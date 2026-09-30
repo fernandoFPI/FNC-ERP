@@ -7,7 +7,7 @@ import { ApolloServer } from '@apollo/server'
 import { expressMiddleware } from '@apollo/server/express4'
 import { env } from '@fnc-erp/config'
 import { requireAuth } from '@fnc-erp/auth'
-import { buildHealthStatus } from '@fnc-erp/db'
+import { buildHealthStatus, asyncHandler } from '@fnc-erp/db'
 import { requestLogger } from '@fnc-erp/logger'
 import { devUploadsDir } from '@fnc-erp/storage'
 import { globalRateLimit, authRateLimit, userRateLimit } from './middleware/rate-limit.js'
@@ -92,10 +92,10 @@ export async function createApp(): Promise<express.Application> {
   }
 
   // ── 6. Health check (no auth, no rate limit) ────────────────
-  app.get('/health', async (_req, res) => {
+  app.get('/health', asyncHandler(async (_req, res) => {
     const health = await buildHealthStatus('gateway')
     res.status(health.status === 'down' ? 503 : 200).json(health)
-  })
+  }))
 
   // ── 6b. Internal service-to-service events (SERVICE_TOKEN, not JWT) ──
   app.use('/internal/events', internalEventsRouter)
@@ -188,7 +188,6 @@ export async function createApp(): Promise<express.Application> {
       proxyReqPathResolver: (req) => `${stripPrefix}${req.url}`,
       proxyReqOptDecorator: (proxyReqOpts, srcReq) => {
         if (srcReq.auth) {
-          proxyReqOpts.headers = proxyReqOpts.headers ?? {}
           proxyReqOpts.headers['x-user-id'] = srcReq.auth.userId
           proxyReqOpts.headers['x-company-id'] = srcReq.auth.companyId
           proxyReqOpts.headers['x-role'] = srcReq.auth.role

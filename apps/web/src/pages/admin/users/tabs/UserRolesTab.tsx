@@ -29,7 +29,6 @@ const PO_POSITION_OPTIONS = [
   { value: 'store_keeper', label: 'Store Keeper' },
   { value: 'store_pricing', label: 'Store Pricing' },
   { value: 'procurement_officer', label: 'Procurement Officer' },
-  { value: 'procurement_2nd', label: 'Procurement 2nd' },
   { value: 'po_admin', label: 'PO Admin' },
 ]
 
@@ -222,7 +221,7 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
     addToast({ type: 'success', message: `Applied template: ${template.name}` })
   }
 
-  const isAdmin = permsData?.userPermissions?.isAdmin ?? false
+  const isAdmin = permsData?.userPermissions.isAdmin ?? false
 
   const poColumns: Column<POPosition>[] = [
     {

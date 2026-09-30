@@ -18,18 +18,19 @@ import { OvertimeRequestCard } from '../../../components/ui/OvertimeRequestCard'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { useToastStore } from '../../../store/toastStore'
+import type { ApproveOvertimeRequestMutation, ApproveOvertimeRequestMutationVariables, BulkApproveOvertimeMutation, BulkApproveOvertimeMutationVariables, OvertimeRequestsQuery, OvertimeRequestsQueryVariables, RejectOvertimeRequestMutation, RejectOvertimeRequestMutationVariables } from '../../../graphql/generated'
 
 interface OTRequest {
   id: string
   employee_id: string
-  employee_name: string
+  employee_name: string | null
   work_date: string
-  regular_hours: number
-  overtime_hours: number
-  overtime_multiplier: number
-  status: 'pending' | 'approved' | 'rejected'
-  review_notes?: string
-  reviewed_by_email?: string
+  regular_hours: string | null
+  overtime_hours: string
+  overtime_multiplier: number | null
+  status: string
+  review_notes?: string | null
+  reviewed_by_email?: string | null
 }
 
 const STATUS_OPTIONS = [
@@ -46,34 +47,34 @@ export default function OvertimePage() {
   const [toDate, setToDate] = useState('')
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
 
-  const { data: pendingData, refetch: refetchPending } = useQuery(OVERTIME_REQUESTS_QUERY, {
+  const { data: pendingData, refetch: refetchPending } = useQuery<OvertimeRequestsQuery, OvertimeRequestsQueryVariables>(OVERTIME_REQUESTS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
   const {
     data: historyData,
     loading: historyLoading,
     refetch: refetchHistory,
-  } = useQuery(OVERTIME_REQUESTS_QUERY, {
+  } = useQuery<OvertimeRequestsQuery, OvertimeRequestsQueryVariables>(OVERTIME_REQUESTS_QUERY, {
     variables: { from_date: fromDate || undefined, to_date: toDate || undefined },
     fetchPolicy: 'cache-and-network',
   })
 
-  const [approveOT] = useMutation(APPROVE_OVERTIME)
-  const [rejectOT] = useMutation(REJECT_OVERTIME)
-  const [bulkApprove, { loading: bulkApproving }] = useMutation(BULK_APPROVE_OVERTIME)
+  const [approveOT] = useMutation<ApproveOvertimeRequestMutation, ApproveOvertimeRequestMutationVariables>(APPROVE_OVERTIME)
+  const [rejectOT] = useMutation<RejectOvertimeRequestMutation, RejectOvertimeRequestMutationVariables>(REJECT_OVERTIME)
+  const [bulkApprove, { loading: bulkApproving }] = useMutation<BulkApproveOvertimeMutation, BulkApproveOvertimeMutationVariables>(BULK_APPROVE_OVERTIME)
 
-  const allOvertimeLogs: OTRequest[] = pendingData?.overtimeRequests ?? []
+  const allOvertimeLogs: OTRequest[] = (pendingData?.overtimeRequests ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const pendingRequests: OTRequest[] = allOvertimeLogs
-  const historyRequests: OTRequest[] = (historyData?.overtimeRequests ?? []).filter(
-    (r: OTRequest) => r.status === 'approved' || r.status === 'rejected',
-  )
+  const historyRequests: OTRequest[] = (historyData?.overtimeRequests ?? [])
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    .filter((r) => r.status === 'approved' || r.status === 'rejected')
 
   async function handleApprove(id: string) {
     try {
       await approveOT({ variables: { id } })
       addToast({ type: 'success', message: 'Approved' })
-      refetchPending()
-      refetchHistory()
+      void refetchPending()
+      void refetchHistory()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -83,8 +84,8 @@ export default function OvertimePage() {
     try {
       await rejectOT({ variables: { id, reviewNotes: notes } })
       addToast({ type: 'warning', message: 'Rejected' })
-      refetchPending()
-      refetchHistory()
+      void refetchPending()
+      void refetchHistory()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -96,8 +97,8 @@ export default function OvertimePage() {
       await bulkApprove({ variables: { ids } })
       addToast({ type: 'success', message: `${ids.length} requests approved` })
       setBulkConfirmOpen(false)
-      refetchPending()
-      refetchHistory()
+      void refetchPending()
+      void refetchHistory()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -194,17 +195,17 @@ export default function OvertimePage() {
                   key={r.id}
                   request={{
                     id: r.id,
-                    employeeName: r.employee_name,
+                    employeeName: r.employee_name ?? '—',
                     workDate: r.work_date,
-                    regularHours: r.regular_hours,
-                    overtimeHours: r.overtime_hours,
-                    overtimeMultiplier: r.overtime_multiplier,
-                    status: r.status,
-                    reviewNotes: r.review_notes,
+                    regularHours: Number(r.regular_hours ?? 0),
+                    overtimeHours: Number(r.overtime_hours),
+                    overtimeMultiplier: r.overtime_multiplier ?? 1,
+                    status: r.status as 'pending' | 'approved' | 'rejected',
+                    reviewNotes: r.review_notes ?? undefined,
                   }}
                   isManager
-                  onApprove={() => handleApprove(r.id)}
-                  onReject={(notes) => handleReject(r.id, notes)}
+                  onApprove={() => void handleApprove(r.id)}
+                  onReject={(notes) => void handleReject(r.id, notes)}
                 />
               ))}
             </div>
@@ -241,8 +242,8 @@ export default function OvertimePage() {
                 onToDateChange={setToDate}
                 resultCount={historyRequests.length}
                 onRefresh={() => {
-                  refetchPending()
-                  refetchHistory()
+                  void refetchPending()
+                  void refetchHistory()
                 }}
               />
             </div>
@@ -261,7 +262,7 @@ export default function OvertimePage() {
         onClose={() => {
           setBulkConfirmOpen(false)
         }}
-        onConfirm={handleBulkApprove}
+        onConfirm={(...args: Parameters<typeof handleBulkApprove>) => void handleBulkApprove(...args)}
         title="Approve all pending requests"
         message={`This will approve all ${pendingRequests.length} pending overtime requests. Continue?`}
         confirmLabel="Approve all"

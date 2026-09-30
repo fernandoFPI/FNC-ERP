@@ -1,11 +1,28 @@
 import type { PoolClient } from './client.js'
 import { pool, query } from './client.js'
 import { withTransaction } from './transaction.js'
+import { asyncHandler } from './async-handler.js'
 import type { Router, Request, Response } from 'express'
 
 // Local type — mirrors the auth context injected by @fnc-erp/auth middleware
 interface AuthRequest extends Request {
   auth?: { userId: string; companyId: string; role: string; module: string; sessionId: string }
+}
+
+// Local re-implementations of @fnc-erp/auth's getAuth/@fnc-erp's requireParam
+// helpers — this package can't depend on @fnc-erp/auth (it already depends
+// on this one, for `query`), so importing it here would be circular. Every
+// caller of these route handlers runs behind requireAuth() with this param
+// in its path, same guarantee as everywhere else those helpers are used.
+function getAuth(req: AuthRequest): NonNullable<AuthRequest['auth']> {
+  if (!req.auth) throw new Error('Unauthorized')
+  return req.auth
+}
+
+function requireParam(req: Request, name: string): string {
+  const v = req.params[name]
+  if (v === undefined) throw new Error(`Missing route param: ${name}`)
+  return v
 }
 
 export type EntityType =
@@ -126,9 +143,9 @@ export function registerAttachmentRoutes(
   const { entityType, verifyEntitySql } = opts
 
   // GET /:id/attachments
-  router.get('/:id/attachments', async (req: AuthRequest, res: Response) => {
+  router.get('/:id/attachments', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
-      const result = await getAttachments(entityType, req.params['id']!)
+      const result = await getAttachments(entityType, requireParam(req, 'id'))
       res.json({ success: true, data: result.rows })
     } catch (err) {
       res.status(500).json({
@@ -136,10 +153,10 @@ export function registerAttachmentRoutes(
         error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch attachments' },
       })
     }
-  })
+  }))
 
   // POST /:id/attachments
-  router.post('/:id/attachments', async (req: AuthRequest, res: Response) => {
+  router.post('/:id/attachments', asyncHandler(async (req: AuthRequest, res: Response) => {
     const body = req.body as { fileId?: string; label?: string; isPrimary?: boolean }
     const { fileId, label, isPrimary } = body
 
@@ -151,9 +168,9 @@ export function registerAttachmentRoutes(
       return
     }
 
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
-    const entityId = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
+    const entityId = requireParam(req, 'id')
 
     // Verify entity belongs to company
     const entity = await query(verifyEntitySql, [entityId, companyId])
@@ -181,7 +198,7 @@ export function registerAttachmentRoutes(
     }
 
     try {
-      await withTransaction({ companyId, userId, role: req.auth!.role }, async (client) => {
+      await withTransaction({ companyId, userId, role: getAuth(req).role }, async (client) => {
         await createAttachment(client, {
           entityType,
           entityId,
@@ -208,19 +225,19 @@ export function registerAttachmentRoutes(
           : 'Failed to attach file'
       res.status(409).json({ success: false, error: { code: 'ATTACHMENT_ERROR', message: msg } })
     }
-  })
+  }))
 
   // DELETE /:id/attachments/:attachmentId
-  router.delete('/:id/attachments/:attachmentId', async (req: AuthRequest, res: Response) => {
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
-    const entityId = req.params['id']!
-    const attachmentId = req.params['attachmentId']!
+  router.delete('/:id/attachments/:attachmentId', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
+    const entityId = requireParam(req, 'id')
+    const attachmentId = requireParam(req, 'attachmentId')
 
     try {
       let removed: { fileId: string; filename: string } | null = null
 
-      await withTransaction({ companyId, userId, role: req.auth!.role }, async (client) => {
+      await withTransaction({ companyId, userId, role: getAuth(req).role }, async (client) => {
         removed = await removeAttachment(client, attachmentId, entityType, entityId)
         if (!removed) {
           return // will 404 below
@@ -251,5 +268,5 @@ export function registerAttachmentRoutes(
         error: { code: 'INTERNAL_ERROR', message: 'Failed to remove attachment' },
       })
     }
-  })
+  }))
 }

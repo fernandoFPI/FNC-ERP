@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
-import { query, withTransaction } from '@fnc-erp/db'
+import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
-export const retentionRouter: import('express').Router = Router()
+export const retentionRouter: Router = Router()
 
 function round2(n: number) {
   return Math.round(n * 100) / 100
@@ -17,7 +18,7 @@ async function nextRecordNumber(companyId: string): Promise<string> {
     `SELECT COUNT(*) AS n FROM retention_records WHERE company_id=$1 AND record_number LIKE $2`,
     [companyId, `RET-${year}-%`],
   )
-  const seq = Number(r.rows[0]!['n']) + 1
+  const seq = Number(firstRowOrThrow(r)['n']) + 1
   return `RET-${year}-${String(seq).padStart(4, '0')}`
 }
 
@@ -26,7 +27,7 @@ async function nextRecordNumber(companyId: string): Promise<string> {
 retentionRouter.get(
   '/summary',
   requirePermission('finance.retention.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT
@@ -46,13 +47,13 @@ retentionRouter.get(
          )                                                                                                    AS due_this_month
        FROM retention_records
        WHERE company_id = $1`,
-        [req.auth!.companyId],
+        [getAuth(req).companyId],
       )
       sendOk(res, r.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load retention summary', err)
     }
-  },
+  }),
 )
 
 // ─── Aging Report ─────────────────────────────────────────────────────────────
@@ -60,7 +61,7 @@ retentionRouter.get(
 retentionRouter.get(
   '/aging',
   requirePermission('finance.retention.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT
@@ -74,22 +75,22 @@ retentionRouter.get(
        FROM retention_records
        WHERE company_id = $1 AND status != 'released'
        GROUP BY retention_type`,
-        [req.auth!.companyId],
+        [getAuth(req).companyId],
       )
       sendOk(res, r.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load retention aging', err)
     }
-  },
+  }),
 )
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 
-retentionRouter.get('/', requirePermission('finance.retention.view', 'view'), async (req, res) => {
+retentionRouter.get('/', requirePermission('finance.retention.view', 'view'), asyncHandler(async (req, res) => {
   const { type, status, project_id } = req.query as Record<string, string>
   try {
     const conditions = [`company_id = $1`]
-    const vals: unknown[] = [req.auth!.companyId]
+    const vals: unknown[] = [getAuth(req).companyId]
     let i = 2
     if (type) {
       conditions.push(`retention_type = $${i++}`)
@@ -116,14 +117,14 @@ retentionRouter.get('/', requirePermission('finance.retention.view', 'view'), as
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load retention records', err)
   }
-})
+}))
 
 // ─── Get detail with releases ──────────────────────────────────────────────────
 
 retentionRouter.get(
   '/:id',
   requirePermission('finance.retention.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const rr = await query(
         `SELECT *, (retention_amount - released_amount) AS outstanding_amount,
@@ -133,7 +134,7 @@ retentionRouter.get(
        LEFT JOIN chart_of_accounts ca1 ON ca1.id = rr.retention_account_id
        LEFT JOIN chart_of_accounts ca2 ON ca2.id = rr.offset_account_id
        WHERE rr.id = $1 AND rr.company_id = $2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!rr.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Retention record not found')
@@ -152,12 +153,12 @@ retentionRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load retention record', err)
     }
-  },
+  }),
 )
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
-retentionRouter.post('/', requirePermission('finance.retention.edit', 'edit'), async (req, res) => {
+retentionRouter.post('/', requirePermission('finance.retention.edit', 'edit'), asyncHandler(async (req, res) => {
   const schema = z.object({
     retention_type: z.enum(['ar', 'ap']),
     source_ref: z.string().optional(),
@@ -179,10 +180,10 @@ retentionRouter.post('/', requirePermission('finance.retention.edit', 'edit'), a
   try {
     const d = schema.parse(req.body)
     const retentionAmount = round2((d.retention_rate / 100) * d.invoice_amount)
-    const recordNumber = await nextRecordNumber(req.auth!.companyId)
+    const recordNumber = await nextRecordNumber(getAuth(req).companyId)
 
     const result = await withTransaction(
-      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
       async (client) => {
         const r = await client.query(
           `INSERT INTO retention_records
@@ -191,7 +192,7 @@ retentionRouter.post('/', requirePermission('finance.retention.edit', 'edit'), a
               invoice_date, expected_release_date, retention_account_id, offset_account_id, notes, created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
           [
-            req.auth!.companyId,
+            getAuth(req).companyId,
             recordNumber,
             d.retention_type,
             d.source_ref ?? null,
@@ -206,10 +207,10 @@ retentionRouter.post('/', requirePermission('finance.retention.edit', 'edit'), a
             d.retention_account_id ?? null,
             d.offset_account_id ?? null,
             d.notes ?? null,
-            req.auth!.userId,
+            getAuth(req).userId,
           ],
         )
-        const record = r.rows[0]!
+        const record = firstRowOrThrow(r)
 
         // Post journal entry if accounts configured
         if (d.post_journal_entry && d.retention_account_id && d.offset_account_id) {
@@ -217,9 +218,9 @@ retentionRouter.post('/', requirePermission('finance.retention.edit', 'edit'), a
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status, created_by)
              VALUES ($1,$2,$3,$4,'retention','posted',$5) RETURNING id`,
-            [req.auth!.companyId, recordNumber, desc, d.invoice_date, req.auth!.userId],
+            [getAuth(req).companyId, recordNumber, desc, d.invoice_date, getAuth(req).userId],
           )
-          const jeId = jeRes.rows[0]!.id as string
+          const jeId = firstRowOrThrow(jeRes).id as string
 
           if (d.retention_type === 'ar') {
             // DR Retention Receivable / CR Accounts Receivable
@@ -247,8 +248,8 @@ retentionRouter.post('/', requirePermission('finance.retention.edit', 'edit'), a
       },
     )
     await logAudit({
-      companyId: req.auth!.companyId,
-      userId: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      userId: getAuth(req).userId,
       action: 'INSERT',
       tableName: 'retention_records',
       recordId: result.id as string,
@@ -258,14 +259,14 @@ retentionRouter.post('/', requirePermission('finance.retention.edit', 'edit'), a
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create retention record', err)
   }
-})
+}))
 
 // ─── Release ──────────────────────────────────────────────────────────────────
 
 retentionRouter.post(
   '/:id/release',
   requirePermission('finance.retention.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       release_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       amount: z.coerce.number().positive(),
@@ -277,7 +278,7 @@ retentionRouter.post(
 
       const recRes = await query(`SELECT * FROM retention_records WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       const rec = recRes.rows[0]
       if (!rec) {
@@ -305,7 +306,7 @@ retentionRouter.post(
         newReleased >= Number(rec['retention_amount']) - 0.01 ? 'released' : 'partially_released'
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           let journalEntryId: string | null = null
 
@@ -318,14 +319,14 @@ retentionRouter.post(
               `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status, created_by)
              VALUES ($1,$2,$3,$4,'retention_release','posted',$5) RETURNING id`,
               [
-                req.auth!.companyId,
+                getAuth(req).companyId,
                 `${rec['record_number'] as string}-REL`,
                 desc,
                 d.release_date,
-                req.auth!.userId,
+                getAuth(req).userId,
               ],
             )
-            journalEntryId = jeRes.rows[0]!.id as string
+            journalEntryId = firstRowOrThrow(jeRes).id as string
 
             if (rec['retention_type'] === 'ar') {
               // Release AR retention: DR AR (offset) / CR Retention Receivable
@@ -355,12 +356,12 @@ retentionRouter.post(
            VALUES ($1,$2,$3,$4,$5,$6,$7)`,
             [
               req.params['id'],
-              req.auth!.companyId,
+              getAuth(req).companyId,
               d.release_date,
               d.amount,
               journalEntryId,
               d.notes ?? null,
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
 
@@ -375,8 +376,8 @@ retentionRouter.post(
         },
       )
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'retention_records',
         recordId: req.params['id'],
@@ -386,7 +387,7 @@ retentionRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to release retention', err)
     }
-  },
+  }),
 )
 
 // ─── Update expected release date / notes ────────────────────────────────────
@@ -394,7 +395,7 @@ retentionRouter.post(
 retentionRouter.patch(
   '/:id',
   requirePermission('finance.retention.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       expected_release_date: z
         .string()
@@ -430,7 +431,7 @@ retentionRouter.patch(
         return
       }
       sets.push('updated_at=NOW()')
-      vals.push(req.params['id'], req.auth!.companyId)
+      vals.push(req.params['id'], getAuth(req).companyId)
       const r = await query(
         `UPDATE retention_records SET ${sets.join(',')} WHERE id=$${i++} AND company_id=$${i++} RETURNING *, (retention_amount-released_amount) AS outstanding_amount`,
         vals,
@@ -443,5 +444,5 @@ retentionRouter.patch(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update retention record', err)
     }
-  },
+  }),
 )

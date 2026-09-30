@@ -115,7 +115,7 @@ export default function ConsolidatedTrialBalance() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

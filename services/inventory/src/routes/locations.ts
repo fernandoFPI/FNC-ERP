@@ -1,9 +1,10 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const locationsRouter: IRouter = Router()
@@ -19,25 +20,25 @@ const Schema = z.object({
 locationsRouter.get(
   '/',
   requirePermission('inventory.locations.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await query(
         'SELECT * FROM stock_locations WHERE company_id = $1 ORDER BY code NULLS LAST, name',
-        [req.auth!.companyId],
+        [getAuth(req).companyId],
       )
       sendOk(res, result.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch locations', err)
     }
-  },
+  }),
 )
 
 locationsRouter.post(
   '/',
   requirePermission('inventory.locations.admin', 'admin'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const parsed = Schema.safeParse(req.body)
       if (!parsed.success) {
         sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -50,10 +51,10 @@ locationsRouter.post(
       )
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'CREATE',
         tableName: 'stock_locations',
-        recordId: result.rows[0]!['id'] as string,
+        recordId: firstRowOrThrow(result)['id'] as string,
       })
       sendOk(res, result.rows[0], 201)
     } catch (err: unknown) {
@@ -64,15 +65,15 @@ locationsRouter.post(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create location', err)
     }
-  },
+  }),
 )
 
 locationsRouter.put(
   '/:id',
   requirePermission('inventory.locations.admin', 'admin'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const parsed = Schema.partial().safeParse(req.body)
       if (!parsed.success) {
         sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -111,29 +112,29 @@ locationsRouter.put(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update location', err)
     }
-  },
+  }),
 )
 
 locationsRouter.delete(
   '/:id',
   requirePermission('inventory.locations.admin', 'admin'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       await query(
         'UPDATE stock_locations SET is_active = false WHERE id = $1 AND company_id = $2',
         [req.params['id'], companyId],
       )
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'DELETE',
         tableName: 'stock_locations',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
       })
       sendOk(res, { deleted: true })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete location', err)
     }
-  },
+  }),
 )

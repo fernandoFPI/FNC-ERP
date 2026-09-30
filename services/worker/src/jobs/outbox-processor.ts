@@ -1,4 +1,4 @@
-import { pool, getSystemConfig, isEmailEnabled, withSystemTransaction } from '@fnc-erp/db'
+import { pool, getSystemConfig, isEmailEnabled, withSystemTransaction, firstRowOrThrow } from '@fnc-erp/db'
 import { env } from '@fnc-erp/config'
 import { logger } from '@fnc-erp/logger'
 import QRCode from 'qrcode'
@@ -283,7 +283,7 @@ async function routeToDLQ(event: OutboxRow, config: EventConfig): Promise<void> 
       event.attempts,
       event.first_attempted_at ?? event.created_at,
       event.last_error ?? 'Unknown error',
-      JSON.stringify(event.error_history ?? []),
+      JSON.stringify(event.error_history),
       config.dlqPriority,
     ],
   )
@@ -504,7 +504,7 @@ export async function processOutbox(): Promise<number> {
       const errorMessage = err instanceof Error ? err.message : String(err)
 
       const errorHistory = [
-        ...(event.error_history ?? []),
+        ...event.error_history,
         {
           attempt: updatedAttempts,
           error: errorMessage.substring(0, 500),
@@ -774,7 +774,7 @@ async function createInvoiceJournal(p: InvoiceJournalPayload): Promise<void> {
        VALUES ($1,$2,'Project invoice',CURRENT_DATE,'posted','project_invoice',$3,$4) RETURNING id`,
       [p.company_id, invoiceNumber, p.invoice_id, userId],
     )
-    const id = jeResult.rows[0]!['id']
+    const id = firstRowOrThrow(jeResult)['id']
 
     // DR: Accounts Receivable (no analytic tag — AR is not a project cost/revenue)
     if (netPayable > 0) {
@@ -858,7 +858,7 @@ async function createPOCompletionJournal(p: POCompletionJournalPayload): Promise
        VALUES ($1,$2,$3,CURRENT_DATE,'posted','po_completion',$4::uuid,$5,NOW(),$5) RETURNING id`,
       [p.company_id, `PO-${poNumber}-COST`, `Project cost from PO ${poNumber}`, p.po_id, userId],
     )
-    const id = je.rows[0]!.id
+    const id = firstRowOrThrow(je).id
 
     await client.query(
       `INSERT INTO journal_po_links (journal_entry_id, po_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
@@ -911,7 +911,7 @@ async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {
        VALUES ($1,'PAY-' || LEFT($2::text,8),'Invoice payment',$3,'posted','invoice_payment',$2::uuid,$4) RETURNING id`,
       [p.company_id, p.invoice_id, p.payment_date, userId],
     )
-    const id = jeResult.rows[0]!['id']
+    const id = firstRowOrThrow(jeResult)['id']
 
     if (!p.wht_applies || whtAmount === 0) {
       // Simple: Dr Cash / Cr AR
@@ -1000,7 +1000,7 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
        VALUES ($1,'APINV-'||LEFT($2::text,8),'Vendor invoice approved',$3,'posted','vendor_invoice',$2::uuid,$4) RETURNING id`,
       [p.company_id, p.invoice_id, p.invoice_date, userId],
     )
-    const id = jeResult.rows[0]!['id']
+    const id = firstRowOrThrow(jeResult)['id']
 
     // Dr Expense (cost — tagged with cost center/analytic account so it's
     // visible to cost-center reporting and project_cost_actuals) / Cr
@@ -1050,7 +1050,7 @@ async function createVendorPaymentJournal(p: VendorPaymentJournalPayload): Promi
        VALUES ($1,'APPAY-'||LEFT($2::text,8),'Vendor payment',$3,'draft','vendor_payment',$4,$5) RETURNING id`,
       [p.companyId, p.paymentId, p.paymentDate, p.paymentId, userId],
     )
-    const id = jeResult.rows[0]!['id']
+    const id = firstRowOrThrow(jeResult)['id']
 
     if (!p.whtApplies || proportionalWht === 0 || !whtPayable) {
       // Simple: Dr AP / Cr Cash
@@ -1129,7 +1129,7 @@ async function createMOJournal(p: MOJournalPayload): Promise<void> {
        RETURNING id`,
       [p.company_id, p.mo_id, userId],
     )
-    const id = jeResult.rows[0]!['id']
+    const id = firstRowOrThrow(jeResult)['id']
 
     // Dr Inventory (finished goods in), Cr Production Cost (materials + labour consumed)
     await client.query(
@@ -1189,7 +1189,7 @@ async function createRentalInvoiceJournal(p: RentalInvoiceJournalPayload): Promi
        RETURNING id`,
       [p.company_id, p.invoice_id, userId],
     )
-    const id = jeResult.rows[0]!['id']
+    const id = firstRowOrThrow(jeResult)['id']
 
     // DR: AR (no analytic tag) / CR: Revenue — tag with the contract's
     // analytic account so it flows into project_cost_actuals. The payload
@@ -1278,7 +1278,7 @@ async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
        RETURNING id`,
       [p.company_id, p.payroll_run_id, `Payroll expense — ${p.period_name}`, p.end_date, userId],
     )
-    const id = jeResult.rows[0]!['id']
+    const id = firstRowOrThrow(jeResult)['id']
 
     // Dr Salary & Wages Expense (gross)
     // Cr Accrued Salaries Payable (net take-home)
@@ -1325,24 +1325,34 @@ async function deliverToInterco(event: OutboxRow): Promise<void> {
   }
 }
 
+// Outbox payloads are arbitrary JSON pulled off a DB row, not runtime-validated
+// against a schema — a bare `p['field']!` would silently hand `undefined` to a
+// PDF handler expecting a string. This re-checks at the read site and fails
+// the event clearly (so it surfaces in the outbox retry/DLQ path) instead.
+function requirePayloadField(p: Record<string, string>, name: string): string {
+  const v = p[name]
+  if (v === undefined) throw new Error(`Missing required outbox payload field: ${name}`)
+  return v
+}
+
 // ── Reporting: PDF generation ─────────────────────────────────
 async function deliverToReporting(event: OutboxRow): Promise<void> {
   const p = event.payload as Record<string, string>
 
   switch (event.event_type) {
     case 'PROJECT_INVOICE_PDF_REQUESTED':
-      await handleInvoicePDF(p['invoice_id']!, p['company_id']!)
+      await handleInvoicePDF(requirePayloadField(p, 'invoice_id'), requirePayloadField(p, 'company_id'))
       break
     case 'PAYSLIP_GENERATION_REQUESTED':
       await handlePayslipPDF(
-        p['payroll_line_id']!,
-        p['payroll_run_id']!,
-        p['employee_id']!,
-        p['company_id']!,
+        requirePayloadField(p, 'payroll_line_id'),
+        requirePayloadField(p, 'payroll_run_id'),
+        requirePayloadField(p, 'employee_id'),
+        requirePayloadField(p, 'company_id'),
       )
       break
     case 'PO_PDF_REQUESTED':
-      await handlePOPDF(p['po_id']!, p['company_id']!)
+      await handlePOPDF(requirePayloadField(p, 'po_id'), requirePayloadField(p, 'company_id'))
       break
     default:
       log.warn({ eventType: event.event_type }, 'unknown reporting event')

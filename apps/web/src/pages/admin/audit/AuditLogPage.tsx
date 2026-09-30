@@ -43,7 +43,7 @@ function actionVariant(
     login: 'accent',
     logout: 'neutral',
   }
-  return m[action?.toLowerCase()] ?? 'neutral'
+  return m[action.toLowerCase()] ?? 'neutral'
 }
 
 export default function AuditLogPage() {
@@ -54,7 +54,7 @@ export default function AuditLogPage() {
   const [fromDate, setFromDate] = useState(sevenDaysAgo)
   const [toDate, setToDate] = useState(today)
   const [actionFilter, setActionFilter] = useState('')
-  const [tableFilter, setTableFilter] = useState('')
+  const [tableFilter] = useState('')
   const [search, setSearch] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [page] = useState(1)
@@ -168,7 +168,7 @@ export default function AuditLogPage() {
       header: '',
       mobileAction: true,
       render: (item) =>
-        (item.oldValues || item.newValues) && (
+        (item.oldValues ?? item.newValues) && (
           <button
             style={{
               background: 'transparent',
@@ -199,7 +199,7 @@ export default function AuditLogPage() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh
@@ -237,7 +237,7 @@ export default function AuditLogPage() {
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           onRefresh={() => {
-            refetch()
+            void refetch()
           }}
           resultCount={items.length}
           onExport={() => undefined}

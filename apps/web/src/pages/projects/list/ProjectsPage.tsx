@@ -12,6 +12,7 @@ import { formatCurrency } from '../../../lib/format'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import type { ProjectsQuery, ProjectsQueryVariables } from '../../../graphql/generated'
 
 const STATUS_OPTIONS_ADMIN = [
   { value: 'pending', label: 'Pending' },
@@ -55,18 +56,18 @@ interface Project {
   projectType?: string
   status: string
   isRfq?: boolean
-  rfqNumber?: string
-  clientName?: string
-  projectValue?: number
-  budgetAmount?: number
-  budgetCurrency?: string
-  plannedStartDate?: string
-  plannedEndDate?: string
-  overallCompletionPct?: number
-  teamCount?: number
-  openPoCount?: number
-  allowedActions?: string[]
-  costSummary?: Record<string, number> | null
+  rfqNumber?: string | null
+  clientName?: string | null
+  projectValue?: number | null
+  budgetAmount?: number | null
+  budgetCurrency?: string | null
+  plannedStartDate?: string | null
+  plannedEndDate?: string | null
+  overallCompletionPct?: number | null
+  teamCount?: number | null
+  openPoCount?: number | null
+  allowedActions?: string[] | null
+  costSummary?: unknown
   createdAt?: string
 }
 
@@ -80,15 +81,14 @@ export default function ProjectsPage() {
 
   const [view, setView] = useState<'table' | 'card'>('table')
   const [search, setSearch] = useState(params.get('search') ?? '')
-  const [statuses, setStatuses] = useState<string[]>(
-    params.get('status') ? [params.get('status')!] : [],
-  )
+  const initialStatus = params.get('status')
+  const [statuses, setStatuses] = useState<string[]>(initialStatus ? [initialStatus] : [])
   const [projectType, setProjectType] = useState(params.get('projectType') ?? '')
   const [myProjectsOnly, setMyProjectsOnly] = useState(false)
   const [page, setPage] = useState(1)
   const limit = 20
 
-  const { data, loading, refetch } = useQuery(PROJECTS_QUERY, {
+  const { data, loading, refetch } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     variables: {
       status: statuses.length > 0 ? statuses : undefined,
       projectType: projectType || undefined,
@@ -101,8 +101,8 @@ export default function ProjectsPage() {
   })
   useEntityChanged('project', () => void refetch())
 
-  const projects: Project[] = data?.projects?.data ?? []
-  const pagination = data?.projects?.pagination
+  const projects: Project[] = data?.projects.data ?? []
+  const pagination = data?.projects.pagination
 
   const toggleStatus = (s: string) => {
     setStatuses((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]))

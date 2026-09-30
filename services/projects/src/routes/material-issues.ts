@@ -1,8 +1,9 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
-import { pool, query, nextDocumentNumber } from '@fnc-erp/db'
+import { pool, query, nextDocumentNumber, firstRowOrThrow } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { getAuth } from '@fnc-erp/auth'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const materialIssuesRouter: IRouter = Router()
@@ -10,8 +11,8 @@ export const materialIssuesRouter: IRouter = Router()
 // GET /projects/:id/material-issues
 materialIssuesRouter.get('/', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const projectId = (req.params as Record<string, string>)['id']!
-    const companyId = req.auth!.companyId
+    const projectId = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
     const result = await query(
       `SELECT pmi.*,
               JSON_AGG(JSON_BUILD_OBJECT(
@@ -32,8 +33,8 @@ materialIssuesRouter.get('/', requirePermission('projects.view', 'view'), async 
 // GET /projects/material-issues/:id
 materialIssuesRouter.get('/material-issues/:id', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const companyId = req.auth!.companyId
+    const id = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
     const issue = await query('SELECT * FROM project_material_issues WHERE id=$1 AND company_id=$2', [id, companyId])
     if (!issue.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Material issue not found')
     const lines = await query(
@@ -49,9 +50,9 @@ materialIssuesRouter.get('/material-issues/:id', requirePermission('projects.vie
 // POST /projects/:id/material-issues
 materialIssuesRouter.post('/', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const projectId = (req.params as Record<string, string>)['id']!
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
+    const projectId = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
     const body = req.body as {
       issue_date: string; notes?: string
       lines: Array<{ product_id: string; lot_id?: string; from_location_id: string; to_location_id: string; qty_issued: number }>
@@ -67,7 +68,7 @@ materialIssuesRouter.post('/', requirePermission('projects.edit', 'edit'), async
          VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
         [projectId, companyId, issueNumber, body.issue_date, body.notes ?? null, userId],
       )
-      const issue = result.rows[0]!
+      const issue = firstRowOrThrow(result)
       for (const line of body.lines) {
         await client.query(
           `INSERT INTO project_material_issue_lines (issue_id, product_id, lot_id, from_location_id, to_location_id, qty_issued)
@@ -89,9 +90,9 @@ materialIssuesRouter.post('/', requirePermission('projects.edit', 'edit'), async
 // POST /projects/material-issues/:id/issue
 materialIssuesRouter.post('/material-issues/:id/issue', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
+    const id = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
 
     const issue = await query(
       `SELECT pmi.*, p.analytic_account_id FROM project_material_issues pmi
@@ -176,8 +177,8 @@ materialIssuesRouter.post('/material-issues/:id/issue', requirePermission('proje
 // POST /projects/material-issues/:id/cancel
 materialIssuesRouter.post('/material-issues/:id/cancel', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const companyId = req.auth!.companyId
+    const id = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
     const result = await query(
       `UPDATE project_material_issues SET status='cancelled' WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING id`,
       [id, companyId],

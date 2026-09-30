@@ -28,16 +28,17 @@ import { Input } from '../../../components/ui/Input'
 import { Textarea } from '../../../components/ui/Textarea'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
+import type { CreateLeaveRequestMutation, CreateLeaveRequestMutationVariables, LeaveBalancesQuery, LeaveBalancesQueryVariables, LeaveRequestsQuery, LeaveRequestsQueryVariables, LeaveTypesQuery, LeaveTypesQueryVariables } from '../../../graphql/generated'
 
 interface LeaveRequest {
   id: string
-  employee_name?: string
-  leave_type_name?: string
+  employee_name?: string | null
+  leave_type_name?: string | null
   start_date: string
   end_date: string
-  total_days: number
+  total_days: number | null
   status: string
-  reviewed_at?: string
+  reviewed_at?: string | null
 }
 
 const STATUS_OPTIONS = [
@@ -68,7 +69,7 @@ export default function LeaveRequestsPage() {
   )
   const [form, setForm] = useState(emptyForm)
 
-  const { data, loading, refetch } = useQuery(LEAVE_REQUESTS_QUERY, {
+  const { data, loading, refetch } = useQuery<LeaveRequestsQuery, LeaveRequestsQueryVariables>(LEAVE_REQUESTS_QUERY, {
     variables: {
       status: statusFilter || undefined,
       from_date: fromDate || undefined,
@@ -76,14 +77,14 @@ export default function LeaveRequestsPage() {
     },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: leaveTypesData } = useQuery(LEAVE_TYPES_QUERY, { variables: { is_active: true } })
-  const { data: balancesData } = useQuery(LEAVE_BALANCES_QUERY, {
+  const { data: leaveTypesData } = useQuery<LeaveTypesQuery, LeaveTypesQueryVariables>(LEAVE_TYPES_QUERY, { variables: { is_active: true } })
+  const { data: balancesData } = useQuery<LeaveBalancesQuery, LeaveBalancesQueryVariables>(LEAVE_BALANCES_QUERY, {
     variables: { employee_id: user?.id ?? '' },
     skip: !user?.id,
   })
-  const [createRequest, { loading: creating }] = useMutation(CREATE_LEAVE_REQUEST)
+  const [createRequest, { loading: creating }] = useMutation<CreateLeaveRequestMutation, CreateLeaveRequestMutationVariables>(CREATE_LEAVE_REQUEST)
 
-  const requests: LeaveRequest[] = data?.leaveRequests ?? []
+  const requests: LeaveRequest[] = (data?.leaveRequests ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const leaveTypes = leaveTypesData?.leaveTypes ?? []
   const balances = balancesData?.leaveBalances ?? []
 
@@ -113,7 +114,7 @@ export default function LeaveRequestsPage() {
       addToast({ type: 'success', message: 'Leave request submitted' })
       setModalOpen(false)
       setForm(emptyForm)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -230,7 +231,7 @@ export default function LeaveRequestsPage() {
             onFromDateChange={setFromDate}
             onToDateChange={setToDate}
             resultCount={requests.length}
-            onRefresh={() => refetch()}
+            onRefresh={() => void refetch()}
           >
             <FilterPresets
               presets={presets}
@@ -288,7 +289,7 @@ export default function LeaveRequestsPage() {
             <Button
               variant="primary"
               fullWidthOnMobile
-              onClick={handleSubmit}
+              onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
               loading={creating}
               disabled={!form.leave_type_id || !form.start_date || !form.end_date}
             >
@@ -305,7 +306,7 @@ export default function LeaveRequestsPage() {
               setForm((f) => ({ ...f, leave_type_id: e.target.value }))
             }}
             required
-            options={leaveTypes.map((lt: { id: string; name: string }) => ({
+            options={leaveTypes.filter((v): v is NonNullable<typeof v> => v !== null).map((lt) => ({
               value: lt.id,
               label: lt.name,
             }))}
@@ -314,8 +315,8 @@ export default function LeaveRequestsPage() {
           {form.leave_type_id &&
             balances.length > 0 &&
             (() => {
-              const bal = balances.find(
-                (b: { leave_type_id: string; days_remaining?: number }) =>
+              const bal = balances.filter((v): v is NonNullable<typeof v> => v !== null).find(
+                (b) =>
                   b.leave_type_id === form.leave_type_id,
               )
               return bal?.days_remaining != null ? (

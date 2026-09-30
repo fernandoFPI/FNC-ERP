@@ -167,7 +167,7 @@ export default function UserDetail() {
     onCompleted: () => {
       addToast({ type: 'success', message: 'User unlocked' })
       setConfirmUnlock(false)
-      refetchUser()
+      void refetchUser()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -180,7 +180,7 @@ export default function UserDetail() {
     onCompleted: () => {
       addToast({ type: 'success', message: 'MFA reset' })
       setConfirmResetMFA(false)
-      refetchUser()
+      void refetchUser()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -192,7 +192,7 @@ export default function UserDetail() {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Session revoked' })
       setRevokeSessionId(null)
-      refetchSessions()
+      void refetchSessions()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -205,7 +205,7 @@ export default function UserDetail() {
     onCompleted: () => {
       addToast({ type: 'success', message: 'All sessions revoked' })
       setConfirmRevokeAll(false)
-      refetchSessions()
+      void refetchSessions()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -217,7 +217,7 @@ export default function UserDetail() {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Role removed' })
       setRemoveRoleId(null)
-      refetchUser()
+      void refetchUser()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -229,7 +229,7 @@ export default function UserDetail() {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Role updated' })
       setEditingRole(null)
-      refetchUser()
+      void refetchUser()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -382,7 +382,7 @@ export default function UserDetail() {
               variant="ghost"
               size="sm"
               onClick={() =>
-                updateRole({
+                void updateRole({
                   variables: {
                     roleId: role.id,
                     input: { isActive: !role.isActive },
@@ -675,7 +675,9 @@ export default function UserDetail() {
                     fontSize: '12px',
                   }}
                 >
-                  {isLocked ? new Date(user.lockedUntil!).toLocaleString() : '—'}
+                  {isLocked && user?.lockedUntil
+                    ? new Date(user.lockedUntil).toLocaleString()
+                    : '—'}
                 </dd>
               </dl>
             </Card>
@@ -776,7 +778,7 @@ export default function UserDetail() {
           setConfirmUnlock(false)
         }}
         onConfirm={() => {
-          unlockUser()
+          void unlockUser()
         }}
         title="Unlock User"
         message={`Unlock ${user.email}? This will clear their failed login attempts and lock.`}
@@ -791,7 +793,7 @@ export default function UserDetail() {
           setConfirmResetMFA(false)
         }}
         onConfirm={() => {
-          resetMFA()
+          void resetMFA()
         }}
         title="Reset MFA"
         message={`Reset MFA for ${user.email}? They will need to re-enroll on next login.`}
@@ -822,7 +824,7 @@ export default function UserDetail() {
           setConfirmRevokeAll(false)
         }}
         onConfirm={() => {
-          revokeAllSessions()
+          void revokeAllSessions()
         }}
         title="Revoke All Sessions"
         message={`Revoke all sessions for ${user.email}? They will be logged out from all devices.`}
@@ -837,7 +839,7 @@ export default function UserDetail() {
           setRevokeSessionId(null)
         }}
         onConfirm={() => {
-          if (revokeSessionId) revokeSession({ variables: { sessionId: revokeSessionId } })
+          if (revokeSessionId) void revokeSession({ variables: { sessionId: revokeSessionId } })
         }}
         title="Revoke Session"
         message="Revoke this session? The user will be logged out on that device."
@@ -852,7 +854,7 @@ export default function UserDetail() {
           setRemoveRoleId(null)
         }}
         onConfirm={() => {
-          if (removeRoleId) removeRole({ variables: { roleId: removeRoleId } })
+          if (removeRoleId) void removeRole({ variables: { roleId: removeRoleId } })
         }}
         title="Remove Role"
         message="Remove this role from the user?"

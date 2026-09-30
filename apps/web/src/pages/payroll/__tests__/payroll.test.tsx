@@ -1,17 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../theme/ThemeContext'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 const mockUseQuery = vi.fn()
 const mockUseMutation = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
-    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
+    useMutation: (...args: unknown[]): unknown => mockUseMutation(...args),
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
   }
@@ -25,7 +27,7 @@ vi.mock('../../../hooks/usePayrollStatus', () => ({ usePayrollStatus: vi.fn() })
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
@@ -89,7 +91,9 @@ describe('PayrollRunsPage', () => {
   it('navigates to run detail on row click', async () => {
     const PayrollRunsPage = (await import('../runs/PayrollRunsPage')).default
     wrap(<PayrollRunsPage />)
-    fireEvent.click(screen.getByText('June 2026 Payroll').closest('tr')!)
+    const row = screen.getByText('June 2026 Payroll').closest('tr')
+    if (!row) throw new Error('Expected a <tr> ancestor for June 2026 Payroll')
+    fireEvent.click(row)
     expect(mockNavigate).toHaveBeenCalledWith('/payroll/runs/pr1')
   })
 })
@@ -131,7 +135,6 @@ describe('PayrollRunForm', () => {
     })
     const PayrollRunForm = (await import('../runs/PayrollRunForm')).default
     wrap(<PayrollRunForm />)
-    const inputs = screen.getAllByRole('textbox')
     // Set dates that overlap
     const periodStartInput = screen.getAllByDisplayValue('')[0]
     fireEvent.change(periodStartInput, { target: { value: '2026-06-15' } })

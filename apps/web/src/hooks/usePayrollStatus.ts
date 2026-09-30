@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@apollo/client'
 import { PAYROLL_RUN_QUERY } from '../graphql/payroll'
+import type { PayrollRunQuery, PayrollRunQueryVariables } from '../graphql/generated'
 
 export function usePayrollStatus(runId: string | undefined) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const { data, refetch } = useQuery(PAYROLL_RUN_QUERY, {
-    variables: { id: runId },
+  const { data, refetch } = useQuery<PayrollRunQuery, PayrollRunQueryVariables>(PAYROLL_RUN_QUERY, {
+    variables: { id: runId ?? '' },
     skip: !runId,
     fetchPolicy: 'network-only',
   })

@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { pool, query } from '@fnc-erp/db'
+import { pool, query, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { checkRateStaleness } from '@fnc-erp/fx/staleness'
 import { sendOk, sendError } from '../lib/errors.js'
@@ -23,12 +24,12 @@ const TRACKED_PAIRS = [
 fxAdminRouter.post(
   '/sync',
   requirePermission('finance.fx_rates.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       await query(
         `INSERT INTO service_outbox (service, event_type, payload)
        VALUES ('worker','FX_SYNC_REQUESTED',$1::jsonb)`,
-        [JSON.stringify({ triggeredBy: req.auth!.userId, syncType: 'manual' })],
+        [JSON.stringify({ triggeredBy: getAuth(req).userId, syncType: 'manual' })],
       )
 
       sendOk(res, {
@@ -37,14 +38,14 @@ fxAdminRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to queue FX sync', err)
     }
-  },
+  }),
 )
 
 // ── GET /finance/fx-rates/sync-history ───────────────────────
 fxAdminRouter.get(
   '/sync-history',
   requirePermission('finance.fx_rates.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const page = Math.max(1, parseInt((req.query['page'] as string) || '1'))
       const limit = Math.min(100, parseInt((req.query['limit'] as string) || '20'))
@@ -63,14 +64,14 @@ fxAdminRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch sync history', err)
     }
-  },
+  }),
 )
 
 // ── GET /finance/fx-rates/change-log ─────────────────────────
 fxAdminRouter.get(
   '/change-log',
   requirePermission('finance.fx_rates.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const { from_currency, to_currency, days = '30' } = req.query as Record<string, string>
       const daysNum = Math.min(365, Math.max(1, parseInt(days)))
@@ -102,16 +103,16 @@ fxAdminRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch rate change log', err)
     }
-  },
+  }),
 )
 
 // ── GET /finance/fx-rates/staleness ──────────────────────────
 fxAdminRouter.get(
   '/staleness',
   requirePermission('finance.fx_rates.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const statuses = await checkRateStaleness(req.auth!.companyId, TRACKED_PAIRS)
+      const statuses = await checkRateStaleness(getAuth(req).companyId, TRACKED_PAIRS)
 
       const hasAnyCritical = statuses.some((s) => s.status === 'critical' || s.status === 'missing')
       const hasAnyWarn = statuses.some((s) => s.status === 'warn')
@@ -123,23 +124,23 @@ fxAdminRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch staleness status', err)
     }
-  },
+  }),
 )
 
 // ── GET /finance/fx-rates/alert-config ───────────────────────
 fxAdminRouter.get(
   '/alert-config',
   requirePermission('finance.fx_rates.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await query(`SELECT * FROM fx_rate_alert_config WHERE company_id = $1`, [
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       sendOk(res, result.rows[0] ?? null)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch alert config', err)
     }
-  },
+  }),
 )
 
 const AlertConfigSchema = z.object({
@@ -153,8 +154,8 @@ const AlertConfigSchema = z.object({
 fxAdminRouter.put(
   '/alert-config',
   requirePermission('finance.fx_rates.edit', 'edit'),
-  async (req, res) => {
-    if (!['company_admin', 'system_admin', 'module_admin'].includes(req.auth!.role)) {
+  asyncHandler(async (req, res) => {
+    if (!['company_admin', 'system_admin', 'module_admin'].includes(getAuth(req).role)) {
       sendError(res, 403, 'FORBIDDEN', 'Company admin or finance module admin required')
       return
     }
@@ -191,7 +192,7 @@ fxAdminRouter.put(
            notify_finance_admins = $5,
            updated_at            = NOW()`,
         [
-          req.auth!.companyId,
+          getAuth(req).companyId,
           warn_after_hours,
           critical_after_hours,
           large_movement_pct,
@@ -200,18 +201,18 @@ fxAdminRouter.put(
       )
 
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.auth!.companyId,
+        userId: getAuth(req).userId,
+        companyId: getAuth(req).companyId,
         action: 'FX_ALERT_CONFIG_UPDATED',
         tableName: 'fx_rate_alert_config',
         newValues: parsed.data,
-        ipAddress: req.auth!.ipAddress,
-        userAgent: req.auth!.userAgent,
+        ipAddress: getAuth(req).ipAddress,
+        userAgent: getAuth(req).userAgent,
       })
 
       sendOk(res, { message: 'Alert configuration updated' })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update alert config', err)
     }
-  },
+  }),
 )

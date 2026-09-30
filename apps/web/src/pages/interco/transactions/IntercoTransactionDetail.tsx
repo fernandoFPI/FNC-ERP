@@ -64,7 +64,7 @@ function statusVariant(
     cancelled: 'danger',
     pending: 'warning',
   }
-  return m[status?.toLowerCase()] ?? 'neutral'
+  return m[status.toLowerCase()] ?? 'neutral'
 }
 
 function JournalEntryPreview({
@@ -164,12 +164,10 @@ interface AccountOption {
 }
 
 function AccountPicker({
-  id,
   accountType,
   onSet,
   setting,
 }: {
-  id: string
   accountType: 'revenue' | 'expense'
   onSet: (accountId: string) => void
   setting: boolean
@@ -228,7 +226,7 @@ export default function IntercoTransactionDetail() {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Transaction posted' })
       setShowJournalPreview(false)
-      refetch()
+      void refetch()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -253,7 +251,7 @@ export default function IntercoTransactionDetail() {
     variables: { id },
     onCompleted: () => {
       addToast({ type: 'success', message: 'Approval recorded' })
-      refetch()
+      void refetch()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -264,7 +262,7 @@ export default function IntercoTransactionDetail() {
   const [setAccount, { loading: settingAccount }] = useMutation(SET_INTERCO_TRANSACTION_ACCOUNT, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Posting account set' })
-      refetch()
+      void refetch()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -295,7 +293,7 @@ export default function IntercoTransactionDetail() {
   }
 
   const isDraft = tx.status === 'pending'
-  const eitherApproved = Boolean(tx.fromCompanyApprovedBy || tx.toCompanyApprovedBy)
+  const eitherApproved = Boolean(tx.fromCompanyApprovedBy ?? tx.toCompanyApprovedBy)
   const bothAccountsSet = Boolean(tx.fromAccountId && tx.toAccountId)
   const canPost = isDraft && eitherApproved && bothAccountsSet
   const canCancel = isDraft
@@ -362,8 +360,8 @@ export default function IntercoTransactionDetail() {
           padding="md"
           style={{
             marginBottom: '16px',
-            border: `1px solid ${theme.warningBorder ?? theme.border}`,
-            background: theme.warningBg ?? theme.bgSurface,
+            border: `1px solid ${theme.warningBorder}`,
+            background: theme.warningBg,
           }}
         >
           <p
@@ -411,7 +409,7 @@ export default function IntercoTransactionDetail() {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    approveTx()
+                    void approveTx()
                   }}
                   loading={approving}
                 >
@@ -451,7 +449,7 @@ export default function IntercoTransactionDetail() {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    approveTx()
+                    void approveTx()
                   }}
                   loading={approving}
                 >
@@ -506,10 +504,9 @@ export default function IntercoTransactionDetail() {
                 tx.fromAccountId ||
                 (canSetFromAccount ? (
                   <AccountPicker
-                    id={tx.id}
                     accountType="revenue"
                     setting={settingAccount}
-                    onSet={(accountId) => setAccount({ variables: { id: tx.id, accountId } })}
+                    onSet={(accountId) => void setAccount({ variables: { id: tx.id, accountId } })}
                   />
                 ) : (
                   '—'
@@ -556,10 +553,9 @@ export default function IntercoTransactionDetail() {
                 tx.toAccountId ||
                 (canSetToAccount ? (
                   <AccountPicker
-                    id={tx.id}
                     accountType="expense"
                     setting={settingAccount}
-                    onSet={(accountId) => setAccount({ variables: { id: tx.id, accountId } })}
+                    onSet={(accountId) => void setAccount({ variables: { id: tx.id, accountId } })}
                   />
                 ) : (
                   '—'
@@ -649,7 +645,7 @@ export default function IntercoTransactionDetail() {
               variant="primary"
               size="sm"
               onClick={() => {
-                postTx()
+                void postTx()
               }}
               loading={posting}
             >
@@ -667,7 +663,7 @@ export default function IntercoTransactionDetail() {
           setConfirmCancel(false)
         }}
         onConfirm={() => {
-          cancelTx()
+          void cancelTx()
         }}
         title="Cancel Transaction"
         message={`Cancel transaction ${tx.reference}? This action cannot be undone.`}

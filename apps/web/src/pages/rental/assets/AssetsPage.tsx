@@ -10,26 +10,27 @@ import { Button } from '../../../components/ui/Button'
 import { AssetStatusBadge } from '../../../components/ui/AssetStatusBadge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import type { EquipmentAssetsQuery, EquipmentAssetsQueryVariables } from '../../../graphql/generated'
 
 interface Asset {
   id: string
   asset_number: string
   name: string
-  category?: string
+  category?: string | null
   status: string
   daily_rate: string
   currency_code: string
-  total_hours?: number
-  maintenance_status?: string
-  condition_rating?: number
-  last_maintenance_date?: string
+  total_hours?: number | null
+  maintenance_status?: string | null
+  condition_rating?: number | null
+  last_maintenance_date?: string | null
 }
 
 export default function AssetsPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
 
-  const { data, loading, refetch } = useQuery(EQUIPMENT_ASSETS_QUERY, {
+  const { data, loading, refetch } = useQuery<EquipmentAssetsQuery, EquipmentAssetsQueryVariables>(EQUIPMENT_ASSETS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('equipment_asset', () => void refetch())
@@ -166,7 +167,7 @@ export default function AssetsPage() {
       />
       <Card style={{ marginTop: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 16px' }}>
-          <Button variant="ghost" size="sm" onClick={() => refetch()}>
+          <Button variant="ghost" size="sm" onClick={() => void refetch()}>
             Refresh
           </Button>
         </div>

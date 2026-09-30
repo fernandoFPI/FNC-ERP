@@ -2,17 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
 const mockUseMutation = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
-    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
+    useMutation: (...args: unknown[]): unknown => mockUseMutation(...args),
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
   }
@@ -30,7 +32,7 @@ vi.mock('../../../../store/authStore', () => ({
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -99,7 +101,7 @@ function mockReq(
   availability: Record<string, unknown>[] = [],
 ) {
   mockUseQuery.mockImplementation((doc: unknown, opts?: { variables?: Record<string, unknown> }) => {
-    const opName = (doc as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name
+    const opName = (doc as { definitions?: { kind?: string; name?: { value?: string } }[] }).definitions?.find((d) => d.kind === 'OperationDefinition')?.name
       ?.value
     if (opName === 'RequisitionChildPurchaseOrders') {
       return { data: { requisitionChildPurchaseOrders: [] }, loading: false, refetch: vi.fn() }
@@ -332,10 +334,10 @@ describe('RequisitionDetail', () => {
 
     const inputs = screen.getAllByPlaceholderText('0.00')
     expect(inputs).toHaveLength(2)
-    fireEvent.change(inputs[0]!, { target: { value: '150' } })
+    fireEvent.change(inputs[0], { target: { value: '150' } })
     expect(submit).toBeDisabled() // second line (the free-text one) still blank
 
-    fireEvent.change(inputs[1]!, { target: { value: '0' } }) // an explicit 0 still counts as entered
+    fireEvent.change(inputs[1], { target: { value: '0' } }) // an explicit 0 still counts as entered
     expect(submit).not.toBeDisabled()
   })
 
@@ -567,7 +569,9 @@ describe('RequisitionDetail', () => {
   })
 
   it('Edit requests tab: Start editing reveals the form, submit sends requisitionId (not id)', async () => {
-    const submitMock = vi.fn().mockResolvedValue({})
+    const submitMock = vi
+      .fn<[{ variables: { requisitionId?: string; id?: string; changes: string } }], Promise<unknown>>()
+      .mockResolvedValue({})
     mockUseMutation.mockReturnValue([submitMock, { loading: false }])
     mockReq()
     const RequisitionDetail = (await import('../RequisitionDetail')).default
@@ -581,14 +585,14 @@ describe('RequisitionDetail', () => {
     expect(submitMock).not.toHaveBeenCalled() // no fields changed yet — nothing to submit
 
     const notesInputs = screen.getAllByDisplayValue('')
-    fireEvent.change(notesInputs[0]!, { target: { value: 'Please expedite' } })
+    fireEvent.change(notesInputs[0], { target: { value: 'Please expedite' } })
     fireEvent.click(screen.getByRole('button', { name: /submit edit request/i }))
 
     expect(submitMock).toHaveBeenCalledTimes(1)
     const call = submitMock.mock.calls[0][0]
     expect(call.variables.requisitionId).toBe('req-1')
     expect(call.variables.id).toBeUndefined()
-    const changes = JSON.parse(call.variables.changes)
+    const changes = JSON.parse(call.variables.changes) as { header: Record<string, unknown> }
     expect(changes.header.notes).toEqual({ from: '', to: 'Please expedite' })
   })
 
@@ -643,11 +647,13 @@ describe('RequisitionDetail', () => {
   // (when shown) the second; the Lines tab's own content is unmounted
   // while on the Edit requests tab, so no other <select> can appear.
   function getEditDeliveryDestinationSelect(container: HTMLElement): HTMLSelectElement {
-    return container.querySelectorAll('select')[1] as HTMLSelectElement
+    return container.querySelectorAll('select')[1]
   }
 
   it('Edit requests tab: shows Delivery Destination for a Project Supply requisition and includes it in the submitted diff', async () => {
-    const submitMock = vi.fn().mockResolvedValue({})
+    const submitMock = vi
+      .fn<[{ variables: { requisitionId?: string; id?: string; changes: string } }], Promise<unknown>>()
+      .mockResolvedValue({})
     mockUseMutation.mockReturnValue([submitMock, { loading: false }])
     mockReq({ purpose: 'project', delivery_destination: 'inventory' })
     const RequisitionDetail = (await import('../RequisitionDetail')).default
@@ -662,7 +668,9 @@ describe('RequisitionDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /submit edit request/i }))
 
     expect(submitMock).toHaveBeenCalledTimes(1)
-    const changes = JSON.parse(submitMock.mock.calls[0][0].variables.changes)
+    const changes = JSON.parse(submitMock.mock.calls[0][0].variables.changes) as {
+      header: Record<string, unknown>
+    }
     expect(changes.header.delivery_destination).toEqual({ from: 'inventory', to: 'jobsite' })
   })
 
@@ -709,7 +717,8 @@ describe('RequisitionDetail', () => {
     fireEvent.change(input, { target: { value: '2' } })
     const raw = localStorage.getItem('fnc_inv_check_draft_req-1')
     expect(raw).toBeTruthy()
-    expect(JSON.parse(raw!)).toMatchObject({ invQty: { 'line-1': '2' } })
+    if (!raw) throw new Error('Expected draft to be saved to localStorage')
+    expect(JSON.parse(raw)).toMatchObject({ invQty: { 'line-1': '2' } })
   })
 
   it('inventory_check: clears the draft once the confirm mutation succeeds', async () => {

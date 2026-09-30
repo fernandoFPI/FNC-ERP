@@ -10,24 +10,25 @@ import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import type { MyApprovalQueueQuery, MyApprovalQueueQueryVariables } from '../../../graphql/generated'
 
 interface POItem {
   id: string
   po_number: string
-  vendor_name?: string
+  vendor_name?: string | null
   status: string
   total_amount: string
   currency_code: string
   created_at: string
-  submitted_at?: string
-  assigned_to_email?: string
+  submitted_at?: string | null
+  assigned_to_email?: string | null
 }
 
 export default function ApprovalQueue() {
   const { theme } = useTheme()
   const navigate = useNavigate()
 
-  const { data, loading, refetch } = useQuery(MY_APPROVAL_QUEUE_QUERY, {
+  const { data, loading, refetch } = useQuery<MyApprovalQueueQuery, MyApprovalQueueQueryVariables>(MY_APPROVAL_QUEUE_QUERY, {
     fetchPolicy: 'cache-and-network',
     pollInterval: 60_000,
   })
@@ -89,7 +90,7 @@ export default function ApprovalQueue() {
         subtitle={`${items.length} pending approval`}
         actions={
           <button
-            onClick={() => refetch()}
+            onClick={() => void refetch()}
             style={{
               background: 'none',
               border: 'none',

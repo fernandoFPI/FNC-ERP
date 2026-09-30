@@ -63,15 +63,13 @@ export function FilterBar({
 
   const resolvedFrom = dateRange ? dateRange.from : (fromDate ?? '')
   const resolvedTo = dateRange ? dateRange.to : (toDate ?? '')
-  const hasDateRange = !!(dateRange || onFromDateChange || onToDateChange)
+  const hasDateRange = !!(dateRange ?? onFromDateChange ?? onToDateChange)
   const hasSearch = searchOnChange != null || typeof search === 'object'
 
   const hasSecondaryFilters = !!(
     (filters && filters.length > 0) ||
     hasDateRange ||
-    onRefresh ||
-    onExport ||
-    children
+    (onRefresh ?? onExport ?? children)
   )
 
   // ── PHONE — Collapsible filter row ──────────────────────────────────────────

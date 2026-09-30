@@ -9,6 +9,14 @@ interface AuthedSocket extends WebSocket {
 // userId → set of open sockets
 const connections = new Map<string, Set<AuthedSocket>>()
 
+function getOrCreate<K, V>(map: Map<K, V>, key: K, factory: () => V): V {
+  const existing = map.get(key)
+  if (existing !== undefined) return existing
+  const created = factory()
+  map.set(key, created)
+  return created
+}
+
 export function createWsServer(httpServer: Server): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
 
@@ -25,8 +33,7 @@ export function createWsServer(httpServer: Server): WebSocketServer {
     ws.userId = userId
     ws.companyId = companyId
 
-    if (!connections.has(userId)) connections.set(userId, new Set())
-    connections.get(userId)!.add(ws)
+    getOrCreate(connections, userId, () => new Set<AuthedSocket>()).add(ws)
 
     ws.on('close', () => {
       connections.get(userId)?.delete(ws)

@@ -23,21 +23,22 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
+import type { BoMsQuery, BoMsQueryVariables, ProductsQuery, ProductsQueryVariables } from '../../../graphql/generated'
 
 interface Product {
   id: string
   sku: string
   name: string
   name_ar?: string | null
-  category?: string
-  sub_category?: string
+  category?: string | null
+  sub_category?: string | null
   uom: string
   valuation_method: string
   average_cost: string
   cost_currency?: string | null
   is_active: boolean
-  reorder_point?: string
-  qty_on_hand?: string
+  reorder_point?: string | null
+  qty_on_hand?: string | null
 }
 
 const CATEGORY_OPTIONS = [
@@ -69,15 +70,15 @@ export default function ProductsPage() {
   const { categories: storeCategories } = useProductStoreCategories()
   const subCategoryOptions = storeCategories.map((c) => ({ value: c.name, label: c.name }))
 
-  const { data, loading, refetch } = useQuery(PRODUCTS_QUERY, {
+  const { data, loading, refetch } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
     variables: { category: categoryFilter || undefined },
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('product', () => void refetch())
 
-  const { data: bomsData } = useQuery(BOMS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const { data: bomsData } = useQuery<BoMsQuery, BoMsQueryVariables>(BOMS_QUERY, { fetchPolicy: 'cache-and-network' })
 
-  const products: Product[] = data?.products ?? []
+  const products: Product[] = (data?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   const bomProductIds = useMemo<Set<string>>(() => {
     const boms: { finished_product_id: string }[] = bomsData?.boms ?? []
@@ -294,14 +295,14 @@ export default function ProductsPage() {
               : []),
           ]}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         >
           <button
             onClick={() => {
               setShowLowStock((s) => !s)
             }}
             style={{
-              background: showLowStock ? (theme.warningBg ?? theme.accentBg) : 'transparent',
+              background: showLowStock ? theme.warningBg : 'transparent',
               border: `1px solid ${showLowStock ? theme.warning : theme.border}`,
               borderRadius: '6px',
               color: showLowStock ? theme.warning : theme.textMuted,

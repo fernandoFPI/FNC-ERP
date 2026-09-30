@@ -35,7 +35,7 @@ function statusVariant(
     unhealthy: 'danger',
     starting: 'info',
   }
-  return m[s?.toLowerCase()] ?? 'neutral'
+  return m[s.toLowerCase()] ?? 'neutral'
 }
 
 function checkVariant(s: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent' {
@@ -117,7 +117,7 @@ export default function SystemHealthPage() {
               variant="ghost"
               size="sm"
               onClick={() => {
-                refetch()
+                void refetch()
               }}
             >
               Refresh
@@ -207,7 +207,7 @@ export default function SystemHealthPage() {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {Object.entries(svc.checks).map(([key, val]) => (
+                {(Object.entries(svc.checks) as [string, string][]).map(([key, val]) => (
                   <div
                     key={key}
                     style={{

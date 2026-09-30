@@ -147,7 +147,7 @@ export default function ConsolidatedBS() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

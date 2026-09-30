@@ -1,3 +1,4 @@
+import type { Socket } from 'net'
 import { createApp } from './app.js'
 import { env } from '@fnc-erp/config'
 import { pool } from '@fnc-erp/db'
@@ -25,9 +26,9 @@ async function start() {
   server.on('upgrade', (req, socket, head) => {
     const url = req.url ?? ''
     if (url.startsWith('/api/v1/graphql-ws')) {
-      handleGraphQLWsUpgrade(req, socket as import('net').Socket, head)
+      handleGraphQLWsUpgrade(req, socket as Socket, head)
     } else if (url.startsWith('/api/v1/ws')) {
-      handleWsUpgrade(req, socket as import('net').Socket, head)
+      handleWsUpgrade(req, socket as Socket, head)
     } else {
       socket.destroy()
     }
@@ -36,9 +37,8 @@ async function start() {
   const shutdown = async () => {
     log.info('Gateway shutting down')
     server.closeIdleConnections()
-    server.close(async () => {
-      await pool.end()
-      process.exit(0)
+    server.close(() => {
+      void pool.end().then(() => process.exit(0))
     })
   }
 

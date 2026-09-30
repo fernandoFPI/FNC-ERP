@@ -17,24 +17,25 @@ import { Select } from '../../../components/ui/Select'
 import { Input } from '../../../components/ui/Input'
 import { Textarea } from '../../../components/ui/Textarea'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreateLeaveRequestMutation, CreateLeaveRequestMutationVariables, LeaveBalancesQuery, LeaveBalancesQueryVariables, LeaveRequestsQuery, LeaveRequestsQueryVariables, LeaveTypesQuery, LeaveTypesQueryVariables } from '../../../graphql/generated'
 
 interface LeaveBalance {
   leave_type_id: string
   leave_type_name: string
-  days_allocated: number
-  days_used: number
-  days_remaining: number
+  days_allocated: number | null
+  days_used: number | null
+  days_remaining: number | null
 }
 
 interface LeaveRequest {
   id: string
-  leave_type_name?: string
+  leave_type_name?: string | null
   start_date: string
   end_date: string
-  total_days: number
+  total_days: number | null
   status: string
-  reason?: string
-  reviewed_at?: string
+  reason?: string | null
+  reviewed_at?: string | null
 }
 
 const emptyForm = { leave_type_id: '', start_date: '', end_date: '', reason: '' }
@@ -55,7 +56,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
 
-  const { data: balData, refetch: refetchBalances } = useQuery(LEAVE_BALANCES_QUERY, {
+  const { data: balData, refetch: refetchBalances } = useQuery<LeaveBalancesQuery, LeaveBalancesQueryVariables>(LEAVE_BALANCES_QUERY, {
     variables: { employee_id: employeeId },
     fetchPolicy: 'cache-and-network',
   })
@@ -63,15 +64,15 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
     data: reqData,
     loading,
     refetch: refetchRequests,
-  } = useQuery(LEAVE_REQUESTS_QUERY, {
+  } = useQuery<LeaveRequestsQuery, LeaveRequestsQueryVariables>(LEAVE_REQUESTS_QUERY, {
     variables: { employee_id: employeeId },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: typesData } = useQuery(LEAVE_TYPES_QUERY, { variables: { is_active: true } })
-  const [createRequest, { loading: creating }] = useMutation(CREATE_LEAVE_REQUEST)
+  const { data: typesData } = useQuery<LeaveTypesQuery, LeaveTypesQueryVariables>(LEAVE_TYPES_QUERY, { variables: { is_active: true } })
+  const [createRequest, { loading: creating }] = useMutation<CreateLeaveRequestMutation, CreateLeaveRequestMutationVariables>(CREATE_LEAVE_REQUEST)
 
-  const balances: LeaveBalance[] = balData?.leaveBalances ?? []
-  const requests: LeaveRequest[] = reqData?.leaveRequests ?? []
+  const balances: LeaveBalance[] = (balData?.leaveBalances ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
+  const requests: LeaveRequest[] = (reqData?.leaveRequests ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const leaveTypes = typesData?.leaveTypes ?? []
 
   const days =
@@ -101,8 +102,8 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
       addToast({ type: 'success', message: 'Leave request created' })
       setModalOpen(false)
       setForm(emptyForm)
-      refetchRequests()
-      refetchBalances()
+      void refetchRequests()
+      void refetchBalances()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -119,7 +120,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
       header: 'From',
       render: (r) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textSecondary }}>
-          {r.start_date?.slice(0, 10)}
+          {r.start_date.slice(0, 10)}
         </span>
       ),
     },
@@ -128,7 +129,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
       header: 'To',
       render: (r) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textSecondary }}>
-          {r.end_date?.slice(0, 10)}
+          {r.end_date.slice(0, 10)}
         </span>
       ),
     },
@@ -169,8 +170,8 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
           {balances.map((b) => {
             const unlimited = b.days_allocated == null
             const pct =
-              !unlimited && b.days_allocated > 0
-                ? Math.min(100, (b.days_used / b.days_allocated) * 100)
+              b.days_allocated != null && b.days_allocated > 0
+                ? Math.min(100, ((b.days_used ?? 0) / b.days_allocated) * 100)
                 : 0
             const color = pct >= 90 ? theme.danger : pct >= 60 ? theme.warning : theme.success
             return (
@@ -274,7 +275,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
             </Button>
             <Button
               variant="primary"
-              onClick={handleSubmit}
+              onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
               loading={creating}
               disabled={!form.leave_type_id || !form.start_date || !form.end_date}
             >
@@ -291,7 +292,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
               setForm((f) => ({ ...f, leave_type_id: e.target.value }))
             }}
             required
-            options={leaveTypes.map((lt: { id: string; name: string }) => ({
+            options={leaveTypes.filter((v): v is NonNullable<typeof v> => v !== null).map((lt) => ({
               value: lt.id,
               label: lt.name,
             }))}

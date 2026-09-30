@@ -2,14 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 const mockUseQuery = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
   }
@@ -21,7 +23,7 @@ vi.mock('../../../../store/authStore', () => ({
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => mockNavigate }
 })
 

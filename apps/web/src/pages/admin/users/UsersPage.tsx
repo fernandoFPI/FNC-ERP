@@ -21,6 +21,7 @@ import {
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import type { CreateUserMutation, CreateUserMutationVariables, DeactivateUserMutation, DeactivateUserMutationVariables, InviteUserMutation, InviteUserMutationVariables, SessionsChangedSubscription, SessionsChangedSubscriptionVariables } from '../../../graphql/generated'
 
 interface UserRole {
   id: string
@@ -74,7 +75,7 @@ export default function UsersPage() {
 
   // Live-refetch the list when any user's sessions change — e.g. the
   // Sessions column updating without a manual page refresh.
-  useSubscription(SESSIONS_CHANGED_SUBSCRIPTION, {
+  useSubscription<SessionsChangedSubscription, SessionsChangedSubscriptionVariables>(SESSIONS_CHANGED_SUBSCRIPTION, {
     onData: () => {
       void refetch()
     },
@@ -85,7 +86,7 @@ export default function UsersPage() {
   )
   const companies = companiesData?.companies ?? []
 
-  const [deactivateUser] = useMutation(DEACTIVATE_USER, {
+  const [deactivateUser] = useMutation<DeactivateUserMutation, DeactivateUserMutationVariables>(DEACTIVATE_USER, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'User deactivated' })
       void refetch()
@@ -95,7 +96,7 @@ export default function UsersPage() {
     },
   })
 
-  const [inviteUser, { loading: inviting }] = useMutation(INVITE_USER, {
+  const [inviteUser, { loading: inviting }] = useMutation<InviteUserMutation, InviteUserMutationVariables>(INVITE_USER, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Invitation sent' })
       setShowInviteModal(false)
@@ -107,7 +108,7 @@ export default function UsersPage() {
     },
   })
 
-  const [createUser, { loading: creating }] = useMutation(CREATE_USER, {
+  const [createUser, { loading: creating }] = useMutation<CreateUserMutation, CreateUserMutationVariables>(CREATE_USER, {
     onCompleted: (res) => {
       addToast({ type: 'success', message: 'User created' })
       setShowCreateModal(false)

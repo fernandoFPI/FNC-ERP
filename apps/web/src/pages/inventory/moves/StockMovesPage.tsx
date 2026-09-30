@@ -12,21 +12,22 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { formatDate } from '../../../lib/format'
+import type { StockMovesQuery, StockMovesQueryVariables } from '../../../graphql/generated'
 
 interface StockMove {
   id: string
   move_date: string
-  product_name?: string
-  sku?: string
-  from_location_name?: string
-  to_location_name?: string
+  product_name?: string | null
+  sku?: string | null
+  from_location_name?: string | null
+  to_location_name?: string | null
   qty: string
-  unit_cost?: string
-  total_cost?: string
+  unit_cost?: string | null
+  total_cost?: string | null
   source_type: string
-  reference?: string
-  lot_number?: string
-  moved_by_email?: string
+  reference?: string | null
+  lot_number?: string | null
+  moved_by_email?: string | null
 }
 
 // Adjustments etc. carry a user-picked effective date with no time-of-day
@@ -67,18 +68,18 @@ export default function StockMovesPage() {
 
   const productId = params.get('productId') ?? undefined
 
-  const { data, loading, refetch } = useQuery(STOCK_MOVES_QUERY, {
+  const { data, loading, refetch } = useQuery<StockMovesQuery, StockMovesQueryVariables>(STOCK_MOVES_QUERY, {
     variables: {
       productId,
       sourceType: sourceFilter || undefined,
-      fromDate: fromDate || undefined,
-      toDate: toDate || undefined,
     },
     fetchPolicy: 'cache-and-network',
   })
 
   const moves: StockMove[] = data?.stockMoves ?? []
   const filtered = moves.filter((m) => {
+    if (fromDate && m.move_date < fromDate) return false
+    if (toDate && m.move_date > toDate) return false
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -239,7 +240,7 @@ export default function StockMovesPage() {
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         />
         <Table columns={columns} data={filtered} loading={loading} rowKey="id" />
       </Card>

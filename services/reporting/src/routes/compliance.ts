@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
 import { query } from '@fnc-erp/db'
+import { getAuth } from '@fnc-erp/auth'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -9,7 +10,7 @@ export const complianceRouter: IRouter = Router()
 // GET /reporting/compliance/withholding-tax?company_id&from_date&to_date
 complianceRouter.get('/withholding-tax', requirePermission('reporting.compliance.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const { from_date, to_date } = req.query
     const params: unknown[] = [companyId]
     let idx = 2
@@ -33,7 +34,7 @@ complianceRouter.get('/withholding-tax', requirePermission('reporting.compliance
 // GET /reporting/compliance/wht-payable?company_id
 complianceRouter.get('/wht-payable', requirePermission('finance.ap.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const year = new Date().getFullYear()
 
     const [summaryRes, monthlyRes, vendorRes] = await Promise.all([
@@ -94,7 +95,7 @@ complianceRouter.get('/wht-payable', requirePermission('finance.ap.view', 'view'
 // GET /reporting/compliance/fx-exposure?company_id&as_of_date
 complianceRouter.get('/fx-exposure', requirePermission('reporting.compliance.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const asOfDate = req.query['as_of_date'] as string | undefined
     const dateClause = asOfDate ? `AND je.entry_date <= '${asOfDate}'` : ''
     const result = await query(
@@ -125,7 +126,7 @@ complianceRouter.get('/fx-exposure', requirePermission('reporting.compliance.vie
 // GET /reporting/compliance/payroll-tax?company_id&from_date&to_date
 complianceRouter.get('/payroll-tax', requirePermission('reporting.compliance.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const { from_date, to_date } = req.query
     const params: unknown[] = [companyId]
     let idx = 2
@@ -150,7 +151,7 @@ complianceRouter.get('/payroll-tax', requirePermission('reporting.compliance.vie
 // GET /reporting/inventory/valuation?company_id&as_of_date
 complianceRouter.get('/inventory-valuation', requirePermission('reporting.compliance.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const result = await query(
       `SELECT p.sku, p.name AS product_name, sl.name AS location_name,
               sb.qty_on_hand, sb.average_cost,
@@ -164,7 +165,7 @@ complianceRouter.get('/inventory-valuation', requirePermission('reporting.compli
       [companyId],
     )
     const totalValue = (result.rows as Array<{ total_value: string }>)
-      .reduce((sum, r) => sum + parseFloat(r.total_value ?? '0'), 0)
+      .reduce((sum, r) => sum + parseFloat(r.total_value), 0)
     sendOk(res, { items: result.rows, total_inventory_value: totalValue })
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to generate inventory valuation', err) }
 })

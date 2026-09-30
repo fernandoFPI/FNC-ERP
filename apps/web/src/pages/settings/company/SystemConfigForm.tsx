@@ -15,8 +15,8 @@ interface SystemConfig {
   socialSecurityRate?: number
   employerSocialSecurityRate?: number
   defaultWHTRate?: number
-  companyEmailFrom?: string
-  companyEmailSignature?: string
+  companyEmailFrom?: string | null
+  companyEmailSignature?: string | null
   setupCompleted?: boolean
 }
 

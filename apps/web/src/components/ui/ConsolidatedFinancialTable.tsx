@@ -357,7 +357,10 @@ export function ConsolidatedFinancialTable({
                 </td>
                 {priorByCode &&
                   (() => {
-                    const priorTotal = priorData!.reduce((s, r) => s + r.consolidated, 0)
+                    const priorTotal = Array.from(priorByCode.values()).reduce(
+                      (s, r) => s + r.consolidated,
+                      0,
+                    )
                     const pct =
                       priorTotal !== 0
                         ? ((grandTotal.consolidated - priorTotal) / Math.abs(priorTotal)) * 100

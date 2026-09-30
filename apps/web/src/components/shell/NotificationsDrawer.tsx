@@ -238,7 +238,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
               </span>
             </div>
             <button
-              onClick={handleMarkAllAsRead}
+              onClick={(...args: Parameters<typeof handleMarkAllAsRead>) => void handleMarkAllAsRead(...args)}
               style={{
                 background: 'none',
                 border: 'none',
@@ -322,7 +322,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                   <NotificationItem
                     key={n.id}
                     notification={n}
-                    onRead={handleRead}
+                    onRead={(...args: Parameters<typeof handleRead>) => void handleRead(...args)}
                     onNavigate={handleNavigate}
                   />
                 ))}
@@ -335,7 +335,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                   <NotificationItem
                     key={n.id}
                     notification={n}
-                    onRead={handleRead}
+                    onRead={(...args: Parameters<typeof handleRead>) => void handleRead(...args)}
                     onNavigate={handleNavigate}
                   />
                 ))}
@@ -355,7 +355,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
           }}
         >
           <button
-            onClick={loadMore}
+            onClick={(...args: Parameters<typeof loadMore>) => void loadMore(...args)}
             style={{
               width: '100%',
               padding: '8px',

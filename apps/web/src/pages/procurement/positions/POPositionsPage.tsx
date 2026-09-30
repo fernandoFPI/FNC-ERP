@@ -20,18 +20,19 @@ import { Select } from '../../../components/ui/Select'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { PO_POSITIONS } from '../../../lib/po-constants'
+import type { AssignPoPositionMutation, AssignPoPositionMutationVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, DepartmentsQuery, DepartmentsQueryVariables, EmployeesQuery, EmployeesQueryVariables, GetPoPositionsQuery, GetPoPositionsQueryVariables, ProjectsQuery, ProjectsQueryVariables, RemovePoPositionMutation, RemovePoPositionMutationVariables } from '../../../graphql/generated'
 
 interface POPosition {
   id: string
   employeeId: string
   employeeName: string
   position: string
-  projectId?: string
-  projectName?: string
-  departmentId?: string
-  departmentName?: string
-  branchId?: string
-  branchName?: string
+  projectId?: string | null
+  projectName?: string | null
+  departmentId?: string | null
+  departmentName?: string | null
+  branchId?: string | null
+  branchName?: string | null
   isActive: boolean
   createdAt: string
 }
@@ -41,7 +42,6 @@ const POSITION_VARIANT: Record<string, 'info' | 'warning' | 'accent' | 'neutral'
   store_keeper: 'info',
   store_pricing: 'info',
   procurement_officer: 'accent',
-  procurement_2nd: 'warning',
   po_admin: 'accent',
 }
 
@@ -63,14 +63,14 @@ function EmployeeCombobox({
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
-  const { data } = useQuery(EMPLOYEES_QUERY, {
+  const { data } = useQuery<EmployeesQuery, EmployeesQueryVariables>(EMPLOYEES_QUERY, {
     variables: { is_active: true },
     skip: !open,
     fetchPolicy: 'cache-and-network',
   })
 
-  const allEmployees: EmployeeOption[] = (data?.employees ?? []).map(
-    (e: { id: string; first_name: string; last_name: string; employee_number?: string }) => ({
+  const allEmployees: EmployeeOption[] = (data?.employees ?? []).filter((v): v is NonNullable<typeof v> => v !== null).map(
+    (e) => ({
       id: e.id,
       label: `${e.first_name} ${e.last_name}${e.employee_number ? ` (${e.employee_number})` : ''}`,
     }),
@@ -199,22 +199,22 @@ export default function POPositionsPage() {
     setBranchId('')
   }
 
-  const { data, loading, refetch } = useQuery(PO_POSITIONS_QUERY, {
+  const { data, loading, refetch } = useQuery<GetPoPositionsQuery, GetPoPositionsQueryVariables>(PO_POSITIONS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
 
   // load projects + departments + branches for scope dropdowns
-  const { data: projectsData } = useQuery(PROJECTS_QUERY, {
+  const { data: projectsData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     variables: { limit: 200, includeAll: true },
     skip: !showAssignModal,
   })
-  const { data: deptData } = useQuery(DEPARTMENTS_QUERY, { skip: !showAssignModal })
-  const { data: branchesData } = useQuery(COMPANY_BRANCHES_QUERY, {
-    variables: { companyId: user?.companyId },
+  const { data: deptData } = useQuery<DepartmentsQuery, DepartmentsQueryVariables>(DEPARTMENTS_QUERY, { skip: !showAssignModal })
+  const { data: branchesData } = useQuery<CompanyBranchesQuery, CompanyBranchesQueryVariables>(COMPANY_BRANCHES_QUERY, {
+    variables: { companyId: (user?.companyId) ?? '' },
     skip: !showAssignModal || !user?.companyId,
   })
 
-  const projects = (projectsData?.projects?.data ?? []) as {
+  const projects = (projectsData?.projects.data ?? []) as {
     id: string
     code: string
     name: string
@@ -230,7 +230,7 @@ export default function POPositionsPage() {
     isActive: boolean
   }[]
 
-  const [assignPosition, { loading: assigning }] = useMutation(ASSIGN_PO_POSITION, {
+  const [assignPosition, { loading: assigning }] = useMutation<AssignPoPositionMutation, AssignPoPositionMutationVariables>(ASSIGN_PO_POSITION, {
     onCompleted: () => {
       setShowAssignModal(false)
       resetForm()
@@ -238,7 +238,7 @@ export default function POPositionsPage() {
     },
   })
 
-  const [removePosition] = useMutation(REMOVE_PO_POSITION, {
+  const [removePosition] = useMutation<RemovePoPositionMutation, RemovePoPositionMutationVariables>(REMOVE_PO_POSITION, {
     onCompleted: () => void refetch(),
   })
 

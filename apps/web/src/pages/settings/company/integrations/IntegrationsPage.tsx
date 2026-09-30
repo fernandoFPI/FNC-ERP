@@ -3,7 +3,6 @@ import { useTheme } from '../../../../theme/ThemeContext'
 import { PageHeader } from '../../../../components/ui/PageHeader'
 import { Card } from '../../../../components/ui/Card'
 import { Button } from '../../../../components/ui/Button'
-import { Input } from '../../../../components/ui/Input'
 import { Badge } from '../../../../components/ui/Badge'
 import { useToastStore } from '../../../../store/toastStore'
 import { api } from '../../../../lib/axios'
@@ -63,7 +62,7 @@ function ConfigField({
   const { theme } = useTheme()
   const [editing, setEditing] = useState(false)
 
-  const currentValue = edits[configKey] !== undefined ? edits[configKey] : (entry?.value ?? '')
+  const currentValue = edits[configKey] ?? entry?.value ?? ''
   const isSensitive = entry?.is_sensitive ?? false
   const hasDbValue = entry?.source === 'db'
   const hasValue = entry?.has_value ?? false
@@ -139,7 +138,7 @@ function ConfigField({
             onClick={() => {
               setEditing(false)
               const newEdits = { ...edits }
-              delete newEdits[configKey]
+              Reflect.deleteProperty(newEdits, configKey)
               onChange(configKey, '•••••')
             }}
             style={{
@@ -157,7 +156,7 @@ function ConfigField({
         )}
         {hasDbValue && (
           <span style={{ fontSize: '11px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-            {entry?.updated_at ? `Updated ${new Date(entry.updated_at).toLocaleDateString()}` : ''}
+            {entry.updated_at ? `Updated ${new Date(entry.updated_at).toLocaleDateString()}` : ''}
           </span>
         )}
       </div>
@@ -201,7 +200,7 @@ export default function IntegrationsPage() {
     setEdits((prev) => {
       if (value === '•••••') {
         const next = { ...prev }
-        delete next[key]
+        Reflect.deleteProperty(next, key)
         return next
       }
       return { ...prev, [key]: value }
@@ -214,7 +213,7 @@ export default function IntegrationsPage() {
       const res = await api.post<{ ok: boolean; sentTo: string }>('/admin/system-config/test-email')
       addToast({ type: 'success', message: `Test email sent to ${res.data.sentTo}` })
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const msg = (err as { response?: { data?: { message?: string } } }).response?.data?.message
       addToast({ type: 'error', message: msg ?? 'Email test failed — check your settings' })
     } finally {
       setTestingEmail(false)

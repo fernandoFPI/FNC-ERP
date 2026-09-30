@@ -10,6 +10,7 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import type { RentalContractsQuery, RentalContractsQueryVariables } from '../../../graphql/generated'
 
 interface RentalContract {
   id: string
@@ -19,10 +20,10 @@ interface RentalContract {
   billing_cycle: string
   rate_amount: string
   start_date: string
-  end_date?: string
-  client_name?: string
-  asset_name?: string
-  currency_code?: string
+  end_date?: string | null
+  client_name?: string | null
+  asset_name?: string | null
+  currency_code?: string | null
 }
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'success' | 'warning' | 'danger'> = {
@@ -36,7 +37,7 @@ export default function RentalContractsPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
 
-  const { data, loading, refetch } = useQuery(RENTAL_CONTRACTS_QUERY, {
+  const { data, loading, refetch } = useQuery<RentalContractsQuery, RentalContractsQueryVariables>(RENTAL_CONTRACTS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('rental_contract', () => void refetch())

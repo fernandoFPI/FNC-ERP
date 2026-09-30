@@ -1,4 +1,4 @@
-﻿import { useParams, useNavigate } from 'react-router-dom'
+﻿import { useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   LEAVE_REQUEST_QUERY,
@@ -11,15 +11,14 @@ import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { DetailHeader } from '../../../components/ui/DetailHeader'
 import { Card } from '../../../components/ui/Card'
-import { Badge } from '../../../components/ui/Badge'
 import { Button, StickyActionBar } from '../../../components/ui/Button'
 import { Textarea } from '../../../components/ui/Textarea'
 import { useToastStore } from '../../../store/toastStore'
 import { useState } from 'react'
+import type { ApproveLeaveRequestMutation, ApproveLeaveRequestMutationVariables, CancelLeaveRequestMutation, CancelLeaveRequestMutationVariables, LeaveRequestQuery, LeaveRequestQueryVariables, RejectLeaveRequestMutation, RejectLeaveRequestMutationVariables } from '../../../graphql/generated'
 
 export default function LeaveRequestDetail() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const { isPhone } = useBreakpoint()
@@ -27,18 +26,18 @@ export default function LeaveRequestDetail() {
   const [rejectNotes, setRejectNotes] = useState('')
   const [showReject, setShowReject] = useState(false)
 
-  const { data, loading, refetch } = useQuery(LEAVE_REQUEST_QUERY, { variables: { id }, skip: !id })
-  const [approveRequest, { loading: approving }] = useMutation(APPROVE_LEAVE_REQUEST)
-  const [rejectRequest, { loading: rejecting }] = useMutation(REJECT_LEAVE_REQUEST)
-  const [cancelRequest, { loading: cancelling }] = useMutation(CANCEL_LEAVE_REQUEST)
+  const { data, loading, refetch } = useQuery<LeaveRequestQuery, LeaveRequestQueryVariables>(LEAVE_REQUEST_QUERY, { variables: { id: id ?? '' }, skip: !id })
+  const [approveRequest, { loading: approving }] = useMutation<ApproveLeaveRequestMutation, ApproveLeaveRequestMutationVariables>(APPROVE_LEAVE_REQUEST)
+  const [rejectRequest, { loading: rejecting }] = useMutation<RejectLeaveRequestMutation, RejectLeaveRequestMutationVariables>(REJECT_LEAVE_REQUEST)
+  const [cancelRequest, { loading: cancelling }] = useMutation<CancelLeaveRequestMutation, CancelLeaveRequestMutationVariables>(CANCEL_LEAVE_REQUEST)
 
   const req = data?.leaveRequest
 
   async function handleApprove() {
     try {
-      await approveRequest({ variables: { id } })
+      await approveRequest({ variables: { id: id ?? '' } })
       addToast({ type: 'success', message: 'Leave request approved' })
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -50,10 +49,10 @@ export default function LeaveRequestDetail() {
       return
     }
     try {
-      await rejectRequest({ variables: { id, reviewNotes: rejectNotes } })
+      await rejectRequest({ variables: { id: id ?? '', reviewNotes: rejectNotes } })
       addToast({ type: 'warning', message: 'Leave request rejected' })
       setShowReject(false)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -61,9 +60,9 @@ export default function LeaveRequestDetail() {
 
   async function handleCancel() {
     try {
-      await cancelRequest({ variables: { id } })
+      await cancelRequest({ variables: { id: id ?? '' } })
       addToast({ type: 'warning', message: 'Leave request cancelled' })
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -93,7 +92,7 @@ export default function LeaveRequestDetail() {
     >
       <DetailHeader
         title={`Leave Request — ${req.leave_type_name ?? ''}`}
-        subtitle={req.employee_name}
+        subtitle={req.employee_name ?? undefined}
         status={req.status}
         statusVariant={statusVariant}
         backPath="/hr/leave"
@@ -103,7 +102,7 @@ export default function LeaveRequestDetail() {
             <div style={{ display: 'flex', gap: '8px' }}>
               {req.status === 'pending' && (
                 <>
-                  <Button variant="primary" size="sm" onClick={handleApprove} loading={approving}>
+                  <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleApprove>) => void handleApprove(...args)} loading={approving}>
                     Approve
                   </Button>
                   <Button
@@ -115,7 +114,7 @@ export default function LeaveRequestDetail() {
                   >
                     Reject
                   </Button>
-                  <Button variant="danger" size="sm" onClick={handleCancel} loading={cancelling}>
+                  <Button variant="danger" size="sm" onClick={(...args: Parameters<typeof handleCancel>) => void handleCancel(...args)} loading={cancelling}>
                     Cancel
                   </Button>
                 </>
@@ -191,7 +190,7 @@ export default function LeaveRequestDetail() {
               <Button
                 variant="danger"
                 size="sm"
-                onClick={handleReject}
+                onClick={(...args: Parameters<typeof handleReject>) => void handleReject(...args)}
                 loading={rejecting}
                 disabled={!rejectNotes}
               >
@@ -210,15 +209,17 @@ export default function LeaveRequestDetail() {
           </Card>
         )}
 
-        {req.review_notes && (
+        {/* review_notes/reviewed_by_email have no backing schema field
+            (LeaveRequest only has reviewed_by as a bare ID, plus reviewed_at)
+            — showing just the review timestamp until that's resolvable. */}
+        {req.reviewed_at && (
           <Card style={{ padding: '16px' }}>
             <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '6px' }}>
-              Review notes
+              Reviewed
             </div>
-            <div style={{ fontSize: '13px', color: theme.textSecondary }}>{req.review_notes}</div>
-            {req.reviewed_by_email && (
+            {req.reviewed_at && (
               <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '6px' }}>
-                — {req.reviewed_by_email} · {req.reviewed_at?.slice(0, 10)}
+                {req.reviewed_at.slice(0, 10)}
               </div>
             )}
           </Card>
@@ -232,7 +233,7 @@ export default function LeaveRequestDetail() {
             <Button
               variant="primary"
               fullWidthOnMobile
-              onClick={handleApprove}
+              onClick={(...args: Parameters<typeof handleApprove>) => void handleApprove(...args)}
               loading={approving}
               style={{ flex: 1 }}
             >
@@ -249,7 +250,7 @@ export default function LeaveRequestDetail() {
             </Button>
             <Button
               variant="danger"
-              onClick={handleCancel}
+              onClick={(...args: Parameters<typeof handleCancel>) => void handleCancel(...args)}
               loading={cancelling}
               style={{ flex: 1 }}
             >

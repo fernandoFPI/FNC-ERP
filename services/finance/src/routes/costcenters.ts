@@ -1,9 +1,10 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const costCentersRouter: IRouter = Router()
@@ -21,11 +22,11 @@ const Schema = z.object({
 costCentersRouter.get(
   '/',
   requirePermission('finance.cost_centers.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const { is_active, search } = req.query as Record<string, string>
       const conditions = [`cc.company_id = $1`]
-      const values: unknown[] = [req.auth!.companyId]
+      const values: unknown[] = [getAuth(req).companyId]
       let p = 1
       if (is_active !== undefined) {
         conditions.push(`cc.is_active = $${++p}`)
@@ -54,15 +55,15 @@ costCentersRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch cost centers', err)
     }
-  },
+  }),
 )
 
 costCentersRouter.get(
   '/:id',
   requirePermission('finance.cost_centers.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const ccRes = await query(
         `
       SELECT cc.*, u.email AS default_recharge_fulfiller_email,
@@ -106,15 +107,15 @@ costCentersRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch cost center', err)
     }
-  },
+  }),
 )
 
 costCentersRouter.post(
   '/',
   requirePermission('finance.cost_centers.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const parsed = Schema.safeParse(req.body)
       if (!parsed.success) {
         sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -127,10 +128,10 @@ costCentersRouter.post(
       )
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'CREATE',
         tableName: 'cost_centers',
-        recordId: result.rows[0]!['id'] as string,
+        recordId: firstRowOrThrow(result)['id'] as string,
       })
       sendOk(res, result.rows[0], 201)
     } catch (err: unknown) {
@@ -141,15 +142,15 @@ costCentersRouter.post(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create cost center', err)
     }
-  },
+  }),
 )
 
 costCentersRouter.put(
   '/:id',
   requirePermission('finance.cost_centers.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const parsed = Schema.partial().safeParse(req.body)
       if (!parsed.success) {
         sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -209,28 +210,28 @@ costCentersRouter.put(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update cost center', err)
     }
-  },
+  }),
 )
 
 costCentersRouter.delete(
   '/:id',
   requirePermission('finance.cost_centers.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       await query('UPDATE cost_centers SET is_active = false WHERE id = $1 AND company_id = $2', [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'DELETE',
         tableName: 'cost_centers',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
       })
       sendOk(res, { deleted: true })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete cost center', err)
     }
-  },
+  }),
 )

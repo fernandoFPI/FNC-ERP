@@ -10,6 +10,7 @@ import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreateManualTransferMutation, CreateManualTransferMutationVariables, ProductsQuery, ProductsQueryVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
 
 interface TransferLine {
   product_id: string
@@ -32,9 +33,9 @@ export default function TransferForm() {
   })
   const [lines, setLines] = useState<TransferLine[]>([emptyLine()])
 
-  const { data: locationsData } = useQuery(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, { variables: {} })
-  const [createTransfer, { loading }] = useMutation(CREATE_TRANSFER)
+  const { data: locationsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, { variables: {} })
+  const [createTransfer, { loading }] = useMutation<CreateManualTransferMutation, CreateManualTransferMutationVariables>(CREATE_TRANSFER)
 
   const locations = locationsData?.stockLocations ?? []
   const products = productsData?.products ?? []
@@ -54,7 +55,7 @@ export default function TransferForm() {
           required
         >
           <option value="">Select product…</option>
-          {products.map((p: { id: string; sku: string; name: string; name_ar?: string | null }) => (
+          {products.filter((v): v is NonNullable<typeof v> => v !== null).map((p) => (
             <option key={p.id} value={p.id}>
               {p.sku} — {p.name}
               {p.name_ar ? ` (${p.name_ar})` : ''}
@@ -144,7 +145,7 @@ export default function TransferForm() {
         backPath="/inventory/moves"
       />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <Card
           style={{
             marginTop: '20px',

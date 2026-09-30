@@ -45,7 +45,7 @@ function priorityVariant(
     medium: 'info',
     low: 'neutral',
   }
-  return m[p?.toLowerCase()] ?? 'neutral'
+  return m[p.toLowerCase()] ?? 'neutral'
 }
 
 export default function EventConfigsPage() {
@@ -62,7 +62,7 @@ export default function EventConfigsPage() {
       addToast({ type: 'success', message: 'Event config updated' })
       setEditingType(null)
       setEditState(null)
-      refetch()
+      void refetch()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -85,7 +85,7 @@ export default function EventConfigsPage() {
 
   function handleSave(eventType: string) {
     if (!editState) return
-    updateConfig({
+    void updateConfig({
       variables: {
         eventType,
         input: {
@@ -300,7 +300,7 @@ export default function EventConfigsPage() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

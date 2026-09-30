@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type IRouter } from 'express'
 import { z } from 'zod'
-import { withTransaction, withSystemTransaction, query } from '@fnc-erp/db'
+import { withTransaction, withSystemTransaction, query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import {
   verifyPassword,
   hashPassword,
@@ -83,7 +83,7 @@ interface CompanyRow {
 
 // ── POST /auth/login ──────────────────────────────────────────────────────────
 
-authRouter.post('/login', async (req: Request, res: Response): Promise<void> => {
+authRouter.post('/login', asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const parsed = loginSchema.safeParse(req.body)
   if (!parsed.success) {
     sendValidationError(res, parsed.error.flatten())
@@ -108,7 +108,7 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
 
     // Check account lock (before password check for locked real accounts)
     // pg returns TIMESTAMPTZ as strings due to custom type parsers, so use Date.parse
-    if (user && user.locked_until && Date.parse(String(user.locked_until)) > Date.now()) {
+    if (user?.locked_until && Date.parse(String(user.locked_until)) > Date.now()) {
       sendError(
         res,
         HTTP_STATUS.UNAUTHORIZED,
@@ -299,11 +299,11 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
     console.error('[auth] login error:', err)
     sendInternalError(res)
   }
-})
+}))
 
 // ── POST /auth/mfa/verify ─────────────────────────────────────────────────────
 
-authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void> => {
+authRouter.post('/mfa/verify', asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const parsed = mfaVerifySchema.safeParse(req.body)
   if (!parsed.success) {
     sendValidationError(res, parsed.error.flatten())
@@ -426,11 +426,11 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
     console.error('[auth] mfa/verify error:', err)
     sendInternalError(res)
   }
-})
+}))
 
 // ── POST /auth/mfa/setup ──────────────────────────────────────────────────────
 
-authRouter.post('/mfa/setup', requireAuth(), async (req: Request, res: Response): Promise<void> => {
+authRouter.post('/mfa/setup', requireAuth(), asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const auth = req.auth
   if (!auth) {
     sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
@@ -471,14 +471,14 @@ authRouter.post('/mfa/setup', requireAuth(), async (req: Request, res: Response)
     console.error('[auth] mfa/setup error:', err)
     sendInternalError(res)
   }
-})
+}))
 
 // ── POST /auth/mfa/confirm ────────────────────────────────────────────────────
 
 authRouter.post(
   '/mfa/confirm',
   requireAuth(),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const auth = req.auth
     if (!auth) {
       sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
@@ -530,12 +530,12 @@ authRouter.post(
       console.error('[auth] mfa/confirm error:', err)
       sendInternalError(res)
     }
-  },
+  }),
 )
 
 // ── POST /auth/refresh ────────────────────────────────────────────────────────
 
-authRouter.post('/refresh', async (req: Request, res: Response): Promise<void> => {
+authRouter.post('/refresh', asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const parsed = refreshSchema.safeParse(req.body)
   if (!parsed.success) {
     sendValidationError(res, parsed.error.flatten())
@@ -636,11 +636,11 @@ authRouter.post('/refresh', async (req: Request, res: Response): Promise<void> =
     console.error('[auth] refresh error:', err)
     sendInternalError(res)
   }
-})
+}))
 
 // ── POST /auth/logout ─────────────────────────────────────────────────────────
 
-authRouter.post('/logout', requireAuth(), async (req: Request, res: Response): Promise<void> => {
+authRouter.post('/logout', requireAuth(), asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const auth = req.auth
   if (!auth) {
     sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
@@ -665,14 +665,14 @@ authRouter.post('/logout', requireAuth(), async (req: Request, res: Response): P
     console.error('[auth] logout error:', err)
     sendInternalError(res)
   }
-})
+}))
 
 // ── POST /auth/logout-all ─────────────────────────────────────────────────────
 
 authRouter.post(
   '/logout-all',
   requireAuth(),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const auth = req.auth
     if (!auth) {
       sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
@@ -699,12 +699,12 @@ authRouter.post(
       console.error('[auth] logout-all error:', err)
       sendInternalError(res)
     }
-  },
+  }),
 )
 
 // ── GET /auth/me ──────────────────────────────────────────────────────────────
 
-authRouter.get('/me', requireAuth(), async (req: Request, res: Response): Promise<void> => {
+authRouter.get('/me', requireAuth(), asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const auth = req.auth
   if (!auth) {
     sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
@@ -761,14 +761,14 @@ authRouter.get('/me', requireAuth(), async (req: Request, res: Response): Promis
     console.error('[auth] /me error:', err)
     sendInternalError(res)
   }
-})
+}))
 
 // ── GET /auth/me/companies ────────────────────────────────────────────────────
 
 authRouter.get(
   '/me/companies',
   requireAuth(),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const auth = req.auth
     if (!auth) {
       sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
@@ -792,7 +792,7 @@ authRouter.get(
       console.error('[auth] /me/companies error:', err)
       sendInternalError(res)
     }
-  },
+  }),
 )
 
 // ── POST /auth/company/switch ─────────────────────────────────────────────────
@@ -800,7 +800,7 @@ authRouter.get(
 authRouter.post(
   '/company/switch',
   requireAuth(),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const auth = req.auth
     if (!auth) {
       sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
@@ -833,7 +833,7 @@ authRouter.post(
         return
       }
 
-      const role = roleResult.rows[0]!
+      const role = firstRowOrThrow(roleResult)
       const newAccessToken = signAccessToken({
         userId: auth.userId,
         sessionId: auth.sessionId,
@@ -877,7 +877,7 @@ authRouter.post(
       console.error('[auth] company/switch error:', err)
       sendInternalError(res)
     }
-  },
+  }),
 )
 
 // ── POST /auth/impersonate ────────────────────────────────────────────────────
@@ -898,7 +898,7 @@ authRouter.post(
   '/impersonate',
   requireAuth(),
   requireRole('system_admin'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const auth = req.auth
     if (!auth) {
       sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
@@ -930,7 +930,7 @@ authRouter.post(
         [targetUserId, companyId],
       )
       const targetUser = userResult.rows[0]
-      if (!targetUser || !targetUser.is_active) {
+      if (!targetUser?.is_active) {
         sendError(res, HTTP_STATUS.NOT_FOUND, ERROR_CODES.NOT_FOUND, 'User not found or inactive')
         return
       }
@@ -1009,5 +1009,5 @@ authRouter.post(
       console.error('[auth] impersonate error:', err)
       sendInternalError(res)
     }
-  },
+  }),
 )

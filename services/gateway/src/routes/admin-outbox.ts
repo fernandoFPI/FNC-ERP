@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import type { IRouter, Request, Response } from 'express'
-import { requireAuth, requireRole } from '@fnc-erp/auth'
-import { pool, withTransaction } from '@fnc-erp/db'
+import { requireAuth, requireRole, getAuth } from '@fnc-erp/auth'
+import { pool, withTransaction, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { logger } from '@fnc-erp/logger'
 
@@ -14,7 +14,7 @@ const requireSysAdmin = [requireAuth(), requireRole('system_admin')]
 
 // ── GET /api/v1/admin/outbox/monitor ─────────────────────────
 // Overall outbox health — powers the monitoring dashboard
-adminOutboxRouter.get('/monitor', ...requireSysAdmin, async (_req: Request, res: Response) => {
+adminOutboxRouter.get('/monitor', ...requireSysAdmin, asyncHandler(async (_req: Request, res: Response) => {
   try {
     const [summary, byEventType, pendingDLQ, stuckEvents] = await Promise.all([
       pool.query(`
@@ -86,10 +86,10 @@ adminOutboxRouter.get('/monitor', ...requireSysAdmin, async (_req: Request, res:
       error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch monitor data' },
     })
   }
-})
+}))
 
 // ── GET /api/v1/admin/outbox/events ──────────────────────────
-adminOutboxRouter.get('/events', ...requireSysAdmin, async (req: Request, res: Response) => {
+adminOutboxRouter.get('/events', ...requireSysAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const {
       status,
@@ -153,10 +153,10 @@ adminOutboxRouter.get('/events', ...requireSysAdmin, async (req: Request, res: R
       .status(500)
       .json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to list events' } })
   }
-})
+}))
 
 // ── GET /api/v1/admin/outbox/events/:id ──────────────────────
-adminOutboxRouter.get('/events/:id', ...requireSysAdmin, async (req: Request, res: Response) => {
+adminOutboxRouter.get('/events/:id', ...requireSysAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const result = await pool.query(`SELECT * FROM service_outbox WHERE id=$1`, [req.params.id])
     if (!result.rows[0]) {
@@ -173,13 +173,13 @@ adminOutboxRouter.get('/events/:id', ...requireSysAdmin, async (req: Request, re
       .status(500)
       .json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch event' } })
   }
-})
+}))
 
 // ── POST /api/v1/admin/outbox/events/:id/retry ───────────────
 adminOutboxRouter.post(
   '/events/:id/retry',
   ...requireSysAdmin,
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const event = await pool.query(`SELECT id, status FROM service_outbox WHERE id=$1`, [
         req.params.id,
@@ -214,18 +214,18 @@ adminOutboxRouter.post(
       )
 
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.auth!.companyId,
+        userId: getAuth(req).userId,
+        companyId: getAuth(req).companyId,
         action: 'OUTBOX_EVENT_RETRIED',
         tableName: 'service_outbox',
         recordId: req.params.id,
-        newValues: { retriedBy: req.auth!.userId },
-        ipAddress: req.auth!.ipAddress,
-        userAgent: req.auth!.userAgent,
+        newValues: { retriedBy: getAuth(req).userId },
+        ipAddress: getAuth(req).ipAddress,
+        userAgent: getAuth(req).userAgent,
       })
 
       log.info(
-        { eventId: req.params.id, retriedBy: req.auth!.userId },
+        { eventId: req.params.id, retriedBy: getAuth(req).userId },
         'outbox event manually retried',
       )
       res.json({ success: true, data: { message: 'Event reset for immediate retry' } })
@@ -236,11 +236,11 @@ adminOutboxRouter.post(
         error: { code: 'INTERNAL_ERROR', message: 'Failed to retry event' },
       })
     }
-  },
+  }),
 )
 
 // ── POST /api/v1/admin/outbox/stuck/reset ────────────────────
-adminOutboxRouter.post('/stuck/reset', ...requireSysAdmin, async (req: Request, res: Response) => {
+adminOutboxRouter.post('/stuck/reset', ...requireSysAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
       `UPDATE service_outbox
@@ -251,7 +251,7 @@ adminOutboxRouter.post('/stuck/reset', ...requireSysAdmin, async (req: Request, 
     )
 
     log.warn(
-      { count: result.rows.length, resetBy: req.auth!.userId },
+      { count: result.rows.length, resetBy: getAuth(req).userId },
       'stuck processing events reset by admin',
     )
 
@@ -263,10 +263,10 @@ adminOutboxRouter.post('/stuck/reset', ...requireSysAdmin, async (req: Request, 
       error: { code: 'INTERNAL_ERROR', message: 'Failed to reset stuck events' },
     })
   }
-})
+}))
 
 // ── GET /api/v1/admin/outbox/dlq ─────────────────────────────
-adminOutboxRouter.get('/dlq', ...requireSysAdmin, async (req: Request, res: Response) => {
+adminOutboxRouter.get('/dlq', ...requireSysAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const {
       status = 'pending',
@@ -318,10 +318,10 @@ adminOutboxRouter.get('/dlq', ...requireSysAdmin, async (req: Request, res: Resp
       .status(500)
       .json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to list DLQ' } })
   }
-})
+}))
 
 // ── GET /api/v1/admin/outbox/dlq/:id ─────────────────────────
-adminOutboxRouter.get('/dlq/:id', ...requireSysAdmin, async (req: Request, res: Response) => {
+adminOutboxRouter.get('/dlq/:id', ...requireSysAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const entry = await pool.query(
       `SELECT dl.*, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS reviewed_by_email
@@ -344,13 +344,13 @@ adminOutboxRouter.get('/dlq/:id', ...requireSysAdmin, async (req: Request, res: 
       error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch DLQ entry' },
     })
   }
-})
+}))
 
 // ── POST /api/v1/admin/outbox/dlq/:id/retry ──────────────────
 adminOutboxRouter.post(
   '/dlq/:id/retry',
   ...requireSysAdmin,
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const entry = await pool.query(
         `SELECT * FROM outbox_dead_letters WHERE id=$1 AND status='pending'`,
@@ -369,7 +369,7 @@ adminOutboxRouter.post(
       let newEventId: string | null = null
 
       await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: 'system_admin' },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: 'system_admin' },
         async (client) => {
           const newEvent = await client.query<{ id: string }>(
             `INSERT INTO service_outbox
@@ -390,9 +390,9 @@ adminOutboxRouter.post(
                retried_at=NOW()
            WHERE id=$4`,
             [
-              req.auth!.userId,
+              getAuth(req).userId,
               String(
-                (req.body as Record<string, unknown>).notes ?? `Retried by ${req.auth!.userId}`,
+                (req.body as Record<string, unknown>).notes ?? `Retried by ${getAuth(req).userId}`,
               ),
               newEventId,
               req.params.id,
@@ -400,8 +400,8 @@ adminOutboxRouter.post(
           )
 
           await logAudit({
-            userId: req.auth!.userId,
-            companyId: req.auth!.companyId,
+            userId: getAuth(req).userId,
+            companyId: getAuth(req).companyId,
             action: 'DLQ_ENTRY_RETRIED',
             tableName: 'outbox_dead_letters',
             recordId: req.params.id,
@@ -419,7 +419,7 @@ adminOutboxRouter.post(
           dlqId: req.params.id,
           eventType: dlqEntry.event_type,
           newEventId,
-          retriedBy: req.auth!.userId,
+          retriedBy: getAuth(req).userId,
         },
         'DLQ entry retried — new outbox event created',
       )
@@ -431,14 +431,14 @@ adminOutboxRouter.post(
         error: { code: 'INTERNAL_ERROR', message: 'Failed to retry DLQ entry' },
       })
     }
-  },
+  }),
 )
 
 // ── POST /api/v1/admin/outbox/dlq/:id/dismiss ────────────────
 adminOutboxRouter.post(
   '/dlq/:id/dismiss',
   ...requireSysAdmin,
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { notes } = req.body as Record<string, unknown>
 
@@ -461,7 +461,7 @@ adminOutboxRouter.post(
            review_notes=$2
        WHERE id=$3 AND status='pending'
        RETURNING id, event_type`,
-        [req.auth!.userId, String(notes), req.params.id],
+        [getAuth(req).userId, String(notes), req.params.id],
       )
 
       if (result.rows.length === 0) {
@@ -475,18 +475,18 @@ adminOutboxRouter.post(
       const r = result.rows[0] as Record<string, unknown>
 
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.auth!.companyId,
+        userId: getAuth(req).userId,
+        companyId: getAuth(req).companyId,
         action: 'DLQ_ENTRY_DISMISSED',
         tableName: 'outbox_dead_letters',
         recordId: String(r.id),
         newValues: { notes: String(notes) },
-        ipAddress: req.auth!.ipAddress,
-        userAgent: req.auth!.userAgent,
+        ipAddress: getAuth(req).ipAddress,
+        userAgent: getAuth(req).userAgent,
       })
 
       log.warn(
-        { dlqId: req.params.id, eventType: r.event_type, dismissedBy: req.auth!.userId },
+        { dlqId: req.params.id, eventType: r.event_type, dismissedBy: getAuth(req).userId },
         'DLQ entry dismissed by admin',
       )
       res.json({ success: true, data: { message: 'DLQ entry dismissed' } })
@@ -497,14 +497,14 @@ adminOutboxRouter.post(
         error: { code: 'INTERNAL_ERROR', message: 'Failed to dismiss DLQ entry' },
       })
     }
-  },
+  }),
 )
 
 // ── GET /api/v1/admin/outbox/event-configs ───────────────────
 adminOutboxRouter.get(
   '/event-configs',
   ...requireSysAdmin,
-  async (_req: Request, res: Response) => {
+  asyncHandler(async (_req: Request, res: Response) => {
     try {
       const configs = await pool.query(`
       SELECT * FROM outbox_event_configs ORDER BY dlq_priority, event_type
@@ -517,14 +517,14 @@ adminOutboxRouter.get(
         error: { code: 'INTERNAL_ERROR', message: 'Failed to list event configs' },
       })
     }
-  },
+  }),
 )
 
 // ── PUT /api/v1/admin/outbox/event-configs/:eventType ────────
 adminOutboxRouter.put(
   '/event-configs/:eventType',
   ...requireSysAdmin,
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const body = req.body as Record<string, unknown>
       const {
@@ -567,14 +567,14 @@ adminOutboxRouter.put(
       }
 
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.auth!.companyId,
+        userId: getAuth(req).userId,
+        companyId: getAuth(req).companyId,
         action: 'OUTBOX_EVENT_CONFIG_UPDATED',
         tableName: 'outbox_event_configs',
         recordId: String((result.rows[0] as Record<string, unknown>).id),
         newValues: body,
-        ipAddress: req.auth!.ipAddress,
-        userAgent: req.auth!.userAgent,
+        ipAddress: getAuth(req).ipAddress,
+        userAgent: getAuth(req).userAgent,
       })
 
       // Config changes take effect within 5 minutes when the worker refreshes its cache
@@ -586,5 +586,5 @@ adminOutboxRouter.put(
         error: { code: 'INTERNAL_ERROR', message: 'Failed to update event config' },
       })
     }
-  },
+  }),
 )

@@ -19,6 +19,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 import { useTourStore } from '../../../store/tourStore'
+import type { CompanyBranchesQuery, CompanyBranchesQueryVariables, CreateRequisitionMutation, CreateRequisitionMutationVariables, EmployeesQuery, EmployeesQueryVariables, ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables } from '../../../graphql/generated'
 
 // No GL account / cost center fields here — a requisition's requester has
 // no reason to know either, and both already default automatically
@@ -100,34 +101,34 @@ export default function RequisitionForm() {
   // finding the item, not managing whose catalog it lives in — so also
   // surface the central warehouse's own products (they may never have been
   // interco'd into this company yet).
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
     variables: { includeCentralWarehouse: true },
   })
-  const { data: projectsData } = useQuery(PROJECTS_QUERY, {
+  const { data: projectsData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     variables: { includeAll: true },
     skip: purpose !== 'project',
   })
-  const { data: mosData } = useQuery(MANUFACTURING_ORDERS_QUERY, {
+  const { data: mosData } = useQuery<ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables>(MANUFACTURING_ORDERS_QUERY, {
     variables: {},
     skip: purpose !== 'manufacturing',
   })
-  const { data: branchesData } = useQuery(COMPANY_BRANCHES_QUERY, {
+  const { data: branchesData } = useQuery<CompanyBranchesQuery, CompanyBranchesQueryVariables>(COMPANY_BRANCHES_QUERY, {
     variables: { companyId: currentCompanyId },
     skip: !currentCompanyId,
   })
-  const { data: employeesData } = useQuery(EMPLOYEES_QUERY, { variables: { is_active: true } })
-  const [createRequisition, { loading }] = useMutation(CREATE_REQUISITION)
+  const { data: employeesData } = useQuery<EmployeesQuery, EmployeesQueryVariables>(EMPLOYEES_QUERY, { variables: { is_active: true } })
+  const [createRequisition, { loading }] = useMutation<CreateRequisitionMutation, CreateRequisitionMutationVariables>(CREATE_REQUISITION)
 
   const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
-    productsData?.products ?? []
-  const projects: { id: string; code: string; name: string }[] = projectsData?.projects?.data ?? []
+    (productsData?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
+  const projects: { id: string; code: string; name: string }[] = projectsData?.projects.data ?? []
   const mos: { id: string; mo_number: string; product_name?: string | null }[] =
     mosData?.manufacturingOrders ?? []
   const branches: { id: string; name: string; isActive: boolean }[] = (
     branchesData?.companyBranches ?? []
   ).filter((b: { isActive: boolean }) => b.isActive)
-  const employees: { id: string; first_name: string; last_name: string; employee_number: string }[] =
-    employeesData?.employees ?? []
+  const employees: { id: string; first_name: string; last_name: string; employee_number: string | null }[] =
+    (employeesData?.employees ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   const productOptions = [
     { value: '', label: 'Custom item' },
@@ -142,14 +143,14 @@ export default function RequisitionForm() {
     ...employees.map((e) => ({
       value: e.id,
       label: `${e.first_name} ${e.last_name}`,
-      sublabel: e.employee_number,
+      sublabel: e.employee_number ?? undefined,
     })),
   ]
 
   const updateLine = (idx: number, field: keyof ReqLineDraft, value: string) => {
     setLines((prev) => {
       const next = [...prev]
-      const line = { ...next[idx]!, [field]: value }
+      const line = { ...next[idx], [field]: value }
       if (field === 'product_id' && value) {
         const p = products.find((pp) => pp.id === value)
         if (p) {
@@ -170,14 +171,14 @@ export default function RequisitionForm() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <SearchableSelect
             value={line.product_id}
-            onChange={(v) => updateLine(i, 'product_id', v)}
+            onChange={(v) => { updateLine(i, 'product_id', v); }}
             options={productOptions}
             placeholder="Search by name or SKU…"
             minDropdownWidth={400}
           />
           <Input
             value={line.description}
-            onChange={(e) => updateLine(i, 'description', e.target.value)}
+            onChange={(e) => { updateLine(i, 'description', e.target.value); }}
             placeholder="Description"
           />
         </div>
@@ -188,7 +189,7 @@ export default function RequisitionForm() {
       label: 'UOM',
       width: '110px',
       render: (line, i) => (
-        <Input value={line.uom} onChange={(e) => updateLine(i, 'uom', e.target.value)} />
+        <Input value={line.uom} onChange={(e) => { updateLine(i, 'uom', e.target.value); }} />
       ),
     },
     {
@@ -201,7 +202,7 @@ export default function RequisitionForm() {
           min="0"
           step="0.01"
           value={line.qty}
-          onChange={(e) => updateLine(i, 'qty', e.target.value)}
+          onChange={(e) => { updateLine(i, 'qty', e.target.value); }}
         />
       ),
     },
@@ -215,7 +216,7 @@ export default function RequisitionForm() {
           min="0"
           step="0.01"
           value={line.unit_price}
-          onChange={(e) => updateLine(i, 'unit_price', e.target.value)}
+          onChange={(e) => { updateLine(i, 'unit_price', e.target.value); }}
         />
       ),
     },
@@ -277,7 +278,7 @@ export default function RequisitionForm() {
       }
       const result = await createRequisition({ variables: { input } })
       addToast({ type: 'success', message: 'Requisition created' })
-      const newId = result.data?.createRequisition?.id
+      const newId = result.data?.createRequisition.id
       navigate(newId ? `/procurement/requisitions/${newId}` : '/procurement/requisitions')
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -332,7 +333,7 @@ export default function RequisitionForm() {
               <Select
                 label="Purpose"
                 value={purpose}
-                onChange={(e) => setPurpose(e.target.value as 'stock' | 'project' | 'manufacturing')}
+                onChange={(e) => { setPurpose(e.target.value as 'stock' | 'project' | 'manufacturing'); }}
               >
                 <option value="stock">General Stock</option>
                 <option value="project">Project Supply</option>
@@ -343,7 +344,7 @@ export default function RequisitionForm() {
               <Select
                 label={branches.length > 0 ? 'Branch *' : 'Branch'}
                 value={branchId}
-                onChange={(e) => setBranchId(e.target.value)}
+                onChange={(e) => { setBranchId(e.target.value); }}
                 options={[{ value: '', label: 'Select branch…' }, ...branches.map((b) => ({ value: b.id, label: b.name }))]}
               />
             </div>
@@ -351,7 +352,7 @@ export default function RequisitionForm() {
               <Select
                 label="Priority"
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as 'low' | 'high' | 'emergency')}
+                onChange={(e) => { setPriority(e.target.value as 'low' | 'high' | 'emergency'); }}
               >
                 <option value="low">Low</option>
                 <option value="high">High</option>
@@ -376,7 +377,7 @@ export default function RequisitionForm() {
                 label="Expected Delivery (optional)"
                 type="date"
                 value={expectedDeliveryDate}
-                onChange={(e) => setExpectedDeliveryDate(e.target.value)}
+                onChange={(e) => { setExpectedDeliveryDate(e.target.value); }}
               />
             </div>
           </div>
@@ -398,7 +399,7 @@ export default function RequisitionForm() {
                 <Select
                   label="Delivery Destination *"
                   value={deliveryDestination}
-                  onChange={(e) => setDeliveryDestination(e.target.value as '' | 'inventory' | 'jobsite')}
+                  onChange={(e) => { setDeliveryDestination(e.target.value as '' | 'inventory' | 'jobsite'); }}
                 >
                   <option value="">Select destination…</option>
                   <option value="inventory">Delivered to inventory</option>
@@ -414,7 +415,7 @@ export default function RequisitionForm() {
                 <Select
                   label="Manufacturing Order *"
                   value={linkedMoId}
-                  onChange={(e) => setLinkedMoId(e.target.value)}
+                  onChange={(e) => { setLinkedMoId(e.target.value); }}
                 >
                   <option value="">Select MO…</option>
                   {mos.map((m) => (
@@ -429,7 +430,7 @@ export default function RequisitionForm() {
           )}
 
           <div data-tour="req-notes">
-            <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+            <Textarea label="Notes" value={notes} onChange={(e) => { setNotes(e.target.value); }} rows={2} />
           </div>
         </Card>
           </div>
@@ -510,9 +511,9 @@ export default function RequisitionForm() {
             <LineItemEditor
               fields={lineFields}
               rows={lines}
-              onRemoveRow={(idx) => setLines((p) => p.filter((_, i) => i !== idx))}
+              onRemoveRow={(idx) => { setLines((p) => p.filter((_, i) => i !== idx)); }}
               removeDisabled={() => lines.length <= 1}
-              onAddRow={() => setLines((p) => [...p, emptyLine()])}
+              onAddRow={() => { setLines((p) => [...p, emptyLine()]); }}
               addButtonDataTour="req-add-line-btn"
             />
           </div>

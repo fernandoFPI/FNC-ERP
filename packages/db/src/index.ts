@@ -1,4 +1,5 @@
-export { pool, query, checkConnection } from './client.js'
+export { pool, query, checkConnection, firstRowOrThrow } from './client.js'
+export { asyncHandler } from './async-handler.js'
 export { buildHealthStatus, checkDatabase, checkRedis, checkOutbox } from './health.js'
 export type { HealthStatus, CheckResult } from './health.js'
 export {

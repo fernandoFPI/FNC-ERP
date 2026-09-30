@@ -12,8 +12,8 @@ import { Card } from '../../../components/ui/Card'
 import { Input } from '../../../components/ui/Input'
 import { Button } from '../../../components/ui/Button'
 import { useToastStore } from '../../../store/toastStore'
-import { useTheme } from '../../../theme/ThemeContext'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { CreateEquipmentAssetMutation, CreateEquipmentAssetMutationVariables, EquipmentAssetQuery, EquipmentAssetQueryVariables, UpdateEquipmentAssetMutation, UpdateEquipmentAssetMutationVariables } from '../../../graphql/generated'
 
 const STATUSES = ['available', 'rented', 'maintenance', 'reserved', 'retired']
 const CATEGORIES = ['vehicle', 'machinery', 'equipment', 'tool', 'other']
@@ -23,7 +23,6 @@ export default function AssetForm() {
   const { id } = useParams()
   const isEdit = !!id
   const addToast = useToastStore((s) => s.addToast)
-  const { theme } = useTheme()
 
   const [form, setForm] = useState({
     name: '',
@@ -38,37 +37,27 @@ export default function AssetForm() {
     status: 'available',
   })
 
-  const { data } = useQuery(EQUIPMENT_ASSET_QUERY, { variables: { id }, skip: !isEdit })
-  const [createAsset, { loading: creating }] = useMutation(CREATE_EQUIPMENT_ASSET)
-  const [updateAsset, { loading: updating }] = useMutation(UPDATE_EQUIPMENT_ASSET)
+  const { data } = useQuery<EquipmentAssetQuery, EquipmentAssetQueryVariables>(EQUIPMENT_ASSET_QUERY, { variables: { id: id ?? '' }, skip: !isEdit })
+  const [createAsset, { loading: creating }] = useMutation<CreateEquipmentAssetMutation, CreateEquipmentAssetMutationVariables>(CREATE_EQUIPMENT_ASSET)
+  const [updateAsset, { loading: updating }] = useMutation<UpdateEquipmentAssetMutation, UpdateEquipmentAssetMutationVariables>(UPDATE_EQUIPMENT_ASSET)
 
   useEffect(() => {
     const a = data?.equipmentAsset
     if (a) {
       setForm({
-        name: a.name ?? '',
+        name: a.name,
         description: a.description ?? '',
         category: a.category ?? 'vehicle',
         serial_number: a.serial_number ?? '',
         purchase_date: a.purchase_date ?? '',
         purchase_price: String(a.purchase_price ?? ''),
-        daily_rate: String(a.daily_rate ?? ''),
-        currency_code: a.currency_code ?? 'IQD',
+        daily_rate: String(a.daily_rate),
+        currency_code: a.currency_code,
         maintenance_due_hours: String(a.maintenance_due_hours ?? ''),
-        status: a.status ?? 'available',
+        status: a.status,
       })
     }
   }, [data])
-
-  const selectStyle: React.CSSProperties = {
-    width: '100%',
-    background: theme.bgSurface,
-    color: theme.textPrimary,
-    border: `1px solid ${theme.border}`,
-    borderRadius: '6px',
-    padding: '8px 12px',
-    fontSize: '13px',
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -93,6 +82,10 @@ export default function AssetForm() {
           variables: { input },
           refetchQueries: [{ query: EQUIPMENT_ASSETS_QUERY }],
         })
+        if (!res.data?.createEquipmentAsset) {
+          addToast({ type: 'error', message: 'Asset creation did not return a result' })
+          return
+        }
         addToast({ type: 'success', message: 'Asset created' })
         navigate(`/rental/assets/${res.data.createEquipmentAsset.id}`)
       }
@@ -109,7 +102,7 @@ export default function AssetForm() {
       />
       <Card style={{ marginTop: '20px' }}>
         <form
-          onSubmit={handleSubmit}
+          onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}
         >
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>

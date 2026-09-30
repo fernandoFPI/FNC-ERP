@@ -93,7 +93,7 @@ export default function CostCenterDetail() {
         <div className="skeleton" style={{ height: 300 }} />
       </div>
     )
-  if (error || !cc)
+  if (error ?? !cc)
     return (
       <div style={{ padding: '24px' }}>
         <Button
@@ -181,7 +181,7 @@ export default function CostCenterDetail() {
       </div>
 
       {/* Parent / fulfiller info */}
-      {(cc.parent_id || cc.default_recharge_fulfiller_email || cc.default_recharge_fulfiller_email_2) && (
+      {(cc.parent_id ?? cc.default_recharge_fulfiller_email ?? cc.default_recharge_fulfiller_email_2) && (
         <Card padding="sm" style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
             {cc.parent_id && (
@@ -331,7 +331,7 @@ export default function CostCenterDetail() {
                         const isDebit = parseFloat(line.debit) > 0
                         const isCredit = parseFloat(line.credit) > 0
                         const amt = isDebit ? parseFloat(line.debit) : parseFloat(line.credit)
-                        const cur = line.currency_code?.trim() || 'IQD'
+                        const cur = line.currency_code.trim() || 'IQD'
                         return (
                           <>
                             <span style={{ color: isCredit ? theme.success : theme.textPrimary }}>

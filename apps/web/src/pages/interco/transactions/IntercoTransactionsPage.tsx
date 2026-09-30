@@ -51,7 +51,7 @@ function statusVariant(
     cancelled: 'danger',
     pending: 'warning',
   }
-  return m[status?.toLowerCase()] ?? 'neutral'
+  return m[status.toLowerCase()] ?? 'neutral'
 }
 
 interface CreateTxForm {
@@ -122,7 +122,7 @@ export default function IntercoTransactionsPage() {
       addToast({ type: 'success', message: 'Transaction created' })
       setShowCreate(false)
       setForm(EMPTY_FORM)
-      refetch()
+      void refetch()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -197,7 +197,7 @@ export default function IntercoTransactionsPage() {
   ]
 
   function handleCreate() {
-    createTx({
+    void createTx({
       variables: {
         input: {
           transactionType: form.transactionType,
@@ -263,7 +263,7 @@ export default function IntercoTransactionsPage() {
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           onRefresh={() => {
-            refetch()
+            void refetch()
           }}
           resultCount={items.length}
         >

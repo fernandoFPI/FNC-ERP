@@ -229,7 +229,7 @@ export default function APDashboard() {
       mobilePriority: 2,
       render: (inv) => (
         <AmountDisplay
-          amount={parseFloat(inv.outstanding ?? '0')}
+          amount={parseFloat(inv.outstanding)}
           currency={inv.currency_code}
           size="sm"
         />
@@ -243,7 +243,7 @@ export default function APDashboard() {
         const isOverdue = inv.days_overdue > 0 && !['paid', 'cancelled'].includes(inv.status)
         return (
           <span style={{ color: isOverdue ? theme.danger : theme.textMuted }}>
-            {inv.due_date?.slice(0, 10)}
+            {inv.due_date.slice(0, 10)}
           </span>
         )
       },
@@ -274,7 +274,7 @@ export default function APDashboard() {
       key: 'invoice_date',
       header: 'Invoice date',
       mobilePriority: 6,
-      render: (inv) => inv.invoice_date?.slice(0, 10),
+      render: (inv) => inv.invoice_date.slice(0, 10),
     },
     {
       key: 'actions',
@@ -528,7 +528,7 @@ export default function APDashboard() {
         onClose={() => {
           setApprovingId(null)
         }}
-        onConfirm={handleApprove}
+        onConfirm={(...args: Parameters<typeof handleApprove>) => void handleApprove(...args)}
         title="Approve vendor invoice"
         message={
           approvingInv

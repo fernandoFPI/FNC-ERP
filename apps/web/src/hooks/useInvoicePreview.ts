@@ -30,7 +30,8 @@ export function useInvoicePreview(params: PreviewParams | null) {
       return
     }
 
-    timerRef.current = setTimeout(async () => {
+    timerRef.current = setTimeout(() => {
+      void (async () => {
       setLoading(true)
       try {
         const res = await api.post<InvoicePreview>(
@@ -58,6 +59,7 @@ export function useInvoicePreview(params: PreviewParams | null) {
       } finally {
         setLoading(false)
       }
+      })()
     }, 500)
 
     return () => {

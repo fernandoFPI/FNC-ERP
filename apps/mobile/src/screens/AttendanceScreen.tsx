@@ -180,7 +180,7 @@ export function AttendanceScreen() {
   return (
     <ScrollView
       style={styles.container}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />}
+      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={(...args: Parameters<typeof onRefresh>) => void onRefresh(...args)} />}
     >
       {/* Connectivity banner */}
       {!isOnline && (

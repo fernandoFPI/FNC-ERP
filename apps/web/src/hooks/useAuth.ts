@@ -80,7 +80,7 @@ function applyCompanies(companies: CompanyFromResponse[], activeCompanyId: strin
   const active =
     mapped.find((c) => c.id === activeCompanyId) ??
     (current ? (mapped.find((c) => c.id === current.id) ?? mapped[0]) : mapped[0])
-  if (active) useCompanyStore.getState().setActiveCompany(active)
+  useCompanyStore.getState().setActiveCompany(active)
 }
 
 function applyAuthResponse(

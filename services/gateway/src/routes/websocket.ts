@@ -1,4 +1,5 @@
 import type { IncomingMessage } from 'http'
+import type { Socket } from 'net'
 import { WebSocketServer, WebSocket } from 'ws'
 import { verifyAccessToken } from '@fnc-erp/auth'
 import { query } from '@fnc-erp/db'
@@ -59,7 +60,7 @@ wss.on('connection', (ws: AuthedWebSocket) => {
 
   ws.on('message', (data) => {
     try {
-      const msg = JSON.parse(data.toString()) as { type?: string }
+      const msg = JSON.parse((data as Buffer).toString()) as { type?: string }
       if (msg.type === 'pong') alive = true
     } catch {
       /* ignore */
@@ -79,7 +80,7 @@ wss.on('connection', (ws: AuthedWebSocket) => {
 
 export function handleWsUpgrade(
   req: IncomingMessage,
-  socket: import('net').Socket,
+  socket: Socket,
   head: Buffer,
 ): void {
   const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'localhost'}`)

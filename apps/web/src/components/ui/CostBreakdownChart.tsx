@@ -22,7 +22,7 @@ export function CostBreakdownChart({ segments, currency = 'IQD' }: Props) {
     theme.success,
     theme.warning,
     theme.danger,
-    theme.info ?? theme.accent,
+    theme.info,
   ]
 
   // Donut geometry

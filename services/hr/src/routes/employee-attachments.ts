@@ -1,8 +1,10 @@
 import { Router, type Request, type Response, type IRouter } from 'express'
-import { query, withTransaction } from '@fnc-erp/db'
+import { getAuth } from '@fnc-erp/auth'
+import { query, withTransaction, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { getAttachments, createAttachment, removeAttachment } from '@fnc-erp/db'
 import { requirePermission } from '@fnc-erp/permissions'
+import { requireParam } from '../lib/errors.js'
 
 export const employeeAttachmentsRouter: IRouter = Router()
 
@@ -52,9 +54,9 @@ async function checkEmployeeDocumentAccess(
 employeeAttachmentsRouter.get(
   '/:id/attachments',
   requirePermission('hr.employees.view', 'view'),
-  async (req: Request, res: Response) => {
-    const companyId = req.auth!.companyId
-    const employee = await getEmployee(req.params['id']!, companyId)
+  asyncHandler(async (req: Request, res: Response) => {
+    const companyId = getAuth(req).companyId
+    const employee = await getEmployee(requireParam(req, 'id'), companyId)
     if (!employee) {
       res
         .status(404)
@@ -63,10 +65,10 @@ employeeAttachmentsRouter.get(
     }
 
     const canAccess = await checkEmployeeDocumentAccess(
-      req.auth!.userId,
+      getAuth(req).userId,
       companyId,
-      req.auth!.role,
-      req.auth!.module,
+      getAuth(req).role,
+      getAuth(req).module,
       employee,
     )
     if (!canAccess) {
@@ -80,22 +82,23 @@ employeeAttachmentsRouter.get(
       return
     }
 
-    const result = await getAttachments('employee', req.params['id']!)
+    const result = await getAttachments('employee', requireParam(req, 'id'))
     res.json({ success: true, data: result.rows })
-  },
+  }),
 )
 
 // POST /hr/employees/:id/attachments
 employeeAttachmentsRouter.post(
   '/:id/attachments',
   requirePermission('hr.employees.edit', 'edit'),
-  async (req: Request, res: Response) => {
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
-    const entityId = req.params['id']!
+  asyncHandler(async (req: Request, res: Response) => {
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
+    const entityId = requireParam(req, 'id')
     const body = req.body as { fileId?: string; label?: string; isPrimary?: boolean }
 
-    if (!body.fileId) {
+    const fileId = body.fileId
+    if (!fileId) {
       res.status(400).json({
         success: false,
         error: { code: 'VALIDATION_ERROR', message: 'fileId is required' },
@@ -114,8 +117,8 @@ employeeAttachmentsRouter.post(
     const canAccess = await checkEmployeeDocumentAccess(
       userId,
       companyId,
-      req.auth!.role,
-      req.auth!.module,
+      getAuth(req).role,
+      getAuth(req).module,
       employee,
     )
     if (!canAccess) {
@@ -131,7 +134,7 @@ employeeAttachmentsRouter.post(
 
     const file = await query(
       `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status='uploaded'`,
-      [body.fileId, companyId],
+      [fileId, companyId],
     )
     if (!file.rows[0]) {
       res.status(404).json({
@@ -145,11 +148,11 @@ employeeAttachmentsRouter.post(
     }
 
     try {
-      await withTransaction({ companyId, userId, role: req.auth!.role }, async (client) => {
+      await withTransaction({ companyId, userId, role: getAuth(req).role }, async (client) => {
         await createAttachment(client, {
           entityType: 'employee',
           entityId,
-          fileId: body.fileId!,
+          fileId,
           label: body.label ?? null,
           isPrimary: body.isPrimary ?? false,
           uploadedBy: userId,
@@ -160,7 +163,7 @@ employeeAttachmentsRouter.post(
           action: 'CREATE',
           tableName: 'document_attachments',
           recordId: entityId,
-          newValues: { fileId: body.fileId, entityType: 'employee', label: body.label },
+          newValues: { fileId, entityType: 'employee', label: body.label },
           client,
         })
       })
@@ -171,18 +174,18 @@ employeeAttachmentsRouter.post(
         error: { code: 'ATTACHMENT_ERROR', message: 'Failed to attach file' },
       })
     }
-  },
+  }),
 )
 
 // DELETE /hr/employees/:id/attachments/:attachmentId
 employeeAttachmentsRouter.delete(
   '/:id/attachments/:attachmentId',
   requirePermission('hr.employees.edit', 'edit'),
-  async (req: Request, res: Response) => {
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
-    const entityId = req.params['id']!
-    const attachmentId = req.params['attachmentId']!
+  asyncHandler(async (req: Request, res: Response) => {
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
+    const entityId = requireParam(req, 'id')
+    const attachmentId = requireParam(req, 'attachmentId')
 
     const employee = await getEmployee(entityId, companyId)
     if (!employee) {
@@ -195,8 +198,8 @@ employeeAttachmentsRouter.delete(
     const canAccess = await checkEmployeeDocumentAccess(
       userId,
       companyId,
-      req.auth!.role,
-      req.auth!.module,
+      getAuth(req).role,
+      getAuth(req).module,
       employee,
     )
     if (!canAccess) {
@@ -212,7 +215,7 @@ employeeAttachmentsRouter.delete(
 
     try {
       let removed: { fileId: string; filename: string } | null = null
-      await withTransaction({ companyId, userId, role: req.auth!.role }, async (client) => {
+      await withTransaction({ companyId, userId, role: getAuth(req).role }, async (client) => {
         removed = await removeAttachment(client, attachmentId, 'employee', entityId)
         if (removed) {
           await logAudit({
@@ -240,5 +243,5 @@ employeeAttachmentsRouter.delete(
         error: { code: 'INTERNAL_ERROR', message: 'Failed to remove attachment' },
       })
     }
-  },
+  }),
 )

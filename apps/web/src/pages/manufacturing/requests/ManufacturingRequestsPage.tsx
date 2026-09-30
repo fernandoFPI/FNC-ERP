@@ -22,6 +22,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Modal } from '../../../components/ui/Modal'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { BoMsQuery, BoMsQueryVariables, CreateManufacturingRequestMutation, CreateManufacturingRequestMutationVariables, ManufacturingRequestsQuery, ManufacturingRequestsQueryVariables, ProjectsQuery, ProjectsQueryVariables } from '../../../graphql/generated'
 
 const MR_STATUSES = [
   'draft',
@@ -45,15 +46,15 @@ interface MR {
   id: string
   requestNumber: string
   projectId: string
-  projectName?: string
-  productName?: string
-  productSku?: string
+  projectName?: string | null
+  productName?: string | null
+  productSku?: string | null
   qtyRequested: number
-  requiredDate?: string
+  requiredDate?: string | null
   status: string
-  requestedByName?: string
-  moNumber?: string
-  actualCost?: number
+  requestedByName?: string | null
+  moNumber?: string | null
+  actualCost?: number | null
   currencyCode: string
   createdAt: string
 }
@@ -91,26 +92,26 @@ export default function ManufacturingRequestsPage() {
     notes: '',
   })
 
-  const { data, loading, refetch } = useQuery(MANUFACTURING_REQUESTS_QUERY, {
+  const { data, loading, refetch } = useQuery<ManufacturingRequestsQuery, ManufacturingRequestsQueryVariables>(MANUFACTURING_REQUESTS_QUERY, {
     variables: { status: statusFilter },
     fetchPolicy: 'cache-and-network',
   })
 
-  const { data: bomsData } = useQuery(BOMS_QUERY, {
+  const { data: bomsData } = useQuery<BoMsQuery, BoMsQueryVariables>(BOMS_QUERY, {
     variables: { isActive: true, allCompanies: true },
     fetchPolicy: 'cache-and-network',
   })
 
-  const { data: projectsData } = useQuery(PROJECTS_QUERY, {
+  const { data: projectsData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
 
-  const [createMR, { loading: creating }] = useMutation(CREATE_MANUFACTURING_REQUEST)
+  const [createMR, { loading: creating }] = useMutation<CreateManufacturingRequestMutation, CreateManufacturingRequestMutationVariables>(CREATE_MANUFACTURING_REQUEST)
 
   const requests: MR[] = data?.manufacturingRequests ?? []
-  const boms: { id: string; finished_product_id: string; product_name: string; version: string }[] =
+  const boms: { id: string; finished_product_id: string; product_name: string | null; version: string }[] =
     bomsData?.boms ?? []
-  const projects: { id: string; code: string; name: string }[] = projectsData?.projects?.data ?? []
+  const projects: { id: string; code: string; name: string }[] = projectsData?.projects.data ?? []
 
   const statusCounts = MR_STATUSES.reduce<Record<string, number>>((acc, s) => {
     acc[s] = requests.filter((r) => r.status === s).length
@@ -155,7 +156,7 @@ export default function ManufacturingRequestsPage() {
         description: '',
         notes: '',
       })
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -344,7 +345,7 @@ export default function ManufacturingRequestsPage() {
           search={search}
           onSearchChange={setSearch}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         >
           <FilterPresets
             presets={presets}
@@ -472,7 +473,7 @@ export default function ManufacturingRequestsPage() {
               >
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" loading={creating} onClick={handleCreate}>
+              <Button variant="primary" size="sm" loading={creating} onClick={(...args: Parameters<typeof handleCreate>) => void handleCreate(...args)}>
                 Create
               </Button>
             </div>

@@ -3,17 +3,19 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
 import { useTourStore } from '../../../../store/tourStore'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
 const mockUseMutation = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
-    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
+    useMutation: (...args: unknown[]): unknown => mockUseMutation(...args),
     gql: actual.gql,
   }
 })
@@ -29,7 +31,7 @@ vi.mock('../../../../store/authStore', () => ({
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
@@ -47,7 +49,7 @@ function wrap(ui: React.ReactNode, initialPath = '/procurement/requisitions/new'
 // <select> the form renders (Branch/GL Account/Cost Center use the
 // options-array variant, which renders a SearchableSelect instead).
 function getPurposeSelect(container: HTMLElement): HTMLSelectElement {
-  return container.querySelectorAll('select')[0] as HTMLSelectElement
+  return container.querySelectorAll('select')[0]
 }
 
 beforeEach(() => {
@@ -82,8 +84,8 @@ describe('RequisitionForm', () => {
   // which now links here instead of straight to PO creation — mirrors
   // PurchaseOrderForm's own ?projectId= pre-fill.
   it('pre-selects Project Supply and the project when opened with ?projectId=', async () => {
-    mockUseQuery.mockImplementation((doc: { definitions?: { name?: { value?: string } }[] }) => {
-      const opName = doc?.definitions?.[0]?.name?.value
+    mockUseQuery.mockImplementation((doc: { definitions?: { kind?: string; name?: { value?: string } }[] }) => {
+      const opName = doc.definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value
       if (opName === 'Projects') {
         return { data: { projects: { data: [{ id: 'proj-1', code: 'PRJ-001', name: 'Erbil Tower' }] } }, loading: false }
       }
@@ -104,8 +106,8 @@ describe('RequisitionForm', () => {
   // own req_prefill_lines key so the two forms' prefill state never
   // collides).
   it('pre-selects Manufacturing / BOM and the MO, and consumes req_prefill_lines, when opened with ?moId=', async () => {
-    mockUseQuery.mockImplementation((doc: { definitions?: { name?: { value?: string } }[] }) => {
-      const opName = doc?.definitions?.[0]?.name?.value
+    mockUseQuery.mockImplementation((doc: { definitions?: { kind?: string; name?: { value?: string } }[] }) => {
+      const opName = doc.definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value
       if (opName === 'ManufacturingOrders') {
         return { data: { manufacturingOrders: [{ id: 'mo-1', mo_number: 'MO-2026-0001', product_name: 'Steel Frame' }] }, loading: false }
       }
@@ -126,8 +128,8 @@ describe('RequisitionForm', () => {
   })
 
   it('submits a Manufacturing / BOM requisition with linked_mo_id set', async () => {
-    mockUseQuery.mockImplementation((doc: { definitions?: { name?: { value?: string } }[] }) => {
-      const opName = doc?.definitions?.[0]?.name?.value
+    mockUseQuery.mockImplementation((doc: { definitions?: { kind?: string; name?: { value?: string } }[] }) => {
+      const opName = doc.definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value
       if (opName === 'ManufacturingOrders') {
         return { data: { manufacturingOrders: [{ id: 'mo-1', mo_number: 'MO-2026-0001' }] }, loading: false }
       }
@@ -142,7 +144,9 @@ describe('RequisitionForm', () => {
     await vi.waitFor(() => {
       expect(createMock).toHaveBeenCalled()
     })
-    const callArgs = createMock.mock.calls[0][0]
+    const callArgs = (createMock.mock.calls as unknown[][])[0][0] as {
+      variables: { input: { purpose: string; linked_mo_id: string } }
+    }
     expect(callArgs.variables.input.purpose).toBe('manufacturing')
     expect(callArgs.variables.input.linked_mo_id).toBe('mo-1')
   })
@@ -211,7 +215,9 @@ describe('RequisitionForm', () => {
     await vi.waitFor(() => {
       expect(createMock).toHaveBeenCalled()
     })
-    const callArgs = createMock.mock.calls[0][0]
+    const callArgs = (createMock.mock.calls as unknown[][])[0][0] as {
+      variables: { input: { purpose: string; lines: { description: string }[] } }
+    }
     expect(callArgs.variables.input.purpose).toBe('stock')
     expect(callArgs.variables.input.lines).toHaveLength(1)
     expect(callArgs.variables.input.lines[0].description).toBe('Cement bags')

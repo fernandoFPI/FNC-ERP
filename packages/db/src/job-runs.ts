@@ -1,4 +1,4 @@
-import { pool } from './client.js'
+import { pool, firstRowOrThrow } from './client.js'
 
 export interface JobRun {
   id: string
@@ -31,7 +31,7 @@ export async function startJobRun(
      RETURNING id`,
     [jobName, meta ? JSON.stringify(meta) : null],
   )
-  return res.rows[0]!.id
+  return firstRowOrThrow(res).id
 }
 
 export async function finishJobRun(id: string, meta?: Record<string, unknown>): Promise<void> {
@@ -136,7 +136,7 @@ export async function listJobRuns(opts: {
 
   return {
     runs: dataRes.rows,
-    total: parseInt(countRes.rows[0]!.count, 10),
+    total: parseInt(firstRowOrThrow(countRes).count, 10),
   }
 }
 

@@ -9,6 +9,7 @@ import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { ProjectContractsQuery, ProjectContractsQueryVariables } from '../../../graphql/generated'
 
 interface Contract {
   id: string
@@ -29,7 +30,7 @@ export default function ContractsPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
 
-  const { data, loading } = useQuery(PROJECT_CONTRACTS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const { data, loading } = useQuery<ProjectContractsQuery, ProjectContractsQueryVariables>(PROJECT_CONTRACTS_QUERY, { fetchPolicy: 'cache-and-network' })
   const contracts: Contract[] = data?.projectContracts ?? []
 
   const columns: Column<Contract>[] = [

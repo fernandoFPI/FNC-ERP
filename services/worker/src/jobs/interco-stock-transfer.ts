@@ -1,4 +1,4 @@
-import { pool, withIntercoTransaction } from '@fnc-erp/db'
+import { pool, withIntercoTransaction, firstRowOrThrow } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { resolveTransferPrice, TransferPricingError } from '@fnc-erp/fx'
 
@@ -163,18 +163,22 @@ export async function executeIntercoStockTransfer(
       `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' LIMIT 1`,
       [from_company_id],
     )
-    if (!fromVirtualOut.rows[0]) {
+    const fromVirtualOutRow = fromVirtualOut.rows[0]
+    if (!fromVirtualOutRow) {
       throw new Error(`Company ${from_company_id} has no virtual_out stock location`)
     }
+    const fromVirtualOutId = fromVirtualOutRow.id
 
     await switchContext(to_company_id)
     const toVirtualIn = await client.query<{ id: string }>(
       `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' LIMIT 1`,
       [to_company_id],
     )
-    if (!toVirtualIn.rows[0]) {
+    const toVirtualInRow = toVirtualIn.rows[0]
+    if (!toVirtualInRow) {
       throw new Error(`Company ${to_company_id} has no virtual_in stock location`)
     }
+    const toVirtualInId = toVirtualInRow.id
 
     // ── Resolve pricing and create transfer record ─────────────
     await switchContext(from_company_id)
@@ -248,7 +252,7 @@ export async function executeIntercoStockTransfer(
         moved_by,
       ],
     )
-    const transferId = transferResult.rows[0]!.id
+    const transferId = firstRowOrThrow(transferResult).id
 
     // ── Create transfer lines ──────────────────────────────────
     for (const line of resolvedLines) {
@@ -295,7 +299,7 @@ export async function executeIntercoStockTransfer(
           line.product_id,
           line.lot_id,
           line.from_location_id,
-          fromVirtualOut.rows[0]!.id,
+          fromVirtualOutId,
           line.qty,
           line.transfer_price,
           line.total_transfer_value,
@@ -303,7 +307,7 @@ export async function executeIntercoStockTransfer(
           moved_by,
         ],
       )
-      fromMoveIds.push(fromMove.rows[0]!.id)
+      fromMoveIds.push(firstRowOrThrow(fromMove).id)
 
       // TO company: virtual_in → to_location
       await switchContext(to_company_id)
@@ -319,7 +323,7 @@ export async function executeIntercoStockTransfer(
           to_company_id,
           line.product_id,
           line.lot_id,
-          toVirtualIn.rows[0]!.id,
+          toVirtualInId,
           line.to_location_id,
           line.qty,
           line.transfer_price,
@@ -328,7 +332,7 @@ export async function executeIntercoStockTransfer(
           moved_by,
         ],
       )
-      toMoveIds.push(toMove.rows[0]!.id)
+      toMoveIds.push(firstRowOrThrow(toMove).id)
     }
     // stock_balance triggers fire automatically on each insert
 
@@ -350,7 +354,7 @@ export async function executeIntercoStockTransfer(
         moved_by,
       ],
     )
-    const intercoTxId = intercoTxResult.rows[0]!.id
+    const intercoTxId = firstRowOrThrow(intercoTxResult).id
 
     // ── Get analytic account if source is a project issue ──────
     let analyticAccountId: string | null = null
@@ -383,7 +387,7 @@ export async function executeIntercoStockTransfer(
         moved_by,
       ],
     )
-    const fromEntryId = fromEntryResult.rows[0]!.id
+    const fromEntryId = firstRowOrThrow(fromEntryResult).id
 
     // DEBIT interco payable (2400) | CREDIT inventory (1300)
     await client.query(
@@ -410,7 +414,7 @@ export async function executeIntercoStockTransfer(
         moved_by,
       ],
     )
-    const toEntryId = toEntryResult.rows[0]!.id
+    const toEntryId = firstRowOrThrow(toEntryResult).id
 
     // DEBIT inventory (1300) with analytic | CREDIT interco receivable (1700)
     await client.query(
@@ -440,12 +444,12 @@ export async function executeIntercoStockTransfer(
     )
 
     // Update transfer lines with stock move IDs
-    for (let i = 0; i < resolvedLines.length; i++) {
+    for (const [i, line] of resolvedLines.entries()) {
       await client.query(
         `UPDATE interco_stock_transfer_lines
          SET from_stock_move_id=$1, to_stock_move_id=$2
          WHERE transfer_id=$3 AND product_id=$4`,
-        [fromMoveIds[i] ?? null, toMoveIds[i] ?? null, transferId, resolvedLines[i]!.product_id],
+        [fromMoveIds[i] ?? null, toMoveIds[i] ?? null, transferId, line.product_id],
       )
     }
 

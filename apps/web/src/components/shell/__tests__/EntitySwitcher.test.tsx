@@ -25,6 +25,12 @@ function wrap() {
   )
 }
 
+function switcherButton(): HTMLElement {
+  const el = screen.getByText('Nishtimani Yakam').closest('button')
+  if (!el) throw new Error('Expected a <button> ancestor of the active company label')
+  return el
+}
+
 describe('EntitySwitcher', () => {
   it('shows active company name', () => {
     wrap()
@@ -33,19 +39,19 @@ describe('EntitySwitcher', () => {
 
   it('opens dropdown on click', () => {
     wrap()
-    fireEvent.click(screen.getByText('Nishtimani Yakam').closest('button')!)
+    fireEvent.click(switcherButton())
     expect(screen.getByText('Nishtimani Factory')).toBeInTheDocument()
   })
 
   it('shows all companies from companyStore', () => {
     wrap()
-    fireEvent.click(screen.getByText('Nishtimani Yakam').closest('button')!)
+    fireEvent.click(switcherButton())
     expect(screen.getByText('Al Watanyia')).toBeInTheDocument()
   })
 
   it('closes dropdown when clicking outside', async () => {
     wrap()
-    fireEvent.click(screen.getByText('Nishtimani Yakam').closest('button')!)
+    fireEvent.click(switcherButton())
     expect(screen.getByText('Nishtimani Factory')).toBeInTheDocument()
     fireEvent.mouseDown(document.body)
     await waitFor(() => {

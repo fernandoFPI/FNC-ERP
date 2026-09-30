@@ -91,6 +91,17 @@ export function requireAuth(): RequestHandler {
   }
 }
 
+// Every route handler that reaches this runs behind requireAuth() (or a
+// GraphQL resolver's own equivalent `ctx.auth` check), so req.auth is always
+// set by the time a handler body reads it — but that guarantee lives in the
+// middleware chain, a scope away from the read site, which is exactly what
+// `req.auth!` was papering over throughout these services. This re-asserts
+// the same guarantee at the read site instead.
+export function getAuth(req: Request): AuthContext {
+  if (!req.auth) throw new Error('Unauthorized')
+  return req.auth
+}
+
 export function requireRole(role: string): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.auth) {

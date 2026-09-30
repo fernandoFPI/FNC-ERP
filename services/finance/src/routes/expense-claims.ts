@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
-import { query, withTransaction, type PoolClient } from '@fnc-erp/db'
+import { query, withTransaction, type PoolClient, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
-export const expenseClaimsRouter: import('express').Router = Router()
+export const expenseClaimsRouter: Router = Router()
 
 // Thrown for expected, user-actionable setup gaps (missing Settings config,
 // a category with no GL account) — caught specifically to return a clear
@@ -80,7 +81,7 @@ async function nextClaimNumber(companyId: string): Promise<string> {
      WHERE company_id=$1 AND claim_number LIKE $2`,
     [companyId, `EXP-${yr}-%`],
   )
-  const n = String(Number(res.rows[0]!['n'])).padStart(4, '0')
+  const n = String(Number(firstRowOrThrow(res)['n'])).padStart(4, '0')
   return `EXP-${yr}-${n}`
 }
 
@@ -89,42 +90,42 @@ async function nextClaimNumber(companyId: string): Promise<string> {
 expenseClaimsRouter.get(
   '/categories',
   requirePermission('finance.expenses.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT ec.*, a.code AS account_code, a.name AS account_name
        FROM expense_categories ec
        LEFT JOIN chart_of_accounts a ON a.id = ec.gl_account_id
        WHERE ec.company_id=$1 AND ec.is_active=true ORDER BY ec.name`,
-        [req.auth!.companyId],
+        [getAuth(req).companyId],
       )
       sendOk(res, r.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load categories', err)
     }
-  },
+  }),
 )
 
 // Self-service category picker: name only, no GL account codes — an
 // employee submitting their own claim shouldn't see chart-of-accounts
 // detail. No permission gate beyond requireAuth (mounted ahead of this
 // router in app.ts), matching /request-self below.
-expenseClaimsRouter.get('/categories/mine', async (req, res) => {
+expenseClaimsRouter.get('/categories/mine', asyncHandler(async (req, res) => {
   try {
     const r = await query(
       `SELECT id, name FROM expense_categories WHERE company_id=$1 AND is_active=true ORDER BY name`,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
     sendOk(res, r.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load categories', err)
   }
-})
+}))
 
 expenseClaimsRouter.post(
   '/categories',
   requirePermission('finance.expenses.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       name: z.string().min(1),
       gl_account_id: z.string().uuid().optional(),
@@ -134,7 +135,7 @@ expenseClaimsRouter.post(
       const d = schema.parse(req.body)
       const r = await query(
         `INSERT INTO expense_categories (company_id, name, gl_account_id, is_project_related) VALUES ($1,$2,$3,$4) RETURNING *`,
-        [req.auth!.companyId, d.name, d.gl_account_id ?? null, d.is_project_related],
+        [getAuth(req).companyId, d.name, d.gl_account_id ?? null, d.is_project_related],
       )
       sendOk(res, r.rows[0], 201)
     } catch (err) {
@@ -144,13 +145,13 @@ expenseClaimsRouter.post(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create category', err)
     }
-  },
+  }),
 )
 
 expenseClaimsRouter.put(
   '/categories/:id',
   requirePermission('finance.expenses.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       name: z.string().min(1),
       gl_account_id: z.string().uuid().optional(),
@@ -161,7 +162,7 @@ expenseClaimsRouter.put(
       const d = schema.parse(req.body)
       const r = await query(
         `UPDATE expense_categories SET name=$1, gl_account_id=$2, is_active=$3, is_project_related=$4 WHERE id=$5 AND company_id=$6 RETURNING *`,
-        [d.name, d.gl_account_id ?? null, d.is_active, d.is_project_related, req.params['id'], req.auth!.companyId],
+        [d.name, d.gl_account_id ?? null, d.is_active, d.is_project_related, req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Category not found')
@@ -171,7 +172,7 @@ expenseClaimsRouter.put(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update category', err)
     }
-  },
+  }),
 )
 
 // ─── List claims ──────────────────────────────────────────────────────────────
@@ -179,7 +180,7 @@ expenseClaimsRouter.put(
 expenseClaimsRouter.get(
   '/',
   requirePermission('finance.expenses.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       status: z.string().optional(),
       employee_id: z.string().uuid().optional(),
@@ -189,7 +190,7 @@ expenseClaimsRouter.get(
     try {
       const { status, employee_id, limit, offset } = schema.parse(req.query)
       const conditions: string[] = ['ec.company_id = $1']
-      const params: unknown[] = [req.auth!.companyId]
+      const params: unknown[] = [getAuth(req).companyId]
       let p = 2
       if (status) {
         conditions.push(`ec.status = $${p++}`)
@@ -214,7 +215,7 @@ expenseClaimsRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load claims', err)
     }
-  },
+  }),
 )
 
 // ─── Summary KPIs ─────────────────────────────────────────────────────────────
@@ -222,7 +223,7 @@ expenseClaimsRouter.get(
 expenseClaimsRouter.get(
   '/summary',
   requirePermission('finance.expenses.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT
@@ -233,13 +234,13 @@ expenseClaimsRouter.get(
          COALESCE(SUM(total_amount) FILTER (WHERE status='posted'),0)    AS posted_amount,
          COALESCE(SUM(total_amount) FILTER (WHERE status='paid'),0)      AS paid_amount
        FROM expense_claims WHERE company_id=$1`,
-        [req.auth!.companyId],
+        [getAuth(req).companyId],
       )
       sendOk(res, r.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load summary', err)
     }
-  },
+  }),
 )
 
 // ─── Self-service: my claims (with lines) ──────────────────────────────────────
@@ -250,11 +251,11 @@ expenseClaimsRouter.get(
 // permission-gated list endpoint, so there's no way to request someone else's
 // claims by passing a different id.
 
-expenseClaimsRouter.get('/mine', async (req, res) => {
+expenseClaimsRouter.get('/mine', asyncHandler(async (req, res) => {
   try {
     const empRes = await query(
       `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2`,
-      [req.auth!.userId, req.auth!.companyId],
+      [getAuth(req).userId, getAuth(req).companyId],
     )
     const emp = empRes.rows[0] as { id: string } | undefined
     if (!emp) {
@@ -276,13 +277,13 @@ expenseClaimsRouter.get('/mine', async (req, res) => {
        WHERE ec.company_id=$1 AND ec.employee_id=$2
        GROUP BY ec.id, p.code, p.name
        ORDER BY ec.created_at DESC`,
-      [req.auth!.companyId, emp.id],
+      [getAuth(req).companyId, emp.id],
     )
     sendOk(res, r.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load your claims', err)
   }
-})
+}))
 
 // ─── Company-wide outstanding dashboard ─────────────────────────────────────
 //
@@ -292,7 +293,7 @@ expenseClaimsRouter.get('/mine', async (req, res) => {
 expenseClaimsRouter.get(
   '/dashboard',
   requirePermission('finance.expenses.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const [claims, byEmployee] = await Promise.all([
         query(
@@ -300,7 +301,7 @@ expenseClaimsRouter.get(
            FROM expense_claims
            WHERE company_id=$1 AND status='posted'
            ORDER BY approved_at DESC`,
-          [req.auth!.companyId],
+          [getAuth(req).companyId],
         ),
         query(
           `SELECT employee_id, employee_name,
@@ -310,14 +311,14 @@ expenseClaimsRouter.get(
            WHERE company_id=$1 AND status='posted'
            GROUP BY employee_id, employee_name
            ORDER BY total_outstanding DESC`,
-          [req.auth!.companyId],
+          [getAuth(req).companyId],
         ),
       ])
       sendOk(res, { claims: claims.rows, by_employee: byEmployee.rows })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load dashboard', err)
     }
-  },
+  }),
 )
 
 // ─── Get claim with lines ─────────────────────────────────────────────────────
@@ -325,7 +326,7 @@ expenseClaimsRouter.get(
 expenseClaimsRouter.get(
   '/:id',
   requirePermission('finance.expenses.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const ec = await query(
         `SELECT ec.*, proj.code AS project_code, proj.name AS project_name,
@@ -340,7 +341,7 @@ expenseClaimsRouter.get(
          LEFT JOIN users ru ON ru.id = ec.rejected_by
          LEFT JOIN users pu ON pu.id = ec.paid_by
          WHERE ec.id=$1 AND ec.company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!ec.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Claim not found')
@@ -357,7 +358,7 @@ expenseClaimsRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load claim', err)
     }
-  },
+  }),
 )
 
 // ─── Create claim ─────────────────────────────────────────────────────────────
@@ -387,18 +388,18 @@ const claimSchema = z.object({
 expenseClaimsRouter.post(
   '/',
   requirePermission('finance.expenses.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const d = claimSchema.parse(req.body)
-      const claimNumber = await nextClaimNumber(req.auth!.companyId)
+      const claimNumber = await nextClaimNumber(getAuth(req).companyId)
       const totalAmount = d.lines.reduce((s, l) => s + l.amount, 0)
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const reimbursementAccountId = await resolveReimbursementAccount(
             client,
-            req.auth!.companyId,
+            getAuth(req).companyId,
             d.currency_code,
           )
           const ecRes = await client.query(
@@ -406,7 +407,7 @@ expenseClaimsRouter.post(
             (company_id, claim_number, employee_id, employee_name, description, currency_code, total_amount, reimbursement_account_id, project_id, notes, created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               claimNumber,
               d.employee_id,
               d.employee_name,
@@ -416,15 +417,15 @@ expenseClaimsRouter.post(
               reimbursementAccountId,
               d.project_id ?? null,
               d.notes ?? null,
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const claim = ecRes.rows[0]!
+          const claim = firstRowOrThrow(ecRes)
           const lines = []
           for (const line of d.lines) {
             const { accountId, categoryName } = await resolveLineGlAccount(
               client,
-              req.auth!.companyId,
+              getAuth(req).companyId,
               line.category_id,
               line.gl_account_id,
             )
@@ -434,7 +435,7 @@ expenseClaimsRouter.post(
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
               [
                 claim.id,
-                req.auth!.companyId,
+                getAuth(req).companyId,
                 line.expense_date,
                 line.category_id ?? null,
                 line.category_name ?? categoryName ?? null,
@@ -452,8 +453,8 @@ expenseClaimsRouter.post(
         },
       )
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'INSERT',
         tableName: 'expense_claims',
         recordId: result.id as string,
@@ -467,7 +468,7 @@ expenseClaimsRouter.post(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create claim', err)
     }
-  },
+  }),
 )
 
 // ─── Employee self-service request ──────────────────────────────────────────
@@ -494,23 +495,23 @@ const selfClaimSchema = z.object({
   lines: z.array(selfLineSchema).min(1),
 })
 
-expenseClaimsRouter.post('/request-self', async (req, res) => {
+expenseClaimsRouter.post('/request-self', asyncHandler(async (req, res) => {
   try {
     const d = selfClaimSchema.parse(req.body)
-    const claimNumber = await nextClaimNumber(req.auth!.companyId)
+    const claimNumber = await nextClaimNumber(getAuth(req).companyId)
     const result = await withTransaction(
-      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
       async (client) => {
         const empRes = await client.query(
           `SELECT id, first_name, last_name FROM employees WHERE user_id=$1 AND company_id=$2`,
-          [req.auth!.userId, req.auth!.companyId],
+          [getAuth(req).userId, getAuth(req).companyId],
         )
         const emp = empRes.rows[0] as Record<string, unknown> | undefined
         if (!emp) return { error: 'NO_EMPLOYEE_LINK' as const }
 
         const reimbursementAccountId = await resolveReimbursementAccount(
           client,
-          req.auth!.companyId,
+          getAuth(req).companyId,
           d.currency_code,
         )
         const totalAmount = d.lines.reduce((s, l) => s + l.amount, 0)
@@ -521,7 +522,7 @@ expenseClaimsRouter.post('/request-self', async (req, res) => {
               total_amount, reimbursement_account_id, project_id, notes, status, submitted_at, created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'submitted',NOW(),$11) RETURNING *`,
           [
-            req.auth!.companyId,
+            getAuth(req).companyId,
             claimNumber,
             emp['id'],
             employeeName,
@@ -531,15 +532,15 @@ expenseClaimsRouter.post('/request-self', async (req, res) => {
             reimbursementAccountId,
             d.project_id ?? null,
             d.notes ?? null,
-            req.auth!.userId,
+            getAuth(req).userId,
           ],
         )
-        const claim = ecRes.rows[0]!
+        const claim = firstRowOrThrow(ecRes)
         const lines = []
         for (const line of d.lines) {
           const { accountId, categoryName } = await resolveLineGlAccount(
             client,
-            req.auth!.companyId,
+            getAuth(req).companyId,
             line.category_id,
             undefined,
           )
@@ -549,7 +550,7 @@ expenseClaimsRouter.post('/request-self', async (req, res) => {
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
             [
               claim.id,
-              req.auth!.companyId,
+              getAuth(req).companyId,
               line.expense_date,
               line.category_id,
               categoryName ?? null,
@@ -570,8 +571,8 @@ expenseClaimsRouter.post('/request-self', async (req, res) => {
     }
     const claim = result.claim as Record<string, unknown>
     await logAudit({
-      companyId: req.auth!.companyId,
-      userId: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      userId: getAuth(req).userId,
       action: 'INSERT',
       tableName: 'expense_claims',
       recordId: claim['id'] as string,
@@ -589,18 +590,18 @@ expenseClaimsRouter.post('/request-self', async (req, res) => {
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to submit expense claim', err)
   }
-})
+}))
 
 // ─── Update claim (only draft) ────────────────────────────────────────────────
 
 expenseClaimsRouter.put(
   '/:id',
   requirePermission('finance.expenses.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const existing = await query(
         `SELECT status FROM expense_claims WHERE id=$1 AND company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!existing.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Claim not found')
@@ -615,11 +616,11 @@ expenseClaimsRouter.put(
       const totalAmount = d.lines.reduce((s, l) => s + l.amount, 0)
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const reimbursementAccountId = await resolveReimbursementAccount(
             client,
-            req.auth!.companyId,
+            getAuth(req).companyId,
             d.currency_code,
           )
           const ecRes = await client.query(
@@ -643,7 +644,7 @@ expenseClaimsRouter.put(
           for (const line of d.lines) {
             const { accountId, categoryName } = await resolveLineGlAccount(
               client,
-              req.auth!.companyId,
+              getAuth(req).companyId,
               line.category_id,
               line.gl_account_id,
             )
@@ -653,7 +654,7 @@ expenseClaimsRouter.put(
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
               [
                 req.params['id'],
-                req.auth!.companyId,
+                getAuth(req).companyId,
                 line.expense_date,
                 line.category_id ?? null,
                 line.category_name ?? categoryName ?? null,
@@ -678,7 +679,7 @@ expenseClaimsRouter.put(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update claim', err)
     }
-  },
+  }),
 )
 
 // ─── Submit claim ─────────────────────────────────────────────────────────────
@@ -686,12 +687,12 @@ expenseClaimsRouter.put(
 expenseClaimsRouter.post(
   '/:id/submit',
   requirePermission('finance.expenses.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `UPDATE expense_claims SET status='submitted', submitted_at=NOW(), updated_at=NOW()
        WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING *`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Claim is not in draft status')
@@ -701,7 +702,7 @@ expenseClaimsRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to submit claim', err)
     }
-  },
+  }),
 )
 
 // ─── Approve claim (posts journal immediately) ──────────────────────────────
@@ -723,10 +724,10 @@ expenseClaimsRouter.post(
 expenseClaimsRouter.post(
   '/:id/approve',
   requirePermission('finance.expenses.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           // Split into a plain row lock + a separate lines fetch — Postgres
           // rejects FOR UPDATE combined with GROUP BY/aggregates (json_agg
@@ -740,7 +741,7 @@ expenseClaimsRouter.post(
              LEFT JOIN projects p ON p.id = ec.project_id
              LEFT JOIN analytic_accounts aa ON aa.id = p.analytic_account_id
              WHERE ec.id=$1 AND ec.company_id=$2 AND ec.status='submitted' FOR UPDATE OF ec`,
-            [req.params['id'], req.auth!.companyId],
+            [req.params['id'], getAuth(req).companyId],
           )
           if (!claimRes.rows[0]) return null
           const claim = claimRes.rows[0] as Record<string, unknown>
@@ -767,14 +768,14 @@ expenseClaimsRouter.post(
              VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'expense_claim', $4, $5, NOW(), $5)
              RETURNING id`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               claim['claim_number'],
               `Expense claim: ${claim['employee_name'] as string}`,
               claim['id'],
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const jeId = jeRes.rows[0]!.id as string
+          const jeId = firstRowOrThrow(jeRes).id as string
 
           // DR each expense account, CR Accrued Reimbursement. Only the debit
           // (expense-recognizing) lines carry analytic_account_id — the
@@ -810,7 +811,7 @@ expenseClaimsRouter.post(
           const updated = await client.query(
             `UPDATE expense_claims SET status='posted', approved_by=$1, approved_at=NOW(), journal_entry_id=$2, updated_at=NOW()
              WHERE id=$3 RETURNING *`,
-            [req.auth!.userId, jeId, req.params['id']],
+            [getAuth(req).userId, jeId, req.params['id']],
           )
           return updated.rows[0]
         },
@@ -829,8 +830,8 @@ expenseClaimsRouter.post(
         return
       }
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'expense_claims',
         recordId: req.params['id'],
@@ -840,7 +841,7 @@ expenseClaimsRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve claim', err)
     }
-  },
+  }),
 )
 
 // ─── Reject claim ─────────────────────────────────────────────────────────────
@@ -848,14 +849,14 @@ expenseClaimsRouter.post(
 expenseClaimsRouter.post(
   '/:id/reject',
   requirePermission('finance.expenses.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({ reason: z.string().min(1) })
     try {
       const { reason } = schema.parse(req.body)
       const r = await query(
         `UPDATE expense_claims SET status='rejected', rejected_by=$1, rejected_at=NOW(), rejection_reason=$2, updated_at=NOW()
        WHERE id=$3 AND company_id=$4 AND status='submitted' RETURNING *`,
-        [req.auth!.userId, reason, req.params['id'], req.auth!.companyId],
+        [getAuth(req).userId, reason, req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Claim is not in submitted status')
@@ -865,7 +866,7 @@ expenseClaimsRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to reject claim', err)
     }
-  },
+  }),
 )
 
 // ─── Mark as paid ─────────────────────────────────────────────────────────────
@@ -873,12 +874,12 @@ expenseClaimsRouter.post(
 expenseClaimsRouter.post(
   '/:id/mark-paid',
   requirePermission('finance.expenses.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `UPDATE expense_claims SET status='paid', paid_by=$1, paid_at=NOW(), updated_at=NOW()
        WHERE id=$2 AND company_id=$3 AND status='posted' RETURNING *`,
-        [req.auth!.userId, req.params['id'], req.auth!.companyId],
+        [getAuth(req).userId, req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Claim must be posted first')
@@ -888,5 +889,5 @@ expenseClaimsRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark as paid', err)
     }
-  },
+  }),
 )

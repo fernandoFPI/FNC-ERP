@@ -1,9 +1,10 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query, withTransaction } from '@fnc-erp/db'
+import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const vendorInvoicesRouter: IRouter = Router()
@@ -48,7 +49,7 @@ const PaymentSchema = z.object({
 })
 
 // ── GET /finance/vendor-invoices ──────────────────────────────
-vendorInvoicesRouter.get('/', requirePermission('finance.ap.view', 'view'), async (req, res) => {
+vendorInvoicesRouter.get('/', requirePermission('finance.ap.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const {
       status,
@@ -66,7 +67,7 @@ vendorInvoicesRouter.get('/', requirePermission('finance.ap.view', 'view'), asyn
     // cross_company=true skips the company filter — used by PO detail to find invoices
     // created in a different company context (workflow-imported POs exist in multiple companies)
     const conditions: string[] = cross_company === 'true' ? [] : [`vi.company_id = $1`]
-    const values: unknown[] = cross_company === 'true' ? [] : [req.auth!.companyId]
+    const values: unknown[] = cross_company === 'true' ? [] : [getAuth(req).companyId]
     let p = cross_company === 'true' ? 0 : 1
 
     if (status) {
@@ -134,20 +135,20 @@ vendorInvoicesRouter.get('/', requirePermission('finance.ap.view', 'view'), asyn
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
-        total: parseInt(total.rows[0]!['count'] as string),
-        totalPages: Math.ceil(parseInt(total.rows[0]!['count'] as string) / parseInt(limit)),
+        total: parseInt(firstRowOrThrow(total)['count'] as string),
+        totalPages: Math.ceil(parseInt(firstRowOrThrow(total)['count'] as string) / parseInt(limit)),
       },
     })
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list vendor invoices', err)
   }
-})
+}))
 
 // ── GET /finance/vendor-invoices/ap-summary ───────────────────
 vendorInvoicesRouter.get(
   '/ap-summary',
   requirePermission('finance.ap.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await query(
         `
@@ -177,21 +178,21 @@ vendorInvoicesRouter.get(
       LEFT JOIN vendor_payments vp ON vp.vendor_invoice_id = vi.id
       WHERE vi.company_id = $1
     `,
-        [req.auth!.companyId],
+        [getAuth(req).companyId],
       )
 
       sendOk(res, result.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get AP summary', err)
     }
-  },
+  }),
 )
 
 // ── GET /finance/vendor-invoices/vendor/:vendorId/summary ─────
 vendorInvoicesRouter.get(
   '/vendor/:vendorId/summary',
   requirePermission('finance.ap.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await query(
         `
@@ -208,7 +209,7 @@ vendorInvoicesRouter.get(
       WHERE v.id = $2
       GROUP BY v.id, v.name, v.currency_code
     `,
-        [req.auth!.companyId, req.params['vendorId']],
+        [getAuth(req).companyId, req.params['vendorId']],
       )
 
       if (!result.rows[0]) {
@@ -219,11 +220,11 @@ vendorInvoicesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get vendor summary', err)
     }
-  },
+  }),
 )
 
 // ── GET /finance/vendor-invoices/:id ──────────────────────────
-vendorInvoicesRouter.get('/:id', requirePermission('finance.ap.view', 'view'), async (req, res) => {
+vendorInvoicesRouter.get('/:id', requirePermission('finance.ap.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const [invoiceResult, linesResult, paymentsResult] = await Promise.all([
       query(
@@ -247,7 +248,7 @@ vendorInvoicesRouter.get('/:id', requirePermission('finance.ap.view', 'view'), a
         LEFT JOIN users u_rej ON u_rej.id = vi.rejected_by
         WHERE vi.id = $1 AND vi.company_id = $2
       `,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       ),
       query(
         `
@@ -283,10 +284,10 @@ vendorInvoicesRouter.get('/:id', requirePermission('finance.ap.view', 'view'), a
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get vendor invoice', err)
   }
-})
+}))
 
 // ── POST /finance/vendor-invoices ─────────────────────────────
-vendorInvoicesRouter.post('/', requirePermission('finance.ap.edit', 'edit'), async (req, res) => {
+vendorInvoicesRouter.post('/', requirePermission('finance.ap.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
     const parsed = CreateSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -322,7 +323,7 @@ vendorInvoicesRouter.post('/', requirePermission('finance.ap.edit', 'edit'), asy
     const netPayable = Math.round((totalAmount - whtAmount) * 100) / 100
 
     const invoice = await withTransaction(
-      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
       async (client) => {
         const inv = await client.query(
           `
@@ -335,7 +336,7 @@ vendorInvoicesRouter.post('/', requirePermission('finance.ap.edit', 'edit'), asy
           RETURNING *
         `,
           [
-            req.auth!.companyId,
+            getAuth(req).companyId,
             vendor_id,
             po_id ?? null,
             invoice_number,
@@ -352,16 +353,15 @@ vendorInvoicesRouter.post('/', requirePermission('finance.ap.edit', 'edit'), asy
             analytic_account_id ?? null,
             cost_center_id ?? null,
             notes ?? null,
-            req.auth!.userId,
+            getAuth(req).userId,
           ],
         )
 
-        const invoiceId = inv.rows[0]!.id as string
+        const invoiceId = firstRowOrThrow(inv).id as string
         const createdLines: unknown[] = []
 
         if (lines?.length) {
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i]!
+          for (const [i, line] of lines.entries()) {
             const lineTotal = line.total_price ?? line.qty * line.unit_price
             const lineResult = await client.query(
               `
@@ -385,8 +385,8 @@ vendorInvoicesRouter.post('/', requirePermission('finance.ap.edit', 'edit'), asy
         }
 
         await logAudit({
-          userId: req.auth!.userId,
-          companyId: req.auth!.companyId,
+          userId: getAuth(req).userId,
+          companyId: getAuth(req).companyId,
           action: 'CREATE',
           tableName: 'vendor_invoices',
           recordId: invoiceId,
@@ -410,20 +410,20 @@ vendorInvoicesRouter.post('/', requirePermission('finance.ap.edit', 'edit'), asy
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create vendor invoice', err)
   }
-})
+}))
 
 // ── PATCH /finance/vendor-invoices/:id/link-po ────────────────
 vendorInvoicesRouter.patch(
   '/:id/link-po',
   requirePermission('finance.ap.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const { po_id } = req.body as { po_id?: string | null }
       const result = await query(
         `UPDATE vendor_invoices SET po_id = $1, updated_at = NOW()
        WHERE id = $2 AND company_id = $3
        RETURNING id, po_id`,
-        [po_id ?? null, req.params['id'], req.auth!.companyId],
+        [po_id ?? null, req.params['id'], getAuth(req).companyId],
       )
       if (!result.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Vendor invoice not found')
@@ -433,15 +433,15 @@ vendorInvoicesRouter.patch(
     } catch (err: unknown) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to link PO', err)
     }
-  },
+  }),
 )
 
 // ── PUT /finance/vendor-invoices/:id ──────────────────────────
-vendorInvoicesRouter.put('/:id', requirePermission('finance.ap.edit', 'edit'), async (req, res) => {
+vendorInvoicesRouter.put('/:id', requirePermission('finance.ap.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
     const current = await query(
       `SELECT status, vendor_id FROM vendor_invoices WHERE id = $1 AND company_id = $2`,
-      [req.params['id'], req.auth!.companyId],
+      [req.params['id'], getAuth(req).companyId],
     )
     if (!current.rows[0]) {
       sendError(res, 404, 'NOT_FOUND', 'Vendor invoice not found')
@@ -509,7 +509,7 @@ vendorInvoicesRouter.put('/:id', requirePermission('finance.ap.edit', 'edit'), a
         d.cost_center_id ?? null,
         d.notes ?? null,
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ],
     )
 
@@ -517,17 +517,17 @@ vendorInvoicesRouter.put('/:id', requirePermission('finance.ap.edit', 'edit'), a
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update vendor invoice', err)
   }
-})
+}))
 
 // ── POST /finance/vendor-invoices/:id/submit ──────────────────
 vendorInvoicesRouter.post(
   '/:id/submit',
   requirePermission('finance.ap.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const invoice = await query(
         `SELECT status FROM vendor_invoices WHERE id = $1 AND company_id = $2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!invoice.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Vendor invoice not found')
@@ -542,20 +542,20 @@ vendorInvoicesRouter.post(
         `SELECT COUNT(*) FROM vendor_invoice_lines WHERE vendor_invoice_id = $1`,
         [req.params['id']],
       )
-      if (parseInt(lineCount.rows[0]!['count'] as string) === 0) {
+      if (parseInt(firstRowOrThrow(lineCount)['count'] as string) === 0) {
         sendError(res, 400, 'NO_LINES', 'Invoice must have at least one line before submission')
         return
       }
 
       await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           await client.query(
             `
           UPDATE vendor_invoices SET status='submitted', submitted_by=$1, submitted_at=NOW(), updated_at=NOW()
           WHERE id=$2
         `,
-            [req.auth!.userId, req.params['id']],
+            [getAuth(req).userId, req.params['id']],
           )
 
           // Notify system admins via outbox
@@ -575,11 +575,11 @@ vendorInvoicesRouter.post(
           }
 
           await logAudit({
-            userId: req.auth!.userId,
-            companyId: req.auth!.companyId,
+            userId: getAuth(req).userId,
+            companyId: getAuth(req).companyId,
             action: 'UPDATE',
             tableName: 'vendor_invoices',
-            recordId: req.params['id']!,
+            recordId: requireParam(req, 'id'),
           })
         },
       )
@@ -588,14 +588,14 @@ vendorInvoicesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to submit vendor invoice', err)
     }
-  },
+  }),
 )
 
 // ── POST /finance/vendor-invoices/:id/approve ─────────────────
 vendorInvoicesRouter.post(
   '/:id/approve',
   requirePermission('finance.ap.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       // Atomic: the UPDATE's own WHERE clause (not a prior SELECT-then-UPDATE)
       // is what prevents a race — concurrent requests serialize on the row
@@ -606,12 +606,12 @@ vendorInvoicesRouter.post(
         `UPDATE vendor_invoices SET status='approved', approved_by=$1, approved_at=NOW(), updated_at=NOW()
          WHERE id=$2 AND company_id=$3 AND status='submitted'
          RETURNING *`,
-        [req.auth!.userId, req.params['id'], req.auth!.companyId],
+        [getAuth(req).userId, req.params['id'], getAuth(req).companyId],
       )
       if (!updated.rows[0]) {
         const exists = await query(`SELECT id FROM vendor_invoices WHERE id=$1 AND company_id=$2`, [
           req.params['id'],
-          req.auth!.companyId,
+          getAuth(req).companyId,
         ])
         if (!exists.rows[0]) {
           sendError(res, 404, 'NOT_FOUND', 'Vendor invoice not found')
@@ -623,7 +623,7 @@ vendorInvoicesRouter.post(
       const apInv = updated.rows[0] as Record<string, unknown>
 
       await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           // Queue AP journal entry: Dr Expense / Cr Accounts Payable
           await client.query(
@@ -631,7 +631,7 @@ vendorInvoicesRouter.post(
             [
               JSON.stringify({
                 invoice_id: req.params['id'],
-                company_id: req.auth!.companyId,
+                company_id: getAuth(req).companyId,
                 vendor_id: apInv['vendor_id'],
                 total_amount: apInv['total_amount'],
                 currency_code: apInv['currency_code'],
@@ -657,11 +657,11 @@ vendorInvoicesRouter.post(
           }
 
           await logAudit({
-            userId: req.auth!.userId,
-            companyId: req.auth!.companyId,
+            userId: getAuth(req).userId,
+            companyId: getAuth(req).companyId,
             action: 'UPDATE',
             tableName: 'vendor_invoices',
-            recordId: req.params['id']!,
+            recordId: requireParam(req, 'id'),
           })
         },
       )
@@ -670,14 +670,14 @@ vendorInvoicesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve vendor invoice', err)
     }
-  },
+  }),
 )
 
 // ── POST /finance/vendor-invoices/:id/reject ──────────────────
 vendorInvoicesRouter.post(
   '/:id/reject',
   requirePermission('finance.ap.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const { reason } = req.body as { reason?: string }
       if (!reason?.trim()) {
@@ -687,7 +687,7 @@ vendorInvoicesRouter.post(
 
       const invoice = await query(
         `SELECT status, submitted_by FROM vendor_invoices WHERE id=$1 AND company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!invoice.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Vendor invoice not found')
@@ -699,7 +699,7 @@ vendorInvoicesRouter.post(
       }
 
       await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           await client.query(
             `
@@ -708,10 +708,10 @@ vendorInvoicesRouter.post(
             submitted_by=NULL, submitted_at=NULL, updated_at=NOW()
           WHERE id=$3
         `,
-            [req.auth!.userId, reason, req.params['id']],
+            [getAuth(req).userId, reason, req.params['id']],
           )
 
-          if (invoice.rows[0]!['submitted_by']) {
+          if (firstRowOrThrow(invoice)['submitted_by']) {
             await client.query(
               `
             INSERT INTO service_outbox (service, event_type, payload)
@@ -719,7 +719,7 @@ vendorInvoicesRouter.post(
           `,
               [
                 JSON.stringify({
-                  userId: invoice.rows[0]!['submitted_by'],
+                  userId: firstRowOrThrow(invoice)['submitted_by'],
                   invoiceId: req.params['id'],
                   reason,
                 }),
@@ -728,11 +728,11 @@ vendorInvoicesRouter.post(
           }
 
           await logAudit({
-            userId: req.auth!.userId,
-            companyId: req.auth!.companyId,
+            userId: getAuth(req).userId,
+            companyId: getAuth(req).companyId,
             action: 'UPDATE',
             tableName: 'vendor_invoices',
-            recordId: req.params['id']!,
+            recordId: requireParam(req, 'id'),
           })
         },
       )
@@ -741,20 +741,20 @@ vendorInvoicesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to reject vendor invoice', err)
     }
-  },
+  }),
 )
 
 // ── POST /finance/vendor-invoices/:id/cancel ──────────────────
 vendorInvoicesRouter.post(
   '/:id/cancel',
   requirePermission('finance.ap.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const { reason } = req.body as { reason?: string }
 
       const invoice = await query(
         `SELECT status FROM vendor_invoices WHERE id=$1 AND company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!invoice.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Vendor invoice not found')
@@ -780,17 +780,17 @@ vendorInvoicesRouter.post(
       )
 
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.auth!.companyId,
+        userId: getAuth(req).userId,
+        companyId: getAuth(req).companyId,
         action: 'DELETE',
         tableName: 'vendor_invoices',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
       })
       const invNum = String(invToCancel.rows[0]?.['invoice_number'] ?? '')
       ;(async () => {
         const fu = await query(
           `SELECT DISTINCT u.id AS user_id FROM users u JOIN user_company_roles ucr ON ucr.user_id=u.id WHERE ucr.company_id=$1 AND (ucr.role IN ('company_admin','system_admin') OR (ucr.module='finance' AND ucr.role IN ('module_admin','module_user'))) AND u.is_active=true`,
-          [req.auth!.companyId],
+          [getAuth(req).companyId],
         )
         for (const u of fu.rows)
           await query(
@@ -798,26 +798,28 @@ vendorInvoicesRouter.post(
             [
               JSON.stringify({
                 userId: u['user_id'],
-                companyId: req.auth!.companyId,
+                companyId: getAuth(req).companyId,
                 title: `Invoice cancelled: ${invNum}`,
                 body: `Vendor invoice ${invNum} has been cancelled${reason ? ': ' + reason : ''}`,
                 data: { invoiceId: req.params['id'], invoiceNumber: invNum },
               }),
             ],
           )
-      })().catch(() => {})
+      })().catch(() => {
+        // best-effort notification — don't block the cancel flow on it
+      })
       sendOk(res, { message: 'Invoice cancelled' })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to cancel vendor invoice', err)
     }
-  },
+  }),
 )
 
 // ── POST /finance/vendor-invoices/:id/payments ────────────────
 vendorInvoicesRouter.post(
   '/:id/payments',
   requirePermission('finance.ap.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const parsed = PaymentSchema.safeParse(req.body)
       if (!parsed.success) {
@@ -829,7 +831,7 @@ vendorInvoicesRouter.post(
 
       const invoice = await query(`SELECT * FROM vendor_invoices WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!invoice.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Vendor invoice not found')
@@ -863,7 +865,7 @@ vendorInvoicesRouter.post(
       const effectiveCurrency = currency_code ?? String(inv['currency_code'])
 
       const payment = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const pmt = await client.query(
             `
@@ -873,7 +875,7 @@ vendorInvoicesRouter.post(
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
         `,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               req.params['id'],
               inv['vendor_id'],
               payment_date,
@@ -882,7 +884,7 @@ vendorInvoicesRouter.post(
               payment_method,
               payment_reference ?? null,
               notes ?? null,
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
 
@@ -917,7 +919,7 @@ vendorInvoicesRouter.post(
         `,
             [
               JSON.stringify({
-                paymentId: pmt.rows[0]!.id,
+                paymentId: firstRowOrThrow(pmt).id,
                 invoiceId: req.params['id'],
                 vendorId: inv['vendor_id'],
                 poIds,
@@ -927,18 +929,18 @@ vendorInvoicesRouter.post(
                 whtAmount: parseFloat(String(inv['wht_amount'])),
                 currencyCode: effectiveCurrency,
                 paymentDate: payment_date,
-                companyId: req.auth!.companyId,
+                companyId: getAuth(req).companyId,
                 isFullyPaid,
               }),
             ],
           )
 
           await logAudit({
-            userId: req.auth!.userId,
-            companyId: req.auth!.companyId,
+            userId: getAuth(req).userId,
+            companyId: getAuth(req).companyId,
             action: 'CREATE',
             tableName: 'vendor_payments',
-            recordId: pmt.rows[0]!.id as string,
+            recordId: firstRowOrThrow(pmt).id as string,
           })
 
           // Notify finance team that a payment was recorded
@@ -949,7 +951,7 @@ vendorInvoicesRouter.post(
           const invNum = String(invNumberRow.rows[0]?.invoice_number ?? '')
           const fuPmt = await client.query(
             `SELECT DISTINCT u.id AS user_id FROM users u JOIN user_company_roles ucr ON ucr.user_id=u.id WHERE ucr.company_id=$1 AND (ucr.role IN ('company_admin','system_admin') OR (ucr.module='finance' AND ucr.role IN ('module_admin','module_user'))) AND u.is_active=true`,
-            [req.auth!.companyId],
+            [getAuth(req).companyId],
           )
           for (const u of fuPmt.rows) {
             await client.query(
@@ -957,7 +959,7 @@ vendorInvoicesRouter.post(
               [
                 JSON.stringify({
                   userId: u.user_id,
-                  companyId: req.auth!.companyId,
+                  companyId: getAuth(req).companyId,
                   title: `Payment recorded: ${invNum}`,
                   body: `Payment of ${amount} ${effectiveCurrency} recorded for invoice ${invNum}${isFullyPaid ? ' — fully paid' : ''}`,
                   data: { invoiceId: req.params['id'], invoiceNumber: invNum, amount, isFullyPaid },
@@ -979,5 +981,5 @@ vendorInvoicesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to record vendor payment', err)
     }
-  },
+  }),
 )

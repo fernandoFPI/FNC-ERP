@@ -357,10 +357,10 @@ export default function PendingCatalogItemsPage() {
                   </div>
                   {!isExpanded && (
                     <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                      <Button variant="secondary" size="sm" onClick={() => openLink(item)}>
+                      <Button variant="secondary" size="sm" onClick={() => { openLink(item); }}>
                         Link Existing
                       </Button>
-                      <Button variant="primary" size="sm" onClick={() => openNew(item)}>
+                      <Button variant="primary" size="sm" onClick={() => { openNew(item); }}>
                         Catalog as New
                       </Button>
                     </div>
@@ -382,7 +382,7 @@ export default function PendingCatalogItemsPage() {
                       <Select
                         label="Catalog company"
                         value={targetCompanyId}
-                        onChange={(e) => setTargetCompanyId(e.target.value)}
+                        onChange={(e) => { setTargetCompanyId(e.target.value); }}
                       >
                         {companies.map((c) => (
                           <option key={c.id} value={c.id}>
@@ -401,12 +401,12 @@ export default function PendingCatalogItemsPage() {
                       <Input
                         label="Name"
                         value={newForm.name}
-                        onChange={(e) => setNewForm((f) => ({ ...f, name: e.target.value }))}
+                        onChange={(e) => { setNewForm((f) => ({ ...f, name: e.target.value })); }}
                       />
                       <Input
                         label="Name (Arabic)"
                         value={newForm.name_ar}
-                        onChange={(e) => setNewForm((f) => ({ ...f, name_ar: e.target.value }))}
+                        onChange={(e) => { setNewForm((f) => ({ ...f, name_ar: e.target.value })); }}
                         placeholder="Optional"
                       />
                     </div>
@@ -440,7 +440,7 @@ export default function PendingCatalogItemsPage() {
                           label="Store / Sub-category"
                           value={newForm.sub_category}
                           onChange={(e) =>
-                            setNewForm((f) => ({ ...f, sub_category: e.target.value }))
+                            { setNewForm((f) => ({ ...f, sub_category: e.target.value })); }
                           }
                         >
                           <option value="">— Generic SKU —</option>
@@ -454,12 +454,12 @@ export default function PendingCatalogItemsPage() {
                       <Input
                         label="UOM"
                         value={newForm.uom}
-                        onChange={(e) => setNewForm((f) => ({ ...f, uom: e.target.value }))}
+                        onChange={(e) => { setNewForm((f) => ({ ...f, uom: e.target.value })); }}
                       />
                       <Input
                         label="SKU"
                         value={newForm.sku}
-                        onChange={(e) => setNewForm((f) => ({ ...f, sku: e.target.value }))}
+                        onChange={(e) => { setNewForm((f) => ({ ...f, sku: e.target.value })); }}
                         placeholder="Auto-generated"
                       />
                     </div>

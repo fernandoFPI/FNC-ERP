@@ -37,8 +37,6 @@ const PAYMENT_METHODS = [
 export function InvoicePaymentForm({
   invoiceId,
   invoiceNumber,
-  grossTotal,
-  retentionAmount,
   netPayable,
   totalPaid,
   currency,
@@ -118,7 +116,7 @@ export function InvoicePaymentForm({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" loading={submitting} disabled={!isValid} onClick={handleSubmit}>
+          <Button variant="primary" loading={submitting} disabled={!isValid} onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
             Record Payment
           </Button>
         </div>

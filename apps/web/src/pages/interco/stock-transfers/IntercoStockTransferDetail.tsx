@@ -55,7 +55,7 @@ function statusVariant(
     cancelled: 'danger',
     in_transit: 'info',
   }
-  return m[status?.toLowerCase()] ?? 'neutral'
+  return m[status.toLowerCase()] ?? 'neutral'
 }
 
 function billingStatusVariant(
@@ -66,7 +66,7 @@ function billingStatusVariant(
     pending: 'warning',
     cancelled: 'danger',
   }
-  return m[status?.toLowerCase()] ?? 'neutral'
+  return m[status.toLowerCase()] ?? 'neutral'
 }
 
 export default function IntercoStockTransferDetail() {

@@ -35,13 +35,6 @@ function fmtAmt(val: number | string) {
   })
 }
 
-interface TopVendorRow {
-  vendor_name: string
-  invoice_count: number
-  total_wht: string
-  total_payments: string
-}
-
 interface MonthlyRow {
   month: number
   payments_subject_to_wht: number
@@ -85,32 +78,6 @@ export default function WHTPayablePage() {
     rate:
       row.payments_subject_to_wht > 0 ? (row.wht_amount / row.payments_subject_to_wht) * 100 : 0,
   }))
-
-  const topVendorColumns: Column<TopVendorRow>[] = [
-    {
-      key: 'vendor_name',
-      header: 'Vendor',
-      mobilePrimary: true,
-      render: (v) => (
-        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{v.vendor_name}</span>
-      ),
-    },
-    {
-      key: 'invoice_count',
-      header: 'Invoices',
-      mobileSecondary: true,
-      render: (v) => `${v.invoice_count} invoices`,
-    },
-    {
-      key: 'total_wht',
-      header: 'WHT Withheld',
-      render: (v) => (
-        <span style={{ fontWeight: 600, color: theme.warning }}>
-          <AmountDisplay amount={parseFloat(v.total_wht)} currency="IQD" size="sm" />
-        </span>
-      ),
-    },
-  ]
 
   const monthlyColumns: Column<MonthlyRow>[] = [
     {

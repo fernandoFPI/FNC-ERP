@@ -138,7 +138,7 @@ export default function AttendanceSummaryReport() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

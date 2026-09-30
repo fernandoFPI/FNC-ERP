@@ -8,18 +8,19 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
+import type { CompaniesQuery, CompaniesQueryVariables, CreateCompanyMutation, CreateCompanyMutationVariables } from '../../../graphql/generated'
 
 interface Company {
   id: string
   name: string
-  legalName?: string
-  city?: string
-  countryCode?: string
+  legalName?: string | null
+  city?: string | null
+  countryCode?: string | null
   currencyCode: string
   isActive: boolean
   setupCompleted: boolean
-  intercoTransferPricingMethod?: string
-  configuration?: { defaultCurrency?: string; fiscalYearStartMonth?: number }
+  intercoTransferPricingMethod?: string | null
+  configuration?: { defaultCurrency?: string; fiscalYearStartMonth?: number } | null
 }
 
 export default function CompaniesPage() {
@@ -33,8 +34,8 @@ export default function CompaniesPage() {
     countryCode: '',
   })
 
-  const { data, loading, refetch } = useQuery(COMPANIES_QUERY, { fetchPolicy: 'cache-and-network' })
-  const [createCompany, { loading: creating }] = useMutation(CREATE_COMPANY, {
+  const { data, loading, refetch } = useQuery<CompaniesQuery, CompaniesQueryVariables>(COMPANIES_QUERY, { fetchPolicy: 'cache-and-network' })
+  const [createCompany, { loading: creating }] = useMutation<CreateCompanyMutation, CreateCompanyMutationVariables>(CREATE_COMPANY, {
     onCompleted: (res) => {
       setShowCreateModal(false)
       setForm({ name: '', legalName: '', currencyCode: 'USD', countryCode: '' })
@@ -270,9 +271,9 @@ export default function CompaniesPage() {
                     variables: {
                       input: {
                         name: form.name,
-                        legalName: form.legalName || undefined,
-                        currencyCode: form.currencyCode,
-                        countryCode: form.countryCode || undefined,
+                        legal_name: form.legalName || form.name,
+                        functional_currency: form.currencyCode,
+                        country_code: form.countryCode || undefined,
                       },
                     },
                   })

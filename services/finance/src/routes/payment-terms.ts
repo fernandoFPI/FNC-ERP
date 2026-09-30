@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
-import { query, withTransaction } from '@fnc-erp/db'
+import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
-export const paymentTermsRouter: import('express').Router = Router()
+export const paymentTermsRouter: Router = Router()
 
 const lineSchema = z.object({
   sequence: z.coerce.number().int().default(10),
@@ -28,7 +29,7 @@ const termSchema = z.object({
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 
-paymentTermsRouter.get('/', requirePermission('finance.terms.view', 'view'), async (req, res) => {
+paymentTermsRouter.get('/', requirePermission('finance.terms.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const r = await query(
       `SELECT pt.*,
@@ -40,24 +41,24 @@ paymentTermsRouter.get('/', requirePermission('finance.terms.view', 'view'), asy
        WHERE pt.company_id = $1
        GROUP BY pt.id
        ORDER BY pt.name`,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
     sendOk(res, r.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load payment terms', err)
   }
-})
+}))
 
 // ─── Get with lines ───────────────────────────────────────────────────────────
 
 paymentTermsRouter.get(
   '/:id',
   requirePermission('finance.terms.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const termRes = await query(`SELECT * FROM payment_terms WHERE id = $1 AND company_id = $2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!termRes.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Payment term not found')
@@ -71,23 +72,23 @@ paymentTermsRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load payment term', err)
     }
-  },
+  }),
 )
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
-paymentTermsRouter.post('/', requirePermission('finance.terms.edit', 'edit'), async (req, res) => {
+paymentTermsRouter.post('/', requirePermission('finance.terms.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
     const d = termSchema.parse(req.body)
     const result = await withTransaction(
-      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
       async (client) => {
         const termRes = await client.query(
           `INSERT INTO payment_terms (company_id, name, note, is_active)
            VALUES ($1,$2,$3,$4) RETURNING *`,
-          [req.auth!.companyId, d.name, d.note ?? null, d.is_active],
+          [getAuth(req).companyId, d.name, d.note ?? null, d.is_active],
         )
-        const term = termRes.rows[0]!
+        const term = firstRowOrThrow(termRes)
         const lines = []
         for (const line of d.lines) {
           const lr = await client.query(
@@ -110,8 +111,8 @@ paymentTermsRouter.post('/', requirePermission('finance.terms.edit', 'edit'), as
       },
     )
     await logAudit({
-      companyId: req.auth!.companyId,
-      userId: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      userId: getAuth(req).userId,
       action: 'INSERT',
       tableName: 'payment_terms',
       recordId: result.id as string,
@@ -125,19 +126,19 @@ paymentTermsRouter.post('/', requirePermission('finance.terms.edit', 'edit'), as
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create payment term', err)
   }
-})
+}))
 
 // ─── Update (replaces all lines) ──────────────────────────────────────────────
 
 paymentTermsRouter.put(
   '/:id',
   requirePermission('finance.terms.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const d = termSchema.parse(req.body)
       const existing = await query(`SELECT id FROM payment_terms WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!existing.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Payment term not found')
@@ -145,7 +146,7 @@ paymentTermsRouter.put(
       }
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const termRes = await client.query(
             `UPDATE payment_terms SET name=$1, note=$2, is_active=$3, updated_at=NOW() WHERE id=$4 RETURNING *`,
@@ -177,7 +178,7 @@ paymentTermsRouter.put(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update payment term', err)
     }
-  },
+  }),
 )
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
@@ -185,11 +186,11 @@ paymentTermsRouter.put(
 paymentTermsRouter.delete(
   '/:id',
   requirePermission('finance.terms.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `DELETE FROM payment_terms WHERE id=$1 AND company_id=$2 RETURNING id`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Payment term not found')
@@ -199,7 +200,7 @@ paymentTermsRouter.delete(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete payment term', err)
     }
-  },
+  }),
 )
 
 // ─── Compute payment schedule ──────────────────────────────────────────────────
@@ -207,7 +208,7 @@ paymentTermsRouter.delete(
 paymentTermsRouter.post(
   '/:id/compute',
   requirePermission('finance.terms.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       amount: z.coerce.number().positive(),
       invoice_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -219,7 +220,7 @@ paymentTermsRouter.post(
        JOIN payment_terms pt ON pt.id = ptl.term_id
        WHERE ptl.term_id = $1 AND pt.company_id = $2
        ORDER BY ptl.sequence`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!linesRes.rows.length) {
         sendError(res, 404, 'NOT_FOUND', 'Payment term not found or has no lines')
@@ -275,5 +276,5 @@ paymentTermsRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to compute schedule', err)
     }
-  },
+  }),
 )

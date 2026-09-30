@@ -1,9 +1,10 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const analyticRouter: IRouter = Router()
@@ -17,11 +18,11 @@ const Schema = z.object({
 analyticRouter.get(
   '/',
   requirePermission('finance.analytic_accounts.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const { is_active, search } = req.query as Record<string, string>
       const conditions = [`aa.company_id = $1`]
-      const values: unknown[] = [req.auth!.companyId]
+      const values: unknown[] = [getAuth(req).companyId]
       let p = 1
       if (is_active !== undefined) {
         conditions.push(`aa.is_active = $${++p}`)
@@ -53,15 +54,15 @@ analyticRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch analytic accounts', err)
     }
-  },
+  }),
 )
 
 analyticRouter.get(
   '/:id',
   requirePermission('finance.analytic_accounts.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const aaRes = await query(
         `
       SELECT aa.*,
@@ -106,15 +107,15 @@ analyticRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch analytic account', err)
     }
-  },
+  }),
 )
 
 analyticRouter.post(
   '/',
   requirePermission('finance.analytic_accounts.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const parsed = Schema.safeParse(req.body)
       if (!parsed.success) {
         sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -127,10 +128,10 @@ analyticRouter.post(
       )
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'CREATE',
         tableName: 'analytic_accounts',
-        recordId: result.rows[0]!['id'] as string,
+        recordId: firstRowOrThrow(result)['id'] as string,
       })
       sendOk(res, result.rows[0], 201)
     } catch (err: unknown) {
@@ -141,15 +142,15 @@ analyticRouter.post(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create analytic account', err)
     }
-  },
+  }),
 )
 
 analyticRouter.put(
   '/:id',
   requirePermission('finance.analytic_accounts.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const parsed = Schema.partial().safeParse(req.body)
       if (!parsed.success) {
         sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -168,28 +169,28 @@ analyticRouter.put(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update analytic account', err)
     }
-  },
+  }),
 )
 
 analyticRouter.delete(
   '/:id',
   requirePermission('finance.analytic_accounts.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       await query(
         'UPDATE analytic_accounts SET is_active = false WHERE id = $1 AND company_id = $2',
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'DELETE',
         tableName: 'analytic_accounts',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
       })
       sendOk(res, { deleted: true })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete analytic account', err)
     }
-  },
+  }),
 )

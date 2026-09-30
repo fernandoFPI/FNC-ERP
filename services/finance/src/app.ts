@@ -1,6 +1,6 @@
-import express from 'express'
+import express, { type Express } from 'express'
 import { requireAuth } from '@fnc-erp/auth'
-import { buildHealthStatus } from '@fnc-erp/db'
+import { buildHealthStatus, asyncHandler } from '@fnc-erp/db'
 import { accountsRouter } from './routes/accounts.js'
 import { costCentersRouter } from './routes/costcenters.js'
 import { analyticRouter } from './routes/analytic.js'
@@ -24,16 +24,16 @@ import { pettyCashRouter } from './routes/petty-cash.js'
 import { employeeAdvancesRouter } from './routes/employee-advances.js'
 import { advanceConfigRouter } from './routes/advance-config.js'
 
-export function createApp(): import('express').Express {
+export function createApp(): Express {
   const app = express()
   app.set('trust proxy', 1)
   app.disable('etag')
   app.use(express.json())
 
-  app.get('/health', async (_req, res) => {
+  app.get('/health', asyncHandler(async (_req, res) => {
     const health = await buildHealthStatus('finance')
     res.status(health.status === 'down' ? 503 : 200).json(health)
-  })
+  }))
 
   app.use(requireAuth())
 

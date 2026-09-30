@@ -25,6 +25,7 @@ import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Modal } from '../../../components/ui/Modal'
 import { useToastStore } from '../../../store/toastStore'
+import type { ApproveTolerancePurchaseMutation, ApproveTolerancePurchaseMutationVariables, CreateVendorMutation, CreateVendorMutationVariables, EnsureCashPurchaseVendorMutation, EnsureCashPurchaseVendorMutationVariables, FileDownloadUrlQuery, FileDownloadUrlQueryVariables, FinishBuyingRequisitionMutation, FinishBuyingRequisitionMutationVariables, MarkRequisitionLineShortMutation, MarkRequisitionLineShortMutationVariables, RecordLinePurchaseMutation, RecordLinePurchaseMutationVariables, RequestUploadUrlMutation, RequestUploadUrlMutationVariables, RequisitionItemsBoughtQuery, RequisitionItemsBoughtQueryVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
 
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 const CASH_VENDOR_VALUE = '__cash__'
@@ -62,7 +63,7 @@ interface ReqLine {
   sku?: string | null
   qty: string
   uom?: string | null
-  currency_code: string
+  currency_code: string | null
   unit_price: string
   approved_unit_price?: string | null
   qty_from_stock?: string | null
@@ -81,8 +82,8 @@ interface Requisition {
   id: string
   requisition_number: string
   status: string
-  callerHasBuyerPosition?: boolean
-  callerCanApprove?: boolean
+  callerHasBuyerPosition?: boolean | null
+  callerCanApprove?: boolean | null
   lines: ReqLine[]
 }
 
@@ -115,39 +116,44 @@ export default function ItemsBoughtPage() {
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const globalFileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const { data, loading, refetch } = useQuery(REQUISITION_ITEMS_BOUGHT_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<RequisitionItemsBoughtQuery, RequisitionItemsBoughtQueryVariables>(REQUISITION_ITEMS_BOUGHT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('requisition', () => void refetch())
   const req: Requisition | undefined = data?.requisition
+    ? {
+        ...data.requisition,
+        lines: (data.requisition.lines ?? []).map((l) => ({ ...l, purchases: l.purchases ?? [] })),
+      }
+    : undefined
 
-  const { data: vendorsData } = useQuery(VENDORS_QUERY)
-  const vendors: Vendor[] = (vendorsData?.vendors ?? []).filter((v: Vendor) => !v.is_cash_purchase)
+  const { data: vendorsData } = useQuery<VendorsQuery, VendorsQueryVariables>(VENDORS_QUERY)
+  const vendors: Vendor[] = (vendorsData?.vendors ?? []).filter((v): v is NonNullable<typeof v> => v !== null).filter((v) => !v.is_cash_purchase)
 
-  const [ensureCashVendor] = useMutation(ENSURE_CASH_PURCHASE_VENDOR)
+  const [ensureCashVendor] = useMutation<EnsureCashPurchaseVendorMutation, EnsureCashPurchaseVendorMutationVariables>(ENSURE_CASH_PURCHASE_VENDOR)
   const [cashVendorId, setCashVendorId] = useState<string | null>(null)
   useEffect(() => {
     if (!id) return
     void ensureCashVendor().then((res) => {
-      const vendorId = res.data?.ensureCashPurchaseVendor?.id
+      const vendorId = res.data?.ensureCashPurchaseVendor.id
       if (vendorId) setCashVendorId(vendorId)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
-  const onErr = (e: Error) => addToast({ type: 'error', message: e.message })
+  const onErr = (e: Error) => { addToast({ type: 'error', message: e.message }); }
 
-  const [recordPurchase, { loading: lRecording }] = useMutation(RECORD_LINE_PURCHASE, {
+  const [recordPurchase, { loading: lRecording }] = useMutation<RecordLinePurchaseMutation, RecordLinePurchaseMutationVariables>(RECORD_LINE_PURCHASE, {
     onCompleted: () => void refetch(),
     onError: onErr,
   })
-  const [approveTolerance, { loading: lApproving }] = useMutation(APPROVE_TOLERANCE_PURCHASE, {
+  const [approveTolerance, { loading: lApproving }] = useMutation<ApproveTolerancePurchaseMutation, ApproveTolerancePurchaseMutationVariables>(APPROVE_TOLERANCE_PURCHASE, {
     onCompleted: () => void refetch(),
     onError: onErr,
   })
-  const [markShort, { loading: lMarkingShort }] = useMutation(MARK_REQUISITION_LINE_SHORT, {
+  const [markShort, { loading: lMarkingShort }] = useMutation<MarkRequisitionLineShortMutation, MarkRequisitionLineShortMutationVariables>(MARK_REQUISITION_LINE_SHORT, {
     onCompleted: () => {
       setShortReasonFor(null)
       setShortReasonText('')
@@ -155,16 +161,16 @@ export default function ItemsBoughtPage() {
     },
     onError: onErr,
   })
-  const [finishBuying, { loading: lFinishing }] = useMutation(FINISH_BUYING_REQUISITION, {
+  const [finishBuying, { loading: lFinishing }] = useMutation<FinishBuyingRequisitionMutation, FinishBuyingRequisitionMutationVariables>(FINISH_BUYING_REQUISITION, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Buying finished' })
       navigate(`/procurement/requisitions/${id}`)
     },
     onError: onErr,
   })
-  const [createVendor] = useMutation(CREATE_VENDOR)
-  const [requestUploadUrl] = useMutation(REQUEST_UPLOAD_URL)
-  const [getDownloadUrl] = useLazyQuery(FILE_DOWNLOAD_URL_QUERY)
+  const [createVendor] = useMutation<CreateVendorMutation, CreateVendorMutationVariables>(CREATE_VENDOR)
+  const [requestUploadUrl] = useMutation<RequestUploadUrlMutation, RequestUploadUrlMutationVariables>(REQUEST_UPLOAD_URL)
+  const [getDownloadUrl] = useLazyQuery<FileDownloadUrlQuery, FileDownloadUrlQueryVariables>(FILE_DOWNLOAD_URL_QUERY)
 
   // ── Per-line "record a purchase" form state ─────────────────────────────
   const [selectedVendor, setSelectedVendor] = useState<Record<string, string>>({})
@@ -248,10 +254,10 @@ export default function ItemsBoughtPage() {
         category: 'attachment',
       },
     })
-    const fileId = urlData?.requestUploadUrl?.fileId
+    const fileId = urlData?.requestUploadUrl.fileId
     if (!fileId) throw new Error('Could not prepare the upload')
 
-    const apiBase = import.meta.env.VITE_API_URL as string
+    const apiBase = import.meta.env.VITE_API_URL
     const proxyRes = await fetch(`${apiBase}/api/v1/files/${fileId}/content`, {
       method: 'POST',
       body: file,
@@ -262,7 +268,7 @@ export default function ItemsBoughtPage() {
     })
     if (!proxyRes.ok) {
       const errJson = (await proxyRes.json().catch(() => ({}))) as { error?: { message?: string } }
-      throw new Error(errJson?.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
+      throw new Error(errJson.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
     }
     return fileId
   }
@@ -339,7 +345,7 @@ export default function ItemsBoughtPage() {
         variables: { input: { name: quickCreateName.trim() } },
         refetchQueries: [{ query: VENDORS_QUERY }],
       })
-      const newId = result.data?.createVendor?.id
+      const newId = result.data?.createVendor.id
       if (newId) {
         if (quickCreateLineId === ALL_LINES_SENTINEL) applyVendorToAllLines(newId)
         else setSelectedVendor((prev) => ({ ...prev, [quickCreateLineId]: newId }))
@@ -357,7 +363,7 @@ export default function ItemsBoughtPage() {
 
   async function handleViewReceipt(fileId: string) {
     const { data: dlData } = await getDownloadUrl({ variables: { fileId } })
-    const url = dlData?.fileDownloadUrl?.downloadUrl
+    const url = dlData?.fileDownloadUrl.downloadUrl
     if (url) window.open(url, '_blank', 'noopener,noreferrer')
     else addToast({ type: 'error', message: 'Could not load the receipt' })
   }
@@ -405,7 +411,7 @@ export default function ItemsBoughtPage() {
               <input
                 type="checkbox"
                 checked={sameVendorForAll}
-                onChange={(e) => toggleSameVendorForAll(e.target.checked)}
+                onChange={(e) => { toggleSameVendorForAll(e.target.checked); }}
               />
               All items are from the same vendor
             </label>
@@ -415,7 +421,7 @@ export default function ItemsBoughtPage() {
                   <SearchableSelect
                     label="Vendor for all items"
                     value={globalVendorId}
-                    onChange={(v) => applyVendorToAllLines(v)}
+                    onChange={(v) => { applyVendorToAllLines(v); }}
                     options={vendorOptions}
                     placeholder="Search vendor…"
                     minDropdownWidth={320}
@@ -448,7 +454,7 @@ export default function ItemsBoughtPage() {
               <input
                 type="checkbox"
                 checked={sameReceiptForAll}
-                onChange={(e) => setSameReceiptForAll(e.target.checked)}
+                onChange={(e) => { setSameReceiptForAll(e.target.checked); }}
               />
               Attach one receipt for all items
             </label>
@@ -536,7 +542,9 @@ export default function ItemsBoughtPage() {
                     <span style={{ color: theme.textMuted }}>{p.bought_by_name ?? ''}</span>
                     {p.receipt_file_id ? (
                       <button
-                        onClick={() => void handleViewReceipt(p.receipt_file_id!)}
+                        onClick={() => {
+                          if (p.receipt_file_id) void handleViewReceipt(p.receipt_file_id)
+                        }}
                         style={{
                           background: 'none',
                           border: 'none',
@@ -590,7 +598,7 @@ export default function ItemsBoughtPage() {
                           <SearchableSelect
                             label="Vendor"
                             value={selectedVendor[line.id] ?? ''}
-                            onChange={(v) => setSelectedVendor((prev) => ({ ...prev, [line.id]: v }))}
+                            onChange={(v) => { setSelectedVendor((prev) => ({ ...prev, [line.id]: v })); }}
                             options={vendorOptions}
                             placeholder="Search vendor…"
                             minDropdownWidth={320}
@@ -618,7 +626,7 @@ export default function ItemsBoughtPage() {
                       // Defaults to the full remaining qty — the buyer only
                       // needs to type when this purchase is a partial one.
                       value={purchaseQty[line.id] || (remaining > 0 ? String(remaining) : '')}
-                      onChange={(e) => setPurchaseQty((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                      onChange={(e) => { setPurchaseQty((prev) => ({ ...prev, [line.id]: e.target.value })); }}
                     />
                   </div>
                   <div style={{ width: '130px' }}>
@@ -628,15 +636,15 @@ export default function ItemsBoughtPage() {
                       min="0"
                       // Defaults to the already-approved price — the buyer
                       // only needs to type when the real price differs.
-                      value={purchasePrice[line.id] || (line.approved_unit_price ?? line.unit_price ?? '')}
-                      onChange={(e) => setPurchasePrice((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                      value={purchasePrice[line.id] || (line.approved_unit_price ?? line.unit_price)}
+                      onChange={(e) => { setPurchasePrice((prev) => ({ ...prev, [line.id]: e.target.value })); }}
                     />
                   </div>
                   <div style={{ width: '100px' }}>
                     <Select
                       label="Currency"
                       value={purchaseCurrency[line.id] ?? line.currency_code}
-                      onChange={(e) => setPurchaseCurrency((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                      onChange={(e) => { setPurchaseCurrency((prev) => ({ ...prev, [line.id]: e.target.value })); }}
                       options={CURRENCIES.map((c) => ({ value: c, label: c }))}
                     />
                   </div>
@@ -664,7 +672,10 @@ export default function ItemsBoughtPage() {
                         }}
                       />
                       <Button variant="secondary" size="sm" onClick={() => fileInputRefs.current[line.id]?.click()}>
-                        {pendingFile[line.id] ? `📎 ${pendingFile[line.id]!.name}` : 'Attach receipt photo *'}
+                        {(() => {
+                          const receipt = pendingFile[line.id]
+                          return receipt ? `📎 ${receipt.name}` : 'Attach receipt photo *'
+                        })()}
                       </Button>
                     </>
                   )}
@@ -679,7 +690,7 @@ export default function ItemsBoughtPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setShortReasonFor(line.id)}
+                    onClick={() => { setShortReasonFor(line.id); }}
                   >
                     Mark short
                   </Button>
@@ -693,7 +704,7 @@ export default function ItemsBoughtPage() {
                   <Input
                     label="Reason the vendor can't supply the rest"
                     value={shortReasonText}
-                    onChange={(e) => setShortReasonText(e.target.value)}
+                    onChange={(e) => { setShortReasonText(e.target.value); }}
                   />
                 </div>
                 <Button
@@ -705,7 +716,7 @@ export default function ItemsBoughtPage() {
                 >
                   Confirm mark short
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => setShortReasonFor(null)}>
+                <Button variant="ghost" size="sm" onClick={() => { setShortReasonFor(null); }}>
                   Cancel
                 </Button>
               </div>
@@ -751,7 +762,7 @@ export default function ItemsBoughtPage() {
         size="sm"
         footer={
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => setQuickCreateOpen(false)}>
+            <Button variant="ghost" size="sm" onClick={() => { setQuickCreateOpen(false); }}>
               Cancel
             </Button>
             <Button
@@ -769,7 +780,7 @@ export default function ItemsBoughtPage() {
         <Input
           label="Vendor name"
           value={quickCreateName}
-          onChange={(e) => setQuickCreateName(e.target.value)}
+          onChange={(e) => { setQuickCreateName(e.target.value); }}
           placeholder="e.g. Al-Rasheed Hardware"
         />
       </Modal>

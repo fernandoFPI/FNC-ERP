@@ -1,8 +1,9 @@
 import { RateLimiterRedis } from 'rate-limiter-flexible'
 import { createClient } from 'redis'
-import type { Request, Response, NextFunction } from 'express'
+import type { Request, Response, NextFunction, RequestHandler } from 'express'
 import { env } from '@fnc-erp/config'
 import { logger } from '@fnc-erp/logger'
+import { asyncHandler } from '@fnc-erp/db'
 
 const redisClient = createClient({
   url: env.REDIS_URL,
@@ -48,8 +49,8 @@ function isRateLimiterError(err: unknown): err is RateLimiterError {
   return typeof err === 'object' && err !== null && 'msBeforeNext' in err
 }
 
-export function globalRateLimit() {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export function globalRateLimit(): RequestHandler {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       await globalLimiter.consume(req.ip ?? 'unknown')
       next()
@@ -75,11 +76,11 @@ export function globalRateLimit() {
       }
       next()
     }
-  }
+  })
 }
 
-export function authRateLimit() {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export function authRateLimit(): RequestHandler {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const body = req.body as Record<string, unknown>
     const email = typeof body.email === 'string' ? body.email : 'unknown'
     const key = `${req.ip ?? 'unknown'}:${email}`
@@ -106,11 +107,11 @@ export function authRateLimit() {
       }
       next()
     }
-  }
+  })
 }
 
-export function userRateLimit() {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export function userRateLimit(): RequestHandler {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const userId = req.auth?.userId
     if (!userId) {
       next()
@@ -139,5 +140,5 @@ export function userRateLimit() {
       }
       next()
     }
-  }
+  })
 }

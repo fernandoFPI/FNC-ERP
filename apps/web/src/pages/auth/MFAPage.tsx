@@ -267,7 +267,7 @@ export default function MFAPage() {
               size="md"
               loading={loading}
               disabled={loading || code.length !== 6}
-              onClick={() => submit(code)}
+              onClick={() => void submit(code)}
               style={{ width: '100%', justifyContent: 'center' }}
             >
               Verify

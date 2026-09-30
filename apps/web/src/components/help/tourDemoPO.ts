@@ -105,8 +105,8 @@ export function buildTourDemoPO(status: string): PO {
     priority: 'low',
     currency_code: 'IQD',
     base_currency_code: 'IQD',
-    total_amount: lines.reduce((s, l) => s + l.total, 0),
-    subtotal: lines.reduce((s, l) => s + l.total, 0),
+    total_amount: String(lines.reduce((s, l) => s + l.total, 0)),
+    subtotal: String(lines.reduce((s, l) => s + l.total, 0)),
     currencyTotals: [
       { currency_code: 'IQD', subtotal: String(lines.reduce((s, l) => s + l.total, 0)), line_count: lines.length },
     ],
@@ -163,7 +163,7 @@ export function buildTourDemoReceiptPO() {
     lines: lines.map((l) => ({
       id: l.id,
       description: l.description,
-      sku: l.product_id || null,
+      sku: l.product_id ?? null,
       qty: String(l.qty),
       qty_received: String(l.qty_received),
       qty_from_stock: String(l.qty_from_stock),
@@ -182,8 +182,8 @@ export function buildTourDemoStockAvailability(po: PO) {
     const qtyAvailable = qtyOnHand
     return {
       lineId: line.id,
-      productId: line.product_id || undefined,
-      productName: line.product_name || undefined,
+      productId: line.product_id ?? undefined,
+      productName: line.product_name ?? undefined,
       description: line.description,
       qtyRequired,
       qtyOnHand,

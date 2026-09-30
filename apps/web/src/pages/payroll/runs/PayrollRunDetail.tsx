@@ -26,6 +26,7 @@ import { Timeline } from '../../../components/ui/Timeline'
 import { PermissionGate } from '../../../components/ui/PermissionGate'
 import { usePayrollStatus } from '../../../hooks/usePayrollStatus'
 import { useToastStore } from '../../../store/toastStore'
+import type { ApprovePayrollRunMutation, ApprovePayrollRunMutationVariables, CancelPayrollRunMutation, CancelPayrollRunMutationVariables, PayrollRunQuery, PayrollRunQueryVariables, PayslipsQuery, PayslipsQueryVariables, PostPayrollRunMutation, PostPayrollRunMutationVariables, ProcessPayrollRunMutation, ProcessPayrollRunMutationVariables } from '../../../graphql/generated'
 
 const RUN_STEPS = [
   { key: 'draft', label: 'Draft' },
@@ -37,15 +38,15 @@ const RUN_STEPS = [
 
 interface PayrollLine {
   id: string
-  employee_name?: string
-  employee_number?: string
-  working_days?: number
-  overtime_hours?: string
+  employee_name?: string | null
+  employee_number?: string | null
+  working_days?: number | null
+  overtime_hours?: string | null
   gross_salary?: string
   net_salary?: string
   income_tax?: string
   social_security?: string
-  currency_code?: string
+  currency_code?: string | null
 }
 
 export default function PayrollRunDetail() {
@@ -56,32 +57,32 @@ export default function PayrollRunDetail() {
   const [postConfirmOpen, setPostConfirmOpen] = useState(false)
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false)
 
-  const { data, loading, refetch } = useQuery(PAYROLL_RUN_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<PayrollRunQuery, PayrollRunQueryVariables>(PAYROLL_RUN_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: linesData, loading: linesLoading } = useQuery(PAYSLIPS_QUERY, {
+  const { data: linesData, loading: linesLoading } = useQuery<PayslipsQuery, PayslipsQueryVariables>(PAYSLIPS_QUERY, {
     variables: { payroll_run_id: id },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
 
-  const [processRun, { loading: processing }] = useMutation(PROCESS_PAYROLL_RUN)
-  const [approveRun, { loading: approving }] = useMutation(APPROVE_PAYROLL_RUN)
-  const [postRun, { loading: posting }] = useMutation(POST_PAYROLL_RUN)
-  const [cancelRun, { loading: cancelling }] = useMutation(CANCEL_PAYROLL_RUN)
+  const [processRun, { loading: processing }] = useMutation<ProcessPayrollRunMutation, ProcessPayrollRunMutationVariables>(PROCESS_PAYROLL_RUN)
+  const [approveRun, { loading: approving }] = useMutation<ApprovePayrollRunMutation, ApprovePayrollRunMutationVariables>(APPROVE_PAYROLL_RUN)
+  const [postRun, { loading: posting }] = useMutation<PostPayrollRunMutation, PostPayrollRunMutationVariables>(POST_PAYROLL_RUN)
+  const [cancelRun, { loading: cancelling }] = useMutation<CancelPayrollRunMutation, CancelPayrollRunMutationVariables>(CANCEL_PAYROLL_RUN)
 
   const run = data?.payrollRun
   usePayrollStatus(run?.status === 'processing' ? id : undefined)
 
-  const lines: PayrollLine[] = linesData?.payslips ?? []
+  const lines: PayrollLine[] = (linesData?.payslips ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   async function doAction(fn: () => Promise<unknown>, msg: string) {
     try {
       await fn()
       addToast({ type: 'success', message: msg })
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -91,18 +92,16 @@ export default function PayrollRunDetail() {
     return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
   if (!run) return <div style={{ padding: '24px', color: theme.textMuted }}>Run not found</div>
 
-  const statusVariant =
-    ((
-      {
-        draft: 'neutral',
-        processing: 'info',
-        review: 'warning',
-        approved: 'accent',
-        posted: 'success',
-        cancelled: 'danger',
-      } as Record<string, string>
-    )[run.status as string] as 'neutral' | 'info' | 'warning' | 'accent' | 'success' | 'danger') ??
-    'neutral'
+  const statusVariant = (
+    {
+      draft: 'neutral',
+      processing: 'info',
+      review: 'warning',
+      approved: 'accent',
+      posted: 'success',
+      cancelled: 'danger',
+    } as Record<string, 'neutral' | 'info' | 'warning' | 'accent' | 'success' | 'danger'>
+  )[run.status]
 
   const lineColumns: Column<PayrollLine>[] = [
     {
@@ -168,8 +167,8 @@ export default function PayrollRunDetail() {
                 variant="primary"
                 size="sm"
                 onClick={() =>
-                  doAction(
-                    () => processRun({ variables: { id } }),
+                  void doAction(
+                    () => processRun({ variables: { id: id ?? '' } }),
                     'Payroll processed — ready for review',
                   )
                 }
@@ -188,7 +187,7 @@ export default function PayrollRunDetail() {
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => doAction(() => approveRun({ variables: { id } }), 'Run approved')}
+                  onClick={() => void doAction(() => approveRun({ variables: { id: id ?? '' } }), 'Run approved')}
                   loading={approving}
                 >
                   Approve
@@ -338,7 +337,7 @@ export default function PayrollRunDetail() {
         }}
         onConfirm={() => {
           setPostConfirmOpen(false)
-          doAction(() => postRun({ variables: { id } }), 'Payroll run posted')
+          void doAction(() => postRun({ variables: { id: id ?? '' } }), 'Payroll run posted')
         }}
         title="Post Payroll Run"
         message="This will post the payroll run and lock all payslips. This cannot be undone."
@@ -353,7 +352,7 @@ export default function PayrollRunDetail() {
         }}
         onConfirm={() => {
           setCancelConfirmOpen(false)
-          doAction(() => cancelRun({ variables: { id } }), 'Run cancelled')
+          void doAction(() => cancelRun({ variables: { id: id ?? '' } }), 'Run cancelled')
         }}
         title="Cancel Run"
         message="Are you sure you want to cancel this payroll run?"

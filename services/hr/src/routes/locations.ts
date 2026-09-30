@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -15,23 +16,23 @@ const LocationSchema = z.object({
   geofence_radius_m: z.number().int().positive().default(200),
 })
 
-locationsRouter.get('/', requirePermission('hr.departments.view', 'view'), async (req, res) => {
+locationsRouter.get('/', requirePermission('hr.departments.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const result = await query(
       `SELECT * FROM work_locations WHERE company_id = $1 AND is_active = TRUE ORDER BY name`,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
     sendOk(res, result.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch locations', err)
   }
-})
+}))
 
-locationsRouter.get('/:id', requirePermission('hr.departments.view', 'view'), async (req, res) => {
+locationsRouter.get('/:id', requirePermission('hr.departments.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const result = await query(`SELECT * FROM work_locations WHERE id = $1 AND company_id = $2`, [
       req.params['id'],
-      req.auth!.companyId,
+      getAuth(req).companyId,
     ])
     const row = result.rows[0]
     if (!row) {
@@ -42,9 +43,9 @@ locationsRouter.get('/:id', requirePermission('hr.departments.view', 'view'), as
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch location', err)
   }
-})
+}))
 
-locationsRouter.post('/', requirePermission('hr.departments.edit', 'edit'), async (req, res) => {
+locationsRouter.post('/', requirePermission('hr.departments.edit', 'edit'), asyncHandler(async (req, res) => {
   const parsed = LocationSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -56,7 +57,7 @@ locationsRouter.post('/', requirePermission('hr.departments.edit', 'edit'), asyn
       `INSERT INTO work_locations (company_id, name, address, latitude, longitude, geofence_radius_m)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
       [
-        req.auth!.companyId,
+        getAuth(req).companyId,
         name,
         address ?? null,
         latitude ?? null,
@@ -64,13 +65,13 @@ locationsRouter.post('/', requirePermission('hr.departments.edit', 'edit'), asyn
         geofence_radius_m,
       ],
     )
-    sendOk(res, result.rows[0]!, 201)
+    sendOk(res, firstRowOrThrow(result), 201)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create location', err)
   }
-})
+}))
 
-locationsRouter.put('/:id', requirePermission('hr.departments.edit', 'edit'), async (req, res) => {
+locationsRouter.put('/:id', requirePermission('hr.departments.edit', 'edit'), asyncHandler(async (req, res) => {
   const parsed = LocationSchema.partial().safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -79,7 +80,7 @@ locationsRouter.put('/:id', requirePermission('hr.departments.edit', 'edit'), as
   try {
     const existing = await query(
       `SELECT id FROM work_locations WHERE id = $1 AND company_id = $2`,
-      [req.params['id'], req.auth!.companyId],
+      [req.params['id'], getAuth(req).companyId],
     )
     if (!existing.rows[0]) {
       sendError(res, 404, 'NOT_FOUND', 'Location not found')
@@ -97,24 +98,24 @@ locationsRouter.put('/:id', requirePermission('hr.departments.edit', 'edit'), as
         parsed.data.longitude ?? null,
         parsed.data.geofence_radius_m ?? null,
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ],
     )
-    sendOk(res, result.rows[0]!)
+    sendOk(res, firstRowOrThrow(result))
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update location', err)
   }
-})
+}))
 
 locationsRouter.delete(
   '/:id',
   requirePermission('hr.departments.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await query(
         `UPDATE work_locations SET is_active = FALSE, updated_at = NOW()
        WHERE id = $1 AND company_id = $2 RETURNING id`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!result.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Location not found')
@@ -124,5 +125,5 @@ locationsRouter.delete(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete location', err)
     }
-  },
+  }),
 )

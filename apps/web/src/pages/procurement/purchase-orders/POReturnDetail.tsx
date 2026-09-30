@@ -145,7 +145,9 @@ export default function POReturnDetail() {
         .then((r) => {
           setEmployeeResults(Array.isArray(r.data) ? r.data : [])
         })
-        .catch(() => {})
+        .catch(() => {
+          /* ignore: search results just stay empty if the lookup fails */
+        })
     }, 300)
     return () => {
       clearTimeout(t)

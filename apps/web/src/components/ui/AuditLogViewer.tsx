@@ -7,6 +7,7 @@ import { Select } from './Select'
 import { Button } from './Button'
 import { AUDIT_LOG_QUERY } from '../../graphql/admin'
 import { formatDate, formatRelativeTime } from '../../lib/format'
+import type { AuditLogQuery, AuditLogQueryVariables } from '../../graphql/generated'
 
 interface AuditLogViewerProps {
   filters?: {
@@ -52,25 +53,32 @@ interface AuditRow {
   id: string
   createdAt: string
   userEmail: string
-  companyName: string
+  companyName: string | null
   action: string
-  tableName: string
-  recordId: string
-  ipAddress: string
-  oldValues: string | null
-  newValues: string | null
+  tableName: string | null
+  recordId: string | null
+  ipAddress: string | null
+  oldValues: unknown
+  newValues: unknown
 }
 
-function parseJson(raw: string | null | undefined): Record<string, unknown> | null {
-  if (!raw) return null
-  try {
-    return JSON.parse(raw) as Record<string, unknown>
-  } catch {
-    return null
+// The `JSON` GraphQL scalar passes the DB's already-parsed JSONB value
+// through as-is (not a JSON-encoded string) — only fall back to JSON.parse
+// for a string, in case a caller ever passes serialized JSON directly.
+function parseJson(raw: unknown): Record<string, unknown> | null {
+  if (raw === null || raw === undefined) return null
+  if (typeof raw === 'object') return raw as Record<string, unknown>
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      return null
+    }
   }
+  return null
 }
 
-function DiffPanel({ old: oldRaw, next: nextRaw }: { old: string | null; next: string | null }) {
+function DiffPanel({ old: oldRaw, next: nextRaw }: { old: unknown; next: unknown }) {
   const { theme } = useTheme()
   const oldObj = parseJson(oldRaw)
   const nextObj = parseJson(nextRaw)
@@ -155,10 +163,10 @@ export function AuditLogViewer({
   const [localFrom, setLocalFrom] = useState(externalFilters?.fromDate ?? '')
   const [localTo, setLocalTo] = useState(externalFilters?.toDate ?? '')
 
-  const { data, loading, error } = useQuery(AUDIT_LOG_QUERY, {
+  const { data, loading, error } = useQuery<AuditLogQuery, AuditLogQueryVariables>(AUDIT_LOG_QUERY, {
     variables: {
       userId: localUserId || undefined,
-      companyId: externalFilters?.companyId || undefined,
+      companyId: externalFilters?.companyId ?? undefined,
       tableName: localTable || undefined,
       action: localAction || undefined,
       fromDate: localFrom || undefined,
@@ -169,8 +177,8 @@ export function AuditLogViewer({
     fetchPolicy: 'cache-and-network',
   })
 
-  const rows: AuditRow[] = data?.auditLog?.items ?? []
-  const total: number = data?.auditLog?.total ?? 0
+  const rows: AuditRow[] = data?.auditLog.items ?? []
+  const total: number = data?.auditLog.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const thStyle: React.CSSProperties = {

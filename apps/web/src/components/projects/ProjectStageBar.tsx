@@ -29,7 +29,7 @@ const stageColor = (status: string) =>
     cancelled: '#f87171',
   })[status] ?? '#d1d5db'
 
-export function ProjectStageBar({ stages, overallPct, onStageClick }: Props) {
+export function ProjectStageBar({ stages, onStageClick }: Props) {
   const { theme } = useTheme()
   const [tooltip, setTooltip] = useState<{ stage: Stage; x: number; y: number } | null>(null)
   const sorted = [...stages].sort((a, b) => a.sequence - b.sequence)

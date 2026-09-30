@@ -15,16 +15,17 @@ import { Select } from '../../../components/ui/Select'
 import { useMutation } from '@apollo/client'
 import { CREATE_STOCK_LOCATION } from '../../../graphql/inventory'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreateStockLocationMutation, CreateStockLocationMutationVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
 
 interface StockLocation {
   id: string
   name: string
-  code?: string
+  code?: string | null
   type: string
-  parent_id?: string
-  parent_name?: string
+  parent_id?: string | null
+  parent_name?: string | null
   is_active: boolean
-  address?: string
+  address?: string | null
 }
 
 const TYPE_OPTIONS = [
@@ -49,12 +50,12 @@ export default function LocationsPage() {
     address: '',
   })
 
-  const { data, loading, refetch } = useQuery(STOCK_LOCATIONS_QUERY, {
+  const { data, loading, refetch } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, {
     variables: { type: typeFilter || undefined, isActive: undefined },
     fetchPolicy: 'cache-and-network',
   })
 
-  const [createLocation, { loading: creating }] = useMutation(CREATE_STOCK_LOCATION)
+  const [createLocation, { loading: creating }] = useMutation<CreateStockLocationMutation, CreateStockLocationMutationVariables>(CREATE_STOCK_LOCATION)
 
   const locations: StockLocation[] = data?.stockLocations ?? []
   const filtered = locations.filter((l) => {
@@ -171,7 +172,7 @@ export default function LocationsPage() {
             },
           ]}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         />
         <Table columns={columns} data={filtered} loading={loading} rowKey="id" />
       </Card>
@@ -184,7 +185,7 @@ export default function LocationsPage() {
         title="New Stock Location"
       >
         <form
-          onSubmit={handleCreate}
+          onSubmit={(...args: Parameters<typeof handleCreate>) => void handleCreate(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '20px' }}
         >
           <div

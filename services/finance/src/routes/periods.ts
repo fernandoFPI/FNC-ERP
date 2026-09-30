@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query, pool } from '@fnc-erp/db'
+import { query, pool, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
@@ -14,21 +15,21 @@ const CreatePeriodSchema = z.object({
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 })
 
-periodsRouter.get('/', requirePermission('finance.periods.view', 'view'), async (req, res) => {
+periodsRouter.get('/', requirePermission('finance.periods.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const result = await query(
       'SELECT * FROM accounting_periods WHERE company_id = $1 ORDER BY start_date DESC',
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
     sendOk(res, result.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch periods', err)
   }
-})
+}))
 
-periodsRouter.post('/', requirePermission('finance.periods.admin', 'admin'), async (req, res) => {
+periodsRouter.post('/', requirePermission('finance.periods.admin', 'admin'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const parsed = CreatePeriodSchema.safeParse(req.body)
     if (!parsed.success) {
       sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -45,10 +46,10 @@ periodsRouter.post('/', requirePermission('finance.periods.admin', 'admin'), asy
     )
     await logAudit({
       companyId,
-      userId: req.auth!.userId,
+      userId: getAuth(req).userId,
       action: 'CREATE',
       tableName: 'accounting_periods',
-      recordId: result.rows[0]!['id'] as string,
+      recordId: firstRowOrThrow(result)['id'] as string,
     })
     sendOk(res, result.rows[0], 201)
   } catch (err: unknown) {
@@ -59,13 +60,13 @@ periodsRouter.post('/', requirePermission('finance.periods.admin', 'admin'), asy
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create period', err)
   }
-})
+}))
 
 periodsRouter.post(
   '/:id/close',
   requirePermission('finance.periods.admin', 'admin'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -107,12 +108,12 @@ periodsRouter.post(
 
       await client.query(
         `UPDATE accounting_periods SET status = 'closed', closed_by = $1, closed_at = NOW() WHERE id = $2`,
-        [req.auth!.userId, period.id],
+        [getAuth(req).userId, period.id],
       )
       await client.query('COMMIT')
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'accounting_periods',
         recordId: period.id,
@@ -126,5 +127,5 @@ periodsRouter.post(
     } finally {
       client.release()
     }
-  },
+  }),
 )

@@ -150,12 +150,12 @@ export default function CashFlowStatement() {
 
   function handleApply() {
     setApplied({ from: fromDate, to: toDate })
-    load(fromDate, toDate)
+    void load(fromDate, toDate)
   }
 
   const inputStyle = {
     background: theme.bgSurface,
-    border: `1px solid ${(theme as unknown as Record<string, string>).borderInput ?? theme.border}`,
+    border: `1px solid ${theme.borderInput}`,
     borderRadius: '8px',
     padding: '6px 10px',
     fontSize: '12px',
@@ -171,7 +171,7 @@ export default function CashFlowStatement() {
         title="Cash Flow Statement"
         subtitle="Indirect method — operating, investing & financing activities"
         actions={
-          <Button variant="ghost" size="sm" onClick={() => load(applied.from, applied.to)}>
+          <Button variant="ghost" size="sm" onClick={() => void load(applied.from, applied.to)}>
             Refresh
           </Button>
         }
@@ -289,7 +289,7 @@ export default function CashFlowStatement() {
             >
               <span style={{ color: theme.textSecondary }}>Opening Cash Balance</span>
               <span style={{ color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
-                {s!.opening_cash_balance.toLocaleString()}
+                {data.summary.opening_cash_balance.toLocaleString()}
               </span>
             </div>
             <div
@@ -303,13 +303,13 @@ export default function CashFlowStatement() {
               <span style={{ color: theme.textSecondary }}>Net Change in Cash</span>
               <span
                 style={{
-                  color: s!.net_change_in_cash < 0 ? '#ef4444' : '#22c55e',
+                  color: data.summary.net_change_in_cash < 0 ? '#ef4444' : '#22c55e',
                   fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                {s!.net_change_in_cash < 0
-                  ? `(${Math.abs(s!.net_change_in_cash).toLocaleString()})`
-                  : s!.net_change_in_cash.toLocaleString()}
+                {data.summary.net_change_in_cash < 0
+                  ? `(${Math.abs(data.summary.net_change_in_cash).toLocaleString()})`
+                  : data.summary.net_change_in_cash.toLocaleString()}
               </span>
             </div>
             <div
@@ -324,7 +324,7 @@ export default function CashFlowStatement() {
             >
               <span style={{ color: theme.textPrimary }}>Closing Cash Balance</span>
               <span style={{ color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
-                {s!.closing_cash_balance.toLocaleString()}
+                {data.summary.closing_cash_balance.toLocaleString()}
               </span>
             </div>
           </div>

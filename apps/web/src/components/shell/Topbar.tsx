@@ -133,7 +133,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
   const crumbs = buildCrumbs(location.pathname)
   const initials = user ? getInitials(user.email) : 'U'
   const displayName =
-    user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : null
+    user?.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : null
 
   // Bootstrap and refresh unread notification count
   useEffect(() => {

@@ -49,7 +49,7 @@ export function ProjectKPIRow({
     ...financeKpis,
     {
       label: 'Completion',
-      value: `${overallCompletionPct ?? 0}%`,
+      value: `${overallCompletionPct}%`,
       sub: 'Overall progress',
       color: theme.accent,
     },

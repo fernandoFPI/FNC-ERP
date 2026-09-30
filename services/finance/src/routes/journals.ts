@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { pool, query } from '@fnc-erp/db'
+import { pool, query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { getRate } from '@fnc-erp/fx'
 import { checkRateStaleness } from '@fnc-erp/fx/staleness'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const journalsRouter: IRouter = Router()
@@ -29,9 +30,9 @@ const CreateJournalSchema = z.object({
   force_stale_rate: z.boolean().default(false),
 })
 
-journalsRouter.get('/', requirePermission('finance.journals.view', 'view'), async (req, res) => {
+journalsRouter.get('/', requirePermission('finance.journals.view', 'view'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const { status, from_date, to_date, source_type, page = '1', limit = '50' } = req.query
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
 
@@ -63,11 +64,11 @@ journalsRouter.get('/', requirePermission('finance.journals.view', 'view'), asyn
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch journals', err)
   }
-})
+}))
 
-journalsRouter.get('/:id', requirePermission('finance.journals.view', 'view'), async (req, res) => {
+journalsRouter.get('/:id', requirePermission('finance.journals.view', 'view'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const jeResult = await query(
       'SELECT * FROM journal_entries WHERE id = $1 AND company_id = $2',
       [req.params['id'], companyId],
@@ -89,10 +90,10 @@ journalsRouter.get('/:id', requirePermission('finance.journals.view', 'view'), a
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch journal', err)
   }
-})
+}))
 
-journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), async (req, res) => {
-  const companyId = req.auth!.companyId
+journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asyncHandler(async (req, res) => {
+  const companyId = getAuth(req).companyId
   const parsed = CreateJournalSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -189,7 +190,7 @@ journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asy
           422,
           'STALE_FX_RATE',
           `Exchange rate for ${criticalPairs.map((p) => p.currencyPair).join(', ')} is critically stale ` +
-            `(${criticalPairs[0]!.ageHours ?? 'unknown'} hours old). ` +
+            `(${criticalPairs[0]?.ageHours ?? 'unknown'} hours old). ` +
             `Update the rate first or pass force_stale_rate=true to proceed anyway.`,
           { stalePairs: criticalPairs, canForce: true },
         )
@@ -224,9 +225,9 @@ journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asy
     const jeResult = await client.query(
       `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, created_by)
        VALUES ($1,$2,$3,$4,'draft',$5) RETURNING *`,
-      [companyId, reference, description ?? null, entry_date, req.auth!.userId],
+      [companyId, reference, description ?? null, entry_date, getAuth(req).userId],
     )
-    const je = jeResult.rows[0]!
+    const je = firstRowOrThrow(jeResult)
 
     // Insert lines
     for (const { line, rate, amountCompany } of processedLines) {
@@ -253,7 +254,7 @@ journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asy
     // Audit inside the same transaction — rolls back if commit fails
     await logAudit({
       companyId,
-      userId: req.auth!.userId,
+      userId: getAuth(req).userId,
       action: 'CREATE',
       tableName: 'journal_entries',
       recordId: je.id as string,
@@ -278,13 +279,13 @@ journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asy
   } finally {
     client.release()
   }
-})
+}))
 
 journalsRouter.post(
   '/:id/post',
   requirePermission('finance.journals.approve', 'approve'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -310,7 +311,7 @@ journalsRouter.post(
       }
       await client.query(
         `UPDATE journal_entries SET status = 'posted', posted_at = NOW(), posted_by = $1, updated_at = NOW() WHERE id = $2`,
-        [req.auth!.userId, req.params['id']],
+        [getAuth(req).userId, req.params['id']],
       )
 
       // If this journal was generated from a vendor payment, mark the payment as posted
@@ -322,10 +323,10 @@ journalsRouter.post(
 
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'journal_entries',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
         newValues: { status: 'posted' },
         client,
       })
@@ -358,16 +359,16 @@ journalsRouter.post(
     } finally {
       client.release()
     }
-  },
+  }),
 )
 
 // ── POST /:id/link-pos — link/unlink POs to a journal entry ─────────────────
 journalsRouter.post(
   '/:id/link-pos',
   requirePermission('finance.journals.edit', 'edit'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
-    const jeId = req.params['id']!
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
+    const jeId = requireParam(req, 'id')
     const { po_ids } = req.body as { po_ids?: string[] }
     if (!Array.isArray(po_ids)) {
       sendError(res, 400, 'VALIDATION_ERROR', 'po_ids must be an array')
@@ -413,15 +414,15 @@ journalsRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to link POs', err)
     }
-  },
+  }),
 )
 
 // ── GET /:id/linked-pos — fetch POs linked to a journal ──────────────────────
 journalsRouter.get(
   '/:id/linked-pos',
   requirePermission('finance.journals.view', 'view'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
     try {
       const jeCheck = await query(`SELECT id FROM journal_entries WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
@@ -443,15 +444,15 @@ journalsRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch linked POs', err)
     }
-  },
+  }),
 )
 
 // ── POST /:id/audit — auditor signs off on a posted journal ──────────────────
 journalsRouter.post(
   '/:id/audit',
   requirePermission('finance.journals.approve', 'approve'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
     try {
       const je = await query(
         `SELECT id, status, created_by, reference FROM journal_entries WHERE id=$1 AND company_id=$2`,
@@ -468,7 +469,7 @@ journalsRouter.post(
       }
       const r = await query(
         `UPDATE journal_entries SET audited_by=$1, audited_at=NOW(), updated_at=NOW() WHERE id=$2 RETURNING *`,
-        [req.auth!.userId, req.params['id']],
+        [getAuth(req).userId, req.params['id']],
       )
       if (jeRow.created_by) {
         query(
@@ -482,20 +483,22 @@ journalsRouter.post(
               data: { journalId: req.params['id'], reference: jeRow.reference },
             }),
           ],
-        ).catch(() => {})
+        ).catch(() => {
+          // best-effort notification — don't block the audit flow on it
+        })
       }
       sendOk(res, r.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to audit journal', err)
     }
-  },
+  }),
 )
 
 journalsRouter.post(
   '/:id/cancel',
   requirePermission('finance.journals.approve', 'approve'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -531,7 +534,7 @@ journalsRouter.post(
             `REV-${je.reference}`,
             `Reversal of ${je.reference}`,
             je.entry_date,
-            req.auth!.userId,
+            getAuth(req).userId,
             je.id,
           ],
         )
@@ -572,7 +575,7 @@ journalsRouter.post(
       )
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'journal_entries',
         recordId: je.id,
@@ -607,5 +610,5 @@ journalsRouter.post(
     } finally {
       client.release()
     }
-  },
+  }),
 )

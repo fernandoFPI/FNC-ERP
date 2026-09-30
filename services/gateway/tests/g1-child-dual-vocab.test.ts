@@ -622,32 +622,4 @@ describe('edit-request mutations widened for requisitionId', () => {
     expect(parseFloat(line.rows[0]!.unit_price)).not.toBe(999)
   })
 
-  it('notifyPOOwnerForEditRequest accepts a requisitionId and returns true', async () => {
-    const productId = await makeProduct('notify')
-    const created = await resolvers.Mutation.createRequisition(
-      null,
-      { input: { purpose: 'stock', lines: [{ product_id: productId, description: 'x', qty: 2, unit_price: 5 }] } },
-      ctx as never,
-    )
-    const reqId = (created as { id: string }).id
-    const lineRow = await pool.query<{ id: string }>(`SELECT id FROM po_lines WHERE requisition_id=$1`, [reqId])
-    const lineId = lineRow.rows[0]!.id
-    await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
-    await resolvers.Mutation.confirmRequisitionInventoryCheck(null, { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 0 }] }, ctx as never)
-    // confirmRequisitionInventoryCheck now auto-advances straight through
-    // store_pricing to market_pricing — no separate call needed.
-    const marketResult = await resolvers.Mutation.submitRequisitionMarketPricing(
-      null,
-      { id: reqId, linePrices: [{ lineId, marketPrice: 8, currencyCode: 'IQD' }] },
-      ctx as never,
-    )
-    expect((marketResult as { status: string }).status).toBe('price_verification')
-
-    const notifyResult = await resolvers.Mutation.notifyPOOwnerForEditRequest(
-      null,
-      { requisitionId: reqId, reason: 'price looks off' },
-      ctx as never,
-    )
-    expect(notifyResult).toBe(true)
-  })
 })

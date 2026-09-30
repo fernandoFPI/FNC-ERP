@@ -9,14 +9,15 @@ import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import type { BomQuery, BomQueryVariables } from '../../../graphql/generated'
 
 interface BOMLine {
   id: string
   sequence: number
-  component_name?: string
+  component_name?: string | null
   qty: number
   uom: string
-  unit_cost?: number
+  unit_cost?: number | null
 }
 
 export default function BOMDetail() {
@@ -24,14 +25,14 @@ export default function BOMDetail() {
   const navigate = useNavigate()
   const { theme } = useTheme()
 
-  const { data, loading } = useQuery(BOM_QUERY, { variables: { id }, skip: !id })
+  const { data, loading } = useQuery<BomQuery, BomQueryVariables>(BOM_QUERY, { variables: { id: id ?? '' }, skip: !id })
   const bom = data?.bom
 
   if (loading || !bom)
     return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading…</div>
 
   const totalCost = (bom.lines ?? []).reduce(
-    (s: number, l: { qty: number; unit_cost?: number }) => s + (l.qty ?? 0) * (l.unit_cost ?? 0),
+    (s, l) => s + l.qty * (l.unit_cost ?? 0),
     0,
   )
 
@@ -78,7 +79,7 @@ export default function BOMDetail() {
       mobilePriority: 4,
       render: (l) => (
         <span style={{ fontWeight: 600 }}>
-          <AmountDisplay amount={(l.qty ?? 0) * (l.unit_cost ?? 0)} currency="IQD" size="sm" />
+          <AmountDisplay amount={l.qty * (l.unit_cost ?? 0)} currency="IQD" size="sm" />
         </span>
       ),
     },

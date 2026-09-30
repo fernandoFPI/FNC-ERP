@@ -46,7 +46,7 @@ function statusVariant(
     on_hold: 'warning',
     cancelled: 'danger',
   }
-  return m[status?.toLowerCase()] ?? 'neutral'
+  return m[status.toLowerCase()] ?? 'neutral'
 }
 
 function marginColor(
@@ -200,7 +200,7 @@ export default function ProjectProfitabilityReport() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

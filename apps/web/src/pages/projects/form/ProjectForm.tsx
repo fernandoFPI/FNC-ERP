@@ -9,6 +9,7 @@ import { useToastStore } from '../../../store/toastStore'
 import { usePermission } from '../../../hooks/usePermission'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { api } from '../../../lib/axios'
+import type { CreateRfqMutation, CreateRfqMutationVariables, ProjectQuery, ProjectQueryVariables, UpdateProjectMutation, UpdateProjectMutationVariables } from '../../../graphql/generated'
 
 interface Employee {
   id: string
@@ -130,16 +131,18 @@ export default function ProjectForm() {
       .then((r) => {
         setEmployees(Array.isArray(r.data) ? r.data : [])
       })
-      .catch(() => {})
+      .catch(() => {
+        /* ignore: employee picker just stays empty if this fails */
+      })
   }, [])
 
-  const { data } = useQuery(PROJECT_QUERY, {
-    variables: { id },
+  const { data } = useQuery<ProjectQuery, ProjectQueryVariables>(PROJECT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !isEdit,
     fetchPolicy: 'cache-and-network',
   })
-  const [createRFQ, { loading: creating }] = useMutation(CREATE_RFQ)
-  const [updateProject, { loading: updating }] = useMutation(UPDATE_PROJECT)
+  const [createRFQ, { loading: creating }] = useMutation<CreateRfqMutation, CreateRfqMutationVariables>(CREATE_RFQ)
+  const [updateProject, { loading: updating }] = useMutation<UpdateProjectMutation, UpdateProjectMutationVariables>(UPDATE_PROJECT)
   const saving = creating || updating
 
   const project = data?.project
@@ -150,10 +153,10 @@ export default function ProjectForm() {
     const p = data?.project
     if (!p) return
     setForm({
-      name: p.name ?? '',
+      name: p.name,
       contractName: p.contractName ?? '',
       projectLocation: p.projectLocation ?? '',
-      projectType: p.projectType ?? 'construction',
+      projectType: p.projectType,
       clientName: p.clientName ?? '',
       clientContact: p.clientContact ?? '',
       projectValue: p.projectValue != null ? String(p.projectValue) : '',
@@ -224,12 +227,12 @@ export default function ProjectForm() {
         navigate(`/projects/${id}`)
       } else {
         const res = await createRFQ({ variables: { input } })
-        const newId = res.data?.createRFQ?.id
+        const newId = res.data?.createRFQ.id
         addToast({ type: 'success', message: 'RFQ created' })
         navigate(newId ? `/projects/${newId}` : '/projects')
       }
     } catch (err) {
-      addToast({ type: 'error', message: (err as Error).message ?? 'Failed to save project' })
+      addToast({ type: 'error', message: (err as Error).message })
     }
   }
 

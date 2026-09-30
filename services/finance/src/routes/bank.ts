@@ -1,14 +1,25 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
-import { query, withTransaction } from '@fnc-erp/db'
+import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
-export const bankRouter: import('express').Router = Router()
+export const bankRouter: Router = Router()
 
 function round2(n: number) {
   return Math.round(n * 100) / 100
+}
+
+// accounting_periods.period is written everywhere else in this service as
+// 'YYYY-MM' (see nextDocumentNumber / createOpenPeriod-style callers) —
+// this just validates that assumption instead of trusting a bare
+// `.split('-').map(Number)` destructure with two `!` on the result.
+function parsePeriod(period: string): { year: number; month: number } {
+  const m = /^(\d{4})-(\d{2})$/.exec(period)
+  if (!m) throw new Error(`Malformed period: ${period}`)
+  return { year: Number(m[1]), month: Number(m[2]) }
 }
 
 // ─── Company Bank Accounts (read-only, from existing bank_accounts table) ────
@@ -16,7 +27,7 @@ function round2(n: number) {
 bankRouter.get(
   '/company-accounts',
   requirePermission('finance.bank.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT id, account_name AS name, bank_name, branch_code AS branch,
@@ -30,12 +41,12 @@ bankRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load company bank accounts', err)
     }
-  },
+  }),
 )
 
 // ─── Bank Accounts ────────────────────────────────────────────────────────────
 
-bankRouter.get('/accounts', requirePermission('finance.bank.view', 'view'), async (req, res) => {
+bankRouter.get('/accounts', requirePermission('finance.bank.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const r = await query(
       `SELECT ba.*,
@@ -48,15 +59,15 @@ bankRouter.get('/accounts', requirePermission('finance.bank.view', 'view'), asyn
        WHERE ba.company_id = $1
        GROUP BY ba.id, ca.name, ca.code
        ORDER BY ba.is_active DESC, ba.name`,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
     sendOk(res, r.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load bank accounts', err)
   }
-})
+}))
 
-bankRouter.post('/accounts', requirePermission('finance.bank.edit', 'edit'), async (req, res) => {
+bankRouter.post('/accounts', requirePermission('finance.bank.edit', 'edit'), asyncHandler(async (req, res) => {
   const schema = z.object({
     name: z.string().min(1),
     account_number: z.string().optional(),
@@ -76,7 +87,7 @@ bankRouter.post('/accounts', requirePermission('finance.bank.edit', 'edit'), asy
          (company_id,name,account_number,bank_name,branch,swift_code,iban,currency_code,gl_account_id,opening_balance,notes)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [
-        req.auth!.companyId,
+        getAuth(req).companyId,
         d.name,
         d.account_number ?? null,
         d.bank_name ?? null,
@@ -90,11 +101,11 @@ bankRouter.post('/accounts', requirePermission('finance.bank.edit', 'edit'), asy
       ],
     )
     await logAudit({
-      companyId: req.auth!.companyId,
-      userId: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      userId: getAuth(req).userId,
       action: 'INSERT',
       tableName: 'recon_bank_accounts',
-      recordId: r.rows[0]!['id'] as string,
+      recordId: firstRowOrThrow(r)['id'] as string,
       newValues: d,
     })
     sendOk(res, r.rows[0], 201)
@@ -105,19 +116,19 @@ bankRouter.post('/accounts', requirePermission('finance.bank.edit', 'edit'), asy
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create bank account', err)
   }
-})
+}))
 
 bankRouter.get(
   '/accounts/:id',
   requirePermission('finance.bank.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT ba.*, ca.name AS gl_account_name, ca.code AS gl_account_code
        FROM recon_bank_accounts ba
        LEFT JOIN chart_of_accounts ca ON ca.id = ba.gl_account_id
        WHERE ba.id = $1 AND ba.company_id = $2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Bank account not found')
@@ -127,13 +138,13 @@ bankRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load bank account', err)
     }
-  },
+  }),
 )
 
 bankRouter.put(
   '/accounts/:id',
   requirePermission('finance.bank.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       name: z.string().min(1).optional(),
       account_number: z.string().optional(),
@@ -163,7 +174,7 @@ bankRouter.put(
         return
       }
       sets.push(`updated_at = NOW()`)
-      vals.push(req.params['id'], req.auth!.companyId)
+      vals.push(req.params['id'], getAuth(req).companyId)
       const r = await query(
         `UPDATE recon_bank_accounts SET ${sets.join(', ')} WHERE id = $${i++} AND company_id = $${i++} RETURNING *`,
         vals,
@@ -176,7 +187,7 @@ bankRouter.put(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update bank account', err)
     }
-  },
+  }),
 )
 
 // ─── Statements ───────────────────────────────────────────────────────────────
@@ -184,7 +195,7 @@ bankRouter.put(
 bankRouter.get(
   '/accounts/:accountId/statements',
   requirePermission('finance.bank.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT bs.*,
@@ -195,19 +206,19 @@ bankRouter.get(
        WHERE bs.bank_account_id = $1 AND bs.company_id = $2
        GROUP BY bs.id
        ORDER BY bs.period DESC`,
-        [req.params['accountId'], req.auth!.companyId],
+        [req.params['accountId'], getAuth(req).companyId],
       )
       sendOk(res, r.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load statements', err)
     }
-  },
+  }),
 )
 
 bankRouter.post(
   '/accounts/:accountId/statements',
   requirePermission('finance.bank.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       period: z.string().regex(/^\d{4}-\d{2}$/),
       statement_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -219,7 +230,7 @@ bankRouter.post(
       const d = schema.parse(req.body)
       const acct = await query(`SELECT id FROM recon_bank_accounts WHERE id=$1 AND company_id=$2`, [
         req.params['accountId'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!acct.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Bank account not found')
@@ -229,14 +240,14 @@ bankRouter.post(
         `INSERT INTO recon_statements (company_id,bank_account_id,period,statement_date,opening_balance,closing_balance,notes,created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
         [
-          req.auth!.companyId,
+          getAuth(req).companyId,
           req.params['accountId'],
           d.period,
           d.statement_date,
           d.opening_balance,
           d.closing_balance,
           d.notes ?? null,
-          req.auth!.userId,
+          getAuth(req).userId,
         ],
       )
       sendOk(res, r.rows[0], 201)
@@ -247,14 +258,14 @@ bankRouter.post(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create statement', err)
     }
-  },
+  }),
 )
 
 // Get statement with lines and match status
 bankRouter.get(
   '/statements/:id',
   requirePermission('finance.bank.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const stmtRes = await query(
         `SELECT bs.*, ba.name AS account_name, ba.account_number, ba.currency_code, ba.gl_account_id,
@@ -266,7 +277,7 @@ bankRouter.get(
        LEFT JOIN recon_lines bsl ON bsl.statement_id = bs.id
        WHERE bs.id = $1 AND bs.company_id = $2
        GROUP BY bs.id, ba.name, ba.account_number, ba.currency_code, ba.gl_account_id, ba.bank_name`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       const stmt = stmtRes.rows[0]
       if (!stmt) {
@@ -296,7 +307,7 @@ bankRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load statement', err)
     }
-  },
+  }),
 )
 
 // ─── Statement Lines ──────────────────────────────────────────────────────────
@@ -304,7 +315,7 @@ bankRouter.get(
 bankRouter.post(
   '/statements/:id/lines',
   requirePermission('finance.bank.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const lineSchema = z.object({
       transaction_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       value_date: z
@@ -321,7 +332,7 @@ bankRouter.post(
     try {
       const stmtRes = await query(
         `SELECT id, status FROM recon_statements WHERE id=$1 AND company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       const stmt = stmtRes.rows[0]
       if (!stmt) {
@@ -338,10 +349,10 @@ bankRouter.post(
         `SELECT COALESCE(MAX(line_number), 0) AS max FROM recon_lines WHERE statement_id=$1`,
         [req.params['id']],
       )
-      let lineNum = Number(maxRes.rows[0]!['max'])
+      let lineNum = Number(firstRowOrThrow(maxRes)['max'])
 
       const inserted = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const rows = []
           for (const line of lines) {
@@ -352,7 +363,7 @@ bankRouter.post(
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
               [
                 req.params['id'],
-                req.auth!.companyId,
+                getAuth(req).companyId,
                 lineNum,
                 line.transaction_date,
                 line.value_date ?? null,
@@ -376,17 +387,17 @@ bankRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to add statement lines', err)
     }
-  },
+  }),
 )
 
 bankRouter.delete(
   '/lines/:id',
   requirePermission('finance.bank.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(`SELECT is_reconciled FROM recon_lines WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!r.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Line not found')
@@ -401,7 +412,7 @@ bankRouter.delete(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete line', err)
     }
-  },
+  }),
 )
 
 // ─── GL Entries (right panel) ─────────────────────────────────────────────────
@@ -409,14 +420,14 @@ bankRouter.delete(
 bankRouter.get(
   '/statements/:id/gl-entries',
   requirePermission('finance.bank.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const stmtRes = await query(
         `SELECT bs.period, ba.gl_account_id
        FROM recon_statements bs
        JOIN recon_bank_accounts ba ON ba.id = bs.bank_account_id
        WHERE bs.id = $1 AND bs.company_id = $2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!stmtRes.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Statement not found')
@@ -432,9 +443,9 @@ bankRouter.get(
         return
       }
 
-      const [year, month] = period.split('-').map(Number)
-      const from = new Date(year!, month! - 2, 1).toISOString().slice(0, 10)
-      const to = new Date(year!, month! + 1, 0).toISOString().slice(0, 10)
+      const { year, month } = parsePeriod(period)
+      const from = new Date(year, month - 2, 1).toISOString().slice(0, 10)
+      const to = new Date(year, month + 1, 0).toISOString().slice(0, 10)
 
       const r = await query(
         `SELECT jl.id, jl.journal_entry_id, jl.description AS line_description,
@@ -451,13 +462,13 @@ bankRouter.get(
            WHERE journal_line_id IS NOT NULL AND company_id = $2
          )
        ORDER BY je.entry_date, je.reference`,
-        [gl_account_id, req.auth!.companyId, from, to],
+        [gl_account_id, getAuth(req).companyId, from, to],
       )
       sendOk(res, r.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load GL entries', err)
     }
-  },
+  }),
 )
 
 // ─── Auto-Match ───────────────────────────────────────────────────────────────
@@ -465,14 +476,14 @@ bankRouter.get(
 bankRouter.post(
   '/statements/:id/auto-match',
   requirePermission('finance.bank.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const stmtRes = await query(
         `SELECT bs.period, ba.gl_account_id
        FROM recon_statements bs
        JOIN recon_bank_accounts ba ON ba.id = bs.bank_account_id
        WHERE bs.id = $1 AND bs.company_id = $2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!stmtRes.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Statement not found')
@@ -488,9 +499,9 @@ bankRouter.post(
         return
       }
 
-      const [year, month] = period.split('-').map(Number)
-      const from = new Date(year!, month! - 2, 1).toISOString().slice(0, 10)
-      const to = new Date(year!, month! + 1, 0).toISOString().slice(0, 10)
+      const { year, month } = parsePeriod(period)
+      const from = new Date(year, month - 2, 1).toISOString().slice(0, 10)
+      const to = new Date(year, month + 1, 0).toISOString().slice(0, 10)
 
       const bankLines = await query(
         `SELECT id, transaction_date, debit, credit FROM recon_lines
@@ -508,14 +519,14 @@ bankRouter.post(
            SELECT journal_line_id FROM recon_matches
            WHERE journal_line_id IS NOT NULL AND company_id=$2
          )`,
-        [gl_account_id, req.auth!.companyId, from, to],
+        [gl_account_id, getAuth(req).companyId, from, to],
       )
 
       let matched = 0
       const usedGl = new Set<string>()
 
       await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           for (const bLine of bankLines.rows) {
             const bankNet = round2(Number(bLine['credit']) - Number(bLine['debit']))
@@ -536,11 +547,11 @@ bankRouter.post(
                 `INSERT INTO recon_matches (company_id,statement_line_id,journal_line_id,journal_entry_id,match_type,matched_by)
                VALUES ($1,$2,$3,$4,'auto',$5)`,
                 [
-                  req.auth!.companyId,
+                  getAuth(req).companyId,
                   bLine['id'],
                   glMatch['id'],
                   glMatch['journal_entry_id'],
-                  req.auth!.userId,
+                  getAuth(req).userId,
                 ],
               )
               await client.query(
@@ -556,12 +567,12 @@ bankRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to auto-match', err)
     }
-  },
+  }),
 )
 
 // ─── Manual Match ─────────────────────────────────────────────────────────────
 
-bankRouter.post('/match', requirePermission('finance.bank.edit', 'edit'), async (req, res) => {
+bankRouter.post('/match', requirePermission('finance.bank.edit', 'edit'), asyncHandler(async (req, res) => {
   const schema = z.object({
     statement_line_ids: z.array(z.string().uuid()).min(1),
     journal_line_ids: z.array(z.string().uuid()).min(1),
@@ -572,15 +583,15 @@ bankRouter.post('/match', requirePermission('finance.bank.edit', 'edit'), async 
 
     const lineCheck = await query(
       `SELECT COUNT(*) AS n FROM recon_lines WHERE id=ANY($1) AND company_id=$2 AND is_reconciled=false`,
-      [d.statement_line_ids, req.auth!.companyId],
+      [d.statement_line_ids, getAuth(req).companyId],
     )
-    if (Number(lineCheck.rows[0]!['n']) !== d.statement_line_ids.length) {
+    if (Number(firstRowOrThrow(lineCheck)['n']) !== d.statement_line_ids.length) {
       sendError(res, 400, 'INVALID_LINES', 'One or more bank lines are invalid or already matched')
       return
     }
 
     const result = await withTransaction(
-      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
       async (client) => {
         const matches = []
         for (const lineId of d.statement_line_ids) {
@@ -593,7 +604,7 @@ bankRouter.post('/match', requirePermission('finance.bank.edit', 'edit'), async 
             const r = await client.query(
               `INSERT INTO recon_matches (company_id,statement_line_id,journal_line_id,journal_entry_id,match_type,notes,matched_by)
                VALUES ($1,$2,$3,$4,'manual',$5,$6) ON CONFLICT DO NOTHING RETURNING *`,
-              [req.auth!.companyId, lineId, jlId, jeId ?? null, d.notes ?? null, req.auth!.userId],
+              [getAuth(req).companyId, lineId, jlId, jeId ?? null, d.notes ?? null, getAuth(req).userId],
             )
             if (r.rows[0]) matches.push(r.rows[0])
           }
@@ -609,24 +620,24 @@ bankRouter.post('/match', requirePermission('finance.bank.edit', 'edit'), async 
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create match', err)
   }
-})
+}))
 
 // Unmatch a bank line
 bankRouter.delete(
   '/match/line/:statementLineId',
   requirePermission('finance.bank.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(`SELECT is_reconciled FROM recon_lines WHERE id=$1 AND company_id=$2`, [
         req.params['statementLineId'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!r.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Line not found')
         return
       }
       await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           await client.query(`DELETE FROM recon_matches WHERE statement_line_id=$1`, [
             req.params['statementLineId'],
@@ -641,7 +652,7 @@ bankRouter.delete(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to unmatch', err)
     }
-  },
+  }),
 )
 
 // ─── Create Journal Entry from Bank Line ──────────────────────────────────────
@@ -649,7 +660,7 @@ bankRouter.delete(
 bankRouter.post(
   '/lines/:id/create-entry',
   requirePermission('finance.bank.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       offset_account_id: z.string().uuid(),
       description: z.string().optional(),
@@ -663,7 +674,7 @@ bankRouter.post(
        JOIN recon_statements bs ON bs.id = bsl.statement_id
        JOIN recon_bank_accounts ba ON ba.id = bs.bank_account_id
        WHERE bsl.id=$1 AND bsl.company_id=$2 AND bsl.is_reconciled=false`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       const line = lineRes.rows[0]
       if (!line) {
@@ -681,20 +692,20 @@ bankRouter.post(
       const bankGlId = line['gl_account_id'] as string
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id,reference,description,entry_date,source_type,status,created_by)
            VALUES ($1,$2,$3,$4,'bank_entry','posted',$5) RETURNING id`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               `BANK-${(line['transaction_date'] as string).slice(0, 7)}`.slice(0, 50),
               desc,
               line['transaction_date'],
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const jeId = jeRes.rows[0]!.id as string
+          const jeId = firstRowOrThrow(jeRes).id as string
 
           if (isCredit) {
             // Money IN: DR bank, CR offset
@@ -727,7 +738,7 @@ bankRouter.post(
           await client.query(
             `INSERT INTO recon_matches (company_id,statement_line_id,journal_line_id,journal_entry_id,match_type,matched_by)
            VALUES ($1,$2,$3,$4,'created',$5)`,
-            [req.auth!.companyId, req.params['id'], jlId ?? null, jeId, req.auth!.userId],
+            [getAuth(req).companyId, req.params['id'], jlId ?? null, jeId, getAuth(req).userId],
           )
           await client.query(
             `UPDATE recon_lines SET is_reconciled=true, reconciled_at=NOW() WHERE id=$1`,
@@ -740,7 +751,7 @@ bankRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create entry', err)
     }
-  },
+  }),
 )
 
 // ─── Finalize Reconciliation ──────────────────────────────────────────────────
@@ -748,7 +759,7 @@ bankRouter.post(
 bankRouter.post(
   '/statements/:id/finalize',
   requirePermission('finance.bank.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const stmtRes = await query(
         `SELECT bs.*,
@@ -758,7 +769,7 @@ bankRouter.post(
        LEFT JOIN recon_lines bsl ON bsl.statement_id = bs.id
        WHERE bs.id=$1 AND bs.company_id=$2
        GROUP BY bs.id`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       const s = stmtRes.rows[0]
       if (!s) {
@@ -785,19 +796,19 @@ bankRouter.post(
       const r = await query(
         `UPDATE recon_statements SET status='reconciled', reconciled_at=NOW(), reconciled_by=$1, updated_at=NOW()
        WHERE id=$2 RETURNING *`,
-        [req.auth!.userId, req.params['id']],
+        [getAuth(req).userId, req.params['id']],
       )
       await query(
         `UPDATE recon_bank_accounts SET last_reconciled_date=$1, last_reconciled_balance=$2, updated_at=NOW() WHERE id=$3`,
         [
-          r.rows[0]!['statement_date'],
-          r.rows[0]!['closing_balance'],
-          r.rows[0]!['bank_account_id'],
+          firstRowOrThrow(r)['statement_date'],
+          firstRowOrThrow(r)['closing_balance'],
+          firstRowOrThrow(r)['bank_account_id'],
         ],
       )
       sendOk(res, r.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to finalize reconciliation', err)
     }
-  },
+  }),
 )

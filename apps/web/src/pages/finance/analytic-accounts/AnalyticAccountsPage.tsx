@@ -151,7 +151,7 @@ export default function AnalyticAccountsPage() {
   }
 
   const balance = (aa: AnalyticAccount) =>
-    parseFloat(aa.total_debits ?? '0') - parseFloat(aa.total_credits ?? '0')
+    parseFloat(aa.total_debits) - parseFloat(aa.total_credits)
 
   const columns: Column<AnalyticAccount>[] = [
     {
@@ -203,7 +203,7 @@ export default function AnalyticAccountsPage() {
       header: 'Debits',
       mobilePriority: 5,
       render: (aa) => (
-        <AmountDisplay amount={parseFloat(aa.total_debits ?? '0')} currency="IQD" size="sm" />
+        <AmountDisplay amount={parseFloat(aa.total_debits)} currency="IQD" size="sm" />
       ),
     },
     {
@@ -211,7 +211,7 @@ export default function AnalyticAccountsPage() {
       header: 'Credits',
       mobilePriority: 6,
       render: (aa) => (
-        <AmountDisplay amount={parseFloat(aa.total_credits ?? '0')} currency="IQD" size="sm" />
+        <AmountDisplay amount={parseFloat(aa.total_credits)} currency="IQD" size="sm" />
       ),
     },
     {
@@ -419,7 +419,7 @@ export default function AnalyticAccountsPage() {
           >
             Cancel
           </Button>
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+          <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)} disabled={saving}>
             {saving ? 'Saving…' : editing ? 'Update' : 'Create'}
           </Button>
         </div>
@@ -430,7 +430,7 @@ export default function AnalyticAccountsPage() {
         onClose={() => {
           setDeletingId(null)
         }}
-        onConfirm={handleDelete}
+        onConfirm={(...args: Parameters<typeof handleDelete>) => void handleDelete(...args)}
         title="Deactivate analytic account"
         message="This will deactivate the analytic account. Existing journal entries are unaffected."
         confirmLabel="Deactivate"

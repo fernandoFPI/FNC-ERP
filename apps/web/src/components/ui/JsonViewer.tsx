@@ -119,7 +119,7 @@ export function JsonViewer({ data, collapsed = false, title }: JsonViewerProps) 
   const [copied, setCopied] = useState(false)
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(JSON.stringify(data, null, 2)).then(() => {
+    void navigator.clipboard.writeText(JSON.stringify(data, null, 2)).then(() => {
       setCopied(true)
       setTimeout(() => {
         setCopied(false)

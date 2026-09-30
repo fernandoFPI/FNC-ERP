@@ -22,7 +22,6 @@ import { EmployeeAvatar } from '../../../components/ui/EmployeeAvatar'
 import { SalaryBreakdown } from '../../../components/ui/SalaryBreakdown'
 import { AttendanceCalendar } from '../../../components/ui/AttendanceCalendar'
 import { ActivityLog } from '../../../components/ui/ActivityLog'
-import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { Textarea } from '../../../components/ui/Textarea'
@@ -33,6 +32,7 @@ import { BankDetailsForm } from './BankDetailsForm'
 import { EmployeeLeaveTab } from './EmployeeLeaveTab'
 import { EmployeeDocumentsTab } from './EmployeeDocumentsTab'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { AssignShiftMutation, AssignShiftMutationVariables, CompanyUsersQuery, CompanyUsersQueryVariables, EmployeeCurrentShiftQuery, EmployeeCurrentShiftQueryVariables, EmployeeQuery, EmployeeQueryVariables, EmployeeSalaryConfigQuery, EmployeeSalaryConfigQueryVariables, LinkEmployeeUserMutation, LinkEmployeeUserMutationVariables, ShiftConfigsQuery, ShiftConfigsQueryVariables, TerminateEmployeeMutation, TerminateEmployeeMutationVariables, UnassignShiftMutation, UnassignShiftMutationVariables } from '../../../graphql/generated'
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -63,30 +63,30 @@ export default function EmployeeDetail() {
     new Date().toISOString().split('T')[0],
   )
 
-  const { data, loading, refetch } = useQuery(EMPLOYEE_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<EmployeeQuery, EmployeeQueryVariables>(EMPLOYEE_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: scData } = useQuery(EMPLOYEE_SALARY_CONFIG_QUERY, {
-    variables: { employee_id: id },
+  const { data: scData } = useQuery<EmployeeSalaryConfigQuery, EmployeeSalaryConfigQueryVariables>(EMPLOYEE_SALARY_CONFIG_QUERY, {
+    variables: { employee_id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: usersData } = useQuery(COMPANY_USERS_QUERY, {
+  const { data: usersData } = useQuery<CompanyUsersQuery, CompanyUsersQueryVariables>(COMPANY_USERS_QUERY, {
     variables: { companyId: currentCompanyId },
     skip: !linkUserOpen,
   })
-  const { data: shiftData, refetch: refetchShift } = useQuery(EMPLOYEE_CURRENT_SHIFT_QUERY, {
-    variables: { employee_id: id },
+  const { data: shiftData, refetch: refetchShift } = useQuery<EmployeeCurrentShiftQuery, EmployeeCurrentShiftQueryVariables>(EMPLOYEE_CURRENT_SHIFT_QUERY, {
+    variables: { employee_id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: allShiftsData } = useQuery(SHIFT_CONFIGS_QUERY, { skip: !shiftModalOpen })
-  const [terminateEmployee, { loading: terminating }] = useMutation(TERMINATE_EMPLOYEE)
-  const [linkEmployeeUser, { loading: linking }] = useMutation(LINK_EMPLOYEE_USER)
-  const [assignShift, { loading: assigning }] = useMutation(ASSIGN_SHIFT)
-  const [unassignShift, { loading: unassigning }] = useMutation(UNASSIGN_SHIFT)
+  const { data: allShiftsData } = useQuery<ShiftConfigsQuery, ShiftConfigsQueryVariables>(SHIFT_CONFIGS_QUERY, { skip: !shiftModalOpen })
+  const [terminateEmployee, { loading: terminating }] = useMutation<TerminateEmployeeMutation, TerminateEmployeeMutationVariables>(TERMINATE_EMPLOYEE)
+  const [linkEmployeeUser, { loading: linking }] = useMutation<LinkEmployeeUserMutation, LinkEmployeeUserMutationVariables>(LINK_EMPLOYEE_USER)
+  const [assignShift, { loading: assigning }] = useMutation<AssignShiftMutation, AssignShiftMutationVariables>(ASSIGN_SHIFT)
+  const [unassignShift, { loading: unassigning }] = useMutation<UnassignShiftMutation, UnassignShiftMutationVariables>(UNASSIGN_SHIFT)
 
   const emp = data?.employee
   const sc = scData?.employeeSalaryConfig
@@ -95,10 +95,10 @@ export default function EmployeeDetail() {
   async function handleTerminate() {
     if (!terminationDate || !terminationReason) return
     try {
-      await terminateEmployee({ variables: { id, terminationDate, reason: terminationReason } })
+      await terminateEmployee({ variables: { id: id ?? '', terminationDate, reason: terminationReason } })
       addToast({ type: 'success', message: 'Employee terminated' })
       setTerminateOpen(false)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -107,13 +107,13 @@ export default function EmployeeDetail() {
   async function handleLinkUser(overrideUserId?: string) {
     const targetUserId = overrideUserId ?? selectedUserId
     try {
-      await linkEmployeeUser({ variables: { employee_id: id, user_id: targetUserId || null } })
+      await linkEmployeeUser({ variables: { employee_id: id ?? '', user_id: targetUserId || null } })
       addToast({
         type: 'success',
         message: targetUserId ? 'User linked to employee' : 'User unlinked from employee',
       })
       setLinkUserOpen(false)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -124,14 +124,14 @@ export default function EmployeeDetail() {
     try {
       await assignShift({
         variables: {
-          employee_id: id,
+          employee_id: id ?? '',
           shift_id: selectedShiftId,
           effective_from: shiftEffectiveFrom,
         },
       })
       addToast({ type: 'success', message: 'Shift assigned' })
       setShiftModalOpen(false)
-      refetchShift()
+      void refetchShift()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -139,9 +139,9 @@ export default function EmployeeDetail() {
 
   async function handleUnassignShift() {
     try {
-      await unassignShift({ variables: { employee_id: id } })
+      await unassignShift({ variables: { employee_id: id ?? '' } })
       addToast({ type: 'success', message: 'Shift removed' })
-      refetchShift()
+      void refetchShift()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -151,7 +151,7 @@ export default function EmployeeDetail() {
     return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
   if (!emp) return <div style={{ padding: '24px', color: theme.textMuted }}>Employee not found</div>
 
-  const basePay = sc ? parseFloat(sc.base_salary ?? '0') : 0
+  const basePay = sc ? parseFloat(sc.base_salary) : 0
   const salaryAllowances = sc
     ? [
         ...(sc.housing_allowance && parseFloat(sc.housing_allowance) > 0
@@ -220,7 +220,7 @@ export default function EmployeeDetail() {
         <div style={{ flex: 1 }}>
           <PageHeader
             title={`${emp.first_name} ${emp.last_name}`}
-            subtitle={emp.employee_number}
+            subtitle={emp.employee_number ?? undefined}
             status={
               <Badge variant={emp.status === 'active' ? 'success' : 'neutral'}>
                 {emp.status === 'active'
@@ -273,7 +273,7 @@ export default function EmployeeDetail() {
           { label: 'Hire date', value: emp.hire_date ?? '—' },
           { label: 'Contract', value: emp.employment_type?.replace(/_/g, ' ') ?? '—' },
           { label: 'Department', value: emp.department_name ?? '—' },
-          { label: 'Location', value: emp.work_location_name ?? '—' },
+          { label: 'Location', value: emp.work_location_id ?? '—' },
         ].map(({ label, value }) => (
           <div
             key={label}
@@ -341,7 +341,7 @@ export default function EmployeeDetail() {
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
                       {label}
                     </div>
-                    <div style={{ fontSize: '13px', color: theme.textPrimary }}>{value || '—'}</div>
+                    <div style={{ fontSize: '13px', color: theme.textPrimary }}>{value ?? '—'}</div>
                   </div>
                 ))}
               </div>
@@ -432,7 +432,7 @@ export default function EmployeeDetail() {
                         size="sm"
                         style={{ color: theme.danger }}
                         loading={unassigning}
-                        onClick={handleUnassignShift}
+                        onClick={(...args: Parameters<typeof handleUnassignShift>) => void handleUnassignShift(...args)}
                       >
                         Remove
                       </Button>
@@ -452,7 +452,7 @@ export default function EmployeeDetail() {
               </div>
             </Card>
 
-            <BankDetailsForm employeeId={id!} />
+            <BankDetailsForm employeeId={id ?? ''} />
           </>
         )}
 
@@ -484,7 +484,7 @@ export default function EmployeeDetail() {
                 basePay={basePay}
                 allowances={salaryAllowances}
                 deductions={salaryDeductions}
-                currency={sc.currency_code ?? 'IQD'}
+                currency={sc.currency_code}
                 payType="monthly"
               />
             ) : (
@@ -557,7 +557,7 @@ export default function EmployeeDetail() {
             </Button>
             <Button
               variant="primary"
-              onClick={handleAssignShift}
+              onClick={(...args: Parameters<typeof handleAssignShift>) => void handleAssignShift(...args)}
               loading={assigning}
               disabled={!selectedShiftId}
             >
@@ -575,9 +575,9 @@ export default function EmployeeDetail() {
                 setSelectedShiftId(v)
               }}
               placeholder="— Select a shift —"
-              options={(allShiftsData?.shiftConfigs ?? [])
-                .filter((s: { is_active: boolean }) => s.is_active)
-                .map((s: { id: string; name: string; start_time?: string; end_time?: string }) => ({
+              options={(allShiftsData?.shiftConfigs ?? []).filter((v): v is NonNullable<typeof v> => v !== null)
+                .filter((s) => s.is_active)
+                .map((s) => ({
                   value: s.id,
                   label: s.name + (s.start_time ? ` (${s.start_time}–${s.end_time})` : ''),
                 }))}
@@ -612,7 +612,7 @@ export default function EmployeeDetail() {
             >
               Cancel
             </Button>
-            {emp?.user_id && (
+            {emp.user_id && (
               <Button
                 variant="ghost"
                 style={{ color: theme.danger }}
@@ -680,7 +680,7 @@ export default function EmployeeDetail() {
             </Button>
             <Button
               variant="danger"
-              onClick={handleTerminate}
+              onClick={(...args: Parameters<typeof handleTerminate>) => void handleTerminate(...args)}
               loading={terminating}
               disabled={!terminationDate || !terminationReason}
             >

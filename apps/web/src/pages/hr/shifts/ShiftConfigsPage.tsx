@@ -11,14 +11,15 @@ import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreateShiftConfigMutation, CreateShiftConfigMutationVariables, ShiftConfigsQuery, ShiftConfigsQueryVariables, UpdateShiftConfigMutation, UpdateShiftConfigMutationVariables } from '../../../graphql/generated'
 
 interface ShiftConfig {
   id: string
   name: string
-  start_time?: string
-  end_time?: string
-  break_minutes?: number
-  overtime_threshold_hours?: string
+  start_time?: string | null
+  end_time?: string | null
+  break_minutes?: number | null
+  overtime_threshold_hours?: string | null
   is_active: boolean
 }
 
@@ -45,13 +46,13 @@ export default function ShiftConfigsPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
 
-  const { data, loading, refetch } = useQuery(SHIFT_CONFIGS_QUERY, {
+  const { data, loading, refetch } = useQuery<ShiftConfigsQuery, ShiftConfigsQueryVariables>(SHIFT_CONFIGS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
-  const [createShift, { loading: creating }] = useMutation(CREATE_SHIFT_CONFIG)
-  const [updateShift, { loading: updating }] = useMutation(UPDATE_SHIFT_CONFIG)
+  const [createShift, { loading: creating }] = useMutation<CreateShiftConfigMutation, CreateShiftConfigMutationVariables>(CREATE_SHIFT_CONFIG)
+  const [updateShift, { loading: updating }] = useMutation<UpdateShiftConfigMutation, UpdateShiftConfigMutationVariables>(UPDATE_SHIFT_CONFIG)
 
-  const shifts: ShiftConfig[] = data?.shiftConfigs ?? []
+  const shifts: ShiftConfig[] = (data?.shiftConfigs ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   function openCreate() {
     setForm({ ...emptyForm })
@@ -89,7 +90,7 @@ export default function ShiftConfigsPage() {
         addToast({ type: 'success', message: 'Shift created' })
       }
       setModalOpen(false)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -196,7 +197,7 @@ export default function ShiftConfigsPage() {
             >
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleSubmit} loading={creating || updating}>
+            <Button variant="primary" onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)} loading={creating || updating}>
               Save
             </Button>
           </>

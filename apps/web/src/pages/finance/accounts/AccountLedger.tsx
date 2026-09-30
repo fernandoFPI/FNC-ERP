@@ -10,12 +10,13 @@ import { Table } from '../../../components/ui/Table'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { Button } from '../../../components/ui/Button'
 import { DatePicker } from '../../../components/ui/DatePicker'
+import type { AccountLedgerQuery, AccountLedgerQueryVariables, AccountQuery, AccountQueryVariables } from '../../../graphql/generated'
 
 interface LedgerLine {
   id: string
   date: string
-  reference?: string
-  description?: string
+  reference?: string | null
+  description?: string | null
   debit: string
   credit: string
   running_balance: string
@@ -32,10 +33,10 @@ export default function AccountLedger() {
   const [toDate, setToDate] = useState('')
   const [page, setPage] = useState(1)
 
-  const { data: accountData } = useQuery(ACCOUNT_QUERY, { variables: { id }, skip: !id })
-  const { data, loading } = useQuery(ACCOUNT_LEDGER_QUERY, {
+  const { data: accountData } = useQuery<AccountQuery, AccountQueryVariables>(ACCOUNT_QUERY, { variables: { id: id ?? '' }, skip: !id })
+  const { data, loading } = useQuery<AccountLedgerQuery, AccountLedgerQueryVariables>(ACCOUNT_LEDGER_QUERY, {
     variables: {
-      accountId: id!,
+      accountId: id ?? '',
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
       page,

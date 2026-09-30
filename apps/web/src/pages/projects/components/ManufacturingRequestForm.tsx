@@ -161,7 +161,7 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" size="sm" loading={loading} onClick={handleSubmit}>
+          <Button variant="primary" size="sm" loading={loading} onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
             Create Request
           </Button>
         </div>

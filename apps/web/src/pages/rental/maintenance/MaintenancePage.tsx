@@ -25,6 +25,7 @@ import { useToastStore } from '../../../store/toastStore'
 import { KPICard } from '../../../components/ui/KPICard'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { MaintenanceRecordDetail } from './MaintenanceRecordDetail'
+import type { EquipmentAssetsQuery, EquipmentAssetsQueryVariables, MaintenanceRecordsQuery, MaintenanceRecordsQueryVariables, MaintenanceSchedulesQuery, MaintenanceSchedulesQueryVariables, RecordMaintenanceMutation, RecordMaintenanceMutationVariables, ScheduleMaintenanceItemMutation, ScheduleMaintenanceItemMutationVariables } from '../../../graphql/generated'
 
 const TABS = ['Calendar', 'Scheduled', 'Records'].map((t) => ({ key: t, label: t }))
 const MAINTENANCE_TYPES = [
@@ -41,13 +42,13 @@ const MAINTENANCE_TYPES = [
 interface Schedule {
   id: string
   asset_id: string
-  asset_name?: string
+  asset_name?: string | null
   maintenance_type: string
   scheduled_date: string
-  description?: string
+  description?: string | null
   status: string
-  estimated_cost?: number
-  assigned_to?: string
+  estimated_cost?: number | null
+  assigned_to?: string | null
 }
 
 interface Record {
@@ -58,7 +59,7 @@ interface Record {
   description: string
   cost: number
   performed_by: string
-  next_due_date?: string
+  next_due_date?: string | null
 }
 
 export default function MaintenancePage() {
@@ -94,7 +95,7 @@ export default function MaintenancePage() {
     data: schedulesData,
     loading: schedulesLoading,
     refetch: refetchSchedules,
-  } = useQuery(MAINTENANCE_SCHEDULES_QUERY, {
+  } = useQuery<MaintenanceSchedulesQuery, MaintenanceSchedulesQueryVariables>(MAINTENANCE_SCHEDULES_QUERY, {
     variables: { assetId: preselectedAssetId || undefined },
     fetchPolicy: 'cache-and-network',
   })
@@ -102,13 +103,13 @@ export default function MaintenancePage() {
     data: recordsData,
     loading: recordsLoading,
     refetch: refetchRecords,
-  } = useQuery(MAINTENANCE_RECORDS_QUERY, {
+  } = useQuery<MaintenanceRecordsQuery, MaintenanceRecordsQueryVariables>(MAINTENANCE_RECORDS_QUERY, {
     variables: { assetId: preselectedAssetId || undefined },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: assetsData } = useQuery(EQUIPMENT_ASSETS_QUERY, {})
-  const [scheduleMaintenance, { loading: scheduling }] = useMutation(SCHEDULE_MAINTENANCE)
-  const [recordMaintenance, { loading: recording }] = useMutation(RECORD_MAINTENANCE)
+  const { data: assetsData } = useQuery<EquipmentAssetsQuery, EquipmentAssetsQueryVariables>(EQUIPMENT_ASSETS_QUERY, {})
+  const [scheduleMaintenance, { loading: scheduling }] = useMutation<ScheduleMaintenanceItemMutation, ScheduleMaintenanceItemMutationVariables>(SCHEDULE_MAINTENANCE)
+  const [recordMaintenance, { loading: recording }] = useMutation<RecordMaintenanceMutation, RecordMaintenanceMutationVariables>(RECORD_MAINTENANCE)
 
   const schedules: Schedule[] = schedulesData?.maintenanceSchedules ?? []
   const records: Record[] = recordsData?.maintenanceRecords ?? []
@@ -136,16 +137,6 @@ export default function MaintenancePage() {
     assetName: s.asset_name,
   }))
 
-  const selectStyle: React.CSSProperties = {
-    width: '100%',
-    background: theme.bgSurface,
-    color: theme.textPrimary,
-    border: `1px solid ${theme.border}`,
-    borderRadius: '6px',
-    padding: '8px 12px',
-    fontSize: '13px',
-  }
-
   async function handleScheduleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const input = {
@@ -157,7 +148,7 @@ export default function MaintenancePage() {
       await scheduleMaintenance({ variables: { input } })
       addToast({ type: 'success', message: 'Maintenance scheduled' })
       setShowScheduleForm(false)
-      refetchSchedules()
+      void refetchSchedules()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -174,7 +165,7 @@ export default function MaintenancePage() {
       await recordMaintenance({ variables: { input } })
       addToast({ type: 'success', message: 'Maintenance recorded' })
       setShowRecordForm(false)
-      refetchRecords()
+      void refetchRecords()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -406,7 +397,7 @@ export default function MaintenancePage() {
         title="Schedule Maintenance"
       >
         <form
-          onSubmit={handleScheduleSubmit}
+          onSubmit={(...args: Parameters<typeof handleScheduleSubmit>) => void handleScheduleSubmit(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <div>
@@ -499,7 +490,7 @@ export default function MaintenancePage() {
         title="Record Maintenance Service"
       >
         <form
-          onSubmit={handleRecordSubmit}
+          onSubmit={(...args: Parameters<typeof handleRecordSubmit>) => void handleRecordSubmit(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <div>
@@ -604,8 +595,8 @@ export default function MaintenancePage() {
           }}
           onCompleted={() => {
             setDetailDrawer(null)
-            refetchRecords()
-            refetchSchedules()
+            void refetchRecords()
+            void refetchSchedules()
           }}
         />
       )}

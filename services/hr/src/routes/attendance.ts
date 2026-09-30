@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { isWithinGeofence } from '../lib/geofence.js'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
@@ -16,7 +17,7 @@ const PunchSchema = z.object({
   notes: z.string().optional(),
 })
 
-attendanceRouter.get('/', requirePermission('attendance.view', 'view'), async (req, res) => {
+attendanceRouter.get('/', requirePermission('attendance.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const { employee_id, from, to, page = '1', limit = '100' } = req.query
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
@@ -24,7 +25,7 @@ attendanceRouter.get('/', requirePermission('attendance.view', 'view'), async (r
                FROM attendance_logs al
                JOIN employees e ON e.id = al.employee_id
                WHERE al.company_id = $1`
-    const params: unknown[] = [req.auth!.companyId]
+    const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
     if (employee_id) {
       sql += ` AND al.employee_id = $${idx++}`
@@ -45,10 +46,10 @@ attendanceRouter.get('/', requirePermission('attendance.view', 'view'), async (r
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch attendance', err)
   }
-})
+}))
 
 // POST /attendance/punch — geofenced punch-in/out
-attendanceRouter.post('/punch', requirePermission('attendance.edit', 'edit'), async (req, res) => {
+attendanceRouter.post('/punch', requirePermission('attendance.edit', 'edit'), asyncHandler(async (req, res) => {
   const parsed = PunchSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -56,7 +57,7 @@ attendanceRouter.post('/punch', requirePermission('attendance.edit', 'edit'), as
   }
 
   const { employee_id, punch_type, latitude, longitude, notes } = parsed.data
-  const companyId = req.auth!.companyId
+  const companyId = getAuth(req).companyId
 
   try {
     // Verify employee belongs to company
@@ -143,11 +144,11 @@ attendanceRouter.post('/punch', requirePermission('attendance.edit', 'edit'), as
         workLocationId ?? null,
         geofenceValid,
         notes ?? null,
-        req.auth!.userId,
+        getAuth(req).userId,
       ],
     )
-    sendOk(res, result.rows[0]!, 201)
+    sendOk(res, firstRowOrThrow(result), 201)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to record punch', err)
   }
-})
+}))

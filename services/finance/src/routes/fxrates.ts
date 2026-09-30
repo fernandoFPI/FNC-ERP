@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -15,7 +15,7 @@ const CreateFXSchema = z.object({
   source: z.enum(['manual', 'cbi', 'market']).default('manual'),
 })
 
-fxRatesRouter.get('/', requirePermission('finance.fx_rates.view', 'view'), async (req, res) => {
+fxRatesRouter.get('/', requirePermission('finance.fx_rates.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const { from_currency, to_currency, date } = req.query
     let sql = `SELECT * FROM fx_rates WHERE 1=1`
@@ -40,9 +40,9 @@ fxRatesRouter.get('/', requirePermission('finance.fx_rates.view', 'view'), async
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch FX rates', err)
   }
-})
+}))
 
-fxRatesRouter.post('/', requirePermission('finance.fx_rates.edit', 'edit'), async (req, res) => {
+fxRatesRouter.post('/', requirePermission('finance.fx_rates.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
     const parsed = CreateFXSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -68,4 +68,4 @@ fxRatesRouter.post('/', requirePermission('finance.fx_rates.edit', 'edit'), asyn
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to upsert FX rate', err)
   }
-})
+}))

@@ -122,7 +122,7 @@ export default function JobHistoryPage() {
     api
       .get<{ summaries: JobSummary[] }>('/admin/job-runs/summary')
       .then((r) => {
-        setSummaries((r.data as unknown as { summaries: JobSummary[] }).summaries ?? [])
+        setSummaries((r.data as unknown as { summaries: JobSummary[] }).summaries)
       })
       .catch(() => {
         addToast({ type: 'error', message: 'Failed to load job summary' })
@@ -143,8 +143,8 @@ export default function JobHistoryPage() {
       .get<{ runs: JobRun[]; total: number }>(`/admin/job-runs?${params.toString()}`)
       .then((r) => {
         const d = r.data as unknown as { runs: JobRun[]; total: number }
-        setRuns(d.runs ?? [])
-        setTotal(d.total ?? 0)
+        setRuns(d.runs)
+        setTotal(d.total)
       })
       .catch(() => {
         addToast({ type: 'error', message: 'Failed to load job runs' })

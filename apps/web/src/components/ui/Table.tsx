@@ -266,7 +266,7 @@ export function Table<T extends object>({
                       display: 'flex',
                       flexDirection: 'column',
                       paddingTop: '10px',
-                      borderTop: `0.5px solid ${theme.tableBorder ?? theme.border}`,
+                      borderTop: `0.5px solid ${theme.tableBorder}`,
                     }}
                   >
                     {visibleBodyColumns.map((col, i) => (
@@ -279,7 +279,7 @@ export function Table<T extends object>({
                           gap: '12px',
                           padding: '6px 0',
                           borderTop:
-                            i === 0 ? 'none' : `0.5px solid ${theme.tableBorder ?? theme.border}`,
+                            i === 0 ? 'none' : `0.5px solid ${theme.tableBorder}`,
                         }}
                       >
                         <div style={{ fontSize: '11px', color: theme.textMuted, flexShrink: 0 }}>
@@ -327,7 +327,7 @@ export function Table<T extends object>({
                   <div
                     style={{
                       paddingTop: '10px',
-                      borderTop: `0.5px solid ${theme.tableBorder ?? theme.border}`,
+                      borderTop: `0.5px solid ${theme.tableBorder}`,
                     }}
                     onClick={(e) => {
                       e.stopPropagation()
@@ -345,7 +345,7 @@ export function Table<T extends object>({
           <div
             style={{
               background: theme.bgSurface,
-              border: `1px solid ${theme.accentBorder ?? theme.border}`,
+              border: `1px solid ${theme.accentBorder}`,
               borderRadius: '12px',
               padding: '14px',
               display: 'flex',
@@ -365,7 +365,7 @@ export function Table<T extends object>({
                     gap: '12px',
                     padding: '4px 0',
                     borderTop:
-                      i === 0 ? 'none' : `0.5px solid ${theme.tableBorder ?? theme.border}`,
+                      i === 0 ? 'none' : `0.5px solid ${theme.tableBorder}`,
                   }}
                 >
                   <div style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted }}>
@@ -421,7 +421,7 @@ export function Table<T extends object>({
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
                   color: theme.textMuted,
-                  borderBottom: `1px solid ${theme.tableBorder ?? theme.border}`,
+                  borderBottom: `1px solid ${theme.tableBorder}`,
                   whiteSpace: 'nowrap',
                   background: theme.bgSurface,
                   position: stickyFirstColumn && i === 0 ? 'sticky' : undefined,
@@ -475,7 +475,7 @@ export function Table<T extends object>({
                           textTransform: 'uppercase',
                           letterSpacing: '0.06em',
                           background: theme.bgSurface,
-                          borderBottom: `1px solid ${theme.tableBorder ?? theme.border}`,
+                          borderBottom: `1px solid ${theme.tableBorder}`,
                         }}
                       >
                         {sectionHeader}
@@ -486,7 +486,7 @@ export function Table<T extends object>({
                     onClick={() => onRowClick?.(row)}
                     style={{
                       cursor: onRowClick ? 'pointer' : 'default',
-                      borderBottom: `1px solid ${theme.tableBorder ?? theme.border}`,
+                      borderBottom: `1px solid ${theme.tableBorder}`,
                       ...rowStyle,
                     }}
                     onMouseEnter={(e) => {
@@ -517,7 +517,7 @@ export function Table<T extends object>({
                     ))}
                   </tr>
                   {expandedContent && (
-                    <tr style={{ borderBottom: `1px solid ${theme.tableBorder ?? theme.border}` }}>
+                    <tr style={{ borderBottom: `1px solid ${theme.tableBorder}` }}>
                       <td
                         colSpan={visibleColumns.length}
                         style={{
@@ -535,7 +535,7 @@ export function Table<T extends object>({
             })
           )}
           {footerRow && !loading && data.length > 0 && (
-            <tr style={{ borderTop: `2px solid ${theme.tableBorder ?? theme.border}` }}>
+            <tr style={{ borderTop: `2px solid ${theme.tableBorder}` }}>
               {visibleColumns.map((col) => (
                 <td
                   key={col.key}

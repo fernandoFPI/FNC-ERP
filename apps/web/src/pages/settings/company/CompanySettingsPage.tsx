@@ -11,6 +11,7 @@ import { MY_PREFERENCES_QUERY, UPDATE_PREFERENCES } from '../../../graphql/setti
 import { COMPANY_QUERY, UPDATE_COMPANY_CONFIGURATION } from '../../../graphql/admin'
 import { useAuthStore } from '../../../store/authStore'
 import { SystemConfigForm } from './SystemConfigForm'
+import type { CompanyQuery, CompanyQueryVariables, UpdateCompanyConfigurationMutation, UpdateCompanyConfigurationMutationVariables, UpdatePreferencesMutation, UpdatePreferencesMutationVariables } from '../../../graphql/generated'
 
 interface MyPreferences {
   themePreference: string | null
@@ -54,13 +55,13 @@ export default function CompanySettingsPage() {
   const [emailSig, setEmailSig] = useState('')
 
   const { data, loading } = useQuery<PreferencesData>(MY_PREFERENCES_QUERY)
-  const { data: companyData } = useQuery(COMPANY_QUERY, {
-    variables: { id: companyId },
+  const { data: companyData } = useQuery<CompanyQuery, CompanyQueryVariables>(COMPANY_QUERY, {
+    variables: { id: companyId ?? '' },
     skip: !companyId,
   })
   const company = companyData?.company
 
-  const [updatePreferences, { loading: saving }] = useMutation(UPDATE_PREFERENCES, {
+  const [updatePreferences, { loading: saving }] = useMutation<UpdatePreferencesMutation, UpdatePreferencesMutationVariables>(UPDATE_PREFERENCES, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Settings saved' })
       setDirty(false)
@@ -71,7 +72,7 @@ export default function CompanySettingsPage() {
     refetchQueries: [{ query: MY_PREFERENCES_QUERY }],
   })
 
-  const [updateConfig, { loading: savingConfig }] = useMutation(UPDATE_COMPANY_CONFIGURATION, {
+  const [updateConfig, { loading: savingConfig }] = useMutation<UpdateCompanyConfigurationMutation, UpdateCompanyConfigurationMutationVariables>(UPDATE_COMPANY_CONFIGURATION, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Branding settings saved' })
     },
@@ -307,8 +308,7 @@ export default function CompanySettingsPage() {
                 marginTop: '12px',
                 padding: '8px 12px',
                 borderRadius: '8px',
-                background:
-                  (theme as unknown as Record<string, string>).dangerBg ?? theme.bgSurface,
+                background: theme.dangerBg,
                 border: `1px solid ${theme.danger}`,
                 fontSize: '12px',
                 color: theme.danger,
@@ -446,8 +446,8 @@ export default function CompanySettingsPage() {
                     variables: {
                       companyId,
                       input: {
-                        companyEmailFrom: emailFrom || undefined,
-                        companyEmailSignature: emailSig || undefined,
+                        company_email_from: emailFrom || undefined,
+                        company_email_signature: emailSig || undefined,
                       },
                     },
                   })

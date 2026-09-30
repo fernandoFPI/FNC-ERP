@@ -13,12 +13,13 @@ import { Input } from '../../../components/ui/Input'
 import { Checkbox } from '../../../components/ui/Checkbox'
 import { PermissionGate } from '../../../components/ui/PermissionGate'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreateLeaveTypeMutation, CreateLeaveTypeMutationVariables, DeleteLeaveTypeMutation, DeleteLeaveTypeMutationVariables, LeaveTypesQuery, LeaveTypesQueryVariables } from '../../../graphql/generated'
 
 interface LeaveType {
   id: string
   name: string
   is_paid: boolean
-  max_days_per_year?: number
+  max_days_per_year?: number | null
   requires_approval: boolean
   is_active: boolean
 }
@@ -32,13 +33,13 @@ export default function LeaveTypesPage() {
   const [form, setForm] = useState(emptyForm)
   const [deleteTarget, setDeleteTarget] = useState<LeaveType | null>(null)
 
-  const { data, loading, refetch } = useQuery(LEAVE_TYPES_QUERY, {
+  const { data, loading, refetch } = useQuery<LeaveTypesQuery, LeaveTypesQueryVariables>(LEAVE_TYPES_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
-  const [createLeaveType, { loading: creating }] = useMutation(CREATE_LEAVE_TYPE)
-  const [deleteLeaveType, { loading: deleting }] = useMutation(DELETE_LEAVE_TYPE)
+  const [createLeaveType, { loading: creating }] = useMutation<CreateLeaveTypeMutation, CreateLeaveTypeMutationVariables>(CREATE_LEAVE_TYPE)
+  const [deleteLeaveType, { loading: deleting }] = useMutation<DeleteLeaveTypeMutation, DeleteLeaveTypeMutationVariables>(DELETE_LEAVE_TYPE)
 
-  const leaveTypes: LeaveType[] = data?.leaveTypes ?? []
+  const leaveTypes: LeaveType[] = (data?.leaveTypes ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   async function handleSubmit() {
     const input = {
@@ -52,7 +53,7 @@ export default function LeaveTypesPage() {
       addToast({ type: 'success', message: 'Leave type created' })
       setModalOpen(false)
       setForm(emptyForm)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -64,7 +65,7 @@ export default function LeaveTypesPage() {
       await deleteLeaveType({ variables: { id: deleteTarget.id } })
       addToast({ type: 'success', message: `"${deleteTarget.name}" deleted` })
       setDeleteTarget(null)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -171,7 +172,7 @@ export default function LeaveTypesPage() {
             >
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleSubmit} loading={creating}>
+            <Button variant="primary" onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)} loading={creating}>
               Create
             </Button>
           </>
@@ -231,7 +232,7 @@ export default function LeaveTypesPage() {
             >
               Cancel
             </Button>
-            <Button variant="danger" onClick={handleDelete} loading={deleting}>
+            <Button variant="danger" onClick={(...args: Parameters<typeof handleDelete>) => void handleDelete(...args)} loading={deleting}>
               Delete
             </Button>
           </>

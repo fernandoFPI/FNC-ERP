@@ -48,7 +48,9 @@ export async function sendLowStockAlerts(): Promise<void> {
   }
 
   for (const [companyId, items] of byCompany) {
-    const companyName = items[0]!.company_name
+    const first = items[0]
+    if (!first) continue
+    const companyName = first.company_name
 
     const admins = await pool.query<AdminRow>(
       `SELECT DISTINCT user_id FROM user_company_roles WHERE company_id = $1 AND role IN ('company_admin','system_admin') AND is_active = TRUE`,

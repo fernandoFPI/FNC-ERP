@@ -1,11 +1,11 @@
 import { Router, type IRouter, type Request, type Response } from 'express'
 import { randomBytes } from 'crypto'
-import { pool, query, withSystemTransaction } from '@fnc-erp/db'
-import { hashPassword, validatePasswordStrength, requireAuth, requireRole } from '@fnc-erp/auth'
+import { pool, query, withSystemTransaction, asyncHandler } from '@fnc-erp/db'
+import { hashPassword, validatePasswordStrength, requireAuth, requireRole, getAuth } from '@fnc-erp/auth'
 import { logAudit } from '@fnc-erp/audit'
 import { createServiceLogger } from '@fnc-erp/logger'
 import { env } from '@fnc-erp/config'
-import { sendError } from '../lib/errors.js'
+import { sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { revokeSessions } from '../lib/session.js'
 
@@ -25,7 +25,7 @@ userManagementRouter.get(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     try {
       const {
         search,
@@ -106,7 +106,7 @@ userManagementRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list users', err)
     }
-  },
+  }),
 )
 
 // ── GET /auth/users/:id ────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ userManagementRouter.get(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     try {
       const result = await query(
         `SELECT
@@ -155,7 +155,7 @@ userManagementRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch user', err)
     }
-  },
+  }),
 )
 
 // ── POST /auth/users ────────────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ userManagementRouter.post(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const {
       email,
       password,
@@ -231,7 +231,7 @@ userManagementRouter.post(
         }
 
         await logAudit({
-          userId: req.auth!.userId,
+          userId: getAuth(req).userId,
           companyId: undefined,
           action: 'USER_CREATED',
           tableName: 'users',
@@ -242,7 +242,7 @@ userManagementRouter.post(
           client,
         })
 
-        log.info({ userId: uid, email, createdBy: req.auth!.userId }, 'user created')
+        log.info({ userId: uid, email, createdBy: getAuth(req).userId }, 'user created')
         return uid
       })
 
@@ -253,7 +253,7 @@ userManagementRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create user', err)
     }
-  },
+  }),
 )
 
 // ── GET /auth/users/accept-invitation/validate ────────────────────────────────
@@ -261,7 +261,7 @@ userManagementRouter.post(
 
 userManagementRouter.get(
   '/accept-invitation/validate',
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { token } = req.query as { token?: string }
 
     if (!token) {
@@ -309,7 +309,7 @@ userManagementRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to validate invitation', err)
     }
-  },
+  }),
 )
 
 // ── POST /auth/users/invite ────────────────────────────────────────────────────
@@ -321,10 +321,10 @@ userManagementRouter.post(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { email, company_id, role, module: roleModule } = req.body as Record<string, string>
     await dispatchInvitation(req, res, { email, company_id, role, module: roleModule })
-  },
+  }),
 )
 
 // ── POST /auth/accept-invitation ──────────────────────────────────────────────
@@ -332,7 +332,7 @@ userManagementRouter.post(
 
 userManagementRouter.post(
   '/accept-invitation',
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { token, password, confirmPassword } = req.body as Record<string, string>
 
     if (!token || !password) {
@@ -428,7 +428,7 @@ userManagementRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to accept invitation', err)
     }
-  },
+  }),
 )
 
 // ── PATCH /auth/users/:id ──────────────────────────────────────────────────────
@@ -438,7 +438,7 @@ userManagementRouter.patch(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { is_active, email } = req.body as { is_active?: boolean; email?: string }
 
     if (email !== undefined && !email.includes('@')) {
@@ -472,11 +472,11 @@ userManagementRouter.patch(
         await client.query(`UPDATE users SET ${setClauses.join(', ')} WHERE id = $${p + 1}`, values)
 
         if (is_active === false) {
-          await revokeSessions({ executor: client, userId: req.params['id']! })
+          await revokeSessions({ executor: client, userId: requireParam(req, 'id') })
         }
 
         await logAudit({
-          userId: req.auth!.userId,
+          userId: getAuth(req).userId,
           companyId: undefined,
           action: is_active === false ? 'USER_DEACTIVATED' : 'USER_UPDATED',
           tableName: 'users',
@@ -492,7 +492,7 @@ userManagementRouter.patch(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update user', err)
     }
-  },
+  }),
 )
 
 // ── POST /auth/users/:id/unlock ────────────────────────────────────────────────
@@ -502,14 +502,14 @@ userManagementRouter.post(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     try {
       await query(
         `UPDATE users SET failed_login_attempts = 0, locked_until = NULL, updated_at = NOW() WHERE id = $1`,
         [req.params['id']],
       )
       await logAudit({
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         companyId: undefined,
         action: 'USER_UNLOCKED',
         tableName: 'users',
@@ -521,7 +521,7 @@ userManagementRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to unlock user', err)
     }
-  },
+  }),
 )
 
 // ── POST /auth/users/:id/set-password ─────────────────────────────────────────
@@ -531,7 +531,7 @@ userManagementRouter.post(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { newPassword } = req.body as { newPassword?: string }
 
     if (!newPassword || newPassword.length < 8) {
@@ -561,9 +561,9 @@ userManagementRouter.post(
            WHERE id = $2`,
           [passwordHash, req.params['id']],
         )
-        await revokeSessions({ executor: client, userId: req.params['id']! })
+        await revokeSessions({ executor: client, userId: requireParam(req, 'id') })
         await logAudit({
-          userId: req.auth!.userId,
+          userId: getAuth(req).userId,
           companyId: undefined,
           action: 'USER_PASSWORD_CHANGED_BY_ADMIN',
           tableName: 'users',
@@ -575,7 +575,7 @@ userManagementRouter.post(
       })
 
       log.info(
-        { targetUserId: req.params['id'], changedBy: req.auth!.userId },
+        { targetUserId: req.params['id'], changedBy: getAuth(req).userId },
         'admin set user password',
       )
       res.json({
@@ -585,7 +585,7 @@ userManagementRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to set password', err)
     }
-  },
+  }),
 )
 
 // ── POST /auth/users/:id/reset-mfa ────────────────────────────────────────────
@@ -595,16 +595,16 @@ userManagementRouter.post(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     try {
       await withSystemTransaction(async (client) => {
         await client.query(
           `UPDATE users SET mfa_enabled = false, mfa_secret = NULL, updated_at = NOW() WHERE id = $1`,
           [req.params['id']],
         )
-        await revokeSessions({ executor: client, userId: req.params['id']! })
+        await revokeSessions({ executor: client, userId: requireParam(req, 'id') })
         await logAudit({
-          userId: req.auth!.userId,
+          userId: getAuth(req).userId,
           companyId: undefined,
           action: 'USER_MFA_RESET',
           tableName: 'users',
@@ -618,7 +618,7 @@ userManagementRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to reset MFA', err)
     }
-  },
+  }),
 )
 
 // ── GET /auth/users/:id/sessions ──────────────────────────────────────────────
@@ -628,7 +628,7 @@ userManagementRouter.get(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     try {
       const result = await query(
         `SELECT id, device_name, platform, ip_address, created_at, expires_at
@@ -641,7 +641,7 @@ userManagementRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list sessions', err)
     }
-  },
+  }),
 )
 
 // ── DELETE /auth/users/:id/sessions/:sessionId ────────────────────────────────
@@ -651,15 +651,15 @@ userManagementRouter.delete(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     try {
       await revokeSessions({
         executor: pool,
-        userId: req.params['id']!,
+        userId: requireParam(req, 'id'),
         sessionId: req.params['sessionId'],
       })
       await logAudit({
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         companyId: undefined,
         action: 'SESSION_REVOKED_BY_ADMIN',
         tableName: 'sessions',
@@ -671,7 +671,7 @@ userManagementRouter.delete(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to revoke session', err)
     }
-  },
+  }),
 )
 
 // ── DELETE /auth/users/:id/sessions — revoke all ──────────────────────────────
@@ -681,11 +681,11 @@ userManagementRouter.delete(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.users.edit', 'edit'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     try {
-      await revokeSessions({ executor: pool, userId: req.params['id']! })
+      await revokeSessions({ executor: pool, userId: requireParam(req, 'id') })
       await logAudit({
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         companyId: undefined,
         action: 'ALL_SESSIONS_REVOKED_BY_ADMIN',
         tableName: 'sessions',
@@ -697,7 +697,7 @@ userManagementRouter.delete(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to revoke sessions', err)
     }
-  },
+  }),
 )
 
 // ── Shared invitation helper ───────────────────────────────────────────────────
@@ -748,7 +748,7 @@ async function dispatchInvitation(
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
           email.toLowerCase(),
-          req.auth!.userId,
+          getAuth(req).userId,
           company_id ?? null,
           role ?? null,
           roleModule ?? 'all',
@@ -763,7 +763,7 @@ async function dispatchInvitation(
         [
           JSON.stringify({
             email: email.toLowerCase(),
-            invitedBy: req.auth!.userId,
+            invitedBy: getAuth(req).userId,
             invitationUrl: `${env.FRONTEND_URL}/accept-invitation?token=${token}`,
             expiresAt: expiresAt.toISOString(),
             companyName,
@@ -773,7 +773,7 @@ async function dispatchInvitation(
       )
 
       await logAudit({
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         companyId: undefined,
         action: 'USER_INVITED',
         tableName: 'user_invitations',
@@ -785,7 +785,7 @@ async function dispatchInvitation(
       })
     })
 
-    log.info({ email, invitedBy: req.auth!.userId }, 'user invitation sent')
+    log.info({ email, invitedBy: getAuth(req).userId }, 'user invitation sent')
     res.status(201).json({
       success: true,
       data: {

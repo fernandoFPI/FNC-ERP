@@ -16,6 +16,7 @@ import { Button } from '../../../components/ui/Button'
 import { useToastStore } from '../../../store/toastStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { CreateRentalContractMutation, CreateRentalContractMutationVariables, EquipmentAssetsQuery, EquipmentAssetsQueryVariables, ProjectsQuery, ProjectsQueryVariables, RentalContractQuery, RentalContractQueryVariables, UpdateRentalContractMutation, UpdateRentalContractMutationVariables } from '../../../graphql/generated'
 
 const RENTAL_TYPES = ['short_term', 'long_term', 'project_based']
 const BILLING_CYCLES = ['daily', 'weekly', 'monthly']
@@ -53,20 +54,20 @@ export default function RentalContractForm() {
     salvage_value: '',
   })
 
-  const { data: contractData } = useQuery(RENTAL_CONTRACT_QUERY, {
-    variables: { id },
+  const { data: contractData } = useQuery<RentalContractQuery, RentalContractQueryVariables>(RENTAL_CONTRACT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !isEdit,
   })
-  const { data: assetsData } = useQuery(EQUIPMENT_ASSETS_QUERY, {
+  const { data: assetsData } = useQuery<EquipmentAssetsQuery, EquipmentAssetsQueryVariables>(EQUIPMENT_ASSETS_QUERY, {
     variables: { status: 'available' },
   })
   // includeAll bypasses the membership filter so all company projects appear in the dropdown
   // statuses: 'active' was renamed to 'ongoing' in migration 033
-  const { data: projData } = useQuery(PROJECTS_QUERY, {
+  const { data: projData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     variables: { status: ['ongoing', 'submitted', 'approved'], includeAll: true },
   })
-  const [createContract, { loading: creating }] = useMutation(CREATE_RENTAL_CONTRACT)
-  const [updateContract, { loading: updating }] = useMutation(UPDATE_RENTAL_CONTRACT)
+  const [createContract, { loading: creating }] = useMutation<CreateRentalContractMutation, CreateRentalContractMutationVariables>(CREATE_RENTAL_CONTRACT)
+  const [updateContract, { loading: updating }] = useMutation<UpdateRentalContractMutation, UpdateRentalContractMutationVariables>(UPDATE_RENTAL_CONTRACT)
 
   const assets: {
     id: string
@@ -85,11 +86,11 @@ export default function RentalContractForm() {
         project_id: c.project_id ?? '',
         client_name: c.client_name ?? '',
         client_contact: c.client_contact ?? '',
-        rental_type: c.rental_type ?? 'short_term',
-        billing_cycle: c.billing_cycle ?? 'daily',
-        rate_amount: String(c.rate_amount ?? ''),
+        rental_type: c.rental_type,
+        billing_cycle: c.billing_cycle,
+        rate_amount: String(c.rate_amount),
         currency_code: c.currency_code ?? 'IQD',
-        start_date: c.start_date ?? '',
+        start_date: c.start_date,
         end_date: c.end_date ?? '',
         deposit_amount: String(c.deposit_amount ?? ''),
         notes: c.notes ?? '',
@@ -115,24 +116,6 @@ export default function RentalContractForm() {
       setForm((f) => ({ ...f, depreciation_per_day: perDay.toFixed(4) }))
     }
   }, [form.asset_id, form.useful_life_days, form.salvage_value, form.depreciation_method, assets])
-
-  const selectStyle: React.CSSProperties = {
-    width: '100%',
-    background: theme.bgSurface,
-    color: theme.textPrimary,
-    border: `1px solid ${theme.border}`,
-    borderRadius: '6px',
-    padding: '8px 12px',
-    fontSize: '13px',
-  }
-
-  const labelStyle: React.CSSProperties = {
-    display: 'block',
-    fontSize: '12px',
-    color: theme.textSecondary,
-    marginBottom: '4px',
-    fontWeight: 500,
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -178,6 +161,10 @@ export default function RentalContractForm() {
           variables: { input },
           refetchQueries: [{ query: RENTAL_CONTRACTS_QUERY }],
         })
+        if (!res.data?.createRentalContract) {
+          addToast({ type: 'error', message: 'Contract creation did not return a result' })
+          return
+        }
         addToast({ type: 'success', message: 'Contract created' })
         navigate(`/rental/contracts/${res.data.createRentalContract.id}`)
       }
@@ -197,7 +184,7 @@ export default function RentalContractForm() {
 
       <Card style={{ marginTop: '20px' }}>
         <form
-          onSubmit={handleSubmit}
+          onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '24px' }}
         >
           {/* ── Asset & Project ── */}

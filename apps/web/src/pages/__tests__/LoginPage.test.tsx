@@ -3,10 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import LoginPage from '../auth/LoginPage'
 import { ThemeProvider } from '../../theme/ThemeContext'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
@@ -39,7 +40,7 @@ describe('LoginPage', () => {
   })
 
   it('shows loading state on submit', async () => {
-    mockLogin.mockImplementation(() => new Promise(() => {})) // never resolves
+    mockLogin.mockImplementation(() => new Promise(() => { /* never resolves */ }))
     wrap()
     fireEvent.change(screen.getByPlaceholderText('you@fnc-group.com'), {
       target: { value: 'a@b.com' },
@@ -82,7 +83,9 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(
         '/mfa',
-        expect.objectContaining({ state: expect.objectContaining({ tempToken: 'temp123' }) }),
+        expect.objectContaining({
+          state: expect.objectContaining({ tempToken: 'temp123' }) as Record<string, unknown>,
+        }),
       )
     })
   })

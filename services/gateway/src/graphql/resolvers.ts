@@ -9,6 +9,7 @@
   listPoFxRates,
   PRODUCT_CATEGORY_SKU_PREFIXES,
   getProductStoreCategoryPrefix,
+  firstRowOrThrow,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { notifyProjectFileUploadGW } from '../lib/projectNotify.js'
@@ -17,6 +18,7 @@ import {
   renderMeetingInvitationEmail,
   generateMeetingICS,
   renderMeetingMinutesEmail,
+  type EngDocEventType,
 } from '@fnc-erp/email'
 import { env } from '@fnc-erp/config'
 import { resolveTransferPrice } from '@fnc-erp/fx'
@@ -121,13 +123,14 @@ fetchAllHealth()
     healthCache = r
   })
   .catch(() => null)
-setInterval(async () => {
+async function refreshHealthCache(): Promise<void> {
   try {
     healthCache = await fetchAllHealth()
   } catch {
     /* keep stale cache */
   }
-}, 10000)
+}
+setInterval(() => void refreshHealthCache(), 10000)
 
 // ── PO lifecycle helpers ────────────────────────────────────────
 
@@ -154,13 +157,24 @@ interface AdminPOCorrectionChanges extends EditChanges {
   receiptLines?: { edited?: { id: string; field: string; from?: unknown; to: unknown }[] }
 }
 
+// Renders an edit-diff value (typed unknown since it comes straight off the
+// JSON change payload) for the audit summary. Primitives print as-is, same as
+// the old implicit template-literal coercion; a bare object (never expected
+// in practice — diffed fields are scalar) prints as JSON instead of
+// '[object Object]'.
+function displayEditValue(v: unknown): string {
+  if (v === null || v === undefined) return '—'
+  return typeof v === 'object' ? JSON.stringify(v) : String(v)
+}
+
 function buildEditChangeSummary(changes: AdminPOCorrectionChanges): string {
   const parts: string[] = []
-  const headerFields = Object.keys(changes.header ?? {})
-  if (headerFields.length > 0) {
+  const header = changes.header
+  const headerFields = Object.keys(header ?? {})
+  if (header && headerFields.length > 0) {
     const details = headerFields.map((f) => {
-      const diff = changes.header![f]
-      return `${f}: "${diff.from ?? '—'}" → "${diff.to ?? '—'}"`
+      const diff = header[f]
+      return `${f}: "${displayEditValue(diff.from)}" → "${displayEditValue(diff.to)}"`
     })
     parts.push(`Header: ${details.join(', ')}`)
   }
@@ -168,22 +182,49 @@ function buildEditChangeSummary(changes: AdminPOCorrectionChanges): string {
   const added = changes.lines?.added ?? []
   const removed = changes.lines?.removed ?? []
   if (edited.length > 0) {
-    const editDetails = edited.map((e) => `${e.field}: "${e.from ?? '—'}" → "${e.to ?? '—'}"`)
+    const editDetails = edited.map(
+      (e) => `${e.field}: "${displayEditValue(e.from)}" → "${displayEditValue(e.to)}"`,
+    )
     parts.push(`Lines edited (${edited.length}): ${editDetails.join(', ')}`)
   }
   if (added.length > 0) parts.push(`Lines added: ${added.length}`)
   if (removed.length > 0) parts.push(`Lines removed: ${removed.length}`)
   const receiptsEdited = changes.receipts?.edited ?? []
   if (receiptsEdited.length > 0) {
-    const details = receiptsEdited.map((e) => `${e.field}: "${e.from ?? '—'}" → "${e.to ?? '—'}"`)
+    const details = receiptsEdited.map(
+      (e) => `${e.field}: "${displayEditValue(e.from)}" → "${displayEditValue(e.to)}"`,
+    )
     parts.push(`Receipts edited (${receiptsEdited.length}): ${details.join(', ')}`)
   }
   const receiptLinesEdited = changes.receiptLines?.edited ?? []
   if (receiptLinesEdited.length > 0) {
-    const details = receiptLinesEdited.map((e) => `${e.field}: "${e.from ?? '—'}" → "${e.to ?? '—'}"`)
+    const details = receiptLinesEdited.map(
+      (e) => `${e.field}: "${displayEditValue(e.from)}" → "${displayEditValue(e.to)}"`,
+    )
     parts.push(`Receipt lines edited (${receiptLinesEdited.length}): ${details.join(', ')}`)
   }
   return parts.join(' | ')
+}
+
+// Grouping/aggregation code throughout this file builds Map<K, V[]> (or
+// Map<K, Set<V>>) structures with a `has(k) ? set(k, empty) : ...` guard
+// immediately before every `.get(k)!` — this collapses that guard-then-assert
+// pair into one call.
+// For the recurring "exactly one of these two nullable FK columns is set"
+// shape (a po_line belongs to either a PO or a requisition, never both) —
+// a ternary on the first already proves the second is set in its else
+// branch, but that fact doesn't carry across to a *different* property read.
+function requireId(id: string | null | undefined, message: string): string {
+  if (!id) throw new Error(message)
+  return id
+}
+
+function getOrCreate<K, V>(map: Map<K, V>, key: K, factory: () => V): V {
+  const existing = map.get(key)
+  if (existing !== undefined) return existing
+  const created = factory()
+  map.set(key, created)
+  return created
 }
 
 // A PO is editable directly (no edit-request approval needed) up until it's been
@@ -243,7 +284,7 @@ async function releaseLineStockReservations(client: PoolClient, lineIds: string[
     [lineIds],
   )
   for (const row of rows.rows) {
-    const remaining = parseFloat(String(row.remaining ?? 0))
+    const remaining = parseFloat(String(row.remaining))
     if (remaining <= 0) continue
     await client.query(
       `UPDATE stock_balances SET qty_reserved = GREATEST(qty_reserved - $1, 0), updated_at = NOW()
@@ -276,7 +317,7 @@ async function capLineReservationToQtyOrdered(
     qty_from_stock: string
   }>(`SELECT product_id, source_location_id, qty_from_stock FROM po_lines WHERE id=$1`, [lineId])
   const line = lineRes.rows[0]
-  if (!line || !line.source_location_id) return
+  if (!line?.source_location_id) return
   const oldQtyFromStock = parseFloat(line.qty_from_stock)
   if (oldQtyFromStock <= newQtyOrdered) return
 
@@ -526,7 +567,7 @@ async function applyPOEditChanges(
           `SELECT company_id, base_currency_code FROM purchase_orders WHERE id=$1`,
           [poId],
         )
-        poCurrencyInfo = poRes.rows[0]!
+        poCurrencyInfo = firstRowOrThrow(poRes)
       }
       const newCurrency = e.to as string
       const fxRateToBase = await resolveFxRateToBase(
@@ -599,7 +640,7 @@ async function applyPOEditChanges(
         `SELECT company_id, base_currency_code FROM purchase_orders WHERE id=$1`,
         [poId],
       )
-      poCurrencyInfo = poRes.rows[0]!
+      poCurrencyInfo = firstRowOrThrow(poRes)
     }
     const companyId = poCurrencyInfo.company_id
     const baseCurrencyCode = poCurrencyInfo.base_currency_code
@@ -1098,8 +1139,8 @@ async function applyAdminPOCorrection(
     const line = lineRes.rows[0]
     if (!line) throw new Error(`PO line ${e.id} not found`)
     const oldProductId = line.product_id
-    const oldQtyFromStock = parseFloat(String(line.qty_from_stock ?? 0))
-    const oldQtyReceived = parseFloat(String(line.qty_received ?? 0))
+    const oldQtyFromStock = parseFloat(String(line.qty_from_stock))
+    const oldQtyReceived = parseFloat(String(line.qty_received))
     const fxRate = parseFloat(String(line.fx_rate_to_base ?? 1)) || 1
 
     if (e.field === 'qty_ordered') {
@@ -1524,7 +1565,7 @@ async function applyAdminPOCorrection(
 }
 
 async function poTransition(
-  client: import('@fnc-erp/db').PoolClient,
+  client: PoolClient,
   poId: string,
   fromStatus: POStatus,
   toStatus: POStatus,
@@ -1573,7 +1614,7 @@ async function poTransition(
 // purchase_orders/po_approval_log. See PR 1 of G1 Phase 2.
 
 async function reqTransition(
-  client: import('@fnc-erp/db').PoolClient,
+  client: PoolClient,
   reqId: string,
   fromStatus: RequisitionStatus,
   toStatus: RequisitionStatus,
@@ -1940,7 +1981,7 @@ async function releaseRequisitionStockReservations(
     [reqId],
   )
   for (const row of rows.rows) {
-    const remaining = parseFloat(String(row.remaining ?? 0))
+    const remaining = parseFloat(String(row.remaining))
     if (remaining <= 0) continue
     await client.query(
       `UPDATE stock_balances SET qty_reserved = GREATEST(qty_reserved - $1, 0), updated_at = NOW()
@@ -1973,7 +2014,7 @@ async function releaseRequisitionStockReservations(
 //     remain on the old vocab until Milestone B's status remap, and still
 //     finishes via completePO's old-vocab branch — see its own comment.
 async function evaluateRequisitionCompletion(
-  client: import('@fnc-erp/db').PoolClient,
+  client: PoolClient,
   reqId: string,
   auth: GWAuth,
 ): Promise<void> {
@@ -2054,7 +2095,7 @@ async function callerHasCompanyWideStoreKeeper(
 // Post a journal entry when a project-linked PO is completed so that the cost
 // flows into project_cost_actuals via trg_sync_project_costs.
 async function postPOCompletionJournal(
-  client: import('@fnc-erp/db').PoolClient,
+  client: PoolClient,
   poId: string,
   actorId: string,
 ): Promise<void> {
@@ -2247,7 +2288,7 @@ async function completeStockIssuanceLineForResolvedProduct(
 ): Promise<void> {
   const lineRes = await client.query(`SELECT * FROM po_lines WHERE id=$1`, [poLineId])
   const line = lineRes.rows[0] as Record<string, unknown> | undefined
-  if (!line || !line.product_id) return
+  if (!line?.product_id) return
 
   const issueRes = await client.query(
     `SELECT pmi.id FROM project_material_issues pmi
@@ -2293,7 +2334,7 @@ async function completeStoreInLineForResolvedProduct(
     [poLineId],
   )
   const line = lineRes.rows[0] as Record<string, unknown> | undefined
-  if (!line || !line.product_id) return
+  if (!line?.product_id) return
 
   const missingRes = await client.query<{
     id: string
@@ -2533,7 +2574,7 @@ async function releasePOStockReservations(client: PoolClient, poId: string): Pro
     [poId],
   )
   for (const row of rows.rows) {
-    const remaining = parseFloat(String(row.remaining ?? 0))
+    const remaining = parseFloat(String(row.remaining))
     if (remaining <= 0) continue
     await client.query(
       `UPDATE stock_balances SET qty_reserved = GREATEST(qty_reserved - $1, 0), updated_at = NOW()
@@ -2708,8 +2749,8 @@ async function callerHasCurrentStagePositionGW(
       return userHasPositionGW(auth.userId, auth.companyId, poId, 'store_pricing')
     case 'market_pricing':
       return userHasPositionGW(auth.userId, auth.companyId, poId, 'procurement_officer')
-    case 'price_verification':
-      return userHasPositionGW(auth.userId, auth.companyId, poId, 'procurement_2nd')
+    // price_verification has no dedicated position — it's organizer/admin
+    // only (see submitPOPriceVerification), same as draft/approved below.
     case 'pending_approval':
       return (
         (await userIsDeptHeadGW(auth.userId, poId)) ||
@@ -3409,11 +3450,13 @@ async function notifyDeptHeadsAndAdminsGW(
   poId: string,
   notification: POAuthGWNotification,
 ): Promise<void> {
-  const poResult = await query(`SELECT po.organizer_id FROM purchase_orders po WHERE po.id = $1`, [
-    poId,
-  ])
+  const poResult = await query(
+    `SELECT po.organizer_id, po.company_id FROM purchase_orders po WHERE po.id = $1`,
+    [poId],
+  )
   const organizerId = poResult.rows[0]?.organizer_id as string | undefined
-  if (!organizerId) return
+  const companyId = poResult.rows[0]?.company_id as string | undefined
+  if (!organizerId || !companyId) return
 
   const deptHeads = await query(
     `SELECT DISTINCT u.id AS user_id
@@ -3423,12 +3466,14 @@ async function notifyDeptHeadsAndAdminsGW(
      WHERE d.id = (SELECT e.department_id FROM employees e WHERE e.user_id = $1 LIMIT 1)`,
     [organizerId],
   )
+  // Scoped by company_id — was previously missing, which notified every
+  // system_admin across every company in the system, not just this PO's own.
   const admins = await query(
     `SELECT DISTINCT u.id AS user_id
      FROM users u
      JOIN user_company_roles ucr ON ucr.user_id = u.id
-     WHERE ucr.role = 'system_admin' AND u.is_active = true`,
-    [],
+     WHERE ucr.role = 'system_admin' AND ucr.company_id = $1 AND u.is_active = true`,
+    [companyId],
   )
   for (const r of [...deptHeads.rows, ...admins.rows]) {
     await query(
@@ -3556,7 +3601,7 @@ async function notifyDeptHeadsAndAdminsForRequisitionGW(
 // revaluation, not this). Throws rather than silently defaulting to 1 for an
 // unconfigured currency, since that would understate/overstate the PO total.
 async function resolveFxRateToBase(
-  client: import('@fnc-erp/db').PoolClient,
+  client: PoolClient,
   companyId: string,
   currencyCode: string,
   baseCurrencyCode: string,
@@ -3587,7 +3632,7 @@ async function resolveFxRateToBase(
 // anything is posted, so a missing/stale rate falls back to 1 rather than
 // blocking the Store Out confirmation that triggered it.
 async function resolveInterCompanyFxRate(
-  client: import('@fnc-erp/db').PoolClient,
+  client: PoolClient,
   fromCurrency: string,
   toCurrency: string,
 ): Promise<number> {
@@ -3617,7 +3662,7 @@ async function resolveInterCompanyFxRate(
 // already there — avoids logging noise for a receipt line with no price
 // yet, or resubmitting the same number.
 async function recordProductCostChange(
-  client: import('@fnc-erp/db').PoolClient,
+  client: PoolClient,
   params: {
     productId: string
     newCost: number
@@ -3650,7 +3695,7 @@ async function recordProductCostChange(
   )
 }
 
-async function recalcPO(client: import('@fnc-erp/db').PoolClient, poId: string): Promise<void> {
+async function recalcPO(client: PoolClient, poId: string): Promise<void> {
   // Each line's total_price is in that line's own currency_code; fx_rate_to_base
   // (set when the line is priced — see submitPOMarketPricing) converts it into
   // the PO's base_currency_code before summing, so the header total is always a
@@ -3994,10 +4039,16 @@ async function planCPM(projectId: string) {
   for (const d of depsR.rows) {
     const from = String(d.predecessor_id)
     const to = String(d.successor_id)
-    if (!succs.has(from)) succs.set(from, [])
-    succs.get(from)!.push({ to, type: String(d.dependency_type), lag: Number(d.lag_days) })
-    if (!preds.has(to)) preds.set(to, [])
-    preds.get(to)!.push({ from, type: String(d.dependency_type), lag: Number(d.lag_days) })
+    getOrCreate(succs, from, () => []).push({
+      to,
+      type: String(d.dependency_type),
+      lag: Number(d.lag_days),
+    })
+    getOrCreate(preds, to, () => []).push({
+      from,
+      type: String(d.dependency_type),
+      lag: Number(d.lag_days),
+    })
   }
   // Kahn topological sort
   const inDeg = new Map<string, number>()
@@ -4008,7 +4059,8 @@ async function planCPM(projectId: string) {
   for (const [id, deg] of inDeg) if (deg === 0) queue.push(id)
   const topo: string[] = []
   while (queue.length) {
-    const n = queue.shift()!
+    const n = queue.shift()
+    if (n === undefined) break
     topo.push(n)
     for (const s of succs.get(n) ?? []) {
       const nd = (inDeg.get(s.to) ?? 1) - 1
@@ -4063,12 +4115,15 @@ async function planCPM(projectId: string) {
       let earliest: Date | null = null
       for (const s of mySuccs) {
         const sn = nodes.get(s.to)
-        if (!sn || sn.ls === null) continue
+        // ls/lf are always assigned together below (either both set in the
+        // no-successors branch, or both in the earliest!==null branch), so
+        // ls non-null implies lf non-null too.
+        if (sn?.ls == null || sn.lf == null) continue
         const t =
           s.type === 'SS'
             ? addDays(sn.ls, -s.lag)
             : s.type === 'FF'
-              ? addDays(sn.lf!, -s.lag - n.dur)
+              ? addDays(sn.lf, -s.lag - n.dur)
               : s.type === 'SF'
                 ? addDays(sn.ls, s.lag - n.dur)
                 : addDays(sn.ls, -s.lag - n.dur)
@@ -4082,7 +4137,7 @@ async function planCPM(projectId: string) {
   }
   // Write results
   for (const n of nodes.values()) {
-    if (n.ls === null) continue
+    if (n.ls === null || n.lf === null) continue
     const tf = Math.round((n.ls.getTime() - n.es.getTime()) / 86400000)
     const isCrit = tf <= 0
     await query(
@@ -4091,7 +4146,7 @@ async function planCPM(projectId: string) {
         n.es.toISOString().slice(0, 10),
         n.ef.toISOString().slice(0, 10),
         n.ls.toISOString().slice(0, 10),
-        n.lf!.toISOString().slice(0, 10),
+        n.lf.toISOString().slice(0, 10),
         tf,
         isCrit,
         n.id,
@@ -4325,7 +4380,7 @@ function voMapVO(
 // budget line is created). Throws only when >1 contract exists with no explicit
 // selection, since that ambiguity can't be resolved automatically.
 async function voResolveContractId(
-  client: import('@fnc-erp/db').PoolClient,
+  client: PoolClient,
   projectId: string,
   existingContractId: string | null,
 ): Promise<string | null> {
@@ -4345,7 +4400,7 @@ async function voResolveContractId(
 // or re-approval with a different value) never drifts — it always reconciles to
 // exactly (current status === 'approved' ? approved_value : 0).
 async function syncVOFinancialLinks(
-  client: import('@fnc-erp/db').PoolClient,
+  client: PoolClient,
   userId: string,
   voId: string,
 ): Promise<void> {
@@ -4384,7 +4439,7 @@ async function syncVOFinancialLinks(
         contract.currency_code,
         contract.retention_pct,
         contract.end_date,
-        `VO ${vo.vo_number} ${isApproved ? 'approved' : 'reverted'}: contract value ${delta >= 0 ? '+' : ''}${delta.toFixed(2)}`,
+        `VO ${String(vo.vo_number)} ${isApproved ? 'approved' : 'reverted'}: contract value ${delta >= 0 ? '+' : ''}${delta.toFixed(2)}`,
         userId,
       ],
     )
@@ -4412,8 +4467,8 @@ async function syncVOFinancialLinks(
       [
         vo.project_id,
         voId,
-        `VO-${vo.vo_number}`,
-        `VO ${vo.vo_number}: ${vo.title}`,
+        `VO-${String(vo.vo_number)}`,
+        `VO ${String(vo.vo_number)}: ${String(vo.title)}`,
         category,
         target,
       ],
@@ -4440,18 +4495,15 @@ async function voLoadChildren(voIds: string[]) {
   const drawsByVO = new Map<string, object[]>()
   for (const r of items.rows as Record<string, unknown>[]) {
     const k = String(r.vo_id)
-    if (!itemsByVO.has(k)) itemsByVO.set(k, [])
-    itemsByVO.get(k)!.push(voMapCostItem(r))
+    getOrCreate(itemsByVO, k, () => []).push(voMapCostItem(r))
   }
   for (const r of corr.rows as Record<string, unknown>[]) {
     const k = String(r.vo_id)
-    if (!corrByVO.has(k)) corrByVO.set(k, [])
-    corrByVO.get(k)!.push(voMapCorr(r))
+    getOrCreate(corrByVO, k, () => []).push(voMapCorr(r))
   }
   for (const r of draws.rows as Record<string, unknown>[]) {
     const k = String(r.vo_id)
-    if (!drawsByVO.has(k)) drawsByVO.set(k, [])
-    drawsByVO.get(k)!.push(voMapDrawing(r))
+    getOrCreate(drawsByVO, k, () => []).push(voMapDrawing(r))
   }
   return { itemsByVO, corrByVO, drawsByVO }
 }
@@ -4468,7 +4520,7 @@ async function voNotify(
       projectId,
     ])
     const proj = projRes.rows[0] as Record<string, unknown> | undefined
-    const projLabel = proj ? `${proj.code} ${proj.name}` : ''
+    const projLabel = proj ? `${String(proj.code)} ${String(proj.name)}` : ''
     const managerId = proj?.manager_id as string | undefined
     const recipients = new Set<string>()
     const admins = await query(
@@ -4510,6 +4562,257 @@ async function logActivity(
   } catch {
     /* never fail the main operation over a log write */
   }
+}
+
+interface DailyReportInputArgs {
+  reportDate?: string
+  preparedBy?: string
+  reviewedBy?: string
+  weatherConditions?: string
+  temperature?: string
+  scheduleStatus?: string
+  costStatus?: string
+  safetyStatus?: string
+  qualityStatus?: string
+  keyAccomplishments?: string
+  majorConcerns?: string
+  progressMetrics?: unknown
+  safetyStats?: unknown
+  safetyActivities?: unknown
+  safetyRemarks?: string
+  engineeringProgress?: unknown
+  engineeringDeliverables?: unknown
+  engineeringIssues?: string
+  procurementItems?: unknown
+  deliveriesReceived?: unknown
+  procurementConcerns?: string
+  constructionProgress?: unknown
+  qcInspections?: unknown
+  ncrStatus?: unknown
+  qualityRemarks?: string
+  manpower?: unknown
+  equipmentUtilization?: unknown
+  breakdownDetails?: string
+  risksIssues?: unknown
+  clientActions?: unknown
+  lookaheadEngineering?: string
+  lookaheadProcurement?: string
+  lookaheadConstruction?: string
+  lookaheadCommissioning?: string
+  managementComments?: string
+}
+
+// Params shared by createDailyReport/updateDailyReport — the report_date/
+// created_by_id/created_by_name columns aside, both write every column from
+// the DailyReportInput every time (the frontend always submits the whole
+// form, never a partial patch), so one param builder covers both instead of
+// HSE's per-field dynamic-SET pattern used for its inline status dropdowns.
+function dailyReportParams(i: DailyReportInputArgs): unknown[] {
+  const jarr = (v: unknown) => JSON.stringify(v ?? [])
+  return [
+    i.preparedBy ?? null,
+    i.reviewedBy ?? null,
+    i.weatherConditions ?? null,
+    i.temperature ?? null,
+    i.scheduleStatus ?? null,
+    i.costStatus ?? null,
+    i.safetyStatus ?? null,
+    i.qualityStatus ?? null,
+    i.keyAccomplishments ?? null,
+    i.majorConcerns ?? null,
+    jarr(i.progressMetrics),
+    jarr(i.safetyStats),
+    jarr(i.safetyActivities),
+    i.safetyRemarks ?? null,
+    jarr(i.engineeringProgress),
+    jarr(i.engineeringDeliverables),
+    i.engineeringIssues ?? null,
+    jarr(i.procurementItems),
+    jarr(i.deliveriesReceived),
+    i.procurementConcerns ?? null,
+    jarr(i.constructionProgress),
+    jarr(i.qcInspections),
+    jarr(i.ncrStatus),
+    i.qualityRemarks ?? null,
+    jarr(i.manpower),
+    jarr(i.equipmentUtilization),
+    i.breakdownDetails ?? null,
+    jarr(i.risksIssues),
+    jarr(i.clientActions),
+    i.lookaheadEngineering ?? null,
+    i.lookaheadProcurement ?? null,
+    i.lookaheadConstruction ?? null,
+    i.lookaheadCommissioning ?? null,
+    i.managementComments ?? null,
+  ]
+}
+const DAILY_REPORT_COLUMNS = [
+  'prepared_by',
+  'reviewed_by',
+  'weather_conditions',
+  'temperature',
+  'schedule_status',
+  'cost_status',
+  'safety_status',
+  'quality_status',
+  'key_accomplishments',
+  'major_concerns',
+  'progress_metrics',
+  'safety_stats',
+  'safety_activities',
+  'safety_remarks',
+  'engineering_progress',
+  'engineering_deliverables',
+  'engineering_issues',
+  'procurement_items',
+  'deliveries_received',
+  'procurement_concerns',
+  'construction_progress',
+  'qc_inspections',
+  'ncr_status',
+  'quality_remarks',
+  'manpower',
+  'equipment_utilization',
+  'breakdown_details',
+  'risks_issues',
+  'client_actions',
+  'lookahead_engineering',
+  'lookahead_procurement',
+  'lookahead_construction',
+  'lookahead_commissioning',
+  'management_comments',
+]
+
+function mapDailyReportRow(
+  d: Record<string, unknown>,
+  files: unknown[],
+  machinery: unknown[] = [],
+): Record<string, unknown> {
+  return {
+    id: d.id,
+    projectId: d.project_id,
+    reportNumber: d.report_number,
+    reportDate: String(d.report_date).slice(0, 10),
+    preparedBy: d.prepared_by ?? null,
+    reviewedBy: d.reviewed_by ?? null,
+    weatherConditions: d.weather_conditions ?? null,
+    temperature: d.temperature ?? null,
+    scheduleStatus: d.schedule_status ?? null,
+    costStatus: d.cost_status ?? null,
+    safetyStatus: d.safety_status ?? null,
+    qualityStatus: d.quality_status ?? null,
+    keyAccomplishments: d.key_accomplishments ?? null,
+    majorConcerns: d.major_concerns ?? null,
+    progressMetrics: d.progress_metrics ?? [],
+    safetyStats: d.safety_stats ?? [],
+    safetyActivities: d.safety_activities ?? [],
+    safetyRemarks: d.safety_remarks ?? null,
+    engineeringProgress: d.engineering_progress ?? [],
+    engineeringDeliverables: d.engineering_deliverables ?? [],
+    engineeringIssues: d.engineering_issues ?? null,
+    procurementItems: d.procurement_items ?? [],
+    deliveriesReceived: d.deliveries_received ?? [],
+    procurementConcerns: d.procurement_concerns ?? null,
+    constructionProgress: d.construction_progress ?? [],
+    qcInspections: d.qc_inspections ?? [],
+    ncrStatus: d.ncr_status ?? [],
+    qualityRemarks: d.quality_remarks ?? null,
+    manpower: d.manpower ?? [],
+    equipmentUtilization: d.equipment_utilization ?? [],
+    breakdownDetails: d.breakdown_details ?? null,
+    risksIssues: d.risks_issues ?? [],
+    clientActions: d.client_actions ?? [],
+    lookaheadEngineering: d.lookahead_engineering ?? null,
+    lookaheadProcurement: d.lookahead_procurement ?? null,
+    lookaheadConstruction: d.lookahead_construction ?? null,
+    lookaheadCommissioning: d.lookahead_commissioning ?? null,
+    managementComments: d.management_comments ?? null,
+    createdByName: d.created_by_name ?? null,
+    files,
+    machinery,
+    createdAt: d.created_at,
+    updatedAt: d.updated_at,
+  }
+}
+
+async function fetchDailyReportFiles(
+  reportId: string,
+  companyId: string,
+): Promise<Record<string, unknown>[]> {
+  const files = await query(
+    `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='daily_report' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`,
+    [reportId, companyId],
+  )
+  return Promise.all(
+    files.rows.map(async (f: Record<string, unknown>) => {
+      let dl: string | null = null
+      try {
+        const r2 = await generateDownloadUrl(f.file_key as string, f.original_filename as string)
+        dl = r2.downloadUrl
+      } catch {
+        /**/
+      }
+      return {
+        id: f.id,
+        fileId: f.file_id,
+        filename: f.original_filename,
+        mimeType: f.mime_type,
+        sizeBytes: f.size_bytes,
+        title: f.label ?? f.original_filename,
+        description: null,
+        createdAt: f.created_at,
+        downloadUrl: dl,
+      }
+    }),
+  )
+}
+
+async function mapMachineryRow(m: Record<string, unknown>): Promise<Record<string, unknown>> {
+  let downloadUrl: string | null = null
+  if (m.file_key) {
+    try {
+      const r = await generateDownloadUrl(m.file_key as string, m.filename as string)
+      downloadUrl = r.downloadUrl
+    } catch {
+      /**/
+    }
+  }
+  return {
+    id: m.id,
+    dailyReportId: m.daily_report_id,
+    projectId: m.project_id,
+    poId: m.po_id,
+    poNumber: m.po_number ?? null,
+    equipmentDescription: m.equipment_description ?? null,
+    workingHours: m.working_hours != null ? parseFloat(String(m.working_hours)) : null,
+    idleHours: m.idle_hours != null ? parseFloat(String(m.idle_hours)) : null,
+    breakdownHours: m.breakdown_hours != null ? parseFloat(String(m.breakdown_hours)) : null,
+    livePhotoFileId: m.live_photo_file_id ?? null,
+    livePhotoFilename: m.filename ?? null,
+    livePhotoDownloadUrl: downloadUrl,
+    compliant: m.live_photo_file_id != null,
+    createdByName: m.created_by_name ?? null,
+    createdAt: m.created_at,
+  }
+}
+
+const MACHINERY_SELECT = `SELECT drm.*, po.po_number, f.original_filename AS filename, f.file_key
+     FROM project_daily_report_machinery drm
+     JOIN purchase_orders po ON po.id=drm.po_id
+     LEFT JOIN files f ON f.id=drm.live_photo_file_id`
+
+async function fetchDailyReportMachinery(reportId: string): Promise<Record<string, unknown>[]> {
+  const rows = await query(
+    `${MACHINERY_SELECT} WHERE drm.daily_report_id=$1 ORDER BY drm.created_at`,
+    [reportId],
+  )
+  return Promise.all(rows.rows.map((m: Record<string, unknown>) => mapMachineryRow(m)))
+}
+
+async function fetchOneMachineryRow(id: string): Promise<Record<string, unknown>> {
+  const r = await query(`${MACHINERY_SELECT} WHERE drm.id=$1`, [id])
+  if (!r.rows[0]) throw new Error('Machinery entry not found')
+  return mapMachineryRow(r.rows[0] as Record<string, unknown>)
 }
 
 function projectRowToGQL(row: Record<string, unknown>): Record<string, unknown> {
@@ -4779,7 +5082,7 @@ async function notifyEngDocUser(opts: {
   entityRef: string
   projectId: string
   // email
-  eventType: import('@fnc-erp/email').EngDocEventType
+  eventType: EngDocEventType
   role: string
   docTitle: string
   projectName: string
@@ -4872,7 +5175,7 @@ async function upsertDocReminder(opts: {
       opts.reviewerName ?? null,
       user?.email ?? null,
       opts.role,
-      opts.dueDate ?? null,
+      opts.dueDate,
     ],
   )
 }
@@ -5353,6 +5656,15 @@ async function projectTransition(
 
 interface GQLContext {
   auth?: { companyId: string; userId: string; role: string; module: string; sessionId: string }
+}
+
+// Every resolver that reaches this checks `ctx.auth` (or is only reachable
+// after requirePermGW/similar already did), but that guard often lives a
+// scope away from where auth fields are actually read — this re-asserts the
+// same guarantee at the read site instead of a bare `ctx.auth!`.
+function requireAuth(ctx: GQLContext): NonNullable<GQLContext['auth']> {
+  if (!ctx.auth) throw new Error('Unauthorized')
+  return ctx.auth
 }
 
 // ── Phone recharge requests ──────────────────────────────────────────────────
@@ -6293,12 +6605,14 @@ export const resolvers = {
                -- store_keeper position (see confirmPOInventoryCheck) — kept
                -- alongside the other owner-actioned statuses for the
                -- organizer clause, plus its own position lookup below.
+               -- price_verification has no dedicated position — organizer/
+               -- admin only (see submitPOPriceVerification).
                -- 'bought' is a G1 child PO (po.requisition_id set) forked
                -- straight to "already bought, awaiting delivery" — no buyer
                -- position applies (that happened on the requisition side),
                -- Record Receipt is organizer-gated same as 'approved' — see
                -- PurchaseOrderDetail.tsx's po.status === 'bought' block.
-               (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check','bought'))
+               (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check','price_verification','bought'))
                -- Whoever is explicitly named as this PO's receiver ("Received
                -- By") sees it once goods_received too, regardless of whether
                -- they hold a buyer/store_keeper position — see
@@ -6311,7 +6625,6 @@ export const resolvers = {
                ))
                OR (po.status = 'store_pricing' AND ${positionScope('store_pricing')})
                OR (po.status = 'market_pricing' AND ${positionScope('procurement_officer')})
-               OR (po.status = 'price_verification' AND ${positionScope('procurement_2nd')})
                OR (po.status = 'ready_to_issue' AND ${positionScope('store_keeper')})
                OR (po.status = 'pending_approval' AND (
                  EXISTS (SELECT 1 FROM departments d WHERE d.manager_id = $3 AND d.id = org_emp.department_id)
@@ -7131,14 +7444,14 @@ export const resolvers = {
         return d !== 5 && d !== 6
       }).length
       return {
-        days_present: parseInt((row.days_present as string) ?? '0', 10),
-        days_absent: Math.max(0, workDays - parseInt((row.days_present as string) ?? '0', 10)),
-        total_hours: parseFloat((row.total_hours as string) ?? '0'),
+        days_present: parseInt(row.days_present as string, 10),
+        days_absent: Math.max(0, workDays - parseInt(row.days_present as string, 10)),
+        total_hours: parseFloat(row.total_hours as string),
         overtime_hours: parseFloat(
-          ((otRes.rows[0] as Record<string, unknown>).overtime_hours as string) ?? '0',
+          (otRes.rows[0] as Record<string, unknown>).overtime_hours as string,
         ),
         leave_days: parseInt(
-          ((leaveDaysRes.rows[0] as Record<string, unknown>).leave_days as string) ?? '0',
+          (leaveDaysRes.rows[0] as Record<string, unknown>).leave_days as string,
           10,
         ),
       }
@@ -7909,8 +8222,7 @@ export const resolvers = {
       const revsByContract = new Map<string, Record<string, unknown>[]>()
       for (const rv of revRows) {
         const cid = String(rv.contract_id)
-        if (!revsByContract.has(cid)) revsByContract.set(cid, [])
-        revsByContract.get(cid)!.push(rv)
+        getOrCreate(revsByContract, cid, () => []).push(rv)
       }
       const mapRev = (rv: Record<string, unknown>) => ({
         id: rv.id,
@@ -8536,7 +8848,7 @@ export const resolvers = {
           return {
             poLineId: r.po_line_id,
             poId: r.po_id,
-            poNumber: r.po_number ?? null,
+            poNumber: r.po_number,
             productId: r.product_id,
             productName: r.product_name ?? null,
             sku: r.sku ?? null,
@@ -9272,8 +9584,8 @@ export const resolvers = {
       }[]
       const revenue = rows.filter((r) => r.account_type === 'revenue')
       const expenses = rows.filter((r) => r.account_type === 'expense')
-      const totalRevenue = revenue.reduce((s, r) => s + parseFloat(r.amount ?? '0'), 0)
-      const totalExpenses = expenses.reduce((s, r) => s + parseFloat(r.amount ?? '0'), 0)
+      const totalRevenue = revenue.reduce((s, r) => s + parseFloat(r.amount), 0)
+      const totalExpenses = expenses.reduce((s, r) => s + parseFloat(r.amount), 0)
       return {
         revenue,
         expenses,
@@ -9340,9 +9652,9 @@ export const resolvers = {
       const liabilities = bsRows.filter((r) => r.account_type === 'liability')
       const equity = bsRows.filter((r) => r.account_type === 'equity')
 
-      const totalAssets = assets.reduce((s, r) => s + parseFloat(r.amount ?? '0'), 0)
-      const totalLiabilities = liabilities.reduce((s, r) => s + parseFloat(r.amount ?? '0'), 0)
-      const totalEquityAccts = equity.reduce((s, r) => s + parseFloat(r.amount ?? '0'), 0)
+      const totalAssets = assets.reduce((s, r) => s + parseFloat(r.amount), 0)
+      const totalLiabilities = liabilities.reduce((s, r) => s + parseFloat(r.amount), 0)
+      const totalEquityAccts = equity.reduce((s, r) => s + parseFloat(r.amount), 0)
       const totalEquity = totalEquityAccts + retainedEarnings
 
       return {
@@ -9503,8 +9815,10 @@ export const resolvers = {
         isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'store_pricing'),
         isAdmin ||
           userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_officer'),
-        isAdmin ||
-          userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_2nd'),
+        // price_verification has no dedicated position — organizer/admin
+        // only (see verifyRequisitionPrices). Field name kept as-is even
+        // though it's no longer position-based, to avoid a wider rename.
+        isAdmin || userIsOrganizerForRequisitionGW(ctx.auth.userId, args.id, ctx.auth.companyId),
         // G1 Phase 3 Milestone A screen 3 — gates the Items Bought screen,
         // mirroring recordLinePurchase/markRequisitionLineShort/
         // finishBuyingRequisition's own shared authorization exactly.
@@ -9590,7 +9904,8 @@ export const resolvers = {
     // G1 Phase 3 Milestone A — requisition-scoped worklist, mirrors
     // myApprovalQueue's per-stage position-holder mapping exactly (same
     // position per stage: store_keeper/store_pricing/procurement_officer/
-    // procurement_2nd/dept_head-or-assigned_approver), scoped to the
+    // dept_head-or-assigned_approver; price_verification is organizer/admin
+    // only, folded into the organizer clause above), scoped to the
     // requisition's own stage vocabulary (draft through items_bought —
     // 'sourcing'/'completed' have no further caller action to queue on).
     // A separate query rather than widening myApprovalQueue's return type,
@@ -9614,7 +9929,9 @@ export const resolvers = {
            WHERE req.company_id=$1
              AND req.status NOT IN ('deleted','completed','cancelled','sourcing')
              AND (
-               (req.organizer_id=$2 AND req.status IN ('draft','rejected'))
+               -- price_verification has no dedicated position — organizer/
+               -- admin only (see verifyRequisitionPrices).
+               (req.organizer_id=$2 AND req.status IN ('draft','rejected','price_verification'))
                OR (req.status='inventory_check' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true
@@ -9626,10 +9943,6 @@ export const resolvers = {
                OR (req.status='market_pricing' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true
-                       AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
-               OR (req.status='price_verification' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='procurement_2nd' AND ppa.is_active=true
                        AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
                OR (req.status='pending_approval' AND (
                      EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4)
@@ -9760,7 +10073,9 @@ export const resolvers = {
            WHERE po.company_id=$1
              AND po.status NOT IN ('deleted','completed','cancelled')
              AND (
-               (po.organizer_id=$2 AND po.status IN ('draft','goods_received','rejected'))
+               -- price_verification has no dedicated position — organizer/
+               -- admin only (see submitPOPriceVerification).
+               (po.organizer_id=$2 AND po.status IN ('draft','goods_received','rejected','price_verification'))
                OR (po.status='items_bought' AND (
                      po.assigned_buyer_user_id=$2
                      OR EXISTS (
@@ -9779,10 +10094,6 @@ export const resolvers = {
                OR (po.status='market_pricing' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true
-                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
-               OR (po.status='price_verification' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='procurement_2nd' AND ppa.is_active=true
                        AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
                OR (po.status='pending_approval' AND (
                      EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4)
@@ -10261,7 +10572,7 @@ export const resolvers = {
       return Promise.all(
         res.rows.map(async (row) => ({
           ...tqToGQL(row as Record<string, unknown>),
-          files: await fetchTQFilesGW((row as { id: string }).id, ctx.auth!.companyId),
+          files: await fetchTQFilesGW((row as { id: string }).id, requireAuth(ctx).companyId),
         })),
       )
     },
@@ -10367,8 +10678,7 @@ export const resolvers = {
       const reviewMap = new Map<string, Record<string, unknown>[]>()
       for (const rv of revRes.rows as Record<string, unknown>[]) {
         const rid = String(rv.risk_id)
-        if (!reviewMap.has(rid)) reviewMap.set(rid, [])
-        reviewMap.get(rid)!.push(rv)
+        getOrCreate(reviewMap, rid, () => []).push(rv)
       }
       const all = rows.map((r) => riskToGQL(r, reviewMap.get(String(r.id)) ?? []))
       if (args.level) return all.filter((r) => r.riskLevel === args.level)
@@ -10756,8 +11066,8 @@ export const resolvers = {
           await client.query(
             `UPDATE outbox_dead_letters SET status='retried', reviewed_by=$1, reviewed_at=NOW(), review_notes=$2, retry_outbox_id=$3, retried_at=NOW() WHERE id=$4`,
             [
-              ctx.auth!.userId,
-              args.notes ?? `Retried by ${ctx.auth!.userId}`,
+              requireAuth(ctx).userId,
+              args.notes ?? `Retried by ${requireAuth(ctx).userId}`,
               newEventId,
               args.dlqId,
             ],
@@ -11021,12 +11331,12 @@ export const resolvers = {
             `INSERT INTO journal_entries (company_id,reference,entry_date,description,source_type,status,created_by)
            VALUES ($1,$2,$3,$4,$5,'draft',$6) RETURNING *`,
             [
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
               reference,
               entry_date,
               description ?? null,
               source_type ?? 'manual',
-              ctx.auth!.userId,
+              requireAuth(ctx).userId,
             ],
           )
           const entry = je.rows[0] as Record<string, unknown>
@@ -11253,7 +11563,7 @@ export const resolvers = {
           (jeResult.rows[0] as { entry_date: string }).entry_date,
         )
         const refs = (jeResult.rows as { reference: string }[]).map((r) => r.reference).join(', ')
-        const combinedDesc = args.description || `Combined: ${refs}`
+        const combinedDesc = args.description ?? `Combined: ${refs}`
         const combinedRef = `COMB-${Date.now().toString(36).toUpperCase().slice(-8)}`
 
         const newJeResult = await client.query(
@@ -11689,7 +11999,7 @@ export const resolvers = {
         [ctx.auth.companyId],
       )
       const baseCurrencyCode =
-        i.currency_code || companyCurrencyRes.rows[0]?.default_po_currency || 'IQD'
+        (i.currency_code ?? companyCurrencyRes.rows[0]?.default_po_currency) || 'IQD'
       if (i.linkedProjectId) {
         const projCheck = await query(
           `SELECT status, is_rfq FROM projects WHERE id=$1 AND company_id=$2`,
@@ -11709,7 +12019,7 @@ export const resolvers = {
       const createdPO = await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
-          const poNum = await nextDocumentNumber(ctx.auth!.companyId, 'purchase_order', 'PO')
+          const poNum = await nextDocumentNumber(requireAuth(ctx).companyId, 'purchase_order', 'PO')
           const subtotal = i.lines.reduce((s, l) => s + l.qty * l.unit_price, 0)
           const priority = ['low', 'high', 'emergency'].includes(i.priority ?? '')
             ? i.priority
@@ -11718,9 +12028,9 @@ export const resolvers = {
             `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id,organizer_id,assigned_buyer_user_id,base_currency_code,delivery_destination)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17,$14,$18,$19,$20) RETURNING *`,
             [
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
               poNum,
-              i.vendor_id || null,
+              i.vendor_id ?? null,
               i.currency_code ?? 'IQD',
               i.analytic_account_id ?? null,
               i.expected_delivery_date ?? null,
@@ -11731,7 +12041,7 @@ export const resolvers = {
               i.purpose ?? 'stock',
               i.linkedProjectId ?? null,
               i.linkedMoId ?? null,
-              ctx.auth!.userId,
+              requireAuth(ctx).userId,
               i.assigned_receiver_id ?? null,
               priority,
               i.branch_id ?? null,
@@ -11843,7 +12153,7 @@ export const resolvers = {
           // duplicate check before either had committed its INSERT.
           const po = await client.query(
             'SELECT * FROM purchase_orders WHERE id=$1 AND company_id=$2 FOR UPDATE',
-            [args.poId, ctx.auth!.companyId],
+            [args.poId, requireAuth(ctx).companyId],
           )
           if (!po.rows[0]) throw new Error('PO not found')
           const poStatus = po.rows[0].status as string
@@ -11871,7 +12181,7 @@ export const resolvers = {
             `SELECT id, receipt_number FROM po_receipts
              WHERE po_id=$1 AND received_by=$2 AND status='draft' AND created_at > NOW() - INTERVAL '15 minutes'
              ORDER BY created_at DESC`,
-            [args.poId, ctx.auth!.userId],
+            [args.poId, requireAuth(ctx).userId],
           )
           if (recentDrafts.rows.length > 0) {
             const norm = (lines: { po_line_id: string; qty_received: number }[]) =>
@@ -11894,7 +12204,7 @@ export const resolvers = {
                 draftLines.length === newLines.length &&
                 draftLines.every(
                   (dl, idx) =>
-                    dl.po_line_id === newLines[idx]!.po_line_id && dl.qty === newLines[idx]!.qty,
+                    dl.po_line_id === newLines[idx].po_line_id && dl.qty === newLines[idx].qty,
                 )
               if (isSameSubmission) {
                 throw new Error(
@@ -11915,7 +12225,7 @@ export const resolvers = {
               i.receipt_date,
               i.location_id ?? null,
               i.notes ?? null,
-              ctx.auth!.userId,
+              requireAuth(ctx).userId,
               i.received_by_name ?? null,
               i.received_from_name ?? null,
               i.location_notes ?? null,
@@ -11972,7 +12282,7 @@ export const resolvers = {
             [args.id],
           )
           const receipt = receiptRes.rows[0] as Record<string, unknown> | undefined
-          if (!receipt || receipt.company_id !== ctx.auth!.companyId)
+          if (!receipt || receipt.company_id !== requireAuth(ctx).companyId)
             throw new Error('Receipt not found')
           if (receipt.status !== 'draft') throw new Error('Only a draft receipt can be confirmed')
 
@@ -12030,7 +12340,7 @@ export const resolvers = {
           // in, not each line's own (possibly foreign) currency_code.
           const baseCcyRes = await client.query<{ default_currency: string }>(
             `SELECT default_currency FROM system_configuration WHERE company_id=$1`,
-            [ctx.auth!.companyId],
+            [requireAuth(ctx).companyId],
           )
           const receiptBaseCurrency = baseCcyRes.rows[0]?.default_currency ?? 'IQD'
 
@@ -12042,11 +12352,11 @@ export const resolvers = {
           if (!resolvedToLocationId) {
             const warehouseRes = await client.query(
               `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
-              [ctx.auth!.companyId],
+              [requireAuth(ctx).companyId],
             )
             const fallbackRes = await client.query(
               `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true LIMIT 1`,
-              [ctx.auth!.companyId],
+              [requireAuth(ctx).companyId],
             )
             resolvedToLocationId = (warehouseRes.rows[0]?.id ?? fallbackRes.rows[0]?.id) as
               | string
@@ -12096,7 +12406,7 @@ export const resolvers = {
                  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'store_in')
                  ON CONFLICT (po_line_id) DO NOTHING`,
                 [
-                  ctx.auth!.companyId,
+                  requireAuth(ctx).companyId,
                   receipt.po_id,
                   l.po_line_id,
                   polRes.rows[0]?.description ?? '',
@@ -12111,14 +12421,14 @@ export const resolvers = {
               if (!virtualInId) {
                 const virtInRes = await client.query(
                   `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,
-                  [ctx.auth!.companyId],
+                  [requireAuth(ctx).companyId],
                 )
                 virtualInId =
                   virtInRes.rows[0]?.id ??
                   ((
                     await client.query(
                       `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,'Virtual Receipts','virtual_in',true) RETURNING id`,
-                      [ctx.auth!.companyId],
+                      [requireAuth(ctx).companyId],
                     )
                   ).rows[0].id as string)
               }
@@ -12126,7 +12436,7 @@ export const resolvers = {
                 `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'po_receipt',$9,$10,$11,$12,$13)`,
                 [
-                  ctx.auth!.companyId,
+                  requireAuth(ctx).companyId,
                   polProductId,
                   virtualInId,
                   resolvedToLocationId,
@@ -12136,7 +12446,7 @@ export const resolvers = {
                   polUnitPrice * qtyReceived,
                   args.id,
                   receipt.notes ?? null,
-                  ctx.auth!.userId,
+                  requireAuth(ctx).userId,
                   l.po_line_id,
                   l.id,
                 ],
@@ -12148,7 +12458,7 @@ export const resolvers = {
                 sourceType: 'po_receipt',
                 sourceId: receipt.po_id as string,
                 sourceLabel: (receipt.po_number as string | null) ?? null,
-                userId: ctx.auth!.userId,
+                userId: requireAuth(ctx).userId,
               })
             }
           }
@@ -12207,7 +12517,7 @@ export const resolvers = {
               currentStatus,
               'goods_received',
               'receive_goods',
-              ctx.auth!,
+              requireAuth(ctx),
               'Auto-transitioned on receipt confirmation',
             )
           }
@@ -12277,7 +12587,7 @@ export const resolvers = {
         async (client) => {
           const po = await client.query(
             'SELECT * FROM purchase_orders WHERE id=$1 AND company_id=$2',
-            [args.poId, ctx.auth!.companyId],
+            [args.poId, requireAuth(ctx).companyId],
           )
           if (!po.rows[0]) throw new Error('PO not found')
           const poRow = po.rows[0] as Record<string, unknown>
@@ -12336,7 +12646,7 @@ export const resolvers = {
                  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'direct_delivery')
                  ON CONFLICT (po_line_id) DO NOTHING`,
                 [
-                  ctx.auth!.companyId,
+                  requireAuth(ctx).companyId,
                   args.poId,
                   l.po_line_id,
                   polRes.rows[0]?.description ?? '',
@@ -12357,7 +12667,7 @@ export const resolvers = {
               currentStatus,
               'goods_received',
               'receive_goods',
-              ctx.auth!,
+              requireAuth(ctx),
               i.notes ? `Delivered directly to jobsite — ${i.notes}` : 'Delivered directly to jobsite',
             )
           }
@@ -12475,7 +12785,7 @@ export const resolvers = {
              WHERE id=$1 AND company_id=$2 RETURNING *`,
             [
               args.id,
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
               i.name ?? null,
               i.name_ar ?? null,
               i.description ?? null,
@@ -12508,7 +12818,7 @@ export const resolvers = {
                 sourceType: 'manual_edit',
                 sourceId: null,
                 sourceLabel: 'Manual edit',
-                userId: ctx.auth!.userId,
+                userId: requireAuth(ctx).userId,
               })
               // A location that has never had a real cost recorded (still
               // stuck at 0 from an uncosted receipt/opening balance) has
@@ -12533,7 +12843,7 @@ export const resolvers = {
                   `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,currency_code,source_type,notes,moved_by)
                    VALUES ($1,$2,$3,$3,NOW(),$4,$5,$6,$7,'cost_correction',$8,$9)`,
                   [
-                    ctx.auth!.companyId,
+                    requireAuth(ctx).companyId,
                     args.id,
                     loc.location_id,
                     locQty,
@@ -12541,7 +12851,7 @@ export const resolvers = {
                     locQty * newCost,
                     costCurrency,
                     'Synced from product Cost edit',
-                    ctx.auth!.userId,
+                    requireAuth(ctx).userId,
                   ],
                 )
               }
@@ -12557,7 +12867,7 @@ export const resolvers = {
               args.id,
             ])
           }
-          void publishEntityChanged(ctx.auth!.companyId, 'product', args.id, 'updated')
+          void publishEntityChanged(requireAuth(ctx).companyId, 'product', args.id, 'updated')
           const finalRes = await client.query(`SELECT * FROM products WHERE id=$1`, [args.id])
           return finalRes.rows[0]
         },
@@ -12584,7 +12894,7 @@ export const resolvers = {
       // resolves into can target a different company, e.g. when the caller's
       // company (Al Watanyia) doesn't run its own inventory and the item
       // really belongs in another company's catalog (Nishtimani Factory).
-      const targetCompanyId = args.companyId || ctx.auth.companyId
+      const targetCompanyId = args.companyId ?? ctx.auth.companyId
       if (targetCompanyId !== ctx.auth.companyId && !(await callerHasCompanyAccessGW(ctx.auth, targetCompanyId)))
         throw new Error('Target company not found or not accessible to you')
       const pendingRes = await query(
@@ -12644,25 +12954,25 @@ export const resolvers = {
           ])
           await client.query(
             `UPDATE pending_product_catalog_items SET status='resolved', resolved_product_id=$1, resolved_by=$2, resolved_at=NOW() WHERE id=$3`,
-            [product.id, ctx.auth!.userId, args.id],
+            [product.id, requireAuth(ctx).userId, args.id],
           )
           if (pending.source === 'stock_issuance') {
             await completeStockIssuanceLineForResolvedProduct(
               client,
               pending.po_line_id as string,
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
             )
           }
           if (pending.source === 'store_in') {
             await completeStoreInLineForResolvedProduct(
               client,
               pending.po_line_id as string,
-              ctx.auth!.companyId,
-              ctx.auth!.userId,
+              requireAuth(ctx).companyId,
+              requireAuth(ctx).userId,
             )
           }
           await logAudit({
-            userId: ctx.auth!.userId,
+            userId: requireAuth(ctx).userId,
             companyId: targetCompanyId,
             action: 'CATALOG_NEW_PRODUCT_FROM_PO',
             tableName: 'products',
@@ -12693,7 +13003,7 @@ export const resolvers = {
       // Same rule as createProductFromPendingCatalogItem: the pending item is
       // always the caller's own company's, but the existing product it links
       // to may live in a different company the caller has a role in.
-      const targetCompanyId = args.companyId || ctx.auth.companyId
+      const targetCompanyId = args.companyId ?? ctx.auth.companyId
       if (targetCompanyId !== ctx.auth.companyId && !(await callerHasCompanyAccessGW(ctx.auth, targetCompanyId)))
         throw new Error('Target company not found or not accessible to you')
       const pendingRes = await query(
@@ -12729,30 +13039,30 @@ export const resolvers = {
               sourceType: 'catalog_link',
               sourceId: (pending.po_id as string | null) ?? null,
               sourceLabel: poRow?.rows[0]?.po_number ?? null,
-              userId: ctx.auth!.userId,
+              userId: requireAuth(ctx).userId,
             })
           }
           await client.query(
             `UPDATE pending_product_catalog_items SET status='resolved', resolved_product_id=$1, resolved_by=$2, resolved_at=NOW() WHERE id=$3`,
-            [args.productId, ctx.auth!.userId, args.id],
+            [args.productId, requireAuth(ctx).userId, args.id],
           )
           if (pending.source === 'stock_issuance') {
             await completeStockIssuanceLineForResolvedProduct(
               client,
               pending.po_line_id as string,
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
             )
           }
           if (pending.source === 'store_in') {
             await completeStoreInLineForResolvedProduct(
               client,
               pending.po_line_id as string,
-              ctx.auth!.companyId,
-              ctx.auth!.userId,
+              requireAuth(ctx).companyId,
+              requireAuth(ctx).userId,
             )
           }
           await logAudit({
-            userId: ctx.auth!.userId,
+            userId: requireAuth(ctx).userId,
             companyId: targetCompanyId,
             action: 'CATALOG_LINK_EXISTING_PRODUCT_FROM_PO',
             tableName: 'products',
@@ -12841,7 +13151,7 @@ export const resolvers = {
               `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,lot_id,moved_by)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'manual',$9,$10,$11) RETURNING *, moved_at AS move_date`,
               [
-                ctx.auth!.companyId,
+                requireAuth(ctx).companyId,
                 l.product_id,
                 i.from_location_id,
                 i.to_location_id,
@@ -12851,7 +13161,7 @@ export const resolvers = {
                 l.unit_cost ? l.qty * l.unit_cost : 0,
                 i.notes ?? i.reference ?? null,
                 l.lot_id ?? null,
-                ctx.auth!.userId,
+                requireAuth(ctx).userId,
               ],
             )
             lastMove = mv.rows[0] as Record<string, unknown>
@@ -13116,12 +13426,12 @@ export const resolvers = {
         (i.code as string | undefined) ??
         (await nextDocumentNumber(ctx.auth.companyId, 'project', 'PRJ'))
       const rfqNumberResolved =
-        (i.rfqNumber as string | undefined) || (await deriveRfqNumber(ctx.auth.companyId, code))
+        (i.rfqNumber as string | undefined) ?? (await deriveRfqNumber(ctx.auth.companyId, code))
       // Auto-create analytic account — code capped at VARCHAR(20)
       const aaCode = code.slice(0, 20)
       const aa = await query(
         `INSERT INTO analytic_accounts (company_id, name, code, is_active) VALUES ($1,$2,$3,true) RETURNING id`,
-        [ctx.auth.companyId, `Project: ${i.name}`, aaCode],
+        [ctx.auth.companyId, `Project: ${String(i.name)}`, aaCode],
       )
       const r = await query(
         `INSERT INTO projects (
@@ -13479,7 +13789,7 @@ export const resolvers = {
 
     updateRFQPhase: async (
       _: unknown,
-      args: { id: string; status?: string; notes?: string },
+      args: { id: string; status?: string; notes?: string | null },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
@@ -13613,7 +13923,7 @@ export const resolvers = {
       )
 
       const documentNumber =
-        args.documentNumber || (await nextDocumentNumber(ctx.auth.companyId, 'client_document', 'CD'))
+        args.documentNumber ?? (await nextDocumentNumber(ctx.auth.companyId, 'client_document', 'CD'))
 
       const ins = await query(
         `INSERT INTO project_client_documents
@@ -13820,7 +14130,7 @@ export const resolvers = {
         projectId,
         ctx.auth.userId,
         'client_document_revision',
-        `New revision "${args.revision}" uploaded for: "${parent.title}"`,
+        `New revision "${args.revision}" uploaded for: "${String(parent.title)}"`,
       )
       void notifyProjectFileUploadGW(
         projectId,
@@ -13931,7 +14241,7 @@ export const resolvers = {
         String(row.project_id),
         ctx.auth.userId,
         'client_document_update',
-        `Document "${row.title}" updated`,
+        `Document "${String(row.title)}" updated`,
       )
       return {
         id: row.id,
@@ -13976,7 +14286,7 @@ export const resolvers = {
         String(row.project_id),
         ctx.auth.userId,
         'client_document_status',
-        `Document "${row.title}" status → ${args.status}`,
+        `Document "${String(row.title)}" status → ${args.status}`,
       )
       return {
         id: row.id,
@@ -14017,7 +14327,7 @@ export const resolvers = {
         String(row.project_id),
         ctx.auth.userId,
         'client_document_delete',
-        `Document deleted: "${row.title}"`,
+        `Document deleted: "${String(row.title)}"`,
       )
       return true
     },
@@ -14236,7 +14546,7 @@ export const resolvers = {
           String(old.project_id),
           ctx.auth.userId,
           'engineering_doc_revised',
-          `Revised ${old.ref_number} → Rev ${args.revision}`,
+          `Revised ${String(old.ref_number)} → Rev ${args.revision}`,
         )
         return engDocToGQL(row, [])
       } catch (e) {
@@ -14273,8 +14583,8 @@ export const resolvers = {
       if (!r.rows[0]) throw new Error('Document not found')
       const row = r.rows[0] as Record<string, unknown>
       const logMsg = args.workflowNote
-        ? `${row.ref_number} → ${args.status} | ${args.workflowNote}`
-        : `${row.ref_number} → ${args.status}`
+        ? `${String(row.ref_number)} → ${args.status} | ${args.workflowNote}`
+        : `${String(row.ref_number)} → ${args.status}`
       await logActivity(String(row.project_id), ctx.auth.userId, 'engineering_doc_status', logMsg)
       return engDocToGQL(row, [])
     },
@@ -14393,7 +14703,7 @@ export const resolvers = {
         label = `Issued — ${args.issueType}`
         // Auto-generate transmittal reference
         transmittalRef =
-          args.transmittalRef || (await nextDocumentNumber(ctx.auth.companyId, 'transmittal', 'TR'))
+          args.transmittalRef ?? (await nextDocumentNumber(ctx.auth.companyId, 'transmittal', 'TR'))
       } else if (args.action === 'record_client_response') {
         const issueStatuses = ['IFA', 'IFR', 'IFC', 'IFI']
         if (!issueStatuses.includes(fromStatus))
@@ -14416,7 +14726,7 @@ export const resolvers = {
                 : 'For Information'
         }`
         transmittalRef =
-          args.transmittalRef || (await nextDocumentNumber(ctx.auth.companyId, 'transmittal', 'TR'))
+          args.transmittalRef ?? (await nextDocumentNumber(ctx.auth.companyId, 'transmittal', 'TR'))
       } else {
         const t = TRANSITIONS[args.action]
         if (!t) throw new Error(`Unknown workflow action: ${args.action}`)
@@ -14680,7 +14990,7 @@ export const resolvers = {
         String(row.project_id),
         ctx.auth.userId,
         'engineering_doc_deleted',
-        `Deleted ${row.ref_number}`,
+        `Deleted ${String(row.ref_number)}`,
       )
       return true
     },
@@ -15417,7 +15727,7 @@ export const resolvers = {
         String(parent.project_id),
         ctx.auth.userId,
         'drawing_revised',
-        `Drawing revised: ${parent.drawing_number} → Rev ${args.revision}`,
+        `Drawing revised: ${String(parent.drawing_number)} → Rev ${args.revision}`,
       )
 
       let downloadUrl: string | null = null
@@ -15467,7 +15777,7 @@ export const resolvers = {
         String(row.project_id),
         ctx.auth.userId,
         'drawing_status',
-        `Drawing ${row.drawing_number} status → ${args.status}`,
+        `Drawing ${String(row.drawing_number)} status → ${args.status}`,
       )
       return {
         id: row.id,
@@ -15504,7 +15814,7 @@ export const resolvers = {
         String(row.project_id),
         ctx.auth.userId,
         'drawing_deleted',
-        `Drawing deleted: ${row.drawing_number} — ${row.title}`,
+        `Drawing deleted: ${String(row.drawing_number)} — ${String(row.title)}`,
       )
       return true
     },
@@ -15928,11 +16238,8 @@ export const resolvers = {
       const result: Record<string, unknown>[] = []
       for (const [i, item] of args.items.entries()) {
         const totalCost =
-          item.totalCost != null
-            ? item.totalCost
-            : item.quantity != null && item.unitCost != null
-              ? item.quantity * item.unitCost
-              : null
+          item.totalCost ??
+          (item.quantity != null && item.unitCost != null ? item.quantity * item.unitCost : null)
         const ins = await query(
           `INSERT INTO bid_cost_items (project_id,cost_type,description,quantity,unit,unit_cost,total_cost,currency_code,supplier_ref,notes,sequence)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
@@ -17461,9 +17768,9 @@ export const resolvers = {
           args.projectId,
           args.irNumber,
           args.title,
-          args.itpId || null,
-          args.workPackage || null,
-          args.location || null,
+          args.itpId ?? null,
+          args.workPackage ?? null,
+          args.location ?? null,
           args.requestedDate,
           requestedByName,
         ],
@@ -18104,20 +18411,20 @@ export const resolvers = {
           args.recordType,
           args.title,
           args.recordDate,
-          args.conductedBy || null,
-          args.location || null,
-          args.description || null,
+          args.conductedBy ?? null,
+          args.location ?? null,
+          args.description ?? null,
           args.attendeeCount ?? null,
-          args.attendeeNames || null,
-          args.incidentType || null,
-          args.severity || null,
-          args.injuredPerson || null,
-          args.observationType || null,
-          args.ptwType || null,
-          args.ptwNumber || null,
-          args.validFrom || null,
-          args.validTo || null,
-          args.approvedBy || null,
+          args.attendeeNames ?? null,
+          args.incidentType ?? null,
+          args.severity ?? null,
+          args.injuredPerson ?? null,
+          args.observationType ?? null,
+          args.ptwType ?? null,
+          args.ptwNumber ?? null,
+          args.validFrom ?? null,
+          args.validTo ?? null,
+          args.approvedBy ?? null,
           ctx.auth.userId,
           creatorName,
         ],
@@ -18497,6 +18804,294 @@ export const resolvers = {
       return true
     },
 
+    createDailyReport: async (
+      _: unknown,
+      args: { projectId: string; input: DailyReportInputArgs },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.projectId,
+        ctx.auth.companyId,
+      ]).then((r) => {
+        if (!r.rows[0]) throw new Error('Project not found')
+      })
+      const nameR = await query(
+        `SELECT e.first_name||' '||e.last_name AS n FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`,
+        [ctx.auth.userId],
+      )
+      const creatorName = String((nameR.rows[0] as Record<string, unknown>).n ?? 'Unknown')
+      const i = args.input
+      const reportNumber = await nextDocumentNumber(ctx.auth.companyId, 'daily_report', 'DPR')
+      const cols = [
+        'project_id',
+        'company_id',
+        'report_number',
+        'report_date',
+        ...DAILY_REPORT_COLUMNS,
+        'created_by_id',
+        'created_by_name',
+      ]
+      const placeholders = cols.map((_, idx) => `$${idx + 1}`).join(',')
+      const ins = await query(
+        `INSERT INTO project_daily_reports (${cols.join(',')}) VALUES (${placeholders}) RETURNING *`,
+        [
+          args.projectId,
+          ctx.auth.companyId,
+          reportNumber,
+          i.reportDate ?? new Date().toISOString().slice(0, 10),
+          ...dailyReportParams(i),
+          ctx.auth.userId,
+          creatorName,
+        ],
+      )
+      const d = ins.rows[0] as Record<string, unknown>
+      await logActivity(
+        args.projectId,
+        ctx.auth.userId,
+        'daily_report_created',
+        `Daily Report ${reportNumber} filed for ${String(d.report_date).slice(0, 10)}`,
+      )
+      return mapDailyReportRow(d, [])
+    },
+
+    updateDailyReport: async (
+      _: unknown,
+      args: { id: string; input: DailyReportInputArgs },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      const i = args.input
+      const reportDateIdx = DAILY_REPORT_COLUMNS.length + 2
+      const idIdx = DAILY_REPORT_COLUMNS.length + 3
+      const sets = [
+        ...DAILY_REPORT_COLUMNS.map((c, idx) => `${c}=$${idx + 2}`),
+        `report_date=$${reportDateIdx}`,
+        `updated_at=NOW()`,
+      ]
+      const upd = await query(
+        `UPDATE project_daily_reports r SET ${sets.join(',')} FROM projects p WHERE p.id=r.project_id AND p.company_id=$1 AND r.id=$${idIdx} RETURNING r.*`,
+        [
+          ctx.auth.companyId,
+          ...dailyReportParams(i),
+          i.reportDate ?? new Date().toISOString().slice(0, 10),
+          args.id,
+        ],
+      )
+      if (!upd.rows[0]) throw new Error('Daily report not found')
+      const d = upd.rows[0] as Record<string, unknown>
+      await logActivity(
+        String(d.project_id),
+        ctx.auth.userId,
+        'daily_report_updated',
+        `Daily Report ${String(d.report_number)} updated`,
+      )
+      const files = await fetchDailyReportFiles(args.id, ctx.auth.companyId)
+      const machinery = await fetchDailyReportMachinery(args.id)
+      return mapDailyReportRow(d, files, machinery)
+    },
+
+    deleteDailyReport: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      const r = await query(
+        `DELETE FROM project_daily_reports r USING projects p WHERE p.id=r.project_id AND p.company_id=$1 AND r.id=$2 RETURNING r.project_id, r.report_number`,
+        [ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Daily report not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(
+        String(row.project_id),
+        ctx.auth.userId,
+        'daily_report_deleted',
+        `Daily Report ${String(row.report_number)} deleted`,
+      )
+      return true
+    },
+
+    uploadDailyReportFile: async (
+      _: unknown,
+      args: { reportId: string; fileId: string; title?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      const drR = await query(
+        `SELECT r.*, p.company_id FROM project_daily_reports r JOIN projects p ON p.id=r.project_id WHERE r.id=$1 AND p.company_id=$2`,
+        [args.reportId, ctx.auth.companyId],
+      )
+      if (!drR.rows[0]) throw new Error('Daily report not found')
+      const d = drR.rows[0] as Record<string, unknown>
+      const fileR = await query(
+        `SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`,
+        [args.fileId, ctx.auth.companyId],
+      )
+      if (!fileR.rows[0]) throw new Error('File not found')
+      const f = fileR.rows[0] as Record<string, unknown>
+      await query(
+        `INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'daily_report',$2,$3,$4)`,
+        [args.fileId, args.reportId, args.title ?? f.original_filename, ctx.auth.userId],
+      )
+      await logActivity(
+        String(d.project_id),
+        ctx.auth.userId,
+        'daily_report_file',
+        `Photo attached to Daily Report ${String(d.report_number)}: ${String(args.title ?? f.original_filename)}`,
+      )
+      void notifyProjectFileUploadGW(
+        String(d.project_id),
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'Daily Report Photo',
+        `${String(args.title ?? f.original_filename)} (${String(d.report_number)})`,
+      )
+      const files = await fetchDailyReportFiles(args.reportId, ctx.auth.companyId)
+      const machinery = await fetchDailyReportMachinery(args.reportId)
+      return mapDailyReportRow(d, files, machinery)
+    },
+
+    deleteDailyReportFile: async (
+      _: unknown,
+      args: { attachmentId: string; reportId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await query(
+        `DELETE FROM document_attachments da USING project_daily_reports r JOIN projects p ON p.id=r.project_id WHERE r.id=da.entity_id AND da.entity_type='daily_report' AND p.company_id=$1 AND da.id=$2`,
+        [ctx.auth.companyId, args.attachmentId],
+      )
+      return true
+    },
+
+    addDailyReportMachinery: async (
+      _: unknown,
+      args: {
+        dailyReportId: string
+        poId: string
+        equipmentDescription?: string
+        workingHours?: number
+        idleHours?: number
+        breakdownHours?: number
+        fileId?: string
+      },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      for (const [label, hrs] of [
+        ['workingHours', args.workingHours],
+        ['idleHours', args.idleHours],
+        ['breakdownHours', args.breakdownHours],
+      ] as const) {
+        if (hrs != null && (hrs < 0 || hrs > 24)) {
+          throw new Error(`${label} must be between 0 and 24`)
+        }
+      }
+      const drR = await query(
+        `SELECT r.id, r.project_id, r.report_number FROM project_daily_reports r JOIN projects p ON p.id=r.project_id WHERE r.id=$1 AND p.company_id=$2`,
+        [args.dailyReportId, ctx.auth.companyId],
+      )
+      if (!drR.rows[0]) throw new Error('Daily report not found')
+      const dr = drR.rows[0] as Record<string, unknown>
+      const poR = await query(
+        `SELECT po.id, po.po_number FROM purchase_orders po WHERE po.id=$1 AND po.project_id=$2`,
+        [args.poId, dr.project_id],
+      )
+      if (!poR.rows[0]) throw new Error('Purchase order not found on this project')
+      const poNumber = String((poR.rows[0] as Record<string, unknown>).po_number)
+      if (args.fileId) {
+        const fileR = await query(
+          `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`,
+          [args.fileId, ctx.auth.companyId],
+        )
+        if (!fileR.rows[0]) throw new Error('File not found')
+      }
+      const nameR = await query(
+        `SELECT e.first_name||' '||e.last_name AS n FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`,
+        [ctx.auth.userId],
+      )
+      const creatorName = String((nameR.rows[0] as Record<string, unknown>).n ?? 'Unknown')
+      const ins = await query(
+        `INSERT INTO project_daily_report_machinery
+           (daily_report_id, project_id, po_id, equipment_description, working_hours, idle_hours, breakdown_hours, live_photo_file_id, created_by_id, created_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+        [
+          args.dailyReportId,
+          dr.project_id,
+          args.poId,
+          args.equipmentDescription ?? null,
+          args.workingHours ?? null,
+          args.idleHours ?? null,
+          args.breakdownHours ?? null,
+          args.fileId ?? null,
+          ctx.auth.userId,
+          creatorName,
+        ],
+      )
+      const newId = String((ins.rows[0] as Record<string, unknown>).id)
+      if (!args.fileId) {
+        void notifyDeptHeadsAndAdminsGW(args.poId, {
+          type: 'PO_MACHINERY_PHOTO_MISSING',
+          title: 'Machinery PO missing live photo',
+          body: `Daily Report ${String(dr.report_number)} logged PO ${poNumber} without a live photo. This PO is flagged until a photo is attached.`,
+        })
+      }
+      await logActivity(
+        String(dr.project_id),
+        ctx.auth.userId,
+        'daily_report_machinery',
+        `Machinery logged on Daily Report ${String(dr.report_number)}: PO ${poNumber}${args.fileId ? '' : ' (missing live photo)'}`,
+      )
+      return fetchOneMachineryRow(newId)
+    },
+
+    attachDailyReportMachineryPhoto: async (
+      _: unknown,
+      args: { id: string; fileId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      const fileR = await query(
+        `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`,
+        [args.fileId, ctx.auth.companyId],
+      )
+      if (!fileR.rows[0]) throw new Error('File not found')
+      const upd = await query(
+        `UPDATE project_daily_report_machinery drm SET live_photo_file_id=$1
+         FROM project_daily_reports r JOIN projects p ON p.id=r.project_id
+         WHERE drm.daily_report_id=r.id AND p.company_id=$2 AND drm.id=$3
+         RETURNING drm.project_id, drm.po_id`,
+        [args.fileId, ctx.auth.companyId, args.id],
+      )
+      if (!upd.rows[0]) throw new Error('Machinery entry not found')
+      const row = upd.rows[0] as Record<string, unknown>
+      await logActivity(
+        String(row.project_id),
+        ctx.auth.userId,
+        'daily_report_machinery_photo',
+        `Live photo attached to a machinery entry — PO alert cleared if this was the last gap`,
+      )
+      return fetchOneMachineryRow(args.id)
+    },
+
+    deleteDailyReportMachinery: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      const r = await query(
+        `DELETE FROM project_daily_report_machinery drm
+         USING project_daily_reports rpt JOIN projects p ON p.id=rpt.project_id
+         WHERE drm.daily_report_id=rpt.id AND p.company_id=$1 AND drm.id=$2
+         RETURNING drm.id`,
+        [ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Machinery entry not found')
+      return true
+    },
+
     // ── Planning ─────────────────────────────────────────────────────────────
 
     createWBSNode: async (
@@ -18526,14 +19121,14 @@ export const resolvers = {
         `INSERT INTO project_wbs (project_id,parent_id,wbs_code,name,description,level,sequence,budget_amount,responsible) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [
           args.projectId,
-          args.parentId || null,
+          args.parentId ?? null,
           args.wbsCode,
           args.name,
-          args.description || null,
+          args.description ?? null,
           args.level ?? 1,
           args.sequence ?? 0,
           args.budgetAmount ?? 0,
-          args.responsible || null,
+          args.responsible ?? null,
         ],
       )
       return planMapWBS(r.rows[0] as Record<string, unknown>)
@@ -18631,16 +19226,16 @@ export const resolvers = {
         `INSERT INTO project_activities (project_id,wbs_id,activity_code,name,activity_type,planned_start,planned_finish,duration_days,responsible,location,remarks,budget_amount,sequence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [
           args.projectId,
-          args.wbsId || null,
+          args.wbsId ?? null,
           args.activityCode,
           args.name,
-          args.activityType || 'task',
-          args.plannedStart || null,
-          args.plannedFinish || null,
+          args.activityType ?? 'task',
+          args.plannedStart ?? null,
+          args.plannedFinish ?? null,
           args.durationDays ?? 0,
-          args.responsible || null,
-          args.location || null,
-          args.remarks || null,
+          args.responsible ?? null,
+          args.location ?? null,
+          args.remarks ?? null,
           args.budgetAmount ?? 0,
           args.sequence ?? 0,
         ],
@@ -18775,8 +19370,8 @@ export const resolvers = {
         `UPDATE project_activities a SET percent_complete=$1, actual_start=COALESCE($2::date,actual_start), actual_finish=COALESCE($3::date,actual_finish), updated_at=NOW() FROM projects p WHERE p.id=a.project_id AND p.company_id=$4 AND a.id=$5 RETURNING a.*`,
         [
           args.percentComplete,
-          args.actualStart || null,
-          args.actualFinish || null,
+          args.actualStart ?? null,
+          args.actualFinish ?? null,
           ctx.auth.companyId,
           args.id,
         ],
@@ -18867,11 +19462,11 @@ export const resolvers = {
             args.projectId,
             act.activityCode,
             act.name,
-            act.activityType || 'task',
-            act.plannedStart || null,
-            act.plannedFinish || null,
+            act.activityType ?? 'task',
+            act.plannedStart ?? null,
+            act.plannedFinish ?? null,
             act.durationDays ?? 0,
-            act.responsible || null,
+            act.responsible ?? null,
             act.budgetAmount ?? 0,
             act.sequence ?? 0,
           ],
@@ -18884,7 +19479,7 @@ export const resolvers = {
         if (!predId || !succId) continue
         await query(
           `INSERT INTO project_activity_dependencies (project_id,predecessor_id,successor_id,dependency_type,lag_days) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-          [args.projectId, predId, succId, dep.dependencyType || 'FS', dep.lagDays ?? 0],
+          [args.projectId, predId, succId, dep.dependencyType ?? 'FS', dep.lagDays ?? 0],
         )
       }
       await logActivity(
@@ -18921,7 +19516,7 @@ export const resolvers = {
           args.projectId,
           args.predecessorId,
           args.successorId,
-          args.dependencyType || 'FS',
+          args.dependencyType ?? 'FS',
           args.lagDays ?? 0,
         ],
       )
@@ -19005,7 +19600,7 @@ export const resolvers = {
             const d = new Date(s)
             while (d <= f) {
               const k = d.toISOString().slice(0, 10)
-              const e = dayLoad.get(k) || { total: 0, acts: [] }
+              const e = dayLoad.get(k) ?? { total: 0, acts: [] }
               e.total += Number(asgn.units_per_day)
               e.acts.push({
                 id: asgn.act_id,
@@ -19081,7 +19676,7 @@ export const resolvers = {
         [
           args.projectId,
           args.name,
-          args.description || null,
+          args.description ?? null,
           JSON.stringify(snapshot),
           ctx.auth.userId,
         ],
@@ -19192,7 +19787,7 @@ export const resolvers = {
           args.unit,
           args.maxUnitsPerDay,
           args.costPerUnit,
-          args.currencyCode || 'USD',
+          args.currencyCode ?? 'USD',
         ],
       )
       return planMapResource(r.rows[0] as Record<string, unknown>)
@@ -19275,7 +19870,7 @@ export const resolvers = {
       if (!resOwn.rows[0]) throw new Error('Resource not found')
       const r = await query(
         `INSERT INTO project_resource_calendars (resource_id,work_date,available_units,is_holiday,note) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (resource_id,work_date) DO UPDATE SET available_units=EXCLUDED.available_units, is_holiday=EXCLUDED.is_holiday, note=EXCLUDED.note RETURNING *`,
-        [args.resourceId, args.workDate, args.availableUnits, args.isHoliday, args.note || null],
+        [args.resourceId, args.workDate, args.availableUnits, args.isHoliday, args.note ?? null],
       )
       const d = r.rows[0] as Record<string, unknown>
       return {
@@ -19453,8 +20048,8 @@ export const resolvers = {
         `INSERT INTO project_cost_codes (project_id,wbs_id,analytic_account_id,code,name,category,budget_amount,sequence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
         [
           args.projectId,
-          args.wbsId || null,
-          args.analyticAccountId || null,
+          args.wbsId ?? null,
+          args.analyticAccountId ?? null,
           code,
           name,
           args.category,
@@ -19573,16 +20168,16 @@ export const resolvers = {
         `INSERT INTO project_committed_costs (project_id,cost_code_id,commitment_type,reference_number,description,vendor_name,committed_amount,currency_code,commitment_date,expected_invoice_date,notes,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
         [
           args.projectId,
-          args.costCodeId || null,
+          args.costCodeId ?? null,
           args.commitmentType,
-          args.referenceNumber || null,
+          args.referenceNumber ?? null,
           args.description,
-          args.vendorName || null,
+          args.vendorName ?? null,
           args.committedAmount,
-          args.currencyCode || 'USD',
-          args.commitmentDate || null,
-          args.expectedInvoiceDate || null,
-          args.notes || null,
+          args.currencyCode ?? 'USD',
+          args.commitmentDate ?? null,
+          args.expectedInvoiceDate ?? null,
+          args.notes ?? null,
           ctx.auth.userId,
         ],
       )
@@ -19753,7 +20348,7 @@ export const resolvers = {
           args.plannedInflow ?? 0,
           args.actualInflow ?? 0,
           args.forecastInflow ?? 0,
-          args.notes || null,
+          args.notes ?? null,
           ctx.auth.userId,
         ],
       )
@@ -19789,16 +20384,16 @@ export const resolvers = {
         `INSERT INTO project_subcontracts (project_id,cost_code_id,subcontract_number,subcontractor_name,description,scope_of_work,contract_value,revised_value,retention_percentage,currency_code,start_date,end_date,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12) RETURNING *`,
         [
           args.projectId,
-          args.costCodeId || null,
+          args.costCodeId ?? null,
           args.subcontractNumber,
           args.subcontractorName,
-          args.description || null,
-          args.scopeOfWork || null,
+          args.description ?? null,
+          args.scopeOfWork ?? null,
           args.contractValue,
           args.retentionPercentage ?? 10,
-          args.currencyCode || 'USD',
-          args.startDate || null,
-          args.endDate || null,
+          args.currencyCode ?? 'USD',
+          args.startDate ?? null,
+          args.endDate ?? null,
           ctx.auth.userId,
         ],
       )
@@ -19938,7 +20533,7 @@ export const resolvers = {
           args.grossAmount,
           args.retentionAmount,
           args.netAmount,
-          args.notes || null,
+          args.notes ?? null,
         ],
       )
       return ccMapSCBilling(r.rows[0] as Record<string, unknown>)
@@ -20043,16 +20638,16 @@ export const resolvers = {
         `INSERT INTO project_labor_entries (project_id,cost_code_id,activity_id,work_date,trade,worker_name,regular_hours,overtime_hours,cost_per_hour,total_cost,notes,entered_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
         [
           args.projectId,
-          args.costCodeId || null,
-          args.activityId || null,
+          args.costCodeId ?? null,
+          args.activityId ?? null,
           args.workDate,
           args.trade,
-          args.workerName || null,
+          args.workerName ?? null,
           reg,
           ot,
           rate,
           total,
-          args.notes || null,
+          args.notes ?? null,
           ctx.auth.userId,
         ],
       )
@@ -20157,17 +20752,17 @@ export const resolvers = {
         `INSERT INTO project_equipment_log (project_id,cost_code_id,log_date,equipment_name,equipment_type,ownership,working_hours,standby_hours,cost_per_hour,standby_rate,total_cost,notes,entered_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [
           args.projectId,
-          args.costCodeId || null,
+          args.costCodeId ?? null,
           args.logDate,
           args.equipmentName,
-          args.equipmentType || null,
-          args.ownership || 'rented',
+          args.equipmentType ?? null,
+          args.ownership ?? 'rented',
           wh,
           sh,
           cph,
           sr,
           total,
-          args.notes || null,
+          args.notes ?? null,
           ctx.auth.userId,
         ],
       )
@@ -20266,11 +20861,11 @@ export const resolvers = {
         ON CONFLICT (project_id,cost_code_id,forecast_date) DO UPDATE SET etc_amount=EXCLUDED.etc_amount, eac_amount=EXCLUDED.eac_amount, notes=EXCLUDED.notes, prepared_by=EXCLUDED.prepared_by, updated_at=NOW() RETURNING *`,
         [
           args.projectId,
-          args.costCodeId || null,
+          args.costCodeId ?? null,
           args.forecastDate,
           args.etcAmount,
           args.eacAmount,
-          args.notes || null,
+          args.notes ?? null,
           ctx.auth.userId,
         ],
       )
@@ -20320,13 +20915,13 @@ export const resolvers = {
           args.projectId,
           args.billingNumber,
           args.billingDate,
-          args.periodFrom || null,
-          args.periodTo || null,
+          args.periodFrom ?? null,
+          args.periodTo ?? null,
           args.grossAmount,
           args.retentionPercentage ?? 10,
           args.retentionAmount ?? 0,
           args.netAmount,
-          args.notes || null,
+          args.notes ?? null,
           ctx.auth.userId,
         ],
       )
@@ -20467,18 +21062,18 @@ export const resolvers = {
           args.projectId,
           args.voNumber,
           args.title,
-          args.description || null,
-          args.changeType || 'additional_work',
-          args.initiatedBy || 'client',
-          args.instructionDate || null,
-          args.receivedDate || null,
+          args.description ?? null,
+          args.changeType ?? 'additional_work',
+          args.initiatedBy ?? 'client',
+          args.instructionDate ?? null,
+          args.receivedDate ?? null,
           args.scheduleImpactDays ?? 0,
           args.voValue,
-          args.currencyCode || 'USD',
-          args.clientRef || null,
-          args.impactAnalysis || null,
-          args.technicalNotes || null,
-          args.contractId || null,
+          args.currencyCode ?? 'USD',
+          args.clientRef ?? null,
+          args.impactAnalysis ?? null,
+          args.technicalNotes ?? null,
+          args.contractId ?? null,
           ctx.auth.userId,
         ],
       )
@@ -20640,10 +21235,10 @@ export const resolvers = {
         async (client) => {
           const r = await client.query(
             `UPDATE project_variation_orders pvo SET status='approved', approved_value=$1, contract_id=COALESCE($2, pvo.contract_id), decided_at=NOW(), updated_at=NOW() FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$3 AND pvo.id=$4 RETURNING pvo.id`,
-            [args.approvedValue, args.contractId || null, ctx.auth!.companyId, args.id],
+            [args.approvedValue, args.contractId ?? null, requireAuth(ctx).companyId, args.id],
           )
           if (!r.rows[0]) throw new Error('VO not found')
-          await syncVOFinancialLinks(client, ctx.auth!.userId, args.id)
+          await syncVOFinancialLinks(client, requireAuth(ctx).userId, args.id)
         },
       )
       const r = await query(`SELECT * FROM project_variation_orders WHERE id=$1`, [args.id])
@@ -20677,7 +21272,7 @@ export const resolvers = {
         async (client) => {
           const before = await client.query(
             `SELECT pvo.status FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE p.company_id=$1 AND pvo.id=$2`,
-            [ctx.auth!.companyId, args.id],
+            [requireAuth(ctx).companyId, args.id],
           )
           if (!before.rows[0]) throw new Error('VO not found')
           const wasApproved = (before.rows[0] as Record<string, unknown>).status === 'approved'
@@ -20686,7 +21281,7 @@ export const resolvers = {
             [args.reason, args.id],
           )
           if (!r.rows[0]) throw new Error('VO not found')
-          if (wasApproved) await syncVOFinancialLinks(client, ctx.auth!.userId, args.id)
+          if (wasApproved) await syncVOFinancialLinks(client, requireAuth(ctx).userId, args.id)
         },
       )
       const r = await query(`SELECT * FROM project_variation_orders WHERE id=$1`, [args.id])
@@ -20716,7 +21311,7 @@ export const resolvers = {
         async (client) => {
           const before = await client.query(
             `SELECT pvo.status FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE p.company_id=$1 AND pvo.id=$2`,
-            [ctx.auth!.companyId, args.id],
+            [requireAuth(ctx).companyId, args.id],
           )
           if (!before.rows[0]) throw new Error('VO not found')
           const oldStatus = (before.rows[0] as Record<string, unknown>).status
@@ -20726,7 +21321,7 @@ export const resolvers = {
           )
           if (!r.rows[0]) throw new Error('VO not found')
           if (oldStatus === 'approved' || args.status === 'approved')
-            await syncVOFinancialLinks(client, ctx.auth!.userId, args.id)
+            await syncVOFinancialLinks(client, requireAuth(ctx).userId, args.id)
         },
       )
       const r = await query(`SELECT * FROM project_variation_orders WHERE id=$1`, [args.id])
@@ -20770,10 +21365,10 @@ export const resolvers = {
           args.category,
           args.description,
           args.quantity ?? 1,
-          args.unit || null,
+          args.unit ?? null,
           args.unitRate,
           args.amount,
-          args.notes || null,
+          args.notes ?? null,
         ],
       )
       return voMapCostItem(r.rows[0] as Record<string, unknown>)
@@ -20872,9 +21467,9 @@ export const resolvers = {
           args.voId,
           args.correspondenceDate,
           args.direction,
-          args.referenceNumber || null,
+          args.referenceNumber ?? null,
           args.subject,
-          args.description || null,
+          args.description ?? null,
           ctx.auth.userId,
         ],
       )
@@ -20915,9 +21510,9 @@ export const resolvers = {
         [
           args.voId,
           args.drawingNumber,
-          args.revision || null,
-          args.title || null,
-          args.notes || null,
+          args.revision ?? null,
+          args.title ?? null,
+          args.notes ?? null,
         ],
       )
       return voMapDrawing(r.rows[0] as Record<string, unknown>)
@@ -22297,7 +22892,7 @@ export const resolvers = {
            VALUES ($1,$2,$3,$4,COALESCE($5::date,CURRENT_DATE),$6,$7) RETURNING id`,
           [ctx.auth.companyId, projectId, input.poId, returnNumber, input.returnDate ?? null, input.notes ?? null, ctx.auth.userId],
         )
-        returnId = headerRes.rows[0]!.id
+        returnId = headerRes.rows[0].id
         let totalReturnCost = 0
         let totalDirectReturnCost = 0
         // Lazily resolved on first direct-delivery line — the per-company
@@ -22440,7 +23035,7 @@ export const resolvers = {
               `INSERT INTO project_material_return_lines
                  (return_id, po_line_id, product_id, to_location_id, qty_returned, unit_cost, total_cost, stock_move_id)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-              [returnId, line.poLineId, polLine.product_id, line.toLocationId, qty, unitCost, totalCost, moveRes.rows[0]!.id],
+              [returnId, line.poLineId, polLine.product_id, line.toLocationId, qty, unitCost, totalCost, moveRes.rows[0].id],
             )
             continue
           }
@@ -22448,7 +23043,8 @@ export const resolvers = {
           // Only the Store Out branch reaches here — the earlier per-line
           // check guarantees exactly one of issueLineId/poLineId is set, and
           // the poLineId case already `continue`d above.
-          const issueLineId = line.issueLineId!
+          const issueLineId = line.issueLineId
+          if (!issueLineId) continue
 
           const issueLineRes = await client.query<{
             product_id: string
@@ -22534,7 +23130,7 @@ export const resolvers = {
             `INSERT INTO project_material_return_lines
                (return_id, issue_line_id, product_id, to_location_id, qty_returned, unit_cost, total_cost, stock_move_id)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-            [returnId, issueLineId, issueLine.product_id, line.toLocationId, qty, unitCost, totalCost, moveRes.rows[0]!.id],
+            [returnId, issueLineId, issueLine.product_id, line.toLocationId, qty, unitCost, totalCost, moveRes.rows[0].id],
           )
         }
 
@@ -23333,13 +23929,13 @@ export const resolvers = {
           // Resolve project_id and currency from contract (required NOT NULL columns)
           const contractRow = await client.query(
             `SELECT project_id, currency_code FROM project_contracts WHERE id=$1 AND company_id=$2`,
-            [args.contractId, ctx.auth!.companyId],
+            [args.contractId, requireAuth(ctx).companyId],
           )
           if (!contractRow.rows[0]) throw new Error('Contract not found')
           const projectId = contractRow.rows[0].project_id
           const currencyCode = contractRow.rows[0].currency_code ?? 'IQD'
 
-          const num = await nextDocumentNumber(ctx.auth!.companyId, 'project_invoice', 'INV')
+          const num = await nextDocumentNumber(requireAuth(ctx).companyId, 'project_invoice', 'INV')
           const lines = (i.lines as Record<string, unknown>[]) ?? []
           const subtotalBeforeTax = lines.reduce(
             (s, l) => s + Number(l.qty ?? 1) * Number(l.unitCost ?? 0),
@@ -23368,7 +23964,7 @@ export const resolvers = {
               status,invoice_date,due_date,created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$14,$15,'draft',NOW(),$16,$17) RETURNING *`,
             [
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
               projectId,
               args.contractId,
               num,
@@ -23384,7 +23980,7 @@ export const resolvers = {
               whtRate,
               whtAmount,
               i.dueDate,
-              ctx.auth!.userId,
+              requireAuth(ctx).userId,
             ],
           )
           const invId = inv.rows[0].id
@@ -23478,7 +24074,9 @@ export const resolvers = {
 
         if (args.lines !== undefined) {
           // Delete lines that were removed (exist in DB but not in the new list)
-          const keptIds = args.lines.filter((l) => l.id).map((l) => l.id!)
+          const keptIds = args.lines
+            .map((l) => l.id)
+            .filter((id): id is string => Boolean(id))
           if (keptIds.length > 0) {
             await client.query(
               `DELETE FROM project_invoice_lines WHERE invoice_id=$1 AND id NOT IN (${keptIds.map((_, i) => `$${i + 2}`).join(',')})`,
@@ -23798,13 +24396,13 @@ export const resolvers = {
             `INSERT INTO boms (company_id,finished_product_id,version,name,qty_produced,notes,is_active,created_by)
            VALUES ($1,$2,$3,$4,$5,$6,true,$7) RETURNING *`,
             [
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
               i.finished_product_id,
               i.version ?? '1.0',
               i.name ?? null,
               i.qty_produced ?? 1,
               i.notes ?? null,
-              ctx.auth!.userId,
+              requireAuth(ctx).userId,
             ],
           )
           const bomId = bom.rows[0].id as string
@@ -23845,7 +24443,7 @@ export const resolvers = {
            WHERE id=$1 AND company_id=$2 RETURNING *`,
             [
               args.id,
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
               i.version ?? null,
               i.name ?? null,
               i.qty_produced ?? null,
@@ -23938,7 +24536,7 @@ export const resolvers = {
         async (client) => {
           const bomR = await client.query(`SELECT * FROM boms WHERE id=$1 AND company_id=$2`, [
             i.bom_id,
-            ctx.auth!.companyId,
+            requireAuth(ctx).companyId,
           ])
           if (!bomR.rows[0]) throw new Error('BOM not found')
           const bom = bomR.rows[0]
@@ -23960,7 +24558,7 @@ export const resolvers = {
              scheduled_start,scheduled_end,notes,created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,0,'warehouse_first','draft',$9,$10,$11,$12) RETURNING *`,
             [
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
               moNum,
               bom.finished_product_id,
               i.bom_id,
@@ -23971,7 +24569,7 @@ export const resolvers = {
               i.scheduled_start ?? null,
               i.scheduled_end ?? null,
               i.notes ?? null,
-              ctx.auth!.userId,
+              requireAuth(ctx).userId,
             ],
           )
           const moId = mo.rows[0].id as string
@@ -24132,7 +24730,7 @@ export const resolvers = {
           for (const l of i.lines ?? []) {
             consumedMap[l.component_product_id] = {
               qty: l.qty_consumed,
-              unitCost: l.unit_cost ?? consumedMap[l.component_product_id].unitCost ?? 0,
+              unitCost: l.unit_cost ?? consumedMap[l.component_product_id].unitCost,
               sourceLocationId: l.source_location_id,
             }
           }
@@ -24217,7 +24815,7 @@ export const resolvers = {
           const finishedProductId = mo.finished_product_id as string | null
           if (finishedProductId && i.qty_produced > 0 && defaultWarehouseId) {
             const finCostPerUnit = actualCost > 0 ? actualCost / i.qty_produced : 0
-            const srcId = virtualInId ?? virtualOutId ?? defaultWarehouseId
+            const srcId = virtualInId
             await client.query(
               `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,moved_by)
              VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'mo_output',$8,$9)`,
@@ -25245,7 +25843,7 @@ export const resolvers = {
         await requirePermGW(ctx.auth, 'hr.recharge.admin', 'admin')
         requestedForName = requestedForNameRaw
       } else {
-        requestedForUserId = requestedForUserIdRaw || ctx.auth.userId
+        requestedForUserId = requestedForUserIdRaw ?? ctx.auth.userId
         if (requestedForUserId !== ctx.auth.userId) {
           await requirePermGW(ctx.auth, 'hr.recharge.admin', 'admin')
           const targetCheck = await query(
@@ -25451,7 +26049,7 @@ export const resolvers = {
               ctx.auth.userId,
             ],
           )
-          const jeId = je.rows[0]!.id
+          const jeId = je.rows[0].id
           await query(
             `INSERT INTO journal_lines (journal_entry_id, account_id, cost_center_id, currency_code, fx_rate, debit, credit, amount_company_currency)
              VALUES ($1,$2,$5,$3,$4,$6,0,$7),($1,$8,$5,$3,$4,0,$6,$7)`,
@@ -25643,16 +26241,16 @@ export const resolvers = {
       let totalNet = 0
       let totalDeductions = 0
       for (const emp of empResult.rows as Record<string, string>[]) {
-        const base = parseFloat(emp.base_salary ?? '0')
-        const housing = parseFloat(emp.housing_allowance ?? '0')
-        const transport = parseFloat(emp.transport_allowance ?? '0')
-        const other = parseFloat(emp.other_allowances ?? '0')
-        const taxPct = parseFloat(emp.income_tax_pct ?? '0')
-        const ssPct = parseFloat(emp.social_security_pct ?? '0')
-        const currency = emp.currency_code ?? 'IQD'
+        const base = parseFloat(emp.base_salary)
+        const housing = parseFloat(emp.housing_allowance)
+        const transport = parseFloat(emp.transport_allowance)
+        const other = parseFloat(emp.other_allowances)
+        const taxPct = parseFloat(emp.income_tax_pct)
+        const ssPct = parseFloat(emp.social_security_pct)
+        const currency = emp.currency_code
 
-        const otHours = otMap.get(emp.employee_id ?? '') ?? 0
-        const leaveDays = leaveMap.get(emp.employee_id ?? '') ?? 0
+        const otHours = otMap.get(emp.employee_id) ?? 0
+        const leaveDays = leaveMap.get(emp.employee_id) ?? 0
         const absentDays = 0
 
         // Daily rate for overtime calculation
@@ -25918,14 +26516,14 @@ export const resolvers = {
             `INSERT INTO equipment_usage_logs (company_id,asset_id,log_date,hours_operated,odometer_km,operator_name,notes,recorded_by,recorded_via)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'web') RETURNING *`,
             [
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
               i.asset_id,
               i.usage_date,
               i.hours_used,
               i.mileage_km ?? null,
               i.operator_name ?? null,
               i.notes ?? null,
-              ctx.auth!.userId,
+              requireAuth(ctx).userId,
             ],
           )
           await client.query(
@@ -25989,14 +26587,14 @@ export const resolvers = {
             `INSERT INTO maintenance_records (company_id,asset_id,status,completed_at,actual_cost,performed_by,findings,next_service_notes,created_by)
            VALUES ($1,$2,'completed',$3,$4,$5,$6,$7,$8) RETURNING *`,
             [
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
               i.asset_id,
               i.performed_date,
               i.cost ?? 0,
               i.performed_by,
               i.description,
               i.notes ?? null,
-              ctx.auth!.userId,
+              requireAuth(ctx).userId,
             ],
           )
           await client.query(
@@ -26034,7 +26632,7 @@ export const resolvers = {
             `INSERT INTO condition_reports (company_id,asset_id,report_date,rating,checklist,notes,gps_lat,gps_lng,created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
             [
-              ctx.auth!.companyId,
+              requireAuth(ctx).companyId,
               i.asset_id,
               i.report_date,
               i.rating,
@@ -26042,7 +26640,7 @@ export const resolvers = {
               i.notes ?? null,
               i.gps_lat ?? null,
               i.gps_lng ?? null,
-              ctx.auth!.userId,
+              requireAuth(ctx).userId,
             ],
           )
           await client.query(`UPDATE equipment_assets SET condition_rating=$2 WHERE id=$1`, [
@@ -26139,7 +26737,7 @@ export const resolvers = {
         async (client) => {
           const r = await client.query(
             `UPDATE rental_contracts SET status='active', updated_at=NOW() WHERE id=$1 AND company_id=$2 RETURNING *`,
-            [args.id, ctx.auth!.companyId],
+            [args.id, requireAuth(ctx).companyId],
           )
           if (!r.rows[0]) throw new Error('Contract not found')
           await client.query(`UPDATE equipment_assets SET status='rented' WHERE id=$1`, [
@@ -26161,7 +26759,7 @@ export const resolvers = {
         async (client) => {
           const r = await client.query(
             `UPDATE rental_contracts SET status='closed', close_notes=$3, closed_at=NOW(), updated_at=NOW() WHERE id=$1 AND company_id=$2 RETURNING *`,
-            [args.id, ctx.auth!.companyId, args.notes ?? null],
+            [args.id, requireAuth(ctx).companyId, args.notes ?? null],
           )
           if (!r.rows[0]) throw new Error('Contract not found')
           await client.query(`UPDATE equipment_assets SET status='available' WHERE id=$1`, [
@@ -26260,7 +26858,7 @@ function companyRowToDetail(row: Record<string, unknown>) {
     row.fiscal_year_start_month != null
       ? {
           companyId: row.id,
-          fiscalYearStartMonth: row.fiscal_year_start_month ?? 1,
+          fiscalYearStartMonth: row.fiscal_year_start_month,
           fiscalYearStartDay: row.fiscal_year_start_day ?? 1,
           defaultCurrency: row.default_currency ?? 'IQD',
           defaultPaymentTermsDays: row.default_payment_terms_days ?? 30,
@@ -27448,7 +28046,7 @@ const phase5QueryResolvers = {
       email: row.email,
       isActive: row.is_active,
       lastLoginAt: row.last_login_at,
-      roles: (row.roles as Record<string, unknown>[]) ?? [],
+      roles: row.roles as Record<string, unknown>[],
     }))
   },
 
@@ -27492,8 +28090,7 @@ const phase5QueryResolvers = {
     const companiesByInvitation = new Map<string, Record<string, unknown>[]>()
     for (const c of companiesR.rows as Record<string, unknown>[]) {
       const key = String(c.invitation_id)
-      if (!companiesByInvitation.has(key)) companiesByInvitation.set(key, [])
-      companiesByInvitation.get(key)!.push({
+      getOrCreate(companiesByInvitation, key, () => []).push({
         companyId: c.company_id,
         companyName: c.company_name,
         role: c.role,
@@ -27598,8 +28195,7 @@ const phase5QueryResolvers = {
     const companyNamesByUser = new Map<string, Set<string>>()
     for (const row of rolesR.rows as Record<string, unknown>[]) {
       const uid = String(row.user_id)
-      if (!rolesByUser.has(uid)) rolesByUser.set(uid, [])
-      rolesByUser.get(uid)!.push({
+      getOrCreate(rolesByUser, uid, () => []).push({
         id: row.id,
         companyId: row.company_id,
         companyName: row.company_name ?? '',
@@ -27607,8 +28203,7 @@ const phase5QueryResolvers = {
         role: row.role,
         isActive: row.is_active,
       })
-      if (!companyNamesByUser.has(uid)) companyNamesByUser.set(uid, new Set())
-      companyNamesByUser.get(uid)!.add(String(row.company_name))
+      getOrCreate(companyNamesByUser, uid, () => new Set<string>()).add(String(row.company_name))
     }
 
     return {
@@ -27797,10 +28392,10 @@ const phase5QueryResolvers = {
     )
     const row = r.rows[0] as Record<string, unknown>
     return {
-      themePreference: row?.theme_preference,
-      dateFormat: row?.date_format,
-      numberFormat: row?.number_format,
-      notificationPreferences: row?.notification_preferences,
+      themePreference: row.theme_preference,
+      dateFormat: row.date_format,
+      numberFormat: row.number_format,
+      notificationPreferences: row.notification_preferences,
     }
   },
 
@@ -28076,7 +28671,6 @@ const phase5QueryResolvers = {
     const histMap = new Map<string, { row: Record<string, unknown>; url: string | null }[]>()
     for (const h of histRes.rows as Record<string, unknown>[]) {
       const gid = String(h.doc_group_id)
-      if (!histMap.has(gid)) histMap.set(gid, [])
       let hUrl: string | null = null
       try {
         if (h.file_key) {
@@ -28086,7 +28680,7 @@ const phase5QueryResolvers = {
       } catch {
         /* best-effort */
       }
-      histMap.get(gid)!.push({ row: h, url: hUrl })
+      getOrCreate(histMap, gid, () => []).push({ row: h, url: hUrl })
     }
     // Fetch activities for all docs in this project in one query
     const allDocIds = (r.rows as Record<string, unknown>[]).map((d) => d.id)
@@ -28099,8 +28693,7 @@ const phase5QueryResolvers = {
     const actMap = new Map<string, Record<string, unknown>[]>()
     for (const a of actRes.rows as Record<string, unknown>[]) {
       const did = String(a.document_id)
-      if (!actMap.has(did)) actMap.set(did, [])
-      actMap.get(did)!.push(a)
+      getOrCreate(actMap, did, () => []).push(a)
     }
     return Promise.all(
       (r.rows as Record<string, unknown>[]).map(async (row) => {
@@ -28242,7 +28835,7 @@ const phase5QueryResolvers = {
          FROM document_attachments da JOIN files f ON f.id=da.file_id
          WHERE da.entity_type='bid_deliverable' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted'
          ORDER BY da.created_at`,
-          [d.id, ctx.auth!.companyId],
+          [d.id, requireAuth(ctx).companyId],
         )
         const fileList = await Promise.all(
           files.rows.map(async (f: Record<string, unknown>) => {
@@ -28435,6 +29028,81 @@ const phase5QueryResolvers = {
 
   // ── Execution module queries ───────────────────────────────────────────────
 
+  // The schema/mutations for this have existed since createSiteInstruction
+  // etc. were added, but the list query itself was never wired up — found
+  // via GraphQL codegen's schema validation (the frontend's
+  // PROJECT_SITE_INSTRUCTIONS_QUERY referenced a field that existed on
+  // neither this schema nor any resolver). Modeled directly on projectRFIs
+  // below, the one sibling QA/QC list query that does have a resolver.
+  projectSiteInstructions: async (
+    _: unknown,
+    args: { projectId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.view', 'view')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+      args.projectId,
+      ctx.auth.companyId,
+    ]).then((r) => {
+      if (!r.rows[0]) throw new Error('Not found')
+    })
+    const rows = await query(
+      `SELECT * FROM project_site_instructions WHERE project_id=$1 ORDER BY issued_date DESC, created_at DESC`,
+      [args.projectId],
+    )
+    return Promise.all(
+      rows.rows.map(async (d: Record<string, unknown>) => {
+        const files = await query(
+          `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='site_instruction' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`,
+          [d.id, requireAuth(ctx).companyId],
+        )
+        const fileList = await Promise.all(
+          files.rows.map(async (f: Record<string, unknown>) => {
+            let dl: string | null = null
+            try {
+              const r2 = await generateDownloadUrl(
+                f.file_key as string,
+                f.original_filename as string,
+              )
+              dl = r2.downloadUrl
+            } catch {
+              /**/
+            }
+            return {
+              id: f.id,
+              fileId: f.file_id,
+              filename: f.original_filename,
+              mimeType: f.mime_type,
+              sizeBytes: f.size_bytes,
+              title: f.label ?? f.original_filename,
+              description: null,
+              createdAt: f.created_at,
+              downloadUrl: dl,
+            }
+          }),
+        )
+        return {
+          id: d.id,
+          projectId: d.project_id,
+          siNumber: d.si_number,
+          subject: d.subject,
+          description: d.description ?? null,
+          issuedBy: d.issued_by ?? null,
+          issuedDate: String(d.issued_date).slice(0, 10),
+          acknowledgedByName: d.acknowledged_by_name ?? null,
+          acknowledgedDate: d.acknowledged_date ? String(d.acknowledged_date).slice(0, 10) : null,
+          potentialVo: Boolean(d.potential_vo),
+          voRef: d.vo_ref ?? null,
+          status: d.status,
+          files: fileList,
+          createdAt: d.created_at,
+          updatedAt: d.updated_at,
+        }
+      }),
+    )
+  },
+
   projectRFIs: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'projects.qaqc.view', 'view')
@@ -28452,7 +29120,7 @@ const phase5QueryResolvers = {
       rows.rows.map(async (d: Record<string, unknown>) => {
         const files = await query(
           `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='rfi' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`,
-          [d.id, ctx.auth!.companyId],
+          [d.id, requireAuth(ctx).companyId],
         )
         const fileList = await Promise.all(
           files.rows.map(async (f: Record<string, unknown>) => {
@@ -28498,6 +29166,28 @@ const phase5QueryResolvers = {
           createdAt: d.created_at,
           updatedAt: d.updated_at,
         }
+      }),
+    )
+  },
+
+  projectDailyReports: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+      args.projectId,
+      ctx.auth.companyId,
+    ]).then((r) => {
+      if (!r.rows[0]) throw new Error('Not found')
+    })
+    const rows = await query(
+      `SELECT * FROM project_daily_reports WHERE project_id=$1 ORDER BY report_date DESC, created_at DESC`,
+      [args.projectId],
+    )
+    return Promise.all(
+      rows.rows.map(async (d: Record<string, unknown>) => {
+        const files = await fetchDailyReportFiles(String(d.id), requireAuth(ctx).companyId)
+        const machinery = await fetchDailyReportMachinery(String(d.id))
+        return mapDailyReportRow(d, files, machinery)
       }),
     )
   },
@@ -28872,8 +29562,7 @@ const phase5QueryResolvers = {
     const actionsByMeeting = new Map<string, Record<string, unknown>[]>()
     for (const a of actions.rows as Record<string, unknown>[]) {
       const mid = String(a.meeting_id)
-      if (!actionsByMeeting.has(mid)) actionsByMeeting.set(mid, [])
-      actionsByMeeting.get(mid)!.push(a)
+      getOrCreate(actionsByMeeting, mid, () => []).push(a)
     }
     return (meetings.rows as Record<string, unknown>[]).map((m) =>
       momMapMeeting(m, actionsByMeeting.get(String(m.id)) ?? []),
@@ -29518,15 +30207,15 @@ async function syncModuleAdminPermissions(
 ): Promise<void> {
   const wasModuleAdmin = before.role === 'module_admin' && !!before.module
   const isModuleAdmin = after.role === 'module_admin' && !!after.module
-  if (wasModuleAdmin && (!isModuleAdmin || before.module !== after.module)) {
-    await revokeModuleAdminPermissions(userId, companyId, before.module!)
+  if (wasModuleAdmin && (!isModuleAdmin || before.module !== after.module) && before.module) {
+    await revokeModuleAdminPermissions(userId, companyId, before.module)
   }
   // Unconditional (not just on transition into module_admin): granting is
   // idempotent, and a row can already be module_admin from before this
   // auto-grant existed — re-saving identical values must still grant, not
   // look like a no-op change.
-  if (isModuleAdmin) {
-    await applyModuleAdminPermissions(userId, companyId, after.module!, grantedBy)
+  if (isModuleAdmin && after.module) {
+    await applyModuleAdminPermissions(userId, companyId, after.module, grantedBy)
   }
 }
 
@@ -30021,7 +30710,7 @@ const phase5MutationResolvers = {
     const createdReq = await withTransaction(
       { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
       async (client) => {
-        const reqNum = await nextDocumentNumber(ctx.auth!.companyId, 'requisition', 'REQ')
+        const reqNum = await nextDocumentNumber(requireAuth(ctx).companyId, 'requisition', 'REQ')
         const priority = ['low', 'high', 'emergency'].includes(i.priority ?? '')
           ? i.priority
           : 'low'
@@ -30029,14 +30718,14 @@ const phase5MutationResolvers = {
           `INSERT INTO requisitions (company_id, branch_id, requisition_number, project_id, purpose, delivery_destination, priority, organizer_id, assigned_receiver_id, notes, expected_delivery_date, linked_mo_id, status)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'draft') RETURNING *`,
           [
-            ctx.auth!.companyId,
+            requireAuth(ctx).companyId,
             i.branch_id ?? null,
             reqNum,
             i.project_id ?? null,
             i.purpose ?? 'stock',
             i.purpose === 'project' ? (i.delivery_destination ?? null) : null,
             priority,
-            ctx.auth!.userId,
+            requireAuth(ctx).userId,
             i.assigned_receiver_id ?? null,
             i.notes ?? null,
             i.expected_delivery_date ?? null,
@@ -30545,6 +31234,13 @@ const phase5MutationResolvers = {
     )
     if (!isAdmin && !hasPos) throw new Error('procurement_officer position required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
+    // Price verification is organizer/admin only now (no dedicated
+    // position) — fetched here so the post-commit notification below can
+    // ping them directly instead of a position-holder list.
+    const organizerRow = await query<{ organizer_id: string | null }>(
+      `SELECT organizer_id FROM requisitions WHERE id=$1`,
+      [args.id],
+    )
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -30603,11 +31299,14 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
-    void notifyPositionHoldersForRequisitionGW(args.id, 'procurement_2nd', {
-      type: 'REQ_PRICE_VERIFICATION_REQUIRED',
-      title: 'Price verification required',
-      body: 'Requisition market prices require cross-checking',
-    })
+    if (organizerRow.rows[0]?.organizer_id) {
+      void notifyUserGW(organizerRow.rows[0].organizer_id, auth.companyId, {
+        type: 'REQ_PRICE_VERIFICATION_REQUIRED',
+        title: 'Price verification required',
+        body: 'Cross-check market prices and submit for approval',
+        poId: args.id,
+      })
+    }
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
   },
@@ -30624,13 +31323,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      args.id,
-      'procurement_2nd',
-    )
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can submit price verification')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
@@ -30676,8 +31371,8 @@ const phase5MutationResolvers = {
   },
 
   // The following four actions are only available from 'price_verification'
-  // — same procurement_2nd position gate as verifyRequisitionPrices itself,
-  // since whoever can submit for approval at this stage should also be able
+  // — same organizer/admin gate as verifyRequisitionPrices itself, since
+  // whoever can submit for approval at this stage should also be able
   // to send it back instead. Mirrors rejectPOVerificationToMarketPricing/
   // rejectPOVerificationToStorePricing exactly; resetRequisitionToDraft and
   // rejectRequisitionVerificationToInventoryCheck have no PO equivalent —
@@ -30693,13 +31388,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      args.id,
-      'procurement_2nd',
-    )
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -30738,13 +31429,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      args.id,
-      'procurement_2nd',
-    )
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -30783,13 +31470,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      args.id,
-      'procurement_2nd',
-    )
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -30824,13 +31507,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      args.id,
-      'procurement_2nd',
-    )
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -31283,7 +31962,7 @@ const phase5MutationResolvers = {
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
         [lineId, vendorId, currencyCode, qty, actualUnitPrice, auth.userId, overTolerance],
       )
-      purchaseId = inserted.rows[0]!.id
+      purchaseId = inserted.rows[0].id
 
       // One receipt attachment per bought entry (not per line) — a split
       // line's several po_line_purchases rows each carry their own, since
@@ -31300,7 +31979,7 @@ const phase5MutationResolvers = {
           [purchaseId, receiptFileId, auth.userId],
         )
         await client.query(`UPDATE po_line_purchases SET receipt_attachment_id=$1 WHERE id=$2`, [
-          attach.rows[0]!.id,
+          attach.rows[0].id,
           purchaseId,
         ])
         await client.query(`UPDATE files SET status='attached' WHERE id=$1`, [receiptFileId])
@@ -31556,7 +32235,7 @@ const phase5MutationResolvers = {
           // same-vendor split across genuinely different currencies is a
           // known, accepted gap here, same as the old single-currency-
           // header model already had.
-          const headerCurrency = entriesForVendor[0]!.currency_code
+          const headerCurrency = entriesForVendor[0].currency_code
           const poRes = await client.query<{ id: string }>(
             `INSERT INTO purchase_orders
                (company_id, po_number, vendor_id, currency_code, status, purpose, project_id, linked_project_id,
@@ -31579,7 +32258,7 @@ const phase5MutationResolvers = {
               req.assigned_receiver_id,
             ],
           )
-          childByVendor.set(vendorId, poRes.rows[0]!.id)
+          childByVendor.set(vendorId, poRes.rows[0].id)
         }
 
         const lineNumberCounters = new Map<string, number>()
@@ -31604,8 +32283,9 @@ const phase5MutationResolvers = {
           }
 
           for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i]!
-            const childId = childByVendor.get(entry.vendor_id)!
+            const entry = entries[i]
+            const childId = childByVendor.get(entry.vendor_id)
+            if (childId === undefined) throw new Error(`No PO created for vendor ${entry.vendor_id}`)
             const nextLineNumber = (lineNumberCounters.get(childId) ?? 0) + 1
             lineNumberCounters.set(childId, nextLineNumber)
             const qty = parseFloat(entry.qty)
@@ -31757,10 +32437,14 @@ const phase5MutationResolvers = {
     if (line.requisition_status !== 'sourcing')
       throw new Error('Requisition must be in sourcing status to close a line')
     if (line.closed_at) throw new Error('This line is already closed')
+    // The query's INNER JOIN on requisitions guarantees this, but the
+    // column's own type (string | null) doesn't say so.
+    const requisitionId = line.requisition_id
+    if (!requisitionId) throw new Error('Requisition line not found')
 
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, line.requisition_id!)
-    const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, line.requisition_id!)
+    const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, requisitionId)
+    const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, requisitionId)
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
     if (!isAdmin && !isDeptHead && !isApprover && !isReqAdmin)
       throw new Error('Not authorized to close this requisition line')
@@ -31774,7 +32458,7 @@ const phase5MutationResolvers = {
         [args.reason.trim(), auth.userId, args.lineId],
       )
       updatedLine = r.rows[0]
-      await evaluateRequisitionCompletion(client, line.requisition_id!, auth)
+      await evaluateRequisitionCompletion(client, requisitionId, auth)
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -31782,7 +32466,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
-    void publishEntityChanged(auth.companyId, 'requisition', line.requisition_id!, 'updated')
+    void publishEntityChanged(auth.companyId, 'requisition', requisitionId, 'updated')
     return updatedLine
   },
 
@@ -32372,6 +33056,13 @@ const phase5MutationResolvers = {
     if (!isAdmin && !hasPos)
       throw new Error('procurement_officer position required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
+    // Price verification is organizer/admin only now (no dedicated
+    // position) — fetched here so the post-commit notification below can
+    // ping them directly instead of a position-holder list.
+    const organizerRow = await query<{ organizer_id: string | null }>(
+      `SELECT organizer_id FROM purchase_orders WHERE id=$1`,
+      [args.id],
+    )
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -32446,11 +33137,14 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
-    void notifyPositionHoldersGW(args.id, 'procurement_2nd', {
-      type: 'PO_PRICE_VERIFICATION_REQUIRED',
-      title: 'Price verification required',
-      body: 'PO market prices require cross-checking',
-    })
+    if (organizerRow.rows[0]?.organizer_id) {
+      void notifyUserGW(organizerRow.rows[0].organizer_id, auth.companyId, {
+        type: 'PO_PRICE_VERIFICATION_REQUIRED',
+        title: 'Price verification required',
+        body: 'Cross-check market prices and submit for approval',
+        poId: args.id,
+      })
+    }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -32467,8 +33161,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can submit price verification')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
@@ -32573,8 +33268,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this PO')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -32613,8 +33309,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this PO')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -32643,70 +33340,6 @@ const phase5MutationResolvers = {
     })
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
-  },
-
-  // No status change — the PO stays at price_verification. This just pings
-  // the PO's creator to fix something themselves via the existing Edit
-  // Request tool (which auto-applies pre-approval, see submitPOEditRequest),
-  // rather than bouncing the whole PO back through an earlier stage.
-  // G1 Phase 3 Milestone A — widened the same way as submitPOEditRequest.
-  // Notifications are still deferred to Phase 4 throughout G1 (per the
-  // PR 1b/2 scope notes), so the requisitionId branch's notifyUserGW call
-  // is a placeholder — the status check/response shape is real now so the
-  // frontend has something to build against, matching this PR's "spec"
-  // purpose, but nobody actually gets notified yet, same as everywhere
-  // else notifications are deferred in this initiative.
-  notifyPOOwnerForEditRequest: async (
-    _: unknown,
-    args: { id?: string; requisitionId?: string; reason: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const auth = ctx.auth as GWAuth
-    const isAdmin = await hasProcurementAuthorityGW(auth)
-    if (!args.reason.trim()) throw new Error('reason is required')
-
-    if (args.requisitionId) {
-      const reqId = args.requisitionId
-      const hasPos = await userHasPositionForRequisitionGW(auth.userId, auth.companyId, reqId, 'procurement_2nd')
-      if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
-      const reqRow = await query(
-        `SELECT status, organizer_id FROM requisitions WHERE id=$1 AND company_id=$2`,
-        [reqId, auth.companyId],
-      )
-      if (!reqRow.rows[0]) throw new Error('Requisition not found')
-      if (reqRow.rows[0].status !== 'price_verification')
-        throw new Error(`Cannot do this from status '${reqRow.rows[0].status as string}'`)
-      if (reqRow.rows[0].organizer_id) {
-        void notifyUserGW(reqRow.rows[0].organizer_id as string, auth.companyId, {
-          type: 'PO_EDIT_REQUESTED',
-          title: 'Edit requested on your requisition',
-          body: `Price verification flagged an issue: ${args.reason}. Please submit an edit request to fix it.`,
-          poId: reqId,
-        })
-      }
-      return true
-    }
-
-    if (!args.id) throw new Error('Either id or requisitionId is required')
-    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
-    const poRow = await query(
-      `SELECT status, created_by FROM purchase_orders WHERE id=$1 AND company_id=$2`,
-      [args.id, auth.companyId],
-    )
-    if (!poRow.rows[0]) throw new Error('PO not found')
-    if (poRow.rows[0].status !== 'price_verification')
-      throw new Error(`Cannot do this from status '${poRow.rows[0].status as string}'`)
-    if (poRow.rows[0].created_by) {
-      void notifyUserGW(poRow.rows[0].created_by as string, auth.companyId, {
-        type: 'PO_EDIT_REQUESTED',
-        title: 'Edit requested on your PO',
-        body: `Price verification flagged an issue: ${args.reason}. Please submit an edit request to fix it.`,
-        poId: args.id,
-      })
-    }
-    return true
   },
 
   approvePO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -32876,15 +33509,25 @@ const phase5MutationResolvers = {
     let authorized = isAdmin
     if (!authorized && line.flagged_from_status === 'price_verification') {
       authorized = line.po_id
-        ? await userHasPositionGW(auth.userId, auth.companyId, line.po_id, 'procurement_2nd')
-        : await userHasPositionForRequisitionGW(auth.userId, auth.companyId, line.requisition_id!, 'procurement_2nd')
+        ? await userIsOrganizerGW(auth.userId, line.po_id, auth.companyId)
+        : await userIsOrganizerForRequisitionGW(
+            auth.userId,
+            requireId(line.requisition_id, 'Line not found'),
+            auth.companyId,
+          )
     } else if (!authorized && line.flagged_from_status === 'pending_approval') {
       authorized = line.po_id
         ? (await userIsDeptHeadGW(auth.userId, line.po_id)) ||
           (await userIsAssignedApproverGW(auth.userId, line.po_id)) ||
           (await callerHasPOAdmin(auth.userId, auth.companyId))
-        : (await userIsDeptHeadForRequisitionGW(auth.userId, line.requisition_id!)) ||
-          (await userIsAssignedApproverForRequisitionGW(auth.userId, line.requisition_id!)) ||
+        : (await userIsDeptHeadForRequisitionGW(
+            auth.userId,
+            requireId(line.requisition_id, 'Line not found'),
+          )) ||
+          (await userIsAssignedApproverForRequisitionGW(
+            auth.userId,
+            requireId(line.requisition_id, 'Line not found'),
+          )) ||
           (await callerHasPOAdmin(auth.userId, auth.companyId))
     }
     if (!authorized) throw new Error('Not authorized to resolve this flag')
@@ -32896,7 +33539,7 @@ const phase5MutationResolvers = {
     void publishEntityChanged(
       auth.companyId,
       line.po_id ? 'purchase_order' : 'requisition',
-      (line.po_id ?? line.requisition_id)!,
+      requireId(line.po_id ?? line.requisition_id, 'Line not found'),
       'updated',
     )
     return true
@@ -34243,7 +34886,7 @@ const phase5MutationResolvers = {
         args.userId,
         args.input.companyId,
         args.input.module,
-        ctx.auth!.userId,
+        requireAuth(ctx).userId,
       )
     }
     return {
@@ -34295,7 +34938,7 @@ const phase5MutationResolvers = {
     await syncModuleAdminPermissions(
       before.user_id as string,
       row.company_id as string,
-      ctx.auth!.userId,
+      requireAuth(ctx).userId,
       { role: before.role as string | null, module: before.module as string | null },
       { role: row.role as string | null, module: row.module as string | null },
     )
@@ -34769,7 +35412,7 @@ const phase5MutationResolvers = {
         i.user_id as string,
         i.company_id as string,
         i.module as string,
-        ctx.auth!.userId,
+        requireAuth(ctx).userId,
       )
     }
     return {
@@ -34841,11 +35484,11 @@ const phase5MutationResolvers = {
   inviteUser: async (_: unknown, args: { input: Record<string, unknown> }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const i = args.input
-    const companiesInput = (i.companies ?? []) as Array<{
+    const companiesInput = (i.companies ?? []) as {
       companyId: string
       role: string
       module?: string
-    }>
+    }[]
     if (companiesInput.length === 0) throw new Error('At least one company is required')
 
     const token = `inv_${crypto.randomUUID().replace(/-/g, '')}`
@@ -34985,6 +35628,15 @@ Object.assign(resolvers, {
       )
       return r.rows[0]?.is_legacy ?? true
     },
+    machineryPhotoAlert: async (parent: { id: string }): Promise<boolean> => {
+      const r = await query<{ has_gap: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM project_daily_report_machinery WHERE po_id=$1 AND live_photo_file_id IS NULL
+         ) AS has_gap`,
+        [parent.id],
+      )
+      return r.rows[0]?.has_gap ?? false
+    },
   },
 })
 
@@ -35061,12 +35713,12 @@ function shapeLock(
   lockedByMe: boolean
 } {
   return {
-    entityType: row['entity_type'] as string,
-    entityId: row['entity_id'] as string,
-    lockedBy: row['locked_by'] as string,
+    entityType: row.entity_type as string,
+    entityId: row.entity_id as string,
+    lockedBy: row.locked_by as string,
     lockedByName,
-    lockedAt: row['locked_at'] as string,
-    lockedByMe: row['locked_by'] === currentUserId,
+    lockedAt: row.locked_at as string,
+    lockedByMe: row.locked_by === currentUserId,
   }
 }
 
@@ -35085,7 +35737,7 @@ Object.assign(resolvers.Query, {
     )
     const row = r.rows[0] as Record<string, unknown> | undefined
     if (!row) return null
-    return shapeLock(row, row['locked_by_name'] as string, ctx.auth.userId)
+    return shapeLock(row, row.locked_by_name as string, ctx.auth.userId)
   },
 })
 
@@ -35118,7 +35770,7 @@ Object.assign(resolvers.Mutation, {
     }
     const nameRes = await query<{ name: string }>(
       `SELECT first_name || ' ' || last_name AS name FROM users WHERE id=$1`,
-      [row['locked_by']],
+      [row.locked_by],
     )
     const shaped = shapeLock(row, nameRes.rows[0]?.name ?? 'Unknown', ctx.auth.userId)
     if (iAcquired) {

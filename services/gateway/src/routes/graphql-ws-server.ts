@@ -1,4 +1,5 @@
 import type { IncomingMessage } from 'http'
+import type { Socket } from 'net'
 import { WebSocketServer as WSServer } from 'ws'
 import { useServer, type WebSocketServer } from 'graphql-ws/lib/use/ws'
 import { makeExecutableSchema } from '@graphql-tools/schema'
@@ -53,7 +54,7 @@ useServer<Record<string, unknown> | undefined, { auth?: SubscriptionAuth }>(
 
 export function handleGraphQLWsUpgrade(
   req: IncomingMessage,
-  socket: import('net').Socket,
+  socket: Socket,
   head: Buffer,
 ): void {
   wss.handleUpgrade(req, socket, head, (ws) => {

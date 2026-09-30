@@ -1,12 +1,13 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
-import { pool, query } from '@fnc-erp/db'
+import { pool, query, firstRowOrThrow } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
+import { getAuth } from '@fnc-erp/auth'
 import {
   buildInvoiceLines, calculateLineAmounts, calculateInvoiceTotals,
   markSourcesInvoiced, BillingError, type BillingParams,
 } from '@fnc-erp/billing'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const invoicesRouter: IRouter = Router()
@@ -54,7 +55,7 @@ invoicesRouter.get('/', requirePermission('projects.invoices.view', 'view'), asy
     let sql = `SELECT pi.*,
                       COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip WHERE pip.invoice_id=pi.id),0) AS total_paid
                FROM project_invoices pi WHERE pi.company_id=$1`
-    const params: unknown[] = [req.auth!.companyId]
+    const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
     if (project_id) { sql += ` AND pi.project_id=$${idx++}`; params.push(project_id) }
     if (contract_id) { sql += ` AND pi.contract_id=$${idx++}`; params.push(contract_id) }
@@ -68,8 +69,8 @@ invoicesRouter.get('/', requirePermission('projects.invoices.view', 'view'), asy
 // GET /projects/invoices/:id
 invoicesRouter.get('/:id', requirePermission('projects.invoices.view', 'view'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const invoice = await query('SELECT * FROM project_invoices WHERE id=$1 AND company_id=$2', [id, companyId])
     if (!invoice.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found')
     const [lines, payments] = await Promise.all([
@@ -83,7 +84,7 @@ invoicesRouter.get('/:id', requirePermission('projects.invoices.view', 'view'), 
 // POST /projects/invoices/preview — no DB writes
 invoicesRouter.post('/preview', requirePermission('projects.invoices.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const body = req.body as Record<string, unknown>
     const contractId = body['contract_id'] as string
 
@@ -99,14 +100,14 @@ invoicesRouter.post('/preview', requirePermission('projects.invoices.edit', 'edi
       const ctx = {
         client, contractId, companyId,
         projectId: c['project_id'] as string,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
       }
       const params = parseBillingParams(body)
       const rawLines = await buildInvoiceLines(ctx, params)
       const calculatedLines = rawLines.map(l => ({ ...l, ...calculateLineAmounts(l) }))
       const totals = calculateInvoiceTotals(
         calculatedLines,
-        parseFloat(c['retention_pct'] as string ?? '0'),
+        parseFloat(c['retention_pct'] as string),
       )
       sendOk(res, { lines: calculatedLines, totals })
     } finally {
@@ -121,8 +122,8 @@ invoicesRouter.post('/preview', requirePermission('projects.invoices.edit', 'edi
 // POST /projects/invoices — create invoice
 invoicesRouter.post('/', requirePermission('projects.invoices.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
     const body = req.body as Record<string, unknown>
     const contractId = body['contract_id'] as string
     const invoiceDate = body['invoice_date'] as string
@@ -135,8 +136,8 @@ invoicesRouter.post('/', requirePermission('projects.invoices.edit', 'edit'), as
     )
     if (!contract.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
     const c = contract.rows[0] as Record<string, unknown>
-    const paymentTermsDays = parseInt(c['payment_terms_days'] as string ?? '30')
-    const retentionPct = parseFloat(c['retention_pct'] as string ?? '0')
+    const paymentTermsDays = parseInt(c['payment_terms_days'] as string)
+    const retentionPct = parseFloat(c['retention_pct'] as string)
 
     const dueDate = new Date(invoiceDate)
     dueDate.setDate(dueDate.getDate() + paymentTermsDays)
@@ -185,11 +186,10 @@ invoicesRouter.post('/', requirePermission('projects.invoices.edit', 'edit'), as
           invoiceDate, dueDate.toISOString().slice(0, 10), userId,
         ],
       )
-      const invoice = invoiceResult.rows[0]!
+      const invoice = firstRowOrThrow(invoiceResult)
       const invoiceId = invoice['id'] as string
 
-      for (let i = 0; i < calculatedLines.length; i++) {
-        const l = calculatedLines[i]!
+      for (const [i, l] of calculatedLines.entries()) {
         await client.query(
           `INSERT INTO project_invoice_lines
              (invoice_id, line_number, description, source_type, source_id,
@@ -223,8 +223,8 @@ invoicesRouter.post('/', requirePermission('projects.invoices.edit', 'edit'), as
 // POST /projects/invoices/:id/submit-for-review
 invoicesRouter.post('/:id/submit-for-review', requirePermission('projects.invoices.edit', 'edit'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const companyId = req.auth!.companyId
+    const id = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
     const result = await query(
       `UPDATE project_invoices SET status='review', updated_at=NOW()
        WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING id`,
@@ -238,9 +238,9 @@ invoicesRouter.post('/:id/submit-for-review', requirePermission('projects.invoic
 // POST /projects/invoices/:id/approve — marks sources as invoiced
 invoicesRouter.post('/:id/approve', requirePermission('projects.invoices.edit', 'edit'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
+    const id = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
 
     const invoice = await query('SELECT status FROM project_invoices WHERE id=$1 AND company_id=$2', [id, companyId])
     if (!invoice.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found')
@@ -280,9 +280,9 @@ invoicesRouter.post('/:id/approve', requirePermission('projects.invoices.edit', 
 // POST /projects/invoices/:id/issue — posts GL + queues PDF
 invoicesRouter.post('/:id/issue', requirePermission('projects.invoices.edit', 'edit'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
+    const id = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
 
     const client = await pool.connect()
     try {
@@ -347,9 +347,9 @@ invoicesRouter.post('/:id/issue', requirePermission('projects.invoices.edit', 'e
 // POST /projects/invoices/:id/cancel
 invoicesRouter.post('/:id/cancel', requirePermission('projects.invoices.edit', 'edit'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
+    const id = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
 
     const invoice = await query('SELECT status FROM project_invoices WHERE id=$1 AND company_id=$2', [id, companyId])
     if (!invoice.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found')
@@ -402,16 +402,17 @@ invoicesRouter.post('/:id/cancel', requirePermission('projects.invoices.edit', '
 // GET /projects/invoices/:id/available-costs
 invoicesRouter.get('/:id/available-costs', requirePermission('projects.invoices.view', 'view'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const companyId = req.auth!.companyId
+    const id = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
     const sourceType = req.query['source_type'] as string | undefined
 
     const invoice = await query<{ project_id: string; contract_id: string }>(
       'SELECT project_id, contract_id FROM project_invoices WHERE id=$1 AND company_id=$2',
       [id, companyId],
     )
-    if (!invoice.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found')
-    const { project_id: projectId, contract_id: contractId } = invoice.rows[0]!
+    const invoiceRow = invoice.rows[0]
+    if (!invoiceRow) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found')
+    const { project_id: projectId, contract_id: contractId } = invoiceRow
 
     const result: Record<string, unknown[]> = {}
 

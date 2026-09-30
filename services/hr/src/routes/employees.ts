@@ -1,9 +1,10 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const employeesRouter: IRouter = Router()
@@ -24,10 +25,13 @@ const EmployeeSchema = z.object({
   user_id: z.string().uuid().optional(),
 })
 
-employeesRouter.get('/', requirePermission('hr.employees.view', 'view'), async (req, res) => {
+employeesRouter.get('/', requirePermission('hr.employees.view', 'view'), asyncHandler(async (req, res) => {
   try {
-    const { status, department_id, search, page = '1', limit = '50' } = req.query
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
+    const { status, department_id, search, page = '1', limit = '50' } = req.query as Record<
+      string,
+      string
+    >
+    const offset = (parseInt(page) - 1) * parseInt(limit)
     let sql = `SELECT e.id, e.first_name, e.last_name, e.employee_number, e.job_title,
                       e.email, e.status, e.hire_date, e.employment_type,
                       d.name AS department_name, wl.name AS work_location_name
@@ -35,7 +39,7 @@ employeesRouter.get('/', requirePermission('hr.employees.view', 'view'), async (
                LEFT JOIN departments d ON d.id = e.department_id
                LEFT JOIN work_locations wl ON wl.id = e.work_location_id
                WHERE e.company_id = $1`
-    const params: unknown[] = [req.auth!.companyId]
+    const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
     if (status) {
       sql += ` AND e.status = $${idx++}`
@@ -51,15 +55,15 @@ employeesRouter.get('/', requirePermission('hr.employees.view', 'view'), async (
       idx++
     }
     sql += ` ORDER BY e.last_name, e.first_name LIMIT $${idx++} OFFSET $${idx++}`
-    params.push(parseInt(limit as string), offset)
+    params.push(parseInt(limit), offset)
     const result = await query(sql, params)
     sendOk(res, result.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch employees', err)
   }
-})
+}))
 
-employeesRouter.get('/:id', requirePermission('hr.employees.view', 'view'), async (req, res) => {
+employeesRouter.get('/:id', requirePermission('hr.employees.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const result = await query(
       `SELECT e.*, d.name AS department_name, wl.name AS work_location_name
@@ -67,7 +71,7 @@ employeesRouter.get('/:id', requirePermission('hr.employees.view', 'view'), asyn
        LEFT JOIN departments d ON d.id = e.department_id
        LEFT JOIN work_locations wl ON wl.id = e.work_location_id
        WHERE e.id = $1 AND e.company_id = $2`,
-      [req.params['id'], req.auth!.companyId],
+      [req.params['id'], getAuth(req).companyId],
     )
     const row = result.rows[0]
     if (!row) {
@@ -78,9 +82,9 @@ employeesRouter.get('/:id', requirePermission('hr.employees.view', 'view'), asyn
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch employee', err)
   }
-})
+}))
 
-employeesRouter.post('/', requirePermission('hr.employees.edit', 'edit'), async (req, res) => {
+employeesRouter.post('/', requirePermission('hr.employees.edit', 'edit'), asyncHandler(async (req, res) => {
   const parsed = EmployeeSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -93,7 +97,7 @@ employeesRouter.post('/', requirePermission('hr.employees.edit', 'edit'), async 
        national_id, job_title, department_id, work_location_id, manager_id, employment_type, hire_date, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [
-        req.auth!.companyId,
+        getAuth(req).companyId,
         d.user_id ?? null,
         d.employee_number ?? null,
         d.first_name,
@@ -107,13 +111,13 @@ employeesRouter.post('/', requirePermission('hr.employees.edit', 'edit'), async 
         d.manager_id ?? null,
         d.employment_type,
         d.hire_date,
-        req.auth!.userId,
+        getAuth(req).userId,
       ],
     )
-    const row = result.rows[0]!
+    const row = firstRowOrThrow(result)
     await logAudit({
-      companyId: req.auth!.companyId,
-      userId: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      userId: getAuth(req).userId,
       action: 'CREATE',
       tableName: 'employees',
       recordId: row['id'] as string,
@@ -123,9 +127,9 @@ employeesRouter.post('/', requirePermission('hr.employees.edit', 'edit'), async 
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create employee', err)
   }
-})
+}))
 
-employeesRouter.put('/:id', requirePermission('hr.employees.edit', 'edit'), async (req, res) => {
+employeesRouter.put('/:id', requirePermission('hr.employees.edit', 'edit'), asyncHandler(async (req, res) => {
   const parsed = EmployeeSchema.partial().safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -134,7 +138,7 @@ employeesRouter.put('/:id', requirePermission('hr.employees.edit', 'edit'), asyn
   try {
     const existing = await query(`SELECT * FROM employees WHERE id = $1 AND company_id = $2`, [
       req.params['id'],
-      req.auth!.companyId,
+      getAuth(req).companyId,
     ])
     if (!existing.rows[0]) {
       sendError(res, 404, 'NOT_FOUND', 'Employee not found')
@@ -162,20 +166,20 @@ employeesRouter.put('/:id', requirePermission('hr.employees.edit', 'edit'), asyn
         d.employment_type ?? null,
         d.hire_date ?? null,
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ],
     )
-    sendOk(res, result.rows[0]!)
+    sendOk(res, firstRowOrThrow(result))
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update employee', err)
   }
-})
+}))
 
 // Terminate employee (soft delete via status change)
 employeesRouter.post(
   '/:id/terminate',
   requirePermission('hr.employees.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const { termination_date } = req.body as { termination_date?: string }
     if (!termination_date || !/^\d{4}-\d{2}-\d{2}$/.test(termination_date)) {
       sendError(res, 400, 'VALIDATION_ERROR', 'termination_date (YYYY-MM-DD) is required')
@@ -185,18 +189,18 @@ employeesRouter.post(
       const result = await query(
         `UPDATE employees SET status = 'terminated', termination_date = $1, updated_at = NOW()
        WHERE id = $2 AND company_id = $3 AND status != 'terminated' RETURNING *`,
-        [termination_date, req.params['id'], req.auth!.companyId],
+        [termination_date, req.params['id'], getAuth(req).companyId],
       )
       if (!result.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Employee not found or already terminated')
         return
       }
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'employees',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
         newValues: { status: 'terminated', termination_date },
       })
       // Notify HR admins and system admins
@@ -205,7 +209,7 @@ employeesRouter.post(
       ;(async () => {
         const admins = await query(
           `SELECT DISTINCT u.id AS user_id FROM users u JOIN user_company_roles ucr ON ucr.user_id=u.id WHERE ucr.company_id=$1 AND (ucr.role IN ('company_admin','system_admin') OR (ucr.module='hr' AND ucr.role IN ('module_admin'))) AND u.is_active=true`,
-          [req.auth!.companyId],
+          [getAuth(req).companyId],
         )
         for (const u of admins.rows) {
           await query(
@@ -213,7 +217,7 @@ employeesRouter.post(
             [
               JSON.stringify({
                 userId: u['user_id'],
-                companyId: req.auth!.companyId,
+                companyId: getAuth(req).companyId,
                 title: `Employee terminated: ${empName}`,
                 body: `${empName} has been terminated effective ${termination_date}`,
                 data: {
@@ -225,10 +229,12 @@ employeesRouter.post(
             ],
           )
         }
-      })().catch(() => {})
+      })().catch(() => {
+        // best-effort notification — don't block the main flow on it
+      })
       sendOk(res, result.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to terminate employee', err)
     }
-  },
+  }),
 )

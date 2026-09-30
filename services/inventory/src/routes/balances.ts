@@ -1,6 +1,7 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
-import { query } from '@fnc-erp/db'
+import { query, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -9,9 +10,9 @@ export const balancesRouter: IRouter = Router()
 balancesRouter.get(
   '/',
   requirePermission('inventory.stock_moves.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const { product_id, location_id, below_reorder } = req.query
 
       let sql = `
@@ -42,15 +43,15 @@ balancesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch balances', err)
     }
-  },
+  }),
 )
 
 balancesRouter.get(
   '/product/:id',
   requirePermission('inventory.stock_moves.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       // Verify product belongs to company
       const prod = await query('SELECT * FROM products WHERE id = $1 AND company_id = $2', [
         req.params['id'],
@@ -77,5 +78,5 @@ balancesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch product balance', err)
     }
-  },
+  }),
 )

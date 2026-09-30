@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
-import { query, withTransaction } from '@fnc-erp/db'
+import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
-export const pettyCashRouter: import('express').Router = Router()
+export const pettyCashRouter: Router = Router()
 
 async function nextReplenNumber(companyId: string): Promise<string> {
   const yr = new Date().getFullYear()
@@ -13,7 +14,7 @@ async function nextReplenNumber(companyId: string): Promise<string> {
     `SELECT COUNT(*)+1 AS n FROM petty_cash_replenishments WHERE company_id=$1 AND replenishment_number LIKE $2`,
     [companyId, `PCR-${yr}-%`],
   )
-  return `PCR-${yr}-${String(Number(res.rows[0]!['n'])).padStart(4, '0')}`
+  return `PCR-${yr}-${String(Number(firstRowOrThrow(res)['n'])).padStart(4, '0')}`
 }
 
 // ─── Float CRUD ───────────────────────────────────────────────────────────────
@@ -21,7 +22,7 @@ async function nextReplenNumber(companyId: string): Promise<string> {
 pettyCashRouter.get(
   '/floats',
   requirePermission('finance.petty_cash.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT f.*, a.code AS account_code, a.name AS account_name,
@@ -31,13 +32,13 @@ pettyCashRouter.get(
        LEFT JOIN chart_of_accounts a ON a.id = f.gl_account_id
        LEFT JOIN employees e ON e.id = f.custodian_employee_id
        WHERE f.company_id=$1 ORDER BY f.name`,
-        [req.auth!.companyId],
+        [getAuth(req).companyId],
       )
       sendOk(res, r.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load floats', err)
     }
-  },
+  }),
 )
 
 // A petty cash float must post to a real, postable CASH account — its one
@@ -68,7 +69,7 @@ const assertCashAccount = (companyId: string, accountId: string) =>
 pettyCashRouter.post(
   '/floats',
   requirePermission('finance.petty_cash.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       name: z.string().min(1),
       custodian_employee_id: z.string().uuid().optional(),
@@ -80,15 +81,15 @@ pettyCashRouter.post(
     })
     try {
       const d = schema.parse(req.body)
-      await assertCashAccount(req.auth!.companyId, d.gl_account_id)
+      await assertCashAccount(getAuth(req).companyId, d.gl_account_id)
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const fRes = await client.query(
             `INSERT INTO petty_cash_floats (company_id, name, custodian_employee_id, currency_code, authorized_limit, current_balance, gl_account_id, notes)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               d.name,
               d.custodian_employee_id ?? null,
               d.currency_code,
@@ -98,13 +99,13 @@ pettyCashRouter.post(
               d.notes ?? null,
             ],
           )
-          const float_ = fRes.rows[0]!
+          const float_ = firstRowOrThrow(fRes)
           if (d.opening_balance > 0) {
             const balance = d.opening_balance
             await client.query(
               `INSERT INTO petty_cash_transactions (float_id, company_id, transaction_date, description, amount, transaction_type, balance_after, created_by)
              VALUES ($1,$2,NOW(),'Opening balance',$3,'opening',$4,$5)`,
-              [float_.id, req.auth!.companyId, balance, balance, req.auth!.userId],
+              [float_.id, getAuth(req).companyId, balance, balance, getAuth(req).userId],
             )
           }
           return float_
@@ -122,13 +123,13 @@ pettyCashRouter.post(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create float', err)
     }
-  },
+  }),
 )
 
 pettyCashRouter.put(
   '/floats/:id',
   requirePermission('finance.petty_cash.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       name: z.string().min(1),
       custodian_employee_id: z.string().uuid().optional(),
@@ -139,7 +140,7 @@ pettyCashRouter.put(
     })
     try {
       const d = schema.parse(req.body)
-      await assertCashAccount(req.auth!.companyId, d.gl_account_id)
+      await assertCashAccount(getAuth(req).companyId, d.gl_account_id)
       const r = await query(
         `UPDATE petty_cash_floats SET name=$1, custodian_employee_id=$2, authorized_limit=$3, gl_account_id=$4, is_active=$5, notes=$6, updated_at=NOW()
        WHERE id=$7 AND company_id=$8 RETURNING *`,
@@ -151,7 +152,7 @@ pettyCashRouter.put(
           d.is_active,
           d.notes ?? null,
           req.params['id'],
-          req.auth!.companyId,
+          getAuth(req).companyId,
         ],
       )
       if (!r.rows[0]) {
@@ -166,7 +167,7 @@ pettyCashRouter.put(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update float', err)
     }
-  },
+  }),
 )
 
 // ─── Float detail + transactions ──────────────────────────────────────────────
@@ -174,7 +175,7 @@ pettyCashRouter.put(
 pettyCashRouter.get(
   '/floats/:id',
   requirePermission('finance.petty_cash.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const fRes = await query(
         `SELECT f.*, a.code AS account_code, a.name AS account_name,
@@ -183,7 +184,7 @@ pettyCashRouter.get(
        LEFT JOIN chart_of_accounts a ON a.id=f.gl_account_id
        LEFT JOIN employees e ON e.id = f.custodian_employee_id
        WHERE f.id=$1 AND f.company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!fRes.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Float not found')
@@ -205,7 +206,7 @@ pettyCashRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load float', err)
     }
-  },
+  }),
 )
 
 // ─── Record spend ─────────────────────────────────────────────────────────────
@@ -213,7 +214,7 @@ pettyCashRouter.get(
 pettyCashRouter.post(
   '/floats/:id/spend',
   requirePermission('finance.petty_cash.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       transaction_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       description: z.string().min(1),
@@ -227,7 +228,7 @@ pettyCashRouter.post(
       const d = schema.parse(req.body)
       const floatRes = await query(
         `SELECT * FROM petty_cash_floats WHERE id=$1 AND company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!floatRes.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Float not found')
@@ -246,14 +247,14 @@ pettyCashRouter.post(
 
       const newBalance = Math.round((Number(float_['current_balance']) - d.amount) * 100) / 100
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const txnRes = await client.query(
             `INSERT INTO petty_cash_transactions (float_id, company_id, transaction_date, description, category_id, category_name, gl_account_id, amount, transaction_type, balance_after, receipt_url, created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'spend',$9,$10,$11) RETURNING *`,
             [
               req.params['id'],
-              req.auth!.companyId,
+              getAuth(req).companyId,
               d.transaction_date,
               d.description,
               d.category_id ?? null,
@@ -262,7 +263,7 @@ pettyCashRouter.post(
               d.amount,
               newBalance,
               d.receipt_url ?? null,
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
           await client.query(
@@ -275,9 +276,9 @@ pettyCashRouter.post(
             const jeRes = await client.query(
               `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
              VALUES ($1,$2,'PETTY','Petty cash spend: '||$3,'posted',$4) RETURNING id`,
-              [req.auth!.companyId, d.transaction_date, d.description, req.auth!.userId],
+              [getAuth(req).companyId, d.transaction_date, d.description, getAuth(req).userId],
             )
-            const jeId = jeRes.rows[0]!.id as string
+            const jeId = firstRowOrThrow(jeRes).id as string
             await client.query(
               `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
              VALUES ($1,$2,$3,$4,0,$5,$4),($1,$6,$3,0,$4,$5,$4)`,
@@ -292,7 +293,7 @@ pettyCashRouter.post(
             )
             await client.query(
               `UPDATE petty_cash_transactions SET journal_entry_id=$1 WHERE id=$2`,
-              [jeId, txnRes.rows[0]!.id],
+              [jeId, firstRowOrThrow(txnRes).id],
             )
           }
           return txnRes.rows[0]
@@ -302,7 +303,7 @@ pettyCashRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to record spend', err)
     }
-  },
+  }),
 )
 
 // ─── Request replenishment ────────────────────────────────────────────────────
@@ -310,7 +311,7 @@ pettyCashRouter.post(
 pettyCashRouter.post(
   '/floats/:id/replenish',
   requirePermission('finance.petty_cash.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       requested_amount: z.coerce.number().positive(),
       notes: z.string().optional(),
@@ -319,31 +320,31 @@ pettyCashRouter.post(
       const { requested_amount, notes } = schema.parse(req.body)
       const existing = await query(
         `SELECT id FROM petty_cash_floats WHERE id=$1 AND company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!existing.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Float not found')
         return
       }
 
-      const num = await nextReplenNumber(req.auth!.companyId)
+      const num = await nextReplenNumber(getAuth(req).companyId)
       const r = await query(
         `INSERT INTO petty_cash_replenishments (float_id, company_id, replenishment_number, requested_amount, notes, requested_by)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
         [
           req.params['id'],
-          req.auth!.companyId,
+          getAuth(req).companyId,
           num,
           requested_amount,
           notes ?? null,
-          req.auth!.userId,
+          getAuth(req).userId,
         ],
       )
       sendOk(res, r.rows[0], 201)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create replenishment request', err)
     }
-  },
+  }),
 )
 
 // ─── Approve + post replenishment ─────────────────────────────────────────────
@@ -351,7 +352,7 @@ pettyCashRouter.post(
 pettyCashRouter.post(
   '/replenishments/:replenId/approve',
   requirePermission('finance.petty_cash.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       approved_amount: z.coerce.number().positive(),
       bank_account_id: z.string().uuid().optional(),
@@ -361,7 +362,7 @@ pettyCashRouter.post(
       const { approved_amount, offset_account_id } = schema.parse(req.body)
       if (offset_account_id) {
         await assertAccountCategory(
-          req.auth!.companyId,
+          getAuth(req).companyId,
           offset_account_id,
           ['CASH', 'BANK'],
           'offset_account_id',
@@ -372,7 +373,7 @@ pettyCashRouter.post(
        FROM petty_cash_replenishments r
        JOIN petty_cash_floats f ON f.id=r.float_id
        WHERE r.id=$1 AND r.company_id=$2 AND r.status='pending'`,
-        [req.params['replenId'], req.auth!.companyId],
+        [req.params['replenId'], getAuth(req).companyId],
       )
       if (!repRes.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Replenishment not found or not pending')
@@ -383,16 +384,16 @@ pettyCashRouter.post(
       const newBalance = Math.round((Number(rep['current_balance']) + approved_amount) * 100) / 100
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           let jeId: string | null = null
           if (rep['float_gl_account_id'] && offset_account_id) {
             const jeRes = await client.query(
               `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
              VALUES ($1,NOW(),$2,'Petty cash replenishment','posted',$3) RETURNING id`,
-              [req.auth!.companyId, rep['replenishment_number'], req.auth!.userId],
+              [getAuth(req).companyId, rep['replenishment_number'], getAuth(req).userId],
             )
-            jeId = jeRes.rows[0]!.id as string
+            jeId = firstRowOrThrow(jeRes).id as string
             // DR Petty Cash / CR Bank (offset)
             await client.query(
               `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
@@ -409,7 +410,7 @@ pettyCashRouter.post(
 
           await client.query(
             `UPDATE petty_cash_replenishments SET status='posted', approved_amount=$1, approved_by=$2, approved_at=NOW(), journal_entry_id=$3 WHERE id=$4`,
-            [approved_amount, req.auth!.userId, jeId, req.params['replenId']],
+            [approved_amount, getAuth(req).userId, jeId, req.params['replenId']],
           )
           await client.query(
             `UPDATE petty_cash_floats SET current_balance=$1, updated_at=NOW() WHERE id=$2`,
@@ -420,20 +421,20 @@ pettyCashRouter.post(
            VALUES ($1,$2,NOW(),'Replenishment — '||$3,$4,'replenishment',$5,$6,$7)`,
             [
               rep['float_id'],
-              req.auth!.companyId,
+              getAuth(req).companyId,
               rep['replenishment_number'],
               approved_amount,
               newBalance,
               jeId,
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
           return { approved: true, new_balance: newBalance, journal_entry_id: jeId }
         },
       )
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'petty_cash_replenishments',
         recordId: req.params['replenId'],
@@ -447,19 +448,19 @@ pettyCashRouter.post(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve replenishment', err)
     }
-  },
+  }),
 )
 
 pettyCashRouter.post(
   '/replenishments/:replenId/reject',
   requirePermission('finance.petty_cash.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({ reason: z.string().min(1) })
     try {
       const { reason } = schema.parse(req.body)
       const r = await query(
         `UPDATE petty_cash_replenishments SET status='rejected', rejection_reason=$1, approved_by=$2, approved_at=NOW() WHERE id=$3 AND company_id=$4 AND status='pending' RETURNING *`,
-        [reason, req.auth!.userId, req.params['replenId'], req.auth!.companyId],
+        [reason, getAuth(req).userId, req.params['replenId'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Replenishment not found or not pending')
@@ -469,7 +470,7 @@ pettyCashRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to reject replenishment', err)
     }
-  },
+  }),
 )
 
 // ─── All pending replenishments (finance view) ────────────────────────────────
@@ -477,18 +478,18 @@ pettyCashRouter.post(
 pettyCashRouter.get(
   '/replenishments',
   requirePermission('finance.petty_cash.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT pr.*, f.name AS float_name, f.currency_code
        FROM petty_cash_replenishments pr
        JOIN petty_cash_floats f ON f.id=pr.float_id
        WHERE pr.company_id=$1 ORDER BY pr.created_at DESC LIMIT 100`,
-        [req.auth!.companyId],
+        [getAuth(req).companyId],
       )
       sendOk(res, r.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load replenishments', err)
     }
-  },
+  }),
 )

@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query, withTransaction } from '@fnc-erp/db'
+import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
@@ -14,23 +15,23 @@ const CreateRunSchema = z.object({
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 })
 
-payrollRouter.get('/', requirePermission('payroll.runs.view', 'view'), async (req, res) => {
+payrollRouter.get('/', requirePermission('payroll.runs.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const result = await query(
       `SELECT * FROM payroll_runs WHERE company_id = $1 ORDER BY start_date DESC`,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
     sendOk(res, result.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch payroll runs', err)
   }
-})
+}))
 
-payrollRouter.get('/:id', requirePermission('payroll.runs.view', 'view'), async (req, res) => {
+payrollRouter.get('/:id', requirePermission('payroll.runs.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const result = await query(`SELECT * FROM payroll_runs WHERE id = $1 AND company_id = $2`, [
       req.params['id'],
-      req.auth!.companyId,
+      getAuth(req).companyId,
     ])
     const row = result.rows[0]
     if (!row) {
@@ -41,16 +42,16 @@ payrollRouter.get('/:id', requirePermission('payroll.runs.view', 'view'), async 
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch payroll run', err)
   }
-})
+}))
 
 payrollRouter.get(
   '/:id/payslips',
   requirePermission('payroll.runs.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const run = await query(`SELECT id FROM payroll_runs WHERE id = $1 AND company_id = $2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!run.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Payroll run not found')
@@ -66,10 +67,10 @@ payrollRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch payslips', err)
     }
-  },
+  }),
 )
 
-payrollRouter.post('/', requirePermission('payroll.runs.edit', 'edit'), async (req, res) => {
+payrollRouter.post('/', requirePermission('payroll.runs.edit', 'edit'), asyncHandler(async (req, res) => {
   const parsed = CreateRunSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -80,9 +81,9 @@ payrollRouter.post('/', requirePermission('payroll.runs.edit', 'edit'), async (r
     const result = await query(
       `INSERT INTO payroll_runs (company_id, period_name, start_date, end_date, created_by)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [req.auth!.companyId, period_name, start_date, end_date, req.auth!.userId],
+      [getAuth(req).companyId, period_name, start_date, end_date, getAuth(req).userId],
     )
-    sendOk(res, result.rows[0]!, 201)
+    sendOk(res, firstRowOrThrow(result), 201)
   } catch (err) {
     const e = err as { code?: string }
     if (e.code === '23505') {
@@ -91,14 +92,14 @@ payrollRouter.post('/', requirePermission('payroll.runs.edit', 'edit'), async (r
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create payroll run', err)
   }
-})
+}))
 
 // POST /:id/process — compute payslips for all active employees
 payrollRouter.post(
   '/:id/process',
   requirePermission('payroll.runs.approve', 'approve'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
     try {
       const runResult = await query(
         `SELECT * FROM payroll_runs WHERE id = $1 AND company_id = $2`,
@@ -123,11 +124,11 @@ payrollRouter.post(
       }
 
       const processedRun = await withTransaction(
-        { companyId, userId: req.auth!.userId, role: 'company_admin' },
+        { companyId, userId: getAuth(req).userId, role: 'company_admin' },
         async (client) => {
           await client.query(
             `UPDATE payroll_runs SET status = 'processing', processed_by = $1, updated_at = NOW() WHERE id = $2`,
-            [req.auth!.userId, run.id],
+            [getAuth(req).userId, run.id],
           )
 
           // Fetch all active employees with current salary config
@@ -290,7 +291,7 @@ payrollRouter.post(
 
           await logAudit({
             companyId,
-            userId: req.auth!.userId,
+            userId: getAuth(req).userId,
             action: 'UPDATE',
             tableName: 'payroll_runs',
             recordId: run.id,
@@ -315,7 +316,7 @@ payrollRouter.post(
           )
 
           const updated = await client.query(`SELECT * FROM payroll_runs WHERE id = $1`, [run.id])
-          return updated.rows[0]!
+          return firstRowOrThrow(updated)
         },
       )
 
@@ -323,19 +324,19 @@ payrollRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to process payroll run', err)
     }
-  },
+  }),
 )
 
 // POST /:id/cancel
 payrollRouter.post(
   '/:id/cancel',
   requirePermission('payroll.runs.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await query(
         `UPDATE payroll_runs SET status = 'cancelled', updated_at = NOW()
        WHERE id = $1 AND company_id = $2 AND status NOT IN ('posted','cancelled') RETURNING *`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!result.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Payroll run not found or cannot be cancelled')
@@ -345,5 +346,5 @@ payrollRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to cancel payroll run', err)
     }
-  },
+  }),
 )

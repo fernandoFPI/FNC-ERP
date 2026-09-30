@@ -25,6 +25,7 @@ export const VENDORS_QUERY = gql`
       country_code
       is_active
       contact_email
+      withholding_tax_rate
       is_cash_purchase
     }
   }
@@ -273,44 +274,46 @@ export const RECORD_DIRECT_DELIVERY = gql`
 
 // ── Store In (PO receipts, company-wide) ──────────────────────────────────────
 
-const PO_RECEIPT_FIELDS = `
-  id
-  po_id
-  po_number
-  vendor_name
-  received_from_name
-  base_currency_code
-  receipt_number
-  receipt_date
-  location_name
-  notes
-  received_by_email
-  received_by_name
-  location_notes
-  created_at
-  is_invoiced
-  status
-  confirmed_at
-  lines {
-    po_line_id
-    description
-    product_name
-    product_name_ar
-    sku
-    uom
-    unit_price
-    currency_code
-    fx_rate_to_base
-    qty_received
-  }
-  photos {
+const PO_RECEIPT_FIELDS = gql`
+  fragment POReceiptFields on POReceipt {
     id
-    fileId
-    label
-    category
-    originalFilename
-    downloadUrl
-    createdAt
+    po_id
+    po_number
+    vendor_name
+    received_from_name
+    base_currency_code
+    receipt_number
+    receipt_date
+    location_name
+    notes
+    received_by_email
+    received_by_name
+    location_notes
+    created_at
+    is_invoiced
+    status
+    confirmed_at
+    lines {
+      po_line_id
+      description
+      product_name
+      product_name_ar
+      sku
+      uom
+      unit_price
+      currency_code
+      fx_rate_to_base
+      qty_received
+    }
+    photos {
+      id
+      fileId
+      label
+      category
+      originalFilename
+      downloadUrl
+      createdAt
+    }
   }
 `
 
@@ -329,17 +332,19 @@ export const RECEIVABLE_PURCHASE_ORDERS_QUERY = gql`
 `
 
 export const PO_RECEIPTS_QUERY = gql`
+  ${PO_RECEIPT_FIELDS}
   query POReceipts {
     poReceipts {
-      ${PO_RECEIPT_FIELDS}
+      ...POReceiptFields
     }
   }
 `
 
 export const PO_RECEIPT_QUERY = gql`
+  ${PO_RECEIPT_FIELDS}
   query POReceipt($id: ID!) {
     poReceipt(id: $id) {
-      ${PO_RECEIPT_FIELDS}
+      ...POReceiptFields
     }
   }
 `
@@ -369,7 +374,7 @@ export const CONFIRM_UPLOAD = gql`
   mutation ConfirmUpload($fileId: ID!) {
     confirmUpload(fileId: $fileId) {
       id
-      original_filename
+      originalFilename
       status
     }
   }
@@ -466,6 +471,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       created_by_email
       created_at
       updated_at
+      machineryPhotoAlert
       lines {
         id
         product_id
@@ -752,11 +758,6 @@ export const RESOLVE_LINE_FLAG = gql`
   }
 `
 
-export const NOTIFY_PO_OWNER_FOR_EDIT_REQUEST = gql`
-  mutation NotifyPOOwnerForEditRequest($id: ID, $requisitionId: ID, $reason: String!) {
-    notifyPOOwnerForEditRequest(id: $id, requisitionId: $requisitionId, reason: $reason)
-  }
-`
 
 export const APPROVE_PO = gql`
   mutation ApprovePO($id: ID!) {

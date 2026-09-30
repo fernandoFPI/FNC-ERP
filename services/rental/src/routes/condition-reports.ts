@@ -3,7 +3,8 @@ import type { IRouter, Request, Response } from 'express'
 import { z } from 'zod'
 import { pool, query } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { getAuth } from '@fnc-erp/auth'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const conditionReportsRouter: IRouter = Router({ mergeParams: true })
@@ -38,7 +39,7 @@ conditionReportsRouter.get('/', requirePermission('rental.assets.view', 'view'),
     const limit = Math.min(100, parseInt((req.query['limit'] as string) ?? '20'))
     const offset = (page - 1) * limit
 
-    const params: unknown[] = [(req.params as Record<string, string>)['id']!]
+    const params: unknown[] = [requireParam(req, 'id')]
     const conditions: string[] = []
     let idx = 2
     if (status) { conditions.push(`ecr.status = $${idx++}`); params.push(status) }
@@ -73,6 +74,7 @@ conditionReportsRouter.post('/', requirePermission('rental.assets.edit', 'edit')
     return
   }
   const d = parsed.data
+  const assetId = requireParam(req, 'id')
 
   try {
     const client = await pool.connect()
@@ -87,8 +89,8 @@ conditionReportsRouter.post('/', requirePermission('rental.assets.edit', 'edit')
             gps_lat, gps_lng, photo_file_ids)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10::jsonb)
          RETURNING *`,
-        [(req.params as Record<string, string>)['id']!, d.project_id ?? null,
-         req.auth!.userId, d.reported_via, d.overall_condition,
+        [assetId, d.project_id ?? null,
+         getAuth(req).userId, d.reported_via, d.overall_condition,
          JSON.stringify(d.checklist), d.issues_found ?? null,
          d.gps_lat ?? null, d.gps_lng ?? null,
          JSON.stringify(d.photo_file_ids)],
@@ -101,19 +103,19 @@ conditionReportsRouter.post('/', requirePermission('rental.assets.edit', 'edit')
           `INSERT INTO service_outbox (service, event_type, payload)
            VALUES ('notifications','ASSET_CONDITION_ALERT',$1::jsonb)`,
           [JSON.stringify({
-            assetId: (req.params as Record<string, string>)['id']!,
+            assetId,
             reportId: report['id'],
             condition: d.overall_condition,
             issues: d.issues_found,
-            reportedBy: req.auth!.userId,
-            companyId: req.auth!.companyId,
+            reportedBy: getAuth(req).userId,
+            companyId: getAuth(req).companyId,
           })],
         )
       }
 
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.auth!.companyId,
+        userId: getAuth(req).userId,
+        companyId: getAuth(req).companyId,
         action: 'CONDITION_REPORT_SUBMITTED',
         tableName: 'equipment_condition_reports',
         recordId: report['id'] as string,
@@ -142,7 +144,7 @@ conditionReportsRouter.post('/:reportId/acknowledge', requirePermission('rental.
       `UPDATE equipment_condition_reports
        SET status = 'acknowledged', reviewed_by = $1, reviewed_at = NOW(), updated_at = NOW()
        WHERE id = $2 AND asset_id = $3`,
-      [req.auth!.userId, req.params['reportId'], (req.params as Record<string, string>)['id']!],
+      [getAuth(req).userId, req.params['reportId'], requireParam(req, 'id')],
     )
     sendOk(res, { message: 'Report acknowledged' })
   } catch (err) {
@@ -167,8 +169,8 @@ conditionReportsRouter.post('/:reportId/close', requirePermission('rental.assets
            action_taken = $2, maintenance_record_id = $3,
            updated_at = NOW()
        WHERE id = $4 AND asset_id = $5`,
-      [req.auth!.userId, d.action_taken, d.maintenance_record_id ?? null,
-       req.params['reportId'], (req.params as Record<string, string>)['id']!],
+      [getAuth(req).userId, d.action_taken, d.maintenance_record_id ?? null,
+       req.params['reportId'], requireParam(req, 'id')],
     )
     sendOk(res, { message: 'Condition report closed' })
   } catch (err) {
@@ -198,7 +200,7 @@ export async function getOpenConditionReports(req: Request, res: Response): Prom
            WHEN 'good'     THEN 4
          END,
          ecr.created_at DESC`,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
     sendOk(res, reports.rows)
   } catch (err) {

@@ -106,7 +106,7 @@ export default function FXExposureReport() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

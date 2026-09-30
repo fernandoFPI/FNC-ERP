@@ -16,6 +16,7 @@ import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
+import type { CompaniesQuery, CompaniesQueryVariables, CreateIntercoStockTransferMutation, CreateIntercoStockTransferMutationVariables, ProductsQuery, ProductsQueryVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
 
 interface TransferLine {
   id: string
@@ -38,22 +39,24 @@ export default function IntercoStockTransferForm() {
     { id: '1', product_id: '', from_location_id: '', to_location_id: '', qty: '1' },
   ])
 
-  const { data: companiesData } = useQuery(COMPANIES_QUERY)
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, { variables: { is_active: true } })
-  const { data: fromLocsData } = useQuery(STOCK_LOCATIONS_QUERY, {
+  const { data: companiesData } = useQuery<CompaniesQuery, CompaniesQueryVariables>(COMPANIES_QUERY)
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY)
+  const { data: fromLocsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, {
     variables: { type: 'warehouse' },
   })
-  const { data: toLocsData } = useQuery(STOCK_LOCATIONS_QUERY, {
+  const { data: toLocsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, {
     variables: { companyId: toCompanyId, type: 'warehouse' },
     skip: !toCompanyId,
   })
 
-  const [createTransfer, { loading }] = useMutation(CREATE_INTERCO_STOCK_TRANSFER)
+  const [createTransfer, { loading }] = useMutation<CreateIntercoStockTransferMutation, CreateIntercoStockTransferMutationVariables>(CREATE_INTERCO_STOCK_TRANSFER)
 
   const companies = (companiesData?.companies ?? []).filter(
     (c: { id: string }) => c.id !== user?.companyId,
   )
-  const products = productsData?.products ?? []
+  const products = (productsData?.products ?? []).filter(
+    (p): p is NonNullable<typeof p> => p !== null && p.is_active,
+  )
   const fromLocs = fromLocsData?.stockLocations ?? []
   const toLocs = toLocsData?.stockLocations ?? []
 
@@ -101,7 +104,7 @@ export default function IntercoStockTransferForm() {
           }}
           placeholder="Select product…"
           options={products.map(
-            (p: { id: string; name: string; sku: string; name_ar?: string | null }) => ({
+            (p) => ({
               value: p.id,
               label: p.name,
               sublabel: p.sku,
@@ -201,6 +204,10 @@ export default function IntercoStockTransferForm() {
           { query: INTERCO_STOCK_TRANSFERS_QUERY, variables: { page: 1, limit: 50 } },
         ],
       })
+      if (!res.data?.createIntercoStockTransfer) {
+        addToast({ type: 'error', message: 'Transfer creation did not return a result' })
+        return
+      }
       addToast({
         type: 'success',
         message: `Transfer ${res.data.createIntercoStockTransfer.transferNumber} created`,
@@ -219,7 +226,7 @@ export default function IntercoStockTransferForm() {
       />
 
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
         style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}
       >
         <Card style={{ padding: '20px' }}>

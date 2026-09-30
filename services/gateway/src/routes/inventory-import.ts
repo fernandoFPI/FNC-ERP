@@ -2,7 +2,7 @@ import { Router, type IRouter } from 'express'
 import multer from 'multer'
 import * as XLSX from 'xlsx'
 import { requireAuth } from '@fnc-erp/auth'
-import { withTransaction } from '@fnc-erp/db'
+import { withTransaction, asyncHandler } from '@fnc-erp/db'
 
 export const inventoryImportRouter: IRouter = Router()
 
@@ -331,7 +331,7 @@ function parseExcel(buffer: Buffer): { items: ParsedItem[]; skipped: SkippedShee
 }
 
 // POST /api/v1/admin/inventory-import
-inventoryImportRouter.post('/', requireAuth(), upload.single('file'), async (req, res) => {
+inventoryImportRouter.post('/', requireAuth(), upload.single('file'), asyncHandler(async (req, res) => {
   if (req.auth?.role !== 'system_admin') {
     res.status(403).json({
       success: false,
@@ -463,4 +463,4 @@ inventoryImportRouter.post('/', requireAuth(), upload.single('file'), async (req
     success: true,
     data: { created, updated, errors, total: items.length, skippedSheets },
   })
-})
+}))

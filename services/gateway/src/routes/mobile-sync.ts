@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import type { IRouter, Request, Response } from 'express'
-import { requireAuth } from '@fnc-erp/auth'
-import { pool, query } from '@fnc-erp/db'
+import { requireAuth, getAuth } from '@fnc-erp/auth'
+import { pool, query, asyncHandler } from '@fnc-erp/db'
 import { env } from '@fnc-erp/config'
 import { logger } from '@fnc-erp/logger'
 import type { AuthContext } from '@fnc-erp/types'
@@ -25,7 +25,7 @@ type EntityType = (typeof SUPPORTED_ENTITIES)[number]
 // ── GET /api/v1/mobile/sync ──────────────────────────────────
 // Delta sync — returns only records changed since sinceDate.
 // Device sends its last sync timestamp; server returns only new/changed data.
-mobileSyncRouter.get('/sync', requireAuth(), async (req: Request, res: Response) => {
+mobileSyncRouter.get('/sync', requireAuth(), asyncHandler(async (req: Request, res: Response) => {
   const { since, entities, device_id } = req.query as Record<string, string>
 
   if (!device_id) {
@@ -44,8 +44,8 @@ mobileSyncRouter.get('/sync', requireAuth(), async (req: Request, res: Response)
     : [...SUPPORTED_ENTITIES]
 
   const sinceDate = since ? new Date(since) : new Date(0)
-  const userId = req.auth!.userId
-  const companyId = req.auth!.companyId
+  const userId = getAuth(req).userId
+  const companyId = getAuth(req).companyId
   const platform = (req.headers['x-platform'] as string) ?? 'unknown'
   const syncedAt = new Date()
 
@@ -93,7 +93,7 @@ mobileSyncRouter.get('/sync', requireAuth(), async (req: Request, res: Response)
     log.error({ err }, 'mobile sync failed')
     res.status(500).json({ success: false, error: { code: 'SYNC_ERROR', message: 'Sync failed' } })
   }
-})
+}))
 
 // ── Fetch delta per entity ─────────────────────────────────────
 async function fetchEntityDelta(
@@ -326,7 +326,7 @@ async function fetchEntityDelta(
 // ── POST /api/v1/mobile/actions ──────────────────────────────
 // Process offline actions submitted after connectivity restored.
 // Actions are sorted by action_taken_at and processed in order.
-mobileSyncRouter.post('/actions', requireAuth(), async (req: Request, res: Response) => {
+mobileSyncRouter.post('/actions', requireAuth(), asyncHandler(async (req: Request, res: Response) => {
   const { actions, device_id } = req.body as {
     actions: OfflineAction[]
     device_id: string
@@ -354,7 +354,7 @@ mobileSyncRouter.post('/actions', requireAuth(), async (req: Request, res: Respo
   const results: ActionResult[] = []
 
   for (const action of sorted) {
-    const result = await processOfflineAction(action, req.auth!, device_id)
+    const result = await processOfflineAction(action, getAuth(req), device_id)
     results.push(result)
 
     await pool.query(
@@ -364,7 +364,7 @@ mobileSyncRouter.post('/actions', requireAuth(), async (req: Request, res: Respo
        VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,NOW())`,
       [
         device_id,
-        req.auth!.userId,
+        getAuth(req).userId,
         action.action_type,
         JSON.stringify(action.payload),
         new Date(action.action_taken_at),
@@ -380,11 +380,11 @@ mobileSyncRouter.post('/actions', requireAuth(), async (req: Request, res: Respo
   const failed = results.length - succeeded
 
   log.info(
-    { userId: req.auth!.userId, deviceId: device_id, succeeded, failed },
+    { userId: getAuth(req).userId, deviceId: device_id, succeeded, failed },
     'offline actions processed',
   )
   res.json({ success: true, data: { results, succeeded, failed } })
-})
+}))
 
 // ── Offline action types ──────────────────────────────────────
 interface OfflineAction {
@@ -636,7 +636,7 @@ async function processMaterialIssueAction(
 }
 
 // ── GET /api/v1/mobile/device-info ──────────────────────────
-mobileSyncRouter.get('/device-info', requireAuth(), async (req: Request, res: Response) => {
+mobileSyncRouter.get('/device-info', requireAuth(), asyncHandler(async (req: Request, res: Response) => {
   const { device_id } = req.query as Record<string, string>
   if (!device_id) {
     res.status(400).json({
@@ -653,7 +653,7 @@ mobileSyncRouter.get('/device-info', requireAuth(), async (req: Request, res: Re
         `SELECT entity_type, last_synced_at, records_synced
          FROM mobile_sync_cursors
          WHERE device_id=$1 AND user_id=$2`,
-        [device_id, req.auth!.userId],
+        [device_id, getAuth(req).userId],
       ),
     ])
 
@@ -671,4 +671,4 @@ mobileSyncRouter.get('/device-info', requireAuth(), async (req: Request, res: Re
       error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch device info' },
     })
   }
-})
+}))

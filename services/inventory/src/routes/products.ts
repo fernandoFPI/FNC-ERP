@@ -1,9 +1,10 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const productsRouter: IRouter = Router()
@@ -23,11 +24,11 @@ const CreateProductSchema = z.object({
 
 const UpdateProductSchema = CreateProductSchema.partial().omit({ sku: true })
 
-productsRouter.get('/', requirePermission('inventory.products.view', 'view'), async (req, res) => {
+productsRouter.get('/', requirePermission('inventory.products.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const { category, is_active } = req.query
     let sql = `SELECT * FROM products WHERE company_id = $1`
-    const params: unknown[] = [req.auth!.companyId]
+    const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
     if (category) {
       sql += ` AND category = $${idx++}`
@@ -43,16 +44,16 @@ productsRouter.get('/', requirePermission('inventory.products.view', 'view'), as
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch products', err)
   }
-})
+}))
 
 productsRouter.get(
   '/:id',
   requirePermission('inventory.products.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await query('SELECT * FROM products WHERE id = $1 AND company_id = $2', [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       const row = result.rows[0]
       if (!row) {
@@ -63,12 +64,12 @@ productsRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch product', err)
     }
-  },
+  }),
 )
 
-productsRouter.post('/', requirePermission('inventory.products.edit', 'edit'), async (req, res) => {
+productsRouter.post('/', requirePermission('inventory.products.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const parsed = CreateProductSchema.safeParse(req.body)
     if (!parsed.success) {
       sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -103,10 +104,10 @@ productsRouter.post('/', requirePermission('inventory.products.edit', 'edit'), a
         is_storable,
       ],
     )
-    const product = result.rows[0]!
+    const product = firstRowOrThrow(result)
     await logAudit({
       companyId,
-      userId: req.auth!.userId,
+      userId: getAuth(req).userId,
       action: 'CREATE',
       tableName: 'products',
       recordId: product['id'] as string,
@@ -120,14 +121,14 @@ productsRouter.post('/', requirePermission('inventory.products.edit', 'edit'), a
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create product', err)
   }
-})
+}))
 
 productsRouter.put(
   '/:id',
   requirePermission('inventory.products.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const parsed = UpdateProductSchema.safeParse(req.body)
       if (!parsed.success) {
         sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -196,25 +197,25 @@ productsRouter.put(
       )
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'products',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
         newValues: parsed.data,
       })
       sendOk(res, result.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update product', err)
     }
-  },
+  }),
 )
 
 productsRouter.delete(
   '/:id',
   requirePermission('inventory.products.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const moves = await query(
         'SELECT COUNT(*) FROM stock_moves WHERE product_id = $1 AND company_id = $2',
         [req.params['id'], companyId],
@@ -229,14 +230,14 @@ productsRouter.delete(
       )
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'DELETE',
         tableName: 'products',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
       })
       sendOk(res, { deleted: true })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete product', err)
     }
-  },
+  }),
 )

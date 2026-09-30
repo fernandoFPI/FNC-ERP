@@ -16,6 +16,7 @@ import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables } from '../../../graphql/generated'
 
 const MO_STATUSES = ['draft', 'confirmed', 'in_progress', 'done', 'cancelled']
 
@@ -35,10 +36,10 @@ interface MO {
   qty_produced: string
   planned_cost: string
   actual_cost: string
-  product_name?: string
-  work_center_name?: string
-  project_name?: string
-  scheduled_start?: string
+  product_name?: string | null
+  work_center_name?: string | null
+  project_name?: string | null
+  scheduled_start?: string | null
   created_at: string
 }
 
@@ -53,7 +54,7 @@ export default function ManufacturingOrdersPage() {
     FILTER_DEFAULTS,
   )
 
-  const { data, loading, refetch } = useQuery(MANUFACTURING_ORDERS_QUERY, {
+  const { data, loading, refetch } = useQuery<ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables>(MANUFACTURING_ORDERS_QUERY, {
     variables: { status: statusFilter },
     fetchPolicy: 'cache-and-network',
   })
@@ -213,7 +214,7 @@ export default function ManufacturingOrdersPage() {
           search={search}
           onSearchChange={setSearch}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         >
           <FilterPresets
             presets={presets}

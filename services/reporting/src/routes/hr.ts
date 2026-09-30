@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
 import { query } from '@fnc-erp/db'
+import { getAuth } from '@fnc-erp/auth'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -9,7 +10,7 @@ export const hrReportRouter: IRouter = Router()
 // GET /reporting/payroll/summary?company_id&from_date&to_date
 hrReportRouter.get('/payroll/summary', requirePermission('reporting.operational.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const { from_date, to_date } = req.query
     const params: unknown[] = [companyId]
     let idx = 2
@@ -37,7 +38,7 @@ hrReportRouter.get('/payroll/summary', requirePermission('reporting.operational.
 // GET /reporting/hr/attendance-summary?company_id&from_date&to_date&department_id
 hrReportRouter.get('/hr/attendance-summary', requirePermission('reporting.operational.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const { from_date, to_date, department_id } = req.query
     const params: unknown[] = [companyId]
     let idx = 2
@@ -63,7 +64,7 @@ hrReportRouter.get('/hr/attendance-summary', requirePermission('reporting.operat
 // GET /reporting/hr/headcount?company_id&as_of_date
 hrReportRouter.get('/hr/headcount', requirePermission('reporting.operational.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const asOfDate = req.query['as_of_date'] as string | undefined
     const dateClause = asOfDate ? `AND e.hire_date <= '${asOfDate}'` : ''
     const result = await query(

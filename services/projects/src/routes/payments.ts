@@ -1,8 +1,9 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
-import { pool, query } from '@fnc-erp/db'
+import { pool, query, firstRowOrThrow } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { getAuth } from '@fnc-erp/auth'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const paymentsRouter: IRouter = Router({ mergeParams: true })
@@ -10,7 +11,7 @@ export const paymentsRouter: IRouter = Router({ mergeParams: true })
 // GET /projects/invoices/:id/payments
 paymentsRouter.get('/', requirePermission('projects.invoices.view', 'view'), async (req, res) => {
   try {
-    const invoiceId = (req.params as Record<string, string>)['id']!
+    const invoiceId = requireParam(req, 'id')
     sendOk(res, (await query(
       'SELECT * FROM project_invoice_payments WHERE invoice_id=$1 ORDER BY payment_date',
       [invoiceId],
@@ -21,9 +22,9 @@ paymentsRouter.get('/', requirePermission('projects.invoices.view', 'view'), asy
 // POST /projects/invoices/:id/payments
 paymentsRouter.post('/', requirePermission('projects.invoices.edit', 'edit'), async (req, res) => {
   try {
-    const invoiceId = (req.params as Record<string, string>)['id']!
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
+    const invoiceId = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
     const body = req.body as {
       payment_date: string; amount: number; currency_code?: string
       payment_reference?: string; payment_method?: string; notes?: string
@@ -36,8 +37,8 @@ paymentsRouter.post('/', requirePermission('projects.invoices.edit', 'edit'), as
       'SELECT status, net_payable, currency_code, project_id, wht_applies, wht_scenario, wht_amount FROM project_invoices WHERE id=$1 AND company_id=$2',
       [invoiceId, companyId],
     )
-    if (!invoice.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found')
-    const inv = invoice.rows[0]!
+    const inv = invoice.rows[0]
+    if (!inv) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found')
     if (!['issued','partial'].includes(inv['status'])) {
       return sendError(res, 409, 'INVALID_STATUS', 'Only issued or partial invoices can receive payments')
     }
@@ -72,7 +73,7 @@ paymentsRouter.post('/', requirePermission('projects.invoices.edit', 'edit'), as
          body.payment_reference ?? null, body.payment_method ?? null,
          body.notes ?? null, userId],
       )
-      const payment = result.rows[0]!
+      const payment = firstRowOrThrow(result)
 
       // Update invoice status
       const newTotalPaid = alreadyPaid + body.amount

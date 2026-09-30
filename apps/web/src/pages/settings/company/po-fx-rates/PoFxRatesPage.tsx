@@ -60,7 +60,7 @@ export default function PoFxRatesPage() {
       await api.put(`/admin/po-fx-rates/${currencyCode}`, { rate_to_base: rate })
       addToast({ type: 'success', message: `${currencyCode} rate saved` })
       const next = { ...edits }
-      delete next[currencyCode]
+      Reflect.deleteProperty(next, currencyCode)
       setEdits(next)
       load()
     } catch {

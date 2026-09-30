@@ -237,7 +237,7 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
                 return (
                   <button
                     key={company.id}
-                    onClick={() => switchCompany(company)}
+                    onClick={() => void switchCompany(company)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -255,8 +255,7 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
                       if (!isActive) e.currentTarget.style.background = theme.bgSurfaceHover
                     }}
                     onMouseLeave={(e) => {
-                      if (!isActive)
-                        e.currentTarget.style.background = isActive ? theme.accentBg : 'none'
+                      if (!isActive) e.currentTarget.style.background = 'none'
                     }}
                   >
                     <span

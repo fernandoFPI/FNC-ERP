@@ -20,6 +20,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuth } from '../../../hooks/useAuth'
 import { usePermission } from '../../../hooks/usePermission'
+import type { CreateStockAdjustmentMutation, CreateStockAdjustmentMutationVariables, ProductsQuery, ProductsQueryVariables, StockBalancesQuery, StockBalancesQueryVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
 
 interface UserPOPosition {
   position: string
@@ -64,15 +65,15 @@ export default function StockAdjustmentForm() {
   const [notes, setNotes] = useState('')
   const [adjustmentDate, setAdjustmentDate] = useState(new Date().toISOString().slice(0, 10))
 
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, { variables: {} })
-  const { data: locationsData } = useQuery(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
-  const { data: balanceData } = useQuery(STOCK_BALANCES_QUERY, {
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, { variables: {} })
+  const { data: locationsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
+  const { data: balanceData } = useQuery<StockBalancesQuery, StockBalancesQueryVariables>(STOCK_BALANCES_QUERY, {
     variables: { productId, locationId },
     skip: !productId || !locationId,
     fetchPolicy: 'cache-and-network',
   })
 
-  const [createAdjustment, { loading }] = useMutation(CREATE_STOCK_ADJUSTMENT, {
+  const [createAdjustment, { loading }] = useMutation<CreateStockAdjustmentMutation, CreateStockAdjustmentMutationVariables>(CREATE_STOCK_ADJUSTMENT, {
     refetchQueries: [{ query: STOCK_SNAPSHOT_QUERY }],
   })
 
@@ -84,8 +85,8 @@ export default function StockAdjustmentForm() {
     uom: string
     average_cost: string
     cost_currency?: string | null
-  }[] = productsData?.products ?? []
-  const locations: { id: string; name: string; code: string; type: string }[] =
+  }[] = (productsData?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
+  const locations: { id: string; name: string; code: string | null; type: string }[] =
     locationsData?.stockLocations ?? []
   const warehouses = locations.filter((l) => l.type === 'warehouse')
 
@@ -224,7 +225,7 @@ export default function StockAdjustmentForm() {
         backPath="/inventory/balances"
       />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <Card
           style={{
             marginTop: '20px',
@@ -392,7 +393,7 @@ export default function StockAdjustmentForm() {
             >
               Quantity is unchanged — this will only correct the recorded cost for this product at
               this location, from {currentCost.toFixed(4)} {currentBalance?.last_cost_currency ?? ''} to{' '}
-              {parsedUnitCost!.toFixed(4)} {effectiveCostCurrency}. Future receipts will keep
+              {parsedUnitCost.toFixed(4)} {effectiveCostCurrency}. Future receipts will keep
               updating it automatically from there.
             </div>
           )}
@@ -435,7 +436,7 @@ export default function StockAdjustmentForm() {
                   ? isCostOnlyCorrection
                     ? 'Update cost only'
                     : 'No change'
-                  : `Apply adjustment (${diff > 0 ? '+' : ''}${diff?.toFixed(4)})`}
+                  : `Apply adjustment (${diff > 0 ? '+' : ''}${diff.toFixed(4)})`}
             </Button>
           </div>
         </Card>

@@ -2,8 +2,8 @@ import { Router } from 'express'
 import type { IRouter, Request, Response } from 'express'
 import { z } from 'zod'
 import { createCipheriv, randomBytes } from 'crypto'
-import { requireAuth, requireRole } from '@fnc-erp/auth'
-import { pool, getSystemConfig } from '@fnc-erp/db'
+import { requireAuth, requireRole, getAuth } from '@fnc-erp/auth'
+import { pool, getSystemConfig, asyncHandler } from '@fnc-erp/db'
 import { logger } from '@fnc-erp/logger'
 import { sendEmail, type EmailConfig } from '@fnc-erp/email'
 
@@ -129,7 +129,7 @@ const KNOWN_KEYS: ConfigKeyDef[] = [
 const SENSITIVE_KEYS = new Set(KNOWN_KEYS.filter((k) => k.is_sensitive).map((k) => k.key))
 
 // ── GET /api/v1/admin/system-config ──────────────────────────
-systemConfigRouter.get('/', ...requireAdmin, async (_req: Request, res: Response) => {
+systemConfigRouter.get('/', ...requireAdmin, asyncHandler(async (_req: Request, res: Response) => {
   // Read from DB — if the table doesn't exist yet (migration not yet run),
   // fall through gracefully and show env-sourced values.
   interface DbRow {
@@ -179,7 +179,7 @@ systemConfigRouter.get('/', ...requireAdmin, async (_req: Request, res: Response
   })
 
   res.json({ entries })
-})
+}))
 
 const UpdateSchema = z.object({
   updates: z
@@ -194,7 +194,7 @@ const UpdateSchema = z.object({
 })
 
 // ── PUT /api/v1/admin/system-config ──────────────────────────
-systemConfigRouter.put('/', ...requireAdmin, async (req: Request, res: Response) => {
+systemConfigRouter.put('/', ...requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const parsed = UpdateSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: 'VALIDATION_ERROR', details: parsed.error.flatten() })
@@ -240,15 +240,15 @@ systemConfigRouter.put('/', ...requireAdmin, async (req: Request, res: Response)
     log.error({ err }, 'failed to update system config')
     res.status(500).json({ error: 'INTERNAL_ERROR' })
   }
-})
+}))
 
 // ── POST /api/v1/admin/system-config/test-email ────────────────
-systemConfigRouter.post('/test-email', ...requireAdmin, async (req: Request, res: Response) => {
+systemConfigRouter.post('/test-email', ...requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
     // Get admin's email address to send the test to
     const userResult = await pool.query<{ email: string }>(
       'SELECT email FROM users WHERE id = $1',
-      [req.auth!.userId],
+      [getAuth(req).userId],
     )
     const toEmail = userResult.rows[0]?.email
     if (!toEmail) {
@@ -299,11 +299,11 @@ systemConfigRouter.post('/test-email', ...requireAdmin, async (req: Request, res
       emailConfig,
     )
 
-    log.info({ userId: req.auth!.userId, toEmail }, 'test email sent via Microsoft Graph')
+    log.info({ userId: getAuth(req).userId, toEmail }, 'test email sent via Microsoft Graph')
     res.json({ ok: true, sentTo: toEmail })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     log.warn({ err }, 'Graph test email failed')
     res.status(400).json({ error: 'MSGRAPH_ERROR', message })
   }
-})
+}))

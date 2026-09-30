@@ -17,6 +17,7 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import type { CompanyUsersQuery, CompanyUsersQueryVariables } from '../../../graphql/generated'
 
 interface CostCenter {
   id: string
@@ -75,7 +76,7 @@ export default function CostCentersPage() {
   const companyId = useAuthStore((s) => s.user?.companyId ?? '')
   const { can } = usePermission()
   const canEdit = can('finance.cost_centers.edit', 'edit')
-  const { data: usersData } = useQuery(COMPANY_USERS_QUERY, {
+  const { data: usersData } = useQuery<CompanyUsersQuery, CompanyUsersQueryVariables>(COMPANY_USERS_QUERY, {
     variables: { companyId },
     skip: !companyId,
   })
@@ -458,7 +459,7 @@ export default function CostCentersPage() {
           >
             Cancel
           </Button>
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+          <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)} disabled={saving}>
             {saving ? 'Saving…' : editing ? 'Update' : 'Create'}
           </Button>
         </div>
@@ -469,7 +470,7 @@ export default function CostCentersPage() {
         onClose={() => {
           setDeletingId(null)
         }}
-        onConfirm={handleDelete}
+        onConfirm={(...args: Parameters<typeof handleDelete>) => void handleDelete(...args)}
         title="Deactivate cost center"
         message="This will deactivate the cost center. It will no longer appear in dropdowns. Existing journal entries are unaffected."
         confirmLabel="Deactivate"

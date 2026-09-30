@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from 'express'
-import { query, withSystemTransaction } from '@fnc-erp/db'
-import { requireAuth, requireRole } from '@fnc-erp/auth'
+import { query, withSystemTransaction, asyncHandler } from '@fnc-erp/db'
+import { requireAuth, requireRole, getAuth } from '@fnc-erp/auth'
 import { logAudit } from '@fnc-erp/audit'
 import { sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
@@ -31,7 +31,7 @@ rolesRouter.get(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.roles.admin', 'admin'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     try {
       const { user_id, company_id } = req.query as Record<string, string>
 
@@ -68,7 +68,7 @@ rolesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list role assignments', err)
     }
-  },
+  }),
 )
 
 // ── POST /auth/roles ───────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ rolesRouter.post(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.roles.admin', 'admin'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { user_id, company_id, role, module: roleModule } = req.body as Record<string, string>
 
     if (!VALID_ROLES.includes(role as (typeof VALID_ROLES)[number])) {
@@ -122,7 +122,7 @@ rolesRouter.post(
         )
 
         await logAudit({
-          userId: req.auth!.userId,
+          userId: getAuth(req).userId,
           companyId: undefined,
           action: 'ROLE_ASSIGNED',
           tableName: 'user_company_roles',
@@ -140,7 +140,7 @@ rolesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to assign role', err)
     }
-  },
+  }),
 )
 
 // ── PATCH /auth/roles/:id ──────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ rolesRouter.patch(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.roles.admin', 'admin'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { is_active } = req.body as { is_active?: boolean }
     if (is_active === undefined) {
       sendError(res, 400, 'MISSING_FIELDS', 'is_active is required')
@@ -180,7 +180,7 @@ rolesRouter.patch(
         }
 
         await logAudit({
-          userId: req.auth!.userId,
+          userId: getAuth(req).userId,
           companyId: undefined,
           action: is_active ? 'ROLE_ACTIVATED' : 'ROLE_DEACTIVATED',
           tableName: 'user_company_roles',
@@ -197,7 +197,7 @@ rolesRouter.patch(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update role assignment', err)
     }
-  },
+  }),
 )
 
 // ── DELETE /auth/roles/:id ─────────────────────────────────────────────────────
@@ -207,7 +207,7 @@ rolesRouter.delete(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.roles.admin', 'admin'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     try {
       const existing = await query(`SELECT * FROM user_company_roles WHERE id = $1`, [
         req.params['id'],
@@ -221,7 +221,7 @@ rolesRouter.delete(
         await client.query(`DELETE FROM user_company_roles WHERE id = $1`, [req.params['id']])
 
         await logAudit({
-          userId: req.auth!.userId,
+          userId: getAuth(req).userId,
           companyId: undefined,
           action: 'ROLE_REMOVED',
           tableName: 'user_company_roles',
@@ -240,5 +240,5 @@ rolesRouter.delete(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to remove role assignment', err)
     }
-  },
+  }),
 )

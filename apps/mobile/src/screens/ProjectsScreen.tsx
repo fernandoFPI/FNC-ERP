@@ -119,7 +119,7 @@ function ProjectsScreenBase({ projects }: { projects: Project[] }) {
       keyExtractor={(p) => p.id}
       renderItem={({ item }) => <ProjectCard project={item} />}
       contentContainerStyle={styles.list}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />}
+      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={(...args: Parameters<typeof onRefresh>) => void onRefresh(...args)} />}
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No projects assigned</Text>

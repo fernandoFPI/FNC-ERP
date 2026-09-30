@@ -12,12 +12,13 @@ import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { KPICard } from '../../../components/ui/KPICard'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { StockSnapshotQuery, StockSnapshotQueryVariables } from '../../../graphql/generated'
 
 interface SnapshotRow {
   product_id: string
   sku: string
   product_name: string
-  category?: string
+  category?: string | null
   location_id: string
   location_name: string
   location_type: string
@@ -35,7 +36,7 @@ export default function StockBalancesPage() {
   const [search, setSearch] = useState('')
   const [showLowOnly, setShowLowOnly] = useState(false)
 
-  const { data, loading, refetch } = useQuery(STOCK_SNAPSHOT_QUERY, {
+  const { data, loading, refetch } = useQuery<StockSnapshotQuery, StockSnapshotQueryVariables>(STOCK_SNAPSHOT_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
 
@@ -267,7 +268,7 @@ export default function StockBalancesPage() {
           search={search}
           onSearchChange={setSearch}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         >
           <button
             onClick={() => {

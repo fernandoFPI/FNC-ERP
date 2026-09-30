@@ -7,9 +7,6 @@ import {
   ADMIN_SET_PROJECT_STATUS,
   ADMIN_SET_PHASE,
   RFQ_LINES_QUERY,
-  UPSERT_RFQ_LINES,
-  RFQ_PHASES_QUERY,
-  UPDATE_RFQ_PHASE,
   CLIENT_DOCUMENTS_QUERY,
   UPLOAD_CLIENT_DOCUMENT,
   UPLOAD_CLIENT_DOCUMENT_REVISION,
@@ -22,7 +19,6 @@ import {
   REVISE_ENG_DOC,
   UPDATE_ENG_DOC_STATUS,
   DELETE_ENG_DOC,
-  UPDATE_ENG_DOC_META,
   PERFORM_DOC_WORKFLOW,
   DOC_COMMENTS_QUERY,
   ADD_DOC_COMMENT,
@@ -53,13 +49,7 @@ import {
   UPDATE_RISK_STATUS,
   ADD_RISK_REVIEW,
   DELETE_RISK,
-  ENGINEERING_REVISIONS_QUERY,
-  ISSUE_ENGINEERING_REVISION,
   PROJECT_DRAWINGS_QUERY,
-  CREATE_PROJECT_DRAWING,
-  REVISE_PROJECT_DRAWING,
-  UPDATE_PROJECT_DRAWING_STATUS,
-  DELETE_PROJECT_DRAWING,
   BID_DELIVERABLES_QUERY,
   CREATE_BID_DELIVERABLE,
   UPDATE_BID_DELIVERABLE,
@@ -118,11 +108,19 @@ import {
   DELETE_HSE_RECORD,
   UPLOAD_HSE_FILE,
   DELETE_HSE_FILE,
+  PROJECT_DAILY_REPORTS_QUERY,
+  CREATE_DAILY_REPORT,
+  UPDATE_DAILY_REPORT,
+  DELETE_DAILY_REPORT,
+  UPLOAD_DAILY_REPORT_FILE,
+  DELETE_DAILY_REPORT_FILE,
+  ADD_DAILY_REPORT_MACHINERY,
+  ATTACH_DAILY_REPORT_MACHINERY_PHOTO,
+  DELETE_DAILY_REPORT_MACHINERY,
   PROJECT_WBS_QUERY,
   PROJECT_ACTIVITIES_QUERY,
   PROJECT_BASELINES_QUERY,
   PROJECT_RESOURCES_QUERY,
-  PROJECT_RESOURCE_LOADING_QUERY,
   PROJECT_EVM_QUERY,
   CREATE_WBS_NODE,
   UPDATE_WBS_NODE,
@@ -168,9 +166,6 @@ import {
   CREATE_SUBCONTRACT,
   UPDATE_SUBCONTRACT,
   DELETE_SUBCONTRACT,
-  CREATE_SUBCONTRACT_BILLING,
-  UPDATE_SUBCONTRACT_BILLING,
-  DELETE_SUBCONTRACT_BILLING,
   CREATE_LABOR_ENTRY,
   UPDATE_LABOR_ENTRY,
   DELETE_LABOR_ENTRY,
@@ -233,24 +228,21 @@ import {
   ADD_ENG_CLIENT_COMMENT,
   CLOSE_ENG_CLIENT_COMMENT,
   REOPEN_ENG_CLIENT_COMMENT,
-  DELETE_ENG_CLIENT_COMMENT,
 } from '../../../graphql/projects'
+import { PROJECT_RESOURCE_LOADING_QUERY } from '../../../graphql/_known-broken'
+import { PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
 import { MANUFACTURING_REQUESTS_QUERY } from '../../../graphql/manufacturing-requests'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
 import { resolveProjectCapability } from '../../../hooks/useProjectCapability'
-import { TAB_TO_MODULE, type ProjectModule } from '../../../lib/projectCapabilityMatrix'
+import { TAB_TO_MODULE } from '../../../lib/projectCapabilityMatrix'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
-import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useRecordLock } from '../../../hooks/useRecordLock'
-import { PageHeader } from '../../../components/ui/PageHeader'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { TabBar } from '../../../components/ui/TabBar'
 import { RevisionHistory } from '../../../components/ui/RevisionHistory'
 import { ProjectStatusBar } from '../../../components/projects/ProjectStatusBar'
-import { ProjectStageBar } from '../../../components/projects/ProjectStageBar'
-import { ProjectKPIRow } from '../../../components/projects/ProjectKPIRow'
 import { StageEditDrawer } from '../../../components/projects/StageEditDrawer'
 import { ManufacturingRequestForm } from '../components/ManufacturingRequestForm'
 import { formatCurrency } from '../../../lib/format'
@@ -260,19 +252,9 @@ import { useAuthStore } from '../../../store/authStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Modal } from '../../../components/ui/Modal'
 import { Table, type Column } from '../../../components/ui/Table'
-import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import JSZip from 'jszip'
-
-const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'neutral' | 'danger' | 'info'> = {
-  pending: 'neutral',
-  ongoing: 'info',
-  submitted: 'warning',
-  approved: 'success',
-  completed: 'success',
-  on_hold: 'warning',
-  cancelled: 'danger',
-  cancelled_after_approval: 'danger',
-}
+import type { AcceptHandoverCertificateMutation, AcceptHandoverCertificateMutationVariables, AddDailyReportMachineryMutation, AddDailyReportMachineryMutationVariables, AddDocCommentMutation, AddDocCommentMutationVariables, AddEngClientCommentMutation, AddEngClientCommentMutationVariables, AddPunchPhotoMutation, AddPunchPhotoMutationVariables, AddRiskReviewMutation, AddRiskReviewMutationVariables, AddVoDrawingMutation, AddVoDrawingMutationVariables, AdminSetPhaseMutation, AdminSetPhaseMutationVariables, AdminSetProjectStatusMutation, AdminSetProjectStatusMutationVariables, ApplyBaselineMutation, ApplyBaselineMutationVariables, ApproveBidMutation, ApproveBidMutationVariables, ApproveVariationOrderMutation, ApproveVariationOrderMutationVariables, AssignResourceMutation, AssignResourceMutationVariables, AttachDailyReportMachineryPhotoMutation, AttachDailyReportMachineryPhotoMutationVariables, BidCommercialSummaryQuery, BidCommercialSummaryQueryVariables, BidCostItemsQuery, BidCostItemsQueryVariables, BidDeliverablesQuery, BidDeliverablesQueryVariables, BidPackageFilesQuery, BidPackageFilesQueryVariables, BidSupplierQuotationsQuery, BidSupplierQuotationsQueryVariables, BulkImportActivitiesMutation, BulkImportActivitiesMutationVariables, ClientDocumentsQuery, ClientDocumentsQueryVariables, CloseEngClientCommentMutation, CloseEngClientCommentMutationVariables, CloseMeetingMutation, CloseMeetingMutationVariables, CloseTqMutation, CloseTqMutationVariables, CreateActivityMutation, CreateActivityMutationVariables, CreateBaselineMutation, CreateBaselineMutationVariables, CreateBidDeliverableMutation, CreateBidDeliverableMutationVariables, CreateBidSupplierQuotationMutation, CreateBidSupplierQuotationMutationVariables, CreateClientBillingMutation, CreateClientBillingMutationVariables, CreateCommittedCostMutation, CreateCommittedCostMutationVariables, CreateContractMilestoneMutation, CreateContractMilestoneMutationVariables, CreateCostCodeMutation, CreateCostCodeMutationVariables, CreateDailyReportMutation, CreateDailyReportMutationVariables, CreateDependencyMutation, CreateDependencyMutationVariables, CreateEngineeringDocMutation, CreateEngineeringDocMutationVariables, CreateEquipmentLogMutation, CreateEquipmentLogMutationVariables, CreateHandoverCertificateMutation, CreateHandoverCertificateMutationVariables, CreateHandoverItemMutation, CreateHandoverItemMutationVariables, CreateHseRecordMutation, CreateHseRecordMutationVariables, CreateInspectionRequestMutation, CreateInspectionRequestMutationVariables, CreateLaborEntryMutation, CreateLaborEntryMutationVariables, CreateMeetingActionMutation, CreateMeetingActionMutationVariables, CreateMeetingMutation, CreateMeetingMutationVariables, CreateProjectContractMutation, CreateProjectContractMutationVariables, CreateProjectItpMutation, CreateProjectItpMutationVariables, CreateProjectNcrMutation, CreateProjectNcrMutationVariables, CreateProjectRfiMutation, CreateProjectRfiMutationVariables, CreatePunchItemMutation, CreatePunchItemMutationVariables, CreateResourceMutation, CreateResourceMutationVariables, CreateRiskMutation, CreateRiskMutationVariables, CreateSiteInstructionMutation, CreateSiteInstructionMutationVariables, CreateSubcontractMutation, CreateSubcontractMutationVariables, CreateTqMutation, CreateTqMutationVariables, CreateVariationOrderMutation, CreateVariationOrderMutationVariables, CreateVoCorrespondenceMutation, CreateVoCorrespondenceMutationVariables, CreateVoCostItemMutation, CreateVoCostItemMutationVariables, CreateWbsNodeMutation, CreateWbsNodeMutationVariables, DeleteActivityMutation, DeleteActivityMutationVariables, DeleteBaselineMutation, DeleteBaselineMutationVariables, DeleteBidDeliverableFileMutation, DeleteBidDeliverableFileMutationVariables, DeleteBidDeliverableMutation, DeleteBidDeliverableMutationVariables, DeleteBidPackageFileMutation, DeleteBidPackageFileMutationVariables, DeleteBidSupplierQuotationMutation, DeleteBidSupplierQuotationMutationVariables, DeleteCalendarDayMutation, DeleteCalendarDayMutationVariables, DeleteClientBillingMutation, DeleteClientBillingMutationVariables, DeleteClientDocumentMutation, DeleteClientDocumentMutationVariables, DeleteCommittedCostMutation, DeleteCommittedCostMutationVariables, DeleteContractMilestoneMutation, DeleteContractMilestoneMutationVariables, DeleteCostCodeMutation, DeleteCostCodeMutationVariables, DeleteDailyReportFileMutation, DeleteDailyReportFileMutationVariables, DeleteDailyReportMachineryMutation, DeleteDailyReportMachineryMutationVariables, DeleteDailyReportMutation, DeleteDailyReportMutationVariables, DeleteDependencyMutation, DeleteDependencyMutationVariables, DeleteDocCommentMutation, DeleteDocCommentMutationVariables, DeleteEngineeringDocMutation, DeleteEngineeringDocMutationVariables, DeleteEquipmentLogMutation, DeleteEquipmentLogMutationVariables, DeleteHandoverCertFileMutation, DeleteHandoverCertFileMutationVariables, DeleteHandoverCertificateMutation, DeleteHandoverCertificateMutationVariables, DeleteHandoverItemMutation, DeleteHandoverItemMutationVariables, DeleteHseFileMutation, DeleteHseFileMutationVariables, DeleteHseRecordMutation, DeleteHseRecordMutationVariables, DeleteInspectionRequestMutation, DeleteInspectionRequestMutationVariables, DeleteIrFileMutation, DeleteIrFileMutationVariables, DeleteLaborEntryMutation, DeleteLaborEntryMutationVariables, DeleteMeetingActionMutation, DeleteMeetingActionMutationVariables, DeleteMeetingMutation, DeleteMeetingMutationVariables, DeleteNcrFileMutation, DeleteNcrFileMutationVariables, DeleteProjectItpMutation, DeleteProjectItpMutationVariables, DeleteProjectNcrMutation, DeleteProjectNcrMutationVariables, DeleteProjectRfiMutation, DeleteProjectRfiMutationVariables, DeletePunchItemMutation, DeletePunchItemMutationVariables, DeletePunchPhotoMutation, DeletePunchPhotoMutationVariables, DeleteResourceMutation, DeleteResourceMutationVariables, DeleteRfiFileMutation, DeleteRfiFileMutationVariables, DeleteRiskMutation, DeleteRiskMutationVariables, DeleteSiFileMutation, DeleteSiFileMutationVariables, DeleteSiteInstructionMutation, DeleteSiteInstructionMutationVariables, DeleteSubcontractMutation, DeleteSubcontractMutationVariables, DeleteTqFileMutation, DeleteTqFileMutationVariables, DeleteTqMutation, DeleteTqMutationVariables, DeleteVariationOrderMutation, DeleteVariationOrderMutationVariables, DeleteVoCorrespondenceMutation, DeleteVoCorrespondenceMutationVariables, DeleteVoCostItemMutation, DeleteVoCostItemMutationVariables, DeleteWbsNodeMutation, DeleteWbsNodeMutationVariables, DocCommentsQuery, DocCommentsQueryVariables, EngClientCommentsQuery, EngClientCommentsQueryVariables, EngineeringDocumentsQuery, EngineeringDocumentsQueryVariables, IfcDocumentsQuery, IfcDocumentsQueryVariables, IssueHandoverCertificateMutation, IssueHandoverCertificateMutationVariables, IssueMeetingMutation, IssueMeetingMutationVariables, LevelResourcesMutation, LevelResourcesMutationVariables, LifecycleConfigQuery, LifecycleConfigQueryVariables, ManufacturingRequestsQuery, ManufacturingRequestsQueryVariables, MaterialIssuesQuery, MaterialIssuesQueryVariables, PerformDocWorkflowActionMutation, PerformDocWorkflowActionMutationVariables, PmSignPunchMutation, PmSignPunchMutationVariables, ProjectActivitiesQuery, ProjectActivitiesQueryVariables, ProjectBaselinesQuery, ProjectBaselinesQueryVariables, ProjectCashFlowQuery, ProjectCashFlowQueryVariables, ProjectClientBillingsQuery, ProjectClientBillingsQueryVariables, ProjectCommittedCostsQuery, ProjectCommittedCostsQueryVariables, ProjectContractsQuery, ProjectContractsQueryVariables, ProjectCostCodesQuery, ProjectCostCodesQueryVariables, ProjectCostForecastQuery, ProjectCostForecastQueryVariables, ProjectCostSummaryQuery, ProjectCostSummaryQueryVariables, ProjectDailyReportsQuery, ProjectDailyReportsQueryVariables, ProjectDrawingsQuery, ProjectDrawingsQueryVariables, ProjectEquipmentLogQuery, ProjectEquipmentLogQueryVariables, ProjectEvmQuery, ProjectEvmQueryVariables, ProjectHandoverQuery, ProjectHandoverQueryVariables, ProjectHseRecordsQuery, ProjectHseRecordsQueryVariables, ProjectInspectionRequestsQuery, ProjectInspectionRequestsQueryVariables, ProjectInvoicesQuery, ProjectInvoicesQueryVariables, ProjectItPsQuery, ProjectItPsQueryVariables, ProjectLaborEntriesQuery, ProjectLaborEntriesQueryVariables, ProjectMeetingsQuery, ProjectMeetingsQueryVariables, ProjectNcRsQuery, ProjectNcRsQueryVariables, ProjectPunchItemsQuery, ProjectPunchItemsQueryVariables, ProjectQuery, ProjectQueryVariables, ProjectResourcesQuery, ProjectResourcesQueryVariables, ProjectRfIsQuery, ProjectRfIsQueryVariables, ProjectRisksQuery, ProjectRisksQueryVariables, ProjectSiteInstructionsQuery, ProjectSiteInstructionsQueryVariables, ProjectSubcontractsQuery, ProjectSubcontractsQueryVariables, ProjectTQsQuery, ProjectTQsQueryVariables, ProjectVariationOrdersQuery, ProjectVariationOrdersQueryVariables, ProjectWbsQuery, ProjectWbsQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, ReachMilestoneMutation, ReachMilestoneMutationVariables, RecalculateCpmMutation, RecalculateCpmMutationVariables, RecordItpItemResultMutation, RecordItpItemResultMutationVariables, RejectBidMutation, RejectBidMutationVariables, RejectHandoverCertificateMutation, RejectHandoverCertificateMutationVariables, RejectVariationOrderMutation, RejectVariationOrderMutationVariables, RemoveResourceAssignmentMutation, RemoveResourceAssignmentMutationVariables, RemoveVoDrawingMutation, RemoveVoDrawingMutationVariables, ReopenEngClientCommentMutation, ReopenEngClientCommentMutationVariables, ReopenPunchMutation, ReopenPunchMutationVariables, RespondToCommentMutation, RespondToCommentMutationVariables, RespondToRfiMutation, RespondToRfiMutationVariables, RespondToTqMutation, RespondToTqMutationVariables, ReviewTqMutation, ReviewTqMutationVariables, ReviseBidMutation, ReviseBidMutationVariables, ReviseContractMutation, ReviseContractMutationVariables, ReviseEngineeringDocMutation, ReviseEngineeringDocMutationVariables, RfqLinesQuery, RfqLinesQueryVariables, SetActiveBaselineMutation, SetActiveBaselineMutationVariables, SetCalendarDayMutation, SetCalendarDayMutationVariables, SetVoStatusMutation, SetVoStatusMutationVariables, SubmitBidForApprovalMutation, SubmitBidForApprovalMutationVariables, SubmitVariationOrderMutation, SubmitVariationOrderMutationVariables, SupervisorSignPunchMutation, SupervisorSignPunchMutationVariables, SyncPoCommitmentsMutation, SyncPoCommitmentsMutationVariables, UpdateActivityMutation, UpdateActivityMutationVariables, UpdateActivityProgressMutation, UpdateActivityProgressMutationVariables, UpdateBidCommercialSummaryMutation, UpdateBidCommercialSummaryMutationVariables, UpdateBidDeliverableMutation, UpdateBidDeliverableMutationVariables, UpdateBidSupplierQuotationMutation, UpdateBidSupplierQuotationMutationVariables, UpdateClientBillingMutation, UpdateClientBillingMutationVariables, UpdateClientDocumentMutation, UpdateClientDocumentMutationVariables, UpdateClientDocumentStatusMutation, UpdateClientDocumentStatusMutationVariables, UpdateCommittedCostMutation, UpdateCommittedCostMutationVariables, UpdateContractMilestoneMutation, UpdateContractMilestoneMutationVariables, UpdateCostCodeMutation, UpdateCostCodeMutationVariables, UpdateDailyReportMutation, UpdateDailyReportMutationVariables, UpdateEngineeringDocStatusMutation, UpdateEngineeringDocStatusMutationVariables, UpdateEquipmentLogMutation, UpdateEquipmentLogMutationVariables, UpdateHandoverCertificateMutation, UpdateHandoverCertificateMutationVariables, UpdateHandoverItemMutation, UpdateHandoverItemMutationVariables, UpdateHseRecordMutation, UpdateHseRecordMutationVariables, UpdateInspectionRequestMutation, UpdateInspectionRequestMutationVariables, UpdateLaborEntryMutation, UpdateLaborEntryMutationVariables, UpdateMeetingActionMutation, UpdateMeetingActionMutationVariables, UpdateMeetingMutation, UpdateMeetingMutationVariables, UpdateProjectContractMutation, UpdateProjectContractMutationVariables, UpdateProjectItpMutation, UpdateProjectItpMutationVariables, UpdateProjectNcrMutation, UpdateProjectNcrMutationVariables, UpdateProjectRfiMutation, UpdateProjectRfiMutationVariables, UpdateProjectStageMutation, UpdateProjectStageMutationVariables, UpdatePunchItemMutation, UpdatePunchItemMutationVariables, UpdatePunchStatusMutation, UpdatePunchStatusMutationVariables, UpdateResourceAssignmentMutation, UpdateResourceAssignmentMutationVariables, UpdateResourceMutation, UpdateResourceMutationVariables, UpdateRiskMutation, UpdateRiskMutationVariables, UpdateRiskStatusMutation, UpdateRiskStatusMutationVariables, UpdateSiteInstructionMutation, UpdateSiteInstructionMutationVariables, UpdateSubcontractMutation, UpdateSubcontractMutationVariables, UpdateTqMutation, UpdateTqMutationVariables, UpdateVariationOrderMutation, UpdateVariationOrderMutationVariables, UpdateVoCostItemMutation, UpdateVoCostItemMutationVariables, UpdateWbsNodeMutation, UpdateWbsNodeMutationVariables, UploadBidDeliverableFileMutation, UploadBidDeliverableFileMutationVariables, UploadBidPackageFileMutation, UploadBidPackageFileMutationVariables, UploadClientDocumentMutation, UploadClientDocumentMutationVariables, UploadClientDocumentRevisionMutation, UploadClientDocumentRevisionMutationVariables, UploadDailyReportFileMutation, UploadDailyReportFileMutationVariables, UploadHandoverCertFileMutation, UploadHandoverCertFileMutationVariables, UploadHseFileMutation, UploadHseFileMutationVariables, UploadIrFileMutation, UploadIrFileMutationVariables, UploadNcrFileMutation, UploadNcrFileMutationVariables, UploadRfiFileMutation, UploadRfiFileMutationVariables, UploadSiFileMutation, UploadSiFileMutationVariables, UploadTqFileMutation, UploadTqFileMutationVariables, UpsertBidCostItemsMutation, UpsertBidCostItemsMutationVariables, UpsertCashFlowPeriodMutation, UpsertCashFlowPeriodMutationVariables, UpsertCostForecastMutation, UpsertCostForecastMutationVariables, UpsertItpItemsMutation, UpsertItpItemsMutationVariables, VerifyHandoverItemMutation, VerifyHandoverItemMutationVariables } from '../../../graphql/generated'
+import type { MilestoneInput, ProjectContractInput } from '../../../graphql/schema-types'
 
 const ALL_TABS = [
   { key: 'overview', label: 'Overview' },
@@ -384,19 +366,17 @@ export default function ProjectDetail() {
   const navigate = useNavigate()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
-  const pagePadding = usePagePadding()
   const { can, isSystemLevel } = usePermission()
   const isAdmin = can('projects.edit')
   const currentUser = useAuthStore((s) => s.user)
   const currentUserName = currentUser
-    ? (([currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') ||
-        currentUser.email) ??
-      '')
+    ? ([currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') ||
+        currentUser.email)
     : ''
   const addToast = useToastStore((s) => s.addToast)
   const [adminStatus, setAdminStatus] = useState('')
   const [adminPhase, setAdminPhase] = useState('')
-  const [adminSetProjectStatus, { loading: adminSetting }] = useMutation(ADMIN_SET_PROJECT_STATUS, {
+  const [adminSetProjectStatus, { loading: adminSetting }] = useMutation<AdminSetProjectStatusMutation, AdminSetProjectStatusMutationVariables>(ADMIN_SET_PROJECT_STATUS, {
     onCompleted: () => {
       setAdminStatus('')
       addToast({ type: 'success', message: 'Status updated' })
@@ -406,7 +386,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [adminSetPhase, { loading: adminPhaseSetting }] = useMutation(ADMIN_SET_PHASE, {
+  const [adminSetPhase, { loading: adminPhaseSetting }] = useMutation<AdminSetPhaseMutation, AdminSetPhaseMutationVariables>(ADMIN_SET_PHASE, {
     onCompleted: () => {
       setAdminPhase('')
       addToast({ type: 'success', message: 'Phase updated' })
@@ -418,16 +398,13 @@ export default function ProjectDetail() {
   })
   const [showActionsPanel, setShowActionsPanel] = useState(false)
   const [tab, setTab] = useState('overview')
-  const [bidSection, setBidSection] = useState<'technical' | 'commercial' | 'clarifications'>(
-    'technical',
-  )
   const [procSection, setProcSection] = useState<'purchase_orders' | 'manufacturing' | 'store_out'>(
     'purchase_orders',
   )
   const [editStage, setEditStage] = useState<Stage | null>(null)
-  const [quickUpdateStage] = useMutation(UPDATE_PROJECT_STAGE, {
+  const [quickUpdateStage] = useMutation<UpdateProjectStageMutation, UpdateProjectStageMutationVariables>(UPDATE_PROJECT_STAGE, {
     onCompleted: () => void refetch(),
-    onError: (e) => addToast({ type: 'error', message: e.message }),
+    onError: (e) => { addToast({ type: 'error', message: e.message }); },
   })
   const [stageDrawer, setStageDrawer] = useState(false)
   const [showMRForm, setShowMRForm] = useState(false)
@@ -469,7 +446,7 @@ export default function ProjectDetail() {
     setTeamLoading(true)
     api
       .get<LiveMember[]>(`/projects/${id}/members`)
-      .then((r) => setLiveTeam(Array.isArray(r.data) ? r.data : []))
+      .then((r) => { setLiveTeam(Array.isArray(r.data) ? r.data : []); })
       .catch(() => {
         addToast({ type: 'error', message: 'Failed to load team members' })
       })
@@ -487,8 +464,10 @@ export default function ProjectDetail() {
     // into national IDs, phone numbers, and hire dates just to pick a name.
     api
       .get<Employee[]>(`/projects/${id}/team-candidates`)
-      .then((r) => setEmployees(Array.isArray(r.data) ? r.data : []))
-      .catch(() => {})
+      .then((r) => { setEmployees(Array.isArray(r.data) ? r.data : []); })
+      .catch(() => {
+        /* ignore: employee picker just stays empty if this fails */
+      })
   }, [showAddForm, id])
 
   async function handleAddMember() {
@@ -511,7 +490,7 @@ export default function ProjectDetail() {
       addToast({ type: 'success', message: 'Team member added' })
     } catch (e: unknown) {
       const msg =
-        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        (e as { response?: { data?: { message?: string } } }).response?.data?.message ??
         'Failed to add member'
       addToast({ type: 'error', message: msg })
     } finally {
@@ -549,82 +528,73 @@ export default function ProjectDetail() {
     }
   }
 
-  const { data, loading, refetch } = useQuery(PROJECT_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<ProjectQuery, ProjectQueryVariables>(PROJECT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: mrData, refetch: refetchMRs } = useQuery(MANUFACTURING_REQUESTS_QUERY, {
+  const { data: mrData, refetch: refetchMRs } = useQuery<ManufacturingRequestsQuery, ManufacturingRequestsQueryVariables>(MANUFACTURING_REQUESTS_QUERY, {
     variables: { projectId: id },
     skip: !id || tab !== 'procurement',
     fetchPolicy: 'cache-and-network',
   })
-  const { data: miData, refetch: refetchMIs } = useQuery(MATERIAL_ISSUES_QUERY, {
+  const { data: miData } = useQuery<MaterialIssuesQuery, MaterialIssuesQueryVariables>(MATERIAL_ISSUES_QUERY, {
     variables: { projectId: id },
     skip: !id || tab !== 'procurement' || procSection !== 'store_out',
     fetchPolicy: 'cache-and-network',
   })
-  const { data: rfqLinesData, refetch: refetchRFQLines } = useQuery(RFQ_LINES_QUERY, {
-    variables: { projectId: id },
+  const { data: rfqLinesData } = useQuery<RfqLinesQuery, RfqLinesQueryVariables>(RFQ_LINES_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: !id || (tab !== 'rfq_lines' && tab !== 'execution'),
     fetchPolicy: 'cache-and-network',
   })
-  const [upsertRFQLines, { loading: savingLines }] = useMutation(UPSERT_RFQ_LINES, {
-    onCompleted: () => {
-      addToast({ type: 'success', message: 'Scope of work saved' })
-      void refetchRFQLines()
-    },
-    onError: (e) => {
-      addToast({ type: 'error', message: e.message })
-    },
-  })
-  const { data: drawingsData, refetch: refetchDrawings } = useQuery(PROJECT_DRAWINGS_QUERY, {
-    variables: { projectId: id },
+  const { data: drawingsData } = useQuery<ProjectDrawingsQuery, ProjectDrawingsQueryVariables>(PROJECT_DRAWINGS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: !id || tab !== 'execution',
     fetchPolicy: 'cache-and-network',
   })
 
   // ── Bidding hooks ──────────────────────────────────────────────────────────
-  const { data: bidDeliverableData, refetch: refetchBidDeliverables } = useQuery(
+  const { data: bidDeliverableData, refetch: refetchBidDeliverables } = useQuery<BidDeliverablesQuery, BidDeliverablesQueryVariables>(
     BID_DELIVERABLES_QUERY,
     {
-      variables: { projectId: id },
+      variables: { projectId: id ?? '' },
       skip: !id || tab !== 'bidding',
       fetchPolicy: 'cache-and-network',
     },
   )
-  const { data: bidCostData, refetch: refetchBidCosts } = useQuery(BID_COST_ITEMS_QUERY, {
-    variables: { projectId: id },
+  const { data: bidCostData, refetch: refetchBidCosts } = useQuery<BidCostItemsQuery, BidCostItemsQueryVariables>(BID_COST_ITEMS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: !id || tab !== 'bidding',
     fetchPolicy: 'cache-and-network',
   })
-  const { data: bidQuotationsData, refetch: refetchBidQuotations } = useQuery(
+  const { data: bidQuotationsData, refetch: refetchBidQuotations } = useQuery<BidSupplierQuotationsQuery, BidSupplierQuotationsQueryVariables>(
     BID_SUPPLIER_QUOTATIONS_QUERY,
     {
-      variables: { projectId: id },
+      variables: { projectId: id ?? '' },
       skip: !id || tab !== 'bidding',
       fetchPolicy: 'cache-and-network',
     },
   )
-  const { data: bidSummaryData, refetch: refetchBidSummary } = useQuery(
+  const { data: bidSummaryData, refetch: refetchBidSummary } = useQuery<BidCommercialSummaryQuery, BidCommercialSummaryQueryVariables>(
     BID_COMMERCIAL_SUMMARY_QUERY,
     {
-      variables: { projectId: id },
+      variables: { projectId: id ?? '' },
       skip: !id || tab !== 'bidding',
       fetchPolicy: 'cache-and-network',
     },
   )
-  const [createBidDeliverable, { loading: creatingDeliverable }] = useMutation(
+  const [createBidDeliverable, { loading: creatingDeliverable }] = useMutation<CreateBidDeliverableMutation, CreateBidDeliverableMutationVariables>(
     CREATE_BID_DELIVERABLE,
     {
       onCompleted: () => {
         addToast({ type: 'success', message: 'Deliverable added' })
         void refetchBidDeliverables()
       },
-      onError: (e) => addToast({ type: 'error', message: e.message }),
+      onError: (e) => { addToast({ type: 'error', message: e.message }); },
     },
   )
-  const [updateBidDeliverable] = useMutation(UPDATE_BID_DELIVERABLE, {
+  const [updateBidDeliverable] = useMutation<UpdateBidDeliverableMutation, UpdateBidDeliverableMutationVariables>(UPDATE_BID_DELIVERABLE, {
     onCompleted: () => {
       void refetchBidDeliverables()
     },
@@ -632,7 +602,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [deleteBidDeliverable] = useMutation(DELETE_BID_DELIVERABLE, {
+  const [deleteBidDeliverable] = useMutation<DeleteBidDeliverableMutation, DeleteBidDeliverableMutationVariables>(DELETE_BID_DELIVERABLE, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Deliverable removed' })
       void refetchBidDeliverables()
@@ -641,7 +611,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [uploadBidDeliverableFile] = useMutation(UPLOAD_BID_DELIVERABLE_FILE, {
+  const [uploadBidDeliverableFile] = useMutation<UploadBidDeliverableFileMutation, UploadBidDeliverableFileMutationVariables>(UPLOAD_BID_DELIVERABLE_FILE, {
     onCompleted: () => {
       void refetchBidDeliverables()
     },
@@ -649,7 +619,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [deleteBidDeliverableFile] = useMutation(DELETE_BID_DELIVERABLE_FILE, {
+  const [deleteBidDeliverableFile] = useMutation<DeleteBidDeliverableFileMutation, DeleteBidDeliverableFileMutationVariables>(DELETE_BID_DELIVERABLE_FILE, {
     onCompleted: () => {
       void refetchBidDeliverables()
     },
@@ -657,15 +627,15 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const { data: bidPackageFilesData, refetch: refetchBidPackageFiles } = useQuery(
+  const { data: bidPackageFilesData, refetch: refetchBidPackageFiles } = useQuery<BidPackageFilesQuery, BidPackageFilesQueryVariables>(
     BID_PACKAGE_FILES_QUERY,
     {
-      variables: { projectId: id },
+      variables: { projectId: id ?? '' },
       skip: !id || tab !== 'bidding',
       fetchPolicy: 'cache-and-network',
     },
   )
-  const [uploadBidPackageFile] = useMutation(UPLOAD_BID_PACKAGE_FILE, {
+  const [uploadBidPackageFile] = useMutation<UploadBidPackageFileMutation, UploadBidPackageFileMutationVariables>(UPLOAD_BID_PACKAGE_FILE, {
     onCompleted: () => {
       void refetchBidPackageFiles()
     },
@@ -673,7 +643,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [deleteBidPackageFile] = useMutation(DELETE_BID_PACKAGE_FILE, {
+  const [deleteBidPackageFile] = useMutation<DeleteBidPackageFileMutation, DeleteBidPackageFileMutationVariables>(DELETE_BID_PACKAGE_FILE, {
     onCompleted: () => {
       void refetchBidPackageFiles()
     },
@@ -681,7 +651,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [upsertBidCostItems, { loading: savingCosts }] = useMutation(UPSERT_BID_COST_ITEMS, {
+  const [upsertBidCostItems, { loading: savingCosts }] = useMutation<UpsertBidCostItemsMutation, UpsertBidCostItemsMutationVariables>(UPSERT_BID_COST_ITEMS, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Cost items saved' })
       void refetchBidCosts()
@@ -691,7 +661,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [createBidSupplierQuotation] = useMutation(CREATE_BID_SUPPLIER_QUOTATION, {
+  const [createBidSupplierQuotation] = useMutation<CreateBidSupplierQuotationMutation, CreateBidSupplierQuotationMutationVariables>(CREATE_BID_SUPPLIER_QUOTATION, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Quotation added' })
       void refetchBidQuotations()
@@ -700,7 +670,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [updateBidSupplierQuotation] = useMutation(UPDATE_BID_SUPPLIER_QUOTATION, {
+  const [updateBidSupplierQuotation] = useMutation<UpdateBidSupplierQuotationMutation, UpdateBidSupplierQuotationMutationVariables>(UPDATE_BID_SUPPLIER_QUOTATION, {
     onCompleted: () => {
       void refetchBidQuotations()
     },
@@ -708,7 +678,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [deleteBidSupplierQuotation] = useMutation(DELETE_BID_SUPPLIER_QUOTATION, {
+  const [deleteBidSupplierQuotation] = useMutation<DeleteBidSupplierQuotationMutation, DeleteBidSupplierQuotationMutationVariables>(DELETE_BID_SUPPLIER_QUOTATION, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Quotation removed' })
       void refetchBidQuotations()
@@ -717,16 +687,16 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [updateBidCommercialSummary, { loading: savingSummary }] = useMutation(
+  const [updateBidCommercialSummary, { loading: savingSummary }] = useMutation<UpdateBidCommercialSummaryMutation, UpdateBidCommercialSummaryMutationVariables>(
     UPDATE_BID_COMMERCIAL_SUMMARY,
     {
       onCompleted: () => {
         void refetchBidSummary()
       },
-      onError: (e) => addToast({ type: 'error', message: e.message }),
+      onError: (e) => { addToast({ type: 'error', message: e.message }); },
     },
   )
-  const [submitBidForApproval, { loading: submittingBid }] = useMutation(SUBMIT_BID_FOR_APPROVAL, {
+  const [submitBidForApproval, { loading: submittingBid }] = useMutation<SubmitBidForApprovalMutation, SubmitBidForApprovalMutationVariables>(SUBMIT_BID_FOR_APPROVAL, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Bid submitted for approval' })
       void refetchBidSummary()
@@ -735,7 +705,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [approveBid, { loading: approvingBid }] = useMutation(APPROVE_BID, {
+  const [approveBid, { loading: approvingBid }] = useMutation<ApproveBidMutation, ApproveBidMutationVariables>(APPROVE_BID, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Bid approved' })
       void refetchBidSummary()
@@ -744,7 +714,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [rejectBid, { loading: rejectingBid }] = useMutation(REJECT_BID, {
+  const [rejectBid, { loading: rejectingBid }] = useMutation<RejectBidMutation, RejectBidMutationVariables>(REJECT_BID, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Bid rejected' })
       void refetchBidSummary()
@@ -753,7 +723,7 @@ export default function ProjectDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [reviseBidM, { loading: revisingBid }] = useMutation(REVISE_BID, {
+  const [reviseBidM, { loading: revisingBid }] = useMutation<ReviseBidMutation, ReviseBidMutationVariables>(REVISE_BID, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Bid revised' })
       void refetchBidSummary()
@@ -765,33 +735,43 @@ export default function ProjectDetail() {
 
   // ── Execution queries ──────────────────────────────────────────────────────
   const skipExec = !id || tab !== 'execution'
-  const { data: rfiData, refetch: refetchRFIs } = useQuery(PROJECT_RFIS_QUERY, {
-    variables: { projectId: id },
+  const { data: rfiData, refetch: refetchRFIs } = useQuery<ProjectRfIsQuery, ProjectRfIsQueryVariables>(PROJECT_RFIS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipExec,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: siData, refetch: refetchSIs } = useQuery(PROJECT_SITE_INSTRUCTIONS_QUERY, {
-    variables: { projectId: id },
+  const { data: siData, refetch: refetchSIs } = useQuery<ProjectSiteInstructionsQuery, ProjectSiteInstructionsQueryVariables>(PROJECT_SITE_INSTRUCTIONS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipExec,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: itpData, refetch: refetchITPs } = useQuery(PROJECT_ITPS_QUERY, {
-    variables: { projectId: id },
+  const { data: itpData, refetch: refetchITPs } = useQuery<ProjectItPsQuery, ProjectItPsQueryVariables>(PROJECT_ITPS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipExec,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: irData, refetch: refetchIRs } = useQuery(PROJECT_INSPECTION_REQUESTS_QUERY, {
-    variables: { projectId: id },
+  const { data: irData, refetch: refetchIRs } = useQuery<ProjectInspectionRequestsQuery, ProjectInspectionRequestsQueryVariables>(PROJECT_INSPECTION_REQUESTS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipExec,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: ncrData, refetch: refetchNCRs } = useQuery(PROJECT_NCRS_QUERY, {
-    variables: { projectId: id },
+  const { data: ncrData, refetch: refetchNCRs } = useQuery<ProjectNcRsQuery, ProjectNcRsQueryVariables>(PROJECT_NCRS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipExec,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: hseData, refetch: refetchHSE } = useQuery(PROJECT_HSE_RECORDS_QUERY, {
-    variables: { projectId: id },
+  const { data: hseData, refetch: refetchHSE } = useQuery<ProjectHseRecordsQuery, ProjectHseRecordsQueryVariables>(PROJECT_HSE_RECORDS_QUERY, {
+    variables: { projectId: id ?? '' },
+    skip: skipExec,
+    fetchPolicy: 'cache-and-network',
+  })
+  const { data: dailyReportData, refetch: refetchDailyReports } = useQuery<ProjectDailyReportsQuery, ProjectDailyReportsQueryVariables>(PROJECT_DAILY_REPORTS_QUERY, {
+    variables: { projectId: id ?? '' },
+    skip: skipExec,
+    fetchPolicy: 'cache-and-network',
+  })
+  const { data: projectPOsData } = useQuery<PurchaseOrdersQuery, PurchaseOrdersQueryVariables>(PURCHASE_ORDERS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipExec,
     fetchPolicy: 'cache-and-network',
   })
@@ -799,18 +779,18 @@ export default function ProjectDetail() {
   const execError = (e: Error) => {
     addToast({ type: 'error', message: e.message })
   }
-  const [createProjectRFI] = useMutation(CREATE_PROJECT_RFI, {
+  const [createProjectRFI] = useMutation<CreateProjectRfiMutation, CreateProjectRfiMutationVariables>(CREATE_PROJECT_RFI, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'RFI created' })
       void refetchRFIs()
     },
     onError: execError,
   })
-  const [updateProjectRFI] = useMutation(UPDATE_PROJECT_RFI, {
+  const [updateProjectRFI] = useMutation<UpdateProjectRfiMutation, UpdateProjectRfiMutationVariables>(UPDATE_PROJECT_RFI, {
     onCompleted: () => void refetchRFIs(),
     onError: execError,
   })
-  const [respondToRFI] = useMutation(RESPOND_TO_RFI, {
+  const [respondToRFI] = useMutation<RespondToRfiMutation, RespondToRfiMutationVariables>(RESPOND_TO_RFI, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Response recorded' })
       void refetchRFIs()
@@ -836,139 +816,175 @@ export default function ProjectDetail() {
       })
     },
   })
-  const [deleteProjectRFI] = useMutation(DELETE_PROJECT_RFI, {
+  const [deleteProjectRFI] = useMutation<DeleteProjectRfiMutation, DeleteProjectRfiMutationVariables>(DELETE_PROJECT_RFI, {
     onCompleted: () => void refetchRFIs(),
     onError: execError,
   })
-  const [uploadRFIFile] = useMutation(UPLOAD_RFI_FILE, {
+  const [uploadRFIFile] = useMutation<UploadRfiFileMutation, UploadRfiFileMutationVariables>(UPLOAD_RFI_FILE, {
     onCompleted: () => void refetchRFIs(),
     onError: execError,
   })
-  const [deleteRFIFile] = useMutation(DELETE_RFI_FILE, {
+  const [deleteRFIFile] = useMutation<DeleteRfiFileMutation, DeleteRfiFileMutationVariables>(DELETE_RFI_FILE, {
     onCompleted: () => void refetchRFIs(),
     onError: execError,
   })
 
-  const [createSiteInstruction] = useMutation(CREATE_SITE_INSTRUCTION, {
+  const [createSiteInstruction] = useMutation<CreateSiteInstructionMutation, CreateSiteInstructionMutationVariables>(CREATE_SITE_INSTRUCTION, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Site Instruction created' })
       void refetchSIs()
     },
     onError: execError,
   })
-  const [updateSiteInstruction] = useMutation(UPDATE_SITE_INSTRUCTION, {
+  const [updateSiteInstruction] = useMutation<UpdateSiteInstructionMutation, UpdateSiteInstructionMutationVariables>(UPDATE_SITE_INSTRUCTION, {
     onCompleted: () => void refetchSIs(),
     onError: execError,
   })
-  const [deleteSiteInstruction] = useMutation(DELETE_SITE_INSTRUCTION, {
+  const [deleteSiteInstruction] = useMutation<DeleteSiteInstructionMutation, DeleteSiteInstructionMutationVariables>(DELETE_SITE_INSTRUCTION, {
     onCompleted: () => void refetchSIs(),
     onError: execError,
   })
-  const [uploadSIFile] = useMutation(UPLOAD_SI_FILE, {
+  const [uploadSIFile] = useMutation<UploadSiFileMutation, UploadSiFileMutationVariables>(UPLOAD_SI_FILE, {
     onCompleted: () => void refetchSIs(),
     onError: execError,
   })
-  const [deleteSIFile] = useMutation(DELETE_SI_FILE, {
+  const [deleteSIFile] = useMutation<DeleteSiFileMutation, DeleteSiFileMutationVariables>(DELETE_SI_FILE, {
     onCompleted: () => void refetchSIs(),
     onError: execError,
   })
 
-  const [createProjectITP] = useMutation(CREATE_PROJECT_ITP, {
+  const [createProjectITP] = useMutation<CreateProjectItpMutation, CreateProjectItpMutationVariables>(CREATE_PROJECT_ITP, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'ITP created' })
       void refetchITPs()
     },
     onError: execError,
   })
-  const [updateProjectITP] = useMutation(UPDATE_PROJECT_ITP, {
+  const [updateProjectITP] = useMutation<UpdateProjectItpMutation, UpdateProjectItpMutationVariables>(UPDATE_PROJECT_ITP, {
     onCompleted: () => void refetchITPs(),
     onError: execError,
   })
-  const [deleteProjectITP] = useMutation(DELETE_PROJECT_ITP, {
+  const [deleteProjectITP] = useMutation<DeleteProjectItpMutation, DeleteProjectItpMutationVariables>(DELETE_PROJECT_ITP, {
     onCompleted: () => void refetchITPs(),
     onError: execError,
   })
-  const [upsertITPItems] = useMutation(UPSERT_ITP_ITEMS, {
+  const [upsertITPItems] = useMutation<UpsertItpItemsMutation, UpsertItpItemsMutationVariables>(UPSERT_ITP_ITEMS, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'ITP items saved' })
       void refetchITPs()
     },
     onError: execError,
   })
-  const [recordITPItemResult] = useMutation(RECORD_ITP_ITEM_RESULT, {
+  const [recordITPItemResult] = useMutation<RecordItpItemResultMutation, RecordItpItemResultMutationVariables>(RECORD_ITP_ITEM_RESULT, {
     onCompleted: () => void refetchITPs(),
     onError: execError,
   })
 
-  const [createInspectionRequest] = useMutation(CREATE_INSPECTION_REQUEST, {
+  const [createInspectionRequest] = useMutation<CreateInspectionRequestMutation, CreateInspectionRequestMutationVariables>(CREATE_INSPECTION_REQUEST, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Inspection Request created' })
       void refetchIRs()
     },
     onError: execError,
   })
-  const [updateInspectionRequest] = useMutation(UPDATE_INSPECTION_REQUEST, {
+  const [updateInspectionRequest] = useMutation<UpdateInspectionRequestMutation, UpdateInspectionRequestMutationVariables>(UPDATE_INSPECTION_REQUEST, {
     onCompleted: () => void refetchIRs(),
     onError: execError,
   })
-  const [deleteInspectionRequest] = useMutation(DELETE_INSPECTION_REQUEST, {
+  const [deleteInspectionRequest] = useMutation<DeleteInspectionRequestMutation, DeleteInspectionRequestMutationVariables>(DELETE_INSPECTION_REQUEST, {
     onCompleted: () => void refetchIRs(),
     onError: execError,
   })
-  const [uploadIRFile] = useMutation(UPLOAD_IR_FILE, {
+  const [uploadIRFile] = useMutation<UploadIrFileMutation, UploadIrFileMutationVariables>(UPLOAD_IR_FILE, {
     onCompleted: () => void refetchIRs(),
     onError: execError,
   })
-  const [deleteIRFile] = useMutation(DELETE_IR_FILE, {
+  const [deleteIRFile] = useMutation<DeleteIrFileMutation, DeleteIrFileMutationVariables>(DELETE_IR_FILE, {
     onCompleted: () => void refetchIRs(),
     onError: execError,
   })
 
-  const [createProjectNCR] = useMutation(CREATE_PROJECT_NCR, {
+  const [createProjectNCR] = useMutation<CreateProjectNcrMutation, CreateProjectNcrMutationVariables>(CREATE_PROJECT_NCR, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'NCR created' })
       void refetchNCRs()
     },
     onError: execError,
   })
-  const [updateProjectNCR] = useMutation(UPDATE_PROJECT_NCR, {
+  const [updateProjectNCR] = useMutation<UpdateProjectNcrMutation, UpdateProjectNcrMutationVariables>(UPDATE_PROJECT_NCR, {
     onCompleted: () => void refetchNCRs(),
     onError: execError,
   })
-  const [deleteProjectNCR] = useMutation(DELETE_PROJECT_NCR, {
+  const [deleteProjectNCR] = useMutation<DeleteProjectNcrMutation, DeleteProjectNcrMutationVariables>(DELETE_PROJECT_NCR, {
     onCompleted: () => void refetchNCRs(),
     onError: execError,
   })
-  const [uploadNCRFile] = useMutation(UPLOAD_NCR_FILE, {
+  const [uploadNCRFile] = useMutation<UploadNcrFileMutation, UploadNcrFileMutationVariables>(UPLOAD_NCR_FILE, {
     onCompleted: () => void refetchNCRs(),
     onError: execError,
   })
-  const [deleteNCRFile] = useMutation(DELETE_NCR_FILE, {
+  const [deleteNCRFile] = useMutation<DeleteNcrFileMutation, DeleteNcrFileMutationVariables>(DELETE_NCR_FILE, {
     onCompleted: () => void refetchNCRs(),
     onError: execError,
   })
 
-  const [createHSERecord] = useMutation(CREATE_HSE_RECORD, {
+  const [createHSERecord] = useMutation<CreateHseRecordMutation, CreateHseRecordMutationVariables>(CREATE_HSE_RECORD, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'HSE record created' })
       void refetchHSE()
     },
     onError: execError,
   })
-  const [updateHSERecord] = useMutation(UPDATE_HSE_RECORD, {
+  const [updateHSERecord] = useMutation<UpdateHseRecordMutation, UpdateHseRecordMutationVariables>(UPDATE_HSE_RECORD, {
     onCompleted: () => void refetchHSE(),
     onError: execError,
   })
-  const [deleteHSERecord] = useMutation(DELETE_HSE_RECORD, {
+  const [deleteHSERecord] = useMutation<DeleteHseRecordMutation, DeleteHseRecordMutationVariables>(DELETE_HSE_RECORD, {
     onCompleted: () => void refetchHSE(),
     onError: execError,
   })
-  const [uploadHSEFile] = useMutation(UPLOAD_HSE_FILE, {
+  const [uploadHSEFile] = useMutation<UploadHseFileMutation, UploadHseFileMutationVariables>(UPLOAD_HSE_FILE, {
     onCompleted: () => void refetchHSE(),
     onError: execError,
   })
-  const [deleteHSEFile] = useMutation(DELETE_HSE_FILE, {
+  const [deleteHSEFile] = useMutation<DeleteHseFileMutation, DeleteHseFileMutationVariables>(DELETE_HSE_FILE, {
     onCompleted: () => void refetchHSE(),
+    onError: execError,
+  })
+
+  const [createDailyReport] = useMutation<CreateDailyReportMutation, CreateDailyReportMutationVariables>(CREATE_DAILY_REPORT, {
+    onCompleted: () => {
+      addToast({ type: 'success', message: 'Daily report created' })
+      void refetchDailyReports()
+    },
+    onError: execError,
+  })
+  const [updateDailyReport] = useMutation<UpdateDailyReportMutation, UpdateDailyReportMutationVariables>(UPDATE_DAILY_REPORT, {
+    onCompleted: () => void refetchDailyReports(),
+    onError: execError,
+  })
+  const [deleteDailyReport] = useMutation<DeleteDailyReportMutation, DeleteDailyReportMutationVariables>(DELETE_DAILY_REPORT, {
+    onCompleted: () => void refetchDailyReports(),
+    onError: execError,
+  })
+  const [uploadDailyReportFile] = useMutation<UploadDailyReportFileMutation, UploadDailyReportFileMutationVariables>(UPLOAD_DAILY_REPORT_FILE, {
+    onCompleted: () => void refetchDailyReports(),
+    onError: execError,
+  })
+  const [deleteDailyReportFile] = useMutation<DeleteDailyReportFileMutation, DeleteDailyReportFileMutationVariables>(DELETE_DAILY_REPORT_FILE, {
+    onCompleted: () => void refetchDailyReports(),
+    onError: execError,
+  })
+  const [addDailyReportMachinery] = useMutation<AddDailyReportMachineryMutation, AddDailyReportMachineryMutationVariables>(ADD_DAILY_REPORT_MACHINERY, {
+    onCompleted: () => void refetchDailyReports(),
+    onError: execError,
+  })
+  const [attachDailyReportMachineryPhoto] = useMutation<AttachDailyReportMachineryPhotoMutation, AttachDailyReportMachineryPhotoMutationVariables>(ATTACH_DAILY_REPORT_MACHINERY_PHOTO, {
+    onCompleted: () => void refetchDailyReports(),
+    onError: execError,
+  })
+  const [deleteDailyReportMachinery] = useMutation<DeleteDailyReportMachineryMutation, DeleteDailyReportMachineryMutationVariables>(DELETE_DAILY_REPORT_MACHINERY, {
+    onCompleted: () => void refetchDailyReports(),
     onError: execError,
   })
 
@@ -984,23 +1000,23 @@ export default function ProjectDetail() {
     d.setMonth(d.getMonth() + 9)
     return d.toISOString().slice(0, 10)
   }, [])
-  const { data: wbsData, refetch: refetchWBS } = useQuery(PROJECT_WBS_QUERY, {
-    variables: { projectId: id },
+  const { data: wbsData, refetch: refetchWBS } = useQuery<ProjectWbsQuery, ProjectWbsQueryVariables>(PROJECT_WBS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipPlan,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: activitiesData, refetch: refetchActivities } = useQuery(PROJECT_ACTIVITIES_QUERY, {
-    variables: { projectId: id },
+  const { data: activitiesData, refetch: refetchActivities } = useQuery<ProjectActivitiesQuery, ProjectActivitiesQueryVariables>(PROJECT_ACTIVITIES_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipPlan,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: baselinesData, refetch: refetchBaselines } = useQuery(PROJECT_BASELINES_QUERY, {
-    variables: { projectId: id },
+  const { data: baselinesData, refetch: refetchBaselines } = useQuery<ProjectBaselinesQuery, ProjectBaselinesQueryVariables>(PROJECT_BASELINES_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipPlan,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: resourcesData, refetch: refetchResources } = useQuery(PROJECT_RESOURCES_QUERY, {
-    variables: { projectId: id },
+  const { data: resourcesData, refetch: refetchResources } = useQuery<ProjectResourcesQuery, ProjectResourcesQueryVariables>(PROJECT_RESOURCES_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipPlan,
     fetchPolicy: 'cache-and-network',
   })
@@ -1009,8 +1025,8 @@ export default function ProjectDetail() {
     skip: skipPlan,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: evmData, refetch: refetchEVM } = useQuery(PROJECT_EVM_QUERY, {
-    variables: { projectId: id },
+  const { data: evmData, refetch: refetchEVM } = useQuery<ProjectEvmQuery, ProjectEvmQueryVariables>(PROJECT_EVM_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipPlan,
     fetchPolicy: 'cache-and-network',
   })
@@ -1023,162 +1039,162 @@ export default function ProjectDetail() {
     void refetchResources()
     void refetchEVM()
   }
-  const planError = (e: Error) => addToast({ type: 'error', message: e.message })
-  const [createWBSNode] = useMutation(CREATE_WBS_NODE, {
+  const planError = (e: Error) => { addToast({ type: 'error', message: e.message }); }
+  const [createWBSNode] = useMutation<CreateWbsNodeMutation, CreateWbsNodeMutationVariables>(CREATE_WBS_NODE, {
     onCompleted: () => void refetchWBS(),
     onError: planError,
   })
-  const [updateWBSNode] = useMutation(UPDATE_WBS_NODE, {
+  const [updateWBSNode] = useMutation<UpdateWbsNodeMutation, UpdateWbsNodeMutationVariables>(UPDATE_WBS_NODE, {
     onCompleted: () => void refetchWBS(),
     onError: planError,
   })
-  const [deleteWBSNode] = useMutation(DELETE_WBS_NODE, {
+  const [deleteWBSNode] = useMutation<DeleteWbsNodeMutation, DeleteWbsNodeMutationVariables>(DELETE_WBS_NODE, {
     onCompleted: () => void refetchWBS(),
     onError: planError,
   })
-  const [createActivity] = useMutation(CREATE_ACTIVITY, {
+  const [createActivity] = useMutation<CreateActivityMutation, CreateActivityMutationVariables>(CREATE_ACTIVITY, {
     onCompleted: () => void refetchActivities(),
     onError: planError,
   })
-  const [updateActivity] = useMutation(UPDATE_ACTIVITY, {
+  const [updateActivity] = useMutation<UpdateActivityMutation, UpdateActivityMutationVariables>(UPDATE_ACTIVITY, {
     onCompleted: () => void refetchActivities(),
     onError: planError,
   })
-  const [updateActivityProgress] = useMutation(UPDATE_ACTIVITY_PROGRESS, {
+  const [updateActivityProgress] = useMutation<UpdateActivityProgressMutation, UpdateActivityProgressMutationVariables>(UPDATE_ACTIVITY_PROGRESS, {
     onCompleted: () => {
       void refetchActivities()
       void refetchEVM()
     },
     onError: planError,
   })
-  const [deleteActivity] = useMutation(DELETE_ACTIVITY, {
+  const [deleteActivity] = useMutation<DeleteActivityMutation, DeleteActivityMutationVariables>(DELETE_ACTIVITY, {
     onCompleted: () => void refetchActivities(),
     onError: planError,
   })
-  const [bulkImportActivities] = useMutation(BULK_IMPORT_ACTIVITIES, {
+  const [bulkImportActivities] = useMutation<BulkImportActivitiesMutation, BulkImportActivitiesMutationVariables>(BULK_IMPORT_ACTIVITIES, {
     onCompleted: () => {
       planRefresh()
       addToast({ type: 'success', message: 'Schedule imported' })
     },
     onError: planError,
   })
-  const [createDependency] = useMutation(CREATE_DEPENDENCY, {
+  const [createDependency] = useMutation<CreateDependencyMutation, CreateDependencyMutationVariables>(CREATE_DEPENDENCY, {
     onCompleted: () => void refetchActivities(),
     onError: planError,
   })
-  const [deleteDependency] = useMutation(DELETE_DEPENDENCY, {
+  const [deleteDependency] = useMutation<DeleteDependencyMutation, DeleteDependencyMutationVariables>(DELETE_DEPENDENCY, {
     onCompleted: () => void refetchActivities(),
     onError: planError,
   })
-  const [recalculateCPM] = useMutation(RECALCULATE_CPM, {
+  const [recalculateCPM] = useMutation<RecalculateCpmMutation, RecalculateCpmMutationVariables>(RECALCULATE_CPM, {
     onCompleted: () => {
       void refetchActivities()
       addToast({ type: 'success', message: 'CPM recalculated' })
     },
     onError: planError,
   })
-  const [levelResources] = useMutation(LEVEL_RESOURCES, {
+  const [levelResources] = useMutation<LevelResourcesMutation, LevelResourcesMutationVariables>(LEVEL_RESOURCES, {
     onCompleted: () => {
       planRefresh()
       addToast({ type: 'success', message: 'Resources leveled' })
     },
     onError: planError,
   })
-  const [createBaseline] = useMutation(CREATE_BASELINE, {
+  const [createBaseline] = useMutation<CreateBaselineMutation, CreateBaselineMutationVariables>(CREATE_BASELINE, {
     onCompleted: () => {
       void refetchBaselines()
       addToast({ type: 'success', message: 'Baseline saved' })
     },
     onError: planError,
   })
-  const [setActiveBaseline] = useMutation(SET_ACTIVE_BASELINE, {
+  const [setActiveBaseline] = useMutation<SetActiveBaselineMutation, SetActiveBaselineMutationVariables>(SET_ACTIVE_BASELINE, {
     onCompleted: () => void refetchBaselines(),
     onError: planError,
   })
-  const [applyBaseline] = useMutation(APPLY_BASELINE, {
+  const [applyBaseline] = useMutation<ApplyBaselineMutation, ApplyBaselineMutationVariables>(APPLY_BASELINE, {
     onCompleted: () => {
       void refetchActivities()
       addToast({ type: 'success', message: 'Baseline applied to schedule' })
     },
     onError: planError,
   })
-  const [deleteBaseline] = useMutation(DELETE_BASELINE, {
+  const [deleteBaseline] = useMutation<DeleteBaselineMutation, DeleteBaselineMutationVariables>(DELETE_BASELINE, {
     onCompleted: () => void refetchBaselines(),
     onError: planError,
   })
-  const [createResource] = useMutation(CREATE_RESOURCE, {
+  const [createResource] = useMutation<CreateResourceMutation, CreateResourceMutationVariables>(CREATE_RESOURCE, {
     onCompleted: () => void refetchResources(),
     onError: planError,
   })
-  const [updateResource] = useMutation(UPDATE_RESOURCE, {
+  const [updateResource] = useMutation<UpdateResourceMutation, UpdateResourceMutationVariables>(UPDATE_RESOURCE, {
     onCompleted: () => void refetchResources(),
     onError: planError,
   })
-  const [deleteResource] = useMutation(DELETE_RESOURCE, {
+  const [deleteResource] = useMutation<DeleteResourceMutation, DeleteResourceMutationVariables>(DELETE_RESOURCE, {
     onCompleted: () => void refetchResources(),
     onError: planError,
   })
-  const [setCalendarDay] = useMutation(SET_CALENDAR_DAY, {
+  const [setCalendarDay] = useMutation<SetCalendarDayMutation, SetCalendarDayMutationVariables>(SET_CALENDAR_DAY, {
     onCompleted: () => void refetchResources(),
     onError: planError,
   })
-  const [deleteCalendarDay] = useMutation(DELETE_CALENDAR_DAY, {
+  const [deleteCalendarDay] = useMutation<DeleteCalendarDayMutation, DeleteCalendarDayMutationVariables>(DELETE_CALENDAR_DAY, {
     onCompleted: () => void refetchResources(),
     onError: planError,
   })
-  const [assignResource] = useMutation(ASSIGN_RESOURCE, {
+  const [assignResource] = useMutation<AssignResourceMutation, AssignResourceMutationVariables>(ASSIGN_RESOURCE, {
     onCompleted: () => void refetchActivities(),
     onError: planError,
   })
-  const [updateResourceAssignment] = useMutation(UPDATE_RESOURCE_ASSIGNMENT, {
+  const [updateResourceAssignment] = useMutation<UpdateResourceAssignmentMutation, UpdateResourceAssignmentMutationVariables>(UPDATE_RESOURCE_ASSIGNMENT, {
     onCompleted: () => void refetchActivities(),
     onError: planError,
   })
-  const [removeResourceAssignment] = useMutation(REMOVE_RESOURCE_ASSIGNMENT, {
+  const [removeResourceAssignment] = useMutation<RemoveResourceAssignmentMutation, RemoveResourceAssignmentMutationVariables>(REMOVE_RESOURCE_ASSIGNMENT, {
     onCompleted: () => void refetchActivities(),
     onError: planError,
   })
 
   // ── IFC Drawing Register (Execution panel) ────────────────────────────────
-  const { data: ifcDocsData } = useQuery(IFC_DOCS_QUERY, {
-    variables: { projectId: id, status: ['IFC', 'AFC'] },
+  const { data: ifcDocsData } = useQuery<IfcDocumentsQuery, IfcDocumentsQueryVariables>(IFC_DOCS_QUERY, {
+    variables: { projectId: id ?? '', status: ['IFC', 'AFC'] },
     skip: !id || tab !== 'execution',
     fetchPolicy: 'cache-and-network',
   })
 
   // ── Lifecycle config (company-scoped phases + tab gating; migration 166) ────
-  const { data: lifecycleData } = useQuery(LIFECYCLE_CONFIG_QUERY, { fetchPolicy: 'cache-first' })
+  const { data: lifecycleData } = useQuery<LifecycleConfigQuery, LifecycleConfigQueryVariables>(LIFECYCLE_CONFIG_QUERY, { fetchPolicy: 'cache-first' })
 
   // ── Cost Control queries ───────────────────────────────────────────────────
   const skipCC = !id || tab !== 'cost_control'
-  const { data: ccCodesData, refetch: refetchCCCodes } = useQuery(PROJECT_COST_CODES_QUERY, {
-    variables: { projectId: id },
+  const { data: ccCodesData, refetch: refetchCCCodes } = useQuery<ProjectCostCodesQuery, ProjectCostCodesQueryVariables>(PROJECT_COST_CODES_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipCC,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: ccSummaryData, refetch: refetchCCSummary } = useQuery(PROJECT_COST_SUMMARY_QUERY, {
-    variables: { projectId: id },
+  const { data: ccSummaryData, refetch: refetchCCSummary } = useQuery<ProjectCostSummaryQuery, ProjectCostSummaryQueryVariables>(PROJECT_COST_SUMMARY_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipCC,
     fetchPolicy: 'cache-and-network',
   })
   const ccError = (e: Error) => {
     addToast({ type: 'error', message: e.message })
   }
-  const [createCostCode] = useMutation(CREATE_COST_CODE, {
+  const [createCostCode] = useMutation<CreateCostCodeMutation, CreateCostCodeMutationVariables>(CREATE_COST_CODE, {
     onCompleted: () => {
       void refetchCCCodes()
       void refetchCCSummary()
     },
     onError: ccError,
   })
-  const [updateCostCode] = useMutation(UPDATE_COST_CODE, {
+  const [updateCostCode] = useMutation<UpdateCostCodeMutation, UpdateCostCodeMutationVariables>(UPDATE_COST_CODE, {
     onCompleted: () => {
       void refetchCCCodes()
       void refetchCCSummary()
     },
     onError: ccError,
   })
-  const [deleteCostCode] = useMutation(DELETE_COST_CODE, {
+  const [deleteCostCode] = useMutation<DeleteCostCodeMutation, DeleteCostCodeMutationVariables>(DELETE_COST_CODE, {
     onCompleted: () => {
       void refetchCCCodes()
       void refetchCCSummary()
@@ -1187,37 +1203,37 @@ export default function ProjectDetail() {
   })
 
   // Cost sub-entities — project-level operational cost tracking (committed, subcontracts, labor, equipment, cash flow, forecast, client billing)
-  const { data: ccCommittedData, refetch: refetchCommitted } = useQuery(
+  const { data: ccCommittedData, refetch: refetchCommitted } = useQuery<ProjectCommittedCostsQuery, ProjectCommittedCostsQueryVariables>(
     PROJECT_COMMITTED_COSTS_QUERY,
-    { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' },
+    { variables: { projectId: id ?? '' }, skip: skipCC, fetchPolicy: 'cache-and-network' },
   )
-  const { data: ccSubData, refetch: refetchSub } = useQuery(PROJECT_SUBCONTRACTS_QUERY, {
-    variables: { projectId: id },
+  const { data: ccSubData, refetch: refetchSub } = useQuery<ProjectSubcontractsQuery, ProjectSubcontractsQueryVariables>(PROJECT_SUBCONTRACTS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipCC,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: ccLaborData, refetch: refetchLabor } = useQuery(PROJECT_LABOR_ENTRIES_QUERY, {
-    variables: { projectId: id },
+  const { data: ccLaborData, refetch: refetchLabor } = useQuery<ProjectLaborEntriesQuery, ProjectLaborEntriesQueryVariables>(PROJECT_LABOR_ENTRIES_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipCC,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: ccEquipData, refetch: refetchEquip } = useQuery(PROJECT_EQUIPMENT_LOG_QUERY, {
-    variables: { projectId: id },
+  const { data: ccEquipData, refetch: refetchEquip } = useQuery<ProjectEquipmentLogQuery, ProjectEquipmentLogQueryVariables>(PROJECT_EQUIPMENT_LOG_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipCC,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: ccCashData, refetch: refetchCash } = useQuery(PROJECT_CASH_FLOW_QUERY, {
-    variables: { projectId: id },
+  const { data: ccCashData, refetch: refetchCash } = useQuery<ProjectCashFlowQuery, ProjectCashFlowQueryVariables>(PROJECT_CASH_FLOW_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipCC,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: ccForecastData, refetch: refetchForecast } = useQuery(PROJECT_COST_FORECAST_QUERY, {
-    variables: { projectId: id },
+  const { data: ccForecastData, refetch: refetchForecast } = useQuery<ProjectCostForecastQuery, ProjectCostForecastQueryVariables>(PROJECT_COST_FORECAST_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipCC,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: ccBillingData, refetch: refetchBilling } = useQuery(PROJECT_CLIENT_BILLINGS_QUERY, {
-    variables: { projectId: id },
+  const { data: ccBillingData, refetch: refetchBilling } = useQuery<ProjectClientBillingsQuery, ProjectClientBillingsQueryVariables>(PROJECT_CLIENT_BILLINGS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipCC,
     fetchPolicy: 'cache-and-network',
   })
@@ -1232,83 +1248,83 @@ export default function ProjectDetail() {
     void refetchForecast()
     void refetchBilling()
   }
-  const [createCommittedM] = useMutation(CREATE_COMMITTED_COST, {
+  const [createCommittedM] = useMutation<CreateCommittedCostMutation, CreateCommittedCostMutationVariables>(CREATE_COMMITTED_COST, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [updateCommittedM] = useMutation(UPDATE_COMMITTED_COST, {
+  const [updateCommittedM] = useMutation<UpdateCommittedCostMutation, UpdateCommittedCostMutationVariables>(UPDATE_COMMITTED_COST, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [deleteCommittedM] = useMutation(DELETE_COMMITTED_COST, {
+  const [deleteCommittedM] = useMutation<DeleteCommittedCostMutation, DeleteCommittedCostMutationVariables>(DELETE_COMMITTED_COST, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [syncPOCommitM] = useMutation(SYNC_PO_COMMITMENTS, {
+  const [syncPOCommitM] = useMutation<SyncPoCommitmentsMutation, SyncPoCommitmentsMutationVariables>(SYNC_PO_COMMITMENTS, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [createSubM] = useMutation(CREATE_SUBCONTRACT, {
+  const [createSubM] = useMutation<CreateSubcontractMutation, CreateSubcontractMutationVariables>(CREATE_SUBCONTRACT, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [updateSubM] = useMutation(UPDATE_SUBCONTRACT, {
+  const [updateSubM] = useMutation<UpdateSubcontractMutation, UpdateSubcontractMutationVariables>(UPDATE_SUBCONTRACT, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [deleteSubM] = useMutation(DELETE_SUBCONTRACT, {
+  const [deleteSubM] = useMutation<DeleteSubcontractMutation, DeleteSubcontractMutationVariables>(DELETE_SUBCONTRACT, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [createLaborM] = useMutation(CREATE_LABOR_ENTRY, {
+  const [createLaborM] = useMutation<CreateLaborEntryMutation, CreateLaborEntryMutationVariables>(CREATE_LABOR_ENTRY, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [updateLaborM] = useMutation(UPDATE_LABOR_ENTRY, {
+  const [updateLaborM] = useMutation<UpdateLaborEntryMutation, UpdateLaborEntryMutationVariables>(UPDATE_LABOR_ENTRY, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [deleteLaborM] = useMutation(DELETE_LABOR_ENTRY, {
+  const [deleteLaborM] = useMutation<DeleteLaborEntryMutation, DeleteLaborEntryMutationVariables>(DELETE_LABOR_ENTRY, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [createEquipM] = useMutation(CREATE_EQUIPMENT_LOG, {
+  const [createEquipM] = useMutation<CreateEquipmentLogMutation, CreateEquipmentLogMutationVariables>(CREATE_EQUIPMENT_LOG, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [updateEquipM] = useMutation(UPDATE_EQUIPMENT_LOG, {
+  const [updateEquipM] = useMutation<UpdateEquipmentLogMutation, UpdateEquipmentLogMutationVariables>(UPDATE_EQUIPMENT_LOG, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [deleteEquipM] = useMutation(DELETE_EQUIPMENT_LOG, {
+  const [deleteEquipM] = useMutation<DeleteEquipmentLogMutation, DeleteEquipmentLogMutationVariables>(DELETE_EQUIPMENT_LOG, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [upsertCashM] = useMutation(UPSERT_CASH_FLOW_PERIOD, {
+  const [upsertCashM] = useMutation<UpsertCashFlowPeriodMutation, UpsertCashFlowPeriodMutationVariables>(UPSERT_CASH_FLOW_PERIOD, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [upsertForecastM] = useMutation(UPSERT_COST_FORECAST, {
+  const [upsertForecastM] = useMutation<UpsertCostForecastMutation, UpsertCostForecastMutationVariables>(UPSERT_COST_FORECAST, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [createBillingM] = useMutation(CREATE_CLIENT_BILLING, {
+  const [createBillingM] = useMutation<CreateClientBillingMutation, CreateClientBillingMutationVariables>(CREATE_CLIENT_BILLING, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [updateBillingM] = useMutation(UPDATE_CLIENT_BILLING, {
+  const [updateBillingM] = useMutation<UpdateClientBillingMutation, UpdateClientBillingMutationVariables>(UPDATE_CLIENT_BILLING, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
-  const [deleteBillingM] = useMutation(DELETE_CLIENT_BILLING, {
+  const [deleteBillingM] = useMutation<DeleteClientBillingMutation, DeleteClientBillingMutationVariables>(DELETE_CLIENT_BILLING, {
     onCompleted: refetchCostAll,
     onError: ccError,
   })
 
   // ── Variation Orders ───────────────────────────────────────────────────────
   const skipVO = !id || tab !== 'variation_orders'
-  const { data: voData, refetch: refetchVO } = useQuery(PROJECT_VARIATION_ORDERS_QUERY, {
-    variables: { projectId: id },
+  const { data: voData, refetch: refetchVO } = useQuery<ProjectVariationOrdersQuery, ProjectVariationOrdersQueryVariables>(PROJECT_VARIATION_ORDERS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipVO,
     fetchPolicy: 'cache-and-network',
   })
@@ -1318,61 +1334,61 @@ export default function ProjectDetail() {
   const voRefresh = () => {
     void refetchVO()
   }
-  const [createVariationOrder] = useMutation(CREATE_VARIATION_ORDER, {
+  const [createVariationOrder] = useMutation<CreateVariationOrderMutation, CreateVariationOrderMutationVariables>(CREATE_VARIATION_ORDER, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [updateVariationOrder] = useMutation(UPDATE_VARIATION_ORDER, {
+  const [updateVariationOrder] = useMutation<UpdateVariationOrderMutation, UpdateVariationOrderMutationVariables>(UPDATE_VARIATION_ORDER, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [deleteVariationOrder] = useMutation(DELETE_VARIATION_ORDER, {
+  const [deleteVariationOrder] = useMutation<DeleteVariationOrderMutation, DeleteVariationOrderMutationVariables>(DELETE_VARIATION_ORDER, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [submitVariationOrder] = useMutation(SUBMIT_VARIATION_ORDER, {
+  const [submitVariationOrder] = useMutation<SubmitVariationOrderMutation, SubmitVariationOrderMutationVariables>(SUBMIT_VARIATION_ORDER, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [approveVariationOrder] = useMutation(APPROVE_VARIATION_ORDER, {
+  const [approveVariationOrder] = useMutation<ApproveVariationOrderMutation, ApproveVariationOrderMutationVariables>(APPROVE_VARIATION_ORDER, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [rejectVariationOrder] = useMutation(REJECT_VARIATION_ORDER, {
+  const [rejectVariationOrder] = useMutation<RejectVariationOrderMutation, RejectVariationOrderMutationVariables>(REJECT_VARIATION_ORDER, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [setVOStatus] = useMutation(SET_VO_STATUS, { onCompleted: voRefresh, onError: voError })
-  const [createVOCostItem] = useMutation(CREATE_VO_COST_ITEM, {
+  const [setVOStatus] = useMutation<SetVoStatusMutation, SetVoStatusMutationVariables>(SET_VO_STATUS, { onCompleted: voRefresh, onError: voError })
+  const [createVOCostItem] = useMutation<CreateVoCostItemMutation, CreateVoCostItemMutationVariables>(CREATE_VO_COST_ITEM, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [updateVOCostItem] = useMutation(UPDATE_VO_COST_ITEM, {
+  const [updateVOCostItem] = useMutation<UpdateVoCostItemMutation, UpdateVoCostItemMutationVariables>(UPDATE_VO_COST_ITEM, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [deleteVOCostItem] = useMutation(DELETE_VO_COST_ITEM, {
+  const [deleteVOCostItem] = useMutation<DeleteVoCostItemMutation, DeleteVoCostItemMutationVariables>(DELETE_VO_COST_ITEM, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [createVOCorrespondence] = useMutation(CREATE_VO_CORRESPONDENCE, {
+  const [createVOCorrespondence] = useMutation<CreateVoCorrespondenceMutation, CreateVoCorrespondenceMutationVariables>(CREATE_VO_CORRESPONDENCE, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [deleteVOCorrespondence] = useMutation(DELETE_VO_CORRESPONDENCE, {
+  const [deleteVOCorrespondence] = useMutation<DeleteVoCorrespondenceMutation, DeleteVoCorrespondenceMutationVariables>(DELETE_VO_CORRESPONDENCE, {
     onCompleted: voRefresh,
     onError: voError,
   })
-  const [addVODrawing] = useMutation(ADD_VO_DRAWING, { onCompleted: voRefresh, onError: voError })
-  const [removeVODrawing] = useMutation(REMOVE_VO_DRAWING, {
+  const [addVODrawing] = useMutation<AddVoDrawingMutation, AddVoDrawingMutationVariables>(ADD_VO_DRAWING, { onCompleted: voRefresh, onError: voError })
+  const [removeVODrawing] = useMutation<RemoveVoDrawingMutation, RemoveVoDrawingMutationVariables>(REMOVE_VO_DRAWING, {
     onCompleted: voRefresh,
     onError: voError,
   })
 
   // ── Meetings / MOM ─────────────────────────────────────────────────────────
   const skipMOM = !id || tab !== 'meetings'
-  const { data: momData, refetch: refetchMOM } = useQuery(PROJECT_MEETINGS_QUERY, {
-    variables: { projectId: id },
+  const { data: momData, refetch: refetchMOM } = useQuery<ProjectMeetingsQuery, ProjectMeetingsQueryVariables>(PROJECT_MEETINGS_QUERY, {
+    variables: { projectId: id ?? '' },
     skip: skipMOM,
     fetchPolicy: 'cache-and-network',
   })
@@ -1382,81 +1398,81 @@ export default function ProjectDetail() {
   const momRefresh = () => {
     void refetchMOM()
   }
-  const [createMeeting] = useMutation(CREATE_MEETING, {
+  const [createMeeting] = useMutation<CreateMeetingMutation, CreateMeetingMutationVariables>(CREATE_MEETING, {
     onCompleted: momRefresh,
     onError: momError,
   })
-  const [updateMeeting] = useMutation(UPDATE_MEETING, {
+  const [updateMeeting] = useMutation<UpdateMeetingMutation, UpdateMeetingMutationVariables>(UPDATE_MEETING, {
     onCompleted: momRefresh,
     onError: momError,
   })
-  const [deleteMeeting] = useMutation(DELETE_MEETING, {
+  const [deleteMeeting] = useMutation<DeleteMeetingMutation, DeleteMeetingMutationVariables>(DELETE_MEETING, {
     onCompleted: momRefresh,
     onError: momError,
   })
-  const [issueMeeting] = useMutation(ISSUE_MEETING, { onCompleted: momRefresh, onError: momError })
-  const [closeMeeting] = useMutation(CLOSE_MEETING, { onCompleted: momRefresh, onError: momError })
-  const [createMeetingAction] = useMutation(CREATE_MEETING_ACTION, {
+  const [issueMeeting] = useMutation<IssueMeetingMutation, IssueMeetingMutationVariables>(ISSUE_MEETING, { onCompleted: momRefresh, onError: momError })
+  const [closeMeeting] = useMutation<CloseMeetingMutation, CloseMeetingMutationVariables>(CLOSE_MEETING, { onCompleted: momRefresh, onError: momError })
+  const [createMeetingAction] = useMutation<CreateMeetingActionMutation, CreateMeetingActionMutationVariables>(CREATE_MEETING_ACTION, {
     onCompleted: momRefresh,
     onError: momError,
   })
-  const [updateMeetingAction] = useMutation(UPDATE_MEETING_ACTION, {
+  const [updateMeetingAction] = useMutation<UpdateMeetingActionMutation, UpdateMeetingActionMutationVariables>(UPDATE_MEETING_ACTION, {
     onCompleted: momRefresh,
     onError: momError,
   })
-  const [deleteMeetingAction] = useMutation(DELETE_MEETING_ACTION, {
+  const [deleteMeetingAction] = useMutation<DeleteMeetingActionMutation, DeleteMeetingActionMutationVariables>(DELETE_MEETING_ACTION, {
     onCompleted: momRefresh,
     onError: momError,
   })
 
   // ── Contract Management queries ───────────────────────────────────────────
   const skipContracts = !id || tab !== 'contracts'
-  const { data: contractsData, refetch: refetchContracts } = useQuery(PROJECT_CONTRACTS_QUERY, {
+  const { data: contractsData, refetch: refetchContracts } = useQuery<ProjectContractsQuery, ProjectContractsQueryVariables>(PROJECT_CONTRACTS_QUERY, {
     variables: { projectId: id },
     skip: skipContracts,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: invoicesData, refetch: refetchInvoices } = useQuery(PROJECT_INVOICES_QUERY, {
+  const { data: invoicesData, refetch: refetchInvoices } = useQuery<ProjectInvoicesQuery, ProjectInvoicesQueryVariables>(PROJECT_INVOICES_QUERY, {
     variables: { projectId: id },
     skip: skipContracts,
     fetchPolicy: 'cache-and-network',
   })
-  const contractError = (e: Error) => addToast({ type: 'error', message: e.message })
+  const contractError = (e: Error) => { addToast({ type: 'error', message: e.message }); }
   const contractRefresh = () => {
     void refetchContracts()
     void refetchInvoices()
   }
-  const [reachMilestone] = useMutation(REACH_MILESTONE, {
+  const [reachMilestone] = useMutation<ReachMilestoneMutation, ReachMilestoneMutationVariables>(REACH_MILESTONE, {
     onCompleted: contractRefresh,
     onError: contractError,
   })
-  const [createContractMilestone] = useMutation(CREATE_CONTRACT_MILESTONE, {
+  const [createContractMilestone] = useMutation<CreateContractMilestoneMutation, CreateContractMilestoneMutationVariables>(CREATE_CONTRACT_MILESTONE, {
     onCompleted: contractRefresh,
     onError: contractError,
   })
-  const [updateContractMilestone] = useMutation(UPDATE_CONTRACT_MILESTONE, {
+  const [updateContractMilestone] = useMutation<UpdateContractMilestoneMutation, UpdateContractMilestoneMutationVariables>(UPDATE_CONTRACT_MILESTONE, {
     onCompleted: contractRefresh,
     onError: contractError,
   })
-  const [deleteContractMilestone] = useMutation(DELETE_CONTRACT_MILESTONE, {
+  const [deleteContractMilestone] = useMutation<DeleteContractMilestoneMutation, DeleteContractMilestoneMutationVariables>(DELETE_CONTRACT_MILESTONE, {
     onCompleted: contractRefresh,
     onError: contractError,
   })
-  const [createProjectContract] = useMutation(CREATE_PROJECT_CONTRACT, {
+  const [createProjectContract] = useMutation<CreateProjectContractMutation, CreateProjectContractMutationVariables>(CREATE_PROJECT_CONTRACT, {
     onCompleted: () => {
       contractRefresh()
       addToast({ type: 'success', message: 'Contract created' })
     },
     onError: contractError,
   })
-  const [updateProjectContract] = useMutation(UPDATE_PROJECT_CONTRACT, {
+  const [updateProjectContract] = useMutation<UpdateProjectContractMutation, UpdateProjectContractMutationVariables>(UPDATE_PROJECT_CONTRACT, {
     onCompleted: () => {
       contractRefresh()
       addToast({ type: 'success', message: 'Contract updated' })
     },
     onError: contractError,
   })
-  const [reviseContractM] = useMutation(REVISE_CONTRACT, {
+  const [reviseContractM] = useMutation<ReviseContractMutation, ReviseContractMutationVariables>(REVISE_CONTRACT, {
     onCompleted: () => {
       contractRefresh()
       addToast({ type: 'success', message: 'Contract revised' })
@@ -1524,7 +1540,7 @@ export default function ProjectDetail() {
         <span style={{ fontSize: '13px' }}>
           This project may have been removed or you may not have access.
         </span>
-        <Button variant="secondary" size="sm" onClick={() => navigate('/projects')}>
+        <Button variant="secondary" size="sm" onClick={() => { navigate('/projects'); }}>
           Back to Projects
         </Button>
       </div>
@@ -1598,12 +1614,12 @@ export default function ProjectDetail() {
     bidding: cap.can('bidding', 'approve'),
   }
   const phase = p.lifecyclePhase ?? 'enquiry'
-  const simpleBidMode: boolean = lifecycleData?.lifecycleConfig?.bidSimpleModeEnabled ?? false
-  const hideRiskRegister: boolean = lifecycleData?.lifecycleConfig?.hideRiskRegister ?? true
+  const simpleBidMode: boolean = lifecycleData?.lifecycleConfig.bidSimpleModeEnabled ?? false
+  const hideRiskRegister: boolean = lifecycleData?.lifecycleConfig.hideRiskRegister ?? true
 
   // Lifecycle from company config, with hardcoded fallback until it loads.
-  const lifecycleStages: { key: string; label: string }[] = lifecycleData?.lifecycleConfig?.phases
-    ?.length
+  const lifecycleStages: { key: string; label: string }[] = lifecycleData?.lifecycleConfig.phases
+    .length
     ? lifecycleData.lifecycleConfig.phases.map((ph: { key: string; label: string }) => ({
         key: ph.key,
         label: ph.label,
@@ -1612,7 +1628,7 @@ export default function ProjectDetail() {
   const phaseOrder = lifecycleStages.map((s) => s.key)
   const moduleMinPhase: Record<string, string> = { ...DEFAULT_MODULE_MIN_PHASE }
   const moduleLabels: Record<string, string> = {}
-  for (const m of (lifecycleData?.lifecycleConfig?.modules ?? []) as {
+  for (const m of (lifecycleData?.lifecycleConfig.modules ?? []) as {
     moduleKey: string
     minPhaseKey: string
     label?: string | null
@@ -1661,7 +1677,7 @@ export default function ProjectDetail() {
 
   const parse = (v: unknown): unknown[] => {
     try {
-      return Array.isArray(v) ? v : JSON.parse(String(v ?? '[]'))
+      return Array.isArray(v) ? v : (JSON.parse(String(v ?? '[]')) as unknown[])
     } catch {
       return []
     }
@@ -1674,48 +1690,33 @@ export default function ProjectDetail() {
   const costSummary = (() => {
     try {
       if (!p.costSummary) return null
-      return typeof p.costSummary === 'object' ? p.costSummary : JSON.parse(String(p.costSummary))
+      return typeof p.costSummary === 'object'
+        ? (p.costSummary as Record<string, unknown>)
+        : (JSON.parse(String(p.costSummary)) as Record<string, unknown>)
     } catch {
       return null
     }
   })()
 
-  const sec = (title: string) => (
-    <div
-      style={{
-        fontSize: '11px',
-        fontWeight: 700,
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
-        color: theme.textMuted,
-        padding: '8px 0 4px',
-        borderBottom: `1px solid ${theme.border}`,
-        marginBottom: '12px',
-      }}
-    >
-      {title}
-    </div>
-  )
-
   // ── header-level computations ───────────────────────────────────────────────
-  const cs = costSummary as Record<string, unknown> | null
-  const hdrCcy = String(cs?.['currencyCode'] ?? p.budgetCurrency ?? 'USD')
-  const hdrActual = Number(cs?.['actualCosts'] ?? 0)
-  const hdrBudget = Number(cs?.['budgetAmount'] ?? p.budgetAmount ?? 0)
-  const hdrRemain = Number(cs?.['budgetRemaining'] ?? hdrBudget - hdrActual)
+  const cs = costSummary
+  const hdrCcy = String(cs?.currencyCode ?? p.budgetCurrency ?? 'USD')
+  const hdrActual = Number(cs?.actualCosts ?? 0)
+  const hdrBudget = Number(cs?.budgetAmount ?? p.budgetAmount ?? 0)
+  const hdrRemain = Number(cs?.budgetRemaining ?? hdrBudget - hdrActual)
   const hdrUtilPct = hdrBudget > 0 ? Math.round((hdrActual / hdrBudget) * 100) : 0
   const hdrApprPOs = recentPos.filter(
-    (po) => (po as Record<string, unknown>)['status'] === 'approved',
+    (po) => (po).status === 'approved',
   )
   const hdrPendPOs = recentPos.filter(
-    (po) => (po as Record<string, unknown>)['status'] === 'pending_approval',
+    (po) => (po).status === 'pending_approval',
   )
   const hdrApprAmt = hdrApprPOs.reduce(
     (s, po) =>
       s +
       Number(
-        (po as Record<string, unknown>)['totalAmount'] ??
-          (po as Record<string, unknown>)['amount'] ??
+        (po).totalAmount ??
+          (po).amount ??
           0,
       ),
     0,
@@ -1724,8 +1725,8 @@ export default function ProjectDetail() {
     (s, po) =>
       s +
       Number(
-        (po as Record<string, unknown>)['totalAmount'] ??
-          (po as Record<string, unknown>)['amount'] ??
+        (po).totalAmount ??
+          (po).amount ??
           0,
       ),
     0,
@@ -1931,7 +1932,7 @@ export default function ProjectDetail() {
                   <>
                     {/* click-away backdrop */}
                     <div
-                      onClick={() => setShowActionsPanel(false)}
+                      onClick={() => { setShowActionsPanel(false); }}
                       style={{ position: 'fixed', inset: 0, zIndex: 99 }}
                     />
                     {/* panel */}
@@ -1972,7 +1973,7 @@ export default function ProjectDetail() {
                           Workflow Actions
                         </span>
                         <button
-                          onClick={() => setShowActionsPanel(false)}
+                          onClick={() => { setShowActionsPanel(false); }}
                           style={{
                             border: 'none',
                             background: 'none',
@@ -1989,13 +1990,23 @@ export default function ProjectDetail() {
                       {/* workflow buttons */}
                       <div style={{ padding: '14px 16px' }}>
                         <ProjectStatusBar
-                          projectId={id!}
-                          status={p.status}
+                          projectId={id ?? ''}
+                          status={
+                            p.status as
+                              | 'pending'
+                              | 'ongoing'
+                              | 'submitted'
+                              | 'approved'
+                              | 'completed'
+                              | 'on_hold'
+                              | 'cancelled'
+                              | 'cancelled_after_approval'
+                          }
                           lifecyclePhase={p.lifecyclePhase ?? 'enquiry'}
                           allowedActions={p.allowedActions ?? []}
                           clientDocCount={p.clientDocCount ?? 0}
                           rfqLineCount={p.rfqLineCount ?? 0}
-                          isRfq={p.isRfq ?? false}
+                          isRfq={p.isRfq}
                           onTransitioned={() => {
                             void refetch()
                             setShowActionsPanel(false)
@@ -2099,7 +2110,7 @@ export default function ProjectDetail() {
                               loading={adminSetting}
                               onClick={() =>
                                 void adminSetProjectStatus({
-                                  variables: { id: id!, status: adminStatus },
+                                  variables: { id: id ?? '', status: adminStatus },
                                 })
                               }
                             >
@@ -2136,7 +2147,7 @@ export default function ProjectDetail() {
                               }
                               loading={adminPhaseSetting}
                               onClick={() =>
-                                void adminSetPhase({ variables: { id: id!, phase: adminPhase } })
+                                void adminSetPhase({ variables: { id: id ?? '', phase: adminPhase } })
                               }
                             >
                               Apply
@@ -2356,7 +2367,7 @@ export default function ProjectDetail() {
             'Approved POs',
             String(
               hdrApprPOs.length ||
-                (p.openPoCount != null ? recentPos.length - (p.openPoCount ?? 0) : 0),
+                (p.openPoCount != null ? recentPos.length - p.openPoCount : 0),
             ),
             hdrApprAmt > 0 ? formatCurrency(hdrApprAmt, hdrCcy) : null,
             <svg
@@ -2466,14 +2477,14 @@ export default function ProjectDetail() {
           <>
             {tab === 'rfq_lines' && (
               <EngineeringTab
-                projectId={id!}
-                projectCode={String(p?.rfqNumber ?? p?.code ?? '')}
+                projectId={id ?? ''}
+                projectCode={String(p.rfqNumber ?? p.code)}
                 theme={theme}
                 isAdmin={canEdit.engineering}
                 canApprove={canApprove.engineering}
                 isSysAdmin={currentUser?.role === 'system_admin'}
                 currentUserName={currentUserName}
-                projectManagerName={p?.managerName ?? undefined}
+                projectManagerName={p.managerName ?? undefined}
                 teamMembers={liveTeam}
               />
             )}
@@ -2490,29 +2501,29 @@ export default function ProjectDetail() {
                 resources={resourcesData?.projectResources ?? []}
                 resourceLoading={loadingData?.projectResourceLoading ?? []}
                 evm={evmData?.projectEVM ?? null}
-                onCreateWBS={(v) => void createWBSNode({ variables: v })}
-                onUpdateWBS={(v) => void updateWBSNode({ variables: v })}
+                onCreateWBS={(v) => void createWBSNode({ variables: v as CreateWbsNodeMutationVariables })}
+                onUpdateWBS={(v) => void updateWBSNode({ variables: v as UpdateWbsNodeMutationVariables })}
                 onDeleteWBS={(wid) => void deleteWBSNode({ variables: { id: wid } })}
-                onCreateActivity={(v) => void createActivity({ variables: v })}
-                onUpdateActivity={(v) => void updateActivity({ variables: v })}
-                onUpdateProgress={(v) => void updateActivityProgress({ variables: v })}
+                onCreateActivity={(v) => void createActivity({ variables: v as CreateActivityMutationVariables })}
+                onUpdateActivity={(v) => void updateActivity({ variables: v as UpdateActivityMutationVariables })}
+                onUpdateProgress={(v) => void updateActivityProgress({ variables: v as UpdateActivityProgressMutationVariables })}
                 onDeleteActivity={(aid) => void deleteActivity({ variables: { id: aid } })}
-                onBulkImport={(v) => void bulkImportActivities({ variables: v })}
-                onCreateDependency={(v) => void createDependency({ variables: v })}
+                onBulkImport={(v) => void bulkImportActivities({ variables: v as BulkImportActivitiesMutationVariables })}
+                onCreateDependency={(v) => void createDependency({ variables: v as CreateDependencyMutationVariables })}
                 onDeleteDependency={(did) => void deleteDependency({ variables: { id: did } })}
                 onRecalculateCPM={() => void recalculateCPM({ variables: { projectId: id } })}
                 onLevelResources={() => void levelResources({ variables: { projectId: id } })}
-                onCreateBaseline={(v) => void createBaseline({ variables: v })}
+                onCreateBaseline={(v) => void createBaseline({ variables: v as CreateBaselineMutationVariables })}
                 onSetActiveBaseline={(bid) => void setActiveBaseline({ variables: { id: bid } })}
                 onApplyBaseline={(bid) => void applyBaseline({ variables: { id: bid } })}
                 onDeleteBaseline={(bid) => void deleteBaseline({ variables: { id: bid } })}
-                onCreateResource={(v) => void createResource({ variables: v })}
-                onUpdateResource={(v) => void updateResource({ variables: v })}
+                onCreateResource={(v) => void createResource({ variables: v as CreateResourceMutationVariables })}
+                onUpdateResource={(v) => void updateResource({ variables: v as UpdateResourceMutationVariables })}
                 onDeleteResource={(rid) => void deleteResource({ variables: { id: rid } })}
-                onSetCalendarDay={(v) => void setCalendarDay({ variables: v })}
+                onSetCalendarDay={(v) => void setCalendarDay({ variables: v as SetCalendarDayMutationVariables })}
                 onDeleteCalendarDay={(cid) => void deleteCalendarDay({ variables: { id: cid } })}
-                onAssignResource={(v) => void assignResource({ variables: v })}
-                onUpdateAssignment={(v) => void updateResourceAssignment({ variables: v })}
+                onAssignResource={(v) => void assignResource({ variables: v as AssignResourceMutationVariables })}
+                onUpdateAssignment={(v) => void updateResourceAssignment({ variables: v as UpdateResourceAssignmentMutationVariables })}
                 onRemoveAssignment={(amid) =>
                   void removeResourceAssignment({ variables: { id: amid } })
                 }
@@ -2520,17 +2531,17 @@ export default function ProjectDetail() {
             )}
 
             {tab === 'risk_register' && (
-              <RiskRegisterTab projectId={id!} theme={theme} isAdmin={isAdmin} />
+              <RiskRegisterTab projectId={id ?? ''} theme={theme} isAdmin={isAdmin} />
             )}
 
-            {tab === 'handover' && <HandoverTab projectId={id!} theme={theme} isAdmin={isAdmin} />}
+            {tab === 'handover' && <HandoverTab projectId={id ?? ''} theme={theme} isAdmin={isAdmin} />}
 
             {tab === 'contracts' && (
               <ContractManagementTab
-                projectId={id!}
-                projectName={p?.name}
-                projectClientName={p?.clientName}
-                projectCurrency={p?.budgetCurrency}
+                projectId={id ?? ''}
+                projectName={p.name}
+                projectClientName={p.clientName}
+                projectCurrency={p.budgetCurrency}
                 contracts={contractsData?.projectContracts ?? []}
                 invoices={invoicesData?.projectInvoices ?? []}
                 theme={theme}
@@ -2539,19 +2550,27 @@ export default function ProjectDetail() {
                   void reachMilestone({ variables: { contractId, milestoneId } })
                 }
                 onCreateMilestone={(contractId, input) =>
-                  void createContractMilestone({ variables: { contractId, input } })
+                  void createContractMilestone({
+                    variables: { contractId, input: input as MilestoneInput },
+                  })
                 }
                 onUpdateMilestone={(id2, input) =>
-                  void updateContractMilestone({ variables: { id: id2, input } })
+                  void updateContractMilestone({
+                    variables: { id: id2, input: input as MilestoneInput },
+                  })
                 }
                 onDeleteMilestone={(id2) =>
                   void deleteContractMilestone({ variables: { id: id2 } })
                 }
                 onCreateContract={(input) =>
-                  void createProjectContract({ variables: { projectId: id, input } })
+                  void createProjectContract({
+                    variables: { projectId: id ?? '', input: input as ProjectContractInput },
+                  })
                 }
                 onUpdateContract={(contractId, input) =>
-                  void updateProjectContract({ variables: { id: contractId, input } })
+                  void updateProjectContract({
+                    variables: { id: contractId, input: input as ProjectContractInput },
+                  })
                 }
                 onReviseContract={(v) => void reviseContractM({ variables: v })}
               />
@@ -2560,13 +2579,13 @@ export default function ProjectDetail() {
             {tab === 'overview' &&
               (() => {
                 // ── overview-local computations ──────────────────────────────────────
-                const ovCcy = String(cs?.['currencyCode'] ?? p.budgetCurrency ?? 'USD')
-                const ovActual = Number(cs?.['actualCosts'] ?? 0)
-                const ovCommitted = Number(cs?.['committedCosts'] ?? 0)
-                const ovStoreCosts = Number(cs?.['storeCosts'] ?? 0)
-                const ovBudget = Number(cs?.['budgetAmount'] ?? p.budgetAmount ?? 0)
+                const ovCcy = String(cs?.currencyCode ?? p.budgetCurrency ?? 'USD')
+                const ovActual = Number(cs?.actualCosts ?? 0)
+                const ovCommitted = Number(cs?.committedCosts ?? 0)
+                const ovStoreCosts = Number(cs?.storeCosts ?? 0)
+                const ovBudget = Number(cs?.budgetAmount ?? p.budgetAmount ?? 0)
                 const ovRemaining = Number(
-                  cs?.['budgetRemaining'] ?? ovBudget - ovActual - ovCommitted,
+                  cs?.budgetRemaining ?? ovBudget - ovActual - ovCommitted,
                 )
                 const ovUtilPct = ovBudget > 0 ? Math.round((ovActual / ovBudget) * 100) : 0
                 const ovCompletion = p.overallCompletionPct ?? 0
@@ -2614,12 +2633,12 @@ export default function ProjectDetail() {
                 // PO summary
                 const ovPoMap: Record<string, { count: number; amount: number }> = {}
                 recentPos.forEach((po) => {
-                  const st = String((po as Record<string, unknown>)['status'] ?? 'draft')
+                  const st = String((po).status ?? 'draft')
                   if (!ovPoMap[st]) ovPoMap[st] = { count: 0, amount: 0 }
                   ovPoMap[st].count++
                   ovPoMap[st].amount += Number(
-                    (po as Record<string, unknown>)['totalAmount'] ??
-                      (po as Record<string, unknown>)['amount'] ??
+                    (po).totalAmount ??
+                      (po).amount ??
                       0,
                   )
                 })
@@ -2641,8 +2660,8 @@ export default function ProjectDetail() {
                   (s, po) =>
                     s +
                     Number(
-                      (po as Record<string, unknown>)['totalAmount'] ??
-                        (po as Record<string, unknown>)['amount'] ??
+                      (po).totalAmount ??
+                        (po).amount ??
                         0,
                     ),
                   0,
@@ -2685,9 +2704,9 @@ export default function ProjectDetail() {
                 // Alerts
                 const ovAlerts: string[] = []
                 if (ovUtilPct > 80) ovAlerts.push(`Budget utilization reached ${ovUtilPct}%`)
-                if ((ovPoMap['pending_approval']?.count ?? 0) > 0)
+                if ((ovPoMap.pending_approval?.count ?? 0) > 0)
                   ovAlerts.push(
-                    `${ovPoMap['pending_approval'].count} Purchase Order${ovPoMap['pending_approval'].count > 1 ? 's' : ''} awaiting approval`,
+                    `${ovPoMap.pending_approval.count} Purchase Order${ovPoMap.pending_approval.count > 1 ? 's' : ''} awaiting approval`,
                   )
                 if (ovRemaining < 0) ovAlerts.push('Project is over budget')
                 ;(
@@ -2843,7 +2862,7 @@ export default function ProjectDetail() {
                     : '—'
 
                 // Financial Summary table (Table component migration)
-                type FinancialSummaryRow = {
+                interface FinancialSummaryRow {
                   label: string
                   val: number | null
                   color: string
@@ -2934,7 +2953,7 @@ export default function ProjectDetail() {
                   },
                 ]
 
-                type PoSummaryRow = {
+                interface PoSummaryRow {
                   status: string
                   count: number
                   amount: number
@@ -2942,8 +2961,8 @@ export default function ProjectDetail() {
                 const poSummaryRows: PoSummaryRow[] = PO_ORDER.filter((st) => ovPoMap[st]).map(
                   (st) => ({
                     status: st,
-                    count: ovPoMap[st]!.count,
-                    amount: ovPoMap[st]!.amount,
+                    count: ovPoMap[st].count,
+                    amount: ovPoMap[st].amount,
                   }),
                 )
                 const poSummaryColumns: Column<PoSummaryRow>[] = [
@@ -3157,7 +3176,7 @@ export default function ProjectDetail() {
                           {ch(
                             'Purchase Order Summary',
                             <button
-                              onClick={() => setTab('procurement')}
+                              onClick={() => { setTab('procurement'); }}
                               style={{
                                 fontSize: '11px',
                                 color: theme.accent,
@@ -3211,7 +3230,7 @@ export default function ProjectDetail() {
                                   cy="60"
                                   r="48"
                                   fill="none"
-                                  stroke={`${theme.border}`}
+                                  stroke={theme.border}
                                   strokeWidth="12"
                                   strokeDasharray={`${Math.PI * 48} ${2 * Math.PI * 48}`}
                                   strokeLinecap="round"
@@ -3395,7 +3414,7 @@ export default function ProjectDetail() {
                                       />
                                     )}
                                     {/* actual */}
-                                    {(s.actualStartDate || s.plannedStartDate) && (
+                                    {(s.actualStartDate ?? s.plannedStartDate) && (
                                       <div
                                         style={{
                                           position: 'absolute',
@@ -3521,14 +3540,14 @@ export default function ProjectDetail() {
                               </span>
                             )}
                             {recent6.map((ev, i) => {
-                              const evType = String(ev['event_type'] ?? ev['type'] ?? '')
+                              const evType = String(ev.event_type ?? ev.type ?? '')
                               const summary = String(
-                                ev['summary'] ??
-                                  ev['description'] ??
-                                  ev['message'] ??
-                                  `Status → ${ev['status'] ?? ''}`,
+                                ev.summary ??
+                                  ev.description ??
+                                  ev.message ??
+                                  `Status → ${String(ev.status ?? '')}`,
                               )
-                              const ts = String(ev['created_at'] ?? ev['timestamp'] ?? '')
+                              const ts = String(ev.created_at ?? ev.timestamp ?? '')
                               const age = ts
                                 ? (() => {
                                     const diff = Math.floor(
@@ -3621,7 +3640,7 @@ export default function ProjectDetail() {
                           </div>
                           {ovEvents.length > 6 && (
                             <button
-                              onClick={() => setTab('history')}
+                              onClick={() => { setTab('history'); }}
                               style={{
                                 marginTop: '10px',
                                 fontSize: '11px',
@@ -3743,7 +3762,7 @@ export default function ProjectDetail() {
                           {ch(
                             'Team Members',
                             <button
-                              onClick={() => setTab('team')}
+                              onClick={() => { setTab('team'); }}
                               style={{
                                 fontSize: '11px',
                                 color: theme.accent,
@@ -3763,9 +3782,9 @@ export default function ProjectDetail() {
                             )}
                             {(liveTeam.length > 0 ? liveTeam : team).slice(0, 5).map((m, i) => {
                               const mu = m as unknown as Record<string, unknown>
-                              const name = String(mu['employee_name'] ?? mu['name'] ?? '?')
+                              const name = String(mu.employee_name ?? mu.name ?? '?')
                               const role = String(
-                                mu['member_type'] ?? mu['role'] ?? mu['job_title'] ?? '',
+                                mu.member_type ?? mu.role ?? mu.job_title ?? '',
                               )
                               const initials = name
                                 .split(' ')
@@ -3834,7 +3853,7 @@ export default function ProjectDetail() {
                           </div>
                           {(liveTeam.length > 5 || team.length > 5) && (
                             <button
-                              onClick={() => setTab('team')}
+                              onClick={() => { setTab('team'); }}
                               style={{
                                 marginTop: '8px',
                                 fontSize: '11px',
@@ -3996,17 +4015,17 @@ export default function ProjectDetail() {
                                   onClick={() =>
                                     void quickUpdateStage({
                                       variables: {
-                                        projectId: id!,
+                                        projectId: id ?? '',
                                         stageId: s.id,
                                         input: {
                                           name: s.name,
                                           status: s.status === 'pending' ? 'active' : 'completed',
                                           completionPct:
                                             s.status === 'pending' ? s.completionPct : 100,
-                                          plannedStartDate: s.plannedStartDate || null,
-                                          plannedEndDate: s.plannedEndDate || null,
+                                          plannedStartDate: s.plannedStartDate ?? null,
+                                          plannedEndDate: s.plannedEndDate ?? null,
                                           actualStartDate:
-                                            s.actualStartDate ||
+                                            s.actualStartDate ??
                                             (s.status === 'pending'
                                               ? new Date().toISOString().slice(0, 10)
                                               : null),
@@ -4014,8 +4033,8 @@ export default function ProjectDetail() {
                                             s.status !== 'pending'
                                               ? new Date().toISOString().slice(0, 10)
                                               : null,
-                                          notes: s.notes || null,
-                                          assignedTo: s.assignedTo || null,
+                                          notes: s.notes ?? null,
+                                          assignedTo: s.assignedTo ?? null,
                                         },
                                       },
                                     })
@@ -4174,7 +4193,7 @@ export default function ProjectDetail() {
                               </Badge>
                             </div>
                             <div
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={(e) => { e.stopPropagation(); }}
                               style={{ display: 'flex', gap: 6, alignItems: 'center' }}
                             >
                               {s.status !== 'completed' && s.status !== 'cancelled' && (
@@ -4182,17 +4201,17 @@ export default function ProjectDetail() {
                                   onClick={() =>
                                     void quickUpdateStage({
                                       variables: {
-                                        projectId: id!,
+                                        projectId: id ?? '',
                                         stageId: s.id,
                                         input: {
                                           name: s.name,
                                           status: s.status === 'pending' ? 'active' : 'completed',
                                           completionPct:
                                             s.status === 'pending' ? s.completionPct : 100,
-                                          plannedStartDate: s.plannedStartDate || null,
-                                          plannedEndDate: s.plannedEndDate || null,
+                                          plannedStartDate: s.plannedStartDate ?? null,
+                                          plannedEndDate: s.plannedEndDate ?? null,
                                           actualStartDate:
-                                            s.actualStartDate ||
+                                            s.actualStartDate ??
                                             (s.status === 'pending'
                                               ? new Date().toISOString().slice(0, 10)
                                               : null),
@@ -4200,8 +4219,8 @@ export default function ProjectDetail() {
                                             s.status !== 'pending'
                                               ? new Date().toISOString().slice(0, 10)
                                               : null,
-                                          notes: s.notes || null,
-                                          assignedTo: s.assignedTo || null,
+                                          notes: s.notes ?? null,
+                                          assignedTo: s.assignedTo ?? null,
                                         },
                                       },
                                     })
@@ -4265,252 +4284,6 @@ export default function ProjectDetail() {
                   </span>
                 )
 
-                const memberRow = (m: LiveMember, i: number, last: boolean) => (
-                  <div
-                    key={m.id}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns:
-                        confirmRemoveId === m.id
-                          ? '40px 1fr 1fr 100px 80px 220px'
-                          : '40px 1fr 1fr 100px 80px 72px',
-                      alignItems: 'center',
-                      padding: '10px 16px',
-                      borderBottom: !last ? `1px solid ${theme.border}` : 'none',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '50%',
-                        background: `${typeColor(m.member_type ?? 'technical')}18`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        color: typeColor(m.member_type ?? 'technical'),
-                      }}
-                    >
-                      {(m.employee_name ?? '?')[0].toUpperCase()}
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
-                      {m.employee_name}
-                    </div>
-                    <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                      {m.job_title ?? '—'}
-                    </div>
-                    <div>{typeTag(m.member_type ?? 'technical')}</div>
-                    <div style={{ fontSize: '13px', color: theme.textMuted, textAlign: 'right' }}>
-                      {m.allocated_hours != null ? `${m.allocated_hours}h` : '—'}
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'flex-end',
-                        alignItems: 'center',
-                        gap: '2px',
-                      }}
-                    >
-                      {/* Permissions editor — admin/PM only */}
-                      {canEdit.team && (
-                        <button
-                          onClick={() => {
-                            setPermEditMemberId(m.id)
-                            setPermEditDraft(m.permissions ?? {})
-                          }}
-                          title="Edit permissions"
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: theme.textMuted,
-                            padding: '4px',
-                            borderRadius: '4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.color = theme.accent)}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = theme.textMuted)}
-                        >
-                          <svg
-                            width="13"
-                            height="13"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                          >
-                            <circle cx="7.5" cy="15.5" r="4.5" />
-                            <path d="M21 2l-9.6 9.6" />
-                            <path d="M15.5 7.5L17 6l2.5 2.5L18 10" />
-                          </svg>
-                        </button>
-                      )}
-                      {canEdit.team &&
-                        (confirmRemoveId === m.id ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                color: theme.textMuted,
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              Remove?
-                            </span>
-                            <button
-                              onClick={() => void handleRemoveMember(m.id)}
-                              style={{
-                                fontSize: '11px',
-                                padding: '3px 10px',
-                                borderRadius: '5px',
-                                background: '#ef4444',
-                                color: '#fff',
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontWeight: 600,
-                              }}
-                            >
-                              Yes
-                            </button>
-                            <button
-                              onClick={() => setConfirmRemoveId(null)}
-                              style={{
-                                fontSize: '11px',
-                                padding: '3px 8px',
-                                borderRadius: '5px',
-                                background: 'transparent',
-                                color: theme.textMuted,
-                                border: `1px solid ${theme.border}`,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              No
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setConfirmRemoveId(m.id)}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              color: theme.textMuted,
-                              padding: '4px',
-                              borderRadius: '4px',
-                              display: 'flex',
-                              alignItems: 'center',
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = theme.textMuted)}
-                            title="Remove"
-                          >
-                            <svg
-                              width="13"
-                              height="13"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <line x1="18" y1="6" x2="6" y2="18" />
-                              <line x1="6" y1="6" x2="18" y2="18" />
-                            </svg>
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-                )
-
-                const sectionHeader = (label: string, count: number, color: string) => (
-                  <div
-                    style={{
-                      padding: '8px 16px',
-                      background: `${color}10`,
-                      borderBottom: `1px solid ${theme.border}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        color,
-                      }}
-                    >
-                      {label}
-                    </span>
-                    <span style={{ fontSize: '11px', color: theme.textMuted }}>({count})</span>
-                  </div>
-                )
-
-                const tableHeader = (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '40px 1fr 1fr 100px 80px 40px',
-                      gap: '0',
-                      padding: '8px 16px',
-                      borderBottom: `1px solid ${theme.border}`,
-                      background: theme.bgCanvas,
-                    }}
-                  >
-                    <div />
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                      }}
-                    >
-                      Name
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                      }}
-                    >
-                      Job Title
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                      }}
-                    >
-                      Type
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        textAlign: 'right',
-                      }}
-                    >
-                      Hours
-                    </div>
-                    <div />
-                  </div>
-                )
-
                 return (
                   <div>
                     {/* Header */}
@@ -4527,7 +4300,7 @@ export default function ProjectDetail() {
                         {both.length > 0 ? ` · ${both.length} both` : ''}
                       </span>
                       {canEdit.team && (
-                        <Button variant="primary" size="sm" onClick={() => setShowAddForm(true)}>
+                        <Button variant="primary" size="sm" onClick={() => { setShowAddForm(true); }}>
                           Add Member
                         </Button>
                       )}
@@ -4576,7 +4349,7 @@ export default function ProjectDetail() {
                               <button
                                 key={t}
                                 type="button"
-                                onClick={() => setAddForm((f) => ({ ...f, member_type: t }))}
+                                onClick={() => { setAddForm((f) => ({ ...f, member_type: t })); }}
                                 style={{
                                   flex: 1,
                                   padding: '8px 0',
@@ -4603,7 +4376,7 @@ export default function ProjectDetail() {
                         <SearchableSelect
                           label="Employee"
                           value={addForm.employee_id}
-                          onChange={(v) => setAddForm((f) => ({ ...f, employee_id: v }))}
+                          onChange={(v) => { setAddForm((f) => ({ ...f, employee_id: v })); }}
                           placeholder="Select employee…"
                           options={employees.map((e) => ({
                             value: e.id,
@@ -4629,7 +4402,7 @@ export default function ProjectDetail() {
                             placeholder="0"
                             value={addForm.allocated_hours}
                             onChange={(e) =>
-                              setAddForm((f) => ({ ...f, allocated_hours: e.target.value }))
+                              { setAddForm((f) => ({ ...f, allocated_hours: e.target.value })); }
                             }
                             style={{
                               width: '100%',
@@ -4664,7 +4437,7 @@ export default function ProjectDetail() {
                           >
                             Cancel
                           </Button>
-                          <Button variant="primary" loading={addLoading} onClick={handleAddMember}>
+                          <Button variant="primary" loading={addLoading} onClick={(...args: Parameters<typeof handleAddMember>) => void handleAddMember(...args)}>
                             Add Member
                           </Button>
                         </div>
@@ -4674,7 +4447,7 @@ export default function ProjectDetail() {
                     {/* Permission Editor Modal */}
                     {(() => {
                       const editingMember = liveTeam.find((m) => m.id === permEditMemberId)
-                      const PERM_TABS: Array<{ key: string; label: string }> = [
+                      const PERM_TABS: { key: string; label: string }[] = [
                         { key: 'overview', label: 'Overview' },
                         { key: 'client_documents', label: 'Client Documents' },
                         { key: 'rfq_lines', label: 'Scope of Work' },
@@ -4688,7 +4461,7 @@ export default function ProjectDetail() {
                         { key: 'meetings', label: 'Meetings' },
                         { key: 'attachments', label: 'Attachments' },
                       ]
-                      const LEVELS: Array<{ value: string; label: string; color: string }> = [
+                      const LEVELS: { value: string; label: string; color: string }[] = [
                         { value: 'none', label: 'None', color: theme.textMuted },
                         { value: 'view', label: 'View', color: '#f59e0b' },
                         { value: 'edit', label: 'Edit', color: theme.accent },
@@ -4696,7 +4469,7 @@ export default function ProjectDetail() {
                       return (
                         <Modal
                           open={!!permEditMemberId}
-                          onClose={() => setPermEditMemberId(null)}
+                          onClose={() => { setPermEditMemberId(null); }}
                           title={`Permissions — ${editingMember?.employee_name ?? ''}`}
                           size="sm"
                         >
@@ -4740,11 +4513,11 @@ export default function ProjectDetail() {
                                     <button
                                       type="button"
                                       onClick={() =>
-                                        setPermEditDraft((d) => {
+                                        { setPermEditDraft((d) => {
                                           const n = { ...d }
-                                          delete n[key]
+                                          Reflect.deleteProperty(n, key)
                                           return n
-                                        })
+                                        }); }
                                       }
                                       style={{
                                         padding: '4px 10px',
@@ -4764,7 +4537,7 @@ export default function ProjectDetail() {
                                         key={lv.value}
                                         type="button"
                                         onClick={() =>
-                                          setPermEditDraft((d) => ({ ...d, [key]: lv.value }))
+                                          { setPermEditDraft((d) => ({ ...d, [key]: lv.value })); }
                                         }
                                         style={{
                                           padding: '4px 10px',
@@ -4796,13 +4569,13 @@ export default function ProjectDetail() {
                                 paddingTop: '14px',
                               }}
                             >
-                              <Button variant="ghost" onClick={() => setPermEditMemberId(null)}>
+                              <Button variant="ghost" onClick={() => { setPermEditMemberId(null); }}>
                                 Cancel
                               </Button>
                               <Button
                                 variant="primary"
                                 loading={permSaving}
-                                onClick={handleSavePerms}
+                                onClick={(...args: Parameters<typeof handleSavePerms>) => void handleSavePerms(...args)}
                               >
                                 Save Permissions
                               </Button>
@@ -4881,7 +4654,7 @@ export default function ProjectDetail() {
 
                         const memberCard = (m: LiveMember) => {
                           const color = typeColor(m.member_type ?? 'technical')
-                          const initials = (m.employee_name ?? '?')
+                          const initials = m.employee_name
                             .split(' ')
                             .map((n: string) => n[0])
                             .join('')
@@ -5097,7 +4870,7 @@ export default function ProjectDetail() {
                                         Yes
                                       </button>
                                       <button
-                                        onClick={() => setConfirmRemoveId(null)}
+                                        onClick={() => { setConfirmRemoveId(null); }}
                                         style={{
                                           fontSize: 11,
                                           padding: '4px 8px',
@@ -5113,7 +4886,7 @@ export default function ProjectDetail() {
                                     </div>
                                   ) : (
                                     <button
-                                      onClick={() => setConfirmRemoveId(m.id)}
+                                      onClick={() => { setConfirmRemoveId(m.id); }}
                                       title="Remove"
                                       style={{
                                         fontSize: 11,
@@ -5229,11 +5002,11 @@ export default function ProjectDetail() {
                 isAdmin={canEdit.costControl}
                 costCodes={ccCodesData?.projectCostCodes ?? []}
                 summary={ccSummaryData?.projectCostSummary ?? null}
-                onCreateCostCode={(v) => void createCostCode({ variables: v })}
-                onUpdateCostCode={(v) => void updateCostCode({ variables: v })}
+                onCreateCostCode={(v) => void createCostCode({ variables: v as CreateCostCodeMutationVariables })}
+                onUpdateCostCode={(v) => void updateCostCode({ variables: v as UpdateCostCodeMutationVariables })}
                 onDeleteCostCode={(id) => void deleteCostCode({ variables: { id } })}
-                projectAnalyticAccountId={p?.analyticAccountId ?? null}
-                projectAnalyticAccountName={p?.analyticAccountName ?? null}
+                projectAnalyticAccountId={p.analyticAccountId ?? null}
+                projectAnalyticAccountName={p.analyticAccountName ?? null}
                 committedCosts={ccCommittedData?.projectCommittedCosts ?? []}
                 subcontracts={ccSubData?.projectSubcontracts ?? []}
                 laborEntries={ccLaborData?.projectLaborEntries ?? []}
@@ -5241,23 +5014,23 @@ export default function ProjectDetail() {
                 cashFlow={ccCashData?.projectCashFlow ?? []}
                 costForecast={ccForecastData?.projectCostForecast ?? []}
                 clientBillings={ccBillingData?.projectClientBillings ?? []}
-                onCreateCommitted={(v) => void createCommittedM({ variables: v })}
-                onUpdateCommitted={(v) => void updateCommittedM({ variables: v })}
+                onCreateCommitted={(v) => void createCommittedM({ variables: v as CreateCommittedCostMutationVariables })}
+                onUpdateCommitted={(v) => void updateCommittedM({ variables: v as UpdateCommittedCostMutationVariables })}
                 onDeleteCommitted={(cid) => void deleteCommittedM({ variables: { id: cid } })}
-                onSyncPO={(v) => void syncPOCommitM({ variables: v })}
-                onCreateSub={(v) => void createSubM({ variables: v })}
-                onUpdateSub={(v) => void updateSubM({ variables: v })}
+                onSyncPO={(v) => void syncPOCommitM({ variables: v as SyncPoCommitmentsMutationVariables })}
+                onCreateSub={(v) => void createSubM({ variables: v as CreateSubcontractMutationVariables })}
+                onUpdateSub={(v) => void updateSubM({ variables: v as UpdateSubcontractMutationVariables })}
                 onDeleteSub={(sid) => void deleteSubM({ variables: { id: sid } })}
-                onCreateLabor={(v) => void createLaborM({ variables: v })}
-                onUpdateLabor={(v) => void updateLaborM({ variables: v })}
+                onCreateLabor={(v) => void createLaborM({ variables: v as CreateLaborEntryMutationVariables })}
+                onUpdateLabor={(v) => void updateLaborM({ variables: v as UpdateLaborEntryMutationVariables })}
                 onDeleteLabor={(lid) => void deleteLaborM({ variables: { id: lid } })}
-                onCreateEquip={(v) => void createEquipM({ variables: v })}
-                onUpdateEquip={(v) => void updateEquipM({ variables: v })}
+                onCreateEquip={(v) => void createEquipM({ variables: v as CreateEquipmentLogMutationVariables })}
+                onUpdateEquip={(v) => void updateEquipM({ variables: v as UpdateEquipmentLogMutationVariables })}
                 onDeleteEquip={(eid) => void deleteEquipM({ variables: { id: eid } })}
-                onUpsertCash={(v) => void upsertCashM({ variables: v })}
-                onUpsertForecast={(v) => void upsertForecastM({ variables: v })}
-                onCreateBilling={(v) => void createBillingM({ variables: v })}
-                onUpdateBilling={(v) => void updateBillingM({ variables: v })}
+                onUpsertCash={(v) => void upsertCashM({ variables: v as UpsertCashFlowPeriodMutationVariables })}
+                onUpsertForecast={(v) => void upsertForecastM({ variables: v as UpsertCostForecastMutationVariables })}
+                onCreateBilling={(v) => void createBillingM({ variables: v as CreateClientBillingMutationVariables })}
+                onUpdateBilling={(v) => void updateBillingM({ variables: v as UpdateClientBillingMutationVariables })}
                 onDeleteBilling={(bid) => void deleteBillingM({ variables: { id: bid } })}
               />
             )}
@@ -5265,7 +5038,7 @@ export default function ProjectDetail() {
             {/* ── Procurement tab (Purchase Orders + Manufacturing Requests) ── */}
             {tab === 'procurement' &&
               (() => {
-                const mrs = (mrData?.manufacturingRequests ?? []) as Array<Record<string, unknown>>
+                const mrs = (mrData?.manufacturingRequests ?? []) as Record<string, unknown>[]
                 const mrStatusVariant: Record<
                   string,
                   'neutral' | 'warning' | 'info' | 'success' | 'danger'
@@ -5277,7 +5050,7 @@ export default function ProjectDetail() {
                   completed: 'success',
                   cancelled: 'danger',
                 }
-                const storeOuts = (miData?.materialIssues ?? []) as Array<Record<string, unknown>>
+                const storeOuts = (miData?.materialIssues ?? []) as Record<string, unknown>[]
                 const subNav: { key: typeof procSection; label: string; count: number }[] = [
                   { key: 'purchase_orders', label: 'Purchase Orders', count: recentPos.length },
                   { key: 'manufacturing', label: 'Manufacturing Requests', count: mrs.length },
@@ -5297,7 +5070,7 @@ export default function ProjectDetail() {
                       {subNav.map((s) => (
                         <button
                           key={s.key}
-                          onClick={() => setProcSection(s.key)}
+                          onClick={() => { setProcSection(s.key); }}
                           style={{
                             padding: '8px 20px',
                             border: 'none',
@@ -5339,7 +5112,7 @@ export default function ProjectDetail() {
                               variant="primary"
                               size="sm"
                               onClick={() =>
-                                navigate(`/procurement/requisitions/new?projectId=${id}`)
+                                { navigate(`/procurement/requisitions/new?projectId=${id}`); }
                               }
                             >
                               + New Requisition
@@ -5364,7 +5137,7 @@ export default function ProjectDetail() {
                               {recentPos.map((po, i) => (
                                 <div
                                   key={String(po.id ?? i)}
-                                  onClick={() => navigate(`/procurement/purchase-orders/${po.id}`)}
+                                  onClick={() => { navigate(`/procurement/purchase-orders/${String(po.id)}`); }}
                                   style={{
                                     display: 'flex',
                                     justifyContent: 'space-between',
@@ -5441,7 +5214,7 @@ export default function ProjectDetail() {
                               {recentPos.map((po, i) => (
                                 <div
                                   key={String(po.id ?? i)}
-                                  onClick={() => navigate(`/procurement/purchase-orders/${po.id}`)}
+                                  onClick={() => { navigate(`/procurement/purchase-orders/${String(po.id)}`); }}
                                   style={{
                                     display: 'grid',
                                     gridTemplateColumns: '180px 1fr 140px 110px 32px',
@@ -5527,7 +5300,7 @@ export default function ProjectDetail() {
                             {mrs.length} request{mrs.length !== 1 ? 's' : ''}
                           </span>
                           {canEdit.procurement && (
-                            <Button variant="primary" size="sm" onClick={() => setShowMRForm(true)}>
+                            <Button variant="primary" size="sm" onClick={() => { setShowMRForm(true); }}>
                               New Request
                             </Button>
                           )}
@@ -5549,8 +5322,8 @@ export default function ProjectDetail() {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                               {mrs.map((mr) => (
                                 <div
-                                  key={String(mr['id'])}
-                                  onClick={() => navigate(`/manufacturing/requests/${mr['id']}`)}
+                                  key={String(mr.id)}
+                                  onClick={() => { navigate(`/manufacturing/requests/${String(mr.id)}`); }}
                                   style={{
                                     display: 'flex',
                                     justifyContent: 'space-between',
@@ -5577,17 +5350,17 @@ export default function ProjectDetail() {
                                         fontSize: '13px',
                                       }}
                                     >
-                                      {String(mr['requestNumber'] ?? '—')}
+                                      {String(mr.requestNumber ?? '—')}
                                     </div>
                                     <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                                      {String(mr['productName'] ?? '')} · Qty{' '}
-                                      {String(mr['qtyRequested'] ?? 0)}
+                                      {String(mr.productName ?? '')} · Qty{' '}
+                                      {String(mr.qtyRequested ?? 0)}
                                     </div>
                                   </div>
                                   <Badge
-                                    variant={mrStatusVariant[String(mr['status'])] ?? 'neutral'}
+                                    variant={mrStatusVariant[String(mr.status)] ?? 'neutral'}
                                   >
-                                    {String(mr['status']).replace(/_/g, ' ')}
+                                    {String(mr.status).replace(/_/g, ' ')}
                                   </Badge>
                                 </div>
                               ))}
@@ -5629,8 +5402,8 @@ export default function ProjectDetail() {
                               </div>
                               {mrs.map((mr, i) => (
                                 <div
-                                  key={String(mr['id'])}
-                                  onClick={() => navigate(`/manufacturing/requests/${mr['id']}`)}
+                                  key={String(mr.id)}
+                                  onClick={() => { navigate(`/manufacturing/requests/${String(mr.id)}`); }}
                                   style={{
                                     display: 'grid',
                                     gridTemplateColumns: '160px 1fr 80px 130px 120px 32px',
@@ -5655,24 +5428,24 @@ export default function ProjectDetail() {
                                       color: theme.accent,
                                     }}
                                   >
-                                    {String(mr['requestNumber'] ?? '—')}
+                                    {String(mr.requestNumber ?? '—')}
                                   </div>
                                   <div style={{ fontSize: '13px', color: theme.textPrimary }}>
-                                    {String(mr['productName'] ?? '—')}
+                                    {String(mr.productName ?? '—')}
                                   </div>
                                   <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                                    {String(mr['qtyRequested'] ?? 0)}
+                                    {String(mr.qtyRequested ?? 0)}
                                   </div>
                                   <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                                    {mr['requiredDate']
-                                      ? String(mr['requiredDate']).slice(0, 10)
+                                    {mr.requiredDate
+                                      ? String(mr.requiredDate).slice(0, 10)
                                       : '—'}
                                   </div>
                                   <div>
                                     <Badge
-                                      variant={mrStatusVariant[String(mr['status'])] ?? 'neutral'}
+                                      variant={mrStatusVariant[String(mr.status)] ?? 'neutral'}
                                     >
-                                      {String(mr['status']).replace(/_/g, ' ')}
+                                      {String(mr.status).replace(/_/g, ' ')}
                                     </Badge>
                                   </div>
                                   <div
@@ -5720,14 +5493,14 @@ export default function ProjectDetail() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => navigate('/inventory/material-returns')}
+                              onClick={() => { navigate('/inventory/material-returns'); }}
                             >
                               Return unused material →
                             </Button>
                             <Button
                               variant="secondary"
                               size="sm"
-                              onClick={() => navigate(`/inventory/store-out?projectId=${id}`)}
+                              onClick={() => { navigate(`/inventory/store-out?projectId=${id}`); }}
                             >
                               Manage in Store Out module →
                             </Button>
@@ -5744,7 +5517,7 @@ export default function ProjectDetail() {
                           >
                             No store-outs for this project yet.{' '}
                             <button
-                              onClick={() => navigate('/inventory/store-out')}
+                              onClick={() => { navigate('/inventory/store-out'); }}
                               style={{
                                 background: 'none',
                                 border: 'none',
@@ -5795,9 +5568,9 @@ export default function ProjectDetail() {
                               )}
                             </div>
                             {storeOuts.map((si, i) => {
-                              const siLines = (si['lines'] as Array<Record<string, unknown>>) ?? []
+                              const siLines = si.lines as Record<string, unknown>[]
                               const totalCost = siLines.reduce(
-                                (sum, l) => sum + parseFloat(String(l['totalCost'] ?? '0')),
+                                (sum, l) => sum + parseFloat(String(l.totalCost ?? '0')),
                                 0,
                               )
                               const statusVariant: Record<
@@ -5806,7 +5579,7 @@ export default function ProjectDetail() {
                               > = { draft: 'warning', issued: 'success', cancelled: 'danger' }
                               return (
                                 <div
-                                  key={String(si['id'])}
+                                  key={String(si.id)}
                                   style={{
                                     display: 'grid',
                                     gridTemplateColumns: '160px 1fr 130px 120px 100px',
@@ -5818,7 +5591,7 @@ export default function ProjectDetail() {
                                         : 'none',
                                     cursor: 'pointer',
                                   }}
-                                  onClick={() => navigate('/inventory/store-out')}
+                                  onClick={() => { navigate('/inventory/store-out'); }}
                                   onMouseEnter={(e) =>
                                     (e.currentTarget.style.background = theme.bgCanvas)
                                   }
@@ -5834,17 +5607,17 @@ export default function ProjectDetail() {
                                       color: theme.accent,
                                     }}
                                   >
-                                    {String(si['issueNumber'] ?? '—')}
+                                    {String(si.issueNumber ?? '—')}
                                   </div>
                                   <div style={{ fontSize: '13px', color: theme.textPrimary }}>
-                                    {si['poNumber']
-                                      ? `PO: ${String(si['poNumber'])}`
-                                      : si['notes']
-                                        ? String(si['notes']).slice(0, 40)
+                                    {si.poNumber
+                                      ? `PO: ${String(si.poNumber)}`
+                                      : si.notes
+                                        ? String(si.notes).slice(0, 40)
                                         : 'Manual issue'}
                                   </div>
                                   <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                                    {String(si['issueDate'] ?? '').slice(0, 10)}
+                                    {String(si.issueDate ?? '').slice(0, 10)}
                                   </div>
                                   <div
                                     style={{
@@ -5861,9 +5634,9 @@ export default function ProjectDetail() {
                                   </div>
                                   <div>
                                     <Badge
-                                      variant={statusVariant[String(si['status'])] ?? 'neutral'}
+                                      variant={statusVariant[String(si.status)] ?? 'neutral'}
                                     >
-                                      {String(si['status'])}
+                                      {String(si.status)}
                                     </Badge>
                                   </div>
                                 </div>
@@ -5953,44 +5726,56 @@ export default function ProjectDetail() {
                 inspectionRequests={irData?.projectInspectionRequests ?? []}
                 ncrs={ncrData?.projectNCRs ?? []}
                 hseRecords={hseData?.projectHSERecords ?? []}
+                dailyReports={(dailyReportData?.projectDailyReports ?? []) as unknown as DailyReportRow[]}
                 drawings={drawingsData?.projectDrawings ?? []}
                 rfqLines={rfqLinesData?.rfqLines ?? []}
                 team={liveTeam}
-                onCreateRFI={(v) => void createProjectRFI({ variables: { projectId: id, ...v } })}
-                onUpdateRFI={(v) => void updateProjectRFI({ variables: v })}
-                onRespondRFI={(v) => void respondToRFI({ variables: v })}
+                onCreateRFI={(v) => void createProjectRFI({ variables: ({ projectId: id, ...v }) as CreateProjectRfiMutationVariables })}
+                onUpdateRFI={(v) => void updateProjectRFI({ variables: v as UpdateProjectRfiMutationVariables })}
+                onRespondRFI={(v) => void respondToRFI({ variables: v as RespondToRfiMutationVariables })}
                 onDeleteRFI={(rfId) => void deleteProjectRFI({ variables: { id: rfId } })}
-                onUploadRFIFile={(v) => void uploadRFIFile({ variables: v })}
-                onDeleteRFIFile={(v) => void deleteRFIFile({ variables: v })}
+                onUploadRFIFile={(v) => void uploadRFIFile({ variables: v as UploadRfiFileMutationVariables })}
+                onDeleteRFIFile={(v) => void deleteRFIFile({ variables: v as DeleteRfiFileMutationVariables })}
                 onCreateSI={(v) =>
-                  void createSiteInstruction({ variables: { projectId: id, ...v } })
+                  void createSiteInstruction({ variables: ({ projectId: id, ...v }) as CreateSiteInstructionMutationVariables })
                 }
-                onUpdateSI={(v) => void updateSiteInstruction({ variables: v })}
+                onUpdateSI={(v) => void updateSiteInstruction({ variables: v as UpdateSiteInstructionMutationVariables })}
                 onDeleteSI={(sId) => void deleteSiteInstruction({ variables: { id: sId } })}
-                onUploadSIFile={(v) => void uploadSIFile({ variables: v })}
-                onDeleteSIFile={(v) => void deleteSIFile({ variables: v })}
-                onCreateITP={(v) => void createProjectITP({ variables: { projectId: id, ...v } })}
-                onUpdateITP={(v) => void updateProjectITP({ variables: v })}
+                onUploadSIFile={(v) => void uploadSIFile({ variables: v as UploadSiFileMutationVariables })}
+                onDeleteSIFile={(v) => void deleteSIFile({ variables: v as DeleteSiFileMutationVariables })}
+                onCreateITP={(v) => void createProjectITP({ variables: ({ projectId: id, ...v }) as CreateProjectItpMutationVariables })}
+                onUpdateITP={(v) => void updateProjectITP({ variables: v as UpdateProjectItpMutationVariables })}
                 onDeleteITP={(iId) => void deleteProjectITP({ variables: { id: iId } })}
-                onUpsertITPItems={(v) => void upsertITPItems({ variables: v })}
-                onRecordITPResult={(v) => void recordITPItemResult({ variables: v })}
+                onUpsertITPItems={(v) => void upsertITPItems({ variables: v as UpsertItpItemsMutationVariables })}
+                onRecordITPResult={(v) => void recordITPItemResult({ variables: v as RecordItpItemResultMutationVariables })}
                 onCreateIR={(v) =>
-                  void createInspectionRequest({ variables: { projectId: id, ...v } })
+                  void createInspectionRequest({ variables: ({ projectId: id, ...v }) as CreateInspectionRequestMutationVariables })
                 }
-                onUpdateIR={(v) => void updateInspectionRequest({ variables: v })}
+                onUpdateIR={(v) => void updateInspectionRequest({ variables: v as UpdateInspectionRequestMutationVariables })}
                 onDeleteIR={(iId) => void deleteInspectionRequest({ variables: { id: iId } })}
-                onUploadIRFile={(v) => void uploadIRFile({ variables: v })}
-                onDeleteIRFile={(v) => void deleteIRFile({ variables: v })}
-                onCreateNCR={(v) => void createProjectNCR({ variables: { projectId: id, ...v } })}
-                onUpdateNCR={(v) => void updateProjectNCR({ variables: v })}
+                onUploadIRFile={(v) => void uploadIRFile({ variables: v as UploadIrFileMutationVariables })}
+                onDeleteIRFile={(v) => void deleteIRFile({ variables: v as DeleteIrFileMutationVariables })}
+                onCreateNCR={(v) => void createProjectNCR({ variables: ({ projectId: id, ...v }) as CreateProjectNcrMutationVariables })}
+                onUpdateNCR={(v) => void updateProjectNCR({ variables: v as UpdateProjectNcrMutationVariables })}
                 onDeleteNCR={(nId) => void deleteProjectNCR({ variables: { id: nId } })}
-                onUploadNCRFile={(v) => void uploadNCRFile({ variables: v })}
-                onDeleteNCRFile={(v) => void deleteNCRFile({ variables: v })}
-                onCreateHSE={(v) => void createHSERecord({ variables: { projectId: id, ...v } })}
-                onUpdateHSE={(v) => void updateHSERecord({ variables: v })}
+                onUploadNCRFile={(v) => void uploadNCRFile({ variables: v as UploadNcrFileMutationVariables })}
+                onDeleteNCRFile={(v) => void deleteNCRFile({ variables: v as DeleteNcrFileMutationVariables })}
+                onCreateHSE={(v) => void createHSERecord({ variables: ({ projectId: id, ...v }) as CreateHseRecordMutationVariables })}
+                onUpdateHSE={(v) => void updateHSERecord({ variables: v as UpdateHseRecordMutationVariables })}
                 onDeleteHSE={(hId) => void deleteHSERecord({ variables: { id: hId } })}
-                onUploadHSEFile={(v) => void uploadHSEFile({ variables: v })}
-                onDeleteHSEFile={(v) => void deleteHSEFile({ variables: v })}
+                onUploadHSEFile={(v) => void uploadHSEFile({ variables: v as UploadHseFileMutationVariables })}
+                onDeleteHSEFile={(v) => void deleteHSEFile({ variables: v as DeleteHseFileMutationVariables })}
+                onCreateDailyReport={(v) => void createDailyReport({ variables: v as CreateDailyReportMutationVariables })}
+                onUpdateDailyReport={(v) => void updateDailyReport({ variables: v as UpdateDailyReportMutationVariables })}
+                onDeleteDailyReport={(rId) => void deleteDailyReport({ variables: { id: rId } })}
+                onUploadDailyReportFile={(v) => void uploadDailyReportFile({ variables: v as UploadDailyReportFileMutationVariables })}
+                onDeleteDailyReportFile={(v) => void deleteDailyReportFile({ variables: v as DeleteDailyReportFileMutationVariables })}
+                projectPOs={(projectPOsData?.purchaseOrders ?? [])
+                  .filter((po): po is NonNullable<typeof po> => po != null)
+                  .map((po) => ({ id: po.id, poNumber: po.po_number }))}
+                onAddMachinery={(v) => void addDailyReportMachinery({ variables: v as AddDailyReportMachineryMutationVariables })}
+                onAttachMachineryPhoto={(v) => void attachDailyReportMachineryPhoto({ variables: v as AttachDailyReportMachineryPhotoMutationVariables })}
+                onDeleteMachinery={(mId) => void deleteDailyReportMachinery({ variables: { id: mId } })}
                 ifcDocs={ifcDocsData?.engineeringDocuments ?? []}
               />
             )}
@@ -6001,8 +5786,8 @@ export default function ProjectDetail() {
                 isAdmin={canEdit.variation}
                 variationOrders={voData?.projectVariationOrders ?? []}
                 contracts={contractsData?.projectContracts ?? []}
-                onCreateVO={(v) => void createVariationOrder({ variables: v })}
-                onUpdateVO={(v) => void updateVariationOrder({ variables: v })}
+                onCreateVO={(v) => void createVariationOrder({ variables: v as CreateVariationOrderMutationVariables })}
+                onUpdateVO={(v) => void updateVariationOrder({ variables: v as UpdateVariationOrderMutationVariables })}
                 onDeleteVO={(voId) => void deleteVariationOrder({ variables: { id: voId } })}
                 onSubmitVO={(voId) => void submitVariationOrder({ variables: { id: voId } })}
                 onApproveVO={(voId, approvedValue, contractId) =>
@@ -6014,30 +5799,30 @@ export default function ProjectDetail() {
                 onSetVOStatus={(voId, status) =>
                   void setVOStatus({ variables: { id: voId, status } })
                 }
-                onCreateCostItem={(v) => void createVOCostItem({ variables: v })}
-                onUpdateCostItem={(v) => void updateVOCostItem({ variables: v })}
+                onCreateCostItem={(v) => void createVOCostItem({ variables: v as CreateVoCostItemMutationVariables })}
+                onUpdateCostItem={(v) => void updateVOCostItem({ variables: v as UpdateVoCostItemMutationVariables })}
                 onDeleteCostItem={(itemId) => void deleteVOCostItem({ variables: { id: itemId } })}
-                onCreateCorrespondence={(v) => void createVOCorrespondence({ variables: v })}
+                onCreateCorrespondence={(v) => void createVOCorrespondence({ variables: v as CreateVoCorrespondenceMutationVariables })}
                 onDeleteCorrespondence={(corrId) =>
                   void deleteVOCorrespondence({ variables: { id: corrId } })
                 }
-                onAddDrawing={(v) => void addVODrawing({ variables: v })}
+                onAddDrawing={(v) => void addVODrawing({ variables: v as AddVoDrawingMutationVariables })}
                 onRemoveDrawing={(drawId) => void removeVODrawing({ variables: { id: drawId } })}
               />
             )}
             {tab === 'meetings' && (
               <MeetingsTab
-                projectId={id!}
+                projectId={id ?? ''}
                 th={theme as unknown as Record<string, string>}
                 isAdmin={canEdit.meetings}
                 meetings={(momData?.projectMeetings ?? []) as MeetingType[]}
-                onCreateMeeting={(v) => void createMeeting({ variables: v })}
-                onUpdateMeeting={(v) => void updateMeeting({ variables: v })}
+                onCreateMeeting={(v) => void createMeeting({ variables: v as CreateMeetingMutationVariables })}
+                onUpdateMeeting={(v) => void updateMeeting({ variables: v as UpdateMeetingMutationVariables })}
                 onDeleteMeeting={(mid) => void deleteMeeting({ variables: { id: mid } })}
                 onIssueMeeting={(mid) => void issueMeeting({ variables: { id: mid } })}
                 onCloseMeeting={(mid) => void closeMeeting({ variables: { id: mid } })}
-                onCreateAction={(v) => void createMeetingAction({ variables: v })}
-                onUpdateAction={(v) => void updateMeetingAction({ variables: v })}
+                onCreateAction={(v) => void createMeetingAction({ variables: v as CreateMeetingActionMutationVariables })}
+                onUpdateAction={(v) => void updateMeetingAction({ variables: v as UpdateMeetingActionMutationVariables })}
                 onDeleteAction={(aid) => void deleteMeetingAction({ variables: { id: aid } })}
               />
             )}
@@ -6146,17 +5931,17 @@ export default function ProjectDetail() {
                             top: '12px',
                             bottom: '12px',
                             width: '2px',
-                            background: `${theme.border}`,
+                            background: theme.border,
                             borderRadius: '1px',
                           }}
                         />
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
                           {log.map((entry, i) => {
                             const e = entry as Record<string, unknown>
-                            const et = String(e['eventType'] ?? 'status_change')
+                            const et = String(e.eventType ?? 'status_change')
                             const dotColor = EVENT_COLOR[et] ?? theme.accent
                             const evLabel = EVENT_LABEL[et] ?? 'Event'
-                            const ts = e['createdAt']
+                            const ts = e.createdAt
                             return (
                               <div
                                 key={i}
@@ -6226,10 +6011,10 @@ export default function ProjectDetail() {
                                             fontWeight: 500,
                                           }}
                                         >
-                                          {String(e['summary'] ?? '')}
+                                          {String(e.summary ?? '')}
                                         </div>
-                                        {!!e['actorName'] &&
-                                          String(e['actorName']) !== 'System' && (
+                                        {!!e.actorName &&
+                                          String(e.actorName) !== 'System' && (
                                             <div
                                               style={{
                                                 fontSize: '11px',
@@ -6237,7 +6022,7 @@ export default function ProjectDetail() {
                                                 marginTop: '2px',
                                               }}
                                             >
-                                              by {String(e['actorName'])}
+                                              by {String(e.actorName)}
                                             </div>
                                           )}
                                       </div>
@@ -6271,13 +6056,13 @@ export default function ProjectDetail() {
       </div>
 
       <StageEditDrawer
-        projectId={id!}
+        projectId={id ?? ''}
         stage={editStage}
         open={stageDrawer}
         onClose={() => {
           setStageDrawer(false)
         }}
-        onSaved={() => refetch()}
+        onSaved={() => void refetch()}
         teamMembers={liveTeam.map((m) => ({
           id: m.id,
           employeeId: m.employee_id,
@@ -6288,1885 +6073,11 @@ export default function ProjectDetail() {
       />
       {showMRForm && (
         <ManufacturingRequestForm
-          projectId={id!}
-          onClose={() => setShowMRForm(false)}
-          onCreated={() => refetchMRs()}
+          projectId={id ?? ''}
+          onClose={() => { setShowMRForm(false); }}
+          onCreated={() => void refetchMRs()}
         />
       )}
-    </div>
-  )
-}
-
-// ── RFQ Scope-of-Work Tab ──────────────────────────────────────────────────
-
-interface RFQLine {
-  id?: string
-  sequence: number
-  phaseLabel: string
-  description: string
-  quantity: string
-  unit: string
-  estimatedUnitCost: string
-  bidUnitPrice: string
-  notes: string
-}
-
-function blankLine(seq: number): RFQLine {
-  return {
-    sequence: seq,
-    phaseLabel: '',
-    description: '',
-    quantity: '',
-    unit: '',
-    estimatedUnitCost: '',
-    bidUnitPrice: '',
-    notes: '',
-  }
-}
-
-function RFQLinesTab({
-  projectId: _projectId,
-  lines: serverLines,
-  isEditable,
-  saving,
-  onSave,
-  theme,
-  rfqEstimatedCost,
-  rfqOutcome,
-  rfqOutcomeReason,
-}: {
-  projectId: string
-  lines: Record<string, unknown>[]
-  isEditable: boolean
-  saving: boolean
-  onSave: (
-    lines: Array<{
-      sequence: number
-      phaseLabel?: string
-      description: string
-      quantity?: number
-      unit?: string
-      estimatedUnitCost?: number
-      bidUnitPrice?: number
-      notes?: string
-    }>,
-  ) => void
-  theme: ReturnType<typeof useTheme>['theme']
-  rfqEstimatedCost?: number | null
-  rfqOutcome?: string | null
-  rfqOutcomeReason?: string | null
-}) {
-  const [rows, setRows] = React.useState<RFQLine[]>([blankLine(0)])
-  const [dirty, setDirty] = React.useState(false)
-  const hasLoadedRef = React.useRef(false)
-
-  React.useEffect(() => {
-    if (serverLines.length > 0) {
-      hasLoadedRef.current = true
-      setRows(
-        serverLines.map((l) => ({
-          id: String(l['id'] ?? ''),
-          sequence: parseInt(String(l['sequence'] ?? 0)),
-          phaseLabel: String(l['phaseLabel'] ?? ''),
-          description: String(l['description'] ?? ''),
-          quantity: l['quantity'] != null ? String(l['quantity']) : '',
-          unit: String(l['unit'] ?? ''),
-          estimatedUnitCost: l['estimatedUnitCost'] != null ? String(l['estimatedUnitCost']) : '',
-          bidUnitPrice: l['bidUnitPrice'] != null ? String(l['bidUnitPrice']) : '',
-          notes: String(l['notes'] ?? ''),
-        })),
-      )
-      setDirty(false)
-    } else if (!hasLoadedRef.current) {
-      setRows([blankLine(0)])
-      setDirty(false)
-    }
-    // if hasLoadedRef.current is true and serverLines is transiently empty (Apollo refetch in-flight),
-    // leave rows unchanged to avoid flickering back to blank
-  }, [serverLines])
-
-  const update = (i: number, key: keyof RFQLine, val: string) => {
-    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)))
-    setDirty(true)
-  }
-
-  const addRow = () => {
-    setRows((prev) => [...prev, blankLine(prev.length)])
-    setDirty(true)
-  }
-  const removeRow = (i: number) => {
-    setRows((prev) => prev.filter((_, idx) => idx !== i))
-    setDirty(true)
-  }
-
-  const handleSave = () => {
-    const payload = rows
-      .filter((r) => r.description.trim())
-      .map((r, idx) => ({
-        sequence: idx,
-        phaseLabel: r.phaseLabel.trim() || undefined,
-        description: r.description.trim(),
-        quantity: r.quantity ? parseFloat(r.quantity) : undefined,
-        unit: r.unit || undefined,
-        estimatedUnitCost: r.estimatedUnitCost ? parseFloat(r.estimatedUnitCost) : undefined,
-        bidUnitPrice: r.bidUnitPrice ? parseFloat(r.bidUnitPrice) : undefined,
-        notes: r.notes || undefined,
-      }))
-    onSave(payload)
-    setDirty(false)
-  }
-
-  const totalEstimated = rows.reduce((s, r) => {
-    const qty = parseFloat(r.quantity || '1')
-    const cost = parseFloat(r.estimatedUnitCost || '0')
-    return s + qty * cost
-  }, 0)
-  const totalBid = rows.reduce((s, r) => {
-    const qty = parseFloat(r.quantity || '1')
-    const price = parseFloat(r.bidUnitPrice || '0')
-    return s + qty * price
-  }, 0)
-
-  const outcomeColors: Record<string, string> = {
-    won: '#16a34a',
-    lost: '#ef4444',
-    withdrawn: '#f59e0b',
-  }
-  const cellStyle: React.CSSProperties = {
-    padding: '4px 6px',
-    fontSize: '12px',
-    border: `1px solid ${theme.border}`,
-    borderRadius: '5px',
-    background: theme.bgCanvas,
-    color: theme.textPrimary,
-    width: '100%',
-    boxSizing: 'border-box',
-  }
-
-  // Read-only view groups rows by phase label with a divider on the first row of each
-  // new group (editable view shows phaseLabel per-row via the field itself, ungrouped).
-  const newPhaseGroupRows = new Set<RFQLine>()
-  if (!isEditable) {
-    rows.forEach((r, i) => {
-      const prevPhase = i > 0 ? rows[i - 1].phaseLabel.trim() : null
-      const thisPhase = r.phaseLabel.trim()
-      if (thisPhase && thisPhase !== prevPhase) newPhaseGroupRows.add(r)
-    })
-  }
-
-  const lineFields: LineItemField<RFQLine>[] = [
-    {
-      key: 'index',
-      label: '#',
-      width: '32px',
-      render: (_row, i) => (
-        <span style={{ color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
-      ),
-    },
-    {
-      key: 'phaseLabel',
-      label: 'Phase / Group',
-      width: '120px',
-      render: (row, i) =>
-        isEditable ? (
-          <input
-            style={cellStyle}
-            value={row.phaseLabel}
-            onChange={(e) => update(i, 'phaseLabel', e.target.value)}
-            placeholder="e.g. Light Gauge"
-          />
-        ) : (
-          <span style={{ fontSize: '11px', color: theme.accent, fontWeight: 500 }}>
-            {row.phaseLabel || ''}
-          </span>
-        ),
-    },
-    {
-      key: 'description',
-      label: 'Description *',
-      render: (row, i) =>
-        isEditable ? (
-          <input
-            style={cellStyle}
-            value={row.description}
-            onChange={(e) => update(i, 'description', e.target.value)}
-            placeholder="Describe item or deliverable…"
-          />
-        ) : (
-          <span style={{ color: theme.textPrimary }}>{row.description}</span>
-        ),
-    },
-    {
-      key: 'quantity',
-      label: 'Qty',
-      width: '80px',
-      render: (row, i) =>
-        isEditable ? (
-          <input
-            style={cellStyle}
-            type="number"
-            min="0"
-            step="any"
-            value={row.quantity}
-            onChange={(e) => update(i, 'quantity', e.target.value)}
-            placeholder="0"
-          />
-        ) : (
-          <span style={{ color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>
-            {row.quantity || '—'}
-          </span>
-        ),
-    },
-    {
-      key: 'unit',
-      label: 'Unit',
-      width: '80px',
-      render: (row, i) =>
-        isEditable ? (
-          <input
-            style={cellStyle}
-            value={row.unit}
-            onChange={(e) => update(i, 'unit', e.target.value)}
-            placeholder="pcs"
-          />
-        ) : (
-          <span style={{ color: theme.textMuted }}>{row.unit || '—'}</span>
-        ),
-    },
-    {
-      key: 'estimatedUnitCost',
-      label: 'Est. Cost/Unit',
-      width: '120px',
-      render: (row, i) =>
-        isEditable ? (
-          <input
-            style={cellStyle}
-            type="number"
-            min="0"
-            step="any"
-            value={row.estimatedUnitCost}
-            onChange={(e) => update(i, 'estimatedUnitCost', e.target.value)}
-            placeholder="0.00"
-          />
-        ) : (
-          <span style={{ color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>
-            {row.estimatedUnitCost || '—'}
-          </span>
-        ),
-    },
-    {
-      key: 'bidUnitPrice',
-      label: 'Bid Price/Unit',
-      width: '120px',
-      render: (row, i) =>
-        isEditable ? (
-          <input
-            style={cellStyle}
-            type="number"
-            min="0"
-            step="any"
-            value={row.bidUnitPrice}
-            onChange={(e) => update(i, 'bidUnitPrice', e.target.value)}
-            placeholder="0.00"
-          />
-        ) : (
-          <span
-            style={{
-              color: theme.textPrimary,
-              fontVariantNumeric: 'tabular-nums',
-              fontWeight: 500,
-            }}
-          >
-            {row.bidUnitPrice || '—'}
-          </span>
-        ),
-    },
-    {
-      key: 'notes',
-      label: 'Notes',
-      render: (row, i) =>
-        isEditable ? (
-          <input
-            style={cellStyle}
-            value={row.notes}
-            onChange={(e) => update(i, 'notes', e.target.value)}
-            placeholder="Optional notes…"
-          />
-        ) : (
-          <span style={{ color: theme.textMuted }}>{row.notes || '—'}</span>
-        ),
-    },
-  ]
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* Outcome banner */}
-      {rfqOutcome && (
-        <div
-          style={{
-            padding: '10px 16px',
-            borderRadius: '8px',
-            background: `${outcomeColors[rfqOutcome] ?? theme.border}22`,
-            border: `1px solid ${outcomeColors[rfqOutcome] ?? theme.border}`,
-            fontSize: '13px',
-            color: outcomeColors[rfqOutcome] ?? theme.textMuted,
-            display: 'flex',
-            gap: '8px',
-            alignItems: 'center',
-          }}
-        >
-          <span style={{ fontWeight: 600 }}>
-            RFQ Outcome: {rfqOutcome.charAt(0).toUpperCase() + rfqOutcome.slice(1)}
-          </span>
-          {rfqOutcomeReason && <span>— {rfqOutcomeReason}</span>}
-        </div>
-      )}
-
-      {/* Summary row */}
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-        {[
-          ...(rfqEstimatedCost != null
-            ? [
-                {
-                  label: 'Internal Estimate',
-                  sub: 'from project form',
-                  value: rfqEstimatedCost,
-                  color: theme.textMuted,
-                },
-              ]
-            : []),
-          {
-            label: 'Scope Cost',
-            sub: 'qty × est. cost/unit',
-            value: totalEstimated,
-            color: '#f59e0b',
-          },
-          { label: 'Bid Total', sub: 'qty × bid price/unit', value: totalBid, color: theme.accent },
-        ].map(({ label, sub, value, color }) => (
-          <div
-            key={label}
-            style={{
-              background: theme.bgSurface,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
-              padding: '10px 14px',
-              minWidth: '160px',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '11px',
-                color: theme.textMuted,
-                fontWeight: 600,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              {label}
-            </div>
-            <div
-              style={{
-                fontSize: '18px',
-                fontWeight: 700,
-                color,
-                fontVariantNumeric: 'tabular-nums',
-                marginTop: '2px',
-              }}
-            >
-              {value.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </div>
-            <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '1px' }}>{sub}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Lines table */}
-      <LineItemEditor
-        fields={lineFields}
-        rows={rows}
-        rowKey={(row, i) => row.id || String(i)}
-        getRowStyle={(row) =>
-          newPhaseGroupRows.has(row) ? { borderTop: `2px solid ${theme.accent}` } : {}
-        }
-        onRemoveRow={
-          isEditable
-            ? (i) => {
-                removeRow(i)
-              }
-            : undefined
-        }
-        emptyMessage="No scope lines yet"
-      />
-
-      {isEditable && (
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={addRow}
-            style={{
-              padding: '6px 14px',
-              borderRadius: '7px',
-              border: `1px dashed ${theme.border}`,
-              background: 'transparent',
-              color: theme.textMuted,
-              cursor: 'pointer',
-              fontSize: '13px',
-            }}
-          >
-            + Add Line
-          </button>
-          <button
-            disabled={!dirty || saving}
-            onClick={handleSave}
-            style={{
-              padding: '6px 16px',
-              borderRadius: '7px',
-              border: 'none',
-              background: dirty ? theme.accent : theme.border,
-              color: '#fff',
-              cursor: dirty && !saving ? 'pointer' : 'not-allowed',
-              fontSize: '13px',
-              fontWeight: 500,
-            }}
-          >
-            {saving ? 'Saving…' : 'Save Scope'}
-          </button>
-        </div>
-      )}
-
-      {/* Phase breakdown — only shown when at least one line has a phase label */}
-      {(() => {
-        const phaseMap = new Map<string, { scopeCost: number; bidTotal: number; count: number }>()
-        for (const r of rows) {
-          const label = r.phaseLabel.trim() || '(Unassigned)'
-          const qty = parseFloat(r.quantity || '0') || 0
-          const cost = parseFloat(r.estimatedUnitCost || '0') || 0
-          const bid = parseFloat(r.bidUnitPrice || '0') || 0
-          const existing = phaseMap.get(label) ?? { scopeCost: 0, bidTotal: 0, count: 0 }
-          phaseMap.set(label, {
-            scopeCost: existing.scopeCost + qty * cost,
-            bidTotal: existing.bidTotal + qty * bid,
-            count: existing.count + 1,
-          })
-        }
-        const hasPhases = [...phaseMap.keys()].some((k) => k !== '(Unassigned)')
-        if (!hasPhases) return null
-        const phases = [...phaseMap.entries()]
-        const phaseRows = phases.map(([label, v]) => ({ label, ...v }))
-        const phaseColumns: Column<{
-          label: string
-          scopeCost: number
-          bidTotal: number
-          count: number
-        }>[] = [
-          {
-            key: 'label',
-            header: 'Phase / Group',
-            mobilePrimary: true,
-            render: (row) => (
-              <span
-                style={{
-                  fontWeight: row.label === '(Unassigned)' ? 400 : 600,
-                  color: row.label === '(Unassigned)' ? theme.textMuted : theme.textPrimary,
-                }}
-              >
-                {row.label}
-              </span>
-            ),
-          },
-          {
-            key: 'count',
-            header: 'Lines',
-            mobilePriority: 3,
-            render: (row) => <span style={{ color: theme.textMuted }}>{row.count}</span>,
-          },
-          {
-            key: 'scopeCost',
-            header: 'Scope Cost',
-            mobilePriority: 1,
-            render: (row) => (
-              <span style={{ fontVariantNumeric: 'tabular-nums', color: '#f59e0b' }}>
-                {row.scopeCost.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </span>
-            ),
-          },
-          {
-            key: 'bidTotal',
-            header: 'Bid Total',
-            mobilePriority: 2,
-            render: (row) => (
-              <span
-                style={{ fontVariantNumeric: 'tabular-nums', color: theme.accent, fontWeight: 600 }}
-              >
-                {row.bidTotal.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </span>
-            ),
-          },
-        ]
-        return (
-          <div
-            style={{
-              background: theme.bgSurface,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '10px',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                padding: '10px 14px',
-                fontSize: '10px',
-                fontWeight: 700,
-                color: theme.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                borderBottom: `1px solid ${theme.border}`,
-              }}
-            >
-              Phase Breakdown {isEditable ? '' : '— stages auto-created on approval'}
-            </div>
-            <Table columns={phaseColumns} data={phaseRows} rowKey="label" />
-          </div>
-        )
-      })()}
-    </div>
-  )
-}
-
-// ── RFQ Phases Tab ───────────────────────────────────────────────────────────
-
-interface RFQPhaseFile {
-  id: string
-  fileId: string
-  filename: string
-  mimeType: string
-  sizeBytes: number
-  title: string | null
-  description: string | null
-  createdAt: string
-  downloadUrl: string | null
-}
-interface RFQPhaseData {
-  id: string
-  projectId: string
-  phaseType: string
-  serviceType: string
-  status: string
-  notes: string | null
-  sequence: number
-  fileCount: number
-  files: RFQPhaseFile[]
-}
-
-const PHASE_META: Record<string, { label: string; icon: string; description: string }> = {
-  engineering: {
-    label: 'Engineering',
-    icon: '⚙',
-    description: 'Technical scope, drawings, specs & site surveys',
-  },
-  pricing: {
-    label: 'Pricing',
-    icon: '💰',
-    description: 'Cost estimation, supplier quotes & margin analysis',
-  },
-  executing: {
-    label: 'Executing',
-    icon: '📋',
-    description: 'Final commercial offer, work schedule & contract terms',
-  },
-}
-
-function serviceTypeBadge(serviceType: string, theme: ReturnType<typeof useTheme>['theme']) {
-  const cfg =
-    serviceType === 'commercial'
-      ? { label: 'Commercial', bg: '#7c3aed18', color: '#7c3aed' }
-      : serviceType === 'both'
-        ? { label: 'Technical + Commercial', bg: '#05966918', color: '#059669' }
-        : { label: 'Technical', bg: `${theme.accent}18`, color: theme.accent }
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 8px',
-        borderRadius: '999px',
-        fontSize: '10px',
-        fontWeight: 700,
-        textTransform: 'uppercase' as const,
-        letterSpacing: '0.05em',
-        background: cfg.bg,
-        color: cfg.color,
-      }}
-    >
-      {cfg.label}
-    </span>
-  )
-}
-
-function phaseStatusBadge(status: string) {
-  const cfg =
-    status === 'complete'
-      ? { label: 'Complete', bg: '#05966918', color: '#059669' }
-      : status === 'in_progress'
-        ? { label: 'In Progress', bg: '#f59e0b18', color: '#f59e0b' }
-        : { label: 'Pending', bg: '#6b728018', color: '#6b7280' }
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px',
-        padding: '2px 8px',
-        borderRadius: '999px',
-        fontSize: '10px',
-        fontWeight: 700,
-        textTransform: 'uppercase' as const,
-        letterSpacing: '0.05em',
-        background: cfg.bg,
-        color: cfg.color,
-      }}
-    >
-      <span
-        style={{
-          width: '5px',
-          height: '5px',
-          borderRadius: '50%',
-          background: cfg.color,
-          display: 'inline-block',
-        }}
-      />
-      {cfg.label}
-    </span>
-  )
-}
-
-function fileIcon(mimeType: string) {
-  if (
-    mimeType.includes('spreadsheet') ||
-    mimeType.includes('excel') ||
-    mimeType === 'application/vnd.ms-excel'
-  )
-    return { icon: '📊', color: '#16a34a' }
-  if (mimeType === 'application/pdf') return { icon: '📄', color: '#dc2626' }
-  if (mimeType.includes('word') || mimeType.includes('document'))
-    return { icon: '📝', color: '#2563eb' }
-  if (mimeType.startsWith('image/')) return { icon: '🖼', color: '#7c3aed' }
-  return { icon: '📎', color: '#6b7280' }
-}
-
-function PlaceholderTab({
-  icon,
-  title,
-  description,
-  badge,
-}: {
-  icon: string
-  title: string
-  description: string
-  badge?: string
-}) {
-  const { theme } = useTheme()
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '60px 24px',
-        textAlign: 'center',
-        gap: '12px',
-      }}
-    >
-      <div style={{ fontSize: '48px', lineHeight: 1 }}>{icon}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <h2 style={{ fontSize: '20px', fontWeight: 700, color: theme.textPrimary, margin: 0 }}>
-          {title}
-        </h2>
-        {badge && (
-          <span
-            style={{
-              padding: '2px 10px',
-              borderRadius: '999px',
-              background: theme.accentBg,
-              color: theme.accent,
-              fontSize: '11px',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-            }}
-          >
-            {badge}
-          </span>
-        )}
-      </div>
-      <p
-        style={{
-          fontSize: '14px',
-          color: theme.textMuted,
-          maxWidth: '480px',
-          lineHeight: 1.6,
-          margin: 0,
-        }}
-      >
-        {description}
-      </p>
-    </div>
-  )
-}
-
-function RFQPhasesTab({
-  projectId,
-  isReadOnly,
-  theme,
-  serviceSection,
-}: {
-  projectId: string
-  isReadOnly: boolean
-  theme: ReturnType<typeof useTheme>['theme']
-  serviceSection?: 'technical' | 'commercial'
-}) {
-  const { data, loading, refetch } = useQuery(RFQ_PHASES_QUERY, {
-    variables: { projectId },
-    fetchPolicy: 'cache-and-network',
-  })
-  const [updateRFQPhase] = useMutation(UPDATE_RFQ_PHASE)
-  const addToast = useToastStore((s) => s.addToast)
-
-  const fileInputRef = React.useRef<HTMLInputElement>(null)
-
-  const allPhases: RFQPhaseData[] = data?.rfqPhases ?? []
-  const phases = serviceSection
-    ? allPhases.filter((ph) => ph.serviceType === serviceSection || ph.serviceType === 'both')
-    : allPhases
-  const [selectedType, setSelectedType] = React.useState<string>('engineering')
-  const [noteDraft, setNoteDraft] = React.useState<Record<string, string>>({})
-  const [savingNote, setSavingNote] = React.useState(false)
-
-  // Upload modal state
-  const [pendingFile, setPendingFile] = React.useState<{ file: File; phase: RFQPhaseData } | null>(
-    null,
-  )
-  const [uploadTitle, setUploadTitle] = React.useState('')
-  const [uploadDesc, setUploadDesc] = React.useState('')
-  const [uploading, setUploading] = React.useState(false)
-
-  // Preview lightbox state
-  const [previewIndex, setPreviewIndex] = React.useState<number | null>(null)
-
-  const selected = phases.find((p) => p.phaseType === selectedType) ?? null
-  const doneCount = phases.filter((p) => p.status === 'complete').length
-
-  // Keyboard nav for preview lightbox
-  React.useEffect(() => {
-    if (previewIndex === null) return
-    const files = selected?.files ?? []
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPreviewIndex(null)
-      if (e.key === 'ArrowRight')
-        setPreviewIndex((i) => (i !== null ? Math.min(i + 1, files.length - 1) : null))
-      if (e.key === 'ArrowLeft') setPreviewIndex((i) => (i !== null ? Math.max(i - 1, 0) : null))
-    }
-    window.addEventListener('keydown', handler)
-    return () => {
-      window.removeEventListener('keydown', handler)
-    }
-  }, [previewIndex, selected])
-
-  const handleStatusChange = async (phase: RFQPhaseData, status: string) => {
-    try {
-      await updateRFQPhase({ variables: { id: phase.id, status } })
-      void refetch()
-    } catch {
-      addToast({ type: 'error', message: 'Failed to update status' })
-    }
-  }
-
-  const handleSaveNote = async (phase: RFQPhaseData) => {
-    setSavingNote(true)
-    try {
-      await updateRFQPhase({ variables: { id: phase.id, notes: noteDraft[phase.id] ?? '' } })
-      void refetch()
-      addToast({ type: 'success', message: 'Notes saved' })
-    } catch {
-      addToast({ type: 'error', message: 'Failed to save notes' })
-    } finally {
-      setSavingNote(false)
-    }
-  }
-
-  const openUploadModal = (phase: RFQPhaseData, file: File) => {
-    setPendingFile({ file, phase })
-    setUploadTitle(file.name.replace(/\.[^.]+$/, ''))
-    setUploadDesc('')
-  }
-
-  const confirmUpload = async () => {
-    if (!pendingFile) return
-    const { file, phase } = pendingFile
-    setUploading(true)
-    try {
-      const { data: urlData } = await api.post<{ uploadUrl: string; fileId: string }>(
-        '/files/upload-url',
-        {
-          filename: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          sizeBytes: file.size,
-          category: 'attachment',
-        },
-      )
-      const buf = await file.arrayBuffer()
-      await api.post(`/files/${urlData.fileId}/content`, buf, {
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      })
-      await api.post('/files/attach', {
-        fileId: urlData.fileId,
-        entityType: 'rfq_phase',
-        entityId: phase.id,
-        label: uploadTitle.trim() || file.name,
-        description: uploadDesc.trim() || null,
-      })
-      void refetch()
-      setPendingFile(null)
-      addToast({ type: 'success', message: `${uploadTitle || file.name} uploaded` })
-    } catch {
-      addToast({ type: 'error', message: 'Upload failed' })
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const handleDelete = async (attachmentId: string) => {
-    try {
-      await api.delete(`/files/attachments/${attachmentId}`)
-      void refetch()
-    } catch {
-      addToast({ type: 'error', message: 'Failed to delete file' })
-    }
-  }
-
-  const handleDownload = (file: RFQPhaseFile) => {
-    const url = file.downloadUrl
-    if (!url) {
-      addToast({ type: 'error', message: 'Download URL unavailable' })
-      return
-    }
-    const a = document.createElement('a')
-    a.href = url
-    a.download = file.filename
-    a.click()
-  }
-
-  const onDrop = (phase: RFQPhaseData) => (e: React.DragEvent) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    if (file) openUploadModal(phase, file)
-  }
-
-  if (loading && phases.length === 0)
-    return (
-      <div style={{ color: theme.textMuted, fontSize: '13px', padding: '24px 0' }}>Loading…</div>
-    )
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* Progress bar */}
-      <div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '6px',
-          }}
-        >
-          <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
-            Bid Preparation Progress
-          </span>
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>
-            {doneCount} / {phases.length} phases complete
-          </span>
-        </div>
-        <div
-          style={{
-            height: '6px',
-            borderRadius: '999px',
-            background: theme.border,
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              height: '100%',
-              borderRadius: '999px',
-              background: theme.accent,
-              width: `${(doneCount / Math.max(phases.length, 1)) * 100}%`,
-              transition: 'width 0.4s',
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Phase selector */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-        {phases.map((phase) => {
-          const meta = PHASE_META[phase.phaseType] ?? {
-            label: phase.phaseType,
-            icon: '📌',
-            description: '',
-          }
-          const active = phase.phaseType === selectedType
-          return (
-            <button
-              key={phase.phaseType}
-              onClick={() => {
-                setSelectedType(phase.phaseType)
-                setNoteDraft((d) => ({ ...d, [phase.id]: phase.notes ?? '' }))
-              }}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-                padding: '12px',
-                borderRadius: '10px',
-                border: `2px solid ${active ? theme.accent : theme.border}`,
-                background: active ? theme.accentBg : theme.bgSurface,
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>{meta.icon}</span>
-                {phaseStatusBadge(phase.status)}
-              </div>
-              <div
-                style={{
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: active ? theme.accent : theme.textPrimary,
-                }}
-              >
-                {meta.label}
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  flexWrap: 'wrap' as const,
-                }}
-              >
-                {serviceTypeBadge(phase.serviceType, theme)}
-                <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                  {phase.fileCount} file{phase.fileCount !== 1 ? 's' : ''}
-                </span>
-              </div>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Selected phase detail */}
-      {selected &&
-        (() => {
-          const meta = PHASE_META[selected.phaseType] ?? {
-            label: selected.phaseType,
-            icon: '📌',
-            description: '',
-          }
-          const noteVal = noteDraft[selected.id] ?? selected.notes ?? ''
-          const noteDirty = noteVal !== (selected.notes ?? '')
-          return (
-            <div
-              style={{
-                background: theme.bgSurface,
-                border: `1px solid ${theme.border}`,
-                borderRadius: '10px',
-                overflow: 'hidden',
-              }}
-            >
-              {/* Phase header */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '12px 16px',
-                  background: theme.bgCanvas,
-                  borderBottom: `1px solid ${theme.border}`,
-                }}
-              >
-                <span style={{ fontSize: '20px' }}>{meta.icon}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
-                    {meta.label} Phase
-                  </div>
-                  <div style={{ fontSize: '11px', color: theme.textMuted }}>{meta.description}</div>
-                </div>
-                {serviceTypeBadge(selected.serviceType, theme)}
-                {/* Status selector */}
-                {!isReadOnly && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '7px',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {(['pending', 'in_progress', 'complete'] as const).map((s) => {
-                      const labels: Record<string, string> = {
-                        pending: 'Pending',
-                        in_progress: 'In Progress',
-                        complete: 'Complete',
-                      }
-                      const active = selected.status === s
-                      return (
-                        <button
-                          key={s}
-                          onClick={() => void handleStatusChange(selected, s)}
-                          style={{
-                            padding: '5px 10px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            border: 'none',
-                            cursor: 'pointer',
-                            background: active ? theme.accent : theme.bgCanvas,
-                            color: active ? '#fff' : theme.textMuted,
-                          }}
-                        >
-                          {labels[s]}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-                {isReadOnly && phaseStatusBadge(selected.status)}
-              </div>
-
-              {/* Notes */}
-              <div style={{ padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
-                <div
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: theme.textMuted,
-                    textTransform: 'uppercase' as const,
-                    letterSpacing: '0.05em',
-                    marginBottom: '6px',
-                  }}
-                >
-                  Notes
-                </div>
-                {isReadOnly ? (
-                  <div
-                    style={{ fontSize: '13px', color: theme.textPrimary, whiteSpace: 'pre-wrap' }}
-                  >
-                    {selected.notes || <span style={{ color: theme.textMuted }}>—</span>}
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <textarea
-                      value={noteVal}
-                      onChange={(e) =>
-                        setNoteDraft((d) => ({ ...d, [selected.id]: e.target.value }))
-                      }
-                      placeholder="Add notes for this phase…"
-                      rows={3}
-                      style={{
-                        width: '100%',
-                        padding: '8px 10px',
-                        borderRadius: '7px',
-                        border: `1px solid ${theme.borderInput}`,
-                        background: theme.bgCanvas,
-                        color: theme.textPrimary,
-                        fontSize: '13px',
-                        resize: 'vertical',
-                        boxSizing: 'border-box' as const,
-                      }}
-                    />
-                    {noteDirty && (
-                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          loading={savingNote}
-                          onClick={() => void handleSaveNote(selected)}
-                        >
-                          Save Notes
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Files */}
-              <div style={{ padding: '14px 16px' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '10px',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: theme.textMuted,
-                      textTransform: 'uppercase' as const,
-                      letterSpacing: '0.05em',
-                    }}
-                  >
-                    Files ({selected.fileCount})
-                  </div>
-                  {!isReadOnly && (
-                    <>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        style={{ display: 'none' }}
-                        accept=".xlsx,.xls,.pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.dwg,.dxf,.csv"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0]
-                          if (f && selected) openUploadModal(selected, f)
-                          e.target.value = ''
-                        }}
-                      />
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        loading={uploading}
-                        onClick={() => !uploading && fileInputRef.current?.click()}
-                      >
-                        + Upload
-                      </Button>
-                    </>
-                  )}
-                </div>
-
-                {selected.files.length === 0 ? (
-                  !isReadOnly ? (
-                    <div
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={onDrop(selected)}
-                      style={{
-                        border: `2px dashed ${theme.border}`,
-                        borderRadius: '8px',
-                        padding: '32px',
-                        textAlign: 'center',
-                        color: theme.textMuted,
-                        fontSize: '13px',
-                      }}
-                    >
-                      Drop files here or click Upload
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        fontSize: '13px',
-                        color: theme.textMuted,
-                        textAlign: 'center',
-                        padding: '24px 0',
-                      }}
-                    >
-                      No files yet.
-                    </div>
-                  )
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {selected.files.map((file, idx) => {
-                      const { icon, color } = fileIcon(file.mimeType)
-                      return (
-                        <div
-                          key={file.id}
-                          onClick={() => setPreviewIndex(idx)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'stretch',
-                            borderRadius: '10px',
-                            border: `1px solid ${theme.border}`,
-                            background: theme.bgSurface,
-                            overflow: 'hidden',
-                            cursor: 'pointer',
-                            transition: 'border-color 0.15s, box-shadow 0.15s',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = color
-                            e.currentTarget.style.boxShadow = `0 0 0 3px ${color}18`
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = theme.border
-                            e.currentTarget.style.boxShadow = 'none'
-                          }}
-                        >
-                          {/* Left accent stripe */}
-                          <div style={{ width: '4px', background: color, flexShrink: 0 }} />
-
-                          {/* Body */}
-                          <div style={{ flex: 1, padding: '12px 14px', minWidth: 0 }}>
-                            {/* Title row */}
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                marginBottom: file.description ? '5px' : '4px',
-                              }}
-                            >
-                              <span style={{ fontSize: '16px', lineHeight: 1, flexShrink: 0 }}>
-                                {icon}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: '13px',
-                                  fontWeight: 600,
-                                  color: theme.textPrimary,
-                                  flex: 1,
-                                  minWidth: 0,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap' as const,
-                                }}
-                              >
-                                {file.title || file.filename}
-                              </span>
-                              <span
-                                style={{ fontSize: '11px', color: theme.textMuted, flexShrink: 0 }}
-                              >
-                                {formatBytes(file.sizeBytes)}
-                              </span>
-                            </div>
-                            {/* Description */}
-                            {file.description && (
-                              <div
-                                style={{
-                                  fontSize: '12px',
-                                  color: theme.textMuted,
-                                  lineHeight: 1.5,
-                                  marginBottom: '6px',
-                                  paddingLeft: '24px',
-                                }}
-                              >
-                                {file.description}
-                              </div>
-                            )}
-                            {/* Filename + actions */}
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                paddingLeft: '24px',
-                              }}
-                            >
-                              <span
-                                style={{
-                                  flex: 1,
-                                  fontSize: '10px',
-                                  color: theme.textMuted,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap' as const,
-                                  opacity: 0.7,
-                                }}
-                              >
-                                {file.filename}
-                              </span>
-                              <button
-                                onClick={() => handleDownload(file)}
-                                title="Download"
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '3px',
-                                  padding: '3px 8px',
-                                  borderRadius: '5px',
-                                  border: `1px solid ${theme.border}`,
-                                  background: theme.bgCanvas,
-                                  color: theme.textMuted,
-                                  cursor: 'pointer',
-                                  fontSize: '11px',
-                                  flexShrink: 0,
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.borderColor = color
-                                  e.currentTarget.style.color = color
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.borderColor = theme.border
-                                  e.currentTarget.style.color = theme.textMuted
-                                }}
-                              >
-                                <svg
-                                  width="11"
-                                  height="11"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2.5"
-                                >
-                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                  <polyline points="7 10 12 15 17 10" />
-                                  <line x1="12" y1="15" x2="12" y2="3" />
-                                </svg>
-                                Download
-                              </button>
-                              {!isReadOnly && (
-                                <button
-                                  onClick={() => void handleDelete(file.id)}
-                                  title="Remove"
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: '3px 6px',
-                                    borderRadius: '5px',
-                                    border: `1px solid transparent`,
-                                    background: 'transparent',
-                                    color: theme.textMuted,
-                                    cursor: 'pointer',
-                                    flexShrink: 0,
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = '#ef444415'
-                                    e.currentTarget.style.color = '#ef4444'
-                                    e.currentTarget.style.borderColor = '#ef444430'
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = 'transparent'
-                                    e.currentTarget.style.color = theme.textMuted
-                                    e.currentTarget.style.borderColor = 'transparent'
-                                  }}
-                                >
-                                  <svg
-                                    width="12"
-                                    height="12"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                  >
-                                    <polyline points="3 6 5 6 21 6" />
-                                    <path d="M19 6l-1 14H6L5 6" />
-                                    <path d="M9 6V4h6v2" />
-                                  </svg>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })()}
-
-      {/* Preview lightbox */}
-      {previewIndex !== null &&
-        selected &&
-        (() => {
-          const files = selected.files
-          const file = files[previewIndex]
-          if (!file) return null
-          const { icon, color } = fileIcon(file.mimeType)
-          const isImage = file.mimeType.startsWith('image/')
-          const isPdf = file.mimeType === 'application/pdf'
-          const canPreview = (isImage || isPdf) && !!file.downloadUrl
-          return (
-            <div
-              style={{
-                position: 'fixed',
-                inset: 0,
-                zIndex: 1000,
-                display: 'flex',
-                alignItems: 'stretch',
-                background: 'rgba(0,0,0,0.75)',
-              }}
-              onClick={() => setPreviewIndex(null)}
-            >
-              {/* Left nav */}
-              <div
-                style={{ display: 'flex', alignItems: 'center', padding: '0 8px', flexShrink: 0 }}
-              >
-                <button
-                  disabled={previewIndex === 0}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setPreviewIndex((i) => (i !== null ? Math.max(i - 1, 0) : 0))
-                  }}
-                  style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '50%',
-                    border: 'none',
-                    background:
-                      previewIndex === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)',
-                    color: '#fff',
-                    fontSize: '18px',
-                    cursor: previewIndex === 0 ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  ‹
-                </button>
-              </div>
-
-              {/* Main panel */}
-              <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  margin: '24px 0',
-                  background: theme.bgCanvas,
-                  borderRadius: '12px',
-                  overflow: 'hidden',
-                  maxWidth: '900px',
-                  marginLeft: 'auto',
-                  marginRight: 'auto',
-                }}
-              >
-                {/* Header */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '14px 18px',
-                    borderBottom: `1px solid ${theme.border}`,
-                    flexShrink: 0,
-                  }}
-                >
-                  <span style={{ fontSize: '22px' }}>{icon}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        color: theme.textPrimary,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {file.title || file.filename}
-                    </div>
-                    {file.description && (
-                      <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                        {file.description}
-                      </div>
-                    )}
-                  </div>
-                  <span style={{ fontSize: '12px', color: theme.textMuted, flexShrink: 0 }}>
-                    {previewIndex + 1} / {files.length}
-                  </span>
-                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    <button
-                      onClick={() => handleDownload(file)}
-                      title="Download"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        padding: '6px 12px',
-                        borderRadius: '7px',
-                        border: `1px solid ${theme.border}`,
-                        background: theme.bgSurface,
-                        color: theme.textPrimary,
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        fontWeight: 500,
-                      }}
-                    >
-                      <svg
-                        width="13"
-                        height="13"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="7 10 12 15 17 10" />
-                        <line x1="12" y1="15" x2="12" y2="3" />
-                      </svg>
-                      Download
-                    </button>
-                    {!isReadOnly && (
-                      <button
-                        onClick={() => {
-                          void handleDelete(file.id)
-                          setPreviewIndex(null)
-                        }}
-                        title="Delete"
-                        style={{
-                          padding: '6px 10px',
-                          borderRadius: '7px',
-                          border: '1px solid #ef444440',
-                          background: '#ef444410',
-                          color: '#ef4444',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          display: 'flex',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <svg
-                          width="13"
-                          height="13"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6l-1 14H6L5 6" />
-                          <path d="M10 11v6" />
-                          <path d="M14 11v6" />
-                          <path d="M9 6V4h6v2" />
-                        </svg>
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setPreviewIndex(null)}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '7px',
-                        border: `1px solid ${theme.border}`,
-                        background: theme.bgSurface,
-                        color: theme.textMuted,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                      >
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Preview body */}
-                <div
-                  style={{
-                    flex: 1,
-                    overflow: 'hidden',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: theme.bgSurface,
-                    minHeight: 0,
-                  }}
-                >
-                  {canPreview && isImage && (
-                    <img
-                      src={file.downloadUrl!}
-                      alt={file.title || file.filename}
-                      style={{
-                        maxWidth: '100%',
-                        maxHeight: '100%',
-                        objectFit: 'contain',
-                        padding: '16px',
-                      }}
-                    />
-                  )}
-                  {canPreview && isPdf && (
-                    <iframe
-                      src={file.downloadUrl!}
-                      title={file.title || file.filename}
-                      style={{ width: '100%', height: '100%', border: 'none' }}
-                    />
-                  )}
-                  {!canPreview && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '16px',
-                        padding: '48px 32px',
-                        textAlign: 'center',
-                      }}
-                    >
-                      <span style={{ fontSize: '64px', color }}>{icon}</span>
-                      <div>
-                        <div
-                          style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}
-                        >
-                          {file.title || file.filename}
-                        </div>
-                        {file.description && (
-                          <div
-                            style={{
-                              fontSize: '13px',
-                              color: theme.textMuted,
-                              marginTop: '6px',
-                              maxWidth: '360px',
-                            }}
-                          >
-                            {file.description}
-                          </div>
-                        )}
-                        <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '8px' }}>
-                          {formatBytes(file.sizeBytes)} · {file.filename}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleDownload(file)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          padding: '10px 20px',
-                          borderRadius: '8px',
-                          border: 'none',
-                          background: theme.accent,
-                          color: '#fff',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          fontWeight: 500,
-                        }}
-                      >
-                        <svg
-                          width="15"
-                          height="15"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="7 10 12 15 17 10" />
-                          <line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
-                        Download to view
-                      </button>
-                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                        Preview not available for this file type
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer — file meta */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '16px',
-                    padding: '10px 18px',
-                    borderTop: `1px solid ${theme.border}`,
-                    flexShrink: 0,
-                    background: theme.bgCanvas,
-                  }}
-                >
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>{file.filename}</span>
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>·</span>
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                    {formatBytes(file.sizeBytes)}
-                  </span>
-                  <div style={{ marginLeft: 'auto', fontSize: '11px', color: theme.textMuted }}>
-                    ← → to navigate · Esc to close
-                  </div>
-                </div>
-              </div>
-
-              {/* Right nav */}
-              <div
-                style={{ display: 'flex', alignItems: 'center', padding: '0 8px', flexShrink: 0 }}
-              >
-                <button
-                  disabled={previewIndex === files.length - 1}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setPreviewIndex((i) => (i !== null ? Math.min(i + 1, files.length - 1) : 0))
-                  }}
-                  style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '50%',
-                    border: 'none',
-                    background:
-                      previewIndex === files.length - 1
-                        ? 'rgba(255,255,255,0.1)'
-                        : 'rgba(255,255,255,0.2)',
-                    color: '#fff',
-                    fontSize: '18px',
-                    cursor: previewIndex === files.length - 1 ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  ›
-                </button>
-              </div>
-            </div>
-          )
-        })()}
-
-      {/* Upload modal — title + description before confirming upload */}
-      <Modal
-        open={!!pendingFile}
-        onClose={() => setPendingFile(null)}
-        title="Add Document"
-        size="sm"
-        closeOnBackdrop={false}
-      >
-        {pendingFile && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {/* File preview */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 12px',
-                background: theme.bgSurface,
-                borderRadius: '8px',
-                border: `1px solid ${theme.border}`,
-              }}
-            >
-              <span style={{ fontSize: '22px' }}>{fileIcon(pendingFile.file.type || '').icon}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 500,
-                    color: theme.textPrimary,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {pendingFile.file.name}
-                </div>
-                <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                  {formatBytes(pendingFile.file.size)}
-                </div>
-              </div>
-            </div>
-            {/* Title */}
-            <div>
-              <label
-                style={{
-                  fontSize: '11px',
-                  color: theme.textMuted,
-                  display: 'block',
-                  marginBottom: '4px',
-                  fontWeight: 600,
-                  textTransform: 'uppercase' as const,
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Title *
-              </label>
-              <input
-                autoFocus
-                value={uploadTitle}
-                onChange={(e) => setUploadTitle(e.target.value)}
-                placeholder="e.g. Structural Drawings Rev A"
-                style={{
-                  width: '100%',
-                  padding: '8px 10px',
-                  borderRadius: '7px',
-                  border: `1px solid ${theme.borderInput}`,
-                  background: theme.bgCanvas,
-                  color: theme.textPrimary,
-                  fontSize: '13px',
-                  boxSizing: 'border-box' as const,
-                }}
-              />
-            </div>
-            {/* Description */}
-            <div>
-              <label
-                style={{
-                  fontSize: '11px',
-                  color: theme.textMuted,
-                  display: 'block',
-                  marginBottom: '4px',
-                  fontWeight: 600,
-                  textTransform: 'uppercase' as const,
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Description <span style={{ fontWeight: 400 }}>(optional)</span>
-              </label>
-              <textarea
-                value={uploadDesc}
-                onChange={(e) => setUploadDesc(e.target.value)}
-                placeholder="Briefly describe this document…"
-                rows={3}
-                style={{
-                  width: '100%',
-                  padding: '8px 10px',
-                  borderRadius: '7px',
-                  border: `1px solid ${theme.borderInput}`,
-                  background: theme.bgCanvas,
-                  color: theme.textPrimary,
-                  fontSize: '13px',
-                  resize: 'vertical',
-                  boxSizing: 'border-box' as const,
-                }}
-              />
-            </div>
-            <div
-              style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '2px' }}
-            >
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setPendingFile(null)
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                loading={uploading}
-                disabled={!uploadTitle.trim()}
-                onClick={() => void confirmUpload()}
-              >
-                Upload
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }
@@ -8275,7 +6186,28 @@ interface ClientDoc {
   filename: string | null
   mimeType: string | null
   sizeBytes: number | null
-  revisions: ClientDoc[]
+  revisions: ClientDocRevision[]
+  createdAt: string
+}
+
+// The query's nested `revisions` selection is deliberately smaller than the
+// top-level doc (no projectId/parentDocumentId/uploadedById/mimeType/
+// sizeBytes, and no revisions of its own) — a distinct, flatter shape.
+interface ClientDocRevision {
+  id: string
+  fileId: string | null
+  category: string
+  title: string
+  documentNumber: string | null
+  revision: string | null
+  description: string | null
+  receivedFrom: string | null
+  transmissionDate: string | null
+  status: string
+  uploadedByName: string | null
+  downloadUrl: string | null
+  previewUrl: string | null
+  filename: string | null
   createdAt: string
 }
 
@@ -8323,17 +6255,17 @@ function ClientDocumentsTab({
     description: '',
   })
 
-  const { data, loading, refetch } = useQuery(CLIENT_DOCUMENTS_QUERY, {
+  const { data, loading, refetch } = useQuery<ClientDocumentsQuery, ClientDocumentsQueryVariables>(CLIENT_DOCUMENTS_QUERY, {
     variables: { projectId },
     skip: !projectId,
     fetchPolicy: 'cache-and-network',
   })
 
-  const [uploadDoc] = useMutation(UPLOAD_CLIENT_DOCUMENT)
-  const [uploadRev] = useMutation(UPLOAD_CLIENT_DOCUMENT_REVISION)
-  const [updateDoc] = useMutation(UPDATE_CLIENT_DOCUMENT)
-  const [updateStatus] = useMutation(UPDATE_CLIENT_DOCUMENT_STATUS)
-  const [deleteDoc] = useMutation(DELETE_CLIENT_DOCUMENT)
+  const [uploadDoc] = useMutation<UploadClientDocumentMutation, UploadClientDocumentMutationVariables>(UPLOAD_CLIENT_DOCUMENT)
+  const [uploadRev] = useMutation<UploadClientDocumentRevisionMutation, UploadClientDocumentRevisionMutationVariables>(UPLOAD_CLIENT_DOCUMENT_REVISION)
+  const [updateDoc] = useMutation<UpdateClientDocumentMutation, UpdateClientDocumentMutationVariables>(UPDATE_CLIENT_DOCUMENT)
+  const [updateStatus] = useMutation<UpdateClientDocumentStatusMutation, UpdateClientDocumentStatusMutationVariables>(UPDATE_CLIENT_DOCUMENT_STATUS)
+  const [deleteDoc] = useMutation<DeleteClientDocumentMutation, DeleteClientDocumentMutationVariables>(DELETE_CLIENT_DOCUMENT)
 
   const docs: ClientDoc[] = data?.clientDocuments ?? []
 
@@ -8353,13 +6285,13 @@ function ClientDocumentsTab({
   const uploadFile = async (file: File, onPicked: (fileId: string, filename: string) => void) => {
     setUploading(true)
     try {
-      const { data: urlRes } = await api.post('/files/upload-url', {
+      const { data: urlRes } = await api.post<{ fileId: string }>('/files/upload-url', {
         filename: file.name,
         mimeType: file.type || 'application/octet-stream',
         sizeBytes: file.size,
         category: 'attachment',
       })
-      const { fileId } = urlRes as { fileId: string }
+      const { fileId } = urlRes
       const buf = await file.arrayBuffer()
       await api.post(`/files/${fileId}/content`, buf, {
         headers: { 'Content-Type': file.type || 'application/octet-stream' },
@@ -8391,7 +6323,7 @@ function ClientDocumentsTab({
     e.preventDefault()
     setDropTarget(null)
     if (uploading) return
-    const file = e.dataTransfer.files?.[0]
+    const file = e.dataTransfer.files[0]
     if (file) void uploadFile(file, onPicked)
   }
 
@@ -8490,6 +6422,7 @@ function ClientDocumentsTab({
   }
 
   const handleRevise = async () => {
+    if (!reviseDoc) return
     if (!revForm.revision || !revForm.fileId) {
       addToast({ type: 'error', message: 'Revision and file are required' })
       return
@@ -8497,7 +6430,7 @@ function ClientDocumentsTab({
     try {
       await uploadRev({
         variables: {
-          parentDocumentId: reviseDoc!.id,
+          parentDocumentId: reviseDoc.id,
           fileId: revForm.fileId,
           revision: revForm.revision,
           description: revForm.description || null,
@@ -8512,7 +6445,7 @@ function ClientDocumentsTab({
     }
   }
 
-  const handleArchive = async (doc: ClientDoc) => {
+  const handleArchive = async (doc: ClientDoc | ClientDocRevision) => {
     try {
       await updateStatus({
         variables: { id: doc.id, status: doc.status === 'archived' ? 'active' : 'archived' },
@@ -8529,7 +6462,7 @@ function ClientDocumentsTab({
       title: doc.title,
       documentNumber: doc.documentNumber ?? '',
       revision: doc.revision ?? '',
-      category: (doc.category as CDCategory) ?? 'rfq_tender',
+      category: doc.category as CDCategory,
       receivedFrom: doc.receivedFrom ?? '',
       transmissionDate: doc.transmissionDate ?? '',
       description: doc.description ?? '',
@@ -8562,7 +6495,7 @@ function ClientDocumentsTab({
     }
   }
 
-  const handleDelete = async (doc: ClientDoc) => {
+  const handleDelete = async (doc: ClientDoc | ClientDocRevision) => {
     if (!window.confirm(`Delete "${doc.title}"?`)) return
     try {
       await deleteDoc({ variables: { id: doc.id } })
@@ -8725,7 +6658,7 @@ function ClientDocumentsTab({
       type={type}
       value={value}
       placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => { onChange(e.target.value); }}
       style={{
         width: '100%',
         padding: '9px 12px',
@@ -8757,11 +6690,11 @@ function ClientDocumentsTab({
 
   const COL = '52px minmax(0,1fr) 150px 72px 110px 180px'
 
-  const renderDocRow = (doc: ClientDoc, isRevision = false) => {
+  const renderDocRow = (doc: ClientDoc | ClientDocRevision, isRevision = false) => {
     const catColor = CD_COLORS[doc.category as CDCategory] ?? CD_COLORS.other
     const catLabel = CD_CATEGORIES.find((c) => c.key === doc.category)?.label ?? doc.category
     const isExpanded = expandedId === doc.id
-    const hasRevisions = !isRevision && doc.revisions.length > 0
+    const hasRevisions = !isRevision && 'revisions' in doc && doc.revisions.length > 0
     const meta = [
       doc.receivedFrom && `From ${doc.receivedFrom}`,
       doc.transmissionDate && doc.transmissionDate,
@@ -8790,7 +6723,7 @@ function ClientDocumentsTab({
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             {hasRevisions && (
               <button
-                onClick={() => setExpandedId(isExpanded ? null : doc.id)}
+                onClick={() => { setExpandedId(isExpanded ? null : doc.id); }}
                 style={{
                   all: 'unset',
                   cursor: 'pointer',
@@ -9025,7 +6958,7 @@ function ClientDocumentsTab({
                     strokeLinejoin="round"
                   />
                 </svg>,
-                () => openEdit(doc),
+                () => { openEdit(doc as ClientDoc); },
               )}
             {/* + Revision */}
             {!isRevision &&
@@ -9051,7 +6984,7 @@ function ClientDocumentsTab({
                   <path d="M17 15h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>,
                 () => {
-                  setReviseDoc(doc)
+                  setReviseDoc(doc as ClientDoc)
                   setRevForm({ revision: '', description: '', fileId: '', filename: '' })
                 },
               )}
@@ -9132,7 +7065,7 @@ function ClientDocumentsTab({
               )}
           </div>
         </div>
-        {isExpanded && doc.revisions.map((rev) => renderDocRow(rev, true))}
+        {isExpanded && 'revisions' in doc && doc.revisions.map((rev) => renderDocRow(rev, true))}
       </React.Fragment>
     )
   }
@@ -9173,7 +7106,7 @@ function ClientDocumentsTab({
             return (
               <button
                 key={k}
-                onClick={() => setFilterCat(k)}
+                onClick={() => { setFilterCat(k); }}
                 style={{
                   padding: '5px 13px',
                   borderRadius: 999,
@@ -9241,7 +7174,7 @@ function ClientDocumentsTab({
           </svg>
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); }}
             placeholder="Search documents…"
             style={{
               padding: '7px 12px 7px 32px',
@@ -9462,7 +7395,7 @@ function ClientDocumentsTab({
               {lbl('Document Title', true)}
               {inp(
                 form.title,
-                (v) => setForm((f) => ({ ...f, title: v })),
+                (v) => { setForm((f) => ({ ...f, title: v })); },
                 'e.g. RFQ Package — Civil Works',
               )}
             </div>
@@ -9473,7 +7406,7 @@ function ClientDocumentsTab({
                 <select
                   value={form.category}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, category: e.target.value as CDCategory }))
+                    { setForm((f) => ({ ...f, category: e.target.value as CDCategory })); }
                   }
                   style={{
                     width: '100%',
@@ -9496,7 +7429,7 @@ function ClientDocumentsTab({
                 {lbl('Revision')}
                 {inp(
                   form.revision,
-                  (v) => setForm((f) => ({ ...f, revision: v })),
+                  (v) => { setForm((f) => ({ ...f, revision: v })); },
                   'e.g. A, 1, B2',
                 )}
               </div>
@@ -9507,7 +7440,7 @@ function ClientDocumentsTab({
                 {lbl('Transmission Date')}
                 {inp(
                   form.transmissionDate,
-                  (v) => setForm((f) => ({ ...f, transmissionDate: v })),
+                  (v) => { setForm((f) => ({ ...f, transmissionDate: v })); },
                   '',
                   'date',
                 )}
@@ -9516,7 +7449,7 @@ function ClientDocumentsTab({
                 {lbl('Received From')}
                 {inp(
                   form.receivedFrom,
-                  (v) => setForm((f) => ({ ...f, receivedFrom: v })),
+                  (v) => { setForm((f) => ({ ...f, receivedFrom: v })); },
                   'Client name or organisation',
                 )}
               </div>
@@ -9526,7 +7459,7 @@ function ClientDocumentsTab({
               {lbl('Notes')}
               <textarea
                 value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
                 placeholder="Optional context or notes about this document…"
                 style={{
                   width: '100%',
@@ -9603,7 +7536,7 @@ function ClientDocumentsTab({
                   e.preventDefault()
                   if (!uploading) setDropTarget('new')
                 }}
-                onDragLeave={() => setDropTarget(null)}
+                onDragLeave={() => { setDropTarget(null); }}
                 onDrop={dropFiles}
                 style={{
                   border: `2px dashed ${dropTarget === 'new' ? theme.accent : theme.border}`,
@@ -9718,7 +7651,7 @@ function ClientDocumentsTab({
         <Modal
           open={true}
           title={`New Revision — ${reviseDoc.title}`}
-          onClose={() => setReviseDoc(null)}
+          onClose={() => { setReviseDoc(null); }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div
@@ -9744,7 +7677,7 @@ function ClientDocumentsTab({
               {lbl('New Revision Number', true)}
               {inp(
                 revForm.revision,
-                (v) => setRevForm((f) => ({ ...f, revision: v })),
+                (v) => { setRevForm((f) => ({ ...f, revision: v })); },
                 'e.g. B, 2, C1',
               )}
             </div>
@@ -9753,7 +7686,7 @@ function ClientDocumentsTab({
               {lbl('Change Summary')}
               <textarea
                 value={revForm.description}
-                onChange={(e) => setRevForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) => { setRevForm((f) => ({ ...f, description: e.target.value })); }}
                 placeholder="What changed in this revision?"
                 style={{
                   width: '100%',
@@ -9775,16 +7708,18 @@ function ClientDocumentsTab({
               {lbl('Revised File', true)}
               <div
                 onClick={() =>
-                  !uploading &&
-                  pickFile((fid, fn) => setRevForm((f) => ({ ...f, fileId: fid, filename: fn })))
+                  void (
+                    !uploading &&
+                    pickFile((fid, fn) => { setRevForm((f) => ({ ...f, fileId: fid, filename: fn })); })
+                  )
                 }
                 onDragOver={(e) => {
                   e.preventDefault()
                   if (!uploading) setDropTarget('revise')
                 }}
-                onDragLeave={() => setDropTarget(null)}
+                onDragLeave={() => { setDropTarget(null); }}
                 onDrop={(e) =>
-                  dropFile(e, (fid, fn) => setRevForm((f) => ({ ...f, fileId: fid, filename: fn })))
+                  { dropFile(e, (fid, fn) => { setRevForm((f) => ({ ...f, fileId: fid, filename: fn })); }); }
                 }
                 style={{
                   border: `2px dashed ${dropTarget === 'revise' ? theme.accent : revForm.fileId ? theme.accent : theme.border}`,
@@ -9831,7 +7766,7 @@ function ClientDocumentsTab({
               }}
             >
               <button
-                onClick={() => setReviseDoc(null)}
+                onClick={() => { setReviseDoc(null); }}
                 style={{
                   padding: '8px 18px',
                   borderRadius: 8,
@@ -9872,7 +7807,7 @@ function ClientDocumentsTab({
         <Modal
           open={true}
           title={`Edit Document — ${editDoc.title}`}
-          onClose={() => setEditDoc(null)}
+          onClose={() => { setEditDoc(null); }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -9880,7 +7815,7 @@ function ClientDocumentsTab({
                 {lbl('Title', true)}
                 {inp(
                   editForm.title,
-                  (v) => setEditForm((f) => ({ ...f, title: v })),
+                  (v) => { setEditForm((f) => ({ ...f, title: v })); },
                   'Document title',
                 )}
               </div>
@@ -9889,7 +7824,7 @@ function ClientDocumentsTab({
                 <select
                   value={editForm.category}
                   onChange={(e) =>
-                    setEditForm((f) => ({ ...f, category: e.target.value as CDCategory }))
+                    { setEditForm((f) => ({ ...f, category: e.target.value as CDCategory })); }
                   }
                   style={{
                     width: '100%',
@@ -9914,7 +7849,7 @@ function ClientDocumentsTab({
                 {lbl('Revision')}
                 {inp(
                   editForm.revision,
-                  (v) => setEditForm((f) => ({ ...f, revision: v })),
+                  (v) => { setEditForm((f) => ({ ...f, revision: v })); },
                   'e.g. A, 1, C2',
                 )}
               </div>
@@ -9922,7 +7857,7 @@ function ClientDocumentsTab({
                 {lbl('Document Number')}
                 {inp(
                   editForm.documentNumber,
-                  (v) => setEditForm((f) => ({ ...f, documentNumber: v })),
+                  (v) => { setEditForm((f) => ({ ...f, documentNumber: v })); },
                   'e.g. DOC-001',
                 )}
               </div>
@@ -9930,7 +7865,7 @@ function ClientDocumentsTab({
                 {lbl('Received From')}
                 {inp(
                   editForm.receivedFrom,
-                  (v) => setEditForm((f) => ({ ...f, receivedFrom: v })),
+                  (v) => { setEditForm((f) => ({ ...f, receivedFrom: v })); },
                   'Client / sender name',
                 )}
               </div>
@@ -9938,7 +7873,7 @@ function ClientDocumentsTab({
                 {lbl('Transmission Date')}
                 {inp(
                   editForm.transmissionDate,
-                  (v) => setEditForm((f) => ({ ...f, transmissionDate: v })),
+                  (v) => { setEditForm((f) => ({ ...f, transmissionDate: v })); },
                   '',
                   'date',
                 )}
@@ -9947,7 +7882,7 @@ function ClientDocumentsTab({
                 {lbl('Description')}
                 <textarea
                   value={editForm.description}
-                  onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                  onChange={(e) => { setEditForm((f) => ({ ...f, description: e.target.value })); }}
                   placeholder="Brief description…"
                   style={{
                     width: '100%',
@@ -9976,7 +7911,7 @@ function ClientDocumentsTab({
               }}
             >
               <button
-                onClick={() => setEditDoc(null)}
+                onClick={() => { setEditDoc(null); }}
                 style={{
                   padding: '8px 18px',
                   borderRadius: 8,
@@ -10113,7 +8048,7 @@ interface BidSummary {
 interface BidPackageFile {
   id: string
   fileId: string
-  bidType: 'technical' | 'commercial'
+  bidType: string
   filename: string
   mimeType: string
   sizeBytes: number | null
@@ -10304,7 +8239,7 @@ function BiddingTab({
   costItems: BidCostItem[]
   savingCosts: boolean
   onSaveCosts: (
-    items: Array<{
+    items: {
       costType: string
       description: string
       quantity?: number
@@ -10315,7 +8250,7 @@ function BiddingTab({
       supplierRef?: string
       notes?: string
       sequence?: number
-    }>,
+    }[],
   ) => void
   quotations: BidQuotation[]
   onCreateQuotation: (v: {
@@ -10381,13 +8316,13 @@ function BiddingTab({
     try {
       setUploadingDelId(deliverableId)
       setDelUploadProgress(10)
-      const { data: urlRes } = await api.post('/files/upload-url', {
+      const { data: urlRes } = await api.post<{ fileId: string }>('/files/upload-url', {
         filename: file.name,
         mimeType: file.type,
         sizeBytes: file.size,
         category: 'attachment',
       })
-      const { fileId } = urlRes as { fileId: string }
+      const { fileId } = urlRes
       setDelUploadProgress(40)
       const buf = await file.arrayBuffer()
       await api.post(`/files/${fileId}/content`, buf, {
@@ -10416,13 +8351,13 @@ function BiddingTab({
     try {
       setUploadingPkgType(bidType)
       setPkgUploadProgress(10)
-      const { data: urlRes } = await api.post('/files/upload-url', {
+      const { data: urlRes } = await api.post<{ fileId: string }>('/files/upload-url', {
         filename: file.name,
         mimeType: file.type,
         sizeBytes: file.size,
         category: 'attachment',
       })
-      const { fileId } = urlRes as { fileId: string }
+      const { fileId } = urlRes
       setPkgUploadProgress(40)
       const buf = await file.arrayBuffer()
       await api.post(`/files/${fileId}/content`, buf, {
@@ -10652,7 +8587,7 @@ function BiddingTab({
                     )}
                     {isEditable && (
                       <button
-                        onClick={() => onDeletePackageFile(f.id)}
+                        onClick={() => { onDeletePackageFile(f.id); }}
                         title="Delete"
                         style={{
                           background: 'none',
@@ -10718,7 +8653,7 @@ function BiddingTab({
               pkgFileRef.current?.setAttribute('data-pkg-bidtype', bidType)
               pkgFileRef.current?.click()
             }}
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={(e) => { e.preventDefault(); }}
             onDrop={(e) => {
               e.preventDefault()
               const file = e.dataTransfer.files[0]
@@ -10854,7 +8789,7 @@ function BiddingTab({
         ? Number(r.quantity) * Number(r.unitCost)
         : 0
     acc[r.costType] = (acc[r.costType] ?? 0) + total
-    acc['__total'] = (acc['__total'] ?? 0) + total
+    acc.__total = (acc.__total ?? 0) + total
     return acc
   }, {})
 
@@ -10876,7 +8811,7 @@ function BiddingTab({
   }, [summary])
 
   const pctNum = (k: keyof typeof summaryPcts) => parseFloat(summaryPcts[k]) || 0
-  const directTotal = rowTotals['__total'] ?? 0
+  const directTotal = rowTotals.__total ?? 0
   const overheadAmt = (directTotal * pctNum('overheadPct')) / 100
   const contingencyAmt = (directTotal * pctNum('contingencyPct')) / 100
   const subTotal = directTotal + overheadAmt + contingencyAmt
@@ -10966,7 +8901,7 @@ function BiddingTab({
           .map((s) => (
             <button
               key={s}
-              onClick={() => setBidSub(s)}
+              onClick={() => { setBidSub(s); }}
               style={{
                 padding: '8px 24px',
                 border: 'none',
@@ -11001,7 +8936,7 @@ function BiddingTab({
             | 'commercial'
             | null
           if (file && bidType) void handlePkgFileUpload(bidType, file)
-          if (e.target) e.target.value = ''
+          e.target.value = ''
         }}
       />
 
@@ -11037,7 +8972,7 @@ function BiddingTab({
                 </span>
                 {isEditable && (
                   <button
-                    onClick={() => setShowAddDeliverable(true)}
+                    onClick={() => { setShowAddDeliverable(true); }}
                     style={{
                       padding: '6px 14px',
                       border: 'none',
@@ -11134,7 +9069,7 @@ function BiddingTab({
                   </div>
                   {deliverables.map((del) => {
                     const typeInfo =
-                      DELIVERABLE_TYPES[del.deliverableType] ?? DELIVERABLE_TYPES['custom']
+                      DELIVERABLE_TYPES[del.deliverableType] ?? DELIVERABLE_TYPES.custom
                     const isExp = expandedDel === del.id
                     return (
                       <React.Fragment key={del.id}>
@@ -11152,7 +9087,7 @@ function BiddingTab({
                           }}
                         >
                           <button
-                            onClick={() => setExpandedDel(isExp ? null : del.id)}
+                            onClick={() => { setExpandedDel(isExp ? null : del.id); }}
                             style={{
                               background: 'none',
                               border: 'none',
@@ -11196,10 +9131,10 @@ function BiddingTab({
                             <select
                               value={del.assignedTo ?? ''}
                               onChange={(e) =>
-                                onUpdateDeliverable({
+                                { onUpdateDeliverable({
                                   id: del.id,
                                   assignedTo: e.target.value || undefined,
-                                })
+                                }); }
                               }
                               style={{ ...inp, padding: '3px 7px', fontSize: '12px' }}
                             >
@@ -11232,7 +9167,7 @@ function BiddingTab({
                             <select
                               value={del.status}
                               onChange={(e) =>
-                                onUpdateDeliverable({ id: del.id, status: e.target.value })
+                                { onUpdateDeliverable({ id: del.id, status: e.target.value }); }
                               }
                               style={{
                                 ...inp,
@@ -11310,7 +9245,7 @@ function BiddingTab({
                                     )}
                                     {isEditable && (
                                       <button
-                                        onClick={() => onDeleteDeliverableFile(f.id, del.id)}
+                                        onClick={() => { onDeleteDeliverableFile(f.id, del.id); }}
                                         style={{
                                           background: 'none',
                                           border: 'none',
@@ -11334,7 +9269,7 @@ function BiddingTab({
                                   delFileRef.current?.setAttribute('data-del-id', del.id)
                                   delFileRef.current?.click()
                                 }}
-                                onDragOver={(e) => e.preventDefault()}
+                                onDragOver={(e) => { e.preventDefault(); }}
                                 onDrop={(e) => {
                                   e.preventDefault()
                                   const file = e.dataTransfer.files[0]
@@ -11421,14 +9356,14 @@ function BiddingTab({
                   const file = e.target.files?.[0]
                   const delId = delFileRef.current?.getAttribute('data-del-id')
                   if (file && delId) void handleDelFileUpload(delId, file)
-                  if (e.target) e.target.value = ''
+                  e.target.value = ''
                 }}
               />
 
               {/* Add Deliverable modal */}
               <Modal
                 open={showAddDeliverable}
-                onClose={() => setShowAddDeliverable(false)}
+                onClose={() => { setShowAddDeliverable(false); }}
                 title="Add Deliverable"
               >
                 <div
@@ -11503,7 +9438,7 @@ function BiddingTab({
                     style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}
                   >
                     <button
-                      onClick={() => setShowAddDeliverable(false)}
+                      onClick={() => { setShowAddDeliverable(false); }}
                       style={{
                         padding: '8px 16px',
                         borderRadius: 7,
@@ -11749,7 +9684,7 @@ function BiddingTab({
                               {approvingBid ? 'Approving…' : 'Approve Bid'}
                             </button>
                             <button
-                              onClick={() => setShowRejectModal(true)}
+                              onClick={() => { setShowRejectModal(true); }}
                               style={{
                                 padding: '8px 20px',
                                 border: '1px solid #ef4444',
@@ -11819,7 +9754,7 @@ function BiddingTab({
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {COST_TYPES.map((type) => {
-                    const meta = COST_TYPE_META[type]!
+                    const meta = COST_TYPE_META[type]
                     const typeRows = costRows
                       .map((r, i) => ({ ...r, _idx: i }))
                       .filter((r) => r.costType === type)
@@ -11949,7 +9884,7 @@ function BiddingTab({
                             </span>
                             {isEditable && (
                               <button
-                                onClick={() => addCostRow(type)}
+                                onClick={() => { addCostRow(type); }}
                                 style={{
                                   padding: '3px 10px',
                                   border: `1px solid ${theme.border}`,
@@ -12007,7 +9942,7 @@ function BiddingTab({
                                 <input
                                   value={r.description}
                                   onChange={(e) =>
-                                    updCostRow(r._idx, 'description', e.target.value)
+                                    { updCostRow(r._idx, 'description', e.target.value); }
                                   }
                                   disabled={!isEditable}
                                   placeholder="Description"
@@ -12015,7 +9950,7 @@ function BiddingTab({
                                 />
                                 <input
                                   value={r.quantity}
-                                  onChange={(e) => updCostRow(r._idx, 'quantity', e.target.value)}
+                                  onChange={(e) => { updCostRow(r._idx, 'quantity', e.target.value); }}
                                   disabled={!isEditable}
                                   type="number"
                                   placeholder="0"
@@ -12023,14 +9958,14 @@ function BiddingTab({
                                 />
                                 <input
                                   value={r.unit}
-                                  onChange={(e) => updCostRow(r._idx, 'unit', e.target.value)}
+                                  onChange={(e) => { updCostRow(r._idx, 'unit', e.target.value); }}
                                   disabled={!isEditable}
                                   placeholder="m²"
                                   style={{ ...inp, padding: '5px 8px', fontSize: '13px' }}
                                 />
                                 <input
                                   value={r.unitCost}
-                                  onChange={(e) => updCostRow(r._idx, 'unitCost', e.target.value)}
+                                  onChange={(e) => { updCostRow(r._idx, 'unitCost', e.target.value); }}
                                   disabled={!isEditable}
                                   type="number"
                                   placeholder="0.00"
@@ -12048,7 +9983,7 @@ function BiddingTab({
                                       ? String(Number(r.quantity) * Number(r.unitCost))
                                       : '')
                                   }
-                                  onChange={(e) => updCostRow(r._idx, 'totalCost', e.target.value)}
+                                  onChange={(e) => { updCostRow(r._idx, 'totalCost', e.target.value); }}
                                   disabled={!isEditable}
                                   type="number"
                                   placeholder="Auto"
@@ -12062,7 +9997,7 @@ function BiddingTab({
                                 <input
                                   value={r.supplierRef}
                                   onChange={(e) =>
-                                    updCostRow(r._idx, 'supplierRef', e.target.value)
+                                    { updCostRow(r._idx, 'supplierRef', e.target.value); }
                                   }
                                   disabled={!isEditable}
                                   placeholder="Vendor / PO ref"
@@ -12070,7 +10005,7 @@ function BiddingTab({
                                 />
                                 {isEditable ? (
                                   <button
-                                    onClick={() => removeCostRow(r._idx)}
+                                    onClick={() => { removeCostRow(r._idx); }}
                                     style={{
                                       background: 'none',
                                       border: 'none',
@@ -12419,7 +10354,7 @@ function BiddingTab({
                   </div>
                   {isEditable && (
                     <button
-                      onClick={() => setShowAddQuotation(true)}
+                      onClick={() => { setShowAddQuotation(true); }}
                       style={{
                         padding: '7px 16px',
                         border: `1px solid ${theme.border}`,
@@ -12534,7 +10469,7 @@ function BiddingTab({
                           <select
                             value={q.status}
                             onChange={(e) =>
-                              onUpdateQuotation({ id: q.id, status: e.target.value })
+                              { onUpdateQuotation({ id: q.id, status: e.target.value }); }
                             }
                             disabled={!isEditable}
                             style={{
@@ -12654,7 +10589,7 @@ function BiddingTab({
               {/* ── Add Quotation Modal ────────────────────────────────── */}
               <Modal
                 open={showAddQuotation}
-                onClose={() => setShowAddQuotation(false)}
+                onClose={() => { setShowAddQuotation(false); }}
                 title="Add Supplier Quotation"
               >
                 <div
@@ -12727,7 +10662,7 @@ function BiddingTab({
                   </div>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button
-                      onClick={() => setShowAddQuotation(false)}
+                      onClick={() => { setShowAddQuotation(false); }}
                       style={{
                         padding: '8px 16px',
                         borderRadius: 7,
@@ -12782,7 +10717,7 @@ function BiddingTab({
               {/* ── Reject Bid Modal ───────────────────────────────────── */}
               <Modal
                 open={showRejectModal}
-                onClose={() => setShowRejectModal(false)}
+                onClose={() => { setShowRejectModal(false); }}
                 title="Reject Bid"
               >
                 <div
@@ -12792,13 +10727,13 @@ function BiddingTab({
                   <textarea
                     rows={3}
                     value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
+                    onChange={(e) => { setRejectReason(e.target.value); }}
                     placeholder="Describe the reason…"
                     style={{ ...inp, resize: 'vertical' }}
                   />
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button
-                      onClick={() => setShowRejectModal(false)}
+                      onClick={() => { setShowRejectModal(false); }}
                       style={{
                         padding: '8px 16px',
                         borderRadius: 7,
@@ -12843,7 +10778,7 @@ function BiddingTab({
               {/* ── Revise Bid Modal ───────────────────────────────────── */}
               <Modal
                 open={showReviseModal}
-                onClose={() => setShowReviseModal(false)}
+                onClose={() => { setShowReviseModal(false); }}
                 title={`Revise Bid — Rev ${(summary?.revision ?? 1) + 1}`}
               >
                 <div
@@ -12860,13 +10795,13 @@ function BiddingTab({
                   <textarea
                     rows={3}
                     value={reviseChangeSummary}
-                    onChange={(e) => setReviseChangeSummary(e.target.value)}
+                    onChange={(e) => { setReviseChangeSummary(e.target.value); }}
                     placeholder="Why is the bid being revised? (e.g. client requested re-price, lost previous round, scope change)"
                     style={{ ...inp, resize: 'vertical' }}
                   />
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button
-                      onClick={() => setShowReviseModal(false)}
+                      onClick={() => { setShowReviseModal(false); }}
                       style={{
                         padding: '8px 16px',
                         borderRadius: 7,
@@ -13001,7 +10936,24 @@ interface EngDrawing {
   uploadedByName: string | null
   downloadUrl: string | null
   filename: string | null
-  revisions: EngDrawing[]
+  revisions: EngDrawingRevision[]
+  createdAt: string
+}
+
+// The query's nested `revisions` selection is deliberately smaller than the
+// top-level drawing (no projectId/discipline/scale/paperSize/fileId/
+// parentDrawingId, and no revisions of its own) — a distinct, flatter shape.
+interface EngDrawingRevision {
+  id: string
+  drawingNumber: string
+  title: string
+  revision: string | null
+  status: string
+  issueDate: string | null
+  notes: string | null
+  uploadedByName: string | null
+  downloadUrl: string | null
+  filename: string | null
   createdAt: string
 }
 
@@ -13049,24 +11001,68 @@ interface EngDoc {
   openCommentCount: number
   clientCommentCount: number
   openClientCommentCount: number
-  history: EngDoc[]
+  history: EngDocHistoryEntry[]
   activities: EngDocActivity[]
   createdAt: string
+}
+
+// The query's nested `history` selection is deliberately smaller than the
+// top-level doc (no projectId/docType/seqNo/description/scale/paperSize/
+// fileId/docGroupId/isCurrent, and its own `activities` is a further-reduced
+// shape without documentId/transmittalRef/submittedTo/dueDate).
+interface EngDocHistoryActivity {
+  id: string
+  fromStatus: string | null
+  toStatus: string
+  action: string
+  actorName: string | null
+  responseCode: string | null
+  createdAt: string
+  notes: string | null
+  // Not selected by the query for history activities (always absent) —
+  // optional so the shared activity-row renderer can read them uniformly.
+  submittedTo?: string | null
+  transmittalRef?: string | null
+  dueDate?: string | null
+}
+
+interface EngDocHistoryEntry {
+  id: string
+  refNumber: string
+  revision: string | null
+  status: string
+  issueDate: string | null
+  notes: string | null
+  uploadedByName: string | null
+  downloadUrl: string | null
+  filename: string | null
+  createdAt: string
+  originatorName: string | null
+  checkerName: string | null
+  approverName: string | null
+  purposeOfIssue: string | null
+  commentCount: number
+  openCommentCount: number
+  clientCommentCount: number
+  openClientCommentCount: number
+  activities: EngDocHistoryActivity[]
 }
 
 interface DocComment {
   id: string
   documentId: string
   revision: string
+  reviewerId: string
   reviewerName: string | null
   commentNumber: number
   locationRef: string | null
   commentText: string
-  category: 'major' | 'minor' | 'info'
+  category: string
   responseText: string | null
+  responseById: string | null
   responseName: string | null
   responseDate: string | null
-  resolution: 'accepted' | 'partial' | 'rejected' | 'withdrawn' | null
+  resolution: string | null
   createdAt: string
 }
 
@@ -13260,29 +11256,28 @@ function EngineeringTab({
     resolution: 'accepted',
   })
 
-  const { data, loading, refetch } = useQuery(ENG_DOCS_QUERY, {
+  const { data, loading, refetch } = useQuery<EngineeringDocumentsQuery, EngineeringDocumentsQueryVariables>(ENG_DOCS_QUERY, {
     variables: { projectId },
     skip: !projectId,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: commentsData, refetch: refetchComments } = useQuery(DOC_COMMENTS_QUERY, {
+  const { data: commentsData, refetch: refetchComments } = useQuery<DocCommentsQuery, DocCommentsQueryVariables>(DOC_COMMENTS_QUERY, {
     variables: { documentId: reviewDocId ?? '' },
     skip: !reviewDocId,
     fetchPolicy: 'cache-and-network',
   })
-  const [createDoc] = useMutation(CREATE_ENG_DOC)
-  const [reviseDocM] = useMutation(REVISE_ENG_DOC)
-  const [updateStatus] = useMutation(UPDATE_ENG_DOC_STATUS)
-  const [performDocWorkflow] = useMutation(PERFORM_DOC_WORKFLOW)
-  const [deleteDocM] = useMutation(DELETE_ENG_DOC)
-  const [addCommentM] = useMutation(ADD_DOC_COMMENT)
-  const [respondM] = useMutation(RESPOND_TO_COMMENT)
-  const [deleteCommentM] = useMutation(DELETE_DOC_COMMENT)
-  const [addClientCommentM] = useMutation(ADD_ENG_CLIENT_COMMENT)
-  const [closeClientCommentM] = useMutation(CLOSE_ENG_CLIENT_COMMENT)
-  const [reopenClientCommentM] = useMutation(REOPEN_ENG_CLIENT_COMMENT)
-  const [deleteClientCommentM] = useMutation(DELETE_ENG_CLIENT_COMMENT)
-  const [loadClientComments, clientCommentsResult] = useLazyQuery(ENG_CLIENT_COMMENTS_QUERY, {
+  const [createDoc] = useMutation<CreateEngineeringDocMutation, CreateEngineeringDocMutationVariables>(CREATE_ENG_DOC)
+  const [reviseDocM] = useMutation<ReviseEngineeringDocMutation, ReviseEngineeringDocMutationVariables>(REVISE_ENG_DOC)
+  const [updateStatus] = useMutation<UpdateEngineeringDocStatusMutation, UpdateEngineeringDocStatusMutationVariables>(UPDATE_ENG_DOC_STATUS)
+  const [performDocWorkflow] = useMutation<PerformDocWorkflowActionMutation, PerformDocWorkflowActionMutationVariables>(PERFORM_DOC_WORKFLOW)
+  const [deleteDocM] = useMutation<DeleteEngineeringDocMutation, DeleteEngineeringDocMutationVariables>(DELETE_ENG_DOC)
+  const [addCommentM] = useMutation<AddDocCommentMutation, AddDocCommentMutationVariables>(ADD_DOC_COMMENT)
+  const [respondM] = useMutation<RespondToCommentMutation, RespondToCommentMutationVariables>(RESPOND_TO_COMMENT)
+  const [deleteCommentM] = useMutation<DeleteDocCommentMutation, DeleteDocCommentMutationVariables>(DELETE_DOC_COMMENT)
+  const [addClientCommentM] = useMutation<AddEngClientCommentMutation, AddEngClientCommentMutationVariables>(ADD_ENG_CLIENT_COMMENT)
+  const [closeClientCommentM] = useMutation<CloseEngClientCommentMutation, CloseEngClientCommentMutationVariables>(CLOSE_ENG_CLIENT_COMMENT)
+  const [reopenClientCommentM] = useMutation<ReopenEngClientCommentMutation, ReopenEngClientCommentMutationVariables>(REOPEN_ENG_CLIENT_COMMENT)
+  const [loadClientComments, clientCommentsResult] = useLazyQuery<EngClientCommentsQuery, EngClientCommentsQueryVariables>(ENG_CLIENT_COMMENTS_QUERY, {
     fetchPolicy: 'network-only',
   })
 
@@ -13303,7 +11298,6 @@ function EngineeringTab({
     return true
   })
 
-  const docsForReview = allDocs.filter((d) => d.commentCount > 0)
   const reviewDoc = allDocs.find((d) => d.id === reviewDocId) ?? null
 
   const pickFile = async (onPicked: (fileId: string, filename: string) => void) => {
@@ -13315,13 +11309,13 @@ function EngineeringTab({
       if (!file) return
       setUploading(true)
       try {
-        const { data: urlRes } = await api.post('/files/upload-url', {
+        const { data: urlRes } = await api.post<{ fileId: string }>('/files/upload-url', {
           filename: file.name,
           mimeType: file.type || 'application/octet-stream',
           sizeBytes: file.size,
           category: 'attachment',
         })
-        const { fileId } = urlRes as { fileId: string }
+        const { fileId } = urlRes
         const buf = await file.arrayBuffer()
         await api.post(`/files/${fileId}/content`, buf, {
           headers: { 'Content-Type': file.type || 'application/octet-stream' },
@@ -13386,6 +11380,7 @@ function EngineeringTab({
   }
 
   const handleRevise = async () => {
+    if (!reviseDoc) return
     if (!revForm.revision) {
       addToast({ type: 'error', message: 'Revision is required' })
       return
@@ -13393,7 +11388,7 @@ function EngineeringTab({
     try {
       await reviseDocM({
         variables: {
-          id: reviseDoc!.id,
+          id: reviseDoc.id,
           fileId: revForm.fileId || null,
           revision: revForm.revision,
           notes: revForm.notes || null,
@@ -13477,8 +11472,9 @@ function EngineeringTab({
   }
 
 
-  const handleDelete = async (doc: EngDoc) => {
-    if (!window.confirm(`Delete "${doc.title}" (${doc.refNumber})?`)) return
+  const handleDelete = async (doc: EngDoc | EngDocHistoryEntry) => {
+    const label = 'title' in doc ? doc.title : doc.refNumber
+    if (!window.confirm(`Delete "${label}" (${doc.refNumber})?`)) return
     try {
       await deleteDocM({ variables: { id: doc.id } })
       void refetch()
@@ -13487,7 +11483,11 @@ function EngineeringTab({
     }
   }
 
-  const handleStatus = async (doc: EngDoc, status: string, purposeOfIssue?: string) => {
+  const handleStatus = async (
+    doc: EngDoc | EngDocHistoryEntry,
+    status: string,
+    purposeOfIssue?: string,
+  ) => {
     try {
       await updateStatus({ variables: { id: doc.id, status, purposeOfIssue } })
       void refetch()
@@ -13532,9 +11532,6 @@ function EngineeringTab({
   const [expandedClientCommentsId, setExpandedClientCommentsId] = React.useState<string | null>(
     null,
   )
-  const [closingCommentId, setClosingCommentId] = React.useState<string | null>(null)
-  const [closingResolution, setClosingResolution] = React.useState('')
-
   const openWorkflow = (doc: EngDoc, btn: WorkflowBtn) => {
     setWorkflowAction({
       doc,
@@ -13904,7 +11901,7 @@ function EngineeringTab({
       specification: { bg: '#ede9fe', fg: '#5b21b6', ext: 'SPC' },
       other: { bg: '#f1f5f9', fg: '#475569', ext: 'OTH' },
     }
-    const c = MAP[dt] ?? MAP.other!
+    const c = MAP[dt] ?? MAP.other
     return (
       <div
         style={{
@@ -13952,7 +11949,7 @@ function EngineeringTab({
   }
 
   const statusPill = (s: string, forAdmin = false, doc?: EngDoc) => {
-    const cfg = ENG_DOC_STATUSES[s] ?? ENG_DOC_STATUSES.preliminary!
+    const cfg = ENG_DOC_STATUSES[s] ?? ENG_DOC_STATUSES.preliminary
     if (forAdmin && doc) {
       const isOpen = statusDropdownId === doc.id
       return (
@@ -14017,7 +12014,7 @@ function EngineeringTab({
           </button>
           {isOpen && (
             <div
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); }}
               style={{
                 position: 'fixed',
                 top: statusDropdownPos.top,
@@ -14167,7 +12164,7 @@ function EngineeringTab({
       type={type}
       value={value}
       placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => { onChange(e.target.value); }}
       style={{
         width: '100%',
         padding: '9px 12px',
@@ -14198,7 +12195,6 @@ function EngineeringTab({
   )
 
   const activeDisc = ENG_DISCIPLINES.find((d) => d.key === discipline)
-  const activeDisciplineLabel = activeDisc?.label ?? 'Overview'
   const activeDisciplineCode = activeDisc?.code ?? null
 
   // grid: icon | document | revision | status | actions
@@ -14217,11 +12213,19 @@ function EngineeringTab({
     }
   }, [statusDropdownId])
 
-  const renderRow = (doc: EngDoc, isHistory = false) => {
+  const renderRow = (doc: EngDoc | EngDocHistoryEntry, isHistory = false) => {
     const isExpanded = expandedId === doc.id
-    const hasHistory = !isHistory && doc.history.length > 0
-    const discLabel = ENG_DISCIPLINES.find((d) => d.key === doc.discipline)?.label ?? doc.discipline
-    const typeLabel = ENG_DOC_TYPES.find((t) => t.key === doc.docType)?.label ?? doc.docType
+    const hasHistory = !isHistory && 'history' in doc && doc.history.length > 0
+    // discipline/docType/title only exist on the top-level doc — a history
+    // entry is a past revision of the SAME document, so these would just
+    // repeat what the parent row already shows.
+    const discLabel = 'discipline' in doc
+      ? (ENG_DISCIPLINES.find((d) => d.key === doc.discipline)?.label ?? doc.discipline)
+      : null
+    const typeLabel = 'docType' in doc
+      ? (ENG_DOC_TYPES.find((t) => t.key === doc.docType)?.label ?? doc.docType)
+      : null
+    const displayTitle = 'title' in doc ? doc.title : doc.refNumber
     const meta = [
       discLabel,
       typeLabel,
@@ -14248,7 +12252,7 @@ function EngineeringTab({
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             {hasHistory && (
               <button
-                onClick={() => setExpandedId(isExpanded ? null : doc.id)}
+                onClick={() => { setExpandedId(isExpanded ? null : doc.id); }}
                 style={{
                   all: 'unset',
                   cursor: 'pointer',
@@ -14281,7 +12285,7 @@ function EngineeringTab({
                 </svg>
               </button>
             )}
-            {docTypeIcon(doc.docType)}
+            {docTypeIcon('docType' in doc ? doc.docType : 'other')}
           </div>
 
           {/* Document info */}
@@ -14339,7 +12343,7 @@ function EngineeringTab({
                 whiteSpace: 'nowrap',
               }}
             >
-              {doc.title}
+              {displayTitle}
             </div>
             {meta && (
               <div
@@ -14364,8 +12368,8 @@ function EngineeringTab({
                   borderRadius: 4,
                   fontSize: 10,
                   fontWeight: 600,
-                  color: ENG_PURPOSE_LABELS[doc.purposeOfIssue]!.color,
-                  background: ENG_PURPOSE_LABELS[doc.purposeOfIssue]!.bg,
+                  color: ENG_PURPOSE_LABELS[doc.purposeOfIssue].color,
+                  background: ENG_PURPOSE_LABELS[doc.purposeOfIssue].bg,
                 }}
               >
                 {ENG_PURPOSE_LABELS[doc.purposeOfIssue].label}
@@ -14492,7 +12496,7 @@ function EngineeringTab({
             {statusPill(
               doc.status,
               isSysAdmin && !isHistory,
-              isSysAdmin && !isHistory ? doc : undefined,
+              isSysAdmin && !isHistory ? (doc as EngDoc) : undefined,
             )}
           </div>
 
@@ -14501,9 +12505,9 @@ function EngineeringTab({
             style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}
           >
             {/* Activity timeline toggle */}
-            {!isHistory && (doc.activities?.length ?? 0) > 0 && (
+            {!isHistory && doc.activities.length > 0 && (
               <button
-                onClick={() => setActivityDocId(activityDocId === doc.id ? null : doc.id)}
+                onClick={() => { setActivityDocId(activityDocId === doc.id ? null : doc.id); }}
                 title="View activity log"
                 style={{
                   display: 'inline-flex',
@@ -14574,11 +12578,11 @@ function EngineeringTab({
                       </span>
                     )}
                     {wfBtns.map((btn) => {
-                      const st = VARIANT_STYLE[btn.variant]!
+                      const st = VARIANT_STYLE[btn.variant]
                       return (
                         <button
                           key={btn.action + (btn.issueType ?? '')}
-                          onClick={() => openWorkflow(doc, btn)}
+                          onClick={() => { openWorkflow(doc as EngDoc, btn); }}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -14626,7 +12630,9 @@ function EngineeringTab({
                   />
                   <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
                 </svg>,
-                () => window.open(doc.downloadUrl!, '_blank'),
+                () => {
+                  if (doc.downloadUrl) window.open(doc.downloadUrl, '_blank')
+                },
               )}
             {doc.downloadUrl &&
               iconActionBtn(
@@ -14656,7 +12662,9 @@ function EngineeringTab({
                     strokeLinecap="round"
                   />
                 </svg>,
-                () => window.open(doc.downloadUrl!, '_blank'),
+                () => {
+                  if (doc.downloadUrl) window.open(doc.downloadUrl, '_blank')
+                },
                 'accent',
               )}
             {!isHistory &&
@@ -14693,7 +12701,7 @@ function EngineeringTab({
                   <path d="M17 15h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>,
                 () => {
-                  setReviseDoc(doc)
+                  setReviseDoc(doc as EngDoc)
                   setRevForm({
                     revision: '',
                     notes: '',
@@ -14741,7 +12749,7 @@ function EngineeringTab({
         </div>
 
         {/* History revisions */}
-        {isExpanded && doc.history.map((h) => renderRow(h, true))}
+        {isExpanded && 'history' in doc && doc.history.map((h) => renderRow(h, true))}
 
         {/* Activity timeline */}
         {!isHistory && activityDocId === doc.id && doc.activities.length > 0 && (
@@ -15120,7 +13128,7 @@ function EngineeringTab({
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
-                  onClick={async () => {
+                  onClick={() => void (async () => {
                     const desc = window.prompt('Comment description:')
                     if (!desc?.trim()) return
                     const clauseRef = window.prompt('Clause/section reference (optional):') ?? ''
@@ -15138,7 +13146,7 @@ function EngineeringTab({
                     } catch (e: unknown) {
                       addToast({ type: 'error', message: (e as Error).message })
                     }
-                  }}
+                  })()}
                   style={{
                     fontSize: 11,
                     color: theme.accent,
@@ -15153,7 +13161,7 @@ function EngineeringTab({
                   + Add
                 </button>
                 <button
-                  onClick={() => setExpandedClientCommentsId(null)}
+                  onClick={() => { setExpandedClientCommentsId(null); }}
                   style={{
                     fontSize: 16,
                     color: theme.textMuted,
@@ -15168,7 +13176,7 @@ function EngineeringTab({
               </div>
             </div>
             {(() => {
-              const clientComments: Array<{
+              const clientComments: {
                 id: string
                 commentNo: number
                 description: string
@@ -15178,7 +13186,7 @@ function EngineeringTab({
                 resolution: string | null
                 closedByName: string | null
                 closedAt: string | null
-              }> = clientCommentsResult.data?.engClientComments ?? []
+              }[] = clientCommentsResult.data?.engClientComments ?? []
               if (clientCommentsResult.loading) {
                 return (
                   <div
@@ -15253,7 +13261,7 @@ function EngineeringTab({
                   header: 'Category',
                   mobileSecondary: true,
                   render: (c) => {
-                    const cat = CAT_COLORS[c.category] ?? CAT_COLORS.general!
+                    const cat = CAT_COLORS[c.category] ?? CAT_COLORS.general
                     return (
                       <span
                         style={{
@@ -15339,7 +13347,7 @@ function EngineeringTab({
                       <>
                         {isAdmin && !isClosed && (
                           <button
-                            onClick={async () => {
+                            onClick={() => void (async () => {
                               const res = window.prompt('Resolution / how was this addressed?')
                               if (!res?.trim()) return
                               try {
@@ -15351,7 +13359,7 @@ function EngineeringTab({
                               } catch (e: unknown) {
                                 addToast({ type: 'error', message: (e as Error).message })
                               }
-                            }}
+                            })()}
                             style={{
                               padding: '4px 10px',
                               fontSize: 11,
@@ -15368,7 +13376,7 @@ function EngineeringTab({
                         )}
                         {isAdmin && isClosed && (
                           <button
-                            onClick={async () => {
+                            onClick={() => void (async () => {
                               try {
                                 await reopenClientCommentM({ variables: { id: c.id } })
                                 void loadClientComments({ variables: { documentId: doc.id } })
@@ -15376,7 +13384,7 @@ function EngineeringTab({
                               } catch (e: unknown) {
                                 addToast({ type: 'error', message: (e as Error).message })
                               }
-                            }}
+                            })()}
                             style={{
                               padding: '4px 10px',
                               fontSize: 11,
@@ -15502,7 +13510,7 @@ function EngineeringTab({
           return (
             <button
               key={tab.key}
-              onClick={() => setEngView(tab.key)}
+              onClick={() => { setEngView(tab.key); }}
               style={{
                 padding: '9px 18px',
                 background: 'transparent',
@@ -15589,7 +13597,7 @@ function EngineeringTab({
                 </svg>
                 <input
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => { setSearch(e.target.value); }}
                   placeholder="Search documents…"
                   style={{
                     padding: '7px 12px 7px 32px',
@@ -15724,7 +13732,7 @@ function EngineeringTab({
                   return (
                     <button
                       key={t.key}
-                      onClick={() => setDocType(t.key)}
+                      onClick={() => { setDocType(t.key); }}
                       style={{
                         padding: '8px 16px',
                         fontSize: 13,
@@ -15972,7 +13980,7 @@ function EngineeringTab({
             ) : (
               allDocs.map((doc) => {
                 const isSelected = reviewDocId === doc.id
-                const st = ENG_DOC_STATUSES[doc.status] ?? ENG_DOC_STATUSES['draft']!
+                const st = ENG_DOC_STATUSES[doc.status] ?? ENG_DOC_STATUSES.draft
                 return (
                   <button
                     key={doc.id}
@@ -16122,7 +14130,7 @@ function EngineeringTab({
                   </div>
                 </div>
                 <button
-                  onClick={() => setShowCommentForm((v) => !v)}
+                  onClick={() => { setShowCommentForm((v) => !v); }}
                   style={{
                     padding: '7px 16px',
                     borderRadius: 8,
@@ -16198,10 +14206,10 @@ function EngineeringTab({
                       <select
                         value={commentForm.category}
                         onChange={(e) =>
-                          setCommentForm((f) => ({
+                          { setCommentForm((f) => ({
                             ...f,
                             category: e.target.value as 'major' | 'minor' | 'info',
-                          }))
+                          })); }
                         }
                         style={{
                           width: '100%',
@@ -16223,7 +14231,7 @@ function EngineeringTab({
                       {lbl('Location Reference')}
                       {inp(
                         commentForm.locationRef,
-                        (v) => setCommentForm((f) => ({ ...f, locationRef: v })),
+                        (v) => { setCommentForm((f) => ({ ...f, locationRef: v })); },
                         'e.g. Sheet 3, Clause 4.2',
                       )}
                     </div>
@@ -16231,7 +14239,7 @@ function EngineeringTab({
                   {lbl('Comment Text', true)}
                   <textarea
                     value={commentForm.commentText}
-                    onChange={(e) => setCommentForm((f) => ({ ...f, commentText: e.target.value }))}
+                    onChange={(e) => { setCommentForm((f) => ({ ...f, commentText: e.target.value })); }}
                     placeholder="Describe the issue clearly…"
                     style={{
                       width: '100%',
@@ -16328,7 +14336,7 @@ function EngineeringTab({
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {comments.map((c, idx) => {
-                    const catMeta = DOC_CATEGORY_META[c.category] ?? DOC_CATEGORY_META.minor!
+                    const catMeta = DOC_CATEGORY_META[c.category] ?? DOC_CATEGORY_META.minor
                     const resMeta = c.resolution
                       ? (DOC_RESOLUTION_META[c.resolution] ?? null)
                       : null
@@ -16514,10 +14522,10 @@ function EngineeringTab({
                                   <textarea
                                     value={responseForm.responseText}
                                     onChange={(e) =>
-                                      setResponseForm((f) => ({
+                                      { setResponseForm((f) => ({
                                         ...f,
                                         responseText: e.target.value,
-                                      }))
+                                      })); }
                                     }
                                     placeholder="Enter response to this comment…"
                                     style={{
@@ -16537,7 +14545,7 @@ function EngineeringTab({
                                   <select
                                     value={responseForm.resolution}
                                     onChange={(e) =>
-                                      setResponseForm((f) => ({ ...f, resolution: e.target.value }))
+                                      { setResponseForm((f) => ({ ...f, resolution: e.target.value })); }
                                     }
                                     style={{
                                       padding: '8px 10px',
@@ -16672,7 +14680,7 @@ function EngineeringTab({
           open={true}
           size="lg"
           title="Add Engineering Document"
-          onClose={() => setShowModal(false)}
+          onClose={() => { setShowModal(false); }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div
@@ -16694,7 +14702,7 @@ function EngineeringTab({
                 {lbl('Discipline', true)}
                 <select
                   value={discipline === 'overview' ? 'others' : discipline}
-                  onChange={(e) => setDiscipline(e.target.value)}
+                  onChange={(e) => { setDiscipline(e.target.value); }}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -16717,7 +14725,7 @@ function EngineeringTab({
                 {lbl('Document Type', true)}
                 <select
                   value={docType === 'all' ? 'other' : docType}
-                  onChange={(e) => setDocType(e.target.value)}
+                  onChange={(e) => { setDocType(e.target.value); }}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -16738,25 +14746,25 @@ function EngineeringTab({
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 {lbl('Title', true)}
-                {inp(form.title, (v) => setForm((f) => ({ ...f, title: v })), 'Document title')}
+                {inp(form.title, (v) => { setForm((f) => ({ ...f, title: v })); }, 'Document title')}
               </div>
               <div>
                 {lbl('Revision')}
                 {inp(
                   form.revision,
-                  (v) => setForm((f) => ({ ...f, revision: v })),
+                  (v) => { setForm((f) => ({ ...f, revision: v })); },
                   'e.g. A, 0, P1',
                 )}
               </div>
               <div>
                 {lbl('Issue Date')}
-                {inp(form.issueDate, (v) => setForm((f) => ({ ...f, issueDate: v })), '', 'date')}
+                {inp(form.issueDate, (v) => { setForm((f) => ({ ...f, issueDate: v })); }, '', 'date')}
               </div>
               <div>
                 {lbl('Purpose of Issue')}
                 <select
                   value={form.purposeOfIssue}
-                  onChange={(e) => setForm((f) => ({ ...f, purposeOfIssue: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, purposeOfIssue: e.target.value })); }}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -16781,7 +14789,7 @@ function EngineeringTab({
                 <div style={{ position: 'relative' }}>
                   {inp(
                     form.originatorName,
-                    (v) => setForm((f) => ({ ...f, originatorName: v })),
+                    (v) => { setForm((f) => ({ ...f, originatorName: v })); },
                     'Submitting user',
                   )}
                   {form.originatorName === currentUserName && currentUserName && (
@@ -16806,7 +14814,7 @@ function EngineeringTab({
                 {lbl('Checker')}
                 <select
                   value={form.checkerName}
-                  onChange={(e) => setForm((f) => ({ ...f, checkerName: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, checkerName: e.target.value })); }}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -16831,7 +14839,7 @@ function EngineeringTab({
                 {lbl('Approver')}
                 <select
                   value={form.approverName}
-                  onChange={(e) => setForm((f) => ({ ...f, approverName: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, approverName: e.target.value })); }}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -16863,13 +14871,13 @@ function EngineeringTab({
                 <>
                   <div>
                     {lbl('Scale')}
-                    {inp(form.scale, (v) => setForm((f) => ({ ...f, scale: v })), '1:100')}
+                    {inp(form.scale, (v) => { setForm((f) => ({ ...f, scale: v })); }, '1:100')}
                   </div>
                   <div>
                     {lbl('Paper Size')}
                     <select
                       value={form.paperSize}
-                      onChange={(e) => setForm((f) => ({ ...f, paperSize: e.target.value }))}
+                      onChange={(e) => { setForm((f) => ({ ...f, paperSize: e.target.value })); }}
                       style={{
                         width: '100%',
                         padding: '9px 12px',
@@ -16895,7 +14903,7 @@ function EngineeringTab({
                 {lbl('Description')}
                 <textarea
                   value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
                   placeholder="Optional description…"
                   style={{
                     width: '100%',
@@ -16914,7 +14922,7 @@ function EngineeringTab({
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 {lbl('Notes')}
-                {inp(form.notes, (v) => setForm((f) => ({ ...f, notes: v })), 'Optional notes')}
+                {inp(form.notes, (v) => { setForm((f) => ({ ...f, notes: v })); }, 'Optional notes')}
               </div>
             </div>
             <div>
@@ -16923,7 +14931,7 @@ function EngineeringTab({
                 onClick={() => {
                   if (!uploading)
                     void pickFile((fid, fn) =>
-                      setForm((f) => ({ ...f, fileId: fid, filename: fn })),
+                      { setForm((f) => ({ ...f, fileId: fid, filename: fn })); },
                     )
                 }}
                 style={{
@@ -17028,7 +15036,7 @@ function EngineeringTab({
               }}
             >
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => { setShowModal(false); }}
                 style={{
                   padding: '8px 18px',
                   borderRadius: 8,
@@ -17067,7 +15075,7 @@ function EngineeringTab({
         <Modal
           open={true}
           title={`Issue Revision — ${reviseDoc.refNumber}`}
-          onClose={() => setReviseDoc(null)}
+          onClose={() => { setReviseDoc(null); }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div
@@ -17095,7 +15103,7 @@ function EngineeringTab({
                 {lbl('New Revision', true)}
                 {inp(
                   revForm.revision,
-                  (v) => setRevForm((f) => ({ ...f, revision: v })),
+                  (v) => { setRevForm((f) => ({ ...f, revision: v })); },
                   'e.g. B, 1, P2',
                 )}
               </div>
@@ -17103,7 +15111,7 @@ function EngineeringTab({
                 {lbl('Issue Date')}
                 {inp(
                   revForm.issueDate,
-                  (v) => setRevForm((f) => ({ ...f, issueDate: v })),
+                  (v) => { setRevForm((f) => ({ ...f, issueDate: v })); },
                   '',
                   'date',
                 )}
@@ -17113,7 +15121,7 @@ function EngineeringTab({
                 <div style={{ position: 'relative' }}>
                   {inp(
                     revForm.originatorName,
-                    (v) => setRevForm((f) => ({ ...f, originatorName: v })),
+                    (v) => { setRevForm((f) => ({ ...f, originatorName: v })); },
                     'Submitting user',
                   )}
                   {revForm.originatorName === currentUserName && currentUserName && (
@@ -17138,7 +15146,7 @@ function EngineeringTab({
                 {lbl('Checker')}
                 <select
                   value={revForm.checkerName}
-                  onChange={(e) => setRevForm((f) => ({ ...f, checkerName: e.target.value }))}
+                  onChange={(e) => { setRevForm((f) => ({ ...f, checkerName: e.target.value })); }}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -17163,7 +15171,7 @@ function EngineeringTab({
                 {lbl('Approver')}
                 <select
                   value={revForm.approverName}
-                  onChange={(e) => setRevForm((f) => ({ ...f, approverName: e.target.value }))}
+                  onChange={(e) => { setRevForm((f) => ({ ...f, approverName: e.target.value })); }}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -17195,7 +15203,7 @@ function EngineeringTab({
                 {lbl('Change Notes')}
                 <textarea
                   value={revForm.notes}
-                  onChange={(e) => setRevForm((f) => ({ ...f, notes: e.target.value }))}
+                  onChange={(e) => { setRevForm((f) => ({ ...f, notes: e.target.value })); }}
                   placeholder="What changed in this revision?"
                   style={{
                     width: '100%',
@@ -17219,7 +15227,7 @@ function EngineeringTab({
                 onClick={() => {
                   if (!uploading)
                     void pickFile((fid, fn) =>
-                      setRevForm((f) => ({ ...f, fileId: fid, filename: fn })),
+                      { setRevForm((f) => ({ ...f, fileId: fid, filename: fn })); },
                     )
                 }}
                 style={{
@@ -17259,7 +15267,7 @@ function EngineeringTab({
               }}
             >
               <button
-                onClick={() => setReviseDoc(null)}
+                onClick={() => { setReviseDoc(null); }}
                 style={{
                   padding: '8px 18px',
                   borderRadius: 8,
@@ -17310,7 +15318,7 @@ function EngineeringTab({
         <Modal
           open={true}
           title={workflowAction.btn.modalTitle}
-          onClose={() => setWorkflowAction(null)}
+          onClose={() => { setWorkflowAction(null); }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Document context */}
@@ -17397,11 +15405,11 @@ function EngineeringTab({
                         border: '#a5f3fc',
                       },
                     ] as const
-                  ).map(({ code, label, color, bg, border }) => (
+                  ).map(({ code, label, color, bg }) => (
                     <button
                       key={code}
                       onClick={() =>
-                        setWorkflowAction((a) => (a ? { ...a, responseCode: code } : a))
+                        { setWorkflowAction((a) => (a ? { ...a, responseCode: code } : a)); }
                       }
                       style={{
                         display: 'flex',
@@ -17453,7 +15461,7 @@ function EngineeringTab({
                 {lbl('Transmittal Reference')}
                 {inp(
                   workflowAction.transmittalRef,
-                  (v) => setWorkflowAction((a) => (a ? { ...a, transmittalRef: v } : a)),
+                  (v) => { setWorkflowAction((a) => (a ? { ...a, transmittalRef: v } : a)); },
                   'e.g. TR-0024',
                 )}
               </div>
@@ -17464,7 +15472,7 @@ function EngineeringTab({
                 {lbl('Submitted To')}
                 {inp(
                   workflowAction.submittedTo,
-                  (v) => setWorkflowAction((a) => (a ? { ...a, submittedTo: v } : a)),
+                  (v) => { setWorkflowAction((a) => (a ? { ...a, submittedTo: v } : a)); },
                   'Name or organisation',
                 )}
               </div>
@@ -17475,7 +15483,7 @@ function EngineeringTab({
                 {lbl('Response Due By')}
                 {inp(
                   workflowAction.dueDate,
-                  (v) => setWorkflowAction((a) => (a ? { ...a, dueDate: v } : a)),
+                  (v) => { setWorkflowAction((a) => (a ? { ...a, dueDate: v } : a)); },
                   '',
                   'date',
                 )}
@@ -17574,7 +15582,7 @@ function EngineeringTab({
                   <input
                     value={workflowAction.enteredPhrase}
                     onChange={(e) =>
-                      setWorkflowAction((a) => (a ? { ...a, enteredPhrase: e.target.value } : a))
+                      { setWorkflowAction((a) => (a ? { ...a, enteredPhrase: e.target.value } : a)); }
                     }
                     placeholder="SUPERSEDE"
                     autoComplete="off"
@@ -17643,7 +15651,7 @@ function EngineeringTab({
                     </div>
                     <button
                       onClick={() =>
-                        setWorkflowAction((a) =>
+                        { setWorkflowAction((a) =>
                           a
                             ? {
                                 ...a,
@@ -17653,7 +15661,7 @@ function EngineeringTab({
                                 ],
                               }
                             : a,
-                        )
+                        ); }
                       }
                       style={{
                         fontSize: 12,
@@ -17696,12 +15704,12 @@ function EngineeringTab({
                             value={c.description}
                             placeholder="Comment description *"
                             onChange={(e) =>
-                              setWorkflowAction((a) => {
+                              { setWorkflowAction((a) => {
                                 if (!a) return a
                                 const cs = [...a.comments]
                                 cs[i] = { ...cs[i], description: e.target.value }
                                 return { ...a, comments: cs }
-                              })
+                              }); }
                             }
                             style={{
                               padding: '7px 10px',
@@ -17717,12 +15725,12 @@ function EngineeringTab({
                             value={c.clauseRef}
                             placeholder="Clause ref"
                             onChange={(e) =>
-                              setWorkflowAction((a) => {
+                              { setWorkflowAction((a) => {
                                 if (!a) return a
                                 const cs = [...a.comments]
                                 cs[i] = { ...cs[i], clauseRef: e.target.value }
                                 return { ...a, comments: cs }
-                              })
+                              }); }
                             }
                             style={{
                               padding: '7px 10px',
@@ -17737,12 +15745,12 @@ function EngineeringTab({
                           <select
                             value={c.category}
                             onChange={(e) =>
-                              setWorkflowAction((a) => {
+                              { setWorkflowAction((a) => {
                                 if (!a) return a
                                 const cs = [...a.comments]
                                 cs[i] = { ...cs[i], category: e.target.value }
                                 return { ...a, comments: cs }
-                              })
+                              }); }
                             }
                             style={{
                               padding: '7px 8px',
@@ -17760,9 +15768,9 @@ function EngineeringTab({
                           </select>
                           <button
                             onClick={() =>
-                              setWorkflowAction((a) =>
+                              { setWorkflowAction((a) =>
                                 a ? { ...a, comments: a.comments.filter((_, j) => j !== i) } : a,
-                              )
+                              ); }
                             }
                             style={{
                               width: 28,
@@ -17792,7 +15800,7 @@ function EngineeringTab({
               {lbl('Notes / Comments')}
               <textarea
                 value={workflowAction.note}
-                onChange={(e) => setWorkflowAction((a) => (a ? { ...a, note: e.target.value } : a))}
+                onChange={(e) => { setWorkflowAction((a) => (a ? { ...a, note: e.target.value } : a)); }}
                 placeholder="Optional — add context or instructions for the next reviewer…"
                 style={{
                   width: '100%',
@@ -17820,7 +15828,7 @@ function EngineeringTab({
               }}
             >
               <button
-                onClick={() => setWorkflowAction(null)}
+                onClick={() => { setWorkflowAction(null); }}
                 style={{
                   padding: '8px 18px',
                   borderRadius: 8,
@@ -17850,7 +15858,7 @@ function EngineeringTab({
                       padding: '8px 22px',
                       borderRadius: 8,
                       background: phraseOk
-                        ? (VARIANT_STYLE[workflowAction.btn.variant]?.color ?? theme.accent)
+                        ? VARIANT_STYLE[workflowAction.btn.variant].color
                         : '#d1d5db',
                       color: '#fff',
                       border: 'none',
@@ -17931,7 +15939,6 @@ const TQ_DISCIPLINES = [
 function TQTab({
   projectId,
   theme,
-  isAdmin,
 }: {
   projectId: string
   theme: ReturnType<typeof useTheme>['theme']
@@ -17960,20 +15967,20 @@ function TQTab({
   }
   const [form, setForm] = React.useState(emptyForm)
 
-  const { data, loading, refetch } = useQuery(PROJECT_TQS_QUERY, {
+  const { data, loading, refetch } = useQuery<ProjectTQsQuery, ProjectTQsQueryVariables>(PROJECT_TQS_QUERY, {
     variables: { projectId, status: statusFilter === 'all' ? undefined : statusFilter },
     skip: !projectId,
     fetchPolicy: 'cache-and-network',
   })
   const tqs: ProjectTQ[] = data?.projectTQs ?? []
 
-  const [createTQ] = useMutation(CREATE_TQ)
-  const [updateTQ] = useMutation(UPDATE_TQ)
-  const [reviewTQM] = useMutation(REVIEW_TQ)
-  const [respondTQM] = useMutation(RESPOND_TO_TQ)
-  const [closeTQM] = useMutation(CLOSE_TQ)
-  const [deleteTQM] = useMutation(DELETE_TQ)
-  const [uploadTQFile] = useMutation(UPLOAD_TQ_FILE, {
+  const [createTQ] = useMutation<CreateTqMutation, CreateTqMutationVariables>(CREATE_TQ)
+  const [updateTQ] = useMutation<UpdateTqMutation, UpdateTqMutationVariables>(UPDATE_TQ)
+  const [reviewTQM] = useMutation<ReviewTqMutation, ReviewTqMutationVariables>(REVIEW_TQ)
+  const [respondTQM] = useMutation<RespondToTqMutation, RespondToTqMutationVariables>(RESPOND_TO_TQ)
+  const [closeTQM] = useMutation<CloseTqMutation, CloseTqMutationVariables>(CLOSE_TQ)
+  const [deleteTQM] = useMutation<DeleteTqMutation, DeleteTqMutationVariables>(DELETE_TQ)
+  const [uploadTQFile] = useMutation<UploadTqFileMutation, UploadTqFileMutationVariables>(UPLOAD_TQ_FILE, {
     onCompleted: () => {
       void refetch()
     },
@@ -17981,7 +15988,7 @@ function TQTab({
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [deleteTQFile] = useMutation(DELETE_TQ_FILE, {
+  const [deleteTQFile] = useMutation<DeleteTqFileMutation, DeleteTqFileMutationVariables>(DELETE_TQ_FILE, {
     onCompleted: () => {
       void refetch()
     },
@@ -18053,7 +16060,7 @@ function TQTab({
       type={type}
       value={v}
       placeholder={ph}
-      onChange={(e) => fn(e.target.value)}
+      onChange={(e) => { fn(e.target.value); }}
       style={{
         width: '100%',
         padding: '9px 12px',
@@ -18083,7 +16090,7 @@ function TQTab({
     </div>
   )
   const statusPill = (s: string) => {
-    const c = TQ_STATUS[s] ?? TQ_STATUS.open!
+    const c = TQ_STATUS[s] ?? TQ_STATUS.open
     return (
       <span
         style={{
@@ -18107,7 +16114,7 @@ function TQTab({
     )
   }
   const priorityBadge = (p: string) => {
-    const c = TQ_PRIORITY[p] ?? TQ_PRIORITY.normal!
+    const c = TQ_PRIORITY[p] ?? TQ_PRIORITY.normal
     return (
       <span
         style={{
@@ -18187,7 +16194,7 @@ function TQTab({
           {(['all', 'open', 'under_review', 'responded', 'closed'] as const).map((s, i, arr) => (
             <button
               key={s}
-              onClick={() => setStatusFilter(s)}
+              onClick={() => { setStatusFilter(s); }}
               style={{
                 padding: '7px 13px',
                 background: statusFilter === s ? theme.accent : theme.bgCanvas,
@@ -18339,7 +16346,7 @@ function TQTab({
                     padding: '14px 18px',
                     cursor: 'pointer',
                   }}
-                  onClick={() => setExpandedId(isExpanded ? null : tq.id)}
+                  onClick={() => { setExpandedId(isExpanded ? null : tq.id); }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
@@ -18467,7 +16474,7 @@ function TQTab({
                     )}
 
                     {/* Document reference */}
-                    {(tq.documentRef || tq.documentRevision) && (
+                    {(tq.documentRef ?? tq.documentRevision) && (
                       <div style={{ marginBottom: 14, display: 'flex', gap: 16 }}>
                         {tq.documentRef && (
                           <div>
@@ -18552,7 +16559,7 @@ function TQTab({
                         </div>
                         <textarea
                           value={responseText}
-                          onChange={(e) => setResponseText(e.target.value)}
+                          onChange={(e) => { setResponseText(e.target.value); }}
                           placeholder="Enter formal response…"
                           style={{
                             width: '100%',
@@ -18571,7 +16578,7 @@ function TQTab({
                         />
                         <input
                           value={responseBy}
-                          onChange={(e) => setResponseBy(e.target.value)}
+                          onChange={(e) => { setResponseBy(e.target.value); }}
                           placeholder="Responded by (name)"
                           style={{
                             width: '100%',
@@ -18625,7 +16632,7 @@ function TQTab({
                     )}
 
                     {/* Attachments */}
-                    {(tq.files?.length > 0 || tq.status !== 'closed') && (
+                    {(tq.files.length > 0 || tq.status !== 'closed') && (
                       <div style={{ marginBottom: 14 }}>
                         <div
                           style={{
@@ -18644,13 +16651,13 @@ function TQTab({
                               letterSpacing: '0.06em',
                             }}
                           >
-                            Attachments {tq.files?.length > 0 && `(${tq.files.length})`}
+                            Attachments {tq.files.length > 0 && `(${tq.files.length})`}
                           </span>
                           {tq.status !== 'closed' && (
                             <ExecUploadButton
                               entityId={tq.id}
                               entityType="tq"
-                              onUpload={(v) => void uploadTQFile({ variables: v })}
+                              onUpload={(v) => void uploadTQFile({ variables: v as UploadTqFileMutationVariables })}
                               th={theme as unknown as Record<string, string>}
                             />
                           )}
@@ -18664,7 +16671,7 @@ function TQTab({
                             tq.status !== 'closed',
                             theme as unknown as Record<string, string>,
                           )}
-                          {(!tq.files || tq.files.length === 0) && (
+                          {tq.files.length === 0 && (
                             <div style={{ fontSize: 12, color: theme.textMuted }}>
                               No attachments.
                             </div>
@@ -18715,7 +16722,7 @@ function TQTab({
                                   void refetch()
                                 })
                                 .catch((e: unknown) =>
-                                  addToast({ type: 'error', message: (e as Error).message }),
+                                  { addToast({ type: 'error', message: (e as Error).message }); },
                                 )
                             }}
                             style={{
@@ -18758,7 +16765,7 @@ function TQTab({
                                     void refetch()
                                   })
                                   .catch((e: unknown) =>
-                                    addToast({ type: 'error', message: (e as Error).message }),
+                                    { addToast({ type: 'error', message: (e as Error).message }); },
                                   )
                             }}
                             style={{
@@ -18805,7 +16812,7 @@ function TQTab({
                                 void refetch()
                               })
                               .catch((e: unknown) =>
-                                addToast({ type: 'error', message: (e as Error).message }),
+                                { addToast({ type: 'error', message: (e as Error).message }); },
                               )
                           }
                           style={{
@@ -18848,7 +16855,7 @@ function TQTab({
                 {lbl('Subject', true)}
                 {inp(
                   form.subject,
-                  (v) => setForm((f) => ({ ...f, subject: v })),
+                  (v) => { setForm((f) => ({ ...f, subject: v })); },
                   'Brief description of the query',
                 )}
               </div>
@@ -18856,7 +16863,7 @@ function TQTab({
                 {lbl('Discipline')}
                 <select
                   value={form.discipline}
-                  onChange={(e) => setForm((f) => ({ ...f, discipline: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, discipline: e.target.value })); }}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -18880,7 +16887,7 @@ function TQTab({
                 {lbl('Priority')}
                 <select
                   value={form.priority}
-                  onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, priority: e.target.value })); }}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -18901,7 +16908,7 @@ function TQTab({
                 {lbl('Description')}
                 <textarea
                   value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
                   placeholder="Detailed description of the question or clarification needed…"
                   style={{
                     width: '100%',
@@ -18922,19 +16929,19 @@ function TQTab({
                 {lbl('Raised By')}
                 {inp(
                   form.raisedBy,
-                  (v) => setForm((f) => ({ ...f, raisedBy: v })),
+                  (v) => { setForm((f) => ({ ...f, raisedBy: v })); },
                   'Name of person raising TQ',
                 )}
               </div>
               <div>
                 {lbl('Date Raised')}
-                {inp(form.raisedDate, (v) => setForm((f) => ({ ...f, raisedDate: v })), '', 'date')}
+                {inp(form.raisedDate, (v) => { setForm((f) => ({ ...f, raisedDate: v })); }, '', 'date')}
               </div>
               <div>
                 {lbl('Document / Spec Ref')}
                 {inp(
                   form.documentRef,
-                  (v) => setForm((f) => ({ ...f, documentRef: v })),
+                  (v) => { setForm((f) => ({ ...f, documentRef: v })); },
                   'e.g. FNC-CIV-DRG-0001',
                 )}
               </div>
@@ -18942,13 +16949,13 @@ function TQTab({
                 {lbl('Revision')}
                 {inp(
                   form.documentRevision,
-                  (v) => setForm((f) => ({ ...f, documentRevision: v })),
+                  (v) => { setForm((f) => ({ ...f, documentRevision: v })); },
                   'e.g. Rev A',
                 )}
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 {lbl('Response Due Date')}
-                {inp(form.dueDate, (v) => setForm((f) => ({ ...f, dueDate: v })), '', 'date')}
+                {inp(form.dueDate, (v) => { setForm((f) => ({ ...f, dueDate: v })); }, '', 'date')}
               </div>
             </div>
             <div
@@ -19094,7 +17101,6 @@ const PUNCH_DISCIPLINES = [
 function PunchListTab({
   projectId,
   theme,
-  isAdmin,
 }: {
   projectId: string
   theme: ReturnType<typeof useTheme>['theme']
@@ -19130,7 +17136,7 @@ function PunchListTab({
   }
   const [form, setForm] = React.useState(emptyForm)
 
-  const { data, loading, refetch } = useQuery(PROJECT_PUNCH_ITEMS_QUERY, {
+  const { data, loading, refetch } = useQuery<ProjectPunchItemsQuery, ProjectPunchItemsQueryVariables>(PROJECT_PUNCH_ITEMS_QUERY, {
     variables: {
       projectId,
       category: catFilter === 'all' ? undefined : catFilter,
@@ -19141,15 +17147,15 @@ function PunchListTab({
   })
   const items: PunchItem[] = data?.projectPunchItems ?? []
 
-  const [createItem] = useMutation(CREATE_PUNCH_ITEM)
-  const [updateItem] = useMutation(UPDATE_PUNCH_ITEM)
-  const [updateStatus] = useMutation(UPDATE_PUNCH_STATUS)
-  const [supervisorSign] = useMutation(SUPERVISOR_SIGN_PUNCH)
-  const [pmSign] = useMutation(PM_SIGN_PUNCH)
-  const [reopenItem] = useMutation(REOPEN_PUNCH)
-  const [deleteItem] = useMutation(DELETE_PUNCH_ITEM)
-  const [addPhoto] = useMutation(ADD_PUNCH_PHOTO)
-  const [deletePhoto] = useMutation(DELETE_PUNCH_PHOTO)
+  const [createItem] = useMutation<CreatePunchItemMutation, CreatePunchItemMutationVariables>(CREATE_PUNCH_ITEM)
+  const [updateItem] = useMutation<UpdatePunchItemMutation, UpdatePunchItemMutationVariables>(UPDATE_PUNCH_ITEM)
+  const [updateStatus] = useMutation<UpdatePunchStatusMutation, UpdatePunchStatusMutationVariables>(UPDATE_PUNCH_STATUS)
+  const [supervisorSign] = useMutation<SupervisorSignPunchMutation, SupervisorSignPunchMutationVariables>(SUPERVISOR_SIGN_PUNCH)
+  const [pmSign] = useMutation<PmSignPunchMutation, PmSignPunchMutationVariables>(PM_SIGN_PUNCH)
+  const [reopenItem] = useMutation<ReopenPunchMutation, ReopenPunchMutationVariables>(REOPEN_PUNCH)
+  const [deleteItem] = useMutation<DeletePunchItemMutation, DeletePunchItemMutationVariables>(DELETE_PUNCH_ITEM)
+  const [addPhoto] = useMutation<AddPunchPhotoMutation, AddPunchPhotoMutationVariables>(ADD_PUNCH_PHOTO)
+  const [deletePhoto] = useMutation<DeletePunchPhotoMutation, DeletePunchPhotoMutationVariables>(DELETE_PUNCH_PHOTO)
 
   // KPIs split by category
   const kpi = (['A', 'B', 'C'] as const).reduce<
@@ -19282,7 +17288,7 @@ function PunchListTab({
       type={type}
       value={v}
       placeholder={ph}
-      onChange={(e) => fn(e.target.value)}
+      onChange={(e) => { fn(e.target.value); }}
       style={{
         width: '100%',
         padding: '9px 12px',
@@ -19502,7 +17508,7 @@ function PunchListTab({
             return (
               <button
                 key={c}
-                onClick={() => setCatFilter(c)}
+                onClick={() => { setCatFilter(c); }}
                 style={{
                   padding: '7px 13px',
                   background: catFilter === c ? (cfg?.color ?? theme.accent) : theme.bgCanvas,
@@ -19533,7 +17539,7 @@ function PunchListTab({
             (s, i, arr) => (
               <button
                 key={s}
-                onClick={() => setStatusFilter(s)}
+                onClick={() => { setStatusFilter(s); }}
                 style={{
                   padding: '7px 11px',
                   background: statusFilter === s ? theme.accent : theme.bgCanvas,
@@ -19702,7 +17708,7 @@ function PunchListTab({
                     padding: '12px 16px',
                     cursor: 'pointer',
                   }}
-                  onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                  onClick={() => { setExpandedId(isExpanded ? null : item.id); }}
                 >
                   {/* Category stripe */}
                   <div
@@ -20065,7 +18071,7 @@ function PunchListTab({
                           >
                             <input
                               value={photoUrl}
-                              onChange={(e) => setPhotoUrl(e.target.value)}
+                              onChange={(e) => { setPhotoUrl(e.target.value); }}
                               placeholder="Image URL or paste link…"
                               style={{
                                 padding: '7px 10px',
@@ -20079,7 +18085,7 @@ function PunchListTab({
                             />
                             <input
                               value={photoCaption}
-                              onChange={(e) => setPhotoCaption(e.target.value)}
+                              onChange={(e) => { setPhotoCaption(e.target.value); }}
                               placeholder="Caption (optional)"
                               style={{
                                 padding: '7px 10px',
@@ -20095,7 +18101,7 @@ function PunchListTab({
                           </div>
                           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                             <button
-                              onClick={() => setPhotoModal(null)}
+                              onClick={() => { setPhotoModal(null); }}
                               style={{
                                 padding: '5px 12px',
                                 borderRadius: 6,
@@ -20203,7 +18209,7 @@ function PunchListTab({
                                     void deletePhoto({ variables: { id: photo.id } })
                                       .then(() => void refetch())
                                       .catch((e: unknown) =>
-                                        addToast({ type: 'error', message: (e as Error).message }),
+                                        { addToast({ type: 'error', message: (e as Error).message }); },
                                       )
                                 }}
                                 style={{
@@ -20281,7 +18287,7 @@ function PunchListTab({
                                 void refetch()
                               })
                               .catch((e: unknown) =>
-                                addToast({ type: 'error', message: (e as Error).message }),
+                                { addToast({ type: 'error', message: (e as Error).message }); },
                               )
                           }
                           style={{
@@ -20350,7 +18356,7 @@ function PunchListTab({
                               void reopenItem({ variables: { id: item.id } })
                                 .then(() => void refetch())
                                 .catch((e: unknown) =>
-                                  addToast({ type: 'error', message: (e as Error).message }),
+                                  { addToast({ type: 'error', message: (e as Error).message }); },
                                 )
                           }}
                           style={{
@@ -20373,7 +18379,7 @@ function PunchListTab({
                             void deleteItem({ variables: { id: item.id } })
                               .then(() => void refetch())
                               .catch((e: unknown) =>
-                                addToast({ type: 'error', message: (e as Error).message }),
+                                { addToast({ type: 'error', message: (e as Error).message }); },
                               )
                         }}
                         style={{
@@ -20419,7 +18425,7 @@ function PunchListTab({
                   return (
                     <button
                       key={cat}
-                      onClick={() => setForm((f) => ({ ...f, category: cat }))}
+                      onClick={() => { setForm((f) => ({ ...f, category: cat })); }}
                       style={{
                         flex: 1,
                         padding: '10px 8px',
@@ -20460,7 +18466,7 @@ function PunchListTab({
                 {lbl('Title', true)}
                 {inp(
                   form.title,
-                  (v) => setForm((f) => ({ ...f, title: v })),
+                  (v) => { setForm((f) => ({ ...f, title: v })); },
                   'Brief description of the defect or punch item',
                 )}
               </div>
@@ -20468,7 +18474,7 @@ function PunchListTab({
                 {lbl('Discipline')}
                 <select
                   value={form.discipline}
-                  onChange={(e) => setForm((f) => ({ ...f, discipline: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, discipline: e.target.value })); }}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -20492,7 +18498,7 @@ function PunchListTab({
                 {lbl('Area / System')}
                 {inp(
                   form.area,
-                  (v) => setForm((f) => ({ ...f, area: v })),
+                  (v) => { setForm((f) => ({ ...f, area: v })); },
                   'e.g. Area 3B, System 02',
                 )}
               </div>
@@ -20500,35 +18506,35 @@ function PunchListTab({
                 {lbl('Subcontractor')}
                 {inp(
                   form.subcontractor,
-                  (v) => setForm((f) => ({ ...f, subcontractor: v })),
+                  (v) => { setForm((f) => ({ ...f, subcontractor: v })); },
                   'Responsible subcontractor',
                 )}
               </div>
               <div>
                 {lbl('Responsible Person')}
-                {inp(form.responsible, (v) => setForm((f) => ({ ...f, responsible: v })), 'Name')}
+                {inp(form.responsible, (v) => { setForm((f) => ({ ...f, responsible: v })); }, 'Name')}
               </div>
               <div>
                 {lbl('Raised By')}
                 {inp(
                   form.raisedBy,
-                  (v) => setForm((f) => ({ ...f, raisedBy: v })),
+                  (v) => { setForm((f) => ({ ...f, raisedBy: v })); },
                   'Inspector / surveyor name',
                 )}
               </div>
               <div>
                 {lbl('Date Raised')}
-                {inp(form.raisedDate, (v) => setForm((f) => ({ ...f, raisedDate: v })), '', 'date')}
+                {inp(form.raisedDate, (v) => { setForm((f) => ({ ...f, raisedDate: v })); }, '', 'date')}
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 {lbl('Target Close Date')}
-                {inp(form.targetDate, (v) => setForm((f) => ({ ...f, targetDate: v })), '', 'date')}
+                {inp(form.targetDate, (v) => { setForm((f) => ({ ...f, targetDate: v })); }, '', 'date')}
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 {lbl('Description')}
                 <textarea
                   value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
                   placeholder="Detailed description of the defect…"
                   style={{
                     width: '100%',
@@ -20658,7 +18664,7 @@ function PunchListTab({
               </div>
               <input
                 value={signerName}
-                onChange={(e) => setSignerName(e.target.value)}
+                onChange={(e) => { setSignerName(e.target.value); }}
                 placeholder="Full name (optional)"
                 style={{
                   width: '100%',
@@ -20755,8 +18761,10 @@ function AttachmentsTab({
       .get<FileAttachment[]>('/files/attachments', {
         params: { entityType: 'project', entityId: projectId },
       })
-      .then((r) => setFiles(r.data as unknown as FileAttachment[]))
-      .catch(() => {})
+      .then((r) => { setFiles(r.data as unknown as FileAttachment[]); })
+      .catch(() => {
+        /* ignore: file list just stays empty if this fails */
+      })
       .finally(() => {
         setLoading(false)
       })
@@ -20860,7 +18868,7 @@ function AttachmentsTab({
         {(['All', ...Array.from(visibleCategories)] as (DocCategory | 'All')[]).map((cat) => (
           <button
             key={cat}
-            onClick={() => setFilterCategory(cat)}
+            onClick={() => { setFilterCategory(cat); }}
             style={{
               padding: '3px 12px',
               borderRadius: '999px',
@@ -20871,14 +18879,14 @@ function AttachmentsTab({
                 filterCategory === cat
                   ? cat === 'All'
                     ? theme.accent
-                    : (CAT_COLOR[cat as DocCategory]?.color ?? theme.accent)
+                    : CAT_COLOR[cat].color
                   : theme.bgSurface,
               color:
                 filterCategory === cat
                   ? '#fff'
                   : cat === 'All'
                     ? theme.textMuted
-                    : (CAT_COLOR[cat as DocCategory]?.color ?? theme.textMuted),
+                    : CAT_COLOR[cat].color,
               border: `1px solid ${filterCategory === cat ? 'transparent' : theme.border}`,
             }}
           >
@@ -21076,7 +19084,7 @@ function AttachmentsTab({
           {DOC_CATEGORIES.filter((cat) => visibleCategories.has(cat)).map((cat) => (
             <button
               key={cat}
-              onClick={() => setUploadCategory(cat)}
+              onClick={() => { setUploadCategory(cat); }}
               style={{
                 padding: '4px 12px',
                 borderRadius: '999px',
@@ -21179,11 +19187,13 @@ function AttachmentsTab({
 
 interface RiskReview {
   id: string
+  riskId: string
   probability: number
   impact: number
+  score: number
   notes: string | null
   reviewedBy: string | null
-  createdAt: string
+  reviewedAt: string
 }
 interface Risk {
   id: string
@@ -21351,7 +19361,7 @@ function HandoverTab({
   const th = theme as unknown as Record<string, string>
   const addToast = useToastStore((s) => s.addToast)
 
-  const { data, loading, refetch } = useQuery(PROJECT_HANDOVER_QUERY, {
+  const { data, loading, refetch } = useQuery<ProjectHandoverQuery, ProjectHandoverQueryVariables>(PROJECT_HANDOVER_QUERY, {
     variables: { projectId },
     skip: !projectId,
     fetchPolicy: 'cache-and-network',
@@ -21363,54 +19373,54 @@ function HandoverTab({
     addToast({ type: 'error', message: e.message })
   }
 
-  const [createCert] = useMutation(CREATE_HANDOVER_CERT, {
+  const [createCert] = useMutation<CreateHandoverCertificateMutation, CreateHandoverCertificateMutationVariables>(CREATE_HANDOVER_CERT, {
     onCompleted: () => {
       refresh()
       addToast({ type: 'success', message: 'Certificate created' })
     },
     onError,
   })
-  const [updateCert] = useMutation(UPDATE_HANDOVER_CERT, {
+  const [updateCert] = useMutation<UpdateHandoverCertificateMutation, UpdateHandoverCertificateMutationVariables>(UPDATE_HANDOVER_CERT, {
     onCompleted: () => {
       refresh()
       addToast({ type: 'success', message: 'Certificate updated' })
     },
     onError,
   })
-  const [issueCert] = useMutation(ISSUE_HANDOVER_CERT, { onCompleted: refresh, onError })
-  const [acceptCert] = useMutation(ACCEPT_HANDOVER_CERT, {
+  const [issueCert] = useMutation<IssueHandoverCertificateMutation, IssueHandoverCertificateMutationVariables>(ISSUE_HANDOVER_CERT, { onCompleted: refresh, onError })
+  const [acceptCert] = useMutation<AcceptHandoverCertificateMutation, AcceptHandoverCertificateMutationVariables>(ACCEPT_HANDOVER_CERT, {
     onCompleted: () => {
       refresh()
       addToast({ type: 'success', message: 'Certificate accepted' })
     },
     onError,
   })
-  const [rejectCert] = useMutation(REJECT_HANDOVER_CERT, {
+  const [rejectCert] = useMutation<RejectHandoverCertificateMutation, RejectHandoverCertificateMutationVariables>(REJECT_HANDOVER_CERT, {
     onCompleted: () => {
       refresh()
       addToast({ type: 'success', message: 'Certificate rejected' })
     },
     onError,
   })
-  const [deleteCert] = useMutation(DELETE_HANDOVER_CERT, { onCompleted: refresh, onError })
-  const [uploadCertFile] = useMutation(UPLOAD_HANDOVER_CERT_FILE, {
+  const [deleteCert] = useMutation<DeleteHandoverCertificateMutation, DeleteHandoverCertificateMutationVariables>(DELETE_HANDOVER_CERT, { onCompleted: refresh, onError })
+  const [uploadCertFile] = useMutation<UploadHandoverCertFileMutation, UploadHandoverCertFileMutationVariables>(UPLOAD_HANDOVER_CERT_FILE, {
     onCompleted: refresh,
     onError,
   })
-  const [deleteCertFile] = useMutation(DELETE_HANDOVER_CERT_FILE, {
+  const [deleteCertFile] = useMutation<DeleteHandoverCertFileMutation, DeleteHandoverCertFileMutationVariables>(DELETE_HANDOVER_CERT_FILE, {
     onCompleted: refresh,
     onError,
   })
-  const [createItem] = useMutation(CREATE_HANDOVER_ITEM, { onCompleted: refresh, onError })
-  const [updateItem] = useMutation(UPDATE_HANDOVER_ITEM, { onCompleted: refresh, onError })
-  const [verifyItem] = useMutation(VERIFY_HANDOVER_ITEM, {
+  const [createItem] = useMutation<CreateHandoverItemMutation, CreateHandoverItemMutationVariables>(CREATE_HANDOVER_ITEM, { onCompleted: refresh, onError })
+  const [updateItem] = useMutation<UpdateHandoverItemMutation, UpdateHandoverItemMutationVariables>(UPDATE_HANDOVER_ITEM, { onCompleted: refresh, onError })
+  const [verifyItem] = useMutation<VerifyHandoverItemMutation, VerifyHandoverItemMutationVariables>(VERIFY_HANDOVER_ITEM, {
     onCompleted: () => {
       refresh()
       addToast({ type: 'success', message: 'Item verified' })
     },
     onError,
   })
-  const [deleteItem] = useMutation(DELETE_HANDOVER_ITEM, { onCompleted: refresh, onError })
+  const [deleteItem] = useMutation<DeleteHandoverItemMutation, DeleteHandoverItemMutationVariables>(DELETE_HANDOVER_ITEM, { onCompleted: refresh, onError })
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -21457,13 +19467,13 @@ function HandoverTab({
   const uploadFile = async (file: File, onPicked: (fileId: string, filename: string) => void) => {
     setUploading(true)
     try {
-      const { data: urlRes } = await api.post('/files/upload-url', {
+      const { data: urlRes } = await api.post<{ fileId: string }>('/files/upload-url', {
         filename: file.name,
         mimeType: file.type || 'application/octet-stream',
         sizeBytes: file.size,
         category: 'attachment',
       })
-      const { fileId } = urlRes as { fileId: string }
+      const { fileId } = urlRes
       const buf = await file.arrayBuffer()
       await api.post(`/files/${fileId}/content`, buf, {
         headers: { 'Content-Type': file.type || 'application/octet-stream' },
@@ -21487,9 +19497,9 @@ function HandoverTab({
     input.click()
   }
   const addPendingFile = () =>
-    pickFile((fileId, filename) => setPendingFiles((p) => [...p, { fileId, filename }]))
+    { pickFile((fileId, filename) => { setPendingFiles((p) => [...p, { fileId, filename }]); }); }
   const removePendingFile = (fileId: string) =>
-    setPendingFiles((p) => p.filter((f) => f.fileId !== fileId))
+    { setPendingFiles((p) => p.filter((f) => f.fileId !== fileId)); }
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const totalCerts = certs.length
@@ -21564,7 +19574,7 @@ function HandoverTab({
   const navBtn = (key: string, label: string, activeKey: string, setKey: (k: string) => void) => (
     <button
       key={key}
-      onClick={() => setKey(key)}
+      onClick={() => { setKey(key); }}
       style={{
         padding: '8px 16px',
         border: 'none',
@@ -21647,7 +19657,7 @@ function HandoverTab({
       let newId: string | undefined
       try {
         const result = await createCert({ variables: { projectId, ...vars } })
-        newId = result.data?.createHandoverCertificate?.id as string | undefined
+        newId = result.data?.createHandoverCertificate.id
       } catch {
         // onError already toasted; keep the modal open (with pendingFiles intact) so
         // the user can retry without risking a duplicate certificate on re-submit.
@@ -21775,7 +19785,7 @@ function HandoverTab({
       header: 'Status',
       mobilePriority: 1,
       render: (item) => {
-        const iSt = HANDOVER_ITEM_STATUS_COLOR[item.status] ?? HANDOVER_ITEM_STATUS_COLOR['pending']
+        const iSt = HANDOVER_ITEM_STATUS_COLOR[item.status] ?? HANDOVER_ITEM_STATUS_COLOR.pending
         return (
           <span
             style={{
@@ -21816,7 +19826,7 @@ function HandoverTab({
       header: '',
       mobileAction: true,
       render: (item) => (
-        <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => { e.stopPropagation(); }}>
           {isAdmin && item.status !== 'completed' && item.status !== 'waived' && (
             <button
               onClick={() => {
@@ -21838,7 +19848,7 @@ function HandoverTab({
           )}
           {isAdmin && (
             <button
-              onClick={() => openEditItem(item)}
+              onClick={() => { openEditItem(item); }}
               style={{
                 fontSize: '11px',
                 padding: '3px 8px',
@@ -22043,7 +20053,6 @@ function HandoverTab({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {certs.map((cert) => {
             const isExpanded = expandedId === cert.id
-            const st = HANDOVER_STATUS[cert.status] ?? HANDOVER_STATUS.draft
             const progress =
               cert.totalItemCount > 0
                 ? Math.round((cert.completedItemCount / cert.totalItemCount) * 100)
@@ -22071,7 +20080,7 @@ function HandoverTab({
                     gap: '12px',
                     cursor: 'pointer',
                   }}
-                  onClick={() => setExpandedId(isExpanded ? null : cert.id)}
+                  onClick={() => { setExpandedId(isExpanded ? null : cert.id); }}
                 >
                   <svg
                     width="16"
@@ -22179,7 +20188,7 @@ function HandoverTab({
                   {/* Progress + actions */}
                   <div
                     style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); }}
                   >
                     {cert.totalItemCount > 0 && (
                       <div style={{ textAlign: 'center' }}>
@@ -22282,7 +20291,7 @@ function HandoverTab({
                           </>
                         )}
                         <button
-                          onClick={() => openEditCert(cert)}
+                          onClick={() => { openEditCert(cert); }}
                           style={{
                             padding: '5px 10px',
                             fontSize: '12px',
@@ -22386,7 +20395,7 @@ function HandoverTab({
                       </div>
                       {isAdmin && (
                         <button
-                          onClick={() => openCreateItem(cert.id, cert)}
+                          onClick={() => { openCreateItem(cert.id, cert); }}
                           style={{
                             padding: '5px 12px',
                             fontSize: '12px',
@@ -22459,7 +20468,7 @@ function HandoverTab({
               'Title *',
               <input
                 value={certForm.title}
-                onChange={(e) => setCertForm((f) => ({ ...f, title: e.target.value }))}
+                onChange={(e) => { setCertForm((f) => ({ ...f, title: e.target.value })); }}
                 style={inputSt}
                 placeholder="e.g. Zone A Mechanical Completion"
               />,
@@ -22468,7 +20477,7 @@ function HandoverTab({
               'Area / Zone',
               <input
                 value={certForm.areaZone}
-                onChange={(e) => setCertForm((f) => ({ ...f, areaZone: e.target.value }))}
+                onChange={(e) => { setCertForm((f) => ({ ...f, areaZone: e.target.value })); }}
                 style={inputSt}
                 placeholder="e.g. Block 1, Zone A"
               />,
@@ -22479,7 +20488,7 @@ function HandoverTab({
                 <input
                   type="date"
                   value={certForm.handoverDate}
-                  onChange={(e) => setCertForm((f) => ({ ...f, handoverDate: e.target.value }))}
+                  onChange={(e) => { setCertForm((f) => ({ ...f, handoverDate: e.target.value })); }}
                   style={inputSt}
                 />,
               )}
@@ -22487,7 +20496,7 @@ function HandoverTab({
                 'Contractor Rep',
                 <input
                   value={certForm.contractorRep}
-                  onChange={(e) => setCertForm((f) => ({ ...f, contractorRep: e.target.value }))}
+                  onChange={(e) => { setCertForm((f) => ({ ...f, contractorRep: e.target.value })); }}
                   style={inputSt}
                   placeholder="Name"
                 />,
@@ -22496,7 +20505,7 @@ function HandoverTab({
                 'Client Rep',
                 <input
                   value={certForm.clientRep}
-                  onChange={(e) => setCertForm((f) => ({ ...f, clientRep: e.target.value }))}
+                  onChange={(e) => { setCertForm((f) => ({ ...f, clientRep: e.target.value })); }}
                   style={inputSt}
                   placeholder="Name"
                 />,
@@ -22528,7 +20537,7 @@ function HandoverTab({
                   type="date"
                   value={certForm.defectLiabilityStart}
                   onChange={(e) =>
-                    setCertForm((f) => ({ ...f, defectLiabilityStart: e.target.value }))
+                    { setCertForm((f) => ({ ...f, defectLiabilityStart: e.target.value })); }
                   }
                   style={inputSt}
                 />,
@@ -22539,7 +20548,7 @@ function HandoverTab({
                   type="date"
                   value={certForm.defectLiabilityEnd}
                   onChange={(e) =>
-                    setCertForm((f) => ({ ...f, defectLiabilityEnd: e.target.value }))
+                    { setCertForm((f) => ({ ...f, defectLiabilityEnd: e.target.value })); }
                   }
                   style={inputSt}
                 />,
@@ -22549,7 +20558,7 @@ function HandoverTab({
               'Notes',
               <textarea
                 value={certForm.notes}
-                onChange={(e) => setCertForm((f) => ({ ...f, notes: e.target.value }))}
+                onChange={(e) => { setCertForm((f) => ({ ...f, notes: e.target.value })); }}
                 style={{ ...inputSt, height: '72px', resize: 'vertical' }}
                 placeholder="Any additional notes…"
               />,
@@ -22562,7 +20571,7 @@ function HandoverTab({
                       <div key={f.fileId} style={attachmentRowSt}>
                         <span style={attachmentNameSt}>{f.filename}</span>
                         <button
-                          onClick={() => removePendingFile(f.fileId)}
+                          onClick={() => { removePendingFile(f.fileId); }}
                           style={attachmentRemoveSt}
                         >
                           Remove
@@ -22584,10 +20593,10 @@ function HandoverTab({
                             rel="noreferrer"
                             style={{ ...attachmentNameSt, color: th.accent }}
                           >
-                            {f.title || f.filename}
+                            {f.title ?? f.filename}
                           </a>
                         ) : (
-                          <span style={attachmentNameSt}>{f.title || f.filename}</span>
+                          <span style={attachmentNameSt}>{f.title ?? f.filename}</span>
                         )}
                         <button
                           onClick={() =>
@@ -22605,7 +20614,7 @@ function HandoverTab({
                 <button
                   disabled={uploading}
                   onClick={() =>
-                    certModal.mode === 'create'
+                    { certModal.mode === 'create'
                       ? addPendingFile()
                       : certModal.cert &&
                         pickFile((fileId, filename) => {
@@ -22613,7 +20622,7 @@ function HandoverTab({
                           void uploadCertFile({
                             variables: { certificateId: certModal.cert.id, fileId, title: filename },
                           })
-                        })
+                        }); }
                   }
                   style={{
                     padding: '6px 12px',
@@ -22634,7 +20643,7 @@ function HandoverTab({
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}
             >
               <button
-                onClick={() => setCertModal(null)}
+                onClick={() => { setCertModal(null); }}
                 style={{
                   padding: '8px 16px',
                   borderRadius: '6px',
@@ -22647,7 +20656,7 @@ function HandoverTab({
                 Cancel
               </button>
               <button
-                onClick={saveCert}
+                onClick={(...args: Parameters<typeof saveCert>) => void saveCert(...args)}
                 disabled={!certForm.title.trim()}
                 style={{
                   padding: '8px 20px',
@@ -22696,7 +20705,7 @@ function HandoverTab({
               'Category',
               <select
                 value={itemForm.category}
-                onChange={(e) => setItemForm((f) => ({ ...f, category: e.target.value }))}
+                onChange={(e) => { setItemForm((f) => ({ ...f, category: e.target.value })); }}
                 style={inputSt}
               >
                 {HANDOVER_ITEM_CATEGORIES.map((c) => (
@@ -22710,7 +20719,7 @@ function HandoverTab({
               'Description *',
               <input
                 value={itemForm.description}
-                onChange={(e) => setItemForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) => { setItemForm((f) => ({ ...f, description: e.target.value })); }}
                 style={inputSt}
                 placeholder="e.g. Submit O&M manuals to client"
               />,
@@ -22722,7 +20731,7 @@ function HandoverTab({
                   type="number"
                   min={1}
                   value={itemForm.sequence}
-                  onChange={(e) => setItemForm((f) => ({ ...f, sequence: Number(e.target.value) }))}
+                  onChange={(e) => { setItemForm((f) => ({ ...f, sequence: Number(e.target.value) })); }}
                   style={inputSt}
                 />,
               )}
@@ -22731,7 +20740,7 @@ function HandoverTab({
                   'Status',
                   <select
                     value={itemForm.status}
-                    onChange={(e) => setItemForm((f) => ({ ...f, status: e.target.value }))}
+                    onChange={(e) => { setItemForm((f) => ({ ...f, status: e.target.value })); }}
                     style={inputSt}
                   >
                     {['pending', 'in_progress', 'completed', 'waived'].map((s) => (
@@ -22746,7 +20755,7 @@ function HandoverTab({
               'Notes',
               <input
                 value={itemForm.notes}
-                onChange={(e) => setItemForm((f) => ({ ...f, notes: e.target.value }))}
+                onChange={(e) => { setItemForm((f) => ({ ...f, notes: e.target.value })); }}
                 style={inputSt}
                 placeholder="Optional notes"
               />,
@@ -22755,7 +20764,7 @@ function HandoverTab({
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}
             >
               <button
-                onClick={() => setItemModal(null)}
+                onClick={() => { setItemModal(null); }}
                 style={{
                   padding: '8px 16px',
                   borderRadius: '6px',
@@ -22820,7 +20829,7 @@ function HandoverTab({
               'Verified By *',
               <input
                 value={verifyName}
-                onChange={(e) => setVerifyName(e.target.value)}
+                onChange={(e) => { setVerifyName(e.target.value); }}
                 style={inputSt}
                 placeholder="Your name"
                 autoFocus
@@ -22828,7 +20837,7 @@ function HandoverTab({
             )}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
-                onClick={() => setVerifyModal(null)}
+                onClick={() => { setVerifyModal(null); }}
                 style={{
                   padding: '8px 16px',
                   borderRadius: '6px',
@@ -22896,7 +20905,7 @@ function HandoverTab({
               <input
                 type="date"
                 value={acceptForm.acceptedDate}
-                onChange={(e) => setAcceptForm((f) => ({ ...f, acceptedDate: e.target.value }))}
+                onChange={(e) => { setAcceptForm((f) => ({ ...f, acceptedDate: e.target.value })); }}
                 style={inputSt}
               />,
             )}
@@ -22904,14 +20913,14 @@ function HandoverTab({
               'Client Representative',
               <input
                 value={acceptForm.clientRep}
-                onChange={(e) => setAcceptForm((f) => ({ ...f, clientRep: e.target.value }))}
+                onChange={(e) => { setAcceptForm((f) => ({ ...f, clientRep: e.target.value })); }}
                 style={inputSt}
                 placeholder="Name"
               />,
             )}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
-                onClick={() => setAcceptModal(null)}
+                onClick={() => { setAcceptModal(null); }}
                 style={{
                   padding: '8px 16px',
                   borderRadius: '6px',
@@ -22980,14 +20989,14 @@ function HandoverTab({
               'Reason / Notes',
               <textarea
                 value={rejectNotes}
-                onChange={(e) => setRejectNotes(e.target.value)}
+                onChange={(e) => { setRejectNotes(e.target.value); }}
                 style={{ ...inputSt, height: '80px', resize: 'vertical' }}
                 placeholder="Reason for rejection…"
               />,
             )}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
-                onClick={() => setRejectModal(null)}
+                onClick={() => { setRejectModal(null); }}
                 style={{
                   padding: '8px 16px',
                   borderRadius: '6px',
@@ -23072,7 +21081,7 @@ function RiskRegisterTab({
   }
   const [form, setForm] = React.useState<typeof emptyForm>(emptyForm)
 
-  const { data, loading, refetch } = useQuery(PROJECT_RISKS_QUERY, {
+  const { data, loading, refetch } = useQuery<ProjectRisksQuery, ProjectRisksQueryVariables>(PROJECT_RISKS_QUERY, {
     variables: {
       projectId,
       category: catFilter === 'all' ? undefined : catFilter,
@@ -23084,31 +21093,31 @@ function RiskRegisterTab({
   })
   const risks: Risk[] = data?.projectRisks ?? []
 
-  const [createRisk] = useMutation(CREATE_RISK, {
+  const [createRisk] = useMutation<CreateRiskMutation, CreateRiskMutationVariables>(CREATE_RISK, {
     onCompleted: () => {
       void refetch()
       addToast({ variant: 'success', message: 'Risk created' })
     },
   })
-  const [updateRisk] = useMutation(UPDATE_RISK, {
+  const [updateRisk] = useMutation<UpdateRiskMutation, UpdateRiskMutationVariables>(UPDATE_RISK, {
     onCompleted: () => {
       void refetch()
       addToast({ variant: 'success', message: 'Risk updated' })
     },
   })
-  const [updateRiskStatus] = useMutation(UPDATE_RISK_STATUS, {
+  const [updateRiskStatus] = useMutation<UpdateRiskStatusMutation, UpdateRiskStatusMutationVariables>(UPDATE_RISK_STATUS, {
     onCompleted: () => {
       void refetch()
       addToast({ variant: 'success', message: 'Status updated' })
     },
   })
-  const [addRiskReview] = useMutation(ADD_RISK_REVIEW, {
+  const [addRiskReview] = useMutation<AddRiskReviewMutation, AddRiskReviewMutationVariables>(ADD_RISK_REVIEW, {
     onCompleted: () => {
       void refetch()
       addToast({ variant: 'success', message: 'Review recorded' })
     },
   })
-  const [deleteRisk] = useMutation(DELETE_RISK, {
+  const [deleteRisk] = useMutation<DeleteRiskMutation, DeleteRiskMutationVariables>(DELETE_RISK, {
     onCompleted: () => {
       void refetch()
       addToast({ variant: 'success', message: 'Risk deleted' })
@@ -23490,7 +21499,7 @@ function RiskRegisterTab({
       >
         <select
           value={catFilter}
-          onChange={(e) => setCatFilter(e.target.value)}
+          onChange={(e) => { setCatFilter(e.target.value); }}
           style={{ ...inputStyle, width: 'auto', fontSize: '13px' }}
         >
           <option value="all">All Categories</option>
@@ -23502,7 +21511,7 @@ function RiskRegisterTab({
         </select>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => { setStatusFilter(e.target.value); }}
           style={{ ...inputStyle, width: 'auto', fontSize: '13px' }}
         >
           <option value="all">All Statuses</option>
@@ -23514,7 +21523,7 @@ function RiskRegisterTab({
         </select>
         <select
           value={levelFilter}
-          onChange={(e) => setLevelFilter(e.target.value)}
+          onChange={(e) => { setLevelFilter(e.target.value); }}
           style={{ ...inputStyle, width: 'auto', fontSize: '13px' }}
         >
           <option value="all">All Levels</option>
@@ -23550,7 +21559,7 @@ function RiskRegisterTab({
         data={filtered}
         rowKey="id"
         emptyMessage="No risks recorded"
-        onRowClick={(r) => setExpandedId(expandedId === r.id ? null : r.id)}
+        onRowClick={(r) => { setExpandedId(expandedId === r.id ? null : r.id); }}
         renderExpanded={(r) =>
           expandedId === r.id ? (
             <div
@@ -23709,7 +21718,7 @@ function RiskRegisterTab({
                           marginTop: '2px',
                         }}
                       >
-                        {rv.reviewedBy ?? ''} · {rv.createdAt.slice(0, 10)}
+                        {rv.reviewedBy ?? ''} · {rv.reviewedAt.slice(0, 10)}
                       </div>
                     </div>
                   ))
@@ -23770,7 +21779,7 @@ function RiskRegisterTab({
                 <label style={labelStyle}>Category</label>
                 <select
                   value={form.category}
-                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, category: e.target.value })); }}
                   style={inputStyle}
                 >
                   {RISK_CATEGORIES.map((c) => (
@@ -23784,7 +21793,7 @@ function RiskRegisterTab({
                 <label style={labelStyle}>Status</label>
                 <select
                   value={form.status}
-                  onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, status: e.target.value })); }}
                   style={inputStyle}
                 >
                   {RISK_STATUSES.map((s) => (
@@ -23799,7 +21808,7 @@ function RiskRegisterTab({
               <label style={labelStyle}>Title *</label>
               <input
                 value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                onChange={(e) => { setForm((f) => ({ ...f, title: e.target.value })); }}
                 style={inputStyle}
                 placeholder="Risk title"
               />
@@ -23808,7 +21817,7 @@ function RiskRegisterTab({
               <label style={labelStyle}>Description</label>
               <textarea
                 value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
                 style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }}
               />
             </div>
@@ -23817,7 +21826,7 @@ function RiskRegisterTab({
                 <label style={labelStyle}>Cause</label>
                 <input
                   value={form.cause}
-                  onChange={(e) => setForm((f) => ({ ...f, cause: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, cause: e.target.value })); }}
                   style={inputStyle}
                 />
               </div>
@@ -23825,7 +21834,7 @@ function RiskRegisterTab({
                 <label style={labelStyle}>Consequence</label>
                 <input
                   value={form.consequence}
-                  onChange={(e) => setForm((f) => ({ ...f, consequence: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, consequence: e.target.value })); }}
                   style={inputStyle}
                 />
               </div>
@@ -23840,7 +21849,7 @@ function RiskRegisterTab({
                   min={1}
                   max={5}
                   value={form.probability}
-                  onChange={(e) => setForm((f) => ({ ...f, probability: Number(e.target.value) }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, probability: Number(e.target.value) })); }}
                   style={{ width: '100%' }}
                 />
                 <div
@@ -23865,7 +21874,7 @@ function RiskRegisterTab({
                   min={1}
                   max={5}
                   value={form.impact}
-                  onChange={(e) => setForm((f) => ({ ...f, impact: Number(e.target.value) }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, impact: Number(e.target.value) })); }}
                   style={{ width: '100%' }}
                 />
                 <div
@@ -23906,7 +21915,7 @@ function RiskRegisterTab({
               <label style={labelStyle}>Mitigation Plan</label>
               <textarea
                 value={form.mitigationPlan}
-                onChange={(e) => setForm((f) => ({ ...f, mitigationPlan: e.target.value }))}
+                onChange={(e) => { setForm((f) => ({ ...f, mitigationPlan: e.target.value })); }}
                 style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }}
               />
             </div>
@@ -23914,7 +21923,7 @@ function RiskRegisterTab({
               <label style={labelStyle}>Contingency Plan</label>
               <textarea
                 value={form.contingencyPlan}
-                onChange={(e) => setForm((f) => ({ ...f, contingencyPlan: e.target.value }))}
+                onChange={(e) => { setForm((f) => ({ ...f, contingencyPlan: e.target.value })); }}
                 style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }}
               />
             </div>
@@ -23926,7 +21935,7 @@ function RiskRegisterTab({
                   min={1}
                   max={5}
                   value={form.residualProbability}
-                  onChange={(e) => setForm((f) => ({ ...f, residualProbability: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, residualProbability: e.target.value })); }}
                   style={inputStyle}
                 />
               </div>
@@ -23937,7 +21946,7 @@ function RiskRegisterTab({
                   min={1}
                   max={5}
                   value={form.residualImpact}
-                  onChange={(e) => setForm((f) => ({ ...f, residualImpact: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, residualImpact: e.target.value })); }}
                   style={inputStyle}
                 />
               </div>
@@ -23947,7 +21956,7 @@ function RiskRegisterTab({
                 <label style={labelStyle}>Owner</label>
                 <input
                   value={form.owner}
-                  onChange={(e) => setForm((f) => ({ ...f, owner: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, owner: e.target.value })); }}
                   style={inputStyle}
                 />
               </div>
@@ -23955,7 +21964,7 @@ function RiskRegisterTab({
                 <label style={labelStyle}>Raised By</label>
                 <input
                   value={form.raisedBy}
-                  onChange={(e) => setForm((f) => ({ ...f, raisedBy: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, raisedBy: e.target.value })); }}
                   style={inputStyle}
                 />
               </div>
@@ -23966,7 +21975,7 @@ function RiskRegisterTab({
                 <input
                   type="date"
                   value={form.raisedDate}
-                  onChange={(e) => setForm((f) => ({ ...f, raisedDate: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, raisedDate: e.target.value })); }}
                   style={inputStyle}
                 />
               </div>
@@ -23975,7 +21984,7 @@ function RiskRegisterTab({
                 <input
                   type="date"
                   value={form.reviewDate}
-                  onChange={(e) => setForm((f) => ({ ...f, reviewDate: e.target.value }))}
+                  onChange={(e) => { setForm((f) => ({ ...f, reviewDate: e.target.value })); }}
                   style={inputStyle}
                 />
               </div>
@@ -23984,7 +21993,7 @@ function RiskRegisterTab({
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '20px' }}
             >
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => { setShowModal(false); }}
                 style={{
                   padding: '8px 16px',
                   borderRadius: '6px',
@@ -24054,7 +22063,7 @@ function RiskRegisterTab({
                   max={5}
                   value={reviewForm.probability}
                   onChange={(e) =>
-                    setReviewForm((f) => ({ ...f, probability: Number(e.target.value) }))
+                    { setReviewForm((f) => ({ ...f, probability: Number(e.target.value) })); }
                   }
                   style={{ width: '100%' }}
                 />
@@ -24076,7 +22085,7 @@ function RiskRegisterTab({
                   min={1}
                   max={5}
                   value={reviewForm.impact}
-                  onChange={(e) => setReviewForm((f) => ({ ...f, impact: Number(e.target.value) }))}
+                  onChange={(e) => { setReviewForm((f) => ({ ...f, impact: Number(e.target.value) })); }}
                   style={{ width: '100%' }}
                 />
                 <div
@@ -24108,7 +22117,7 @@ function RiskRegisterTab({
               <label style={labelStyle}>Notes</label>
               <textarea
                 value={reviewForm.notes}
-                onChange={(e) => setReviewForm((f) => ({ ...f, notes: e.target.value }))}
+                onChange={(e) => { setReviewForm((f) => ({ ...f, notes: e.target.value })); }}
                 style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }}
               />
             </div>
@@ -24116,7 +22125,7 @@ function RiskRegisterTab({
               <label style={labelStyle}>Reviewed By</label>
               <input
                 value={reviewForm.reviewedBy}
-                onChange={(e) => setReviewForm((f) => ({ ...f, reviewedBy: e.target.value }))}
+                onChange={(e) => { setReviewForm((f) => ({ ...f, reviewedBy: e.target.value })); }}
                 style={inputStyle}
               />
             </div>
@@ -24124,7 +22133,7 @@ function RiskRegisterTab({
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}
             >
               <button
-                onClick={() => setReviewModal(null)}
+                onClick={() => { setReviewModal(null); }}
                 style={{
                   padding: '8px 16px',
                   borderRadius: '6px',
@@ -24596,7 +22605,7 @@ function ContractManagementTab({
                 min={0}
                 step="0.01"
                 value={reviseForm.contractValue}
-                onChange={(e) => setReviseForm((f) => ({ ...f, contractValue: e.target.value }))}
+                onChange={(e) => { setReviseForm((f) => ({ ...f, contractValue: e.target.value })); }}
                 style={inputStyle}
               />
               {delta !== 0 && (
@@ -24620,7 +22629,7 @@ function ContractManagementTab({
                 max={100}
                 step="0.5"
                 value={reviseForm.retentionPct}
-                onChange={(e) => setReviseForm((f) => ({ ...f, retentionPct: e.target.value }))}
+                onChange={(e) => { setReviseForm((f) => ({ ...f, retentionPct: e.target.value })); }}
                 style={inputStyle}
               />
             </div>
@@ -24630,7 +22639,7 @@ function ContractManagementTab({
             <input
               type="date"
               value={reviseForm.effectiveDate}
-              onChange={(e) => setReviseForm((f) => ({ ...f, effectiveDate: e.target.value }))}
+              onChange={(e) => { setReviseForm((f) => ({ ...f, effectiveDate: e.target.value })); }}
               style={inputStyle}
             />
           </div>
@@ -24638,14 +22647,14 @@ function ContractManagementTab({
             <label style={labelStyle}>Change Summary *</label>
             <textarea
               value={reviseForm.changeSummary}
-              onChange={(e) => setReviseForm((f) => ({ ...f, changeSummary: e.target.value }))}
+              onChange={(e) => { setReviseForm((f) => ({ ...f, changeSummary: e.target.value })); }}
               style={{ ...inputStyle, minHeight: '70px', resize: 'vertical' }}
               placeholder="Why is the contract being amended? (e.g. approved VO-003, scope addition)"
             />
           </div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <button
-              onClick={() => setReviseModal(null)}
+              onClick={() => { setReviseModal(null); }}
               style={{
                 padding: '8px 16px',
                 borderRadius: '6px',
@@ -24737,7 +22746,7 @@ function ContractManagementTab({
             <label style={labelStyle}>Contract Name *</label>
             <input
               value={cForm.contractName}
-              onChange={(e) => setCForm((f) => ({ ...f, contractName: e.target.value }))}
+              onChange={(e) => { setCForm((f) => ({ ...f, contractName: e.target.value })); }}
               style={inputStyle}
               placeholder="e.g. Main EPC Contract"
             />
@@ -24746,7 +22755,7 @@ function ContractManagementTab({
             <label style={labelStyle}>Client Name</label>
             <input
               value={cForm.clientName}
-              onChange={(e) => setCForm((f) => ({ ...f, clientName: e.target.value }))}
+              onChange={(e) => { setCForm((f) => ({ ...f, clientName: e.target.value })); }}
               style={inputStyle}
               placeholder="e.g. Saudi Aramco"
             />
@@ -24766,7 +22775,7 @@ function ContractManagementTab({
                 min={0}
                 step="0.01"
                 value={cForm.contractValue}
-                onChange={(e) => setCForm((f) => ({ ...f, contractValue: e.target.value }))}
+                onChange={(e) => { setCForm((f) => ({ ...f, contractValue: e.target.value })); }}
                 style={inputStyle}
                 placeholder="0.00"
               />
@@ -24775,7 +22784,7 @@ function ContractManagementTab({
               <label style={labelStyle}>Currency</label>
               <select
                 value={cForm.currencyCode}
-                onChange={(e) => setCForm((f) => ({ ...f, currencyCode: e.target.value }))}
+                onChange={(e) => { setCForm((f) => ({ ...f, currencyCode: e.target.value })); }}
                 style={inputStyle}
               >
                 {CURRENCIES.map((c) => (
@@ -24798,7 +22807,7 @@ function ContractManagementTab({
               <label style={labelStyle}>Billing Method</label>
               <select
                 value={cForm.defaultBillingMethod}
-                onChange={(e) => setCForm((f) => ({ ...f, defaultBillingMethod: e.target.value }))}
+                onChange={(e) => { setCForm((f) => ({ ...f, defaultBillingMethod: e.target.value })); }}
                 style={inputStyle}
               >
                 {CONTRACT_BILLING_METHODS.map((m) => (
@@ -24816,7 +22825,7 @@ function ContractManagementTab({
                 max={100}
                 step="0.5"
                 value={cForm.retentionPct}
-                onChange={(e) => setCForm((f) => ({ ...f, retentionPct: e.target.value }))}
+                onChange={(e) => { setCForm((f) => ({ ...f, retentionPct: e.target.value })); }}
                 style={inputStyle}
               />
             </div>
@@ -24825,7 +22834,7 @@ function ContractManagementTab({
             <label style={labelStyle}>Status</label>
             <select
               value={cForm.status}
-              onChange={(e) => setCForm((f) => ({ ...f, status: e.target.value }))}
+              onChange={(e) => { setCForm((f) => ({ ...f, status: e.target.value })); }}
               style={inputStyle}
             >
               {CONTRACT_STATUS_LIST.map((s) => (
@@ -24837,7 +22846,7 @@ function ContractManagementTab({
           </div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <button
-              onClick={() => setContractModal(null)}
+              onClick={() => { setContractModal(null); }}
               style={{
                 padding: '8px 16px',
                 borderRadius: '6px',
@@ -24971,7 +22980,7 @@ function ContractManagementTab({
                 </span>
                 {isAdmin && (
                   <button
-                    onClick={() => openReviseContract(selectedContract)}
+                    onClick={() => { openReviseContract(selectedContract); }}
                     style={{
                       padding: '6px 12px',
                       borderRadius: '6px',
@@ -24988,7 +22997,7 @@ function ContractManagementTab({
                 )}
                 {isAdmin && (
                   <button
-                    onClick={() => openEditContract(selectedContract)}
+                    onClick={() => { openEditContract(selectedContract); }}
                     style={{
                       padding: '6px 12px',
                       borderRadius: '6px',
@@ -25150,7 +23159,7 @@ function ContractManagementTab({
               </h3>
               {isAdmin && (
                 <button
-                  onClick={() => openCreateMilestone(selectedContract.id)}
+                  onClick={() => { openCreateMilestone(selectedContract.id); }}
                   style={{
                     padding: '6px 14px',
                     background: th.accent,
@@ -25268,7 +23277,7 @@ function ContractManagementTab({
                       )}
                       {isAdmin && (
                         <button
-                          onClick={() => openEditMilestone(selectedContract.id, ms)}
+                          onClick={() => { openEditMilestone(selectedContract.id, ms); }}
                           style={{
                             fontSize: '11px',
                             padding: '3px 8px',
@@ -25456,7 +23465,7 @@ function ContractManagementTab({
               <label style={labelStyle}>Milestone Name *</label>
               <input
                 value={msForm.name}
-                onChange={(e) => setMsForm((f) => ({ ...f, name: e.target.value }))}
+                onChange={(e) => { setMsForm((f) => ({ ...f, name: e.target.value })); }}
                 style={inputStyle}
                 placeholder="e.g. Design Approval"
               />
@@ -25475,7 +23484,7 @@ function ContractManagementTab({
                   type="number"
                   min={1}
                   value={msForm.sequence}
-                  onChange={(e) => setMsForm((f) => ({ ...f, sequence: Number(e.target.value) }))}
+                  onChange={(e) => { setMsForm((f) => ({ ...f, sequence: Number(e.target.value) })); }}
                   style={inputStyle}
                 />
               </div>
@@ -25483,7 +23492,7 @@ function ContractManagementTab({
                 <label style={labelStyle}>Currency</label>
                 <input
                   value={msForm.currencyCode}
-                  onChange={(e) => setMsForm((f) => ({ ...f, currencyCode: e.target.value }))}
+                  onChange={(e) => { setMsForm((f) => ({ ...f, currencyCode: e.target.value })); }}
                   style={inputStyle}
                 />
               </div>
@@ -25495,7 +23504,7 @@ function ContractManagementTab({
                 min={0}
                 step="0.01"
                 value={msForm.billableAmount}
-                onChange={(e) => setMsForm((f) => ({ ...f, billableAmount: e.target.value }))}
+                onChange={(e) => { setMsForm((f) => ({ ...f, billableAmount: e.target.value })); }}
                 style={inputStyle}
               />
             </div>
@@ -25503,7 +23512,7 @@ function ContractManagementTab({
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '20px' }}
             >
               <button
-                onClick={() => setMilestoneModal(null)}
+                onClick={() => { setMilestoneModal(null); }}
                 style={{
                   padding: '8px 16px',
                   borderRadius: '6px',
@@ -25553,7 +23562,7 @@ interface ExecFile {
   filename: string
   mimeType: string
   sizeBytes: number
-  title: string
+  title: string | null | null | null | null | null | null | null
   createdAt: string
   downloadUrl: string | null
 }
@@ -25691,6 +23700,68 @@ interface HSERow {
   createdAt: string
   updatedAt: string
 }
+interface DailyReportRow {
+  id: string
+  projectId: string
+  reportNumber: string
+  reportDate: string
+  preparedBy: string | null
+  reviewedBy: string | null
+  weatherConditions: string | null
+  temperature: string | null
+  scheduleStatus: string | null
+  costStatus: string | null
+  safetyStatus: string | null
+  qualityStatus: string | null
+  keyAccomplishments: string | null
+  majorConcerns: string | null
+  progressMetrics: Record<string, string>[]
+  safetyStats: Record<string, string>[]
+  safetyActivities: string[]
+  safetyRemarks: string | null
+  engineeringProgress: Record<string, string>[]
+  engineeringDeliverables: Record<string, string>[]
+  engineeringIssues: string | null
+  procurementItems: Record<string, string>[]
+  deliveriesReceived: Record<string, string>[]
+  procurementConcerns: string | null
+  constructionProgress: Record<string, string>[]
+  qcInspections: Record<string, string>[]
+  ncrStatus: Record<string, string>[]
+  qualityRemarks: string | null
+  manpower: Record<string, string>[]
+  equipmentUtilization: Record<string, string>[]
+  breakdownDetails: string | null
+  risksIssues: Record<string, string>[]
+  clientActions: Record<string, string>[]
+  lookaheadEngineering: string | null
+  lookaheadProcurement: string | null
+  lookaheadConstruction: string | null
+  lookaheadCommissioning: string | null
+  managementComments: string | null
+  createdByName: string | null
+  files: ExecFile[]
+  machinery: MachineryRow[]
+  createdAt: string
+  updatedAt: string
+}
+interface MachineryRow {
+  id: string
+  dailyReportId: string
+  projectId: string
+  poId: string
+  poNumber: string | null
+  equipmentDescription: string | null
+  workingHours: number | null
+  idleHours: number | null
+  breakdownHours: number | null
+  livePhotoFileId: string | null
+  livePhotoFilename: string | null
+  livePhotoDownloadUrl: string | null
+  compliant: boolean
+  createdByName: string | null
+  createdAt: string
+}
 
 interface ExecProps {
   projectId: string
@@ -25737,13 +23808,23 @@ interface ExecProps {
   onDeleteHSE: (id: string) => void
   onUploadHSEFile: (v: Record<string, unknown>) => void
   onDeleteHSEFile: (v: Record<string, unknown>) => void
+  dailyReports: DailyReportRow[]
+  onCreateDailyReport: (v: Record<string, unknown>) => void
+  onUpdateDailyReport: (v: Record<string, unknown>) => void
+  onDeleteDailyReport: (id: string) => void
+  onUploadDailyReportFile: (v: Record<string, unknown>) => void
+  onDeleteDailyReportFile: (v: Record<string, unknown>) => void
+  projectPOs: { id: string; poNumber: string }[]
+  onAddMachinery: (v: Record<string, unknown>) => void
+  onAttachMachineryPhoto: (v: Record<string, unknown>) => void
+  onDeleteMachinery: (id: string) => void
   ifcDocs: {
     id: string
     refNumber: string
     discipline: string
     docType: string
     title: string
-    revision: string
+    revision: string | null
     status: string
     issueDate: string | null
     downloadUrl: string | null
@@ -25777,6 +23858,14 @@ const EXEC_STATUS_COLOR: Record<string, { bg: string; color: string; border: str
   incident: { bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
   observation: { bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' },
   ptw: { bg: '#fdf4ff', color: '#7e22ce', border: '#e9d5ff' },
+  on_track: { bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' },
+  on_budget: { bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' },
+  good: { bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' },
+  at_risk: { bg: '#fffbeb', color: '#92400e', border: '#fde68a' },
+  fair: { bg: '#fffbeb', color: '#92400e', border: '#fde68a' },
+  delayed: { bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
+  over_budget: { bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
+  poor: { bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
 }
 
 function execBadge(val: string, th: Record<string, string>) {
@@ -25847,7 +23936,7 @@ function execFileList(
   isEditable: boolean,
   th: Record<string, string>,
 ) {
-  if (!files || files.length === 0) return null
+  if (files.length === 0) return null
   return (
     <>
       {files.map((f) => (
@@ -25912,7 +24001,7 @@ function execFileList(
           </span>
           {isEditable && onDelete && (
             <button
-              onClick={() => onDelete(f.id)}
+              onClick={() => { onDelete(f.id); }}
               style={{
                 border: 'none',
                 background: 'transparent',
@@ -25953,16 +24042,17 @@ async function execUpload(
     ncr: 'ncrId',
     hse_record: 'hseId',
     tq: 'tqId',
+    daily_report: 'reportId',
   }
   setState({ uploading: true, progress: 0 })
   try {
-    const { data: urlRes } = await api.post('/files/upload-url', {
+    const { data: urlRes } = await api.post<{ fileId: string }>('/files/upload-url', {
       filename: file.name,
       mimeType: file.type,
       sizeBytes: file.size,
       category: 'attachment',
     })
-    const { fileId } = urlRes as { fileId: string }
+    const { fileId } = urlRes
     setState({ uploading: true, progress: 30 })
     const buf = await file.arrayBuffer()
     await api.post(`/files/${fileId}/content`, buf, {
@@ -26050,6 +24140,7 @@ const EXEC_SUB_TABS = [
   { key: 'site_instructions', label: 'Site Instructions' },
   { key: 'qa_qc', label: 'QA/QC' },
   { key: 'hse', label: 'HSE' },
+  { key: 'daily_reports', label: 'Daily Reports' },
 ]
 const QA_SUB_TABS = [
   { key: 'itps', label: 'ITPs' },
@@ -26058,11 +24149,137 @@ const QA_SUB_TABS = [
 ]
 const HSE_TYPES = ['all', 'toolbox_talk', 'incident', 'observation', 'ptw']
 
+const DISCIPLINE_OPTIONS = ['civil', 'structural', 'mechanical', 'electrical', 'instrumentation']
+const SAFETY_ACTIVITY_OPTIONS = [
+  'toolbox_talk',
+  'site_inspection',
+  'equipment_inspection',
+  'permit_audit',
+  'safety_training',
+]
+
+function emptyDailyReportForm() {
+  return {
+    reportDate: new Date().toISOString().slice(0, 10),
+    preparedBy: '',
+    reviewedBy: '',
+    weatherConditions: '',
+    temperature: '',
+    scheduleStatus: 'on_track',
+    costStatus: 'on_budget',
+    safetyStatus: 'good',
+    qualityStatus: 'good',
+    keyAccomplishments: '',
+    majorConcerns: '',
+    progressMetrics: [
+      { metric: 'engineering', planned: '', actual: '' },
+      { metric: 'procurement', planned: '', actual: '' },
+      { metric: 'construction', planned: '', actual: '' },
+      { metric: 'overall', planned: '', actual: '' },
+    ] as Record<string, string>[],
+    safetyStats: [
+      { item: 'Man-hours Worked', today: '', mtd: '', ltd: '' },
+      { item: 'Lost Time Injuries', today: '', mtd: '', ltd: '' },
+      { item: 'Medical Cases', today: '', mtd: '', ltd: '' },
+      { item: 'Near Misses', today: '', mtd: '', ltd: '' },
+      { item: 'Safety Observations', today: '', mtd: '', ltd: '' },
+      { item: 'Toolbox Talks Conducted', today: '', mtd: '', ltd: '' },
+    ] as Record<string, string>[],
+    safetyActivities: [] as string[],
+    safetyRemarks: '',
+    engineeringProgress: DISCIPLINE_OPTIONS.map((discipline) => ({
+      discipline,
+      planned: '',
+      actual: '',
+      remarks: '',
+    })) as Record<string, string>[],
+    engineeringDeliverables: [] as Record<string, string>[],
+    engineeringIssues: '',
+    procurementItems: [] as Record<string, string>[],
+    deliveriesReceived: [] as Record<string, string>[],
+    procurementConcerns: '',
+    constructionProgress: [] as Record<string, string>[],
+    qcInspections: [
+      { type: 'civil', total: '', passed: '', failed: '' },
+      { type: 'mechanical', total: '', passed: '', failed: '' },
+      { type: 'electrical', total: '', passed: '', failed: '' },
+      { type: 'instrumentation', total: '', passed: '', failed: '' },
+    ] as Record<string, string>[],
+    ncrStatus: [] as Record<string, string>[],
+    qualityRemarks: '',
+    manpower: [...DISCIPLINE_OPTIONS, 'other'].map((discipline) => ({
+      discipline,
+      supervisors: '',
+      skilled: '',
+      unskilled: '',
+    })) as Record<string, string>[],
+    equipmentUtilization: [
+      { equipment: 'Excavator', working: '', idle: '', breakdown: '' },
+      { equipment: 'Crane', working: '', idle: '', breakdown: '' },
+      { equipment: 'Forklift', working: '', idle: '', breakdown: '' },
+      { equipment: 'Truck', working: '', idle: '', breakdown: '' },
+      { equipment: 'Generator', working: '', idle: '', breakdown: '' },
+    ] as Record<string, string>[],
+    breakdownDetails: '',
+    risksIssues: [] as Record<string, string>[],
+    clientActions: [] as Record<string, string>[],
+    lookaheadEngineering: '',
+    lookaheadProcurement: '',
+    lookaheadConstruction: '',
+    lookaheadCommissioning: '',
+    managementComments: '',
+  }
+}
+type DailyReportForm = ReturnType<typeof emptyDailyReportForm>
+
+function dailyReportRowToForm(r: DailyReportRow): DailyReportForm {
+  return {
+    reportDate: r.reportDate,
+    preparedBy: r.preparedBy ?? '',
+    reviewedBy: r.reviewedBy ?? '',
+    weatherConditions: r.weatherConditions ?? '',
+    temperature: r.temperature ?? '',
+    scheduleStatus: r.scheduleStatus ?? 'on_track',
+    costStatus: r.costStatus ?? 'on_budget',
+    safetyStatus: r.safetyStatus ?? 'good',
+    qualityStatus: r.qualityStatus ?? 'good',
+    keyAccomplishments: r.keyAccomplishments ?? '',
+    majorConcerns: r.majorConcerns ?? '',
+    progressMetrics: r.progressMetrics?.length ? r.progressMetrics : emptyDailyReportForm().progressMetrics,
+    safetyStats: r.safetyStats?.length ? r.safetyStats : emptyDailyReportForm().safetyStats,
+    safetyActivities: r.safetyActivities ?? [],
+    safetyRemarks: r.safetyRemarks ?? '',
+    engineeringProgress: r.engineeringProgress?.length
+      ? r.engineeringProgress
+      : emptyDailyReportForm().engineeringProgress,
+    engineeringDeliverables: r.engineeringDeliverables ?? [],
+    engineeringIssues: r.engineeringIssues ?? '',
+    procurementItems: r.procurementItems ?? [],
+    deliveriesReceived: r.deliveriesReceived ?? [],
+    procurementConcerns: r.procurementConcerns ?? '',
+    constructionProgress: r.constructionProgress ?? [],
+    qcInspections: r.qcInspections?.length ? r.qcInspections : emptyDailyReportForm().qcInspections,
+    ncrStatus: r.ncrStatus ?? [],
+    qualityRemarks: r.qualityRemarks ?? '',
+    manpower: r.manpower?.length ? r.manpower : emptyDailyReportForm().manpower,
+    equipmentUtilization: r.equipmentUtilization?.length
+      ? r.equipmentUtilization
+      : emptyDailyReportForm().equipmentUtilization,
+    breakdownDetails: r.breakdownDetails ?? '',
+    risksIssues: r.risksIssues ?? [],
+    clientActions: r.clientActions ?? [],
+    lookaheadEngineering: r.lookaheadEngineering ?? '',
+    lookaheadProcurement: r.lookaheadProcurement ?? '',
+    lookaheadConstruction: r.lookaheadConstruction ?? '',
+    lookaheadCommissioning: r.lookaheadCommissioning ?? '',
+    managementComments: r.managementComments ?? '',
+  }
+}
+
 function ExecutionTab({
   projectId,
   theme: th,
   isEditable,
-  isAdmin,
   rfis,
   siteInstructions,
   itps,
@@ -26071,7 +24288,6 @@ function ExecutionTab({
   hseRecords,
   drawings,
   rfqLines,
-  team,
   ifcDocs,
   onCreateRFI,
   onUpdateRFI,
@@ -26104,6 +24320,16 @@ function ExecutionTab({
   onDeleteHSE,
   onUploadHSEFile,
   onDeleteHSEFile,
+  dailyReports,
+  onCreateDailyReport,
+  onUpdateDailyReport,
+  onDeleteDailyReport,
+  onUploadDailyReportFile,
+  onDeleteDailyReportFile,
+  projectPOs,
+  onAddMachinery,
+  onAttachMachineryPhoto,
+  onDeleteMachinery,
 }: ExecProps) {
   const addToast = useToastStore((s) => s.addToast)
   const currentUser = useAuthStore((s) => s.user)
@@ -26280,10 +24506,27 @@ function ExecutionTab({
     remarks: '',
   })
 
+  // ── Daily Report modal state
+  const [dailyReportModal, setDailyReportModal] = React.useState<{
+    open: boolean
+    row: DailyReportRow | null
+    mode: 'view' | 'edit'
+  }>({ open: false, row: null, mode: 'edit' })
+  const [dailyReportForm, setDailyReportForm] = React.useState<DailyReportForm>(emptyDailyReportForm())
+  const [machineryForm, setMachineryForm] = React.useState({
+    poId: '',
+    equipmentDescription: '',
+    workingHours: '',
+    idleHours: '',
+    breakdownHours: '',
+  })
+  const [machineryPhoto, setMachineryPhoto] = React.useState<File | null>(null)
+  const [machineryUploading, setMachineryUploading] = React.useState(false)
+
   const navBtn = (key: string, label: string, activeKey: string, setKey: (k: string) => void) => (
     <button
       key={key}
-      onClick={() => setKey(key)}
+      onClick={() => { setKey(key); }}
       style={{
         padding: '8px 16px',
         border: 'none',
@@ -26299,20 +24542,6 @@ function ExecutionTab({
     >
       {label}
     </button>
-  )
-
-  const card = (children: React.ReactNode, style?: React.CSSProperties) => (
-    <div
-      style={{
-        background: th.bgSurface,
-        border: `1px solid ${th.border}`,
-        borderRadius: '10px',
-        padding: '16px',
-        ...style,
-      }}
-    >
-      {children}
-    </div>
   )
 
   const modalOverlay = (
@@ -26335,7 +24564,7 @@ function ExecutionTab({
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); }}
         style={{
           background: th.bgSurface,
           border: `1px solid ${th.border}`,
@@ -26372,7 +24601,7 @@ function ExecutionTab({
     <input
       type={type}
       value={val}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => { onChange(e.target.value); }}
       placeholder={placeholder}
       style={{
         width: '100%',
@@ -26389,7 +24618,7 @@ function ExecutionTab({
   const sel = (val: string, onChange: (v: string) => void, options: string[]) => (
     <select
       value={val}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => { onChange(e.target.value); }}
       style={{
         width: '100%',
         padding: '7px 10px',
@@ -26410,7 +24639,7 @@ function ExecutionTab({
   const textarea = (val: string, onChange: (v: string) => void, placeholder?: string) => (
     <textarea
       value={val}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => { onChange(e.target.value); }}
       placeholder={placeholder}
       rows={3}
       style={{
@@ -26460,6 +24689,190 @@ function ExecutionTab({
     </div>
   )
 
+  // Generic add/remove row-table editor shared by every repeating-row
+  // section of the Daily Report form (progress metrics, safety stats,
+  // engineering/procurement/construction rows, manpower, equipment, risks,
+  // client actions…) — one editor covers all of them instead of a bespoke
+  // component per section.
+  type RowCol = {
+    key: string
+    label: string
+    type?: 'text' | 'number' | 'date'
+    options?: string[]
+  }
+  const smallCellStyle: React.CSSProperties = {
+    padding: '6px 8px',
+    borderRadius: '5px',
+    border: `1px solid ${th.border}`,
+    background: th.bgCanvas,
+    color: th.textPrimary,
+    fontSize: '12px',
+    width: '100%',
+    boxSizing: 'border-box',
+  }
+  const rowsEditor = (
+    rows: Record<string, string>[],
+    setRows: (rows: Record<string, string>[]) => void,
+    columns: RowCol[],
+    opts?: { allowAddRemove?: boolean; addLabel?: string },
+  ) => {
+    const allowAddRemove = opts?.allowAddRemove ?? true
+    const gridCols = `${columns.map(() => '1fr').join(' ')}${allowAddRemove ? ' 28px' : ''}`
+    return (
+      <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+        <div style={{ minWidth: `${columns.length * 130}px` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '6px', marginBottom: '6px' }}>
+            {columns.map((c) => (
+              <span
+                key={c.key}
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  color: th.textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {c.label}
+              </span>
+            ))}
+            {allowAddRemove && <span />}
+          </div>
+          {rows.map((row, idx) => (
+            <div
+              key={idx}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: gridCols,
+                gap: '6px',
+                marginBottom: '6px',
+                alignItems: 'center',
+              }}
+            >
+              {columns.map((c) =>
+                c.options ? (
+                  <select
+                    key={c.key}
+                    value={row[c.key] ?? ''}
+                    onChange={(e) => {
+                      const next = [...rows]
+                      next[idx] = { ...next[idx], [c.key]: e.target.value }
+                      setRows(next)
+                    }}
+                    style={smallCellStyle}
+                  >
+                    <option value="">—</option>
+                    {c.options.map((o) => (
+                      <option key={o} value={o}>
+                        {o.replace(/_/g, ' ')}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    key={c.key}
+                    type={c.type ?? 'text'}
+                    value={row[c.key] ?? ''}
+                    onChange={(e) => {
+                      const next = [...rows]
+                      next[idx] = { ...next[idx], [c.key]: e.target.value }
+                      setRows(next)
+                    }}
+                    style={smallCellStyle}
+                  />
+                ),
+              )}
+              {allowAddRemove && (
+                <button
+                  onClick={() => { setRows(rows.filter((_, i) => i !== idx)); }}
+                  style={{
+                    padding: '4px 6px',
+                    border: 'none',
+                    background: '#fef2f2',
+                    color: '#991b1b',
+                    borderRadius: '5px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+          {allowAddRemove && (
+            <button
+              onClick={() => {
+                setRows([...rows, Object.fromEntries(columns.map((c) => [c.key, '']))])
+              }}
+              style={{
+                marginTop: '4px',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                border: `1px dashed ${th.border}`,
+                background: 'transparent',
+                color: th.textSecondary,
+                fontSize: '12px',
+                cursor: 'pointer',
+                width: '100%',
+              }}
+            >
+              {opts?.addLabel ?? '+ Add Row'}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const checkboxGroup = (
+    options: string[],
+    selected: string[],
+    onChange: (next: string[]) => void,
+  ) => (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: '12px' }}>
+      {options.map((o) => (
+        <label
+          key={o}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '13px',
+            color: th.textPrimary,
+            cursor: 'pointer',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={selected.includes(o)}
+            onChange={(e) => {
+              onChange(e.target.checked ? [...selected, o] : selected.filter((x) => x !== o))
+            }}
+          />
+          {o.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+        </label>
+      ))}
+    </div>
+  )
+
+  const sectionTitle = (label: string) => (
+    <h4
+      style={{
+        margin: '20px 0 10px',
+        fontSize: '12px',
+        fontWeight: 700,
+        color: th.textMuted,
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        borderTop: `1px solid ${th.border}`,
+        paddingTop: '16px',
+      }}
+    >
+      {label}
+    </h4>
+  )
+
   // ── RFIs section ──────────────────────────────────────────────────────────
   function openRfiCreate() {
     const nextNum = String(rfis.length + 1).padStart(3, '0')
@@ -26487,7 +24900,7 @@ function ExecutionTab({
       drawingRef: r.drawingRef ?? '',
       specRef: r.specRef ?? '',
       raisedByName: r.raisedByName ?? '',
-      raisedDate: r.raisedDate ?? '',
+      raisedDate: r.raisedDate,
       requiredDate: r.requiredDate ?? '',
       response: r.response ?? '',
       respondedByName: r.respondedByName ?? '',
@@ -26684,7 +25097,7 @@ function ExecutionTab({
   }
   function openIRInspect(r: IRRow) {
     setIrInspectForm({
-      inspectorName: r.inspectorName || currentUserName,
+      inspectorName: r.inspectorName ?? currentUserName,
       actualDate: r.actualDate ?? new Date().toISOString().slice(0, 10),
       result: r.result ?? '',
       remarks: r.remarks ?? '',
@@ -26872,16 +25285,110 @@ function ExecutionTab({
     setHseModal({ open: false, row: null })
   }
 
-  const rowStyle = (borderColor: string): React.CSSProperties => ({
-    padding: '14px 16px',
-    background: th.bgSurface,
-    borderTop: `1px solid ${th.border}`,
-    borderRight: `1px solid ${th.border}`,
-    borderBottom: `1px solid ${th.border}`,
-    borderLeft: `4px solid ${borderColor}`,
-    borderRadius: '8px',
-    marginBottom: '8px',
+  // ── Daily Report section ─────────────────────────────────────────────────
+  const emptyMachineryForm = () => ({
+    poId: '',
+    equipmentDescription: '',
+    workingHours: '',
+    idleHours: '',
+    breakdownHours: '',
   })
+  function openDailyReportCreate() {
+    setDailyReportForm({
+      ...emptyDailyReportForm(),
+      preparedBy: currentUserName,
+    })
+    setMachineryForm(emptyMachineryForm())
+    setMachineryPhoto(null)
+    setDailyReportModal({ open: true, row: null, mode: 'edit' })
+  }
+  function openDailyReportEdit(r: DailyReportRow) {
+    setDailyReportForm(dailyReportRowToForm(r))
+    setMachineryForm(emptyMachineryForm())
+    setMachineryPhoto(null)
+    setDailyReportModal({ open: true, row: r, mode: 'edit' })
+  }
+  function openDailyReportView(r: DailyReportRow) {
+    setDailyReportForm(dailyReportRowToForm(r))
+    setMachineryForm(emptyMachineryForm())
+    setMachineryPhoto(null)
+    setDailyReportModal({ open: true, row: r, mode: 'view' })
+  }
+  function saveDailyReport() {
+    if (!dailyReportModal.row) onCreateDailyReport({ projectId, input: dailyReportForm })
+    else onUpdateDailyReport({ id: dailyReportModal.row.id, input: dailyReportForm })
+    setDailyReportModal({ open: false, row: null, mode: 'edit' })
+  }
+
+  // Machinery entries save immediately against the mutation (like Photos),
+  // independent of the main form's Save button — a report must already
+  // exist (dailyReportModal.row) since the mutation needs a dailyReportId.
+  // Uploading the live photo reuses the same two-step upload primitive as
+  // execUpload (get an upload URL, PUT the bytes) but the fileId is passed
+  // straight into addDailyReportMachinery instead of a separate attach call,
+  // since the row and its one required photo are created together.
+  async function submitMachinery() {
+    if (!dailyReportModal.row || !machineryForm.poId) return
+    setMachineryUploading(true)
+    try {
+      let fileId: string | undefined
+      if (machineryPhoto) {
+        const { data: urlRes } = await api.post<{ fileId: string }>('/files/upload-url', {
+          filename: machineryPhoto.name,
+          mimeType: machineryPhoto.type,
+          sizeBytes: machineryPhoto.size,
+          category: 'attachment',
+        })
+        fileId = urlRes.fileId
+        const buf = await machineryPhoto.arrayBuffer()
+        await api.post(`/files/${fileId}/content`, buf, {
+          headers: { 'Content-Type': machineryPhoto.type },
+          timeout: 120_000,
+        })
+      }
+      onAddMachinery({
+        dailyReportId: dailyReportModal.row.id,
+        poId: machineryForm.poId,
+        equipmentDescription: machineryForm.equipmentDescription || null,
+        workingHours: machineryForm.workingHours ? parseFloat(machineryForm.workingHours) : null,
+        idleHours: machineryForm.idleHours ? parseFloat(machineryForm.idleHours) : null,
+        breakdownHours: machineryForm.breakdownHours ? parseFloat(machineryForm.breakdownHours) : null,
+        fileId: fileId ?? null,
+      })
+      if (!fileId) {
+        addToast({
+          type: 'error',
+          message: 'No live photo attached — this PO is now flagged and management has been notified.',
+        })
+      }
+      setMachineryForm(emptyMachineryForm())
+      setMachineryPhoto(null)
+    } finally {
+      setMachineryUploading(false)
+    }
+  }
+
+  async function attachMachineryPhotoNow(row: MachineryRow, file: File) {
+    setMachineryUploading(true)
+    try {
+      const { data: urlRes } = await api.post<{ fileId: string }>('/files/upload-url', {
+        filename: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        category: 'attachment',
+      })
+      const fileId = urlRes.fileId
+      const buf = await file.arrayBuffer()
+      await api.post(`/files/${fileId}/content`, buf, {
+        headers: { 'Content-Type': file.type },
+        timeout: 120_000,
+      })
+      onAttachMachineryPhoto({ id: row.id, fileId })
+    } finally {
+      setMachineryUploading(false)
+    }
+  }
+
   const statusBorderColor = (status: string) => {
     const s = EXEC_STATUS_COLOR[status]
     return s ? s.border : th.border
@@ -27033,7 +25540,7 @@ function ExecutionTab({
             others: '#6b7280',
           }
           const grouped = ifcDocs.reduce<Record<string, typeof ifcDocs>>((acc, d) => {
-            const k = d.discipline ?? 'others'
+            const k = d.discipline
             if (!acc[k]) acc[k] = []
             acc[k].push(d)
             return acc
@@ -27411,7 +25918,7 @@ function ExecutionTab({
                       </div>
                     )}
                   </div>
-                  {(r.raisedByName || r.drawingRef || r.specRef) && (
+                  {(r.raisedByName ?? r.drawingRef ?? r.specRef) && (
                     <div
                       style={{
                         display: 'flex',
@@ -27465,7 +25972,7 @@ function ExecutionTab({
                       <div style={{ fontSize: '13px', color: th.textPrimary, lineHeight: 1.5 }}>
                         {r.response}
                       </div>
-                      {(r.respondedByName || r.respondedDate) && (
+                      {(r.respondedByName ?? r.respondedDate) && (
                         <div style={{ fontSize: '11px', color: '#16a34a', marginTop: 6 }}>
                           {r.respondedByName && <span>{r.respondedByName}</span>}
                           {r.respondedDate && <span> · {r.respondedDate}</span>}
@@ -27481,7 +25988,7 @@ function ExecutionTab({
                   )}
 
                   {/* Attachments */}
-                  {(r.files?.length > 0 || isEditable) && (
+                  {(r.files.length > 0 || isEditable) && (
                     <div>
                       <div
                         style={{
@@ -27500,7 +26007,7 @@ function ExecutionTab({
                             letterSpacing: '0.06em',
                           }}
                         >
-                          Attachments {r.files?.length > 0 && `(${r.files.length})`}
+                          Attachments {r.files.length > 0 && `(${r.files.length})`}
                         </span>
                         {isEditable && (
                           <ExecUploadButton
@@ -27514,11 +26021,11 @@ function ExecutionTab({
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {execFileList(
                           r.files,
-                          isEditable ? (aId) => onDeleteRFIFile({ id: r.id, attachId: aId }) : null,
+                          isEditable ? (aId) => { onDeleteRFIFile({ id: r.id, attachId: aId }); } : null,
                           isEditable,
                           th,
                         )}
-                        {(!r.files || r.files.length === 0) && (
+                        {r.files.length === 0 && (
                           <div style={{ fontSize: '12px', color: th.textMuted }}>
                             No attachments.
                           </div>
@@ -27542,7 +26049,7 @@ function ExecutionTab({
                   >
                     {r.status === 'open' && (
                       <button
-                        onClick={() => openRfiRespond(r)}
+                        onClick={() => { openRfiRespond(r); }}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -27574,7 +26081,7 @@ function ExecutionTab({
                       </button>
                     )}
                     <button
-                      onClick={() => openRfiEdit(r)}
+                      onClick={() => { openRfiEdit(r); }}
                       style={{
                         padding: '6px 14px',
                         borderRadius: 7,
@@ -27590,18 +26097,18 @@ function ExecutionTab({
                     </button>
                     <button
                       onClick={() =>
-                        addToast({
+                        { addToast({
                           type: 'danger',
                           message: `Delete RFI-${r.rfiNumber}?`,
                           actions: [
                             {
                               label: 'Delete',
                               variant: 'danger',
-                              onClick: () => onDeleteRFI(r.id),
+                              onClick: () => { onDeleteRFI(r.id); },
                             },
-                            { label: 'Cancel', onClick: () => {} },
+                            { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                           ],
-                        })
+                        }); }
                       }
                       style={{
                         padding: '6px 14px',
@@ -27733,7 +26240,7 @@ function ExecutionTab({
                       </div>
                     )}
                   </div>
-                  {(r.acknowledgedByName || r.voRef) && (
+                  {(r.acknowledgedByName ?? r.voRef) && (
                     <div
                       style={{
                         display: 'flex',
@@ -27757,7 +26264,7 @@ function ExecutionTab({
                       )}
                     </div>
                   )}
-                  {(r.files?.length > 0 || isEditable) && (
+                  {(r.files.length > 0 || isEditable) && (
                     <div>
                       <div
                         style={{
@@ -27776,7 +26283,7 @@ function ExecutionTab({
                             letterSpacing: '0.06em',
                           }}
                         >
-                          Attachments {r.files?.length > 0 && `(${r.files.length})`}
+                          Attachments {r.files.length > 0 && `(${r.files.length})`}
                         </span>
                         {isEditable && (
                           <ExecUploadButton
@@ -27790,11 +26297,11 @@ function ExecutionTab({
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {execFileList(
                           r.files,
-                          isEditable ? (aId) => onDeleteSIFile({ id: r.id, attachId: aId }) : null,
+                          isEditable ? (aId) => { onDeleteSIFile({ id: r.id, attachId: aId }); } : null,
                           isEditable,
                           th,
                         )}
-                        {(!r.files || r.files.length === 0) && (
+                        {r.files.length === 0 && (
                           <div style={{ fontSize: '12px', color: th.textMuted }}>
                             No attachments.
                           </div>
@@ -27815,7 +26322,7 @@ function ExecutionTab({
                     }}
                   >
                     <button
-                      onClick={() => openSIEdit(r)}
+                      onClick={() => { openSIEdit(r); }}
                       style={{
                         padding: '6px 14px',
                         borderRadius: 7,
@@ -27832,7 +26339,7 @@ function ExecutionTab({
                     {r.status === 'open' && (
                       <button
                         onClick={() =>
-                          onUpdateSI({
+                          { onUpdateSI({
                             id: r.id,
                             siNumber: r.siNumber,
                             subject: r.subject,
@@ -27844,7 +26351,7 @@ function ExecutionTab({
                             potentialVo: r.potentialVo,
                             voRef: r.voRef ?? '',
                             status: 'acknowledged',
-                          })
+                          }); }
                         }
                         style={{
                           padding: '6px 14px',
@@ -27862,14 +26369,14 @@ function ExecutionTab({
                     )}
                     <button
                       onClick={() =>
-                        addToast({
+                        { addToast({
                           type: 'danger',
                           message: `Delete SI-${r.siNumber}?`,
                           actions: [
-                            { label: 'Delete', variant: 'danger', onClick: () => onDeleteSI(r.id) },
-                            { label: 'Cancel', onClick: () => {} },
+                            { label: 'Delete', variant: 'danger', onClick: () => { onDeleteSI(r.id); } },
+                            { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                           ],
-                        })
+                        }); }
                       }
                       style={{
                         padding: '6px 14px',
@@ -27961,7 +26468,7 @@ function ExecutionTab({
                               <select
                                 value={r.status}
                                 onChange={(e) =>
-                                  onUpdateITP({
+                                  { onUpdateITP({
                                     id: r.id,
                                     title: r.title,
                                     workPackage: r.workPackage ?? '',
@@ -27969,7 +26476,7 @@ function ExecutionTab({
                                     revision: r.revision,
                                     status: e.target.value,
                                     createdByName: r.createdByName ?? '',
-                                  })
+                                  }); }
                                 }
                                 style={{
                                   padding: '2px 8px',
@@ -28038,7 +26545,7 @@ function ExecutionTab({
                       }}
                     >
                       <button
-                        onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
+                        onClick={() => { setExpandedId(expandedId === r.id ? null : r.id); }}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -28058,7 +26565,7 @@ function ExecutionTab({
                       {isEditable && (
                         <>
                           <button
-                            onClick={() => openITPItems(r)}
+                            onClick={() => { openITPItems(r); }}
                             style={{
                               padding: '6px 14px',
                               borderRadius: 7,
@@ -28073,7 +26580,7 @@ function ExecutionTab({
                             Edit Items
                           </button>
                           <button
-                            onClick={() => openITPEdit(r)}
+                            onClick={() => { openITPEdit(r); }}
                             style={{
                               padding: '6px 14px',
                               borderRadius: 7,
@@ -28089,18 +26596,18 @@ function ExecutionTab({
                           </button>
                           <button
                             onClick={() =>
-                              addToast({
+                              { addToast({
                                 type: 'danger',
                                 message: `Delete ITP "${r.title}"?`,
                                 actions: [
                                   {
                                     label: 'Delete',
                                     variant: 'danger',
-                                    onClick: () => onDeleteITP(r.id),
+                                    onClick: () => { onDeleteITP(r.id); },
                                   },
-                                  { label: 'Cancel', onClick: () => {} },
+                                  { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                                 ],
-                              })
+                              }); }
                             }
                             style={{
                               padding: '6px 14px',
@@ -28254,7 +26761,7 @@ function ExecutionTab({
                           </div>
                         )}
                       </div>
-                      {(r.files?.length > 0 || isEditable) && (
+                      {(r.files.length > 0 || isEditable) && (
                         <div>
                           <div
                             style={{
@@ -28273,7 +26780,7 @@ function ExecutionTab({
                                 letterSpacing: '0.06em',
                               }}
                             >
-                              Attachments {r.files?.length > 0 && `(${r.files.length})`}
+                              Attachments {r.files.length > 0 && `(${r.files.length})`}
                             </span>
                             {isEditable && (
                               <ExecUploadButton
@@ -28288,12 +26795,12 @@ function ExecutionTab({
                             {execFileList(
                               r.files,
                               isEditable
-                                ? (aId) => onDeleteIRFile({ id: r.id, attachId: aId })
+                                ? (aId) => { onDeleteIRFile({ id: r.id, attachId: aId }); }
                                 : null,
                               isEditable,
                               th,
                             )}
-                            {(!r.files || r.files.length === 0) && (
+                            {r.files.length === 0 && (
                               <div style={{ fontSize: '12px', color: th.textMuted }}>
                                 No attachments.
                               </div>
@@ -28314,7 +26821,7 @@ function ExecutionTab({
                         }}
                       >
                         <button
-                          onClick={() => openIREdit(r)}
+                          onClick={() => { openIREdit(r); }}
                           style={{
                             padding: '6px 14px',
                             borderRadius: 7,
@@ -28330,7 +26837,7 @@ function ExecutionTab({
                         </button>
                         {r.status === 'pending' && (
                           <button
-                            onClick={() => openIRInspect(r)}
+                            onClick={() => { openIRInspect(r); }}
                             style={{
                               padding: '6px 14px',
                               borderRadius: 7,
@@ -28347,18 +26854,18 @@ function ExecutionTab({
                         )}
                         <button
                           onClick={() =>
-                            addToast({
+                            { addToast({
                               type: 'danger',
                               message: `Delete IR-${r.irNumber}?`,
                               actions: [
                                 {
                                   label: 'Delete',
                                   variant: 'danger',
-                                  onClick: () => onDeleteIR(r.id),
+                                  onClick: () => { onDeleteIR(r.id); },
                                 },
-                                { label: 'Cancel', onClick: () => {} },
+                                { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                               ],
-                            })
+                            }); }
                           }
                           style={{
                             padding: '6px 14px',
@@ -28515,7 +27022,7 @@ function ExecutionTab({
                           </div>
                         </div>
                       )}
-                      {(r.files?.length > 0 || isEditable) && (
+                      {(r.files.length > 0 || isEditable) && (
                         <div>
                           <div
                             style={{
@@ -28534,7 +27041,7 @@ function ExecutionTab({
                                 letterSpacing: '0.06em',
                               }}
                             >
-                              Attachments {r.files?.length > 0 && `(${r.files.length})`}
+                              Attachments {r.files.length > 0 && `(${r.files.length})`}
                             </span>
                             {isEditable && (
                               <ExecUploadButton
@@ -28549,12 +27056,12 @@ function ExecutionTab({
                             {execFileList(
                               r.files,
                               isEditable
-                                ? (aId) => onDeleteNCRFile({ id: r.id, attachId: aId })
+                                ? (aId) => { onDeleteNCRFile({ id: r.id, attachId: aId }); }
                                 : null,
                               isEditable,
                               th,
                             )}
-                            {(!r.files || r.files.length === 0) && (
+                            {r.files.length === 0 && (
                               <div style={{ fontSize: '12px', color: th.textMuted }}>
                                 No attachments.
                               </div>
@@ -28575,7 +27082,7 @@ function ExecutionTab({
                         }}
                       >
                         <button
-                          onClick={() => openNCREdit(r)}
+                          onClick={() => { openNCREdit(r); }}
                           style={{
                             padding: '6px 14px',
                             borderRadius: 7,
@@ -28591,7 +27098,7 @@ function ExecutionTab({
                         </button>
                         {r.status !== 'closed' && (
                           <button
-                            onClick={() => openNCRResolve(r)}
+                            onClick={() => { openNCRResolve(r); }}
                             style={{
                               padding: '6px 14px',
                               borderRadius: 7,
@@ -28608,18 +27115,18 @@ function ExecutionTab({
                         )}
                         <button
                           onClick={() =>
-                            addToast({
+                            { addToast({
                               type: 'danger',
                               message: `Delete NCR-${r.ncrNumber}?`,
                               actions: [
                                 {
                                   label: 'Delete',
                                   variant: 'danger',
-                                  onClick: () => onDeleteNCR(r.id),
+                                  onClick: () => { onDeleteNCR(r.id); },
                                 },
-                                { label: 'Cancel', onClick: () => {} },
+                                { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                               ],
-                            })
+                            }); }
                           }
                           style={{
                             padding: '6px 14px',
@@ -28670,7 +27177,7 @@ function ExecutionTab({
               {HSE_TYPES.map((t) => (
                 <button
                   key={t}
-                  onClick={() => setHseType(t)}
+                  onClick={() => { setHseType(t); }}
                   style={{
                     padding: '5px 12px',
                     borderRadius: '6px',
@@ -28779,7 +27286,7 @@ function ExecutionTab({
                         return (
                           <select
                             value={r.ptwStatus}
-                            onChange={(e) => onUpdateHSE(hsePayload({ ptwStatus: e.target.value }))}
+                            onChange={(e) => { onUpdateHSE(hsePayload({ ptwStatus: e.target.value })); }}
                             style={{
                               padding: '2px 8px',
                               borderRadius: '999px',
@@ -28901,7 +27408,7 @@ function ExecutionTab({
                       </div>
                     </div>
                   )}
-                  {(r.files?.length > 0 || isEditable) && (
+                  {(r.files.length > 0 || isEditable) && (
                     <div>
                       <div
                         style={{
@@ -28920,7 +27427,7 @@ function ExecutionTab({
                             letterSpacing: '0.06em',
                           }}
                         >
-                          Attachments {r.files?.length > 0 && `(${r.files.length})`}
+                          Attachments {r.files.length > 0 && `(${r.files.length})`}
                         </span>
                         {isEditable && (
                           <ExecUploadButton
@@ -28934,11 +27441,11 @@ function ExecutionTab({
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {execFileList(
                           r.files,
-                          isEditable ? (aId) => onDeleteHSEFile({ id: r.id, attachId: aId }) : null,
+                          isEditable ? (aId) => { onDeleteHSEFile({ id: r.id, attachId: aId }); } : null,
                           isEditable,
                           th,
                         )}
-                        {(!r.files || r.files.length === 0) && (
+                        {r.files.length === 0 && (
                           <div style={{ fontSize: '12px', color: th.textMuted }}>
                             No attachments.
                           </div>
@@ -28959,7 +27466,7 @@ function ExecutionTab({
                     }}
                   >
                     <button
-                      onClick={() => openHSEEdit(r)}
+                      onClick={() => { openHSEEdit(r); }}
                       style={{
                         padding: '6px 14px',
                         borderRadius: 7,
@@ -28976,7 +27483,7 @@ function ExecutionTab({
                     {r.recordType !== 'ptw' && r.status === 'open' && (
                       <button
                         onClick={() =>
-                          onUpdateHSE({
+                          { onUpdateHSE({
                             id: r.id,
                             recordType: r.recordType,
                             title: r.title,
@@ -29000,7 +27507,7 @@ function ExecutionTab({
                             approvedBy: r.approvedBy ?? '',
                             ptwStatus: r.ptwStatus ?? 'pending',
                             status: 'closed',
-                          })
+                          }); }
                         }
                         style={{
                           padding: '6px 14px',
@@ -29018,18 +27525,18 @@ function ExecutionTab({
                     )}
                     <button
                       onClick={() =>
-                        addToast({
+                        { addToast({
                           type: 'danger',
                           message: `Delete HSE record "${r.title}"?`,
                           actions: [
                             {
                               label: 'Delete',
                               variant: 'danger',
-                              onClick: () => onDeleteHSE(r.id),
+                              onClick: () => { onDeleteHSE(r.id); },
                             },
-                            { label: 'Cancel', onClick: () => {} },
+                            { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                           ],
-                        })
+                        }); }
                       }
                       style={{
                         padding: '6px 14px',
@@ -29047,6 +27554,229 @@ function ExecutionTab({
                     </button>
                   </div>
                 )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sub === 'daily_reports' && (
+        <div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '16px',
+              flexWrap: 'wrap',
+              gap: '8px',
+            }}
+          >
+            <div style={{ fontSize: '15px', fontWeight: 700, color: th.textPrimary }}>
+              Daily Reports{' '}
+              <span style={{ fontSize: '13px', fontWeight: 400, color: th.textMuted }}>
+                ({dailyReports.length})
+              </span>
+            </div>
+            {isEditable && (
+              <button
+                onClick={openDailyReportCreate}
+                style={{
+                  padding: '5px 16px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: th.accent,
+                  color: '#fff',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                + New Report
+              </button>
+            )}
+          </div>
+          {dailyReports.length === 0 && (
+            <div
+              style={{ textAlign: 'center', padding: '40px', color: th.textMuted, fontSize: '13px' }}
+            >
+              No daily reports filed yet.
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {dailyReports.map((r) => (
+              <div
+                key={r.id}
+                style={{ border: `1px solid ${th.border}`, borderRadius: 10, overflow: 'hidden' }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 16px',
+                    background: th.bgSurface,
+                    borderBottom: `1px solid ${th.border}`,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      color: th.textPrimary,
+                    }}
+                  >
+                    {r.reportNumber}
+                  </span>
+                  <span style={{ fontSize: '12px', color: th.textMuted }}>{r.reportDate}</span>
+                  {r.scheduleStatus && execBadge(r.scheduleStatus, th)}
+                  {r.costStatus && execBadge(r.costStatus, th)}
+                  {r.safetyStatus && execBadge(r.safetyStatus, th)}
+                  {r.qualityStatus && execBadge(r.qualityStatus, th)}
+                  <div
+                    style={{
+                      marginLeft: 'auto',
+                      display: 'flex',
+                      gap: 12,
+                      fontSize: '11px',
+                      color: th.textMuted,
+                    }}
+                  >
+                    {r.preparedBy && <span>Prepared by: {r.preparedBy}</span>}
+                    {r.weatherConditions && <span>{r.weatherConditions}</span>}
+                  </div>
+                </div>
+                <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {r.keyAccomplishments && (
+                    <div>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: th.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                        Key Accomplishments
+                      </div>
+                      <div style={{ fontSize: '13px', color: th.textSecondary, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                        {r.keyAccomplishments}
+                      </div>
+                    </div>
+                  )}
+                  {r.majorConcerns && (
+                    <div
+                      style={{
+                        padding: '12px 14px',
+                        background: '#fffbeb',
+                        border: '1px solid #fde68a',
+                        borderRadius: 8,
+                      }}
+                    >
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                        Major Concerns / Delays
+                      </div>
+                      <div style={{ fontSize: '13px', color: th.textPrimary, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                        {r.majorConcerns}
+                      </div>
+                    </div>
+                  )}
+                  {(r.files.length > 0 || isEditable) && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: th.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          Photos {r.files.length > 0 && `(${r.files.length})`}
+                        </span>
+                        {isEditable && (
+                          <ExecUploadButton
+                            entityId={r.id}
+                            entityType="daily_report"
+                            onUpload={onUploadDailyReportFile}
+                            th={th}
+                          />
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {execFileList(
+                          r.files,
+                          isEditable
+                            ? (aId) => { onDeleteDailyReportFile({ attachmentId: aId, reportId: r.id }); }
+                            : null,
+                          isEditable,
+                          th,
+                        )}
+                        {r.files.length === 0 && (
+                          <div style={{ fontSize: '12px', color: th.textMuted }}>No photos attached.</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '10px 16px',
+                    background: th.bgSurface,
+                    borderTop: `1px solid ${th.border}`,
+                  }}
+                >
+                  <button
+                    onClick={() => { openDailyReportView(r); }}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 7,
+                      border: `1px solid ${th.border}`,
+                      background: 'none',
+                      color: th.textSecondary,
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    View
+                  </button>
+                  {isEditable && (
+                    <button
+                      onClick={() => { openDailyReportEdit(r); }}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: 7,
+                        border: `1px solid ${th.border}`,
+                        background: 'none',
+                        color: th.textSecondary,
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {isEditable && (
+                    <button
+                      onClick={() =>
+                        { addToast({
+                          type: 'danger',
+                          message: `Delete Daily Report "${r.reportNumber}"?`,
+                          actions: [
+                            { label: 'Delete', variant: 'danger', onClick: () => { onDeleteDailyReport(r.id); } },
+                            { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
+                          ],
+                        }); }
+                      }
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: 7,
+                        border: '1px solid #fecaca',
+                        background: 'none',
+                        color: '#ef4444',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        marginLeft: 'auto',
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -29112,21 +27842,21 @@ function ExecutionTab({
                           RFI-{rfiForm.rfiNumber}
                         </div>
                       ) : (
-                        inp(rfiForm.rfiNumber, (v) => setRfiForm((f) => ({ ...f, rfiNumber: v })))
+                        inp(rfiForm.rfiNumber, (v) => { setRfiForm((f) => ({ ...f, rfiNumber: v })); })
                       )}
                     </div>
                     {field(
                       'Subject *',
                       inp(
                         rfiForm.subject,
-                        (v) => setRfiForm((f) => ({ ...f, subject: v })),
+                        (v) => { setRfiForm((f) => ({ ...f, subject: v })); },
                         'Brief subject',
                       ),
                     )}
                     {field(
                       'Description',
                       textarea(rfiForm.description, (v) =>
-                        setRfiForm((f) => ({ ...f, description: v })),
+                        { setRfiForm((f) => ({ ...f, description: v })); },
                       ),
                     )}
                     <datalist id="rfi-drawing-refs">
@@ -29146,7 +27876,7 @@ function ExecutionTab({
                           list="rfi-drawing-refs"
                           value={rfiForm.drawingRef}
                           onChange={(e) =>
-                            setRfiForm((f) => ({ ...f, drawingRef: e.target.value }))
+                            { setRfiForm((f) => ({ ...f, drawingRef: e.target.value })); }
                           }
                           placeholder="e.g. DWG-A101"
                           style={comboStyle}
@@ -29157,7 +27887,7 @@ function ExecutionTab({
                         <input
                           list="rfi-spec-refs"
                           value={rfiForm.specRef}
-                          onChange={(e) => setRfiForm((f) => ({ ...f, specRef: e.target.value }))}
+                          onChange={(e) => { setRfiForm((f) => ({ ...f, specRef: e.target.value })); }}
                           placeholder="e.g. Section 03300"
                           style={comboStyle}
                         />,
@@ -29165,14 +27895,14 @@ function ExecutionTab({
                       {field(
                         'Raised By',
                         inp(rfiForm.raisedByName, (v) =>
-                          setRfiForm((f) => ({ ...f, raisedByName: v })),
+                          { setRfiForm((f) => ({ ...f, raisedByName: v })); },
                         ),
                       )}
                       {field(
                         'Raised Date',
                         inp(
                           rfiForm.raisedDate,
-                          (v) => setRfiForm((f) => ({ ...f, raisedDate: v })),
+                          (v) => { setRfiForm((f) => ({ ...f, raisedDate: v })); },
                           '',
                           'date',
                         ),
@@ -29181,14 +27911,14 @@ function ExecutionTab({
                         'Required By',
                         inp(
                           rfiForm.requiredDate,
-                          (v) => setRfiForm((f) => ({ ...f, requiredDate: v })),
+                          (v) => { setRfiForm((f) => ({ ...f, requiredDate: v })); },
                           '',
                           'date',
                         ),
                       )}
                       {field(
                         'Status',
-                        sel(rfiForm.status, (v) => setRfiForm((f) => ({ ...f, status: v })), [
+                        sel(rfiForm.status, (v) => { setRfiForm((f) => ({ ...f, status: v })); }, [
                           'open',
                           'responded',
                           'closed',
@@ -29204,7 +27934,7 @@ function ExecutionTab({
                   'Response *',
                   textarea(
                     rfiForm.response,
-                    (v) => setRfiForm((f) => ({ ...f, response: v })),
+                    (v) => { setRfiForm((f) => ({ ...f, response: v })); },
                     'Enter response…',
                   ),
                 )}
@@ -29212,14 +27942,14 @@ function ExecutionTab({
                   {field(
                     'Responded By',
                     inp(rfiForm.respondedByName, (v) =>
-                      setRfiForm((f) => ({ ...f, respondedByName: v })),
+                      { setRfiForm((f) => ({ ...f, respondedByName: v })); },
                     ),
                   )}
                   {field(
                     'Response Date',
                     inp(
                       rfiForm.respondedDate,
-                      (v) => setRfiForm((f) => ({ ...f, respondedDate: v })),
+                      (v) => { setRfiForm((f) => ({ ...f, respondedDate: v })); },
                       '',
                       'date',
                     ),
@@ -29229,11 +27959,11 @@ function ExecutionTab({
             )}
             {modalBtns(
               saveRfi,
-              () => setRfiModal({ open: false, row: null, mode: 'create' }),
+              () => { setRfiModal({ open: false, row: null, mode: 'create' }); },
               rfiModal.mode === 'respond' ? 'Submit Response' : 'Save',
             )}
           </>,
-          () => setRfiModal({ open: false, row: null, mode: 'create' }),
+          () => { setRfiModal({ open: false, row: null, mode: 'create' }); },
         )}
 
       {/* ── Site Instruction Modal ── */}
@@ -29272,14 +28002,14 @@ function ExecutionTab({
                     SI-{siForm.siNumber}
                   </div>
                 ) : (
-                  inp(siForm.siNumber, (v) => setSiForm((f) => ({ ...f, siNumber: v })))
+                  inp(siForm.siNumber, (v) => { setSiForm((f) => ({ ...f, siNumber: v })); })
                 )}
               </div>
               {field(
                 'Issued Date',
                 inp(
                   siForm.issuedDate,
-                  (v) => setSiForm((f) => ({ ...f, issuedDate: v })),
+                  (v) => { setSiForm((f) => ({ ...f, issuedDate: v })); },
                   '',
                   'date',
                 ),
@@ -29287,20 +28017,20 @@ function ExecutionTab({
             </div>
             {field(
               'Subject *',
-              inp(siForm.subject, (v) => setSiForm((f) => ({ ...f, subject: v }))),
+              inp(siForm.subject, (v) => { setSiForm((f) => ({ ...f, subject: v })); }),
             )}
             {field(
               'Description',
-              textarea(siForm.description, (v) => setSiForm((f) => ({ ...f, description: v }))),
+              textarea(siForm.description, (v) => { setSiForm((f) => ({ ...f, description: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
                 'Issued By',
-                inp(siForm.issuedBy, (v) => setSiForm((f) => ({ ...f, issuedBy: v }))),
+                inp(siForm.issuedBy, (v) => { setSiForm((f) => ({ ...f, issuedBy: v })); }),
               )}
               {field(
                 'Status',
-                sel(siForm.status, (v) => setSiForm((f) => ({ ...f, status: v })), [
+                sel(siForm.status, (v) => { setSiForm((f) => ({ ...f, status: v })); }, [
                   'open',
                   'acknowledged',
                   'closed',
@@ -29309,14 +28039,14 @@ function ExecutionTab({
               {field(
                 'Acknowledged By',
                 inp(siForm.acknowledgedByName, (v) =>
-                  setSiForm((f) => ({ ...f, acknowledgedByName: v })),
+                  { setSiForm((f) => ({ ...f, acknowledgedByName: v })); },
                 ),
               )}
               {field(
                 'Acknowledged Date',
                 inp(
                   siForm.acknowledgedDate,
-                  (v) => setSiForm((f) => ({ ...f, acknowledgedDate: v })),
+                  (v) => { setSiForm((f) => ({ ...f, acknowledgedDate: v })); },
                   '',
                   'date',
                 ),
@@ -29329,7 +28059,7 @@ function ExecutionTab({
                 type="checkbox"
                 id="si-vo"
                 checked={siForm.potentialVo}
-                onChange={(e) => setSiForm((f) => ({ ...f, potentialVo: e.target.checked }))}
+                onChange={(e) => { setSiForm((f) => ({ ...f, potentialVo: e.target.checked })); }}
               />
               <label htmlFor="si-vo" style={{ fontSize: '13px', color: th.textPrimary }}>
                 Potential Variation Order
@@ -29338,11 +28068,11 @@ function ExecutionTab({
             {siForm.potentialVo &&
               field(
                 'VO Reference',
-                inp(siForm.voRef, (v) => setSiForm((f) => ({ ...f, voRef: v }))),
+                inp(siForm.voRef, (v) => { setSiForm((f) => ({ ...f, voRef: v })); }),
               )}
-            {modalBtns(saveSI, () => setSiModal({ open: false, row: null }))}
+            {modalBtns(saveSI, () => { setSiModal({ open: false, row: null }); })}
           </>,
-          () => setSiModal({ open: false, row: null }),
+          () => { setSiModal({ open: false, row: null }); },
         )}
 
       {/* ── ITP Modal ── */}
@@ -29354,24 +28084,24 @@ function ExecutionTab({
             </h3>
             {field(
               'Title *',
-              inp(itpForm.title, (v) => setItpForm((f) => ({ ...f, title: v }))),
+              inp(itpForm.title, (v) => { setItpForm((f) => ({ ...f, title: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
                 'Work Package',
-                inp(itpForm.workPackage, (v) => setItpForm((f) => ({ ...f, workPackage: v }))),
+                inp(itpForm.workPackage, (v) => { setItpForm((f) => ({ ...f, workPackage: v })); }),
               )}
               {field(
                 'Discipline',
-                inp(itpForm.discipline, (v) => setItpForm((f) => ({ ...f, discipline: v }))),
+                inp(itpForm.discipline, (v) => { setItpForm((f) => ({ ...f, discipline: v })); }),
               )}
               {field(
                 'Revision',
-                inp(itpForm.revision, (v) => setItpForm((f) => ({ ...f, revision: v }))),
+                inp(itpForm.revision, (v) => { setItpForm((f) => ({ ...f, revision: v })); }),
               )}
               {field(
                 'Status',
-                sel(itpForm.status, (v) => setItpForm((f) => ({ ...f, status: v })), [
+                sel(itpForm.status, (v) => { setItpForm((f) => ({ ...f, status: v })); }, [
                   'draft',
                   'approved',
                   'active',
@@ -29380,12 +28110,12 @@ function ExecutionTab({
               )}
               {field(
                 'Created By',
-                inp(itpForm.createdByName, (v) => setItpForm((f) => ({ ...f, createdByName: v }))),
+                inp(itpForm.createdByName, (v) => { setItpForm((f) => ({ ...f, createdByName: v })); }),
               )}
             </div>
-            {modalBtns(saveITP, () => setItpModal({ open: false, row: null }))}
+            {modalBtns(saveITP, () => { setItpModal({ open: false, row: null }); })}
           </>,
-          () => setItpModal({ open: false, row: null }),
+          () => { setItpModal({ open: false, row: null }); },
           '760px',
         )}
 
@@ -29418,9 +28148,9 @@ function ExecutionTab({
                     <input
                       value={item.activity}
                       onChange={(e) =>
-                        setItpItems((prev) =>
+                        { setItpItems((prev) =>
                           prev.map((x, i) => (i === idx ? { ...x, activity: e.target.value } : x)),
-                        )
+                        ); }
                       }
                       placeholder="Activity"
                       style={{
@@ -29437,11 +28167,11 @@ function ExecutionTab({
                     <select
                       value={item.inspectionType}
                       onChange={(e) =>
-                        setItpItems((prev) =>
+                        { setItpItems((prev) =>
                           prev.map((x, i) =>
                             i === idx ? { ...x, inspectionType: e.target.value } : x,
                           ),
-                        )
+                        ); }
                       }
                       style={{
                         padding: '5px 6px',
@@ -29460,11 +28190,11 @@ function ExecutionTab({
                     <input
                       value={item.contractorRole ?? ''}
                       onChange={(e) =>
-                        setItpItems((prev) =>
+                        { setItpItems((prev) =>
                           prev.map((x, i) =>
                             i === idx ? { ...x, contractorRole: e.target.value } : x,
                           ),
-                        )
+                        ); }
                       }
                       placeholder="Contractor role"
                       style={{
@@ -29481,11 +28211,11 @@ function ExecutionTab({
                     <input
                       value={item.clientRole ?? ''}
                       onChange={(e) =>
-                        setItpItems((prev) =>
+                        { setItpItems((prev) =>
                           prev.map((x, i) =>
                             i === idx ? { ...x, clientRole: e.target.value } : x,
                           ),
-                        )
+                        ); }
                       }
                       placeholder="Client role"
                       style={{
@@ -29500,7 +28230,7 @@ function ExecutionTab({
                       }}
                     />
                     <button
-                      onClick={() => setItpItems((prev) => prev.filter((_, i) => i !== idx))}
+                      onClick={() => { setItpItems((prev) => prev.filter((_, i) => i !== idx)); }}
                       style={{
                         padding: '4px 8px',
                         border: 'none',
@@ -29535,11 +28265,11 @@ function ExecutionTab({
             </div>
             {modalBtns(
               saveITPItems,
-              () => setItpItemsModal({ open: false, itp: null }),
+              () => { setItpItemsModal({ open: false, itp: null }); },
               'Save Checklist',
             )}
           </>,
-          () => setItpItemsModal({ open: false, itp: null }),
+          () => { setItpItemsModal({ open: false, itp: null }); },
           '1100px',
           '90vh',
         )}
@@ -29556,7 +28286,7 @@ function ExecutionTab({
             </p>
             {field(
               'Result',
-              sel(itpResultForm.result, (v) => setItpResultForm((f) => ({ ...f, result: v })), [
+              sel(itpResultForm.result, (v) => { setItpResultForm((f) => ({ ...f, result: v })); }, [
                 'pass',
                 'fail',
                 'na',
@@ -29566,14 +28296,14 @@ function ExecutionTab({
               {field(
                 'Inspector Name',
                 inp(itpResultForm.inspectorName, (v) =>
-                  setItpResultForm((f) => ({ ...f, inspectorName: v })),
+                  { setItpResultForm((f) => ({ ...f, inspectorName: v })); },
                 ),
               )}
               {field(
                 'Inspection Date',
                 inp(
                   itpResultForm.inspectionDate,
-                  (v) => setItpResultForm((f) => ({ ...f, inspectionDate: v })),
+                  (v) => { setItpResultForm((f) => ({ ...f, inspectionDate: v })); },
                   '',
                   'date',
                 ),
@@ -29582,7 +28312,7 @@ function ExecutionTab({
             {field(
               'Remarks',
               textarea(itpResultForm.remarks, (v) =>
-                setItpResultForm((f) => ({ ...f, remarks: v })),
+                { setItpResultForm((f) => ({ ...f, remarks: v })); },
               ),
             )}
             {modalBtns(
@@ -29598,11 +28328,11 @@ function ExecutionTab({
                   setItpResultModal({ open: false, item: null })
                 }
               },
-              () => setItpResultModal({ open: false, item: null }),
+              () => { setItpResultModal({ open: false, item: null }); },
               'Record',
             )}
           </>,
-          () => setItpResultModal({ open: false, item: null }),
+          () => { setItpResultModal({ open: false, item: null }); },
         )}
 
       {/* ── IR Modal ── */}
@@ -29616,7 +28346,7 @@ function ExecutionTab({
               {field(
                 'IR Number',
                 irModal.row ? (
-                  inp(irForm.irNumber, (v) => setIrForm((f) => ({ ...f, irNumber: v })))
+                  inp(irForm.irNumber, (v) => { setIrForm((f) => ({ ...f, irNumber: v })); })
                 ) : (
                   <div
                     style={{
@@ -29638,7 +28368,7 @@ function ExecutionTab({
                 'Requested Date',
                 inp(
                   irForm.requestedDate,
-                  (v) => setIrForm((f) => ({ ...f, requestedDate: v })),
+                  (v) => { setIrForm((f) => ({ ...f, requestedDate: v })); },
                   '',
                   'date',
                 ),
@@ -29646,21 +28376,21 @@ function ExecutionTab({
             </div>
             {field(
               'Title *',
-              inp(irForm.title, (v) => setIrForm((f) => ({ ...f, title: v }))),
+              inp(irForm.title, (v) => { setIrForm((f) => ({ ...f, title: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
                 'Work Package',
-                inp(irForm.workPackage, (v) => setIrForm((f) => ({ ...f, workPackage: v }))),
+                inp(irForm.workPackage, (v) => { setIrForm((f) => ({ ...f, workPackage: v })); }),
               )}
               {field(
                 'Location',
-                inp(irForm.location, (v) => setIrForm((f) => ({ ...f, location: v }))),
+                inp(irForm.location, (v) => { setIrForm((f) => ({ ...f, location: v })); }),
               )}
               {field(
                 'Requested By',
                 inp(irForm.requestedByName, (v) =>
-                  setIrForm((f) => ({ ...f, requestedByName: v })),
+                  { setIrForm((f) => ({ ...f, requestedByName: v })); },
                 ),
               )}
             </div>
@@ -29689,14 +28419,14 @@ function ExecutionTab({
                     {field(
                       'Inspector Name',
                       inp(irForm.inspectorName, (v) =>
-                        setIrForm((f) => ({ ...f, inspectorName: v })),
+                        { setIrForm((f) => ({ ...f, inspectorName: v })); },
                       ),
                     )}
                     {field(
                       'Actual Date',
                       inp(
                         irForm.actualDate,
-                        (v) => setIrForm((f) => ({ ...f, actualDate: v })),
+                        (v) => { setIrForm((f) => ({ ...f, actualDate: v })); },
                         '',
                         'date',
                       ),
@@ -29714,7 +28444,7 @@ function ExecutionTab({
                     )}
                     {field(
                       'Status',
-                      sel(irForm.status, (v) => setIrForm((f) => ({ ...f, status: v })), [
+                      sel(irForm.status, (v) => { setIrForm((f) => ({ ...f, status: v })); }, [
                         'pending',
                         'accepted',
                         'rejected',
@@ -29724,14 +28454,14 @@ function ExecutionTab({
                   </div>
                   {field(
                     'Remarks',
-                    textarea(irForm.remarks, (v) => setIrForm((f) => ({ ...f, remarks: v }))),
+                    textarea(irForm.remarks, (v) => { setIrForm((f) => ({ ...f, remarks: v })); }),
                   )}
                 </div>
               </>
             )}
-            {modalBtns(saveIR, () => setIrModal({ open: false, row: null }))}
+            {modalBtns(saveIR, () => { setIrModal({ open: false, row: null }); })}
           </>,
-          () => setIrModal({ open: false, row: null }),
+          () => { setIrModal({ open: false, row: null }); },
         )}
 
       {/* ── IR Inspect Modal ── */}
@@ -29748,14 +28478,14 @@ function ExecutionTab({
               {field(
                 'Inspector Name',
                 inp(irInspectForm.inspectorName, (v) =>
-                  setIrInspectForm((f) => ({ ...f, inspectorName: v })),
+                  { setIrInspectForm((f) => ({ ...f, inspectorName: v })); },
                 ),
               )}
               {field(
                 'Actual Date',
                 inp(
                   irInspectForm.actualDate,
-                  (v) => setIrInspectForm((f) => ({ ...f, actualDate: v })),
+                  (v) => { setIrInspectForm((f) => ({ ...f, actualDate: v })); },
                   '',
                   'date',
                 ),
@@ -29763,7 +28493,7 @@ function ExecutionTab({
             </div>
             {field(
               'Result *',
-              sel(irInspectForm.result, (v) => setIrInspectForm((f) => ({ ...f, result: v })), [
+              sel(irInspectForm.result, (v) => { setIrInspectForm((f) => ({ ...f, result: v })); }, [
                 '',
                 'accepted',
                 'accepted_with_punch',
@@ -29773,16 +28503,16 @@ function ExecutionTab({
             {field(
               'Remarks',
               textarea(irInspectForm.remarks, (v) =>
-                setIrInspectForm((f) => ({ ...f, remarks: v })),
+                { setIrInspectForm((f) => ({ ...f, remarks: v })); },
               ),
             )}
             {modalBtns(
               saveIRInspect,
-              () => setIrInspectModal({ open: false, row: null }),
+              () => { setIrInspectModal({ open: false, row: null }); },
               'Save Inspection',
             )}
           </>,
-          () => setIrInspectModal({ open: false, row: null }),
+          () => { setIrInspectModal({ open: false, row: null }); },
         )}
 
       {/* ── NCR Modal ── */}
@@ -29796,7 +28526,7 @@ function ExecutionTab({
               {field(
                 'NCR Number',
                 ncrModal.row ? (
-                  inp(ncrForm.ncrNumber, (v) => setNcrForm((f) => ({ ...f, ncrNumber: v })))
+                  inp(ncrForm.ncrNumber, (v) => { setNcrForm((f) => ({ ...f, ncrNumber: v })); })
                 ) : (
                   <div
                     style={{
@@ -29818,7 +28548,7 @@ function ExecutionTab({
                 'Raised Date',
                 inp(
                   ncrForm.raisedDate,
-                  (v) => setNcrForm((f) => ({ ...f, raisedDate: v })),
+                  (v) => { setNcrForm((f) => ({ ...f, raisedDate: v })); },
                   '',
                   'date',
                 ),
@@ -29826,28 +28556,28 @@ function ExecutionTab({
             </div>
             {field(
               'Title *',
-              inp(ncrForm.title, (v) => setNcrForm((f) => ({ ...f, title: v }))),
+              inp(ncrForm.title, (v) => { setNcrForm((f) => ({ ...f, title: v })); }),
             )}
             {field(
               'Description *',
-              textarea(ncrForm.description, (v) => setNcrForm((f) => ({ ...f, description: v }))),
+              textarea(ncrForm.description, (v) => { setNcrForm((f) => ({ ...f, description: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
                 'Work Package',
-                inp(ncrForm.workPackage, (v) => setNcrForm((f) => ({ ...f, workPackage: v }))),
+                inp(ncrForm.workPackage, (v) => { setNcrForm((f) => ({ ...f, workPackage: v })); }),
               )}
               {field(
                 'Location',
-                inp(ncrForm.location, (v) => setNcrForm((f) => ({ ...f, location: v }))),
+                inp(ncrForm.location, (v) => { setNcrForm((f) => ({ ...f, location: v })); }),
               )}
               {field(
                 'Raised By',
-                inp(ncrForm.raisedByName, (v) => setNcrForm((f) => ({ ...f, raisedByName: v }))),
+                inp(ncrForm.raisedByName, (v) => { setNcrForm((f) => ({ ...f, raisedByName: v })); }),
               )}
               {field(
                 'Severity',
-                sel(ncrForm.severity, (v) => setNcrForm((f) => ({ ...f, severity: v })), [
+                sel(ncrForm.severity, (v) => { setNcrForm((f) => ({ ...f, severity: v })); }, [
                   'minor',
                   'major',
                   'critical',
@@ -29855,7 +28585,7 @@ function ExecutionTab({
               )}
               {field(
                 'Due Date',
-                inp(ncrForm.dueDate, (v) => setNcrForm((f) => ({ ...f, dueDate: v })), '', 'date'),
+                inp(ncrForm.dueDate, (v) => { setNcrForm((f) => ({ ...f, dueDate: v })); }, '', 'date'),
               )}
             </div>
             {ncrModal.row && (
@@ -29882,7 +28612,7 @@ function ExecutionTab({
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     {field(
                       'Status',
-                      sel(ncrForm.status, (v) => setNcrForm((f) => ({ ...f, status: v })), [
+                      sel(ncrForm.status, (v) => { setNcrForm((f) => ({ ...f, status: v })); }, [
                         'open',
                         'pending_close',
                         'closed',
@@ -29915,7 +28645,7 @@ function ExecutionTab({
                     {field(
                       'Closed By',
                       inp(ncrForm.closedByName, (v) =>
-                        setNcrForm((f) => ({ ...f, closedByName: v })),
+                        { setNcrForm((f) => ({ ...f, closedByName: v })); },
                       ),
                     )}
                   </div>
@@ -29942,15 +28672,15 @@ function ExecutionTab({
                   {field(
                     'Preventive Action',
                     textarea(ncrForm.preventiveAction, (v) =>
-                      setNcrForm((f) => ({ ...f, preventiveAction: v })),
+                      { setNcrForm((f) => ({ ...f, preventiveAction: v })); },
                     ),
                   )}
                 </div>
               </>
             )}
-            {modalBtns(saveNCR, () => setNcrModal({ open: false, row: null }))}
+            {modalBtns(saveNCR, () => { setNcrModal({ open: false, row: null }); })}
           </>,
-          () => setNcrModal({ open: false, row: null }),
+          () => { setNcrModal({ open: false, row: null }); },
         )}
 
       {/* ── NCR Resolve Modal ── */}
@@ -29986,7 +28716,7 @@ function ExecutionTab({
             {field(
               'Preventive Action',
               textarea(ncrResolveForm.preventiveAction, (v) =>
-                setNcrResolveForm((f) => ({ ...f, preventiveAction: v })),
+                { setNcrResolveForm((f) => ({ ...f, preventiveAction: v })); },
               ),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -30017,7 +28747,7 @@ function ExecutionTab({
               {field(
                 'Closed By',
                 inp(ncrResolveForm.closedByName, (v) =>
-                  setNcrResolveForm((f) => ({ ...f, closedByName: v })),
+                  { setNcrResolveForm((f) => ({ ...f, closedByName: v })); },
                 ),
               )}
             </div>
@@ -30047,11 +28777,11 @@ function ExecutionTab({
             </div>
             {modalBtns(
               saveNCRResolve,
-              () => setNcrResolveModal({ open: false, row: null }),
+              () => { setNcrResolveModal({ open: false, row: null }); },
               'Save Resolution',
             )}
           </>,
-          () => setNcrResolveModal({ open: false, row: null }),
+          () => { setNcrResolveModal({ open: false, row: null }); },
         )}
 
       {/* ── HSE Modal ── */}
@@ -30063,7 +28793,7 @@ function ExecutionTab({
             </h3>
             {field(
               'Record Type',
-              sel(hseForm.recordType, (v) => setHseForm((f) => ({ ...f, recordType: v })), [
+              sel(hseForm.recordType, (v) => { setHseForm((f) => ({ ...f, recordType: v })); }, [
                 'toolbox_talk',
                 'incident',
                 'observation',
@@ -30072,29 +28802,29 @@ function ExecutionTab({
             )}
             {field(
               'Title *',
-              inp(hseForm.title, (v) => setHseForm((f) => ({ ...f, title: v }))),
+              inp(hseForm.title, (v) => { setHseForm((f) => ({ ...f, title: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
                 'Date',
                 inp(
                   hseForm.recordDate,
-                  (v) => setHseForm((f) => ({ ...f, recordDate: v })),
+                  (v) => { setHseForm((f) => ({ ...f, recordDate: v })); },
                   '',
                   'date',
                 ),
               )}
               {field(
                 'Conducted By',
-                inp(hseForm.conductedBy, (v) => setHseForm((f) => ({ ...f, conductedBy: v }))),
+                inp(hseForm.conductedBy, (v) => { setHseForm((f) => ({ ...f, conductedBy: v })); }),
               )}
               {field(
                 'Location',
-                inp(hseForm.location, (v) => setHseForm((f) => ({ ...f, location: v }))),
+                inp(hseForm.location, (v) => { setHseForm((f) => ({ ...f, location: v })); }),
               )}
               {field(
                 'Status',
-                sel(hseForm.status, (v) => setHseForm((f) => ({ ...f, status: v })), [
+                sel(hseForm.status, (v) => { setHseForm((f) => ({ ...f, status: v })); }, [
                   'open',
                   'closed',
                 ]),
@@ -30102,7 +28832,7 @@ function ExecutionTab({
             </div>
             {field(
               'Description',
-              textarea(hseForm.description, (v) => setHseForm((f) => ({ ...f, description: v }))),
+              textarea(hseForm.description, (v) => { setHseForm((f) => ({ ...f, description: v })); }),
             )}
 
             {hseForm.recordType === 'toolbox_talk' && (
@@ -30111,7 +28841,7 @@ function ExecutionTab({
                   'Attendee Count',
                   inp(
                     hseForm.attendeeCount,
-                    (v) => setHseForm((f) => ({ ...f, attendeeCount: v })),
+                    (v) => { setHseForm((f) => ({ ...f, attendeeCount: v })); },
                     '0',
                     'number',
                   ),
@@ -30119,7 +28849,7 @@ function ExecutionTab({
                 {field(
                   'Attendee Names',
                   inp(hseForm.attendeeNames, (v) =>
-                    setHseForm((f) => ({ ...f, attendeeNames: v })),
+                    { setHseForm((f) => ({ ...f, attendeeNames: v })); },
                   ),
                 )}
               </div>
@@ -30132,13 +28862,13 @@ function ExecutionTab({
                     'Incident Type',
                     sel(
                       hseForm.incidentType,
-                      (v) => setHseForm((f) => ({ ...f, incidentType: v })),
+                      (v) => { setHseForm((f) => ({ ...f, incidentType: v })); },
                       ['near_miss', 'first_aid', 'lti', 'dangerous_occurrence', 'fatality'],
                     ),
                   )}
                   {field(
                     'Severity',
-                    sel(hseForm.severity, (v) => setHseForm((f) => ({ ...f, severity: v })), [
+                    sel(hseForm.severity, (v) => { setHseForm((f) => ({ ...f, severity: v })); }, [
                       'low',
                       'medium',
                       'high',
@@ -30148,14 +28878,14 @@ function ExecutionTab({
                   {field(
                     'Injured Person',
                     inp(hseForm.injuredPerson, (v) =>
-                      setHseForm((f) => ({ ...f, injuredPerson: v })),
+                      { setHseForm((f) => ({ ...f, injuredPerson: v })); },
                     ),
                   )}
                   {field(
                     'Corrective Due Date',
                     inp(
                       hseForm.correctiveDueDate,
-                      (v) => setHseForm((f) => ({ ...f, correctiveDueDate: v })),
+                      (v) => { setHseForm((f) => ({ ...f, correctiveDueDate: v })); },
                       '',
                       'date',
                     ),
@@ -30163,12 +28893,12 @@ function ExecutionTab({
                 </div>
                 {field(
                   'Root Cause',
-                  textarea(hseForm.rootCause, (v) => setHseForm((f) => ({ ...f, rootCause: v }))),
+                  textarea(hseForm.rootCause, (v) => { setHseForm((f) => ({ ...f, rootCause: v })); }),
                 )}
                 {field(
                   'Corrective Action',
                   textarea(hseForm.correctiveAction, (v) =>
-                    setHseForm((f) => ({ ...f, correctiveAction: v })),
+                    { setHseForm((f) => ({ ...f, correctiveAction: v })); },
                   ),
                 )}
               </>
@@ -30179,7 +28909,7 @@ function ExecutionTab({
                 'Observation Type',
                 sel(
                   hseForm.observationType,
-                  (v) => setHseForm((f) => ({ ...f, observationType: v })),
+                  (v) => { setHseForm((f) => ({ ...f, observationType: v })); },
                   ['good', 'bad'],
                 ),
               )}
@@ -30189,7 +28919,7 @@ function ExecutionTab({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   {field(
                     'PTW Type',
-                    sel(hseForm.ptwType, (v) => setHseForm((f) => ({ ...f, ptwType: v })), [
+                    sel(hseForm.ptwType, (v) => { setHseForm((f) => ({ ...f, ptwType: v })); }, [
                       'hot_work',
                       'confined_space',
                       'working_at_height',
@@ -30200,13 +28930,13 @@ function ExecutionTab({
                   )}
                   {field(
                     'PTW Number',
-                    inp(hseForm.ptwNumber, (v) => setHseForm((f) => ({ ...f, ptwNumber: v }))),
+                    inp(hseForm.ptwNumber, (v) => { setHseForm((f) => ({ ...f, ptwNumber: v })); }),
                   )}
                   {field(
                     'Valid From',
                     inp(
                       hseForm.validFrom,
-                      (v) => setHseForm((f) => ({ ...f, validFrom: v })),
+                      (v) => { setHseForm((f) => ({ ...f, validFrom: v })); },
                       '',
                       'datetime-local',
                     ),
@@ -30215,18 +28945,18 @@ function ExecutionTab({
                     'Valid To',
                     inp(
                       hseForm.validTo,
-                      (v) => setHseForm((f) => ({ ...f, validTo: v })),
+                      (v) => { setHseForm((f) => ({ ...f, validTo: v })); },
                       '',
                       'datetime-local',
                     ),
                   )}
                   {field(
                     'Approved By',
-                    inp(hseForm.approvedBy, (v) => setHseForm((f) => ({ ...f, approvedBy: v }))),
+                    inp(hseForm.approvedBy, (v) => { setHseForm((f) => ({ ...f, approvedBy: v })); }),
                   )}
                   {field(
                     'PTW Status',
-                    sel(hseForm.ptwStatus, (v) => setHseForm((f) => ({ ...f, ptwStatus: v })), [
+                    sel(hseForm.ptwStatus, (v) => { setHseForm((f) => ({ ...f, ptwStatus: v })); }, [
                       'pending',
                       'active',
                       'expired',
@@ -30236,9 +28966,472 @@ function ExecutionTab({
                 </div>
               </>
             )}
-            {modalBtns(saveHSE, () => setHseModal({ open: false, row: null }))}
+            {modalBtns(saveHSE, () => { setHseModal({ open: false, row: null }); })}
           </>,
-          () => setHseModal({ open: false, row: null }),
+          () => { setHseModal({ open: false, row: null }); },
+        )}
+
+      {/* ── Daily Report Modal ── */}
+      {dailyReportModal.open &&
+        modalOverlay(
+          <>
+            <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: th.textPrimary }}>
+              {dailyReportModal.row
+                ? `${dailyReportModal.mode === 'view' ? 'View' : 'Edit'} Daily Report — ${dailyReportModal.row.reportNumber}`
+                : 'New Daily Report'}
+            </h3>
+            <p style={{ fontSize: '12px', color: th.textMuted, margin: '0 0 4px' }}>
+              {dailyReportModal.row
+                ? 'Report number is assigned automatically and cannot be changed.'
+                : 'A report number will be assigned automatically on save.'}
+            </p>
+            {(!isEditable || dailyReportModal.mode === 'view') && (
+              <p style={{ fontSize: '12px', color: th.accent, margin: '0 0 4px', fontWeight: 600 }}>
+                View only{!isEditable ? " — you don't have permission to edit Daily Reports." : '.'}
+              </p>
+            )}
+
+            <fieldset disabled={!isEditable || dailyReportModal.mode === 'view'} style={{ border: 'none', margin: 0, padding: 0 }}>
+
+            {sectionTitle('Report Info')}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {field(
+                'Report Date',
+                inp(dailyReportForm.reportDate, (v) => { setDailyReportForm((f) => ({ ...f, reportDate: v })); }, '', 'date'),
+              )}
+              {field('Prepared By', inp(dailyReportForm.preparedBy, (v) => { setDailyReportForm((f) => ({ ...f, preparedBy: v })); }))}
+              {field('Reviewed By', inp(dailyReportForm.reviewedBy, (v) => { setDailyReportForm((f) => ({ ...f, reviewedBy: v })); }))}
+              {field('Weather Conditions', inp(dailyReportForm.weatherConditions, (v) => { setDailyReportForm((f) => ({ ...f, weatherConditions: v })); }))}
+              {field('Temperature', inp(dailyReportForm.temperature, (v) => { setDailyReportForm((f) => ({ ...f, temperature: v })); }))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
+              {field('Schedule Status', sel(dailyReportForm.scheduleStatus, (v) => { setDailyReportForm((f) => ({ ...f, scheduleStatus: v })); }, ['on_track', 'at_risk', 'delayed']))}
+              {field('Cost Status', sel(dailyReportForm.costStatus, (v) => { setDailyReportForm((f) => ({ ...f, costStatus: v })); }, ['on_budget', 'at_risk', 'over_budget']))}
+              {field('Safety Status', sel(dailyReportForm.safetyStatus, (v) => { setDailyReportForm((f) => ({ ...f, safetyStatus: v })); }, ['good', 'fair', 'poor']))}
+              {field('Quality Status', sel(dailyReportForm.qualityStatus, (v) => { setDailyReportForm((f) => ({ ...f, qualityStatus: v })); }, ['good', 'fair', 'poor']))}
+            </div>
+
+            {sectionTitle('Executive Summary — Overall Progress (%)')}
+            {rowsEditor(
+              dailyReportForm.progressMetrics,
+              (rows) => { setDailyReportForm((f) => ({ ...f, progressMetrics: rows })); },
+              [
+                { key: 'metric', label: 'Category', options: ['engineering', 'procurement', 'construction', 'overall'] },
+                { key: 'planned', label: 'Planned %', type: 'number' },
+                { key: 'actual', label: 'Actual %', type: 'number' },
+              ],
+              { allowAddRemove: false },
+            )}
+            {field('Key Accomplishments Today', textarea(dailyReportForm.keyAccomplishments, (v) => { setDailyReportForm((f) => ({ ...f, keyAccomplishments: v })); }, 'One per line…'))}
+            {field('Major Concerns / Delays', textarea(dailyReportForm.majorConcerns, (v) => { setDailyReportForm((f) => ({ ...f, majorConcerns: v })); }, 'One per line…'))}
+
+            {sectionTitle('HSE — Safety Statistics')}
+            {rowsEditor(
+              dailyReportForm.safetyStats,
+              (rows) => { setDailyReportForm((f) => ({ ...f, safetyStats: rows })); },
+              [
+                { key: 'item', label: 'Item', options: ['Man-hours Worked', 'Lost Time Injuries', 'Medical Cases', 'Near Misses', 'Safety Observations', 'Toolbox Talks Conducted'] },
+                { key: 'today', label: 'Today', type: 'number' },
+                { key: 'mtd', label: 'MTD', type: 'number' },
+                { key: 'ltd', label: 'LTD', type: 'number' },
+              ],
+            )}
+            <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
+              Safety Activities Performed
+            </div>
+            {checkboxGroup(SAFETY_ACTIVITY_OPTIONS, dailyReportForm.safetyActivities, (next) => { setDailyReportForm((f) => ({ ...f, safetyActivities: next })); })}
+            {field('Safety Remarks', textarea(dailyReportForm.safetyRemarks, (v) => { setDailyReportForm((f) => ({ ...f, safetyRemarks: v })); }))}
+
+            {sectionTitle('Engineering')}
+            {rowsEditor(
+              dailyReportForm.engineeringProgress,
+              (rows) => { setDailyReportForm((f) => ({ ...f, engineeringProgress: rows })); },
+              [
+                { key: 'discipline', label: 'Discipline', options: DISCIPLINE_OPTIONS },
+                { key: 'planned', label: 'Planned %', type: 'number' },
+                { key: 'actual', label: 'Actual %', type: 'number' },
+                { key: 'remarks', label: 'Remarks' },
+              ],
+            )}
+            <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
+              Deliverables Issued Today
+            </div>
+            {rowsEditor(
+              dailyReportForm.engineeringDeliverables,
+              (rows) => { setDailyReportForm((f) => ({ ...f, engineeringDeliverables: rows })); },
+              [
+                { key: 'docNo', label: 'Document No.' },
+                { key: 'description', label: 'Description' },
+                { key: 'status', label: 'Status', options: ['issued', 'pending', 'approved'] },
+              ],
+              { addLabel: '+ Add Deliverable' },
+            )}
+            {field('Engineering Issues', textarea(dailyReportForm.engineeringIssues, (v) => { setDailyReportForm((f) => ({ ...f, engineeringIssues: v })); }))}
+
+            {sectionTitle('Procurement')}
+            <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
+              Material / Equipment Status
+            </div>
+            {rowsEditor(
+              dailyReportForm.procurementItems,
+              (rows) => { setDailyReportForm((f) => ({ ...f, procurementItems: rows })); },
+              [
+                { key: 'item', label: 'Item' },
+                { key: 'poNo', label: 'PO No.' },
+                { key: 'status', label: 'Status', options: ['ordered', 'in_transit', 'delivered', 'delayed'] },
+                { key: 'expectedDelivery', label: 'Expected Delivery', type: 'date' },
+              ],
+              { addLabel: '+ Add Item' },
+            )}
+            <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
+              Deliveries Received Today
+            </div>
+            {rowsEditor(
+              dailyReportForm.deliveriesReceived,
+              (rows) => { setDailyReportForm((f) => ({ ...f, deliveriesReceived: rows })); },
+              [
+                { key: 'material', label: 'Material' },
+                { key: 'quantity', label: 'Quantity' },
+                { key: 'remarks', label: 'Remarks' },
+              ],
+              { addLabel: '+ Add Delivery' },
+            )}
+            {field('Procurement Concerns', textarea(dailyReportForm.procurementConcerns, (v) => { setDailyReportForm((f) => ({ ...f, procurementConcerns: v })); }))}
+
+            {sectionTitle('Construction Progress')}
+            {rowsEditor(
+              dailyReportForm.constructionProgress,
+              (rows) => { setDailyReportForm((f) => ({ ...f, constructionProgress: rows })); },
+              [
+                { key: 'discipline', label: 'Discipline', options: DISCIPLINE_OPTIONS },
+                { key: 'activity', label: 'Activity' },
+                { key: 'unit', label: 'Unit' },
+                { key: 'planned', label: 'Planned', type: 'number' },
+                { key: 'actual', label: 'Actual', type: 'number' },
+                { key: 'remarks', label: 'Remarks' },
+              ],
+              { addLabel: '+ Add Activity' },
+            )}
+
+            {sectionTitle('Quality Control')}
+            <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
+              Inspections Conducted
+            </div>
+            {rowsEditor(
+              dailyReportForm.qcInspections,
+              (rows) => { setDailyReportForm((f) => ({ ...f, qcInspections: rows })); },
+              [
+                { key: 'type', label: 'Inspection Type', options: DISCIPLINE_OPTIONS },
+                { key: 'total', label: 'Total', type: 'number' },
+                { key: 'passed', label: 'Passed', type: 'number' },
+                { key: 'failed', label: 'Failed', type: 'number' },
+              ],
+            )}
+            <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
+              NCR Status
+            </div>
+            {rowsEditor(
+              dailyReportForm.ncrStatus,
+              (rows) => { setDailyReportForm((f) => ({ ...f, ncrStatus: rows })); },
+              [
+                { key: 'ncrNo', label: 'NCR No.' },
+                { key: 'description', label: 'Description' },
+                { key: 'status', label: 'Status', options: ['open', 'pending', 'closed'] },
+              ],
+              { addLabel: '+ Add NCR' },
+            )}
+            {field('Quality Remarks', textarea(dailyReportForm.qualityRemarks, (v) => { setDailyReportForm((f) => ({ ...f, qualityRemarks: v })); }))}
+
+            {sectionTitle('Manpower')}
+            {rowsEditor(
+              dailyReportForm.manpower,
+              (rows) => { setDailyReportForm((f) => ({ ...f, manpower: rows })); },
+              [
+                { key: 'discipline', label: 'Discipline', options: [...DISCIPLINE_OPTIONS, 'other'] },
+                { key: 'supervisors', label: 'Supervisors', type: 'number' },
+                { key: 'skilled', label: 'Skilled', type: 'number' },
+                { key: 'unskilled', label: 'Unskilled', type: 'number' },
+              ],
+            )}
+            <div style={{ fontSize: '12px', color: th.textMuted, marginBottom: '12px' }}>
+              Total Workforce Today:{' '}
+              <strong style={{ color: th.textPrimary }}>
+                {dailyReportForm.manpower.reduce(
+                  (sum, m) =>
+                    sum + (Number(m.supervisors) || 0) + (Number(m.skilled) || 0) + (Number(m.unskilled) || 0),
+                  0,
+                )}
+              </strong>
+            </div>
+
+            {sectionTitle('Equipment Utilization')}
+            {rowsEditor(
+              dailyReportForm.equipmentUtilization,
+              (rows) => { setDailyReportForm((f) => ({ ...f, equipmentUtilization: rows })); },
+              [
+                { key: 'equipment', label: 'Equipment', options: ['Excavator', 'Crane', 'Forklift', 'Truck', 'Generator'] },
+                { key: 'working', label: 'Working', type: 'number' },
+                { key: 'idle', label: 'Idle', type: 'number' },
+                { key: 'breakdown', label: 'Breakdown', type: 'number' },
+              ],
+            )}
+            {field('Breakdown Details', textarea(dailyReportForm.breakdownDetails, (v) => { setDailyReportForm((f) => ({ ...f, breakdownDetails: v })); }))}
+
+            {sectionTitle('Machinery (PO-Linked)')}
+            <p style={{ fontSize: '11px', color: th.textMuted, margin: '0 0 10px' }}>
+              Every machinery PO logged here needs a live photo taken today. Skipping the photo
+              flags that PO and notifies management — it does not block the PO's own workflow.
+            </p>
+            {!dailyReportModal.row && (
+              <p style={{ fontSize: '11px', color: th.textMuted, margin: '4px 0 12px' }}>
+                Machinery can be linked after the report is saved.
+              </p>
+            )}
+            {dailyReportModal.row && (
+              <>
+                {dailyReportModal.row.machinery.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                    {dailyReportModal.row.machinery.map((m) => (
+                      <div
+                        key={m.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          flexWrap: 'wrap',
+                          padding: '8px 12px',
+                          borderRadius: 8,
+                          border: `1px solid ${m.compliant ? th.border : '#fecaca'}`,
+                          background: m.compliant ? th.bgCanvas : '#fef2f2',
+                        }}
+                      >
+                        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '12px', color: th.textPrimary }}>
+                          {m.poNumber}
+                        </span>
+                        {m.equipmentDescription && (
+                          <span style={{ fontSize: '12px', color: th.textSecondary }}>{m.equipmentDescription}</span>
+                        )}
+                        <span style={{ fontSize: '11px', color: th.textMuted }}>
+                          W:{m.workingHours ?? '—'} I:{m.idleHours ?? '—'} B:{m.breakdownHours ?? '—'}
+                        </span>
+                        {m.compliant ? (
+                          m.livePhotoDownloadUrl && (
+                            <a
+                              href={m.livePhotoDownloadUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ fontSize: '11px', color: th.accent, marginLeft: 'auto' }}
+                            >
+                              View photo
+                            </a>
+                          )
+                        ) : (
+                          <span
+                            style={{
+                              marginLeft: 'auto',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 8,
+                            }}
+                          >
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#991b1b' }}>
+                              ⚠ No live photo — PO flagged
+                            </span>
+                            <label
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                color: th.accent,
+                                cursor: machineryUploading ? 'not-allowed' : 'pointer',
+                              }}
+                            >
+                              Attach photo
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                disabled={machineryUploading}
+                                style={{ display: 'none' }}
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0]
+                                  if (f) void attachMachineryPhotoNow(m, f)
+                                  e.target.value = ''
+                                }}
+                              />
+                            </label>
+                          </span>
+                        )}
+                        <button
+                          onClick={() => { onDeleteMachinery(m.id); }}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: th.textMuted,
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1.4fr 1.4fr 0.8fr 0.8fr 0.8fr 1.2fr auto',
+                    gap: 6,
+                    alignItems: 'center',
+                  }}
+                >
+                  <select
+                    value={machineryForm.poId}
+                    onChange={(e) => { setMachineryForm((f) => ({ ...f, poId: e.target.value })); }}
+                    style={smallCellStyle}
+                  >
+                    <option value="">Select PO…</option>
+                    {projectPOs.map((po) => (
+                      <option key={po.id} value={po.id}>
+                        {po.poNumber}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    placeholder="Equipment description"
+                    value={machineryForm.equipmentDescription}
+                    onChange={(e) => { setMachineryForm((f) => ({ ...f, equipmentDescription: e.target.value })); }}
+                    style={smallCellStyle}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Working"
+                    value={machineryForm.workingHours}
+                    onChange={(e) => { setMachineryForm((f) => ({ ...f, workingHours: e.target.value })); }}
+                    style={smallCellStyle}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Idle"
+                    value={machineryForm.idleHours}
+                    onChange={(e) => { setMachineryForm((f) => ({ ...f, idleHours: e.target.value })); }}
+                    style={smallCellStyle}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Breakdown"
+                    value={machineryForm.breakdownHours}
+                    onChange={(e) => { setMachineryForm((f) => ({ ...f, breakdownHours: e.target.value })); }}
+                    style={smallCellStyle}
+                  />
+                  <label
+                    style={{
+                      ...smallCellStyle,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: machineryPhoto ? th.textPrimary : th.textMuted,
+                    }}
+                  >
+                    {machineryPhoto ? machineryPhoto.name.slice(0, 14) : '📷 Live Photo'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      style={{ display: 'none' }}
+                      onChange={(e) => { setMachineryPhoto(e.target.files?.[0] ?? null); }}
+                    />
+                  </label>
+                  <button
+                    onClick={() => void submitMachinery()}
+                    disabled={!machineryForm.poId || machineryUploading}
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: th.accent,
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: !machineryForm.poId || machineryUploading ? 'not-allowed' : 'pointer',
+                      opacity: !machineryForm.poId || machineryUploading ? 0.6 : 1,
+                    }}
+                  >
+                    {machineryUploading ? '…' : '+ Add'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {sectionTitle('Risks / Issues')}
+            {rowsEditor(
+              dailyReportForm.risksIssues,
+              (rows) => { setDailyReportForm((f) => ({ ...f, risksIssues: rows })); },
+              [
+                { key: 'issue', label: 'Issue' },
+                { key: 'impact', label: 'Impact' },
+                { key: 'responsiblePerson', label: 'Responsible' },
+                { key: 'targetDate', label: 'Target Date', type: 'date' },
+              ],
+              { addLabel: '+ Add Risk' },
+            )}
+
+            {sectionTitle('Client Actions Required')}
+            {rowsEditor(
+              dailyReportForm.clientActions,
+              (rows) => { setDailyReportForm((f) => ({ ...f, clientActions: rows })); },
+              [
+                { key: 'item', label: 'Item' },
+                { key: 'requiredAction', label: 'Required Action' },
+                { key: 'dueDate', label: 'Due Date', type: 'date' },
+              ],
+              { addLabel: '+ Add Action' },
+            )}
+
+            {sectionTitle('Look-Ahead Plan (Next 7 Days)')}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {field('Engineering', textarea(dailyReportForm.lookaheadEngineering, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadEngineering: v })); }))}
+              {field('Procurement', textarea(dailyReportForm.lookaheadProcurement, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadProcurement: v })); }))}
+              {field('Construction', textarea(dailyReportForm.lookaheadConstruction, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadConstruction: v })); }))}
+              {field('Commissioning', textarea(dailyReportForm.lookaheadCommissioning, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadCommissioning: v })); }))}
+            </div>
+
+            {sectionTitle('Management Comments')}
+            {field('Project Manager Remarks', textarea(dailyReportForm.managementComments, (v) => { setDailyReportForm((f) => ({ ...f, managementComments: v })); }))}
+
+            {!dailyReportModal.row && (
+              <p style={{ fontSize: '11px', color: th.textMuted, margin: '4px 0 0' }}>
+                Photos can be attached to the report after it's saved.
+              </p>
+            )}
+
+            </fieldset>
+
+            {isEditable && dailyReportModal.mode === 'edit' ? (
+              modalBtns(saveDailyReport, () => { setDailyReportModal({ open: false, row: null, mode: 'edit' }); })
+            ) : (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+                <button
+                  onClick={() => { setDailyReportModal({ open: false, row: null, mode: 'edit' }); }}
+                  style={{
+                    padding: '7px 16px',
+                    borderRadius: '6px',
+                    border: `1px solid ${th.border}`,
+                    background: 'transparent',
+                    color: th.textSecondary,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </>,
+          () => { setDailyReportModal({ open: false, row: null, mode: 'edit' }); },
+          '900px',
+          '92vh',
         )}
     </div>
   )
@@ -30259,7 +29452,10 @@ interface WBSNodeType {
   responsible: string | null
   createdAt: string
   updatedAt: string
-  children: WBSNodeType[]
+  // The query only nests `children` a fixed number of levels deep (avoiding
+  // an infinite selection set), so the deepest level's items come back
+  // without their own `children` — optional rather than always-present.
+  children?: WBSNodeType[]
 }
 interface ActivityType {
   id: string
@@ -30426,7 +29622,6 @@ function PlanningTab(props: PlanningProps) {
     onDeleteActivity,
     onBulkImport,
     onCreateDependency,
-    onDeleteDependency,
     onRecalculateCPM,
     onLevelResources,
     onCreateBaseline,
@@ -30435,7 +29630,6 @@ function PlanningTab(props: PlanningProps) {
     onDeleteBaseline,
     onCreateResource,
     onUpdateResource,
-    onDeleteResource,
     onAssignResource,
     onRemoveAssignment,
   } = props
@@ -30521,8 +29715,8 @@ function PlanningTab(props: PlanningProps) {
 
   const [importFile, setImportFile] = React.useState<File | null>(null)
   const [importPreview, setImportPreview] = React.useState<{
-    activities: Array<Record<string, unknown>>
-    dependencies: Array<Record<string, unknown>>
+    activities: Record<string, unknown>[]
+    dependencies: Record<string, unknown>[]
   } | null>(null)
   const [importFormat, setImportFormat] = React.useState<'msproject' | 'xer' | null>(null)
   const [clearExisting, setClearExisting] = React.useState(false)
@@ -30585,16 +29779,16 @@ function PlanningTab(props: PlanningProps) {
       style={inputSt}
       type={type}
       value={val}
-      onChange={(e) => set(e.target.value)}
+      onChange={(e) => { set(e.target.value); }}
       placeholder={ph}
     />
   )
   const planSel = (
     val: string,
     set: (v: string) => void,
-    opts: Array<{ value: string; label: string }>,
+    opts: { value: string; label: string }[],
   ) => (
-    <select style={inputSt} value={val} onChange={(e) => set(e.target.value)}>
+    <select style={inputSt} value={val} onChange={(e) => { set(e.target.value); }}>
       {opts.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
@@ -30603,13 +29797,16 @@ function PlanningTab(props: PlanningProps) {
     </select>
   )
 
-  const ganttActs = activities.filter((a) => a.plannedStart && a.plannedFinish)
+  const ganttActs = activities.filter(
+    (a): a is ActivityType & { plannedStart: string; plannedFinish: string } =>
+      !!a.plannedStart && !!a.plannedFinish,
+  )
   const ganttStart =
     ganttActs.length > 0
       ? new Date(
           ganttActs.reduce(
-            (m, a) => (a.plannedStart! < m ? a.plannedStart! : m),
-            ganttActs[0].plannedStart!,
+            (m, a) => (a.plannedStart < m ? a.plannedStart : m),
+            ganttActs[0].plannedStart,
           ),
         )
       : new Date()
@@ -30617,8 +29814,8 @@ function PlanningTab(props: PlanningProps) {
     ganttActs.length > 0
       ? new Date(
           ganttActs.reduce(
-            (m, a) => (a.plannedFinish! > m ? a.plannedFinish! : m),
-            ganttActs[0].plannedFinish!,
+            (m, a) => (a.plannedFinish > m ? a.plannedFinish : m),
+            ganttActs[0].plannedFinish,
           ),
         )
       : new Date()
@@ -30665,7 +29862,7 @@ function PlanningTab(props: PlanningProps) {
     let currentTable = ''
     const fields: string[] = []
     const taskRows: Record<string, string>[] = []
-    const relRows: Array<Record<string, string>> = []
+    const relRows: Record<string, string>[] = []
     for (const line of lines) {
       if (line.startsWith('%T')) {
         currentTable = line.slice(3).trim()
@@ -30682,25 +29879,25 @@ function PlanningTab(props: PlanningProps) {
       }
     }
     const acts = taskRows.map((r, i) => ({
-      activityCode: r['task_code'] ?? `A${i + 1}`,
-      name: r['task_name'] ?? 'Activity',
-      activityType: r['task_type']?.includes('Mile') ? 'milestone' : 'task',
-      plannedStart: r['target_start_date']?.slice(0, 10) ?? null,
-      plannedFinish: r['target_end_date']?.slice(0, 10) ?? null,
-      durationDays: Math.round(parseFloat(r['target_drtn_hr_cnt'] ?? '0') / 8) || 0,
-      responsible: r['rsrc_id'] || null,
-      budgetAmount: parseFloat(r['target_cost'] ?? '0') || 0,
+      activityCode: r.task_code ?? `A${i + 1}`,
+      name: r.task_name ?? 'Activity',
+      activityType: r.task_type?.includes('Mile') ? 'milestone' : 'task',
+      plannedStart: r.target_start_date?.slice(0, 10) ?? null,
+      plannedFinish: r.target_end_date?.slice(0, 10) ?? null,
+      durationDays: Math.round(parseFloat(r.target_drtn_hr_cnt ?? '0') / 8) || 0,
+      responsible: r.rsrc_id || null,
+      budgetAmount: parseFloat(r.target_cost ?? '0') || 0,
       sequence: i,
     }))
     const deps = relRows.map((r) => ({
-      predecessorCode: r['pred_task_id'] ?? '',
-      successorCode: r['task_id'] ?? '',
-      dependencyType: (r['pred_type'] ?? 'FS').slice(-2),
-      lagDays: Math.round(parseFloat(r['lag_hr_cnt'] ?? '0') / 8) || 0,
+      predecessorCode: r.pred_task_id ?? '',
+      successorCode: r.task_id ?? '',
+      dependencyType: (r.pred_type ?? 'FS').slice(-2),
+      lagDays: Math.round(parseFloat(r.lag_hr_cnt ?? '0') / 8) || 0,
     }))
     setImportPreview({
-      activities: acts as Array<Record<string, unknown>>,
-      dependencies: deps as Array<Record<string, unknown>>,
+      activities: acts as Record<string, unknown>[],
+      dependencies: deps as Record<string, unknown>[],
     })
   }
 
@@ -30709,7 +29906,7 @@ function PlanningTab(props: PlanningProps) {
     const doc = parser.parseFromString(xml, 'application/xml')
     const tasks = Array.from(doc.querySelectorAll('Task'))
     const acts: Record<string, unknown>[] = []
-    const deps: Array<Record<string, unknown>> = []
+    const deps: Record<string, unknown>[] = []
     const idToCode = new Map<string, string>()
     for (const t of tasks) {
       const uid = t.querySelector('UID')?.textContent ?? '0'
@@ -30748,10 +29945,10 @@ function PlanningTab(props: PlanningProps) {
       }
     }
     for (const d of deps) {
-      if (idToCode.has(d.predecessorCode as string))
-        d.predecessorCode = idToCode.get(d.predecessorCode as string)!
-      if (idToCode.has(d.successorCode as string))
-        d.successorCode = idToCode.get(d.successorCode as string)!
+      const predCode = idToCode.get(d.predecessorCode as string)
+      if (predCode) d.predecessorCode = predCode
+      const succCode = idToCode.get(d.successorCode as string)
+      if (succCode) d.successorCode = succCode
     }
     setImportPreview({ activities: acts, dependencies: deps })
   }
@@ -30900,7 +30097,7 @@ function PlanningTab(props: PlanningProps) {
   }
 
   const renderWBSNode = (node: WBSNodeType, depth = 0): React.ReactNode => {
-    const hasChildren = node.children.length > 0
+    const hasChildren = (node.children?.length ?? 0) > 0
     const isExpanded = expandedWBS.has(node.id)
     return (
       <div key={node.id}>
@@ -30916,11 +30113,11 @@ function PlanningTab(props: PlanningProps) {
           {hasChildren ? (
             <button
               onClick={() =>
-                setExpandedWBS((ss) => {
+                { setExpandedWBS((ss) => {
                   const n = new Set(ss)
                   isExpanded ? n.delete(node.id) : n.add(node.id)
                   return n
-                })
+                }); }
               }
               style={{
                 background: 'none',
@@ -31012,7 +30209,7 @@ function PlanningTab(props: PlanningProps) {
             </div>
           )}
         </div>
-        {isExpanded && node.children.map((c) => renderWBSNode(c, depth + 1))}
+        {isExpanded && (node.children ?? []).map((c) => renderWBSNode(c, depth + 1))}
       </div>
     )
   }
@@ -31121,7 +30318,7 @@ function PlanningTab(props: PlanningProps) {
                   background: viewMode === v ? th.accent : th.bgSurface,
                   color: viewMode === v ? '#fff' : th.textSecondary,
                 }}
-                onClick={() => setViewMode(v)}
+                onClick={() => { setViewMode(v); }}
               >
                 {v === 'list' ? 'List' : 'Gantt'}
               </button>
@@ -31154,7 +30351,7 @@ function PlanningTab(props: PlanningProps) {
             </button>
           )}
           {isEditable && (
-            <button style={btn({ background: '#6366f1' })} onClick={() => setDepModal(true)}>
+            <button style={btn({ background: '#6366f1' })} onClick={() => { setDepModal(true); }}>
               + Dependency
             </button>
           )}
@@ -31707,7 +30904,7 @@ function PlanningTab(props: PlanningProps) {
                         fontSize: '12px',
                         padding: 0,
                       }}
-                      onClick={() => onRemoveAssignment(r.id)}
+                      onClick={() => { onRemoveAssignment(r.id); }}
                     >
                       ×
                     </button>
@@ -31795,7 +30992,7 @@ function PlanningTab(props: PlanningProps) {
                 {!b.isActive && (
                   <button
                     style={btn({ background: '#22c55e', fontSize: '11px', padding: '4px 10px' })}
-                    onClick={() => onSetActiveBaseline(b.id)}
+                    onClick={() => { onSetActiveBaseline(b.id); }}
                   >
                     Set Active
                   </button>
@@ -31803,18 +31000,18 @@ function PlanningTab(props: PlanningProps) {
                 <button
                   style={btn({ background: '#f59e0b', fontSize: '11px', padding: '4px 10px' })}
                   onClick={() =>
-                    addToast({
+                    { addToast({
                       type: 'warning',
                       message: `Apply "${b.name}" to the schedule? Current planned dates will be overwritten.`,
                       actions: [
                         {
                           label: 'Apply',
                           variant: 'primary',
-                          onClick: () => onApplyBaseline(b.id),
+                          onClick: () => { onApplyBaseline(b.id); },
                         },
-                        { label: 'Cancel', onClick: () => {} },
+                        { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                       ],
-                    })
+                    }); }
                   }
                 >
                   Apply
@@ -31822,18 +31019,18 @@ function PlanningTab(props: PlanningProps) {
                 <button
                   style={btn({ background: '#ef4444', fontSize: '11px', padding: '4px 10px' })}
                   onClick={() =>
-                    addToast({
+                    { addToast({
                       type: 'danger',
                       message: `Delete baseline "${b.name}"? This cannot be undone.`,
                       actions: [
                         {
                           label: 'Delete',
                           variant: 'danger',
-                          onClick: () => onDeleteBaseline(b.id),
+                          onClick: () => { onDeleteBaseline(b.id); },
                         },
-                        { label: 'Cancel', onClick: () => {} },
+                        { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                       ],
-                    })
+                    }); }
                   }
                 >
                   Delete
@@ -31983,7 +31180,7 @@ function PlanningTab(props: PlanningProps) {
             setImportFormat(null)
             if (f) {
               const r = new FileReader()
-              r.onload = (ev) => detectAndParse(f, String(ev.target?.result ?? ''))
+              r.onload = (ev) => { detectAndParse(f, String(ev.target?.result ?? '')); }
               r.readAsText(f)
             }
           }}
@@ -32046,7 +31243,7 @@ function PlanningTab(props: PlanningProps) {
                   {importFormat === 'msproject' ? 'MS Project XML' : 'Primavera P6 XER'}
                 </span>
               )}
-              {importFile && !importPreview && !importFormat && (
+              {!importPreview && !importFormat && (
                 <span style={{ fontSize: '12px', color: th.textSecondary }}>Parsing…</span>
               )}
             </div>
@@ -32113,7 +31310,7 @@ function PlanningTab(props: PlanningProps) {
             type="checkbox"
             id="clearExistingPlan"
             checked={clearExisting}
-            onChange={(e) => setClearExisting(e.target.checked)}
+            onChange={(e) => { setClearExisting(e.target.checked); }}
             style={{ width: 16, height: 16, cursor: 'pointer', accentColor: th.accent }}
           />
         </div>
@@ -32205,13 +31402,13 @@ function PlanningTab(props: PlanningProps) {
           </div>
           <div style={{ maxHeight: 260, overflowY: 'auto' }}>
             {(
-              importPreview.activities as Array<{
+              importPreview.activities as {
                 activityCode?: unknown
                 name?: unknown
                 plannedStart?: unknown
                 plannedFinish?: unknown
                 durationDays?: unknown
-              }>
+              }[]
             )
               .slice(0, 15)
               .map((a, i) => (
@@ -32361,7 +31558,7 @@ function PlanningTab(props: PlanningProps) {
   const flattenWBS = (nodes: WBSNodeType[], acc: WBSNodeType[] = []): WBSNodeType[] => {
     for (const n of nodes) {
       acc.push(n)
-      flattenWBS(n.children, acc)
+      flattenWBS(n.children ?? [], acc)
     }
     return acc
   }
@@ -32424,7 +31621,7 @@ function PlanningTab(props: PlanningProps) {
         {nav.map((n) => (
           <button
             key={n.key}
-            onClick={() => setSection(n.key)}
+            onClick={() => { setSection(n.key); }}
             style={{
               padding: '8px 16px',
               border: 'none',
@@ -32452,9 +31649,9 @@ function PlanningTab(props: PlanningProps) {
       {actModal.open && (
         <div
           style={modalOverlay}
-          onClick={() => setActModal({ open: false, mode: 'create', act: {} })}
+          onClick={() => { setActModal({ open: false, mode: 'create', act: {} }); }}
         >
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+          <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {actModal.mode === 'progress' ? (
               <>
                 {mHdr(`Progress: ${actModal.act.activityCode ?? ''}`)}
@@ -32462,7 +31659,7 @@ function PlanningTab(props: PlanningProps) {
                   '% Complete',
                   planInp(
                     actForm.percentComplete,
-                    (v) => setActForm((f) => ({ ...f, percentComplete: v })),
+                    (v) => { setActForm((f) => ({ ...f, percentComplete: v })); },
                     '0–100',
                     'number',
                   ),
@@ -32471,7 +31668,7 @@ function PlanningTab(props: PlanningProps) {
                   'Actual Start',
                   planInp(
                     actForm.actualStart,
-                    (v) => setActForm((f) => ({ ...f, actualStart: v })),
+                    (v) => { setActForm((f) => ({ ...f, actualStart: v })); },
                     '',
                     'date',
                   ),
@@ -32480,7 +31677,7 @@ function PlanningTab(props: PlanningProps) {
                   'Actual Finish',
                   planInp(
                     actForm.actualFinish,
-                    (v) => setActForm((f) => ({ ...f, actualFinish: v })),
+                    (v) => { setActForm((f) => ({ ...f, actualFinish: v })); },
                     '',
                     'date',
                   ),
@@ -32492,7 +31689,7 @@ function PlanningTab(props: PlanningProps) {
                 {wbsOptions.length > 0 &&
                   planField(
                     'WBS',
-                    planSel(actForm.wbsId, (v) => setActForm((f) => ({ ...f, wbsId: v })), [
+                    planSel(actForm.wbsId, (v) => { setActForm((f) => ({ ...f, wbsId: v })); }, [
                       { value: '', label: '— None —' },
                       ...wbsOptions.map((n) => ({ value: n.id, label: `${n.wbsCode} ${n.name}` })),
                     ]),
@@ -32501,19 +31698,19 @@ function PlanningTab(props: PlanningProps) {
                   'Activity Code',
                   planInp(
                     actForm.activityCode,
-                    (v) => setActForm((f) => ({ ...f, activityCode: v })),
+                    (v) => { setActForm((f) => ({ ...f, activityCode: v })); },
                     'A1000',
                   ),
                 )}
                 {planField(
                   'Name',
-                  planInp(actForm.name, (v) => setActForm((f) => ({ ...f, name: v }))),
+                  planInp(actForm.name, (v) => { setActForm((f) => ({ ...f, name: v })); }),
                 )}
                 {planField(
                   'Type',
                   planSel(
                     actForm.activityType,
-                    (v) => setActForm((f) => ({ ...f, activityType: v })),
+                    (v) => { setActForm((f) => ({ ...f, activityType: v })); },
                     activityTypes,
                   ),
                 )}
@@ -32521,7 +31718,7 @@ function PlanningTab(props: PlanningProps) {
                   'Planned Start',
                   planInp(
                     actForm.plannedStart,
-                    (v) => setActForm((f) => ({ ...f, plannedStart: v })),
+                    (v) => { setActForm((f) => ({ ...f, plannedStart: v })); },
                     '',
                     'date',
                   ),
@@ -32530,7 +31727,7 @@ function PlanningTab(props: PlanningProps) {
                   'Planned Finish',
                   planInp(
                     actForm.plannedFinish,
-                    (v) => setActForm((f) => ({ ...f, plannedFinish: v })),
+                    (v) => { setActForm((f) => ({ ...f, plannedFinish: v })); },
                     '',
                     'date',
                   ),
@@ -32539,7 +31736,7 @@ function PlanningTab(props: PlanningProps) {
                   'Duration (days)',
                   planInp(
                     actForm.durationDays,
-                    (v) => setActForm((f) => ({ ...f, durationDays: v })),
+                    (v) => { setActForm((f) => ({ ...f, durationDays: v })); },
                     '0',
                     'number',
                   ),
@@ -32547,14 +31744,14 @@ function PlanningTab(props: PlanningProps) {
                 {planField(
                   'Responsible',
                   planInp(actForm.responsible, (v) =>
-                    setActForm((f) => ({ ...f, responsible: v })),
+                    { setActForm((f) => ({ ...f, responsible: v })); },
                   ),
                 )}
                 {planField(
                   'Budget Amount',
                   planInp(
                     actForm.budgetAmount,
-                    (v) => setActForm((f) => ({ ...f, budgetAmount: v })),
+                    (v) => { setActForm((f) => ({ ...f, budgetAmount: v })); },
                     '0',
                     'number',
                   ),
@@ -32564,7 +31761,7 @@ function PlanningTab(props: PlanningProps) {
                   <textarea
                     style={{ ...inputSt, minHeight: '60px' }}
                     value={actForm.remarks}
-                    onChange={(e) => setActForm((f) => ({ ...f, remarks: e.target.value }))}
+                    onChange={(e) => { setActForm((f) => ({ ...f, remarks: e.target.value })); }}
                   />,
                 )}
               </>
@@ -32583,8 +31780,8 @@ function PlanningTab(props: PlanningProps) {
                   }),
                 }}
                 onClick={() => {
-                  if (confirm('Delete activity?')) {
-                    onDeleteActivity(actModal.act.id!)
+                  if (confirm('Delete activity?') && actModal.act.id) {
+                    onDeleteActivity(actModal.act.id)
                     setActModal({ open: false, mode: 'create', act: {} })
                   }
                 }}
@@ -32599,42 +31796,42 @@ function PlanningTab(props: PlanningProps) {
       {wbsModal.open && (
         <div
           style={modalOverlay}
-          onClick={() => setWbsModal({ open: false, mode: 'create', node: {} })}
+          onClick={() => { setWbsModal({ open: false, mode: 'create', node: {} }); }}
         >
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+          <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr(wbsModal.mode === 'create' ? 'Add WBS Node' : 'Edit WBS Node')}
             {planField(
               'WBS Code',
-              planInp(wbsForm.wbsCode, (v) => setWbsForm((f) => ({ ...f, wbsCode: v })), '1.1.2'),
+              planInp(wbsForm.wbsCode, (v) => { setWbsForm((f) => ({ ...f, wbsCode: v })); }, '1.1.2'),
             )}
             {planField(
               'Name',
-              planInp(wbsForm.name, (v) => setWbsForm((f) => ({ ...f, name: v }))),
+              planInp(wbsForm.name, (v) => { setWbsForm((f) => ({ ...f, name: v })); }),
             )}
             {planField(
               'Description',
               <textarea
                 style={{ ...inputSt, minHeight: '60px' }}
                 value={wbsForm.description}
-                onChange={(e) => setWbsForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) => { setWbsForm((f) => ({ ...f, description: e.target.value })); }}
               />,
             )}
             {planField(
               'Level',
-              planInp(wbsForm.level, (v) => setWbsForm((f) => ({ ...f, level: v })), '1', 'number'),
+              planInp(wbsForm.level, (v) => { setWbsForm((f) => ({ ...f, level: v })); }, '1', 'number'),
             )}
             {planField(
               'Budget Amount',
               planInp(
                 wbsForm.budgetAmount,
-                (v) => setWbsForm((f) => ({ ...f, budgetAmount: v })),
+                (v) => { setWbsForm((f) => ({ ...f, budgetAmount: v })); },
                 '0',
                 'number',
               ),
             )}
             {planField(
               'Responsible',
-              planInp(wbsForm.responsible, (v) => setWbsForm((f) => ({ ...f, responsible: v }))),
+              planInp(wbsForm.responsible, (v) => { setWbsForm((f) => ({ ...f, responsible: v })); }),
             )}
             {mBtns(
               () => {
@@ -32661,7 +31858,7 @@ function PlanningTab(props: PlanningProps) {
                   })
                 setWbsModal({ open: false, mode: 'create', node: {} })
               },
-              () => setWbsModal({ open: false, mode: 'create', node: {} }),
+              () => { setWbsModal({ open: false, mode: 'create', node: {} }); },
             )}
           </div>
         </div>
@@ -32674,13 +31871,13 @@ function PlanningTab(props: PlanningProps) {
             setDepModal(false)
           }}
         >
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+          <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr('Add Dependency')}
             {planField(
               'Predecessor',
               planSel(
                 depForm.predecessorId,
-                (v) => setDepForm((f) => ({ ...f, predecessorId: v })),
+                (v) => { setDepForm((f) => ({ ...f, predecessorId: v })); },
                 [
                   { value: '', label: '— Select —' },
                   ...activities.map((a) => ({
@@ -32692,7 +31889,7 @@ function PlanningTab(props: PlanningProps) {
             )}
             {planField(
               'Successor',
-              planSel(depForm.successorId, (v) => setDepForm((f) => ({ ...f, successorId: v })), [
+              planSel(depForm.successorId, (v) => { setDepForm((f) => ({ ...f, successorId: v })); }, [
                 { value: '', label: '— Select —' },
                 ...activities.map((a) => ({ value: a.id, label: `${a.activityCode}: ${a.name}` })),
               ]),
@@ -32701,7 +31898,7 @@ function PlanningTab(props: PlanningProps) {
               'Type',
               planSel(
                 depForm.dependencyType,
-                (v) => setDepForm((f) => ({ ...f, dependencyType: v })),
+                (v) => { setDepForm((f) => ({ ...f, dependencyType: v })); },
                 [
                   { value: 'FS', label: 'Finish-to-Start (FS)' },
                   { value: 'SS', label: 'Start-to-Start (SS)' },
@@ -32714,7 +31911,7 @@ function PlanningTab(props: PlanningProps) {
               'Lag Days',
               planInp(
                 depForm.lagDays,
-                (v) => setDepForm((f) => ({ ...f, lagDays: v })),
+                (v) => { setDepForm((f) => ({ ...f, lagDays: v })); },
                 '0',
                 'number',
               ),
@@ -32731,7 +31928,7 @@ function PlanningTab(props: PlanningProps) {
                 })
                 setDepModal(false)
               },
-              () => setDepModal(false),
+              () => { setDepModal(false); },
             )}
           </div>
         </div>
@@ -32744,18 +31941,18 @@ function PlanningTab(props: PlanningProps) {
             setBlModal(false)
           }}
         >
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+          <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr('Save Baseline')}
             {planField(
               'Name',
-              planInp(blForm.name, (v) => setBlForm((f) => ({ ...f, name: v })), 'Baseline 1'),
+              planInp(blForm.name, (v) => { setBlForm((f) => ({ ...f, name: v })); }, 'Baseline 1'),
             )}
             {planField(
               'Description',
               <textarea
                 style={{ ...inputSt, minHeight: '60px' }}
                 value={blForm.description}
-                onChange={(e) => setBlForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) => { setBlForm((f) => ({ ...f, description: e.target.value })); }}
               />,
             )}
             {mBtns(
@@ -32767,7 +31964,7 @@ function PlanningTab(props: PlanningProps) {
                 })
                 setBlModal(false)
               },
-              () => setBlModal(false),
+              () => { setBlModal(false); },
             )}
           </div>
         </div>
@@ -32776,17 +31973,17 @@ function PlanningTab(props: PlanningProps) {
       {resModal.open && (
         <div
           style={modalOverlay}
-          onClick={() => setResModal({ open: false, mode: 'create', res: {} })}
+          onClick={() => { setResModal({ open: false, mode: 'create', res: {} }); }}
         >
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+          <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr(resModal.mode === 'create' ? 'Add Resource' : 'Edit Resource')}
             {planField(
               'Name',
-              planInp(resForm.name, (v) => setResForm((f) => ({ ...f, name: v }))),
+              planInp(resForm.name, (v) => { setResForm((f) => ({ ...f, name: v })); }),
             )}
             {planField(
               'Type',
-              planSel(resForm.resourceType, (v) => setResForm((f) => ({ ...f, resourceType: v })), [
+              planSel(resForm.resourceType, (v) => { setResForm((f) => ({ ...f, resourceType: v })); }, [
                 { value: 'labor', label: 'Labor' },
                 { value: 'equipment', label: 'Equipment' },
                 { value: 'material', label: 'Material' },
@@ -32796,7 +31993,7 @@ function PlanningTab(props: PlanningProps) {
               'Unit',
               planInp(
                 resForm.unit,
-                (v) => setResForm((f) => ({ ...f, unit: v })),
+                (v) => { setResForm((f) => ({ ...f, unit: v })); },
                 'hrs, days, m², kg',
               ),
             )}
@@ -32804,7 +32001,7 @@ function PlanningTab(props: PlanningProps) {
               'Max Units/Day',
               planInp(
                 resForm.maxUnitsPerDay,
-                (v) => setResForm((f) => ({ ...f, maxUnitsPerDay: v })),
+                (v) => { setResForm((f) => ({ ...f, maxUnitsPerDay: v })); },
                 '8',
                 'number',
               ),
@@ -32813,7 +32010,7 @@ function PlanningTab(props: PlanningProps) {
               'Cost/Unit',
               planInp(
                 resForm.costPerUnit,
-                (v) => setResForm((f) => ({ ...f, costPerUnit: v })),
+                (v) => { setResForm((f) => ({ ...f, costPerUnit: v })); },
                 '0',
                 'number',
               ),
@@ -32822,7 +32019,7 @@ function PlanningTab(props: PlanningProps) {
               'Currency',
               planInp(
                 resForm.currencyCode,
-                (v) => setResForm((f) => ({ ...f, currencyCode: v })),
+                (v) => { setResForm((f) => ({ ...f, currencyCode: v })); },
                 'USD',
               ),
             )}
@@ -32849,7 +32046,7 @@ function PlanningTab(props: PlanningProps) {
                   })
                 setResModal({ open: false, mode: 'create', res: {} })
               },
-              () => setResModal({ open: false, mode: 'create', res: {} }),
+              () => { setResModal({ open: false, mode: 'create', res: {} }); },
             )}
           </div>
         </div>
@@ -32862,13 +32059,13 @@ function PlanningTab(props: PlanningProps) {
             setAssignModal({ open: false, activityId: '' })
           }}
         >
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+          <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr('Assign Resource')}
             {planField(
               'Resource',
               planSel(
                 assignForm.resourceId,
-                (v) => setAssignForm((f) => ({ ...f, resourceId: v })),
+                (v) => { setAssignForm((f) => ({ ...f, resourceId: v })); },
                 resources.map((r) => ({ value: r.id, label: `${r.name} (${r.unit})` })),
               ),
             )}
@@ -32876,7 +32073,7 @@ function PlanningTab(props: PlanningProps) {
               'Units/Day',
               planInp(
                 assignForm.unitsPerDay,
-                (v) => setAssignForm((f) => ({ ...f, unitsPerDay: v })),
+                (v) => { setAssignForm((f) => ({ ...f, unitsPerDay: v })); },
                 '1',
                 'number',
               ),
@@ -32885,7 +32082,7 @@ function PlanningTab(props: PlanningProps) {
               'Budgeted Cost',
               planInp(
                 assignForm.budgetedCost,
-                (v) => setAssignForm((f) => ({ ...f, budgetedCost: v })),
+                (v) => { setAssignForm((f) => ({ ...f, budgetedCost: v })); },
                 'optional',
                 'number',
               ),
@@ -32902,7 +32099,7 @@ function PlanningTab(props: PlanningProps) {
                 })
                 setAssignModal({ open: false, activityId: '' })
               },
-              () => setAssignModal({ open: false, activityId: '' }),
+              () => { setAssignModal({ open: false, activityId: '' }); },
             )}
           </div>
         </div>
@@ -32928,6 +32125,8 @@ interface CCCostCode {
   forecastEAC: number
   remainingBudget: number
   percentConsumed: number
+  createdAt: string
+  updatedAt: string
 }
 interface CCSummary {
   totalBudget: number
@@ -32942,14 +32141,14 @@ interface CCSummary {
   totalPaidByClient: number
   totalRetentionHeld: number
   outstandingReceivable: number
-  byCategory: Array<{
+  byCategory: {
     category: string
     budgetAmount: number
     committedAmount: number
     actualAmount: number
     forecastEAC: number
     variance: number
-  }>
+  }[]
 }
 
 interface CCCommitted {
@@ -33045,7 +32244,7 @@ interface CCBilling {
   retentionPercentage: number | null
   retentionAmount: number | null
   netAmount: number
-  certifiedAmount: number
+  certifiedAmount: number | null
   certifiedDate: string | null
   paidAmount: number
   paidDate: string | null
@@ -33217,16 +32416,16 @@ function CostControlTab(props: CostControlProps) {
       style={inputSt}
       type={type}
       value={val}
-      onChange={(e) => set(e.target.value)}
+      onChange={(e) => { set(e.target.value); }}
       placeholder={ph}
     />
   )
   const fs = (
     val: string,
     set: (v: string) => void,
-    opts: Array<{ value: string; label: string }>,
+    opts: { value: string; label: string }[],
   ) => (
-    <select style={inputSt} value={val} onChange={(e) => set(e.target.value)}>
+    <select style={inputSt} value={val} onChange={(e) => { set(e.target.value); }}>
       {opts.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
@@ -33310,11 +32509,6 @@ function CostControlTab(props: CostControlProps) {
     </div>
   )
 
-  const codeOpts = [
-    { value: '', label: '— No Cost Code —' },
-    ...costCodes.map((c) => ({ value: c.id, label: `${c.code} ${c.name}` })),
-  ]
-
   // ── Overview ──────────────────────────────────────────────────────────────
   const renderOverview = () => {
     const s = summary
@@ -33374,7 +32568,7 @@ function CostControlTab(props: CostControlProps) {
               >
                 {t.label}
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 700, color: t.color ?? th.textPrimary }}>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: t.color }}>
                 {t.value}
               </div>
             </div>
@@ -33792,7 +32986,7 @@ function CostControlTab(props: CostControlProps) {
     k: string
     label: string
     type?: 'text' | 'number' | 'date' | 'select' | 'textarea'
-    opts?: Array<{ value: string; label: string }>
+    opts?: { value: string; label: string }[]
     required?: boolean
     editOnly?: boolean
     createOnly?: boolean
@@ -34020,12 +33214,12 @@ function CostControlTab(props: CostControlProps) {
 
   function dataTable<T extends { id: string }>(
     rows: T[],
-    cols: Array<{
+    cols: {
       h: string
       align?: 'right' | 'center' | 'left'
       render: (r: T) => React.ReactNode
       w?: string
-    }>,
+    }[],
     onRow: (r: T) => void,
     empty: string,
   ) {
@@ -34068,7 +33262,7 @@ function CostControlTab(props: CostControlProps) {
           {rows.map((r) => (
             <div
               key={r.id}
-              onClick={() => onRow(r)}
+              onClick={() => { onRow(r); }}
               style={{
                 display: 'grid',
                 gridTemplateColumns: grid,
@@ -34116,7 +33310,7 @@ function CostControlTab(props: CostControlProps) {
       <div style={{ display: 'flex', gap: '8px' }}>
         {extra}
         {isEditable && (
-          <button style={btn()} onClick={() => openRow(entity, 'create')}>
+          <button style={btn()} onClick={() => { openRow(entity, 'create'); }}>
             + Add
           </button>
         )}
@@ -34137,7 +33331,7 @@ function CostControlTab(props: CostControlProps) {
               color: th.textSecondary,
               border: `1px solid ${th.border}`,
             })}
-            onClick={() => onSyncPO({ projectId })}
+            onClick={() => { onSyncPO({ projectId }); }}
           >
             Sync POs
           </button>
@@ -34153,7 +33347,7 @@ function CostControlTab(props: CostControlProps) {
           { h: 'Invoiced', w: '100px', align: 'right', render: (r) => fmt(r.invoicedAmount) },
           { h: 'Status', w: '90px', render: (r) => r.status },
         ],
-        (r) => openRow('committed', 'edit', r as unknown as Record<string, unknown>),
+        (r) => { openRow('committed', 'edit', r as unknown as Record<string, unknown>); },
         'No committed costs yet.',
       )}
     </div>
@@ -34176,7 +33370,7 @@ function CostControlTab(props: CostControlProps) {
           { h: 'Paid', w: '100px', align: 'right', render: (r) => fmt(r.paidAmount) },
           { h: 'Status', w: '90px', render: (r) => r.status },
         ],
-        (r) => openRow('subcontract', 'edit', r as unknown as Record<string, unknown>),
+        (r) => { openRow('subcontract', 'edit', r as unknown as Record<string, unknown>); },
         'No subcontracts yet.',
       )}
     </div>
@@ -34194,7 +33388,7 @@ function CostControlTab(props: CostControlProps) {
           { h: 'OT Hrs', w: '80px', align: 'right', render: (r) => r.overtimeHours },
           { h: 'Total', w: '110px', align: 'right', render: (r) => fmt(r.totalCost) },
         ],
-        (r) => openRow('labor', 'edit', r as unknown as Record<string, unknown>),
+        (r) => { openRow('labor', 'edit', r as unknown as Record<string, unknown>); },
         'No labor entries yet.',
       )}
     </div>
@@ -34212,7 +33406,7 @@ function CostControlTab(props: CostControlProps) {
           { h: 'Standby', w: '90px', align: 'right', render: (r) => r.standbyHours },
           { h: 'Total', w: '110px', align: 'right', render: (r) => fmt(r.totalCost) },
         ],
-        (r) => openRow('equipment', 'edit', r as unknown as Record<string, unknown>),
+        (r) => { openRow('equipment', 'edit', r as unknown as Record<string, unknown>); },
         'No equipment log entries yet.',
       )}
     </div>
@@ -34233,7 +33427,7 @@ function CostControlTab(props: CostControlProps) {
           { h: 'Planned In', w: '110px', align: 'right', render: (r) => fmt(r.plannedInflow) },
           { h: 'Actual In', w: '110px', align: 'right', render: (r) => fmt(r.actualInflow) },
         ],
-        (r) => openRow('cash', 'edit', r as unknown as Record<string, unknown>),
+        (r) => { openRow('cash', 'edit', r as unknown as Record<string, unknown>); },
         'No cash flow periods yet.',
       )}
     </div>
@@ -34249,7 +33443,7 @@ function CostControlTab(props: CostControlProps) {
           { h: 'ETC', w: '130px', align: 'right', render: (r) => fmt(r.etcAmount) },
           { h: 'EAC', w: '130px', align: 'right', render: (r) => fmt(r.eacAmount) },
         ],
-        (r) => openRow('forecast', 'edit', r as unknown as Record<string, unknown>),
+        (r) => { openRow('forecast', 'edit', r as unknown as Record<string, unknown>); },
         'No forecasts yet.',
       )}
     </div>
@@ -34272,7 +33466,7 @@ function CostControlTab(props: CostControlProps) {
           { h: 'Net', w: '110px', align: 'right', render: (r) => fmt(r.netAmount) },
           { h: 'Status', w: '90px', render: (r) => r.status },
         ],
-        (r) => openRow('billing', 'edit', r as unknown as Record<string, unknown>),
+        (r) => { openRow('billing', 'edit', r as unknown as Record<string, unknown>); },
         'No client billings yet.',
       )}
     </div>
@@ -34293,7 +33487,7 @@ function CostControlTab(props: CostControlProps) {
         {nav.map((n) => (
           <button
             key={n.key}
-            onClick={() => setSection(n.key)}
+            onClick={() => { setSection(n.key); }}
             style={{
               padding: '8px 14px',
               border: 'none',
@@ -34325,9 +33519,9 @@ function CostControlTab(props: CostControlProps) {
       {codeModal.open && (
         <div
           style={modalOverlay}
-          onClick={() => setCodeModal({ open: false, mode: 'create', item: {} })}
+          onClick={() => { setCodeModal({ open: false, mode: 'create', item: {} }); }}
         >
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+          <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr(codeModal.mode === 'create' ? 'Add Cost Code' : 'Edit Cost Code')}
             {ff(
               'Analytic Account',
@@ -34346,13 +33540,13 @@ function CostControlTab(props: CostControlProps) {
             )}
             {ff(
               'Category',
-              fs(codeForm.category, (v) => setCodeForm((f) => ({ ...f, category: v })), catOpts),
+              fs(codeForm.category, (v) => { setCodeForm((f) => ({ ...f, category: v })); }, catOpts),
             )}
             {ff(
               'Budget Amount',
               fi(
                 codeForm.budgetAmount,
-                (v) => setCodeForm((f) => ({ ...f, budgetAmount: v })),
+                (v) => { setCodeForm((f) => ({ ...f, budgetAmount: v })); },
                 '0',
                 'number',
               ),
@@ -34377,7 +33571,7 @@ function CostControlTab(props: CostControlProps) {
                   })
                 setCodeModal({ open: false, mode: 'create', item: {} })
               },
-              () => setCodeModal({ open: false, mode: 'create', item: {} }),
+              () => { setCodeModal({ open: false, mode: 'create', item: {} }); },
             )}
             {codeModal.mode === 'edit' && isAdmin && (
               <button
@@ -34390,8 +33584,8 @@ function CostControlTab(props: CostControlProps) {
                   }),
                 }}
                 onClick={() => {
-                  if (confirm('Delete cost code?')) {
-                    onDeleteCostCode(codeModal.item.id!)
+                  if (confirm('Delete cost code?') && codeModal.item.id) {
+                    onDeleteCostCode(codeModal.item.id)
                     setCodeModal({ open: false, mode: 'create', item: {} })
                   }
                 }}
@@ -34422,7 +33616,7 @@ function CostControlTab(props: CostControlProps) {
             rowModal.mode === 'edit' && rowModal.entity !== 'cash' && rowModal.entity !== 'forecast'
           return (
             <div style={modalOverlay} onClick={closeRow}>
-              <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+              <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
                 {mHdr(
                   `${rowModal.mode === 'create' ? 'Add' : 'Edit'} ${titleMap[rowModal.entity]}`,
                 )}
@@ -34433,19 +33627,19 @@ function CostControlTab(props: CostControlProps) {
                       f.type === 'select' ? (
                         fs(
                           rowForm[f.k] ?? '',
-                          (v) => setRowForm((p) => ({ ...p, [f.k]: v })),
+                          (v) => { setRowForm((p) => ({ ...p, [f.k]: v })); },
                           f.opts ?? [],
                         )
                       ) : f.type === 'textarea' ? (
                         <textarea
                           style={{ ...inputSt, minHeight: '60px', resize: 'vertical' }}
                           value={rowForm[f.k] ?? ''}
-                          onChange={(e) => setRowForm((p) => ({ ...p, [f.k]: e.target.value }))}
+                          onChange={(e) => { setRowForm((p) => ({ ...p, [f.k]: e.target.value })); }}
                         />
                       ) : (
                         fi(
                           rowForm[f.k] ?? '',
-                          (v) => setRowForm((p) => ({ ...p, [f.k]: v })),
+                          (v) => { setRowForm((p) => ({ ...p, [f.k]: v })); },
                           '',
                           f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text',
                         )
@@ -34740,16 +33934,16 @@ function VariationOrdersTab(props: VariationOrdersProps) {
       style={inputSt}
       type={type}
       value={val}
-      onChange={(e) => set(e.target.value)}
+      onChange={(e) => { set(e.target.value); }}
       placeholder={ph}
     />
   )
   const vfs = (
     val: string,
     set: (v: string) => void,
-    opts: Array<{ value: string; label: string }>,
+    opts: { value: string; label: string }[],
   ) => (
-    <select style={inputSt} value={val} onChange={(e) => set(e.target.value)}>
+    <select style={inputSt} value={val} onChange={(e) => { set(e.target.value); }}>
       {opts.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
@@ -34868,7 +34062,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
       clientRef: '',
       impactAnalysis: '',
       technicalNotes: '',
-      contractId: contracts.length === 1 ? contracts[0]!.id : '',
+      contractId: contracts.length === 1 ? contracts[0].id : '',
     })
   }
 
@@ -34888,16 +34082,16 @@ function VariationOrdersTab(props: VariationOrdersProps) {
       clientRef: vo.clientRef ?? '',
       impactAnalysis: vo.impactAnalysis ?? '',
       technicalNotes: vo.technicalNotes ?? '',
-      contractId: vo.contractId ?? (contracts.length === 1 ? contracts[0]!.id : ''),
+      contractId: vo.contractId ?? (contracts.length === 1 ? contracts[0].id : ''),
     })
   }
 
   const toggleVO = (voId: string) =>
-    setExpandedVO((s) => {
+    { setExpandedVO((s) => {
       const n = new Set(s)
       n.has(voId) ? n.delete(voId) : n.add(voId)
       return n
-    })
+    }); }
   const getSubTab = (voId: string): VOSubTab => subTab[voId] ?? 'cost'
 
   // ── Analysis ──────────────────────────────────────────────────────────────
@@ -35150,7 +34344,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   cursor: 'pointer',
                   flexWrap: 'wrap',
                 }}
-                onClick={() => toggleVO(vo.id)}
+                onClick={() => { toggleVO(vo.id); }}
               >
                 <span
                   style={{
@@ -35214,12 +34408,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
               <div
                 style={{ display: 'flex', gap: '4px', flexShrink: 0 }}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); }}
               >
                 {isAdmin && vo.status === 'draft' && (
                   <button
                     style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#f59e0b' })}
-                    onClick={() => onSubmitVO(vo.id)}
+                    onClick={() => { onSubmitVO(vo.id); }}
                   >
                     Submit
                   </button>
@@ -35227,7 +34421,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 {isAdmin && vo.status === 'submitted' && (
                   <button
                     style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#3b82f6' })}
-                    onClick={() => onSetVOStatus(vo.id, 'under_review')}
+                    onClick={() => { onSetVOStatus(vo.id, 'under_review'); }}
                   >
                     Under Review
                   </button>
@@ -35243,7 +34437,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                           voNumber: vo.voNumber,
                           voValue: vo.voValue,
                           contractId:
-                            vo.contractId ?? (contracts.length === 1 ? contracts[0]!.id : ''),
+                            vo.contractId ?? (contracts.length === 1 ? contracts[0].id : ''),
                         })
                         setApprovedValue(String(vo.voValue))
                       }}
@@ -35270,7 +34464,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                       color: th.textSecondary,
                       border: `1px solid ${th.border}`,
                     })}
-                    onClick={() => openEditVO(vo)}
+                    onClick={() => { openEditVO(vo); }}
                   >
                     Edit
                   </button>
@@ -35279,10 +34473,10 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   <button
                     style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#ef4444' })}
                     onClick={() =>
-                      setConfirmDel({
+                      { setConfirmDel({
                         message: `Delete ${vo.voNumber}?`,
-                        onConfirm: () => onDeleteVO(vo.id),
-                      })
+                        onConfirm: () => { onDeleteVO(vo.id); },
+                      }); }
                     }
                   >
                     Del
@@ -35335,7 +34529,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 ...(vo.receivedDate
                   ? [{ label: 'Received', value: vo.receivedDate, color: th.textSecondary }]
                   : []),
-              ].map((m, i) => (
+              ].map((m) => (
                 <div
                   key={m.label}
                   style={{
@@ -35379,7 +34573,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             {isExpanded && (
               <div style={{ borderTop: `1px solid ${th.border}` }}>
                 {/* Info fields */}
-                {(vo.description || vo.impactAnalysis || vo.technicalNotes) && (
+                {(vo.description ?? vo.impactAnalysis ?? vo.technicalNotes) && (
                   <div
                     style={{
                       display: 'grid',
@@ -35434,7 +34628,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   {(['cost', 'correspondence', 'drawings'] as VOSubTab[]).map((t) => (
                     <button
                       key={t}
-                      onClick={() => setSubTab((s) => ({ ...s, [vo.id]: t }))}
+                      onClick={() => { setSubTab((s) => ({ ...s, [vo.id]: t })); }}
                       style={{
                         padding: '8px 14px',
                         border: 'none',
@@ -35613,10 +34807,10 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                       border: `1px solid #ef444450`,
                                     })}
                                     onClick={() =>
-                                      setConfirmDel({
+                                      { setConfirmDel({
                                         message: 'Delete cost item?',
-                                        onConfirm: () => onDeleteCostItem(ci.id),
-                                      })
+                                        onConfirm: () => { onDeleteCostItem(ci.id); },
+                                      }); }
                                     }
                                   >
                                     <svg
@@ -35771,10 +34965,10 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                   background: '#ef4444',
                                 })}
                                 onClick={() =>
-                                  setConfirmDel({
+                                  { setConfirmDel({
                                     message: 'Delete correspondence entry?',
-                                    onConfirm: () => onDeleteCorrespondence(c.id),
-                                  })
+                                    onConfirm: () => { onDeleteCorrespondence(c.id); },
+                                  }); }
                                 }
                               >
                                 Del
@@ -35870,10 +35064,10 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                     background: '#ef4444',
                                   })}
                                   onClick={() =>
-                                    setConfirmDel({
+                                    { setConfirmDel({
                                       message: 'Remove linked drawing?',
-                                      onConfirm: () => onRemoveDrawing(d.id),
-                                    })
+                                      onConfirm: () => { onRemoveDrawing(d.id); },
+                                    }); }
                                   }
                                 >
                                   Del
@@ -35916,7 +35110,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
         ).map(([key, label]) => (
           <button
             key={key}
-            onClick={() => setSection(key as VOSection)}
+            onClick={() => { setSection(key); }}
             style={{
               padding: '8px 16px',
               border: 'none',
@@ -35944,13 +35138,13 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             setVOModal((m) => ({ ...m, open: false }))
           }}
         >
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+          <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr(voModal.mode === 'create' ? 'New Variation Order' : `Edit ${voForm.voNumber}`)}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
                 {voff(
                   'VO Number',
-                  vfi(voForm.voNumber, (v) => setVOForm((f) => ({ ...f, voNumber: v })), 'VO-001'),
+                  vfi(voForm.voNumber, (v) => { setVOForm((f) => ({ ...f, voNumber: v })); }, 'VO-001'),
                 )}
               </div>
               <div>
@@ -35958,7 +35152,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Currency',
                   vfi(
                     voForm.currencyCode,
-                    (v) => setVOForm((f) => ({ ...f, currencyCode: v })),
+                    (v) => { setVOForm((f) => ({ ...f, currencyCode: v })); },
                     'USD',
                   ),
                 )}
@@ -35966,14 +35160,14 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             </div>
             {voff(
               'Title',
-              vfi(voForm.title, (v) => setVOForm((f) => ({ ...f, title: v }))),
+              vfi(voForm.title, (v) => { setVOForm((f) => ({ ...f, title: v })); }),
             )}
             {voff(
               'Description',
               <textarea
                 style={{ ...inputSt, minHeight: '60px' }}
                 value={voForm.description}
-                onChange={(e) => setVOForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) => { setVOForm((f) => ({ ...f, description: e.target.value })); }}
               />,
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -35982,7 +35176,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Change Type',
                   vfs(
                     voForm.changeType,
-                    (v) => setVOForm((f) => ({ ...f, changeType: v })),
+                    (v) => { setVOForm((f) => ({ ...f, changeType: v })); },
                     changeTypeOpts,
                   ),
                 )}
@@ -35992,7 +35186,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Initiated By',
                   vfs(
                     voForm.initiatedBy,
-                    (v) => setVOForm((f) => ({ ...f, initiatedBy: v })),
+                    (v) => { setVOForm((f) => ({ ...f, initiatedBy: v })); },
                     initiatedByOpts,
                   ),
                 )}
@@ -36002,7 +35196,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Instruction Date',
                   vfi(
                     voForm.instructionDate,
-                    (v) => setVOForm((f) => ({ ...f, instructionDate: v })),
+                    (v) => { setVOForm((f) => ({ ...f, instructionDate: v })); },
                     '',
                     'date',
                   ),
@@ -36013,7 +35207,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Received Date',
                   vfi(
                     voForm.receivedDate,
-                    (v) => setVOForm((f) => ({ ...f, receivedDate: v })),
+                    (v) => { setVOForm((f) => ({ ...f, receivedDate: v })); },
                     '',
                     'date',
                   ),
@@ -36038,7 +35232,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   ) : (
                     vfi(
                       voForm.voValue,
-                      (v) => setVOForm((f) => ({ ...f, voValue: v })),
+                      (v) => { setVOForm((f) => ({ ...f, voValue: v })); },
                       '0',
                       'number',
                     )
@@ -36050,7 +35244,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Schedule Impact (days)',
                   vfi(
                     voForm.scheduleImpactDays,
-                    (v) => setVOForm((f) => ({ ...f, scheduleImpactDays: v })),
+                    (v) => { setVOForm((f) => ({ ...f, scheduleImpactDays: v })); },
                     '0',
                     'number',
                   ),
@@ -36059,7 +35253,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             </div>
             {voff(
               'Client Reference',
-              vfi(voForm.clientRef, (v) => setVOForm((f) => ({ ...f, clientRef: v }))),
+              vfi(voForm.clientRef, (v) => { setVOForm((f) => ({ ...f, clientRef: v })); }),
             )}
             {contracts.length > 1 &&
               voff(
@@ -36080,7 +35274,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                     (locked — revert status to change)
                   </div>
                 ) : (
-                  vfs(voForm.contractId, (v) => setVOForm((f) => ({ ...f, contractId: v })), [
+                  vfs(voForm.contractId, (v) => { setVOForm((f) => ({ ...f, contractId: v })); }, [
                     { value: '', label: 'Select contract…' },
                     ...contracts.map((c) => ({
                       value: c.id,
@@ -36094,7 +35288,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               <textarea
                 style={{ ...inputSt, minHeight: '60px' }}
                 value={voForm.impactAnalysis}
-                onChange={(e) => setVOForm((f) => ({ ...f, impactAnalysis: e.target.value }))}
+                onChange={(e) => { setVOForm((f) => ({ ...f, impactAnalysis: e.target.value })); }}
               />,
             )}
             {voff(
@@ -36102,7 +35296,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               <textarea
                 style={{ ...inputSt, minHeight: '50px' }}
                 value={voForm.technicalNotes}
-                onChange={(e) => setVOForm((f) => ({ ...f, technicalNotes: e.target.value }))}
+                onChange={(e) => { setVOForm((f) => ({ ...f, technicalNotes: e.target.value })); }}
               />,
             )}
             {mBtnsVO(
@@ -36153,7 +35347,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   })
                 setVOModal((m) => ({ ...m, open: false }))
               },
-              () => setVOModal((m) => ({ ...m, open: false })),
+              () => { setVOModal((m) => ({ ...m, open: false })); },
               voLock.lockedByOther,
             )}
             {voLock.lockedByOther && (
@@ -36174,7 +35368,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             setApproveModal((m) => ({ ...m, open: false }))
           }}
         >
-          <div style={{ ...modalBox, maxWidth: '380px' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ ...modalBox, maxWidth: '380px' }} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr(`Approve ${approveModal.voNumber}`)}
             <div style={{ fontSize: '13px', color: th.textSecondary, marginBottom: '12px' }}>
               Submitted value:{' '}
@@ -36186,7 +35380,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 style={inputSt}
                 type="number"
                 value={approvedValue}
-                onChange={(e) => setApprovedValue(e.target.value)}
+                onChange={(e) => { setApprovedValue(e.target.value); }}
               />,
             )}
             <div style={{ fontSize: '11px', color: th.textSecondary, marginBottom: '8px' }}>
@@ -36197,7 +35391,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 'Applies to Contract *',
                 vfs(
                   approveModal.contractId,
-                  (v) => setApproveModal((m) => ({ ...m, contractId: v })),
+                  (v) => { setApproveModal((m) => ({ ...m, contractId: v })); },
                   [
                     { value: '', label: 'Select contract…' },
                     ...contracts.map((c) => ({
@@ -36209,7 +35403,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               )}
             {contracts.length === 1 && (
               <div style={{ fontSize: '11px', color: th.textSecondary, marginBottom: '8px' }}>
-                Approving will add this value to contract {contracts[0]!.contractNumber}.
+                Approving will add this value to contract {contracts[0].contractNumber}.
               </div>
             )}
             {contracts.length === 0 && (
@@ -36231,7 +35425,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 )
                 setApproveModal((m) => ({ ...m, open: false }))
               },
-              () => setApproveModal((m) => ({ ...m, open: false })),
+              () => { setApproveModal((m) => ({ ...m, open: false })); },
               voLock.lockedByOther,
             )}
           </div>
@@ -36246,14 +35440,14 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             setRejectModal((m) => ({ ...m, open: false }))
           }}
         >
-          <div style={{ ...modalBox, maxWidth: '420px' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ ...modalBox, maxWidth: '420px' }} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr(`Reject ${rejectModal.voNumber}`)}
             {voff(
               'Reason for Rejection',
               <textarea
                 style={{ ...inputSt, minHeight: '80px' }}
                 value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
+                onChange={(e) => { setRejectReason(e.target.value); }}
                 placeholder="Enter reason…"
               />,
             )}
@@ -36263,7 +35457,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 onRejectVO(rejectModal.voId, rejectReason)
                 setRejectModal((m) => ({ ...m, open: false }))
               },
-              () => setRejectModal((m) => ({ ...m, open: false })),
+              () => { setRejectModal((m) => ({ ...m, open: false })); },
               voLock.lockedByOther,
             )}
           </div>
@@ -36277,11 +35471,11 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             {mHdr(costModal.mode === 'create' ? 'Add Cost Item' : 'Edit Cost Item')}
             {voff(
               'Category',
-              vfs(costForm.category, (v) => setCostForm((f) => ({ ...f, category: v })), catOpts),
+              vfs(costForm.category, (v) => { setCostForm((f) => ({ ...f, category: v })); }, catOpts),
             )}
             {voff(
               'Description',
-              vfi(costForm.description, (v) => setCostForm((f) => ({ ...f, description: v }))),
+              vfi(costForm.description, (v) => { setCostForm((f) => ({ ...f, description: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
               <div>
@@ -36289,7 +35483,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Quantity',
                   vfi(
                     costForm.quantity,
-                    (v) => setCostForm((f) => ({ ...f, quantity: v })),
+                    (v) => { setCostForm((f) => ({ ...f, quantity: v })); },
                     '1',
                     'number',
                   ),
@@ -36300,7 +35494,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Unit',
                   vfi(
                     costForm.unit,
-                    (v) => setCostForm((f) => ({ ...f, unit: v })),
+                    (v) => { setCostForm((f) => ({ ...f, unit: v })); },
                     'm², ton, day…',
                   ),
                 )}
@@ -36310,7 +35504,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Unit Rate ($)',
                   vfi(
                     costForm.unitRate,
-                    (v) => setCostForm((f) => ({ ...f, unitRate: v })),
+                    (v) => { setCostForm((f) => ({ ...f, unitRate: v })); },
                     '0',
                     'number',
                   ),
@@ -36319,14 +35513,14 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             </div>
             {voff(
               'Amount ($)',
-              vfi(costForm.amount, (v) => setCostForm((f) => ({ ...f, amount: v })), '0', 'number'),
+              vfi(costForm.amount, (v) => { setCostForm((f) => ({ ...f, amount: v })); }, '0', 'number'),
             )}
             {voff(
               'Notes',
               <textarea
                 style={{ ...inputSt, minHeight: '50px' }}
                 value={costForm.notes}
-                onChange={(e) => setCostForm((f) => ({ ...f, notes: e.target.value }))}
+                onChange={(e) => { setCostForm((f) => ({ ...f, notes: e.target.value })); }}
               />,
             )}
             {mBtnsVO(
@@ -36355,7 +35549,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   })
                 setCostModal((m) => ({ ...m, open: false }))
               },
-              () => setCostModal((m) => ({ ...m, open: false })),
+              () => { setCostModal((m) => ({ ...m, open: false })); },
             )}
           </div>
         </div>
@@ -36369,7 +35563,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             setCorrModal((m) => ({ ...m, open: false }))
           }}
         >
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+          <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr('Add Correspondence Entry')}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
@@ -36377,7 +35571,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Date',
                   vfi(
                     corrForm.correspondenceDate,
-                    (v) => setCorrForm((f) => ({ ...f, correspondenceDate: v })),
+                    (v) => { setCorrForm((f) => ({ ...f, correspondenceDate: v })); },
                     '',
                     'date',
                   ),
@@ -36388,7 +35582,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Direction',
                   vfs(
                     corrForm.direction,
-                    (v) => setCorrForm((f) => ({ ...f, direction: v })),
+                    (v) => { setCorrForm((f) => ({ ...f, direction: v })); },
                     dirOpts,
                   ),
                 )}
@@ -36398,20 +35592,20 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               'Reference Number',
               vfi(
                 corrForm.referenceNumber,
-                (v) => setCorrForm((f) => ({ ...f, referenceNumber: v })),
+                (v) => { setCorrForm((f) => ({ ...f, referenceNumber: v })); },
                 'optional',
               ),
             )}
             {voff(
               'Subject',
-              vfi(corrForm.subject, (v) => setCorrForm((f) => ({ ...f, subject: v }))),
+              vfi(corrForm.subject, (v) => { setCorrForm((f) => ({ ...f, subject: v })); }),
             )}
             {voff(
               'Description / Summary',
               <textarea
                 style={{ ...inputSt, minHeight: '80px' }}
                 value={corrForm.description}
-                onChange={(e) => setCorrForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) => { setCorrForm((f) => ({ ...f, description: e.target.value })); }}
               />,
             )}
             {mBtnsVO(
@@ -36426,7 +35620,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 })
                 setCorrModal((m) => ({ ...m, open: false }))
               },
-              () => setCorrModal((m) => ({ ...m, open: false })),
+              () => { setCorrModal((m) => ({ ...m, open: false })); },
             )}
           </div>
         </div>
@@ -36440,7 +35634,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             setDrawModal((m) => ({ ...m, open: false }))
           }}
         >
-          <div style={{ ...modalBox, maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ ...modalBox, maxWidth: '440px' }} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr('Link Affected Drawing')}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
@@ -36448,7 +35642,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Drawing Number',
                   vfi(
                     drawForm.drawingNumber,
-                    (v) => setDrawForm((f) => ({ ...f, drawingNumber: v })),
+                    (v) => { setDrawForm((f) => ({ ...f, drawingNumber: v })); },
                     'DWG-A-001',
                   ),
                 )}
@@ -36458,7 +35652,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   'Revision',
                   vfi(
                     drawForm.revision,
-                    (v) => setDrawForm((f) => ({ ...f, revision: v })),
+                    (v) => { setDrawForm((f) => ({ ...f, revision: v })); },
                     'Rev A',
                   ),
                 )}
@@ -36466,14 +35660,14 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             </div>
             {voff(
               'Title',
-              vfi(drawForm.title, (v) => setDrawForm((f) => ({ ...f, title: v }))),
+              vfi(drawForm.title, (v) => { setDrawForm((f) => ({ ...f, title: v })); }),
             )}
             {voff(
               'Notes',
               <textarea
                 style={{ ...inputSt, minHeight: '50px' }}
                 value={drawForm.notes}
-                onChange={(e) => setDrawForm((f) => ({ ...f, notes: e.target.value }))}
+                onChange={(e) => { setDrawForm((f) => ({ ...f, notes: e.target.value })); }}
               />,
             )}
             {mBtnsVO(
@@ -36487,7 +35681,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 })
                 setDrawModal((m) => ({ ...m, open: false }))
               },
-              () => setDrawModal((m) => ({ ...m, open: false })),
+              () => { setDrawModal((m) => ({ ...m, open: false })); },
             )}
           </div>
         </div>
@@ -36516,7 +35710,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   color: th.textSecondary,
                   border: `1px solid ${th.border}`,
                 })}
-                onClick={() => setConfirmDel(null)}
+                onClick={() => { setConfirmDel(null); }}
               >
                 Cancel
               </button>
@@ -36693,16 +35887,16 @@ function MeetingsTab(props: MeetingsProps) {
       style={inputSt}
       type={type}
       value={val}
-      onChange={(e) => set(e.target.value)}
+      onChange={(e) => { set(e.target.value); }}
       placeholder={ph}
     />
   )
   const vfs = (
     val: string,
     set: (v: string) => void,
-    opts: Array<{ value: string; label: string }>,
+    opts: { value: string; label: string }[],
   ) => (
-    <select style={inputSt} value={val} onChange={(e) => set(e.target.value)}>
+    <select style={inputSt} value={val} onChange={(e) => { set(e.target.value); }}>
       {opts.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
@@ -36849,11 +36043,11 @@ function MeetingsTab(props: MeetingsProps) {
   }
 
   const toggleM = (id: string) =>
-    setExpandedM((s) => {
+    { setExpandedM((s) => {
       const n = new Set(s)
       n.has(id) ? n.delete(id) : n.add(id)
       return n
-    })
+    }); }
 
   // ── Analysis ──────────────────────────────────────────────────────────────
   const renderAnalysis = () => {
@@ -36868,14 +36062,16 @@ function MeetingsTab(props: MeetingsProps) {
     })).filter((r) => r.count > 0)
     const byPerson = Object.entries(
       allActions
-        .filter((a) => a.responsiblePerson)
-        .reduce(
+        .filter(
+          (a): a is MeetingActionType & { responsiblePerson: string } => !!a.responsiblePerson,
+        )
+        .reduce<Record<string, number>>(
           (acc, a) => {
-            const k = a.responsiblePerson!
+            const k = a.responsiblePerson
             acc[k] = (acc[k] ?? 0) + 1
             return acc
           },
-          {} as Record<string, number>,
+          {},
         ),
     ).sort((a, b) => b[1] - a[1])
     return (
@@ -37134,7 +36330,7 @@ function MeetingsTab(props: MeetingsProps) {
                   {a.status !== 'closed' && (
                     <button
                       style={mbtn({ padding: '3px 10px', fontSize: '11px', background: '#22c55e' })}
-                      onClick={() => onUpdateAction({ id: a.id, status: 'closed' })}
+                      onClick={() => { onUpdateAction({ id: a.id, status: 'closed' }); }}
                     >
                       Close
                     </button>
@@ -37142,7 +36338,7 @@ function MeetingsTab(props: MeetingsProps) {
                   {a.status === 'open' && (
                     <button
                       style={mbtn({ padding: '3px 10px', fontSize: '11px', background: '#3b82f6' })}
-                      onClick={() => onUpdateAction({ id: a.id, status: 'in_progress' })}
+                      onClick={() => { onUpdateAction({ id: a.id, status: 'in_progress' }); }}
                     >
                       Start
                     </button>
@@ -37155,7 +36351,7 @@ function MeetingsTab(props: MeetingsProps) {
                       color: th.textSecondary,
                       border: `1px solid ${th.border}`,
                     })}
-                    onClick={() => openEditAction(a)}
+                    onClick={() => { openEditAction(a); }}
                   >
                     Edit
                   </button>
@@ -37291,7 +36487,7 @@ function MeetingsTab(props: MeetingsProps) {
                 {m.status === 'draft' && (
                   <button
                     style={mbtn({ padding: '4px 10px', fontSize: '11px', background: '#3b82f6' })}
-                    onClick={() => onIssueMeeting(m.id)}
+                    onClick={() => { onIssueMeeting(m.id); }}
                   >
                     Issue
                   </button>
@@ -37299,7 +36495,7 @@ function MeetingsTab(props: MeetingsProps) {
                 {m.status === 'issued' && isAdmin && (
                   <button
                     style={mbtn({ padding: '4px 10px', fontSize: '11px', background: '#22c55e' })}
-                    onClick={() => onCloseMeeting(m.id)}
+                    onClick={() => { onCloseMeeting(m.id); }}
                   >
                     Close
                   </button>
@@ -37312,7 +36508,7 @@ function MeetingsTab(props: MeetingsProps) {
                     color: th.textSecondary,
                     border: `1px solid ${th.border}`,
                   })}
-                  onClick={() => openEditMeeting(m)}
+                  onClick={() => { openEditMeeting(m); }}
                 >
                   Edit
                 </button>
@@ -37338,7 +36534,7 @@ function MeetingsTab(props: MeetingsProps) {
                 }}
               >
                 {/* Agenda + Minutes side by side */}
-                {(m.agenda || m.attendees || m.distributionList) && (
+                {(m.agenda ?? m.attendees ?? m.distributionList) && (
                   <div
                     style={{
                       display: 'grid',
@@ -37498,7 +36694,7 @@ function MeetingsTab(props: MeetingsProps) {
                             color: th.textSecondary,
                             border: `1px solid ${th.border}`,
                           })}
-                          onClick={() => setEditingMinutes(null)}
+                          onClick={() => { setEditingMinutes(null); }}
                         >
                           Cancel
                         </button>
@@ -37509,7 +36705,7 @@ function MeetingsTab(props: MeetingsProps) {
                     <textarea
                       style={{ ...inputSt, minHeight: '100px', fontFamily: 'system-ui,sans-serif' }}
                       value={minutesDraft}
-                      onChange={(e) => setMinutesDraft(e.target.value)}
+                      onChange={(e) => { setMinutesDraft(e.target.value); }}
                       placeholder="Record meeting minutes, decisions, and key points…"
                     />
                   ) : m.minutes ? (
@@ -37556,7 +36752,7 @@ function MeetingsTab(props: MeetingsProps) {
                     </div>
                     <button
                       style={mbtn({ padding: '3px 10px', fontSize: '11px' })}
-                      onClick={() => openCreateAction(m.id)}
+                      onClick={() => { openCreateAction(m.id); }}
                     >
                       + Action
                     </button>
@@ -37670,7 +36866,7 @@ function MeetingsTab(props: MeetingsProps) {
                                     fontSize: '10px',
                                     background: '#22c55e',
                                   })}
-                                  onClick={() => onUpdateAction({ id: a.id, status: 'closed' })}
+                                  onClick={() => { onUpdateAction({ id: a.id, status: 'closed' }); }}
                                 >
                                   ✓
                                 </button>
@@ -37683,7 +36879,7 @@ function MeetingsTab(props: MeetingsProps) {
                                   color: th.textSecondary,
                                   border: `1px solid ${th.border}`,
                                 })}
-                                onClick={() => openEditAction(a)}
+                                onClick={() => { openEditAction(a); }}
                               >
                                 E
                               </button>
@@ -37762,7 +36958,7 @@ function MeetingsTab(props: MeetingsProps) {
     }
 
     const cells: (number | null)[] = [
-      ...Array(firstDay).fill(null),
+      ...Array.from({ length: firstDay }, () => null),
       ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
     ]
     while (cells.length % 7 !== 0) cells.push(null)
@@ -37780,7 +36976,7 @@ function MeetingsTab(props: MeetingsProps) {
           }}
         >
           <button
-            onClick={() => setCalMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
+            onClick={() => { setCalMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1)); }}
             style={{
               padding: '6px 12px',
               border: `1px solid ${th.border}`,
@@ -37798,7 +36994,7 @@ function MeetingsTab(props: MeetingsProps) {
             {MONTH_NAMES[month]} {year}
           </div>
           <button
-            onClick={() => setCalMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
+            onClick={() => { setCalMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1)); }}
             style={{
               padding: '6px 12px',
               border: `1px solid ${th.border}`,
@@ -37983,7 +37179,7 @@ function MeetingsTab(props: MeetingsProps) {
         ).map(([key, label]) => (
           <button
             key={key}
-            onClick={() => setSection(key as MSection)}
+            onClick={() => { setSection(key); }}
             style={{
               padding: '8px 16px',
               border: 'none',
@@ -38013,7 +37209,7 @@ function MeetingsTab(props: MeetingsProps) {
             setMModal((m) => ({ ...m, open: false }))
           }}
         >
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+          <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr(
               mModal.mode === 'create'
                 ? 'New Meeting (MOM)'
@@ -38023,7 +37219,7 @@ function MeetingsTab(props: MeetingsProps) {
               'Meeting Type',
               vfs(
                 mForm.meetingType,
-                (v) => setMForm((f) => ({ ...f, meetingType: v })),
+                (v) => { setMForm((f) => ({ ...f, meetingType: v })); },
                 MEETING_TYPE_OPTS,
               ),
             )}
@@ -38031,7 +37227,7 @@ function MeetingsTab(props: MeetingsProps) {
               'Title',
               vfi(
                 mForm.title,
-                (v) => setMForm((f) => ({ ...f, title: v })),
+                (v) => { setMForm((f) => ({ ...f, title: v })); },
                 'e.g. Weekly Site Meeting #12',
               ),
             )}
@@ -38041,7 +37237,7 @@ function MeetingsTab(props: MeetingsProps) {
                   'Date',
                   vfi(
                     mForm.meetingDate,
-                    (v) => setMForm((f) => ({ ...f, meetingDate: v })),
+                    (v) => { setMForm((f) => ({ ...f, meetingDate: v })); },
                     '',
                     'date',
                   ),
@@ -38052,7 +37248,7 @@ function MeetingsTab(props: MeetingsProps) {
                   'Location / Link',
                   vfi(
                     mForm.location,
-                    (v) => setMForm((f) => ({ ...f, location: v })),
+                    (v) => { setMForm((f) => ({ ...f, location: v })); },
                     'Site office or paste full https:// link for a Join button',
                   ),
                 )}
@@ -38062,7 +37258,7 @@ function MeetingsTab(props: MeetingsProps) {
               'Chairperson',
               vfi(
                 mForm.chairperson,
-                (v) => setMForm((f) => ({ ...f, chairperson: v })),
+                (v) => { setMForm((f) => ({ ...f, chairperson: v })); },
                 'Name of meeting chair',
               ),
             )}
@@ -38071,7 +37267,7 @@ function MeetingsTab(props: MeetingsProps) {
               <textarea
                 style={{ ...inputSt, minHeight: '60px' }}
                 value={mForm.attendees}
-                onChange={(e) => setMForm((f) => ({ ...f, attendees: e.target.value }))}
+                onChange={(e) => { setMForm((f) => ({ ...f, attendees: e.target.value })); }}
                 placeholder="One name per line or comma-separated"
               />,
             )}
@@ -38080,7 +37276,7 @@ function MeetingsTab(props: MeetingsProps) {
               <textarea
                 style={{ ...inputSt, minHeight: '70px' }}
                 value={mForm.agenda}
-                onChange={(e) => setMForm((f) => ({ ...f, agenda: e.target.value }))}
+                onChange={(e) => { setMForm((f) => ({ ...f, agenda: e.target.value })); }}
                 placeholder="List agenda items…"
               />,
             )}
@@ -38089,7 +37285,7 @@ function MeetingsTab(props: MeetingsProps) {
               <textarea
                 style={{ ...inputSt, minHeight: '50px' }}
                 value={mForm.distributionList}
-                onChange={(e) => setMForm((f) => ({ ...f, distributionList: e.target.value }))}
+                onChange={(e) => { setMForm((f) => ({ ...f, distributionList: e.target.value })); }}
                 placeholder="email@example.com, another@example.com…"
               />,
             )}
@@ -38109,7 +37305,7 @@ function MeetingsTab(props: MeetingsProps) {
                 else onUpdateMeeting({ id: mModal.item.id, ...vars })
                 setMModal((m) => ({ ...m, open: false }))
               },
-              () => setMModal((m) => ({ ...m, open: false })),
+              () => { setMModal((m) => ({ ...m, open: false })); },
             )}
           </div>
         </div>
@@ -38123,14 +37319,14 @@ function MeetingsTab(props: MeetingsProps) {
             setAModal((m) => ({ ...m, open: false }))
           }}
         >
-          <div style={{ ...modalBox, maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ ...modalBox, maxWidth: '480px' }} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr(aModal.mode === 'create' ? 'Add Action Item' : 'Edit Action Item')}
             {voff(
               'Description',
               <textarea
                 style={{ ...inputSt, minHeight: '70px' }}
                 value={aForm.description}
-                onChange={(e) => setAForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) => { setAForm((f) => ({ ...f, description: e.target.value })); }}
                 placeholder="What needs to be done?"
               />,
             )}
@@ -38140,7 +37336,7 @@ function MeetingsTab(props: MeetingsProps) {
                   'Responsible Person',
                   vfi(
                     aForm.responsiblePerson,
-                    (v) => setAForm((f) => ({ ...f, responsiblePerson: v })),
+                    (v) => { setAForm((f) => ({ ...f, responsiblePerson: v })); },
                     'Name',
                   ),
                 )}
@@ -38148,7 +37344,7 @@ function MeetingsTab(props: MeetingsProps) {
               <div>
                 {voff(
                   'Due Date',
-                  vfi(aForm.dueDate, (v) => setAForm((f) => ({ ...f, dueDate: v })), '', 'date'),
+                  vfi(aForm.dueDate, (v) => { setAForm((f) => ({ ...f, dueDate: v })); }, '', 'date'),
                 )}
               </div>
               <div>
@@ -38156,7 +37352,7 @@ function MeetingsTab(props: MeetingsProps) {
                   'Priority',
                   vfs(
                     aForm.priority,
-                    (v) => setAForm((f) => ({ ...f, priority: v })),
+                    (v) => { setAForm((f) => ({ ...f, priority: v })); },
                     PRIORITY_OPTS,
                   ),
                 )}
@@ -38167,7 +37363,7 @@ function MeetingsTab(props: MeetingsProps) {
                     'Status',
                     vfs(
                       aForm.status,
-                      (v) => setAForm((f) => ({ ...f, status: v })),
+                      (v) => { setAForm((f) => ({ ...f, status: v })); },
                       ACTION_STATUS_OPTS,
                     ),
                   )}
@@ -38179,7 +37375,7 @@ function MeetingsTab(props: MeetingsProps) {
               <textarea
                 style={{ ...inputSt, minHeight: '50px' }}
                 value={aForm.remarks}
-                onChange={(e) => setAForm((f) => ({ ...f, remarks: e.target.value }))}
+                onChange={(e) => { setAForm((f) => ({ ...f, remarks: e.target.value })); }}
                 placeholder="Notes or updates on this action…"
               />,
             )}
@@ -38205,7 +37401,7 @@ function MeetingsTab(props: MeetingsProps) {
                   })
                 setAModal((m) => ({ ...m, open: false }))
               },
-              () => setAModal((m) => ({ ...m, open: false })),
+              () => { setAModal((m) => ({ ...m, open: false })); },
             )}
           </div>
         </div>

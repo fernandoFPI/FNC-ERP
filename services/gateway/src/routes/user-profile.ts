@@ -1,7 +1,7 @@
 import { Router, type Router as ExpressRouter, type Request, type Response } from 'express'
 import multer from 'multer'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, asyncHandler } from '@fnc-erp/db'
 import { uploadBuffer, generateDownloadUrl } from '@fnc-erp/storage'
 import { logAudit } from '@fnc-erp/audit'
 
@@ -48,7 +48,7 @@ async function autoLinkEmployeeRecord(
       [companyId, userId],
     )
     if (existing.rows[0]) {
-      const existingId = existing.rows[0]['id'] as string
+      const existingId = existing.rows[0].id as string
       // first/last name always come from the profile form (required fields);
       // job title/phone only overwrite when the user actually provided a
       // value, so leaving an optional field blank never wipes out something
@@ -83,7 +83,7 @@ async function autoLinkEmployeeRecord(
       [companyId, profile.email],
     )
     if (placeholder.rows[0]) {
-      const placeholderId = placeholder.rows[0]['id'] as string
+      const placeholderId = placeholder.rows[0].id as string
       const linked = await query(
         `UPDATE employees SET user_id = $1, updated_at = NOW()
          WHERE id = $2 AND company_id = $3 AND user_id IS NULL
@@ -121,7 +121,7 @@ async function autoLinkEmployeeRecord(
         companyId,
         action: 'AUTO_CREATE_EMPLOYEE_SKIPPED_NAME_COLLISION',
         tableName: 'employees',
-        recordId: nameCollision.rows[0]['id'] as string,
+        recordId: nameCollision.rows[0].id as string,
         newValues: { skippedUserId: userId, submittedEmail: profile.email },
       })
       return
@@ -138,7 +138,7 @@ async function autoLinkEmployeeRecord(
       companyId,
       action: 'AUTO_CREATE_EMPLOYEE_ON_PROFILE_COMPLETE',
       tableName: 'employees',
-      recordId: created.rows[0]!['id'] as string,
+      recordId: created.rows[0].id as string,
     })
   } catch (err) {
     console.error('[user-profile] auto-link/create employee record failed:', err)
@@ -146,7 +146,7 @@ async function autoLinkEmployeeRecord(
 }
 
 // GET /api/v1/users/me/profile
-userProfileRouter.get('/me/profile', async (req: Request, res: Response): Promise<void> => {
+userProfileRouter.get('/me/profile', asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const userId = req.auth?.userId
   if (!userId) {
     res.status(401).json({ success: false, error: { message: 'Unauthorized' } })
@@ -180,10 +180,10 @@ userProfileRouter.get('/me/profile', async (req: Request, res: Response): Promis
       createdAt: u.created_at,
     },
   })
-})
+}))
 
 // PUT /api/v1/users/me/profile
-userProfileRouter.put('/me/profile', async (req: Request, res: Response): Promise<void> => {
+userProfileRouter.put('/me/profile', asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const userId = req.auth?.userId
   if (!userId) {
     res.status(401).json({ success: false, error: { message: 'Unauthorized' } })
@@ -238,13 +238,13 @@ userProfileRouter.put('/me/profile', async (req: Request, res: Response): Promis
       profileCompleted: u.profile_completed,
     },
   })
-})
+}))
 
 // POST /api/v1/users/me/avatar
 userProfileRouter.post(
   '/me/avatar',
   upload.single('avatar'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const userId = req.auth?.userId
     if (!userId) {
       res.status(401).json({ success: false, error: { message: 'Unauthorized' } })
@@ -273,5 +273,5 @@ userProfileRouter.post(
 
     const { downloadUrl } = await generateDownloadUrl(fileKey, `avatar.${ext}`)
     res.json({ success: true, data: { profilePicture: downloadUrl } })
-  },
+  }),
 )

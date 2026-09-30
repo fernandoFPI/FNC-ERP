@@ -354,7 +354,7 @@ export function StageEditDrawer({
             Cancel
           </button>
           <button
-            onClick={handleSave}
+            onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)}
             disabled={saving}
             style={{
               padding: '8px 16px',

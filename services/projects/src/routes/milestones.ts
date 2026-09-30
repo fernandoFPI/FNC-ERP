@@ -3,7 +3,8 @@ import type { IRouter } from 'express'
 import { z } from 'zod'
 import { query } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { getAuth } from '@fnc-erp/auth'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const milestonesRouter: IRouter = Router({ mergeParams: true })
@@ -20,8 +21,7 @@ const MilestoneSchema = z.object({
 // GET /projects/contracts/:id/milestones
 milestonesRouter.get('/', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const p = req.params as Record<string, string>
-    const contractId = p['id']!
+    const contractId = requireParam(req, 'id')
     const result = await query(
       'SELECT * FROM project_milestones WHERE contract_id=$1 ORDER BY sequence',
       [contractId],
@@ -33,8 +33,8 @@ milestonesRouter.get('/', requirePermission('projects.view', 'view'), async (req
 // POST /projects/contracts/:id/milestones
 milestonesRouter.post('/', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const contractId = (req.params as Record<string, string>)['id']!
+    const companyId = getAuth(req).companyId
+    const contractId = requireParam(req, 'id')
     const parsed = MilestoneSchema.safeParse(req.body)
     if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
@@ -56,7 +56,7 @@ milestonesRouter.post('/', requirePermission('projects.edit', 'edit'), async (re
 // PUT /projects/contracts/:contractId/milestones/:id
 milestonesRouter.put('/:milestoneId', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const { id: contractId, milestoneId } = req.params as Record<string, string> as { id: string; milestoneId: string }
 
     const existing = await query(
@@ -98,8 +98,8 @@ milestonesRouter.put('/:milestoneId', requirePermission('projects.edit', 'edit')
 // POST /projects/contracts/:contractId/milestones/:milestoneId/reach
 milestonesRouter.post('/:milestoneId/reach', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
     const { id: contractId, milestoneId } = req.params as Record<string, string> as { id: string; milestoneId: string }
 
     const existing = await query(

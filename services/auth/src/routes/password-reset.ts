@@ -2,12 +2,12 @@ import { Router, type IRouter, type Request, type Response } from 'express'
 import crypto from 'crypto'
 import { createClient } from 'redis'
 import { z } from 'zod'
-import { pool, query, withSystemTransaction } from '@fnc-erp/db'
+import { pool, query, withSystemTransaction, asyncHandler } from '@fnc-erp/db'
 import { hashPassword, validatePasswordStrength, requireAuth } from '@fnc-erp/auth'
 import { env, HTTP_STATUS } from '@fnc-erp/config'
 import { logAudit } from '@fnc-erp/audit'
 import { createServiceLogger } from '@fnc-erp/logger'
-import { sendError } from '../lib/errors.js'
+import { sendError, requireParam } from '../lib/errors.js'
 import { revokeSessions } from '../lib/session.js'
 
 const logger = createServiceLogger('auth')
@@ -44,7 +44,7 @@ const GENERIC_RESPONSE = {
 } as const
 
 // ── POST /auth/forgot-password ─────────────────────────────────
-passwordResetRouter.post('/forgot-password', async (req: Request, res: Response) => {
+passwordResetRouter.post('/forgot-password', asyncHandler(async (req: Request, res: Response) => {
   const parsed = forgotSchema.safeParse(req.body)
   if (!parsed.success) {
     res.json(GENERIC_RESPONSE)
@@ -109,10 +109,10 @@ passwordResetRouter.post('/forgot-password', async (req: Request, res: Response)
     logger.error({ err }, 'forgot-password error')
     res.json(GENERIC_RESPONSE) // never leak errors on this endpoint
   }
-})
+}))
 
 // ── GET /auth/reset-password/validate ─────────────────────────
-passwordResetRouter.get('/reset-password/validate', async (req: Request, res: Response) => {
+passwordResetRouter.get('/reset-password/validate', asyncHandler(async (req: Request, res: Response) => {
   const token = req.query['token'] as string | undefined
   if (!token) {
     sendError(res, HTTP_STATUS.BAD_REQUEST, 'MISSING_TOKEN', 'Token is required')
@@ -129,10 +129,10 @@ passwordResetRouter.get('/reset-password/validate', async (req: Request, res: Re
     success: true,
     data: { valid: !!tokenData, expiresInSeconds: ttl > 0 ? ttl : 0 },
   })
-})
+}))
 
 // ── POST /auth/reset-password ──────────────────────────────────
-passwordResetRouter.post('/reset-password', async (req: Request, res: Response) => {
+passwordResetRouter.post('/reset-password', asyncHandler(async (req: Request, res: Response) => {
   const parsed = resetSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, HTTP_STATUS.BAD_REQUEST, 'VALIDATION_ERROR', 'Invalid input')
@@ -227,10 +227,10 @@ passwordResetRouter.post('/reset-password', async (req: Request, res: Response) 
     logger.error({ err }, 'reset-password error')
     sendError(res, HTTP_STATUS.INTERNAL_SERVER_ERROR, 'INTERNAL_ERROR', 'Password reset failed')
   }
-})
+}))
 
 // ── GET /auth/sessions ─────────────────────────────────────────
-passwordResetRouter.get('/sessions', requireAuth(), async (req: Request, res: Response) => {
+passwordResetRouter.get('/sessions', requireAuth(), asyncHandler(async (req: Request, res: Response) => {
   const auth = req.auth
   if (!auth) {
     sendError(res, HTTP_STATUS.UNAUTHORIZED, 'UNAUTHORIZED', 'Not authenticated')
@@ -264,20 +264,20 @@ passwordResetRouter.get('/sessions', requireAuth(), async (req: Request, res: Re
     logger.error({ err }, 'GET /sessions error')
     sendError(res, HTTP_STATUS.INTERNAL_SERVER_ERROR, 'INTERNAL_ERROR', 'Failed to fetch sessions')
   }
-})
+}))
 
 // ── DELETE /auth/sessions/:sessionId ──────────────────────────
 passwordResetRouter.delete(
   '/sessions/:sessionId',
   requireAuth(),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const auth = req.auth
     if (!auth) {
       sendError(res, HTTP_STATUS.UNAUTHORIZED, 'UNAUTHORIZED', 'Not authenticated')
       return
     }
 
-    const sessionId = req.params['sessionId']!
+    const sessionId = requireParam(req, 'sessionId')
 
     if (sessionId === auth.sessionId) {
       sendError(
@@ -315,5 +315,5 @@ passwordResetRouter.delete(
         'Failed to revoke session',
       )
     }
-  },
+  }),
 )

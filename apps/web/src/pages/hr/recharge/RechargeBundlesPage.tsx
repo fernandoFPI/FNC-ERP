@@ -23,6 +23,7 @@ import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { EmptyState } from '../../../components/ui/EmptyState'
+import type { AccountsQuery, AccountsQueryVariables, CostCentersQuery, CostCentersQueryVariables, CreateRechargeBundleMutation, CreateRechargeBundleMutationVariables, DeleteRechargeBundleMutation, DeleteRechargeBundleMutationVariables, RechargeAccountsQuery, RechargeAccountsQueryVariables, RechargeBundlesQuery, RechargeBundlesQueryVariables, RechargeCostCenterQuery, RechargeCostCenterQueryVariables, SetRechargeAccountsMutation, SetRechargeAccountsMutationVariables, SetRechargeCostCenterMutation, SetRechargeCostCenterMutationVariables, UpdateRechargeBundleMutation, UpdateRechargeBundleMutationVariables } from '../../../graphql/generated'
 
 interface CostCenterOption {
   id: string
@@ -53,21 +54,21 @@ export default function RechargeBundlesPage() {
   const pagePadding = usePagePadding()
   const addToast = useToastStore((s) => s.addToast)
 
-  const { data, loading, refetch } = useQuery(RECHARGE_BUNDLES_QUERY, {
+  const { data, loading, refetch } = useQuery<RechargeBundlesQuery, RechargeBundlesQueryVariables>(RECHARGE_BUNDLES_QUERY, {
     variables: { activeOnly: false },
     fetchPolicy: 'cache-and-network',
   })
-  const [createBundle, { loading: creating }] = useMutation(CREATE_RECHARGE_BUNDLE)
-  const [updateBundle, { loading: updating }] = useMutation(UPDATE_RECHARGE_BUNDLE)
-  const [deleteBundle] = useMutation(DELETE_RECHARGE_BUNDLE)
+  const [createBundle, { loading: creating }] = useMutation<CreateRechargeBundleMutation, CreateRechargeBundleMutationVariables>(CREATE_RECHARGE_BUNDLE)
+  const [updateBundle, { loading: updating }] = useMutation<UpdateRechargeBundleMutation, UpdateRechargeBundleMutationVariables>(UPDATE_RECHARGE_BUNDLE)
+  const [deleteBundle] = useMutation<DeleteRechargeBundleMutation, DeleteRechargeBundleMutationVariables>(DELETE_RECHARGE_BUNDLE)
 
-  const { data: costCentersData } = useQuery(COST_CENTERS_QUERY)
+  const { data: costCentersData } = useQuery<CostCentersQuery, CostCentersQueryVariables>(COST_CENTERS_QUERY)
   const {
     data: currentCCData,
     loading: currentCCLoading,
     refetch: refetchCurrentCC,
-  } = useQuery(RECHARGE_COST_CENTER_QUERY, { fetchPolicy: 'cache-and-network' })
-  const [setRechargeCostCenter, { loading: savingCC }] = useMutation(SET_RECHARGE_COST_CENTER)
+  } = useQuery<RechargeCostCenterQuery, RechargeCostCenterQueryVariables>(RECHARGE_COST_CENTER_QUERY, { fetchPolicy: 'cache-and-network' })
+  const [setRechargeCostCenter, { loading: savingCC }] = useMutation<SetRechargeCostCenterMutation, SetRechargeCostCenterMutationVariables>(SET_RECHARGE_COST_CENTER)
   const [selectedCCId, setSelectedCCId] = useState('')
 
   const costCenters: CostCenterOption[] = costCentersData?.costCenters ?? []
@@ -88,17 +89,17 @@ export default function RechargeBundlesPage() {
     }
   }
 
-  const { data: accountsData } = useQuery(ACCOUNTS_QUERY, { variables: { isActive: true } })
+  const { data: accountsData } = useQuery<AccountsQuery, AccountsQueryVariables>(ACCOUNTS_QUERY, { variables: { isActive: true } })
   const {
     data: currentAccountsData,
     loading: currentAccountsLoading,
     refetch: refetchCurrentAccounts,
-  } = useQuery(RECHARGE_ACCOUNTS_QUERY, { fetchPolicy: 'cache-and-network' })
-  const [setRechargeAccounts, { loading: savingAccounts }] = useMutation(SET_RECHARGE_ACCOUNTS)
+  } = useQuery<RechargeAccountsQuery, RechargeAccountsQueryVariables>(RECHARGE_ACCOUNTS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const [setRechargeAccounts, { loading: savingAccounts }] = useMutation<SetRechargeAccountsMutation, SetRechargeAccountsMutationVariables>(SET_RECHARGE_ACCOUNTS)
   const [expenseAccountId, setExpenseAccountId] = useState('')
   const [fundingAccountId, setFundingAccountId] = useState('')
 
-  const accounts: AccountOption[] = accountsData?.accounts ?? []
+  const accounts: AccountOption[] = (accountsData?.accounts ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const currentAccounts = currentAccountsData?.rechargeAccounts as
     | { expenseAccountId: string | null; fundingAccountId: string | null }
     | undefined
@@ -175,7 +176,18 @@ export default function RechargeBundlesPage() {
 
   async function handleToggleActive(b: Bundle) {
     try {
-      await updateBundle({ variables: { id: b.id, input: { isActive: !b.isActive } } })
+      await updateBundle({
+        variables: {
+          id: b.id,
+          input: {
+            name: b.name,
+            amount: b.amount,
+            currencyCode: b.currencyCode,
+            sortOrder: b.sortOrder,
+            isActive: !b.isActive,
+          },
+        },
+      })
       void refetch()
     } catch (e: unknown) {
       addToast({ type: 'error', message: (e as Error).message })

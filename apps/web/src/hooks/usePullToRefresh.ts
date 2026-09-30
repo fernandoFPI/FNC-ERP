@@ -15,9 +15,13 @@ export function usePullToRefresh(ref: RefObject<HTMLElement>, onRefresh: () => P
     if (!isPhone) return
     const el = ref.current
     if (!el) return
+    // Nested function declarations don't retain the null-check narrowing
+    // above (TS resets narrowing at function boundaries), so capture el in
+    // a variable whose declared type is already non-null.
+    const node: HTMLElement = el
 
     function onTouchStart(e: TouchEvent) {
-      if (el!.scrollTop === 0) {
+      if (node.scrollTop === 0) {
         startY.current = e.touches[0].clientY
       }
     }
@@ -36,11 +40,13 @@ export function usePullToRefresh(ref: RefObject<HTMLElement>, onRefresh: () => P
       }
     }
 
+    const onTouchEndSync = (e: TouchEvent) => void onTouchEnd(e)
+
     el.addEventListener('touchstart', onTouchStart, { passive: true })
-    el.addEventListener('touchend', onTouchEnd, { passive: true })
+    el.addEventListener('touchend', onTouchEndSync, { passive: true })
     return () => {
       el.removeEventListener('touchstart', onTouchStart)
-      el.removeEventListener('touchend', onTouchEnd)
+      el.removeEventListener('touchend', onTouchEndSync)
     }
   }, [isPhone, ref])
 

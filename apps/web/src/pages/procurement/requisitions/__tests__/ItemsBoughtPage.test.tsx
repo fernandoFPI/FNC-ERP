@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
@@ -9,12 +11,12 @@ const mockUseMutation = vi.fn()
 const mockUseLazyQuery = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
-    useMutation: (...args: unknown[]) => mockUseMutation(...args),
-    useLazyQuery: (...args: unknown[]) => mockUseLazyQuery(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
+    useMutation: (...args: unknown[]): unknown => mockUseMutation(...args),
+    useLazyQuery: (...args: unknown[]): unknown => mockUseLazyQuery(...args),
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
   }
@@ -31,7 +33,7 @@ vi.mock('../../../../store/authStore', () => ({
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => mockNavigate, useParams: () => ({ id: 'req-1' }) }
 })
 
@@ -72,7 +74,7 @@ function baseLine(overrides: Record<string, unknown> = {}) {
 
 function mockReq(lines: Record<string, unknown>[], overrides: Record<string, unknown> = {}) {
   mockUseQuery.mockImplementation((doc: unknown) => {
-    const opName = (doc as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name?.value
+    const opName = (doc as { definitions?: { kind?: string; name?: { value?: string } }[] }).definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value
     if (opName === 'Vendors') {
       return {
         data: {
@@ -300,7 +302,8 @@ describe('ItemsBoughtPage', () => {
     fireEvent.click(screen.getByLabelText(/attach one receipt for all items/i))
 
     const file = new File(['x'], 'invoice.jpg', { type: 'image/jpeg' })
-    const globalFileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const globalFileInput = container.querySelector('input[type="file"]')
+    if (!globalFileInput) throw new Error('Expected a file input in the container')
     fireEvent.change(globalFileInput, { target: { files: [file] } })
 
     // Both lines show the shared receipt read-only instead of their own attach button.

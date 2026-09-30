@@ -4,6 +4,7 @@ import { useTheme } from '../../theme/ThemeContext'
 import { PayrollSummaryCard } from './PayrollSummaryCard'
 import { Button } from './Button'
 import { PAYSLIP_QUERY } from '../../graphql/payroll'
+import type { PayslipQuery, PayslipQueryVariables } from '../../graphql/generated'
 
 interface PayslipViewerProps {
   payrollLineId: string
@@ -13,7 +14,7 @@ interface PayslipViewerProps {
 export function PayslipViewer({ payrollLineId }: PayslipViewerProps) {
   const { theme } = useTheme()
 
-  const { data, loading } = useQuery(PAYSLIP_QUERY, {
+  const { data, loading } = useQuery<PayslipQuery, PayslipQueryVariables>(PAYSLIP_QUERY, {
     variables: { id: payrollLineId },
     skip: !payrollLineId,
   })
@@ -40,12 +41,12 @@ export function PayslipViewer({ payrollLineId }: PayslipViewerProps) {
   }
 
   const currency: string = line.currency_code ?? 'IQD'
-  const grossPay: number = parseFloat(line.gross_salary ?? '0')
+  const grossPay: number = parseFloat(line.gross_salary)
   const totalDeductions: number =
-    parseFloat(line.income_tax ?? '0') +
-    parseFloat(line.social_security ?? '0') +
+    parseFloat(line.income_tax) +
+    parseFloat(line.social_security) +
     parseFloat(line.other_deductions ?? '0')
-  const netPay: number = parseFloat(line.net_salary ?? '0')
+  const netPay: number = parseFloat(line.net_salary)
 
   const earnings = [
     { name: 'Base salary', amount: parseFloat(line.base_salary ?? '0') },

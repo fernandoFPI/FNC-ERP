@@ -51,7 +51,7 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
     1: theme.danger,
     2: theme.warning,
     3: theme.accent,
-    4: theme.info ?? theme.accent,
+    4: theme.info,
     5: theme.success,
   }
   const RATING_LABELS: Record<number, string> = {
@@ -97,7 +97,7 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
   return (
     <Modal open={open} onClose={onClose} title={`Condition Report — ${assetName}`}>
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
         style={{
           display: 'flex',
           flexDirection: 'column',

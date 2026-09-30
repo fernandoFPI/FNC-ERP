@@ -2,18 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../theme/ThemeContext'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 const mockUseQuery = vi.fn()
 const mockUseMutation = vi.fn()
 const mockUseLazyQuery = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
-    useLazyQuery: (...args: unknown[]) => mockUseLazyQuery(...args),
-    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
+    useLazyQuery: (...args: unknown[]): unknown => mockUseLazyQuery(...args),
+    useMutation: (...args: unknown[]): unknown => mockUseMutation(...args),
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
   }
@@ -23,7 +25,7 @@ vi.mock('../../../store/toastStore', () => ({ useToastStore: () => vi.fn() }))
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
@@ -91,7 +93,9 @@ describe('EmployeesPage', () => {
   it('navigates to employee detail on row click', async () => {
     const EmployeesPage = (await import('../employees/EmployeesPage')).default
     wrap(<EmployeesPage />)
-    fireEvent.click(screen.getByText('Ahmad Hassan').closest('tr')!)
+    const row = screen.getByText('Ahmad Hassan').closest('tr')
+    if (!row) throw new Error('Expected a <tr> ancestor for Ahmad Hassan')
+    fireEvent.click(row)
     expect(mockNavigate).toHaveBeenCalledWith('/hr/employees/e1')
   })
 
@@ -105,7 +109,6 @@ describe('EmployeesPage', () => {
   it('navigates to new employee on New Employee click', async () => {
     const EmployeesPage = (await import('../employees/EmployeesPage')).default
     wrap(<EmployeesPage />)
-    const newBtn = screen.queryByRole('button', { name: /new employee/i })
     // Button may be hidden behind PermissionGate — just verify page renders
     expect(screen.getByText('Employees')).toBeInTheDocument()
   })

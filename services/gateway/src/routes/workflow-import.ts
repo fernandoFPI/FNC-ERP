@@ -1,7 +1,7 @@
 import { Router, type IRouter } from 'express'
 import multer from 'multer'
 import { requireAuth } from '@fnc-erp/auth'
-import { pool, type PoolClient } from '@fnc-erp/db'
+import { pool, type PoolClient, asyncHandler } from '@fnc-erp/db'
 
 export const workflowImportRouter: IRouter = Router()
 
@@ -245,7 +245,7 @@ async function batchUpsert(
 
 // ── Endpoint ───────────────────────────────────────────────────────────────
 
-workflowImportRouter.post('/', requireAuth(), upload.single('file'), async (req, res) => {
+workflowImportRouter.post('/', requireAuth(), upload.single('file'), asyncHandler(async (req, res) => {
   if (req.auth?.role !== 'system_admin') {
     res.status(403).json({
       success: false,
@@ -610,7 +610,7 @@ workflowImportRouter.post('/', requireAuth(), upload.single('file'), async (req,
       // Calculate total value across all invoices in this group
       let groupTotal = 0
       for (const inv of invGroup) {
-        const invId = inv[0]!
+        const invId = inv[0] ?? ''
         const cur = inv[31] ?? 'USD'
         const items = itemsByInvoice.get(invId) ?? []
         for (const item of items) {
@@ -667,7 +667,7 @@ workflowImportRouter.post('/', requireAuth(), upload.single('file'), async (req,
 
       // Create each invoice
       for (const inv of invGroup) {
-        const invId = inv[0]!
+        const invId = inv[0] ?? ''
         const invNum = inv[1]?.trim()
         if (!invNum) continue
         const invCur = inv[31] ?? 'USD'
@@ -771,4 +771,4 @@ workflowImportRouter.post('/', requireAuth(), upload.single('file'), async (req,
       errors,
     },
   })
-})
+}))

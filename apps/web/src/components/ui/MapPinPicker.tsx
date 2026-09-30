@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
+import type * as Leaflet from 'leaflet'
 import { useTheme } from '../../theme/ThemeContext'
 import { Modal } from './Modal'
 import { Button } from './Button'
 
-// Leaflet is loaded dynamically to avoid SSR issues and bundle bloat
+// Leaflet is loaded dynamically (as a global, via a <script> tag below) to
+// avoid SSR issues and bundle bloat — @types/leaflet is already a
+// devDependency, so this can be properly typed instead of `any`.
 declare global {
   interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    L: any
+    L: typeof Leaflet
   }
 }
 
@@ -54,10 +56,8 @@ function loadLeaflet(): Promise<void> {
 export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng }: Props) {
   const { theme } = useTheme()
   const mapContainerRef = useRef<HTMLDivElement>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mapRef = useRef<any>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const markerRef = useRef<any>(null)
+  const mapRef = useRef<Leaflet.Map | null>(null)
+  const markerRef = useRef<Leaflet.Marker | null>(null)
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(
     initialLat != null && initialLng != null ? { lat: initialLat, lng: initialLng } : null,
   )
@@ -70,7 +70,7 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
       setLeafletReady(true)
       return
     }
-    loadLeaflet().then(() => {
+    void loadLeaflet().then(() => {
       setLeafletReady(true)
     })
   }, [open])
@@ -108,9 +108,10 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
       })
 
       if (initialLat != null && initialLng != null) {
-        markerRef.current = L.marker([initialLat, initialLng], { icon, draggable: true }).addTo(map)
-        markerRef.current.on('dragend', () => {
-          const pos = markerRef.current.getLatLng()
+        const marker = L.marker([initialLat, initialLng], { icon, draggable: true }).addTo(map)
+        markerRef.current = marker
+        marker.on('dragend', () => {
+          const pos = marker.getLatLng()
           setPin({ lat: parseFloat(pos.lat.toFixed(7)), lng: parseFloat(pos.lng.toFixed(7)) })
         })
         setPin({ lat: initialLat, lng: initialLng })
@@ -123,9 +124,10 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
         if (markerRef.current) {
           markerRef.current.setLatLng([lat, lng])
         } else {
-          markerRef.current = L.marker([lat, lng], { icon, draggable: true }).addTo(map)
-          markerRef.current.on('dragend', () => {
-            const pos = markerRef.current.getLatLng()
+          const marker = L.marker([lat, lng], { icon, draggable: true }).addTo(map)
+          markerRef.current = marker
+          marker.on('dragend', () => {
+            const pos = marker.getLatLng()
             setPin({ lat: parseFloat(pos.lat.toFixed(7)), lng: parseFloat(pos.lng.toFixed(7)) })
           })
         }

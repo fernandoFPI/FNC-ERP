@@ -23,6 +23,7 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useCompany } from '../../../hooks/useCompany'
 import { useToastStore } from '../../../store/toastStore'
+import type { AttachReceiptPhotoMutation, AttachReceiptPhotoMutationVariables, CancelReceiptMutation, CancelReceiptMutationVariables, ConfirmReceiptMutation, ConfirmReceiptMutationVariables, DetachFileMutation, DetachFileMutationVariables, EntityAttachmentsQuery, EntityAttachmentsQueryVariables, FileDownloadUrlQuery, FileDownloadUrlQueryVariables, PoReceiptQuery, PoReceiptQueryVariables } from '../../../graphql/generated'
 
 type PhotoKind = 'vendor_receipt' | 'materials'
 const PHOTO_CATEGORY: Record<PhotoKind, string> = {
@@ -55,19 +56,19 @@ interface ReceiptPhoto {
 
 interface Receipt {
   id: string
-  po_id: string
+  po_id: string | null
   po_number: string | null
   vendor_name: string | null
   received_from_name: string | null
   base_currency_code: string | null
   receipt_number: string | null
-  receipt_date: string
+  receipt_date: string | null
   location_name: string | null
   notes: string | null
   received_by_email: string | null
   received_by_name: string | null
   location_notes: string | null
-  created_at: string
+  created_at: string | null
   status: string
   confirmed_at: string | null
   lines: ReceiptLine[]
@@ -100,18 +101,18 @@ export default function StoreInDetail() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
 
-  const { data, loading, error, refetch } = useQuery(PO_RECEIPT_QUERY, {
-    variables: { id },
+  const { data, loading, error, refetch } = useQuery<PoReceiptQuery, PoReceiptQueryVariables>(PO_RECEIPT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
-  const receipt: Receipt | undefined = data?.poReceipt
+  const receipt: Receipt | undefined = data?.poReceipt ?? undefined
 
   // The vendor receipt is normally uploaded earlier by the buyer, straight
   // onto the PO — this just checks whether one's there so Confirm doesn't
   // also demand a redundant copy attached to this specific receipt.
-  const { data: buyerReceiptData } = useQuery(ENTITY_ATTACHMENTS_QUERY, {
-    variables: { entityType: 'purchase_order', entityId: receipt?.po_id },
+  const { data: buyerReceiptData } = useQuery<EntityAttachmentsQuery, EntityAttachmentsQueryVariables>(ENTITY_ATTACHMENTS_QUERY, {
+    variables: { entityType: 'purchase_order', entityId: (receipt?.po_id) ?? '' },
     skip: !receipt?.po_id,
     fetchPolicy: 'cache-and-network',
   })
@@ -135,10 +136,10 @@ export default function StoreInDetail() {
     (a) => a.sourceEntityType === 'po_line_purchase' || a.file?.category === 'po_receipt_document',
   )
 
-  const [attachReceiptPhoto] = useMutation(ATTACH_RECEIPT_PHOTO)
-  const [detachFile, { loading: detaching }] = useMutation(DETACH_FILE)
-  const [getDownloadUrl] = useLazyQuery(FILE_DOWNLOAD_URL_QUERY)
-  const [confirmReceipt, { loading: confirming }] = useMutation(CONFIRM_RECEIPT, {
+  const [attachReceiptPhoto] = useMutation<AttachReceiptPhotoMutation, AttachReceiptPhotoMutationVariables>(ATTACH_RECEIPT_PHOTO)
+  const [detachFile, { loading: detaching }] = useMutation<DetachFileMutation, DetachFileMutationVariables>(DETACH_FILE)
+  const [getDownloadUrl] = useLazyQuery<FileDownloadUrlQuery, FileDownloadUrlQueryVariables>(FILE_DOWNLOAD_URL_QUERY)
+  const [confirmReceipt, { loading: confirming }] = useMutation<ConfirmReceiptMutation, ConfirmReceiptMutationVariables>(CONFIRM_RECEIPT, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Receipt confirmed — inventory updated' })
       setConfirmOpen(false)
@@ -149,7 +150,7 @@ export default function StoreInDetail() {
       setConfirmOpen(false)
     },
   })
-  const [cancelReceipt, { loading: cancelling }] = useMutation(CANCEL_RECEIPT, {
+  const [cancelReceipt, { loading: cancelling }] = useMutation<CancelReceiptMutation, CancelReceiptMutationVariables>(CANCEL_RECEIPT, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Draft receipt cancelled' })
       setCancelOpen(false)
@@ -171,6 +172,10 @@ export default function StoreInDetail() {
     )
   if (!receipt)
     return <div style={{ padding: '48px', color: theme.textMuted }}>Store In record not found.</div>
+  // Nested function declarations below don't retain the null-check
+  // narrowing above (TS resets narrowing at function boundaries), so
+  // capture receipt in a variable whose declared type is already non-null.
+  const loadedReceipt: Receipt = receipt
 
   const isDraft = receipt.status === 'draft'
   const hasDocPhoto = receipt.photos.some((p) => p.category === 'po_receipt_document')
@@ -199,7 +204,7 @@ export default function StoreInDetail() {
     })
     await attachReceiptPhoto({
       variables: {
-        receiptId: receipt!.id,
+        receiptId: loadedReceipt.id,
         fileId,
         label: kind === 'vendor_receipt' ? 'Vendor Receipt' : 'Materials Received',
       },
@@ -236,13 +241,13 @@ export default function StoreInDetail() {
   function handleDrop(e: React.DragEvent<HTMLDivElement>, kind: PhotoKind) {
     e.preventDefault()
     setDragOverKind(null)
-    void uploadFiles(Array.from(e.dataTransfer.files ?? []), kind)
+    void uploadFiles(Array.from(e.dataTransfer.files), kind)
   }
 
   async function handleDownload(photo: ReceiptPhoto) {
     try {
       const { data: dlData } = await getDownloadUrl({ variables: { fileId: photo.fileId } })
-      const url = dlData?.fileDownloadUrl?.downloadUrl
+      const url = dlData?.fileDownloadUrl.downloadUrl
       if (!url) throw new Error('No download URL')
       const a = document.createElement('a')
       a.href = url
@@ -259,7 +264,7 @@ export default function StoreInDetail() {
   async function handleRemovePhoto(photo: ReceiptPhoto) {
     try {
       await detachFile({
-        variables: { attachmentId: photo.id, entityType: 'po_receipt', entityId: receipt!.id },
+        variables: { attachmentId: photo.id, entityType: 'po_receipt', entityId: loadedReceipt.id },
       })
       await refetch()
     } catch (err) {
@@ -269,7 +274,7 @@ export default function StoreInDetail() {
 
   function renderPhotoSection(kind: PhotoKind, label: string, hint: string, optional = false) {
     const category = PHOTO_CATEGORY[kind]
-    const photos = receipt!.photos.filter((p) => p.category === category)
+    const photos = loadedReceipt.photos.filter((p) => p.category === category)
     const isDragOver = dragOverKind === kind
     return (
       <div
@@ -285,7 +290,7 @@ export default function StoreInDetail() {
           if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
           setDragOverKind((prev) => (prev === kind ? null : prev))
         }}
-        onDrop={(e) => handleDrop(e, kind)}
+        onDrop={(e) => { handleDrop(e, kind); }}
         style={{
           marginBottom: '16px',
           padding: isDragOver ? '10px' : 0,
@@ -356,7 +361,7 @@ export default function StoreInDetail() {
             variant="secondary"
             size="sm"
             loading={uploadingKind === kind}
-            onClick={() => openCamera(kind)}
+            onClick={() => { openCamera(kind); }}
           >
             📷 Take Photo
           </Button>
@@ -365,7 +370,7 @@ export default function StoreInDetail() {
             variant="ghost"
             size="sm"
             loading={uploadingKind === kind}
-            onClick={() => openGallery(kind)}
+            onClick={() => { openGallery(kind); }}
           >
             + Add Photo / PDF
           </Button>
@@ -440,7 +445,7 @@ export default function StoreInDetail() {
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1100px' }}>
       <PageHeader
         title={receipt.receipt_number ?? receipt.id.slice(0, 8)}
-        subtitle={`${receipt.po_number ? `PO ${receipt.po_number}` : 'No linked PO'} • ${receipt.receipt_date.slice(0, 10)}`}
+        subtitle={`${receipt.po_number ? `PO ${receipt.po_number}` : 'No linked PO'} • ${receipt.receipt_date?.slice(0, 10) ?? '—'}`}
         backPath="/inventory/store-in"
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -722,7 +727,7 @@ export default function StoreInDetail() {
                 ref={printIframeRef}
                 srcDoc={buildStoreInHTML({
                   receiptNumber: receipt.receipt_number ?? receipt.id.slice(0, 8),
-                  receiptDate: receipt.receipt_date,
+                  receiptDate: receipt.receipt_date ?? '',
                   poNumber: receipt.po_number,
                   receivedFromName: receipt.received_from_name,
                   locationName: receipt.location_name,

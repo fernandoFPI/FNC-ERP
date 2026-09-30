@@ -2,17 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../theme/ThemeContext'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
 const mockUseMutation = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
-    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
+    useMutation: (...args: unknown[]): unknown => mockUseMutation(...args),
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
   }
@@ -24,7 +26,7 @@ vi.mock('../../../store/toastStore', () => ({
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
@@ -256,7 +258,9 @@ describe('LotsPage', () => {
   it('navigates to lot detail on row click', async () => {
     const LotsPage = (await import('../lots/LotsPage')).default
     wrap(<LotsPage />)
-    fireEvent.click(screen.getByText('LOT-2026-001').closest('tr')!)
+    const lotRow = screen.getByText('LOT-2026-001').closest('tr')
+    if (!lotRow) throw new Error('Expected a <tr> ancestor for LOT-2026-001')
+    fireEvent.click(lotRow)
     expect(mockNavigate).toHaveBeenCalledWith('/inventory/lots/lot1')
   })
 
@@ -445,8 +449,13 @@ describe('MaterialReturnsPage', () => {
   beforeEach(() => {
     // String(query) on a gql DocumentNode is just "[object Object]" — the
     // operation name lives on the AST itself, not the stringified form.
-    mockUseQuery.mockImplementation((query: { definitions?: { name?: { value?: string } }[] }) => {
-      const opName = query?.definitions?.[0]?.name?.value ?? ''
+    mockUseQuery.mockImplementation((query: { definitions?: { kind?: string; name?: { value?: string } }[] }) => {
+      // definitions[0] isn't reliably the operation — gql fragment
+      // composition (queries built from `${SomeFieldsFragment}`) can put
+      // FragmentDefinition nodes before the OperationDefinition in the
+      // array, so find it by kind instead of assuming position 0.
+      const opDef = query.definitions?.find((d) => d.kind === 'OperationDefinition')
+      const opName = opDef?.name?.value ?? ''
       if (opName === 'MaterialReturns')
         return { data: { materialReturns: returns }, loading: false, refetch: vi.fn() }
       if (opName === 'ReturnableMaterialIssueLines')
@@ -486,8 +495,11 @@ describe('MaterialReturnsPage', () => {
     wrap(<MaterialReturnsPage />)
 
     const findLatestVariables = () => {
-      const calls = mockUseQuery.mock.calls.filter(
-        (c) => (c[0] as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name?.value === 'MaterialReturns',
+      const calls = (mockUseQuery.mock.calls as unknown[][]).filter(
+        (c) =>
+          (c[0] as { definitions?: { kind?: string; name?: { value?: string } }[] }).definitions?.find(
+            (d) => d.kind === 'OperationDefinition',
+          )?.name?.value === 'MaterialReturns',
       )
       return (calls[calls.length - 1]?.[1] as { variables?: Record<string, unknown> })?.variables
     }
@@ -534,8 +546,11 @@ describe('MaterialReturnsPage', () => {
     expect(screen.getByText('Narrow by item (optional)')).toBeInTheDocument()
 
     const findLatestPOVariables = () => {
-      const calls = mockUseQuery.mock.calls.filter(
-        (c) => (c[0] as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name?.value === 'PurchaseOrders',
+      const calls = (mockUseQuery.mock.calls as unknown[][]).filter(
+        (c) =>
+          (c[0] as { definitions?: { kind?: string; name?: { value?: string } }[] }).definitions?.find(
+            (d) => d.kind === 'OperationDefinition',
+          )?.name?.value === 'PurchaseOrders',
       )
       return (calls[calls.length - 1]?.[1] as { variables?: Record<string, unknown> })?.variables
     }
@@ -572,8 +587,13 @@ describe('MaterialReturnsPage', () => {
       fromLocationId: 'loc1',
       fromLocationName: 'Site B',
     }
-    mockUseQuery.mockImplementation((query: { definitions?: { name?: { value?: string } }[] }) => {
-      const opName = query?.definitions?.[0]?.name?.value ?? ''
+    mockUseQuery.mockImplementation((query: { definitions?: { kind?: string; name?: { value?: string } }[] }) => {
+      // definitions[0] isn't reliably the operation — gql fragment
+      // composition (queries built from `${SomeFieldsFragment}`) can put
+      // FragmentDefinition nodes before the OperationDefinition in the
+      // array, so find it by kind instead of assuming position 0.
+      const opDef = query.definitions?.find((d) => d.kind === 'OperationDefinition')
+      const opName = opDef?.name?.value ?? ''
       if (opName === 'MaterialReturns')
         return { data: { materialReturns: returns }, loading: false, refetch: vi.fn() }
       if (opName === 'ReturnableMaterialIssueLines')
@@ -598,20 +618,28 @@ describe('MaterialReturnsPage', () => {
     fireEvent.change(qtyInputs[0], { target: { value: '2' } })
     fireEvent.change(qtyInputs[1], { target: { value: '1' } })
 
+    function lastMainWarehouseOption(): HTMLElement {
+      const opts = screen.getAllByText('Main Warehouse')
+      const last = opts.at(-1)
+      if (!last) throw new Error('Expected at least one "Main Warehouse" option')
+      return last
+    }
+
     fireEvent.click(screen.getAllByText('Return to…')[0])
-    fireEvent.mouseDown(screen.getAllByText('Main Warehouse').at(-1)!)
+    fireEvent.mouseDown(lastMainWarehouseOption())
     fireEvent.click(screen.getByText('Return to…'))
-    fireEvent.mouseDown(screen.getAllByText('Main Warehouse').at(-1)!)
+    fireEvent.mouseDown(lastMainWarehouseOption())
 
     const createButton = screen.getByRole('button', { name: /create return/i })
     expect(createButton).not.toBeDisabled()
     fireEvent.click(createButton)
 
-    await waitFor(() => expect(createReturnMock).toHaveBeenCalledTimes(2))
-    const poIdsSubmitted = createReturnMock.mock.calls.map((c) => (c[0] as { variables: { input: { poId: string } } }).variables.input.poId)
+    await waitFor(() => { expect(createReturnMock).toHaveBeenCalledTimes(2); })
+    const returnCalls = createReturnMock.mock.calls as unknown[][]
+    const poIdsSubmitted = returnCalls.map((c) => (c[0] as { variables: { input: { poId: string } } }).variables.input.poId)
     expect(poIdsSubmitted.sort()).toEqual(['po1', 'po2'])
-    const call1 = createReturnMock.mock.calls.find((c) => (c[0] as { variables: { input: { poId: string } } }).variables.input.poId === 'po1')
-    const call2 = createReturnMock.mock.calls.find((c) => (c[0] as { variables: { input: { poId: string } } }).variables.input.poId === 'po2')
+    const call1 = returnCalls.find((c) => (c[0] as { variables: { input: { poId: string } } }).variables.input.poId === 'po1')
+    const call2 = returnCalls.find((c) => (c[0] as { variables: { input: { poId: string } } }).variables.input.poId === 'po2')
     expect((call1?.[0] as { variables: { input: { lines: { issueLineId: string }[] } } }).variables.input.lines).toEqual([
       { issueLineId: 'il1', toLocationId: 'loc1', qtyReturned: 2 },
     ])

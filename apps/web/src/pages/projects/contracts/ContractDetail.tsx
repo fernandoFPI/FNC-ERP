@@ -16,6 +16,7 @@ import type { InvoiceBuilderResult } from '../../../components/ui/InvoiceBuilder
 import { InvoiceBuilder } from '../../../components/ui/InvoiceBuilder'
 import { useToastStore } from '../../../store/toastStore'
 import { useRecordLock } from '../../../hooks/useRecordLock'
+import type { CreateProjectInvoiceMutation, CreateProjectInvoiceMutationVariables, ProjectContractQuery, ProjectContractQueryVariables, ReachMilestoneMutation, ReachMilestoneMutationVariables } from '../../../graphql/generated'
 
 export default function ContractDetail() {
   const { id } = useParams<{ id: string }>()
@@ -25,46 +26,42 @@ export default function ContractDetail() {
   const addToast = useToastStore((s) => s.addToast)
   const [showInvoiceBuilder, setShowInvoiceBuilder] = useState(false)
 
-  const { data, loading, refetch } = useQuery(PROJECT_CONTRACT_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<ProjectContractQuery, ProjectContractQueryVariables>(PROJECT_CONTRACT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
   })
-  const [reachMilestone] = useMutation(REACH_MILESTONE)
-  const [createInvoice] = useMutation(CREATE_PROJECT_INVOICE)
+  const [reachMilestone] = useMutation<ReachMilestoneMutation, ReachMilestoneMutationVariables>(REACH_MILESTONE)
+  const [createInvoice] = useMutation<CreateProjectInvoiceMutation, CreateProjectInvoiceMutationVariables>(CREATE_PROJECT_INVOICE)
 
   const contract = data?.projectContract
 
   async function handleCreateInvoice(result: InvoiceBuilderResult) {
     const defaultDue = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
-    try {
-      await createInvoice({
-        variables: {
-          contractId: id,
-          input: {
-            billingMethod: result.billing_method,
-            dueDate: result.due_date || defaultDue,
-            notes: result.notes ?? null,
-            discountPct: result.discount_pct,
-            discountAmount: result.discount_amount,
-            whtApplies: result.wht_applies,
-            whtScenario: result.wht_scenario ?? undefined,
-            whtRate: result.wht_rate,
-            lines: result.lines.map((l) => ({
-              description: l.description,
-              sourceType: result.billing_method === 'milestone' ? 'milestone' : 'manual',
-              qty: l.quantity,
-              unitCost: l.unit_price,
-              marginPct: 0,
-              taxPct: l.tax_pct ?? 0,
-            })),
-          },
+    await createInvoice({
+      variables: {
+        contractId: id ?? '',
+        input: {
+          billingMethod: result.billing_method,
+          dueDate: result.due_date ?? defaultDue,
+          notes: result.notes ?? null,
+          discountPct: result.discount_pct,
+          discountAmount: result.discount_amount,
+          whtApplies: result.wht_applies,
+          whtScenario: result.wht_scenario ?? undefined,
+          whtRate: result.wht_rate,
+          lines: result.lines.map((l) => ({
+            description: l.description,
+            sourceType: result.billing_method === 'milestone' ? 'milestone' : 'manual',
+            qty: l.quantity,
+            unitCost: l.unit_price,
+            marginPct: 0,
+            taxPct: l.tax_pct ?? 0,
+          })),
         },
-      })
-      addToast({ type: 'success', message: 'Invoice created' })
-      refetch()
-    } catch (err) {
-      throw err
-    }
+      },
+    })
+    addToast({ type: 'success', message: 'Invoice created' })
+    void refetch()
   }
 
   if (loading || !contract)
@@ -168,15 +165,8 @@ export default function ContractDetail() {
         >
           Milestones
         </div>
-        {(contract.milestones ?? []).map(
-          (m: {
-            id: string
-            name: string
-            sequence: number
-            billableAmount: number
-            status: string
-            reachedAt?: string
-          }) => (
+        {contract.milestones.map(
+          (m) => (
             <div
               key={m.id}
               style={{
@@ -208,11 +198,11 @@ export default function ContractDetail() {
                     variant="ghost"
                     size="sm"
                     disabled={lock.lockedByOther}
-                    onClick={async () => {
-                      await reachMilestone({ variables: { contractId: id, milestoneId: m.id } })
-                      refetch()
+                    onClick={() => void (async () => {
+                      await reachMilestone({ variables: { contractId: id ?? '', milestoneId: m.id } })
+                      void refetch()
                       addToast({ type: 'success', message: 'Milestone reached' })
-                    }}
+                    })()}
                   >
                     Mark Reached
                   </Button>
@@ -235,7 +225,7 @@ export default function ContractDetail() {
         >
           Invoices
         </div>
-        {(contract.invoices ?? []).map(
+        {contract.invoices.map(
           (inv: {
             id: string
             invoiceNumber: string
@@ -299,7 +289,7 @@ export default function ContractDetail() {
             </div>
           ),
         )}
-        {(contract.invoices ?? []).length === 0 && (
+        {contract.invoices.length === 0 && (
           <div
             style={{
               color: theme.textMuted,
@@ -317,9 +307,9 @@ export default function ContractDetail() {
         open={showInvoiceBuilder}
         projectId={id ?? ''}
         projectName={contract.contractName}
-        contractAmount={contract.contractValue ?? 0}
+        contractAmount={contract.contractValue}
         currency={cur}
-        milestones={(contract.milestones ?? []).map(
+        milestones={contract.milestones.map(
           (m: { id: string; name: string; billableAmount: number; status: string }) => ({
             id: m.id,
             name: m.name,

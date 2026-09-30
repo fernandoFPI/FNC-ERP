@@ -35,9 +35,10 @@ function waitForElement(selector: string | undefined, cb: () => void, timeout = 
     setTimeout(cb, 150)
     return
   }
+  const sel = selector
   const start = Date.now()
   function poll() {
-    if (document.querySelector(selector!) || Date.now() - start > timeout) {
+    if (document.querySelector(sel) ?? Date.now() - start > timeout) {
       setTimeout(cb, 150)
     } else {
       requestAnimationFrame(poll)
@@ -1498,10 +1499,9 @@ const informationalTours: Record<string, { title: string; steps: DriveStep[] }> 
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export const tours: Record<string, { title: string }> = Object.fromEntries([
-  ...Object.entries(interactiveTours).map(([k, v]) => [k, { title: v.title }]),
-  ...Object.entries(informationalTours).map(([k, v]) => [k, { title: v.title }]),
-])
+export const tours: Record<string, { title: string }> = {}
+for (const [k, v] of Object.entries(interactiveTours)) tours[k] = { title: v.title }
+for (const [k, v] of Object.entries(informationalTours)) tours[k] = { title: v.title }
 
 export function startTour(
   tourKey: string,
@@ -1509,7 +1509,7 @@ export function startTour(
   theme: ThemeTokens,
   onDestroyed?: () => void,
 ): void {
-  import('driver.js').then(({ driver }) => {
+  void import('driver.js').then(({ driver }) => {
     injectTourStyles(theme)
     const iTour = interactiveTours[tourKey]
     const iInfo = informationalTours[tourKey]
@@ -1520,18 +1520,19 @@ export function startTour(
 
       const isLast = (i: number) => i === iTour.steps.length - 1
 
-      const driveSteps: DriveStep[] = iTour.steps.map(
-        (step, i): DriveStep => ({
+      const driveSteps: DriveStep[] = iTour.steps.map((step, i): DriveStep => {
+        const nextRoute = step.nextRoute
+        return {
           element: step.element,
           popover: {
             title: step.title,
             description: step.description,
             side: step.side,
-            ...(step.nextRoute && !isLast(i)
+            ...(nextRoute && !isLast(i)
               ? {
                   onNextClick: (_el, _s, { driver: d }) => {
                     const nextEl = step.nextElement ?? iTour.steps[i + 1]?.element
-                    navigate(step.nextRoute!)
+                    navigate(nextRoute)
                     useTourStore.getState().setStep(i + 1)
                     waitForElement(nextEl, () => {
                       d.moveNext()
@@ -1547,8 +1548,8 @@ export function startTour(
                   }
                 : {}),
           },
-        }),
-      )
+        }
+      })
 
       const startDriver = () => {
         const driverObj = driver({

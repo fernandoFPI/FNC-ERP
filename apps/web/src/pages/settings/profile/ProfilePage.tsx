@@ -24,6 +24,7 @@ import {
   REVOKE_MY_SESSION,
   REVOKE_ALL_MY_SESSIONS,
 } from '../../../graphql/settings'
+import type { ConfirmMfaMutation, ConfirmMfaMutationVariables, DisableMfaMutation, DisableMfaMutationVariables, EnableMfaMutation, EnableMfaMutationVariables, RevokeAllMySessionsMutation, RevokeAllMySessionsMutationVariables, RevokeMySessionMutation, RevokeMySessionMutationVariables, UpdatePasswordMutation, UpdatePasswordMutationVariables } from '../../../graphql/generated'
 
 interface MyProfile {
   id: string
@@ -187,7 +188,7 @@ export default function ProfilePage() {
     skip: activeTab !== 'sessions',
   })
 
-  const [updatePassword, { loading: changingPwd }] = useMutation(UPDATE_PASSWORD, {
+  const [updatePassword, { loading: changingPwd }] = useMutation<UpdatePasswordMutation, UpdatePasswordMutationVariables>(UPDATE_PASSWORD, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Password updated' })
       setCurrentPassword('')
@@ -199,7 +200,7 @@ export default function ProfilePage() {
     },
   })
 
-  const [enableMFA, { loading: enablingMFA }] = useMutation(ENABLE_MFA, {
+  const [enableMFA, { loading: enablingMFA }] = useMutation<EnableMfaMutation, EnableMfaMutationVariables>(ENABLE_MFA, {
     onCompleted: (d) => {
       setMfaSecret(d.enableMFA.secret)
       setMfaOtpauthUrl(d.enableMFA.otpauthUrl)
@@ -210,36 +211,36 @@ export default function ProfilePage() {
     },
   })
 
-  const [confirmMFA, { loading: confirmingMFA }] = useMutation(CONFIRM_MFA, {
+  const [confirmMFA, { loading: confirmingMFA }] = useMutation<ConfirmMfaMutation, ConfirmMfaMutationVariables>(CONFIRM_MFA, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'MFA enabled successfully' })
       setSetupPhase('idle')
       setTotpCode('')
       setMfaSecret('')
       setMfaOtpauthUrl('')
-      refetchProfile()
+      void refetchProfile()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
     },
   })
 
-  const [disableMFA, { loading: disablingMFA }] = useMutation(DISABLE_MFA, {
+  const [disableMFA, { loading: disablingMFA }] = useMutation<DisableMfaMutation, DisableMfaMutationVariables>(DISABLE_MFA, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'MFA disabled' })
       setDisablePwd('')
-      refetchProfile()
+      void refetchProfile()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
     },
   })
 
-  const [revokeSession, { loading: revokingSession }] = useMutation(REVOKE_MY_SESSION, {
+  const [revokeSession, { loading: revokingSession }] = useMutation<RevokeMySessionMutation, RevokeMySessionMutationVariables>(REVOKE_MY_SESSION, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Session revoked' })
       setRevokeSessionId(null)
-      refetchSessions()
+      void refetchSessions()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -247,11 +248,11 @@ export default function ProfilePage() {
     },
   })
 
-  const [revokeAllSessions, { loading: revokingAll }] = useMutation(REVOKE_ALL_MY_SESSIONS, {
+  const [revokeAllSessions, { loading: revokingAll }] = useMutation<RevokeAllMySessionsMutation, RevokeAllMySessionsMutationVariables>(REVOKE_ALL_MY_SESSIONS, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'All other sessions revoked' })
       setConfirmRevokeAll(false)
-      refetchSessions()
+      void refetchSessions()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -271,7 +272,7 @@ export default function ProfilePage() {
       addToast({ type: 'error', message: 'Password must be at least 8 characters' })
       return
     }
-    updatePassword({ variables: { currentPassword, newPassword } })
+    void updatePassword({ variables: { currentPassword, newPassword } })
   }
 
   return (
@@ -566,7 +567,7 @@ export default function ProfilePage() {
                   <Button
                     variant="danger"
                     size="md"
-                    onClick={() => disableMFA({ variables: { password: disablePwd } })}
+                    onClick={() => void disableMFA({ variables: { password: disablePwd } })}
                     loading={disablingMFA}
                     disabled={!disablePwd}
                   >
@@ -585,7 +586,7 @@ export default function ProfilePage() {
                   size="md"
                   onClick={() => {
                     setSetupPhase('setup')
-                    enableMFA()
+                    void enableMFA()
                   }}
                   loading={enablingMFA}
                 >
@@ -645,7 +646,7 @@ export default function ProfilePage() {
                   <Button
                     variant="primary"
                     size="md"
-                    onClick={() => confirmMFA({ variables: { totpCode } })}
+                    onClick={() => void confirmMFA({ variables: { totpCode } })}
                     loading={confirmingMFA}
                     disabled={totpCode.length !== 6}
                   >
@@ -806,7 +807,7 @@ export default function ProfilePage() {
           setRevokeSessionId(null)
         }}
         onConfirm={() => {
-          if (revokeSessionId) revokeSession({ variables: { sessionId: revokeSessionId } })
+          if (revokeSessionId) void revokeSession({ variables: { sessionId: revokeSessionId } })
         }}
         title="Revoke Session"
         message="Revoke this session? You will be logged out on that device."
@@ -821,7 +822,7 @@ export default function ProfilePage() {
           setConfirmRevokeAll(false)
         }}
         onConfirm={() => {
-          revokeAllSessions()
+          void revokeAllSessions()
         }}
         title="Revoke Other Sessions"
         message="Log out all other devices? Your current session will not be affected."

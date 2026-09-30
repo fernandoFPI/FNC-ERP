@@ -22,8 +22,6 @@ interface OvertimeRequestCardProps {
   isManager: boolean
 }
 
-const [firstName, ...rest] = ['', '']
-
 export function OvertimeRequestCard({
   request,
   onApprove,

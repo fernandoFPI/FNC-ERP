@@ -21,6 +21,16 @@ pool.on('error', (err) => {
   console.error('[db] Unexpected pool error:', err.message)
 })
 
+// Callers use this only where the query is itself the guarantee (an
+// INSERT...RETURNING, or an aggregate/LIMIT 1 with no GROUP BY) — the row is
+// always there, but pg's types don't say so. Re-asserts that guarantee at the
+// read site instead of a bare `result.rows[0]!`.
+export function firstRowOrThrow<R extends QueryResultRow>(result: { rows: R[] }): R {
+  const row = result.rows[0]
+  if (row === undefined) throw new Error('Expected at least one row')
+  return row
+}
+
 export async function query<R extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[],

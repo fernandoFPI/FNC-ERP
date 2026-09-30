@@ -1,6 +1,6 @@
 import { Router, type IRouter } from 'express'
-import { query, withSystemTransaction } from '@fnc-erp/db'
-import { requireAuth } from '@fnc-erp/auth'
+import { query, withSystemTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
+import { requireAuth, getAuth } from '@fnc-erp/auth'
 import {
   PERMISSION_REGISTRY,
   ALL_PERMISSIONS,
@@ -20,16 +20,19 @@ userPermissionsRouter.get(
   '/:id/permissions',
   requireAuth(),
   (req, res, next) => {
-    if (req.auth!.userId === req.params['id']) return next()
-    return requirePermission('admin.users.view', 'view')(req, res, next)
+    if (getAuth(req).userId === req.params['id']) {
+      next()
+      return
+    }
+    requirePermission('admin.users.view', 'view')(req, res, next)
   },
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const id = req.params['id'] ?? ''
       const companyId = (req.query['company_id'] as string | undefined) ?? ''
 
-      const isSelf = req.auth!.userId === id
-      const isAdmin = req.auth!.role === 'system_admin' || req.auth!.role === 'company_admin'
+      const isSelf = getAuth(req).userId === id
+      const isAdmin = getAuth(req).role === 'system_admin' || getAuth(req).role === 'company_admin'
 
       if (!isSelf && !isAdmin) {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN' } })
@@ -51,7 +54,7 @@ userPermissionsRouter.get(
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } })
       }
 
-      const userId = userResult.rows[0]!['id'] ?? ''
+      const userId = firstRowOrThrow(userResult)['id'] ?? ''
 
       const ucrResult = await query<{ role: string }>(
         `SELECT role FROM user_company_roles WHERE user_id = $1 AND company_id = $2`,
@@ -106,7 +109,7 @@ userPermissionsRouter.get(
       console.error('[user-permissions] GET error:', err)
       return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR' } })
     }
-  },
+  }),
 )
 
 // ── PUT /auth/users/:id/permissions ──────────────────────────────────────────
@@ -116,9 +119,9 @@ userPermissionsRouter.put(
   '/:id/permissions',
   requireAuth(),
   requirePermission('admin.users.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      if (req.auth!.role !== 'system_admin' && req.auth!.role !== 'company_admin') {
+      if (getAuth(req).role !== 'system_admin' && getAuth(req).role !== 'company_admin') {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN' } })
       }
 
@@ -160,7 +163,7 @@ userPermissionsRouter.put(
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } })
       }
 
-      const targetUser = userResult.rows[0]!
+      const targetUser = firstRowOrThrow(userResult)
       const companyId = targetUser['company_id'] ?? ''
       const targetRole = targetUser['role'] ?? ''
 
@@ -191,7 +194,7 @@ userPermissionsRouter.put(
              SET access_level = EXCLUDED.access_level,
                  granted_by = EXCLUDED.granted_by,
                  updated_at = NOW()`,
-            [id, companyId, perm.key, perm.accessLevel, req.auth!.userId],
+            [id, companyId, perm.key, perm.accessLevel, getAuth(req).userId],
           )
         }
       })
@@ -203,5 +206,5 @@ userPermissionsRouter.put(
       console.error('[user-permissions] PUT error:', err)
       return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR' } })
     }
-  },
+  }),
 )

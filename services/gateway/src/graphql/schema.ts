@@ -180,7 +180,7 @@
     approveRequisition(id: ID!): Requisition!
     rejectRequisitionApproval(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): Requisition!
     # Mirrors rejectPOVerificationToMarketPricing/rejectPOVerificationToStorePricing —
-    # same procurement_2nd authorization as verifyRequisitionPrices itself,
+    # same organizer/admin authorization as verifyRequisitionPrices itself,
     # no stock-reservation change (the from-stock portion confirmed at
     # inventory_check stays valid either way).
     rejectRequisitionVerificationToMarketPricing(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): Requisition!
@@ -225,13 +225,6 @@
     rejectPOToMarketPricing(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): PurchaseOrder!
     rejectPOVerificationToMarketPricing(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): PurchaseOrder!
     rejectPOVerificationToStorePricing(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): PurchaseOrder!
-    # G1 Phase 3 Milestone A — id/requisitionId are mutually exclusive
-    # (exactly one required, enforced in the resolver). Return type is
-    # Boolean! rather than PurchaseOrder!/Requisition! since neither the
-    # old nor new caller reads anything off the result beyond success —
-    # avoids needing a union type for what's purely a fire-and-forget
-    # notification.
-    notifyPOOwnerForEditRequest(id: ID, requisitionId: ID, reason: String!): Boolean!
     approvePO(id: ID!): PurchaseOrder!
     rejectPO(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): PurchaseOrder!
     resolveLineFlag(lineId: ID!): Boolean!
@@ -443,6 +436,11 @@
     # po_line_purchases-backed entries; always false for anything
     # finishBuyingRequisition forks. Resolved lazily, not stored.
     isLegacyNoPurchaseRecord: Boolean!
+    # True when a Daily Report logged this PO under Machinery without the
+    # required live photo. Resolved lazily against
+    # project_daily_report_machinery, not stored on the PO row, so it clears
+    # itself the moment every gap is backfilled with a photo.
+    machineryPhotoAlert: Boolean!
   }
 
   type POPositionAssignment {
@@ -4021,6 +4019,7 @@
     intercoTransactionReference: String
     intercoTransactionStatus: String
     lines: [IntercoTransferLine!]!
+    currencyCode: String!
   }
 
   type IntercoPricingSettings {
@@ -4890,12 +4889,125 @@
     acceptanceCriteria: String
   }
 
+  # ─── EPC Daily Progress Report ─────────────────────────────────────────────
+  # Header fields are plain columns; the template's ~14 repeating-row
+  # sections (progress %, HSE stats, engineering/procurement/construction
+  # rows, manpower, equipment, risks, client actions, look-ahead) are stored
+  # and exchanged as JSON — each is always read/written as part of one
+  # report snapshot, never queried independently.
+  type ProjectDailyReport {
+    id:                       ID!
+    projectId:                ID!
+    reportNumber:             String!
+    reportDate:               String!
+    preparedBy:               String
+    reviewedBy:               String
+    weatherConditions:        String
+    temperature:              String
+    scheduleStatus:           String
+    costStatus:               String
+    safetyStatus:             String
+    qualityStatus:            String
+    keyAccomplishments:       String
+    majorConcerns:            String
+    progressMetrics:          JSON
+    safetyStats:              JSON
+    safetyActivities:         JSON
+    safetyRemarks:            String
+    engineeringProgress:      JSON
+    engineeringDeliverables:  JSON
+    engineeringIssues:        String
+    procurementItems:         JSON
+    deliveriesReceived:       JSON
+    procurementConcerns:      String
+    constructionProgress:     JSON
+    qcInspections:            JSON
+    ncrStatus:                JSON
+    qualityRemarks:           String
+    manpower:                 JSON
+    equipmentUtilization:     JSON
+    breakdownDetails:         String
+    risksIssues:              JSON
+    clientActions:            JSON
+    lookaheadEngineering:     String
+    lookaheadProcurement:     String
+    lookaheadConstruction:    String
+    lookaheadCommissioning:   String
+    managementComments:       String
+    createdByName:            String
+    files:                    [RFQPhaseFile!]!
+    machinery:                [ProjectDailyReportMachinery!]!
+    createdAt:                String!
+    updatedAt:                String!
+  }
+
+  # A machinery PO logged against one Daily Report — the live photo is the
+  # compliance evidence: compliant is false whenever livePhotoFileId is null,
+  # which is also what PurchaseOrder.machineryPhotoAlert checks for that PO.
+  type ProjectDailyReportMachinery {
+    id:                   ID!
+    dailyReportId:        ID!
+    projectId:            ID!
+    poId:                 ID!
+    poNumber:             String
+    equipmentDescription: String
+    workingHours:         Float
+    idleHours:            Float
+    breakdownHours:       Float
+    livePhotoFileId:      ID
+    livePhotoFilename:    String
+    livePhotoDownloadUrl: String
+    compliant:            Boolean!
+    createdByName:        String
+    createdAt:            String!
+  }
+
+  input DailyReportInput {
+    reportDate:              String
+    preparedBy:              String
+    reviewedBy:              String
+    weatherConditions:       String
+    temperature:             String
+    scheduleStatus:          String
+    costStatus:              String
+    safetyStatus:            String
+    qualityStatus:           String
+    keyAccomplishments:      String
+    majorConcerns:           String
+    progressMetrics:         JSON
+    safetyStats:             JSON
+    safetyActivities:        JSON
+    safetyRemarks:           String
+    engineeringProgress:     JSON
+    engineeringDeliverables: JSON
+    engineeringIssues:       String
+    procurementItems:        JSON
+    deliveriesReceived:      JSON
+    procurementConcerns:     String
+    constructionProgress:    JSON
+    qcInspections:           JSON
+    ncrStatus:               JSON
+    qualityRemarks:          String
+    manpower:                JSON
+    equipmentUtilization:    JSON
+    breakdownDetails:        String
+    risksIssues:             JSON
+    clientActions:           JSON
+    lookaheadEngineering:    String
+    lookaheadProcurement:    String
+    lookaheadConstruction:   String
+    lookaheadCommissioning:  String
+    managementComments:      String
+  }
+
   extend type Query {
+    projectSiteInstructions(projectId: ID!):    [ProjectSiteInstruction!]!
     projectRFIs(projectId: ID!):               [ProjectRFI!]!
     projectITPs(projectId: ID!):               [ProjectITP!]!
     projectInspectionRequests(projectId: ID!): [ProjectInspectionRequest!]!
     projectNCRs(projectId: ID!):               [ProjectNCR!]!
     projectHSERecords(projectId: ID!, recordType: String): [ProjectHSERecord!]!
+    projectDailyReports(projectId: ID!):       [ProjectDailyReport!]!
   }
 
   extend type Mutation {
@@ -4941,6 +5053,19 @@
     deleteHSERecord(id: ID!): Boolean!
     uploadHSEFile(hseId: ID!, fileId: ID!, title: String): ProjectHSERecord!
     deleteHSEFile(attachmentId: ID!, hseId: ID!): Boolean!
+
+    # Daily Progress Reports
+    createDailyReport(projectId: ID!, input: DailyReportInput!): ProjectDailyReport!
+    updateDailyReport(id: ID!, input: DailyReportInput!): ProjectDailyReport!
+    deleteDailyReport(id: ID!): Boolean!
+    uploadDailyReportFile(reportId: ID!, fileId: ID!, title: String): ProjectDailyReport!
+    deleteDailyReportFile(attachmentId: ID!, reportId: ID!): Boolean!
+
+    # Machinery POs logged against a Daily Report — a live photo is required;
+    # omitting fileId flags the PO and alerts dept heads/admins.
+    addDailyReportMachinery(dailyReportId: ID!, poId: ID!, equipmentDescription: String, workingHours: Float, idleHours: Float, breakdownHours: Float, fileId: ID): ProjectDailyReportMachinery!
+    attachDailyReportMachineryPhoto(id: ID!, fileId: ID!): ProjectDailyReportMachinery!
+    deleteDailyReportMachinery(id: ID!): Boolean!
 
   }
 

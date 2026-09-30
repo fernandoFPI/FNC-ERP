@@ -21,6 +21,7 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useAuthStore } from '../../../store/authStore'
 import { useToastStore } from '../../../store/toastStore'
+import type { CancelReceiptMutation, CancelReceiptMutationVariables, PoReceiptsQuery, PoReceiptsQueryVariables, ProjectsQuery, ProjectsQueryVariables, ReceivablePurchaseOrdersQuery, ReceivablePurchaseOrdersQueryVariables } from '../../../graphql/generated'
 
 interface ReceiptLine {
   qty_received: string
@@ -38,7 +39,7 @@ interface Receipt {
   received_from_name: string | null
   base_currency_code: string | null
   receipt_number: string | null
-  receipt_date: string
+  receipt_date: string | null
   received_by_name: string | null
   received_by_email: string | null
   status: string
@@ -72,21 +73,21 @@ export default function StoreInPage() {
   const currentUserRole = useAuthStore((s) => s.user?.role)
   const isAdmin = currentUserRole === 'system_admin' || currentUserRole === 'company_admin'
 
-  const { data, loading, error, refetch } = useQuery(PO_RECEIPTS_QUERY, {
+  const { data, loading, error, refetch } = useQuery<PoReceiptsQuery, PoReceiptsQueryVariables>(PO_RECEIPTS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
-  const [cancelReceiptMutation] = useMutation(CANCEL_RECEIPT)
+  const [cancelReceiptMutation] = useMutation<CancelReceiptMutation, CancelReceiptMutationVariables>(CANCEL_RECEIPT)
   const receipts: Receipt[] = data?.poReceipts ?? []
   const draftCount = receipts.filter((r) => r.status === 'draft').length
   const confirmedCount = receipts.filter((r) => r.status === 'confirmed').length
 
-  const { data: projectsData } = useQuery(PROJECTS_QUERY, {
+  const { data: projectsData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     variables: { includeAll: true },
     skip: !pickerOpen,
   })
   const projects: { id: string; code: string; name: string }[] = projectsData?.projects?.data ?? []
 
-  const { data: posData, loading: posLoading } = useQuery(RECEIVABLE_PURCHASE_ORDERS_QUERY, {
+  const { data: posData, loading: posLoading } = useQuery<ReceivablePurchaseOrdersQuery, ReceivablePurchaseOrdersQueryVariables>(RECEIVABLE_PURCHASE_ORDERS_QUERY, {
     variables: { projectId: pickerProjectId || undefined },
     skip: !pickerOpen,
     fetchPolicy: 'cache-and-network',
@@ -239,7 +240,7 @@ export default function StoreInPage() {
     {
       key: 'receipt_date',
       header: 'Date',
-      render: (r) => <span style={{ color: theme.textMuted }}>{r.receipt_date.slice(0, 10)}</span>,
+      render: (r) => <span style={{ color: theme.textMuted }}>{r.receipt_date?.slice(0, 10) ?? '—'}</span>,
     },
     {
       key: 'status',

@@ -122,7 +122,7 @@ function EquipmentScreenBase({ assets }: { assets: EquipmentAsset[] }) {
       data={assets}
       keyExtractor={(a) => a.id}
       renderItem={({ item }) => <AssetCard asset={item} />}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />}
+      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={(...args: Parameters<typeof onRefresh>) => void onRefresh(...args)} />}
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No equipment assigned</Text>

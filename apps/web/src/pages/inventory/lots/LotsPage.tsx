@@ -10,19 +10,20 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { EmptyState } from '../../../components/ui/EmptyState'
+import type { StockLotsQuery, StockLotsQueryVariables } from '../../../graphql/generated'
 
 interface StockLot {
   id: string
   lot_number: string
   product_id: string
-  product_name?: string
-  expiry_date?: string
+  product_name?: string | null
+  expiry_date?: string | null
   created_at: string
-  current_qty?: string
-  current_location_name?: string
+  current_qty?: string | null
+  current_location_name?: string | null
 }
 
-function expiryStatus(expiryDate?: string): 'ok' | 'expiring' | 'expired' | 'none' {
+function expiryStatus(expiryDate?: string | null): 'ok' | 'expiring' | 'expired' | 'none' {
   if (!expiryDate) return 'none'
   const diff = new Date(expiryDate).getTime() - Date.now()
   const days = diff / 86_400_000
@@ -46,7 +47,7 @@ export default function LotsPage() {
 
   const productId = params.get('productId') ?? undefined
 
-  const { data, loading, refetch } = useQuery(STOCK_LOTS_QUERY, {
+  const { data, loading, refetch } = useQuery<StockLotsQuery, StockLotsQueryVariables>(STOCK_LOTS_QUERY, {
     variables: { productId },
     fetchPolicy: 'cache-and-network',
   })
@@ -152,7 +153,7 @@ export default function LotsPage() {
               },
             ]}
             resultCount={filtered.length}
-            onRefresh={() => refetch()}
+            onRefresh={() => void refetch()}
           />
         </div>
 

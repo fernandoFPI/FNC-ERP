@@ -1,6 +1,6 @@
 import { Router, type IRouter } from 'express'
-import { query, withSystemTransaction } from '@fnc-erp/db'
-import { requireAuth } from '@fnc-erp/auth'
+import { query, withSystemTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
+import { requireAuth, getAuth } from '@fnc-erp/auth'
 import { ALL_PERMISSIONS, PERMISSION_REGISTRY, requirePermission } from '@fnc-erp/permissions'
 
 export const roleTemplatesRouter: IRouter = Router()
@@ -10,9 +10,9 @@ roleTemplatesRouter.get(
   '/',
   requireAuth(),
   requirePermission('admin.roles.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const isAdmin = req.auth!.role === 'system_admin' || req.auth!.role === 'company_admin'
+      const isAdmin = getAuth(req).role === 'system_admin' || getAuth(req).role === 'company_admin'
       if (!isAdmin) {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN' } })
       }
@@ -52,7 +52,7 @@ roleTemplatesRouter.get(
       console.error('[role-templates] GET list error:', err)
       return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR' } })
     }
-  },
+  }),
 )
 
 // ── GET /auth/role-templates/:id ──────────────────────────────────────────────
@@ -60,9 +60,9 @@ roleTemplatesRouter.get(
   '/:id',
   requireAuth(),
   requirePermission('admin.roles.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const isAdmin = req.auth!.role === 'system_admin' || req.auth!.role === 'company_admin'
+      const isAdmin = getAuth(req).role === 'system_admin' || getAuth(req).role === 'company_admin'
       if (!isAdmin) {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN' } })
       }
@@ -79,7 +79,7 @@ roleTemplatesRouter.get(
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } })
       }
 
-      const tmpl = tmplResult.rows[0]!
+      const tmpl = firstRowOrThrow(tmplResult)
 
       const permsResult = await query<Record<string, string>>(
         `SELECT permission_key, access_level FROM role_template_permissions WHERE template_id = $1`,
@@ -122,7 +122,7 @@ roleTemplatesRouter.get(
       console.error('[role-templates] GET one error:', err)
       return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR' } })
     }
-  },
+  }),
 )
 
 // ── POST /auth/role-templates ─────────────────────────────────────────────────
@@ -130,9 +130,9 @@ roleTemplatesRouter.post(
   '/',
   requireAuth(),
   requirePermission('admin.roles.admin', 'admin'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      if (req.auth!.role !== 'system_admin') {
+      if (getAuth(req).role !== 'system_admin') {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN' } })
       }
 
@@ -174,9 +174,9 @@ roleTemplatesRouter.post(
           `INSERT INTO role_templates (name, description, is_system, created_by)
          VALUES ($1, $2, false, $3)
          RETURNING id`,
-          [name.trim(), description ?? null, req.auth!.userId],
+          [name.trim(), description ?? null, getAuth(req).userId],
         )
-        newTemplateId = String(result.rows[0]!['id'] ?? '')
+        newTemplateId = String(firstRowOrThrow(result)['id'] ?? '')
 
         for (const perm of permissions ?? []) {
           await client.query(
@@ -201,7 +201,7 @@ roleTemplatesRouter.post(
       console.error('[role-templates] POST error:', err)
       return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR' } })
     }
-  },
+  }),
 )
 
 // ── PUT /auth/role-templates/:id ──────────────────────────────────────────────
@@ -209,9 +209,9 @@ roleTemplatesRouter.put(
   '/:id',
   requireAuth(),
   requirePermission('admin.roles.admin', 'admin'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      if (req.auth!.role !== 'system_admin') {
+      if (getAuth(req).role !== 'system_admin') {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN' } })
       }
 
@@ -283,7 +283,7 @@ roleTemplatesRouter.put(
       console.error('[role-templates] PUT error:', err)
       return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR' } })
     }
-  },
+  }),
 )
 
 // ── DELETE /auth/role-templates/:id ──────────────────────────────────────────
@@ -291,9 +291,9 @@ roleTemplatesRouter.delete(
   '/:id',
   requireAuth(),
   requirePermission('admin.roles.admin', 'admin'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      if (req.auth!.role !== 'system_admin') {
+      if (getAuth(req).role !== 'system_admin') {
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN' } })
       }
 
@@ -306,7 +306,7 @@ roleTemplatesRouter.delete(
       if (tmpl.rowCount === 0) {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } })
       }
-      if (tmpl.rows[0]!['is_system'] === true) {
+      if (firstRowOrThrow(tmpl)['is_system'] === true) {
         return res.status(400).json({
           success: false,
           error: { code: 'VALIDATION_ERROR', message: 'Cannot delete a system template' },
@@ -320,5 +320,5 @@ roleTemplatesRouter.delete(
       console.error('[role-templates] DELETE error:', err)
       return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR' } })
     }
-  },
+  }),
 )

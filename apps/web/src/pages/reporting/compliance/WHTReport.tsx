@@ -121,7 +121,7 @@ export default function WHTReport() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

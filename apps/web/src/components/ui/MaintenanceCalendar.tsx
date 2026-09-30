@@ -7,7 +7,7 @@ export interface MaintenanceEvent {
   title: string
   date: string
   type: 'scheduled' | 'completed' | 'overdue'
-  assetName?: string
+  assetName?: string | null
 }
 
 interface Props {
@@ -75,7 +75,7 @@ export function MaintenanceCalendar({ events, onEventClick }: Props) {
   }
 
   const cells: (number | null)[] = [
-    ...Array(firstDay).fill(null),
+    ...Array.from({ length: firstDay }, () => null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ]
   // pad to full rows

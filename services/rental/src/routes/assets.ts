@@ -1,8 +1,9 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
+import { getAuth } from '@fnc-erp/auth'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -28,7 +29,7 @@ assetsRouter.get('/', requirePermission('rental.assets.view', 'view'), async (re
   try {
     const { status, category, is_active } = req.query
     let sql = `SELECT * FROM equipment_assets WHERE company_id = $1`
-    const params: unknown[] = [req.auth!.companyId]
+    const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
     if (status) { sql += ` AND status = $${idx++}`; params.push(status) }
     if (category) { sql += ` AND category = $${idx++}`; params.push(category) }
@@ -43,7 +44,7 @@ assetsRouter.get('/availability', requirePermission('rental.assets.view', 'view'
     const { from_date, to_date, category } = req.query
     let sql = `SELECT a.* FROM equipment_assets a
                WHERE a.company_id = $1 AND a.status = 'available' AND a.is_active = true`
-    const params: unknown[] = [req.auth!.companyId]
+    const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
     if (category) { sql += ` AND a.category = $${idx++}`; params.push(category) }
     if (from_date && to_date) {
@@ -68,7 +69,7 @@ assetsRouter.get('/:id', requirePermission('rental.assets.view', 'view'), async 
        LEFT JOIN rental_contract_lines rcl ON rcl.asset_id = a.id
        LEFT JOIN rental_contracts rc ON rc.id = rcl.contract_id AND rc.status = 'active'
        WHERE a.id = $1 AND a.company_id = $2`,
-      [req.params['id'], req.auth!.companyId],
+      [req.params['id'], getAuth(req).companyId],
     )
     if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Asset not found')
     sendOk(res, result.rows[0])
@@ -77,7 +78,7 @@ assetsRouter.get('/:id', requirePermission('rental.assets.view', 'view'), async 
 
 assetsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const parsed = Schema.safeParse(req.body)
     if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
@@ -90,15 +91,15 @@ assetsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async (r
        d.year_of_manufacture ?? null, d.daily_rate, d.weekly_rate ?? null, d.monthly_rate ?? null,
        d.currency_code, d.purchase_cost ?? null, d.purchase_date ?? null, d.notes ?? null],
     )
-    const asset = result.rows[0]!
-    await logAudit({ companyId, userId: req.auth!.userId, action: 'CREATE', tableName: 'equipment_assets', recordId: asset['id'] as string })
+    const asset = firstRowOrThrow(result)
+    await logAudit({ companyId, userId: getAuth(req).userId, action: 'CREATE', tableName: 'equipment_assets', recordId: asset['id'] as string })
     sendOk(res, asset, 201)
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create asset', err) }
 })
 
 assetsRouter.put('/:id', requirePermission('rental.assets.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const parsed = Schema.partial().safeParse(req.body)
     if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
@@ -129,7 +130,7 @@ assetsRouter.post('/:id/retire', requirePermission('rental.assets.edit', 'edit')
     await query(
       `UPDATE equipment_assets SET status='disposed', is_active=false, updated_at=NOW()
        WHERE id=$1 AND company_id=$2`,
-      [req.params['id'], req.auth!.companyId],
+      [req.params['id'], getAuth(req).companyId],
     )
     sendOk(res, { retired: true })
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to retire asset', err) }

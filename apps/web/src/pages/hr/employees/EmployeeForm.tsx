@@ -16,6 +16,7 @@ import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreateEmployeeMutation, CreateEmployeeMutationVariables, DepartmentsQuery, DepartmentsQueryVariables, EmployeeQuery, EmployeeQueryVariables, FindEmployeeAcrossCompaniesQuery, FindEmployeeAcrossCompaniesQueryVariables, UpdateEmployeeMutation, UpdateEmployeeMutationVariables, WorkLocationsQuery, WorkLocationsQueryVariables } from '../../../graphql/generated'
 
 const EMPLOYMENT_TYPE_OPTIONS = [
   { value: 'full_time', label: 'Full time' },
@@ -82,13 +83,13 @@ export default function EmployeeForm() {
   const [linkedUserId, setLinkedUserId] = useState<string | null>(null)
   const [matchApplied, setMatchApplied] = useState(false)
 
-  const { data: empData } = useQuery(EMPLOYEE_QUERY, { variables: { id }, skip: !isEdit })
-  const { data: deptData } = useQuery(DEPARTMENTS_QUERY)
-  const { data: locData } = useQuery(WORK_LOCATIONS_QUERY, { variables: { is_active: true } })
+  const { data: empData } = useQuery<EmployeeQuery, EmployeeQueryVariables>(EMPLOYEE_QUERY, { variables: { id: id ?? '' }, skip: !isEdit })
+  const { data: deptData } = useQuery<DepartmentsQuery, DepartmentsQueryVariables>(DEPARTMENTS_QUERY)
+  const { data: locData } = useQuery<WorkLocationsQuery, WorkLocationsQueryVariables>(WORK_LOCATIONS_QUERY, { variables: { is_active: true } })
 
-  const [createEmployee, { loading: creating }] = useMutation(CREATE_EMPLOYEE)
-  const [updateEmployee, { loading: updating }] = useMutation(UPDATE_EMPLOYEE)
-  const [searchMatch, { data: matchData, loading: searching }] = useLazyQuery(
+  const [createEmployee, { loading: creating }] = useMutation<CreateEmployeeMutation, CreateEmployeeMutationVariables>(CREATE_EMPLOYEE)
+  const [updateEmployee, { loading: updating }] = useMutation<UpdateEmployeeMutation, UpdateEmployeeMutationVariables>(UPDATE_EMPLOYEE)
+  const [searchMatch, { data: matchData, loading: searching }] = useLazyQuery<FindEmployeeAcrossCompaniesQuery, FindEmployeeAcrossCompaniesQueryVariables>(
     FIND_EMPLOYEE_ACROSS_COMPANIES,
     { fetchPolicy: 'network-only' },
   )
@@ -118,8 +119,8 @@ export default function EmployeeForm() {
     if (isEdit && empData?.employee) {
       const e = empData.employee
       setForm({
-        first_name: e.first_name ?? '',
-        last_name: e.last_name ?? '',
+        first_name: e.first_name,
+        last_name: e.last_name,
         national_id: e.national_id ?? '',
         passport_number: e.passport_number ?? '',
         nationality: e.nationality ?? '',
@@ -213,7 +214,11 @@ export default function EmployeeForm() {
       } else {
         const res = await createEmployee({ variables: { input } })
         addToast({ type: 'success', message: 'Employee created' })
-        navigate(`/hr/employees/${res.data.createEmployee.id}`)
+        if (res.data?.createEmployee) {
+          navigate(`/hr/employees/${res.data.createEmployee.id}`)
+        } else {
+          navigate('/hr/employees')
+        }
       }
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -229,7 +234,7 @@ export default function EmployeeForm() {
         backPath={isEdit ? `/hr/employees/${id}` : '/hr/employees'}
       />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '20px' }}>
           {!isEdit && (
             <Card
@@ -402,7 +407,7 @@ export default function EmployeeForm() {
                   value={form.department_id}
                   onChange={field('department_id')}
                   placeholder="Select…"
-                  options={departments.map((d: { id: string; name: string }) => ({
+                  options={departments.filter((v): v is NonNullable<typeof v> => v !== null).map((d) => ({
                     value: d.id,
                     label: d.name,
                   }))}
@@ -412,7 +417,7 @@ export default function EmployeeForm() {
                   value={form.work_location_id}
                   onChange={field('work_location_id')}
                   placeholder="Select…"
-                  options={locations.map((l: { id: string; name: string }) => ({
+                  options={locations.filter((v): v is NonNullable<typeof v> => v !== null).map((l) => ({
                     value: l.id,
                     label: l.name,
                   }))}

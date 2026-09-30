@@ -293,7 +293,7 @@ export default function ARDashboard() {
             color: new Date(c.oldest_due_date) < new Date() ? theme.danger : theme.textMuted,
           }}
         >
-          {c.oldest_due_date?.slice(0, 10) ?? '—'}
+          {c.oldest_due_date.slice(0, 10)}
         </span>
       ),
     },
@@ -364,7 +364,7 @@ export default function ARDashboard() {
       mobilePriority: 5,
       render: (inv) => (
         <span style={{ color: inv.days_overdue > 0 ? theme.danger : theme.textMuted }}>
-          {inv.due_date?.slice(0, 10)}
+          {inv.due_date.slice(0, 10)}
         </span>
       ),
     },

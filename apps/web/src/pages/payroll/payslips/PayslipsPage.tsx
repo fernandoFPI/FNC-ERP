@@ -11,13 +11,14 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { PayslipViewer } from '../../../components/ui/PayslipViewer'
 import { Modal } from '../../../components/ui/Modal'
 import { useAuthStore } from '../../../store/authStore'
+import type { MyPayslipsQuery, MyPayslipsQueryVariables } from '../../../graphql/generated'
 
 interface PayslipLine {
   id: string
-  employee_name?: string
+  employee_name?: string | null
   gross_salary?: string
   net_salary?: string
-  currency_code?: string
+  currency_code?: string | null
 }
 
 export default function PayslipsPage() {
@@ -25,8 +26,8 @@ export default function PayslipsPage() {
   const user = useAuthStore((s) => s.user)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const { data, loading } = useQuery(MY_PAYSLIPS_QUERY, { fetchPolicy: 'cache-and-network' })
-  const lines: PayslipLine[] = data?.myPayslips ?? []
+  const { data, loading } = useQuery<MyPayslipsQuery, MyPayslipsQueryVariables>(MY_PAYSLIPS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const lines: PayslipLine[] = (data?.myPayslips ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   const columns: Column<PayslipLine>[] = [
     {

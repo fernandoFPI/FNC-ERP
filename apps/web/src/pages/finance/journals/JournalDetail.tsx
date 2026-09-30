@@ -5,7 +5,6 @@ import {
   POST_JOURNAL_ENTRY,
   CANCEL_JOURNAL_ENTRY,
   AUDIT_JOURNAL_ENTRY,
-  LINK_JOURNAL_POS,
 } from '../../../graphql/finance'
 
 import { useTheme } from '../../../theme/ThemeContext'
@@ -21,14 +20,15 @@ import { useToastStore } from '../../../store/toastStore'
 import type { JournalPrintLine } from '../../../lib/voucherHtml'
 import { buildGeneralJournalHTML } from '../../../lib/voucherHtml'
 import { useRecordLock } from '../../../hooks/useRecordLock'
+import type { AuditJournalEntryMutation, AuditJournalEntryMutationVariables, CancelJournalEntryMutation, CancelJournalEntryMutationVariables, JournalEntryQuery, JournalEntryQueryVariables, PostJournalEntryMutation, PostJournalEntryMutationVariables } from '../../../graphql/generated'
 
 interface JournalLine {
   id: string
   account_id: string
-  account_code?: string
-  account_name?: string
-  description?: string
-  currency_code?: string
+  account_code?: string | null
+  account_name?: string | null
+  description?: string | null
+  currency_code?: string | null
   debit: string
   credit: string
 }
@@ -36,10 +36,10 @@ interface JournalLine {
 interface LinkedPO {
   po_id: string
   po_number: string
-  vendor_name?: string
-  status?: string
-  total_amount?: string
-  currency_code?: string
+  vendor_name?: string | null
+  status?: string | null
+  total_amount?: string | null
+  currency_code?: string | null
 }
 
 export default function JournalDetail() {
@@ -50,19 +50,17 @@ export default function JournalDetail() {
   const addToast = useToastStore((s) => s.addToast)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [showAuditDialog, setShowAuditDialog] = useState(false)
-  const [poSearch, setPoSearch] = useState('')
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
-  const { data, loading, refetch } = useQuery(JOURNAL_ENTRY_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<JournalEntryQuery, JournalEntryQueryVariables>(JOURNAL_ENTRY_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
 
-  const [postEntry, { loading: posting }] = useMutation(POST_JOURNAL_ENTRY)
-  const [cancelEntry, { loading: cancelling }] = useMutation(CANCEL_JOURNAL_ENTRY)
-  const [auditEntry, { loading: auditing }] = useMutation(AUDIT_JOURNAL_ENTRY)
-  const [linkPOs, { loading: linkingPOs }] = useMutation(LINK_JOURNAL_POS)
+  const [postEntry, { loading: posting }] = useMutation<PostJournalEntryMutation, PostJournalEntryMutationVariables>(POST_JOURNAL_ENTRY)
+  const [cancelEntry, { loading: cancelling }] = useMutation<CancelJournalEntryMutation, CancelJournalEntryMutationVariables>(CANCEL_JOURNAL_ENTRY)
+  const [auditEntry, { loading: auditing }] = useMutation<AuditJournalEntryMutation, AuditJournalEntryMutationVariables>(AUDIT_JOURNAL_ENTRY)
 
   const entry = data?.journalEntry
   const lines: JournalLine[] = entry?.lines ?? []
@@ -71,7 +69,7 @@ export default function JournalDetail() {
   async function handlePost() {
     try {
       await postEntry({
-        variables: { id },
+        variables: { id: id ?? '' },
         refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }],
       })
       addToast({ type: 'success', message: 'Entry posted' })
@@ -83,7 +81,7 @@ export default function JournalDetail() {
   async function handleCancel() {
     try {
       await cancelEntry({
-        variables: { id },
+        variables: { id: id ?? '' },
         refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }],
       })
       addToast({ type: 'warning', message: 'Entry cancelled' })
@@ -96,12 +94,12 @@ export default function JournalDetail() {
   async function handleAudit() {
     try {
       await auditEntry({
-        variables: { id },
+        variables: { id: id ?? '' },
         refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }],
       })
       addToast({ type: 'success', message: 'Entry signed off by auditor' })
       setShowAuditDialog(false)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -120,13 +118,13 @@ export default function JournalDetail() {
     return buildGeneralJournalHTML({
       reference: entry.reference,
       entry_date: entry.entry_date,
-      description: entry.description,
+      description: entry.description ?? undefined,
       lines: printLines,
       linked_pos: linkedPOs,
-      accountant_email: entry.accountant_email,
-      auditor_email: entry.auditor_email,
-      total_debit: parseFloat(entry.total_debit) || 0,
-      total_credit: parseFloat(entry.total_credit) || 0,
+      accountant_email: entry.accountant_email ?? undefined,
+      auditor_email: entry.auditor_email ?? undefined,
+      total_debit: parseFloat(entry.total_debit ?? '0') || 0,
+      total_credit: parseFloat(entry.total_credit ?? '0') || 0,
       journalTemplateImage: entry.journal_template_image ?? null,
     })
   }, [entry, lines, linkedPOs])
@@ -167,7 +165,7 @@ export default function JournalDetail() {
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={handlePost}
+                  onClick={(...args: Parameters<typeof handlePost>) => void handlePost(...args)}
                   loading={posting}
                   disabled={lock.lockedByOther}
                 >
@@ -495,7 +493,7 @@ export default function JournalDetail() {
         )}
       </Card>
 
-      <FileAttachments entityType="finance/journals" entityId={id!} />
+      <FileAttachments entityType="finance/journals" entityId={id ?? ''} />
 
       {/* Print preview */}
       {entry.status === 'posted' && (
@@ -533,7 +531,7 @@ export default function JournalDetail() {
         message="Are you sure you want to cancel this journal entry? This action cannot be undone."
         confirmLabel="Cancel Entry"
         variant="danger"
-        onConfirm={handleCancel}
+        onConfirm={(...args: Parameters<typeof handleCancel>) => void handleCancel(...args)}
         onCancel={() => {
           setShowCancelDialog(false)
         }}
@@ -545,7 +543,7 @@ export default function JournalDetail() {
         message="Sign off this journal entry as auditor? This marks it as reviewed and approved for payment vouchers."
         confirmLabel="Sign Off"
         variant="primary"
-        onConfirm={handleAudit}
+        onConfirm={(...args: Parameters<typeof handleAudit>) => void handleAudit(...args)}
         onCancel={() => {
           setShowAuditDialog(false)
         }}

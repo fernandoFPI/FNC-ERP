@@ -3,9 +3,13 @@ import { useAuthStore } from '../store/authStore'
 import { useEffect, useState } from 'react'
 import { Spinner } from '../components/ui/Spinner'
 
+interface JwtPayload {
+  exp: number
+}
+
 function isTokenExpired(token: string): boolean {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
+    const payload = JSON.parse(atob(token.split('.')[1])) as JwtPayload
     return Date.now() >= payload.exp * 1000 - 30000
   } catch {
     return true
@@ -43,7 +47,7 @@ export function PrivateRoute({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ refreshToken }),
         })
         if (!response.ok) throw new Error('Refresh failed')
-        const data = await response.json()
+        const data = (await response.json()) as { data?: { accessToken?: string } }
         const newToken = data.data?.accessToken
         if (newToken) {
           setAccessToken(newToken)
@@ -56,7 +60,7 @@ export function PrivateRoute({ children }: { children: React.ReactNode }) {
         setChecking(false)
       }
     }
-    check()
+    void check()
   }, [isAuthenticated, accessToken, refreshToken, setAccessToken, clearAuth])
 
   const user = useAuthStore((s) => s.user)
@@ -77,7 +81,7 @@ export function PrivateRoute({ children }: { children: React.ReactNode }) {
     )
   }
   if (!authed) return <Navigate to="/login" state={{ from: location }} replace />
-  if (authed && user && !user.profileCompleted && location.pathname !== '/complete-profile') {
+  if (user && !user.profileCompleted && location.pathname !== '/complete-profile') {
     return <Navigate to="/complete-profile" replace />
   }
   return <>{children}</>

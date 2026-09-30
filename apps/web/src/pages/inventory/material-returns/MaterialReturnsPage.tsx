@@ -20,6 +20,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { useToastStore } from '../../../store/toastStore'
 import { useTheme } from '../../../theme/ThemeContext'
+import type { CreateMaterialReturnMutation, CreateMaterialReturnMutationVariables, MaterialReturnsQuery, MaterialReturnsQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, ReturnableDirectDeliveryLinesQuery, ReturnableDirectDeliveryLinesQueryVariables, ReturnableMaterialIssueLinesQuery, ReturnableMaterialIssueLinesQueryVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
 
 interface MRLine {
   id: string
@@ -122,7 +123,7 @@ export default function MaterialReturnsPage() {
   const [returnQty, setReturnQty] = useState<Record<string, string>>({})
   const [returnLocation, setReturnLocation] = useState<Record<string, string>>({})
 
-  const { data, loading, refetch } = useQuery(MATERIAL_RETURNS_QUERY, {
+  const { data, loading, refetch } = useQuery<MaterialReturnsQuery, MaterialReturnsQueryVariables>(MATERIAL_RETURNS_QUERY, {
     variables: {
       poId: poFilter || undefined,
       projectId: projectFilter || undefined,
@@ -130,14 +131,14 @@ export default function MaterialReturnsPage() {
     },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: posData } = useQuery(PURCHASE_ORDERS_QUERY, {
+  const { data: posData } = useQuery<PurchaseOrdersQuery, PurchaseOrdersQueryVariables>(PURCHASE_ORDERS_QUERY, {
     variables: {},
     fetchPolicy: 'cache-and-network',
   })
   // Separate from posData above — this one is scoped to the New Return
   // modal's own Project/Item narrowing filters, so picking one there
   // doesn't affect the page-level Purchase Order filter or vice versa.
-  const { data: modalPosData } = useQuery(PURCHASE_ORDERS_QUERY, {
+  const { data: modalPosData } = useQuery<PurchaseOrdersQuery, PurchaseOrdersQueryVariables>(PURCHASE_ORDERS_QUERY, {
     variables: {
       projectId: formProjectFilter || undefined,
       productId: formProductFilter || undefined,
@@ -145,15 +146,15 @@ export default function MaterialReturnsPage() {
     skip: !showModal,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: projectsData } = useQuery(PROJECTS_QUERY, {
+  const { data: projectsData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     variables: { limit: 500, includeAll: true },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
     variables: {},
     fetchPolicy: 'cache-and-network',
   })
-  const { data: returnableIssueData, loading: loadingReturnableIssue } = useQuery(
+  const { data: returnableIssueData, loading: loadingReturnableIssue } = useQuery<ReturnableMaterialIssueLinesQuery, ReturnableMaterialIssueLinesQueryVariables>(
     RETURNABLE_MATERIAL_ISSUE_LINES_QUERY,
     {
       variables: {
@@ -165,7 +166,7 @@ export default function MaterialReturnsPage() {
       fetchPolicy: 'cache-and-network',
     },
   )
-  const { data: returnableDirectData, loading: loadingReturnableDirect } = useQuery(
+  const { data: returnableDirectData, loading: loadingReturnableDirect } = useQuery<ReturnableDirectDeliveryLinesQuery, ReturnableDirectDeliveryLinesQueryVariables>(
     RETURNABLE_DIRECT_DELIVERY_LINES_QUERY,
     {
       variables: {
@@ -177,7 +178,7 @@ export default function MaterialReturnsPage() {
       fetchPolicy: 'cache-and-network',
     },
   )
-  const { data: locationsData } = useQuery(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
+  const { data: locationsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
 
   const returns = (data?.materialReturns ?? []) as MR[]
   const purchaseOrders = (posData?.purchaseOrders ?? []) as PO[]
@@ -188,7 +189,7 @@ export default function MaterialReturnsPage() {
     (l) => !['virtual_in', 'virtual_out'].includes(l.type),
   )
 
-  const projects = (projectsData?.projects?.data ?? []) as ProjectOption[]
+  const projects = (projectsData?.projects.data ?? []) as ProjectOption[]
   const products = (productsData?.products ?? []) as ProductOption[]
 
   const modalPurchaseOrders = (modalPosData?.purchaseOrders ?? []) as PO[]
@@ -207,11 +208,11 @@ export default function MaterialReturnsPage() {
     value: p.id,
     label: p.name,
     sublabel: p.sku,
-    keywords: p.name_ar || undefined,
+    keywords: p.name_ar ?? undefined,
   }))
   const locationOptions = locations.map((l) => ({ value: l.id, label: l.name }))
 
-  const [createReturn, { loading: creating }] = useMutation(CREATE_MATERIAL_RETURN)
+  const [createReturn, { loading: creating }] = useMutation<CreateMaterialReturnMutation, CreateMaterialReturnMutationVariables>(CREATE_MATERIAL_RETURN)
 
   function resetModal() {
     setShowModal(false)
@@ -334,7 +335,7 @@ export default function MaterialReturnsPage() {
         title="Material Returns"
         subtitle="Bring unused material — issued from stock or delivered direct to a jobsite — back into inventory"
         actions={
-          <Button variant="primary" onClick={() => setShowModal(true)}>
+          <Button variant="primary" onClick={() => { setShowModal(true); }}>
             + New Material Return
           </Button>
         }
@@ -356,7 +357,7 @@ export default function MaterialReturnsPage() {
           <SearchableSelect
             label="Purchase Order"
             value={poFilter}
-            onChange={(val) => setPoFilter(val)}
+            onChange={(val) => { setPoFilter(val); }}
             options={poOptions}
             placeholder="All Purchase Orders"
           />
@@ -365,7 +366,7 @@ export default function MaterialReturnsPage() {
           <SearchableSelect
             label="Project"
             value={projectFilter}
-            onChange={(val) => setProjectFilter(val)}
+            onChange={(val) => { setProjectFilter(val); }}
             options={projectOptions}
             placeholder="All Projects"
           />
@@ -374,7 +375,7 @@ export default function MaterialReturnsPage() {
           <SearchableSelect
             label="Item"
             value={productFilter}
-            onChange={(val) => setProductFilter(val)}
+            onChange={(val) => { setProductFilter(val); }}
             options={productOptions}
             placeholder="All Items"
           />
@@ -414,7 +415,7 @@ export default function MaterialReturnsPage() {
           title="No material returns yet"
           message="Record unused material — issued from stock or delivered direct to a jobsite — coming back into inventory."
           action={
-            <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+            <Button variant="primary" size="sm" onClick={() => { setShowModal(true); }}>
               + New Material Return
             </Button>
           }
@@ -428,7 +429,7 @@ export default function MaterialReturnsPage() {
             return (
               <Card key={r.id} padding="none">
                 <div
-                  onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                  onClick={() => { setExpandedId(isExpanded ? null : r.id); }}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: '160px 1fr 140px 110px auto',
@@ -675,7 +676,7 @@ export default function MaterialReturnsPage() {
                         <Select
                           value={returnLocation[l.issueLineId] ?? ''}
                           onChange={(e) =>
-                            setReturnLocation((prev) => ({ ...prev, [l.issueLineId]: e.target.value }))
+                            { setReturnLocation((prev) => ({ ...prev, [l.issueLineId]: e.target.value })); }
                           }
                           options={locationOptions}
                           placeholder="Return to…"
@@ -743,7 +744,7 @@ export default function MaterialReturnsPage() {
                         <Select
                           value={returnLocation[l.poLineId] ?? ''}
                           onChange={(e) =>
-                            setReturnLocation((prev) => ({ ...prev, [l.poLineId]: e.target.value }))
+                            { setReturnLocation((prev) => ({ ...prev, [l.poLineId]: e.target.value })); }
                           }
                           options={locationOptions}
                           placeholder="Return to…"
@@ -765,7 +766,7 @@ export default function MaterialReturnsPage() {
         <Textarea
           label="Notes"
           value={formNotes}
-          onChange={(e) => setFormNotes(e.target.value)}
+          onChange={(e) => { setFormNotes(e.target.value); }}
           rows={2}
           placeholder="Optional notes…"
         />

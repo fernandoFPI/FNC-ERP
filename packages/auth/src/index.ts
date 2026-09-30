@@ -13,7 +13,7 @@ export type { PasswordStrengthResult } from './password.js'
 export { encrypt, decrypt } from './encryption.js'
 export { generateMFASecret, verifyMFAToken } from './mfa.js'
 export type { MFASetupResult } from './mfa.js'
-export { requireAuth, requireRole, requireModule } from './middleware.js'
+export { requireAuth, getAuth, requireRole, requireModule } from './middleware.js'
 export {
   loadPermissions,
   invalidatePermissionCache,

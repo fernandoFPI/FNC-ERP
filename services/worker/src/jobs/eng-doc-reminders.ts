@@ -184,7 +184,9 @@ export async function checkEngDocReminders(): Promise<void> {
     if (sent > 0) log.info({ sent, pmAlerts }, 'Eng doc reminder run complete')
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    await failJobRun(runId, msg).catch(() => {})
+    await failJobRun(runId, msg).catch(() => {
+      // best-effort — don't let a failure recording the job's own failure mask the original error being rethrown below
+    })
     log.error({ err }, 'Eng doc reminder job failed')
     throw err
   }

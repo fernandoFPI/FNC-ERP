@@ -8,6 +8,14 @@ interface AttendanceSummary {
   leaveDays: number
 }
 
+interface AttendanceSummaryResponse {
+  days_present?: number | null
+  days_absent?: number | null
+  total_hours?: number | null
+  overtime_hours?: number | null
+  leave_days?: number | null
+}
+
 const cache: Record<string, AttendanceSummary> = {}
 
 export function useAttendanceSummary(employeeId: string | undefined, month: string | undefined) {
@@ -23,7 +31,7 @@ export function useAttendanceSummary(employeeId: string | undefined, month: stri
     }
     setLoading(true)
     fetch(`/api/v1/hr/attendance/summary?employee_id=${employeeId}&month=${month}`)
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<AttendanceSummaryResponse>)
       .then((json) => {
         const s: AttendanceSummary = {
           daysPresent: json.days_present ?? 0,

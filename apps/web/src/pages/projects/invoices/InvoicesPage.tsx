@@ -8,6 +8,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { ProjectInvoicesQuery, ProjectInvoicesQueryVariables } from '../../../graphql/generated'
 
 interface ProjectInvoice {
   id: string
@@ -24,7 +25,7 @@ export default function InvoicesPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
 
-  const { data, loading } = useQuery(PROJECT_INVOICES_QUERY, { fetchPolicy: 'cache-and-network' })
+  const { data, loading } = useQuery<ProjectInvoicesQuery, ProjectInvoicesQueryVariables>(PROJECT_INVOICES_QUERY, { fetchPolicy: 'cache-and-network' })
   const invoices: ProjectInvoice[] = data?.projectInvoices ?? []
 
   const columns: Column<ProjectInvoice>[] = [

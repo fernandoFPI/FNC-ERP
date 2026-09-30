@@ -17,14 +17,15 @@ import { Input } from '../../../components/ui/Input'
 import { Textarea } from '../../../components/ui/Textarea'
 import { MapPinPicker } from '../../../components/ui/MapPinPicker'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreateWorkLocationMutation, CreateWorkLocationMutationVariables, UpdateWorkLocationMutation, UpdateWorkLocationMutationVariables, WorkLocationsQuery, WorkLocationsQueryVariables } from '../../../graphql/generated'
 
 interface WorkLocation {
   id: string
   name: string
-  address?: string
-  latitude?: string
-  longitude?: string
-  geofence_radius_m?: number
+  address?: string | null
+  latitude?: string | null
+  longitude?: string | null
+  geofence_radius_m?: number | null
   is_active: boolean
 }
 
@@ -39,13 +40,13 @@ export default function WorkLocationsPage() {
   const [form, setForm] = useState(emptyForm)
   const [geoError, setGeoError] = useState('')
 
-  const { data, loading, refetch } = useQuery(WORK_LOCATIONS_QUERY, {
+  const { data, loading, refetch } = useQuery<WorkLocationsQuery, WorkLocationsQueryVariables>(WORK_LOCATIONS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
-  const [createLoc, { loading: creating }] = useMutation(CREATE_WORK_LOCATION)
-  const [updateLoc, { loading: updating }] = useMutation(UPDATE_WORK_LOCATION)
+  const [createLoc, { loading: creating }] = useMutation<CreateWorkLocationMutation, CreateWorkLocationMutationVariables>(CREATE_WORK_LOCATION)
+  const [updateLoc, { loading: updating }] = useMutation<UpdateWorkLocationMutation, UpdateWorkLocationMutationVariables>(UPDATE_WORK_LOCATION)
 
-  const locations: WorkLocation[] = data?.workLocations ?? []
+  const locations: WorkLocation[] = (data?.workLocations ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   function openCreate() {
     setForm(emptyForm)
@@ -100,7 +101,7 @@ export default function WorkLocationsPage() {
         addToast({ type: 'success', message: 'Location created' })
       }
       setModalOpen(false)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -207,7 +208,7 @@ export default function WorkLocationsPage() {
             >
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleSubmit} loading={creating || updating}>
+            <Button variant="primary" onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)} loading={creating || updating}>
               Save
             </Button>
           </>

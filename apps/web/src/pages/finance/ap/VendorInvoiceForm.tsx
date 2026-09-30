@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery, useLazyQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
 import { usePermission } from '../../../hooks/usePermission'
@@ -11,34 +12,17 @@ import { Button } from '../../../components/ui/Button'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Select } from '../../../components/ui/Select'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
+import { VENDORS_QUERY, PURCHASE_ORDERS_QUERY, PURCHASE_ORDER_QUERY } from '../../../graphql/procurement'
+import type {
+  VendorsQuery,
+  PurchaseOrdersQuery,
+  PurchaseOrderQuery,
+  PurchaseOrderQueryVariables,
+} from '../../../graphql/generated'
 
-interface Vendor {
-  id: string
-  name: string
-  currency_code: string
-  withholding_tax_rate?: string
-}
-interface PO {
-  id: string
-  po_number: string
-  vendor_id: string
-  currency_code: string
-}
-interface POLine {
-  id: string
-  description: string
-  qty_ordered: string
-  unit_price: string
-  account_id?: string
-}
-interface FullPO {
-  id: string
-  po_number: string
-  vendor_id: string
-  currency_code: string
-  analytic_account_id?: string
-  lines: POLine[]
-}
+type Vendor = NonNullable<NonNullable<VendorsQuery['vendors']>[number]>
+type PO = NonNullable<NonNullable<PurchaseOrdersQuery['purchaseOrders']>[number]>
+type POLine = NonNullable<NonNullable<PurchaseOrderQuery['purchaseOrder']>['lines']>[number]
 interface CostCenter {
   id: string
   code: string
@@ -119,8 +103,8 @@ function mkLineFromPO(pl: POLine): LineForm {
     _key: Math.random().toString(36).slice(2),
     po_line_id: pl.id,
     description: pl.description ?? '',
-    qty: String(pl.qty_ordered ?? 1),
-    unit_price: String(pl.unit_price ?? 0),
+    qty: pl.qty,
+    unit_price: pl.unit_price,
     account_id: pl.account_id ?? '',
   }
 }
@@ -157,8 +141,10 @@ export default function VendorInvoiceForm() {
   const canEdit = can('finance.ap.edit', 'edit')
   const prefilledPoId = searchParams.get('po_id') ?? ''
 
-  const [vendors, setVendors] = useState<Vendor[]>([])
-  const [pos, setPOs] = useState<PO[]>([])
+  const { data: vendorsData } = useQuery<VendorsQuery>(VENDORS_QUERY)
+  const vendors: Vendor[] = (vendorsData?.vendors ?? []).filter((v): v is Vendor => v != null)
+  const { data: posData } = useQuery<PurchaseOrdersQuery>(PURCHASE_ORDERS_QUERY)
+  const pos: PO[] = (posData?.purchaseOrders ?? []).filter((p): p is PO => p != null)
   const [poLines, setPOLines] = useState<POLine[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
   const [analyticAccounts, setAnalyticAccounts] = useState<AnalyticAccount[]>([])
@@ -184,14 +170,6 @@ export default function VendorInvoiceForm() {
 
   useEffect(() => {
     void Promise.all([
-      api.get<Vendor[]>('/procurement/vendors').then((r) => {
-        setVendors(Array.isArray(r.data) ? r.data : [])
-      }),
-      api.get<{ items?: PO[]; data?: PO[] } | PO[]>('/procurement/purchase-orders').then((r) => {
-        const d = r.data as unknown
-        if (Array.isArray(d)) setPOs(d as PO[])
-        else setPOs((d as { items?: PO[] }).items ?? [])
-      }),
       api.get<CostCenter[]>('/finance/cost-centers').then((r) => {
         setCostCenters(Array.isArray(r.data) ? r.data : [])
       }),
@@ -222,7 +200,16 @@ export default function VendorInvoiceForm() {
         cost_center_id?: string
         wht_applies?: boolean
         wht_rate?: string
-        lines: LineForm[]
+        // Raw vendor_invoice_lines rows, not the frontend's LineForm shape —
+        // po_line_id/account_id are genuinely nullable FKs at the DB level,
+        // and there's no _key (that's synthesized client-side for React).
+        lines: {
+          po_line_id: string | null
+          description: string
+          qty: string | number
+          unit_price: string | number
+          account_id: string | null
+        }[]
       }>(`/finance/vendor-invoices/${id}`)
       .then((r) => {
         const inv = r.data
@@ -231,24 +218,24 @@ export default function VendorInvoiceForm() {
           vendor_id: inv.vendor_id,
           po_id: inv.po_id ?? '',
           invoice_number: inv.invoice_number,
-          invoice_date: inv.invoice_date?.slice(0, 10) ?? '',
-          due_date: inv.due_date?.slice(0, 10) ?? '',
-          currency_code: inv.currency_code ?? 'IQD',
-          tax_amount: inv.tax_amount ?? '0',
+          invoice_date: inv.invoice_date.slice(0, 10),
+          due_date: inv.due_date.slice(0, 10),
+          currency_code: inv.currency_code,
+          tax_amount: inv.tax_amount,
           notes: inv.notes ?? '',
           analytic_account_id: inv.analytic_account_id ?? '',
           cost_center_id: inv.cost_center_id ?? '',
           wht_applies: inv.wht_applies ?? false,
           wht_rate: String(invWhtRate * 100),
         })
-        if (inv.lines?.length) {
+        if (inv.lines.length) {
           setLines(
-            inv.lines.map((l: LineForm) => ({
-              _key: l._key ?? Math.random().toString(36).slice(2),
+            inv.lines.map((l) => ({
+              _key: Math.random().toString(36).slice(2),
               po_line_id: l.po_line_id ?? '',
-              description: l.description ?? '',
-              qty: String(l.qty ?? 1),
-              unit_price: String(l.unit_price ?? 0),
+              description: l.description,
+              qty: String(l.qty),
+              unit_price: String(l.unit_price),
               account_id: l.account_id ?? '',
             })),
           )
@@ -262,6 +249,8 @@ export default function VendorInvoiceForm() {
       })
   }, [id, isEdit, addToast])
 
+  const [fetchPO] = useLazyQuery<PurchaseOrderQuery, PurchaseOrderQueryVariables>(PURCHASE_ORDER_QUERY)
+
   useEffect(() => {
     if (!form.po_id) {
       setPOLines([])
@@ -274,20 +263,20 @@ export default function VendorInvoiceForm() {
       }
       return
     }
-    api
-      .get<FullPO>(`/procurement/purchase-orders/${form.po_id}`)
-      .then(async (r) => {
-        const po = r.data
+    void fetchPO({ variables: { id: form.po_id } })
+      .then(async (result) => {
+        const po = result.data?.purchaseOrder
+        if (!po) return
         const poLineList = po.lines ?? []
         setPOLines(poLineList)
         if (!isEdit && poLineList.length > 0) setLines(poLineList.map(mkLineFromPO))
         const autoInvNum = autoInvNumber(po.po_number)
-        const vendorId = po.vendor_id || ''
+        const vendorId = po.vendor_id ?? ''
         setForm((f) => ({
           ...f,
           vendor_id: f.vendor_id || vendorId,
           currency_code: po.currency_code || f.currency_code,
-          analytic_account_id: f.analytic_account_id || po.analytic_account_id || '',
+          analytic_account_id: f.analytic_account_id || (po.analytic_account_id ?? ''),
           invoice_number: isEdit
             ? f.invoice_number
             : isAutoGenerated(f.invoice_number)
@@ -318,7 +307,9 @@ export default function VendorInvoiceForm() {
           }
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        /* ignore: PO auto-fill is best-effort, save still validates */
+      })
   }, [form.po_id])
 
   useEffect(() => {
@@ -329,7 +320,7 @@ export default function VendorInvoiceForm() {
         setForm((prev) => ({
           ...prev,
           // Keep PO currency if a PO is linked; otherwise use vendor default
-          currency_code: prev.po_id ? prev.currency_code : (vendor.currency_code ?? 'IQD'),
+          currency_code: prev.po_id ? prev.currency_code : vendor.currency_code,
           wht_applies: vendorRate > 0,
           wht_rate: vendorRate > 0 ? String(vendorRate * 100) : '0',
         }))
@@ -349,9 +340,9 @@ export default function VendorInvoiceForm() {
         if (k === 'po_line_id' && v) {
           const poline = poLines.find((pl) => pl.id === v)
           if (poline) {
-            updated.description = poline.description
-            updated.qty = String(poline.qty_ordered ?? 1)
-            updated.unit_price = String(poline.unit_price ?? 0)
+            updated.description = poline.description ?? ''
+            updated.qty = String(poline.qty)
+            updated.unit_price = String(poline.unit_price)
           }
         }
         return updated
@@ -555,7 +546,7 @@ export default function VendorInvoiceForm() {
           placeholder="No account"
           options={chartAccounts.map((a) => ({
             value: a.id,
-            label: `${a.code} ${a.name?.slice(0, 25) ?? ''}`,
+            label: `${a.code} ${a.name.slice(0, 25)}`,
           }))}
         />
       ),
@@ -578,7 +569,7 @@ export default function VendorInvoiceForm() {
               Cancel
             </Button>
             {canEdit && (
-              <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+              <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)} disabled={saving}>
                 {saving ? 'Saving…' : 'Save invoice'}
               </Button>
             )}

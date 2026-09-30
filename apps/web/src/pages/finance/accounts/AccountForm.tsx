@@ -17,6 +17,7 @@ import { Select } from '../../../components/ui/Select'
 import { Checkbox } from '../../../components/ui/Checkbox'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { useToastStore } from '../../../store/toastStore'
+import type { AccountQuery, AccountQueryVariables, AccountsQuery, AccountsQueryVariables, CreateAccountMutation, CreateAccountMutationVariables, GroupChartOfAccountsQuery, GroupChartOfAccountsQueryVariables, UpdateAccountMutation, UpdateAccountMutationVariables } from '../../../graphql/generated'
 
 const ACCOUNT_CATEGORIES = [
   'CASH', 'BANK', 'RECEIVABLE', 'PAYABLE', 'INTERCOMPANY', 'INVENTORY',
@@ -30,8 +31,8 @@ export default function AccountForm() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
-  const { data: existing } = useQuery(ACCOUNT_QUERY, {
-    variables: { id },
+  const { data: existing } = useQuery<AccountQuery, AccountQueryVariables>(ACCOUNT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !isEdit,
     onCompleted: (d) => {
       if (d.account) {
@@ -41,9 +42,9 @@ export default function AccountForm() {
           name: a.name,
           account_type: a.account_type,
           parent_id: a.parent_id ?? '',
-          currency_code: a.currency_code ?? 'IQD',
+          currency_code: a.currency_code,
           is_reconcilable: a.is_reconcilable ?? false,
-          is_active: a.is_active ?? true,
+          is_active: a.is_active,
           group_account_id: a.group_account_id ?? '',
           is_header: a.is_header ?? false,
           is_postable: a.is_postable ?? true,
@@ -54,10 +55,10 @@ export default function AccountForm() {
     },
   })
 
-  const { data: allAccounts } = useQuery(ACCOUNTS_QUERY, { variables: {} })
-  const { data: groupAccountsData } = useQuery(GROUP_CHART_OF_ACCOUNTS_QUERY)
-  const [createAccount, { loading: creating }] = useMutation(CREATE_ACCOUNT)
-  const [updateAccount, { loading: updating }] = useMutation(UPDATE_ACCOUNT)
+  const { data: allAccounts } = useQuery<AccountsQuery, AccountsQueryVariables>(ACCOUNTS_QUERY, { variables: {} })
+  const { data: groupAccountsData } = useQuery<GroupChartOfAccountsQuery, GroupChartOfAccountsQueryVariables>(GROUP_CHART_OF_ACCOUNTS_QUERY)
+  const [createAccount, { loading: creating }] = useMutation<CreateAccountMutation, CreateAccountMutationVariables>(CREATE_ACCOUNT)
+  const [updateAccount, { loading: updating }] = useMutation<UpdateAccountMutation, UpdateAccountMutationVariables>(UPDATE_ACCOUNT)
 
   const [form, setForm] = useState({
     code: '',
@@ -120,7 +121,7 @@ export default function AccountForm() {
 
   const parentOptions = [
     { value: '', label: 'None (top level)' },
-    ...(allAccounts?.accounts ?? []).map((a: { id: string; code: string; name: string }) => ({
+    ...(allAccounts?.accounts ?? []).filter((v): v is NonNullable<typeof v> => v !== null).map((a) => ({
       value: a.id,
       label: `${a.code} — ${a.name}`,
     })),
@@ -150,7 +151,7 @@ export default function AccountForm() {
 
       <Card style={{ marginTop: '20px' }}>
         <form
-          onSubmit={handleSubmit}
+          onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <div

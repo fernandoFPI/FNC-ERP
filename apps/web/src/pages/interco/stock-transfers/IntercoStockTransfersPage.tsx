@@ -46,7 +46,7 @@ function statusVariant(
     in_transit: 'info',
     pending: 'warning',
   }
-  return m[status?.toLowerCase()] ?? 'neutral'
+  return m[status.toLowerCase()] ?? 'neutral'
 }
 
 function billingStatusVariant(
@@ -57,7 +57,7 @@ function billingStatusVariant(
     pending: 'warning',
     cancelled: 'danger',
   }
-  return m[status?.toLowerCase()] ?? 'neutral'
+  return m[status.toLowerCase()] ?? 'neutral'
 }
 
 export default function IntercoStockTransfersPage() {
@@ -170,7 +170,7 @@ export default function IntercoStockTransfersPage() {
               variant="ghost"
               size="sm"
               onClick={() => {
-                refetch()
+                void refetch()
               }}
             >
               Refresh
@@ -214,7 +214,7 @@ export default function IntercoStockTransfersPage() {
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           onRefresh={() => {
-            refetch()
+            void refetch()
           }}
           resultCount={items.length}
         />

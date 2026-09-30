@@ -1,18 +1,19 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
-import { query, withTransaction } from '@fnc-erp/db'
+import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
-export const revaluationRouter: import('express').Router = Router()
+export const revaluationRouter: Router = Router()
 
 // ─── List runs ────────────────────────────────────────────────────────────────
 
 revaluationRouter.get(
   '/',
   requirePermission('finance.revaluation.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT rv.*, COUNT(rl.id)::INT AS line_count
@@ -21,13 +22,13 @@ revaluationRouter.get(
        WHERE rv.company_id = $1
        GROUP BY rv.id
        ORDER BY rv.run_date DESC`,
-        [req.auth!.companyId],
+        [getAuth(req).companyId],
       )
       sendOk(res, r.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load revaluation runs', err)
     }
-  },
+  }),
 )
 
 // ─── Get run with lines ───────────────────────────────────────────────────────
@@ -35,11 +36,11 @@ revaluationRouter.get(
 revaluationRouter.get(
   '/:id',
   requirePermission('finance.revaluation.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(`SELECT * FROM fx_revaluation_runs WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!r.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Revaluation run not found')
@@ -57,7 +58,7 @@ revaluationRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load revaluation run', err)
     }
-  },
+  }),
 )
 
 // ─── Compute (preview) revaluation ───────────────────────────────────────────
@@ -65,7 +66,7 @@ revaluationRouter.get(
 revaluationRouter.post(
   '/compute',
   requirePermission('finance.revaluation.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       period: z.string().regex(/^\d{4}-\d{2}$/),
       run_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -92,7 +93,7 @@ revaluationRouter.post(
          AND TO_CHAR(je.entry_date, 'YYYY-MM') <= $3
        GROUP BY jl.account_id, jl.currency_code, a.code, a.name, a.account_type
        HAVING SUM(jl.debit - jl.credit) != 0`,
-        [req.auth!.companyId, functional_currency, period],
+        [getAuth(req).companyId, functional_currency, period],
       )
 
       const lines = []
@@ -112,11 +113,11 @@ revaluationRouter.post(
          FROM journal_lines
          WHERE account_id = $1 AND company_id = $2
            AND TO_CHAR(created_at,'YYYY-MM') <= $3`,
-          [row['account_id'], req.auth!.companyId, period],
+          [row['account_id'], getAuth(req).companyId, period],
         )
         const balanceFC = Number(row['balance_fc'])
         const revaluedLC = Math.round(balanceFC * rate * 100) / 100
-        const currentLC = Number(fcBalRes.rows[0]!['balance_lc'])
+        const currentLC = Number(firstRowOrThrow(fcBalRes)['balance_lc'])
         const gainLoss = Math.round((revaluedLC - currentLC) * 100) / 100
 
         if (gainLoss !== 0) {
@@ -139,7 +140,7 @@ revaluationRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to compute revaluation', err)
     }
-  },
+  }),
 )
 
 // ─── Post revaluation run ─────────────────────────────────────────────────────
@@ -147,7 +148,7 @@ revaluationRouter.post(
 revaluationRouter.post(
   '/post',
   requirePermission('finance.revaluation.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       period: z.string().regex(/^\d{4}-\d{2}$/),
       run_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -173,21 +174,21 @@ revaluationRouter.post(
       const totalGainLoss = d.lines.reduce((s, l) => s + l.gain_loss, 0)
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           // Create journal entry
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
            VALUES ($1,$2,$3,$4,'posted',$5) RETURNING id`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               d.run_date,
               `REVAL-${d.period}`,
               `FX Revaluation ${d.period}`,
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const jeId = jeRes.rows[0]!.id as string
+          const jeId = firstRowOrThrow(jeRes).id as string
 
           // Post a journal line for each account
           for (const line of d.lines) {
@@ -232,16 +233,16 @@ revaluationRouter.post(
             `INSERT INTO fx_revaluation_runs (company_id, run_date, period, status, total_gain_loss, journal_entry_id, notes, created_by)
            VALUES ($1,$2,$3,'posted',$4,$5,$6,$7) RETURNING *`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               d.run_date,
               d.period,
               totalGainLoss,
               jeId,
               d.notes ?? null,
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const run = runRes.rows[0]!
+          const run = firstRowOrThrow(runRes)
 
           // Create line records
           for (const line of d.lines) {
@@ -250,7 +251,7 @@ revaluationRouter.post(
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
               [
                 run.id,
-                req.auth!.companyId,
+                getAuth(req).companyId,
                 line.account_id,
                 line.currency_code,
                 line.original_balance,
@@ -266,8 +267,8 @@ revaluationRouter.post(
       )
 
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'INSERT',
         tableName: 'fx_revaluation_runs',
         recordId: result.id as string,
@@ -277,7 +278,7 @@ revaluationRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to post revaluation', err)
     }
-  },
+  }),
 )
 
 // ─── Reverse a posted run ─────────────────────────────────────────────────────
@@ -285,7 +286,7 @@ revaluationRouter.post(
 revaluationRouter.post(
   '/:id/reverse',
   requirePermission('finance.revaluation.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       reversal_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       notes: z.string().optional(),
@@ -294,7 +295,7 @@ revaluationRouter.post(
       const { reversal_date, notes } = schema.parse(req.body)
       const runRes = await query(
         `SELECT * FROM fx_revaluation_runs WHERE id=$1 AND company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!runRes.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Run not found')
@@ -311,21 +312,21 @@ revaluationRouter.post(
       ])
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           // Create reversal JE (opposite of original)
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
            VALUES ($1,$2,$3,$4,'posted',$5) RETURNING id`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               reversal_date,
               `REVAL-REV-${run['period']}`,
               `Reversal: FX Revaluation ${run['period']}`,
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const jeId = jeRes.rows[0]!.id as string
+          const jeId = firstRowOrThrow(jeRes).id as string
 
           // Flip each line
           for (const line of linesRes.rows) {
@@ -349,5 +350,5 @@ revaluationRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to reverse revaluation', err)
     }
-  },
+  }),
 )

@@ -206,7 +206,7 @@ describe('resolveLineFlag', () => {
     )
   })
 
-  it('procurement_2nd (or admin) can resolve a price_verification-origin flag; a stranger cannot', async () => {
+  it('the organizer (or admin) can resolve a price_verification-origin flag; a stranger cannot', async () => {
     const { reqId, lineId } = await makeReqAtPriceVerification()
     await resolvers.Mutation.rejectRequisitionVerificationToMarketPricing(
       null,
@@ -274,7 +274,7 @@ describe('resolveLineFlag', () => {
     expect(line.rows[0]!.flag_resolved_at).toBeNull()
   })
 
-  it('dept-head/approver/admin (not procurement_2nd alone) is required for a pending_approval-origin flag', async () => {
+  it('dept-head/approver/admin is required for a pending_approval-origin flag', async () => {
     const { reqId, lineId } = await makeReqAtPendingApproval()
     await resolvers.Mutation.rejectRequisitionApproval(
       null,

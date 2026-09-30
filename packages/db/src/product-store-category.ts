@@ -1,4 +1,4 @@
-import { pool } from './client.js'
+import { pool, firstRowOrThrow } from './client.js'
 
 export interface ProductStoreCategory {
   id: string
@@ -96,7 +96,7 @@ export async function createProductStoreCategory(
       [companyId, `product_${slug}`, prefix],
     )
     await client.query('COMMIT')
-    return row.rows[0]!
+    return firstRowOrThrow(row)
   } catch (e) {
     await client.query('ROLLBACK')
     throw e

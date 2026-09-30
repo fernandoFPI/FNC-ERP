@@ -21,6 +21,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 import { useTourStore } from '../../../store/tourStore'
+import type { AnalyticAccountsQuery, AnalyticAccountsQueryVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CreatePurchaseOrderMutation, CreatePurchaseOrderMutationVariables, EmployeesQuery, EmployeesQueryVariables, ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables, PoFxRatesQuery, PoFxRatesQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
 
 interface POLine {
   product_id: string
@@ -203,7 +204,7 @@ export default function PurchaseOrderForm() {
     }
   }, [searchParams])
 
-  const { data: fxRatesData } = useQuery(PO_FX_RATES_QUERY)
+  const { data: fxRatesData } = useQuery<PoFxRatesQuery, PoFxRatesQueryVariables>(PO_FX_RATES_QUERY)
   const fxRates: { currency_code: string; rate_to_base: number; is_default: boolean }[] =
     fxRatesData?.poFxRates?.rates ?? []
   const baseCurrency: string = fxRatesData?.poFxRates?.base_currency ?? 'IQD'
@@ -239,47 +240,47 @@ export default function PurchaseOrderForm() {
     }
   }, [form.currency_code, baseCurrency, fxRates])
 
-  const { data: vendorsData } = useQuery(VENDORS_QUERY, { variables: {} })
-  const { data: analyticsData } = useQuery(ANALYTIC_ACCOUNTS_QUERY)
+  const { data: vendorsData } = useQuery<VendorsQuery, VendorsQueryVariables>(VENDORS_QUERY, { variables: {} })
+  const { data: analyticsData } = useQuery<AnalyticAccountsQuery, AnalyticAccountsQueryVariables>(ANALYTIC_ACCOUNTS_QUERY)
   // Same reasoning as RequisitionForm: a PO line is a request to source/buy
   // something, so also surface the central warehouse's own products even
   // before any of them have been interco'd into this company.
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
     variables: { includeCentralWarehouse: true },
   })
-  const { data: projectsData } = useQuery(PROJECTS_QUERY, {
+  const { data: projectsData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     variables: { includeAll: true },
     skip: purpose !== 'project',
   })
-  const { data: mosData } = useQuery(MANUFACTURING_ORDERS_QUERY, {
+  const { data: mosData } = useQuery<ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables>(MANUFACTURING_ORDERS_QUERY, {
     variables: {},
     skip: purpose !== 'manufacturing',
   })
-  const { data: employeesData } = useQuery(EMPLOYEES_QUERY, { variables: { is_active: true } })
-  const { data: branchesData } = useQuery(COMPANY_BRANCHES_QUERY, {
+  const { data: employeesData } = useQuery<EmployeesQuery, EmployeesQueryVariables>(EMPLOYEES_QUERY, { variables: { is_active: true } })
+  const { data: branchesData } = useQuery<CompanyBranchesQuery, CompanyBranchesQueryVariables>(COMPANY_BRANCHES_QUERY, {
     variables: { companyId: currentCompanyId },
     skip: !currentCompanyId,
   })
-  const [createPO, { loading }] = useMutation(CREATE_PO)
+  const [createPO, { loading }] = useMutation<CreatePurchaseOrderMutation, CreatePurchaseOrderMutationVariables>(CREATE_PO)
 
   const vendors = vendorsData?.vendors ?? []
   const analytics = analyticsData?.analyticAccounts ?? []
   const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
-    productsData?.products ?? []
+    (productsData?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const projects: {
     id: string
     code: string
     name: string
-    analyticAccountId?: string
-    analyticAccountName?: string
+    analyticAccountId?: string | null
+    analyticAccountName?: string | null
   }[] = projectsData?.projects?.data ?? []
   const mos = mosData?.manufacturingOrders ?? []
   const employees: {
     id: string
     first_name: string
     last_name: string
-    employee_number: string
-  }[] = employeesData?.employees ?? []
+    employee_number: string | null
+  }[] = (employeesData?.employees ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const branches: { id: string; name: string; isActive: boolean }[] = (
     branchesData?.companyBranches ?? []
   ).filter((b: { isActive: boolean }) => b.isActive)
@@ -304,7 +305,7 @@ export default function PurchaseOrderForm() {
     ...employees.map((e) => ({
       value: e.id,
       label: `${e.first_name} ${e.last_name}`,
-      sublabel: e.employee_number,
+      sublabel: e.employee_number ?? undefined,
     })),
   ]
 
@@ -313,7 +314,8 @@ export default function PurchaseOrderForm() {
     if (!linkedProjectId || projects.length === 0) return
     const proj = projects.find((p) => p.id === linkedProjectId)
     if (proj?.analyticAccountId) {
-      setForm((f) => ({ ...f, analytic_account_id: proj.analyticAccountId! }))
+      const analyticAccountId = proj.analyticAccountId
+      setForm((f) => ({ ...f, analytic_account_id: analyticAccountId }))
     }
   }, [linkedProjectId, projects])
 
@@ -321,10 +323,11 @@ export default function PurchaseOrderForm() {
   useEffect(() => {
     if (!linkedMoId || mos.length === 0) return
     const mo = mos.find(
-      (m: { id: string; project_analytic_account_id?: string }) => m.id === linkedMoId,
+      (m) => m.id === linkedMoId,
     )
-    if (mo?.project_analytic_account_id) {
-      setForm((f) => ({ ...f, analytic_account_id: mo.project_analytic_account_id }))
+    const analyticAccountId = mo?.project_analytic_account_id
+    if (analyticAccountId) {
+      setForm((f) => ({ ...f, analytic_account_id: analyticAccountId }))
     }
   }, [linkedMoId, mos])
 
@@ -567,7 +570,7 @@ export default function PurchaseOrderForm() {
         }
       />
 
-      <form ref={formRef} onSubmit={handleSubmit}>
+      <form ref={formRef} onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'stretch' }}>
           {/* Left column ~70%: Order Details */}
           <div style={{ flex: '2 1 560px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -654,7 +657,7 @@ export default function PurchaseOrderForm() {
                       required
                     >
                       <option value="">Select MO…</option>
-                      {mos.map((m: { id: string; mo_number: string; product_name?: string }) => (
+                      {mos.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.mo_number}
                           {m.product_name ? ` — ${m.product_name}` : ''}
@@ -679,7 +682,7 @@ export default function PurchaseOrderForm() {
                     }}
                     options={[
                       { value: '', label: 'Select vendor… (optional — can be set later)' },
-                      ...vendors.map((v: { id: string; name: string }) => ({
+                      ...vendors.filter((v): v is NonNullable<typeof v> => v !== null).map((v) => ({
                         value: v.id,
                         label: v.name,
                       })),

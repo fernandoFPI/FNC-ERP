@@ -5,7 +5,6 @@ import {
   COMPANY_QUERY,
   COMPANY_USERS_QUERY,
   UPDATE_COMPANY,
-  UPDATE_COMPANY_CONFIGURATION,
   ASSIGN_ROLE,
   COMPANY_BRANCHES_QUERY,
   CREATE_COMPANY_BRANCH,
@@ -22,6 +21,7 @@ import { SystemConfigForm } from '../../settings/company/SystemConfigForm'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
+import type { AssignRoleMutation, AssignRoleMutationVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CompanyQuery, CompanyQueryVariables, CompanyUsersQuery, CompanyUsersQueryVariables, CreateCompanyBranchMutation, CreateCompanyBranchMutationVariables, DeleteCompanyBranchMutation, DeleteCompanyBranchMutationVariables, UpdateCompanyBranchMutation, UpdateCompanyBranchMutationVariables, UpdateCompanyMutation, UpdateCompanyMutationVariables } from '../../../graphql/generated'
 
 type Tab = 'overview' | 'branches' | 'users' | 'configuration' | 'interco'
 
@@ -29,18 +29,18 @@ interface CompanyUser {
   id: string
   email: string
   isActive: boolean
-  lastLoginAt?: string
-  roles: { id: string; role: string; module: string; isActive: boolean }[]
+  lastLoginAt?: string | null
+  roles: { id: string; role: string; module: string | null; isActive: boolean }[]
 }
 
 interface Branch {
   id: string
   companyId: string
   name: string
-  address?: string
-  city?: string
+  address?: string | null
+  city?: string | null
   countryCode: string
-  phone?: string
+  phone?: string | null
   isActive: boolean
   createdAt: string
   defaultProcurementUserId?: string | null
@@ -111,30 +111,30 @@ export default function CompanyDetail() {
   })
   const [branchForm, setBranchForm] = useState(EMPTY_BRANCH)
 
-  const { data, loading, refetch } = useQuery(COMPANY_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<CompanyQuery, CompanyQueryVariables>(COMPANY_QUERY, {
+    variables: { id: id ?? '' },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: usersData } = useQuery(COMPANY_USERS_QUERY, {
-    variables: { companyId: id },
+  const { data: usersData } = useQuery<CompanyUsersQuery, CompanyUsersQueryVariables>(COMPANY_USERS_QUERY, {
+    variables: { companyId: id ?? '' },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: branchesData, refetch: refetchBranches } = useQuery(COMPANY_BRANCHES_QUERY, {
-    variables: { companyId: id },
+  const { data: branchesData, refetch: refetchBranches } = useQuery<CompanyBranchesQuery, CompanyBranchesQueryVariables>(COMPANY_BRANCHES_QUERY, {
+    variables: { companyId: id ?? '' },
     fetchPolicy: 'cache-and-network',
     skip: !id,
   })
 
-  const [assignRole, { loading: assigning }] = useMutation(ASSIGN_ROLE, {
+  const [assignRole, { loading: assigning }] = useMutation<AssignRoleMutation, AssignRoleMutationVariables>(ASSIGN_ROLE, {
     onCompleted: () => {
       setShowAssignRoleModal(false)
       setRoleForm({ userId: '', role: '', module: '' })
     },
   })
-  const [updateCompanyMutation] = useMutation(UPDATE_COMPANY)
-  const [createBranch, { loading: creatingBranch }] = useMutation(CREATE_COMPANY_BRANCH)
-  const [updateBranch, { loading: updatingBranch }] = useMutation(UPDATE_COMPANY_BRANCH)
-  const [deleteBranch] = useMutation(DELETE_COMPANY_BRANCH)
+  const [updateCompanyMutation] = useMutation<UpdateCompanyMutation, UpdateCompanyMutationVariables>(UPDATE_COMPANY)
+  const [createBranch, { loading: creatingBranch }] = useMutation<CreateCompanyBranchMutation, CreateCompanyBranchMutationVariables>(CREATE_COMPANY_BRANCH)
+  const [updateBranch, { loading: updatingBranch }] = useMutation<UpdateCompanyBranchMutation, UpdateCompanyBranchMutationVariables>(UPDATE_COMPANY_BRANCH)
+  const [deleteBranch] = useMutation<DeleteCompanyBranchMutation, DeleteCompanyBranchMutationVariables>(DELETE_COMPANY_BRANCH)
 
   const company = data?.company
   const users: CompanyUser[] = usersData?.companyUsers ?? []
@@ -210,7 +210,7 @@ export default function CompanyDetail() {
     const reader = new FileReader()
     reader.onload = (ev) => {
       const base64 = ev.target?.result as string
-      void updateCompanyMutation({ variables: { id, input: { stamp_image: base64 } } })
+      void updateCompanyMutation({ variables: { id: id ?? '', input: { stamp_image: base64 } } })
         .then(() => {
           addToast({ type: 'success', message: 'Stamp updated' })
           void refetch()
@@ -224,7 +224,7 @@ export default function CompanyDetail() {
   }
 
   function saveLetterheadBase64(base64: string) {
-    void updateCompanyMutation({ variables: { id, input: { letterhead_image: base64 } } })
+    void updateCompanyMutation({ variables: { id: id ?? '', input: { letterhead_image: base64 } } })
       .then(() => {
         addToast({ type: 'success', message: 'Letterhead updated' })
         void refetch()
@@ -260,7 +260,8 @@ export default function CompanyDetail() {
         const canvas = document.createElement('canvas')
         canvas.width = viewport.width
         canvas.height = viewport.height
-        const ctx = canvas.getContext('2d')!
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('Failed to get 2D canvas context')
         await page.render({ canvasContext: ctx, canvas, viewport }).promise
         onBase64(canvas.toDataURL('image/png'))
       } catch (err: unknown) {
@@ -280,7 +281,7 @@ export default function CompanyDetail() {
     e.target.value = ''
     if (!file) return
     await handlePdfOrImageUpload(file, (b64) => {
-      void updateCompanyMutation({ variables: { id, input: { pv_template_image: b64 } } })
+      void updateCompanyMutation({ variables: { id: id ?? '', input: { pv_template_image: b64 } } })
         .then(() => {
           addToast({ type: 'success', message: 'Payment Voucher template updated' })
           void refetch()
@@ -296,7 +297,7 @@ export default function CompanyDetail() {
     e.target.value = ''
     if (!file) return
     await handlePdfOrImageUpload(file, (b64) => {
-      void updateCompanyMutation({ variables: { id, input: { journal_template_image: b64 } } })
+      void updateCompanyMutation({ variables: { id: id ?? '', input: { journal_template_image: b64 } } })
         .then(() => {
           addToast({ type: 'success', message: 'General Journal template updated' })
           void refetch()
@@ -340,7 +341,8 @@ export default function CompanyDetail() {
         const canvas = document.createElement('canvas')
         canvas.width = viewport.width
         canvas.height = viewport.height
-        const ctx = canvas.getContext('2d')!
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('Failed to get 2D canvas context')
         await page.render({ canvasContext: ctx, canvas, viewport }).promise
         const base64 = canvas.toDataURL('image/png')
         saveLetterheadBase64(base64)
@@ -384,7 +386,7 @@ export default function CompanyDetail() {
         await updateBranch({ variables: { id: branchModal.editing.id, input } })
         addToast({ type: 'success', message: 'Branch updated' })
       } else {
-        await createBranch({ variables: { companyId: id, input } })
+        await createBranch({ variables: { companyId: id ?? '', input } })
         addToast({ type: 'success', message: 'Branch created' })
       }
       setBranchModal({ open: false, editing: null })
@@ -518,7 +520,7 @@ export default function CompanyDetail() {
                 }}
               >
                 <img
-                  src={company.stampImage as string}
+                  src={company.stampImage}
                   alt="Company stamp"
                   style={{
                     maxHeight: '100px',
@@ -578,7 +580,7 @@ export default function CompanyDetail() {
                 }}
                 onClick={() =>
                   void updateCompanyMutation({
-                    variables: { id, input: { stamp_image: null } },
+                    variables: { id: id ?? '', input: { stamp_image: null } },
                   }).then(() => {
                     addToast({ type: 'success', message: 'Stamp removed' })
                     void refetch()
@@ -626,7 +628,7 @@ export default function CompanyDetail() {
                 }}
               >
                 <img
-                  src={company.letterheadImage as string}
+                  src={company.letterheadImage}
                   alt="Letterhead preview"
                   style={{
                     maxHeight: '140px',
@@ -688,7 +690,7 @@ export default function CompanyDetail() {
                 }}
                 onClick={() =>
                   void updateCompanyMutation({
-                    variables: { id, input: { letterhead_image: null } },
+                    variables: { id: id ?? '', input: { letterhead_image: null } },
                   }).then(() => {
                     addToast({ type: 'success', message: 'Letterhead removed' })
                     void refetch()
@@ -738,7 +740,7 @@ export default function CompanyDetail() {
                 }}
               >
                 <img
-                  src={company.pvTemplateImage as string}
+                  src={company.pvTemplateImage}
                   alt="PV template preview"
                   style={{
                     maxHeight: '140px',
@@ -800,7 +802,7 @@ export default function CompanyDetail() {
                 }}
                 onClick={() =>
                   void updateCompanyMutation({
-                    variables: { id, input: { pv_template_image: null } },
+                    variables: { id: id ?? '', input: { pv_template_image: null } },
                   }).then(() => {
                     addToast({ type: 'success', message: 'PV template removed' })
                     void refetch()
@@ -849,7 +851,7 @@ export default function CompanyDetail() {
                 }}
               >
                 <img
-                  src={company.journalTemplateImage as string}
+                  src={company.journalTemplateImage}
                   alt="Journal template preview"
                   style={{
                     maxHeight: '140px',
@@ -914,7 +916,7 @@ export default function CompanyDetail() {
                 }}
                 onClick={() =>
                   void updateCompanyMutation({
-                    variables: { id, input: { journal_template_image: null } },
+                    variables: { id: id ?? '', input: { journal_template_image: null } },
                   }).then(() => {
                     addToast({ type: 'success', message: 'Journal template removed' })
                     void refetch()
@@ -1239,8 +1241,8 @@ export default function CompanyDetail() {
                   void assignRole({
                     variables: {
                       input: {
-                        userId: roleForm.userId,
-                        companyId: id,
+                        user_id: roleForm.userId,
+                        company_id: id ?? '',
                         role: roleForm.role,
                         module: roleForm.module,
                       },

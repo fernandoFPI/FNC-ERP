@@ -8,7 +8,7 @@ export default function RentalLayout() {
   const setOverdue = useApprovalStore((s) => s.setOverdueMaintenance)
 
   useEffect(() => {
-    if (setOverdue) setOverdue(overdueCount)
+    setOverdue(overdueCount)
   }, [overdueCount, setOverdue])
 
   return <Outlet />

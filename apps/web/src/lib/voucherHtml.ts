@@ -2,9 +2,9 @@
 // Matching the physical FNC forms shown in company documents
 
 export interface JournalPrintLine {
-  account_code?: string
-  account_name?: string
-  description?: string
+  account_code?: string | null
+  account_name?: string | null
+  description?: string | null
   debit: number
   credit: number
   currency_code: string
@@ -14,9 +14,9 @@ export interface JournalPrintLine {
 
 export interface JournalLinkedPO {
   po_number: string
-  vendor_name?: string
-  total_amount?: string
-  currency_code?: string
+  vendor_name?: string | null
+  total_amount?: string | null
+  currency_code?: string | null
 }
 
 export interface JournalPrintData {

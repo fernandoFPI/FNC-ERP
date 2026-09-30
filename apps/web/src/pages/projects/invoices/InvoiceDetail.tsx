@@ -35,6 +35,7 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
+import type { BankAccountsQuery, BankAccountsQueryVariables, ProjectInvoiceQuery, ProjectInvoiceQueryVariables, SetInvoiceBankAccountMutation, SetInvoiceBankAccountMutationVariables, SetInvoicePaymentTypeMutation, SetInvoicePaymentTypeMutationVariables, UpdateProjectInvoiceMutation, UpdateProjectInvoiceMutationVariables, VoidProjectInvoiceMutation, VoidProjectInvoiceMutationVariables } from '../../../graphql/generated'
 
 type BankAccount = InvoiceBankAccount
 
@@ -58,8 +59,8 @@ interface Payment {
   id: string
   paymentDate: string
   amount: number
-  paymentReference?: string
-  paymentMethod?: string
+  paymentReference?: string | null
+  paymentMethod?: string | null
 }
 
 export default function InvoiceDetail() {
@@ -81,26 +82,26 @@ export default function InvoiceDetail() {
   const [editDueDate, setEditDueDate] = useState('')
   const [editCurrency, setEditCurrency] = useState('')
 
-  const { data, loading, refetch } = useQuery(PROJECT_INVOICE_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<ProjectInvoiceQuery, ProjectInvoiceQueryVariables>(PROJECT_INVOICE_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: bankData } = useQuery(BANK_ACCOUNTS_QUERY, { fetchPolicy: 'cache-and-network' })
-  const [setBankAccount, { loading: settingBank }] = useMutation(SET_INVOICE_BANK_ACCOUNT)
-  const [setPaymentType, { loading: settingPaymentType }] = useMutation(SET_INVOICE_PAYMENT_TYPE)
-  const [voidInvoice, { loading: voiding }] = useMutation(VOID_PROJECT_INVOICE)
-  const [updateInvoice, { loading: saving }] = useMutation(UPDATE_PROJECT_INVOICE)
+  const { data: bankData } = useQuery<BankAccountsQuery, BankAccountsQueryVariables>(BANK_ACCOUNTS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const [setBankAccount, { loading: settingBank }] = useMutation<SetInvoiceBankAccountMutation, SetInvoiceBankAccountMutationVariables>(SET_INVOICE_BANK_ACCOUNT)
+  const [setPaymentType, { loading: settingPaymentType }] = useMutation<SetInvoicePaymentTypeMutation, SetInvoicePaymentTypeMutationVariables>(SET_INVOICE_PAYMENT_TYPE)
+  const [voidInvoice, { loading: voiding }] = useMutation<VoidProjectInvoiceMutation, VoidProjectInvoiceMutationVariables>(VOID_PROJECT_INVOICE)
+  const [updateInvoice, { loading: saving }] = useMutation<UpdateProjectInvoiceMutation, UpdateProjectInvoiceMutationVariables>(UPDATE_PROJECT_INVOICE)
 
   const inv = data?.projectInvoice
   const bankAccounts: BankAccount[] =
-    bankData?.bankAccounts?.filter((a: BankAccount) => a.isActive) ?? []
+    bankData?.bankAccounts.filter((a: BankAccount) => a.isActive) ?? []
   const selectedBank = bankAccounts.find((a) => a.id === inv?.bankAccountId) ?? null
 
   useEffect(() => {
     if (tab !== 'pdf' || !inv?.verificationToken || qrDataUrl) return
     const baseUrl =
-      (import.meta.env.VITE_APP_BASE_URL as string | undefined) ?? window.location.origin
+      import.meta.env.VITE_APP_BASE_URL ?? window.location.origin
     const url = `${baseUrl}/verify/${inv.verificationToken}`
     void QRCode.toDataURL(url, {
       width: 120,
@@ -111,7 +112,7 @@ export default function InvoiceDetail() {
 
   async function handleSetBank(bankAccountId: string | null) {
     try {
-      await setBankAccount({ variables: { invoiceId: id, bankAccountId } })
+      await setBankAccount({ variables: { invoiceId: id ?? '', bankAccountId } })
       addToast({
         type: 'success',
         message: bankAccountId ? 'Bank account set' : 'Bank account removed',
@@ -124,7 +125,7 @@ export default function InvoiceDetail() {
 
   async function handleSetPaymentType(pt: string) {
     try {
-      await setPaymentType({ variables: { invoiceId: id, paymentType: pt } })
+      await setPaymentType({ variables: { invoiceId: id ?? '', paymentType: pt } })
       void refetch()
     } catch (e: unknown) {
       addToast({ type: 'error', message: (e as Error).message })
@@ -149,7 +150,7 @@ export default function InvoiceDetail() {
 
   async function handleVoid() {
     await voidInvoice({
-      variables: { id },
+      variables: { id: id ?? '' },
       refetchQueries: [{ query: PROJECT_INVOICE_QUERY, variables: { id } }],
     })
     addToast({ type: 'success', message: 'Invoice voided' })
@@ -201,7 +202,7 @@ export default function InvoiceDetail() {
     try {
       await updateInvoice({
         variables: {
-          id,
+          id: id ?? '',
           invoiceDate: editDate || undefined,
           dueDate: editDueDate || undefined,
           currencyCode: inv?.status === 'draft' ? editCurrency || undefined : undefined,
@@ -228,16 +229,16 @@ export default function InvoiceDetail() {
   if (loading || !inv)
     return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading…</div>
 
-  const cur = (inv.currencyCode ?? 'IQD') as string
-  const payments: Payment[] = inv.payments ?? []
-  const totalPaid = payments.reduce((s, p) => s + (p.amount ?? 0), 0)
-  const whtApplies = inv.whtApplies ?? false
+  const cur = inv.currencyCode
+  const payments: Payment[] = inv.payments
+  const totalPaid = payments.reduce((s, p) => s + p.amount, 0)
+  const whtApplies = inv.whtApplies
   const whtScenario = inv.whtScenario ?? null
-  const whtAmt = whtApplies ? (inv.whtAmount ?? 0) : 0
+  const whtAmt = whtApplies ? inv.whtAmount : 0
   const cashTarget =
     whtApplies && whtScenario === 'client_withholds'
-      ? Math.max(0, (inv.netPayable ?? 0) - whtAmt)
-      : (inv.netPayable ?? 0)
+      ? Math.max(0, inv.netPayable - whtAmt)
+      : inv.netPayable
   const outstanding = Math.max(0, cashTarget - totalPaid)
   const paidPct = cashTarget > 0 ? Math.min(100, (totalPaid / cashTarget) * 100) : 0
   const canPay = ['issued', 'sent', 'partial'].includes(inv.status)
@@ -282,7 +283,7 @@ export default function InvoiceDetail() {
       label: 'Source',
       width: '110px',
       render: (el) => {
-        const original = (inv.lines ?? ([] as InvoiceLine[])).find(
+        const original = inv.lines.find(
           (l: InvoiceLine) => l.id === el.id,
         )
         return <Badge variant="neutral">{original?.sourceType ?? 'manual'}</Badge>
@@ -432,7 +433,7 @@ export default function InvoiceDetail() {
                   size="sm"
                   loading={transitioning}
                   onClick={() =>
-                    handleTransition('submit-for-review', 'Invoice submitted for review')
+                    void handleTransition('submit-for-review', 'Invoice submitted for review')
                   }
                 >
                   Submit for Review
@@ -453,7 +454,7 @@ export default function InvoiceDetail() {
                 variant="primary"
                 size="sm"
                 loading={transitioning}
-                onClick={() => handleTransition('approve', 'Invoice approved')}
+                onClick={() => void handleTransition('approve', 'Invoice approved')}
               >
                 Approve
               </Button>
@@ -463,7 +464,7 @@ export default function InvoiceDetail() {
                 variant="primary"
                 size="sm"
                 loading={transitioning}
-                onClick={() => handleTransition('issue', 'Invoice issued')}
+                onClick={() => void handleTransition('issue', 'Invoice issued')}
               >
                 Issue Invoice
               </Button>
@@ -522,7 +523,7 @@ export default function InvoiceDetail() {
             Payment type:
           </span>
           <SearchableSelect
-            value={inv.paymentType ?? 'wire_transfer'}
+            value={inv.paymentType}
             onChange={(v) => void handleSetPaymentType(v)}
             disabled={settingPaymentType}
             options={[
@@ -530,7 +531,7 @@ export default function InvoiceDetail() {
               { value: 'cash', label: 'Cash' },
             ]}
           />
-          {(inv.paymentType ?? 'wire_transfer') === 'wire_transfer' && (
+          {inv.paymentType === 'wire_transfer' && (
             <>
               <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
                 Bank account:
@@ -705,7 +706,7 @@ export default function InvoiceDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(inv.lines ?? []).map((l: InvoiceLine) => (
+                  {inv.lines.map((l: InvoiceLine) => (
                     <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
                       <td style={{ padding: '8px 12px', color: theme.textMuted, fontSize: '12px' }}>
                         {l.lineNumber}
@@ -887,7 +888,7 @@ export default function InvoiceDetail() {
                 srcDoc={buildInvoiceHTML(
                   inv,
                   selectedBank,
-                  inv.paymentType ?? 'wire_transfer',
+                  inv.paymentType,
                   inv.companyStampImage,
                   qrDataUrl,
                 )}
@@ -908,7 +909,7 @@ export default function InvoiceDetail() {
         message="This will permanently void the invoice. This cannot be undone."
         confirmLabel="Void Invoice"
         variant="danger"
-        onConfirm={handleVoid}
+        onConfirm={(...args: Parameters<typeof handleVoid>) => void handleVoid(...args)}
         onCancel={() => {
           setShowVoid(false)
         }}
@@ -919,20 +920,20 @@ export default function InvoiceDetail() {
         open={paymentFormOpen}
         invoiceId={id ?? ''}
         invoiceNumber={inv.invoiceNumber}
-        grossTotal={inv.grossTotal ?? 0}
-        retentionAmount={inv.retentionAmount ?? 0}
-        netPayable={inv.netPayable ?? 0}
+        grossTotal={inv.grossTotal}
+        retentionAmount={inv.retentionAmount}
+        netPayable={inv.netPayable}
         totalPaid={totalPaid}
         currency={cur}
-        whtApplies={inv.whtApplies ?? false}
+        whtApplies={inv.whtApplies}
         whtScenario={inv.whtScenario ?? null}
-        whtAmount={inv.whtAmount ?? 0}
+        whtAmount={inv.whtAmount}
         onClose={() => {
           setPaymentFormOpen(false)
         }}
         onSuccess={() => {
           setPaymentFormOpen(false)
-          refetch()
+          void refetch()
         }}
       />
     </div>

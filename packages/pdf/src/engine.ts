@@ -7,7 +7,7 @@ const log = logger.child({ module: 'pdf-engine' })
 let browser: Browser | null = null
 
 export async function getBrowser(): Promise<Browser> {
-  if (browser && browser.connected) {
+  if (browser?.connected) {
     return browser
   }
 

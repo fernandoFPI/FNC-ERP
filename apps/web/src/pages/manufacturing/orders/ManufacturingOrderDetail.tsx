@@ -25,6 +25,7 @@ import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 import { MOCompletionForm } from './MOCompletionForm'
 import { MOCostAnalysis } from './MOCostAnalysis'
+import type { CancelMoMutation, CancelMoMutationVariables, CompleteMoMutation, CompleteMoMutationVariables, ConfirmMoMutation, ConfirmMoMutationVariables, MOmissingComponentsQuery, MOmissingComponentsQueryVariables, ManufacturingOrderQuery, ManufacturingOrderQueryVariables, MoCostAnalysisQuery, MoCostAnalysisQueryVariables, StartMoMutation, StartMoMutationVariables } from '../../../graphql/generated'
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'danger'> = {
   draft: 'neutral',
@@ -37,8 +38,8 @@ const STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'warning' | 'success' 
 interface MOComponentStatus {
   bomLineId: string
   componentProductId: string
-  productName?: string
-  uom?: string
+  productName?: string | null
+  uom?: string | null
   qtyRequired: number
   qtyOnHand: number
   qtyAvailable: number
@@ -48,7 +49,7 @@ interface MOComponentStatus {
 
 interface MOLine {
   id: string
-  component_name?: string
+  component_name?: string | null
   qty_planned: number
   qty_consumed: number
   unit_cost: number
@@ -65,24 +66,24 @@ export default function ManufacturingOrderDetail() {
   const [cancelNotes, setCancelNotes] = useState('')
   const [tab, setTab] = useState('details')
 
-  const { data, loading, refetch } = useQuery(MANUFACTURING_ORDER_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<ManufacturingOrderQuery, ManufacturingOrderQueryVariables>(MANUFACTURING_ORDER_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
   })
-  const { data: costData } = useQuery(MO_COST_ANALYSIS_QUERY, {
-    variables: { moId: id },
+  const { data: costData } = useQuery<MoCostAnalysisQuery, MoCostAnalysisQueryVariables>(MO_COST_ANALYSIS_QUERY, {
+    variables: { moId: id ?? '' },
     skip: !id || data?.manufacturingOrder?.status !== 'done',
   })
-  const { data: missingData } = useQuery(MO_MISSING_COMPONENTS_QUERY, {
-    variables: { moId: id },
+  const { data: missingData } = useQuery<MOmissingComponentsQuery, MOmissingComponentsQueryVariables>(MO_MISSING_COMPONENTS_QUERY, {
+    variables: { moId: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
   const missingComponents: MOComponentStatus[] = missingData?.moMissingComponents ?? []
-  const [confirmMO, { loading: confirming }] = useMutation(CONFIRM_MO)
-  const [startMO, { loading: starting }] = useMutation(START_MO)
-  const [completeMO, { loading: completing }] = useMutation(COMPLETE_MO)
-  const [cancelMO, { loading: cancelling }] = useMutation(CANCEL_MO)
+  const [confirmMO, { loading: confirming }] = useMutation<ConfirmMoMutation, ConfirmMoMutationVariables>(CONFIRM_MO)
+  const [startMO, { loading: starting }] = useMutation<StartMoMutation, StartMoMutationVariables>(START_MO)
+  const [completeMO, { loading: completing }] = useMutation<CompleteMoMutation, CompleteMoMutationVariables>(COMPLETE_MO)
+  const [cancelMO, { loading: cancelling }] = useMutation<CancelMoMutation, CancelMoMutationVariables>(CANCEL_MO)
 
   const mo = data?.manufacturingOrder
   const costAnalysis = costData?.moCostAnalysis
@@ -91,7 +92,7 @@ export default function ManufacturingOrderDetail() {
     try {
       await fn()
       addToast({ type: 'success', message: successMsg })
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -106,7 +107,7 @@ export default function ManufacturingOrderDetail() {
     await handleAction(
       () =>
         completeMO({
-          variables: { id, input },
+          variables: { id: id ?? '', input },
           refetchQueries: [{ query: MANUFACTURING_ORDER_QUERY, variables: { id } }],
         }),
       'MO completed',
@@ -139,8 +140,8 @@ export default function ManufacturingOrderDetail() {
       </div>
     )
 
-  const planned = parseFloat(mo.planned_cost ?? '0')
-  const actual = parseFloat(mo.actual_cost ?? '0')
+  const planned = parseFloat(mo.planned_cost)
+  const actual = parseFloat(mo.actual_cost)
   const variance = actual - planned
   const isDone = mo.status === 'done'
 
@@ -293,7 +294,7 @@ export default function ManufacturingOrderDetail() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => handleAction(() => confirmMO({ variables: { id } }), 'MO confirmed')}
+                onClick={() => void handleAction(() => confirmMO({ variables: { id: id ?? '' } }), 'MO confirmed')}
                 loading={confirming}
               >
                 Confirm
@@ -303,7 +304,7 @@ export default function ManufacturingOrderDetail() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => handleAction(() => startMO({ variables: { id } }), 'MO started')}
+                onClick={() => void handleAction(() => startMO({ variables: { id: id ?? '' } }), 'MO started')}
                 loading={starting}
               >
                 Start Production
@@ -512,7 +513,7 @@ export default function ManufacturingOrderDetail() {
           setShowComplete(false)
         }}
         mo={{
-          id: id!,
+          id: id ?? '',
           qty_planned: parseFloat(mo.qty_planned),
           planned_cost: planned,
           work_center_name: mo.work_center_name,
@@ -555,8 +556,8 @@ export default function ManufacturingOrderDetail() {
                 variant="danger"
                 loading={cancelling}
                 onClick={() =>
-                  handleAction(
-                    () => cancelMO({ variables: { id, notes: cancelNotes } }),
+                  void handleAction(
+                    () => cancelMO({ variables: { id: id ?? '', notes: cancelNotes } }),
                     'MO cancelled',
                   ).then(() => {
                     setShowCancel(false)

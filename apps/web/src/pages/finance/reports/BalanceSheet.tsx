@@ -7,6 +7,7 @@ import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { Badge } from '../../../components/ui/Badge'
+import type { BalanceSheetQuery, BalanceSheetQueryVariables } from '../../../graphql/generated'
 
 interface BSLine {
   account_id: string
@@ -20,7 +21,7 @@ export default function BalanceSheet() {
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
   const [queried, setQueried] = useState(false)
 
-  const { data, loading, refetch } = useQuery(BALANCE_SHEET_QUERY, {
+  const { data, loading, refetch } = useQuery<BalanceSheetQuery, BalanceSheetQueryVariables>(BALANCE_SHEET_QUERY, {
     variables: { asOfDate },
     skip: !queried,
     fetchPolicy: 'network-only',
@@ -29,7 +30,7 @@ export default function BalanceSheet() {
   const report = data?.balanceSheet
 
   function run() {
-    if (queried) refetch()
+    if (queried) void refetch()
     else setQueried(true)
   }
 

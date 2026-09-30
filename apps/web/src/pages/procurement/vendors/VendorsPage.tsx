@@ -11,16 +11,17 @@ import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import type { VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
 
 interface Vendor {
   id: string
   name: string
-  legal_name?: string
-  tax_id?: string
+  legal_name?: string | null
+  tax_id?: string | null
   currency_code: string
   payment_terms_days: number
-  country_code?: string
-  contact_email?: string
+  country_code?: string | null
+  contact_email?: string | null
   is_active: boolean
 }
 
@@ -29,13 +30,13 @@ export default function VendorsPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
 
-  const { data, loading, refetch } = useQuery(VENDORS_QUERY, {
+  const { data, loading, refetch } = useQuery<VendorsQuery, VendorsQueryVariables>(VENDORS_QUERY, {
     variables: {},
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('vendor', () => void refetch())
 
-  const vendors: Vendor[] = data?.vendors ?? []
+  const vendors: Vendor[] = (data?.vendors ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const filtered = vendors.filter((v) => {
     if (!search) return true
     const q = search.toLowerCase()
@@ -134,7 +135,7 @@ export default function VendorsPage() {
           search={search}
           onSearchChange={setSearch}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         />
         <Table
           columns={columns}

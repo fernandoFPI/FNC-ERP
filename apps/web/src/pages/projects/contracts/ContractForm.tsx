@@ -20,6 +20,7 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
+import type { CreateContractMilestoneMutation, CreateContractMilestoneMutationVariables, CreateProjectContractMutation, CreateProjectContractMutationVariables, DeleteContractMilestoneMutation, DeleteContractMilestoneMutationVariables, ProjectContractQuery, ProjectContractQueryVariables, ProjectsQuery, ProjectsQueryVariables, UpdateContractMilestoneMutation, UpdateContractMilestoneMutationVariables, UpdateProjectContractMutation, UpdateProjectContractMutationVariables } from '../../../graphql/generated'
 
 const BILLING_METHODS: { value: string; label: string }[] = [
   { value: 'fixed_lump_sum', label: 'Fixed Lump Sum' },
@@ -88,13 +89,13 @@ export default function ContractForm() {
     }
   }, [])
 
-  const { data: projectsData } = useQuery(PROJECTS_QUERY, {
+  const { data: projectsData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     variables: { limit: 200 },
     skip: isEdit || !!urlProjectId,
     fetchPolicy: 'cache-and-network',
   })
   const projectOptions: { id: string; name: string; code: string }[] =
-    projectsData?.projects?.data ?? []
+    projectsData?.projects.data ?? []
 
   const [form, setForm] = useState({
     contractName: '',
@@ -107,31 +108,31 @@ export default function ContractForm() {
     status: 'draft',
   })
 
-  const { data, refetch } = useQuery(PROJECT_CONTRACT_QUERY, {
-    variables: { id },
+  const { data, refetch } = useQuery<ProjectContractQuery, ProjectContractQueryVariables>(PROJECT_CONTRACT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !isEdit,
     fetchPolicy: 'cache-and-network',
   })
-  const [createContract, { loading: creating }] = useMutation(CREATE_PROJECT_CONTRACT)
-  const [updateContract, { loading: updating }] = useMutation(UPDATE_PROJECT_CONTRACT)
-  const [createMilestone] = useMutation(CREATE_CONTRACT_MILESTONE)
-  const [updateMilestone] = useMutation(UPDATE_CONTRACT_MILESTONE)
-  const [deleteMilestone] = useMutation(DELETE_CONTRACT_MILESTONE)
+  const [createContract, { loading: creating }] = useMutation<CreateProjectContractMutation, CreateProjectContractMutationVariables>(CREATE_PROJECT_CONTRACT)
+  const [updateContract, { loading: updating }] = useMutation<UpdateProjectContractMutation, UpdateProjectContractMutationVariables>(UPDATE_PROJECT_CONTRACT)
+  const [createMilestone] = useMutation<CreateContractMilestoneMutation, CreateContractMilestoneMutationVariables>(CREATE_CONTRACT_MILESTONE)
+  const [updateMilestone] = useMutation<UpdateContractMilestoneMutation, UpdateContractMilestoneMutationVariables>(UPDATE_CONTRACT_MILESTONE)
+  const [deleteMilestone] = useMutation<DeleteContractMilestoneMutation, DeleteContractMilestoneMutationVariables>(DELETE_CONTRACT_MILESTONE)
 
   useEffect(() => {
     const c = data?.projectContract
     if (c) {
       setForm({
-        contractName: c.contractName ?? '',
-        clientName: c.clientName ?? '',
-        contractValue: String(c.contractValue ?? ''),
-        currencyCode: c.currencyCode ?? 'IQD',
-        defaultBillingMethod: c.defaultBillingMethod ?? 'fixed_lump_sum',
-        defaultMarginPct: String(c.defaultMarginPct ?? '0'),
-        retentionPct: String(c.retentionPct ?? '0'),
-        status: c.status ?? 'draft',
+        contractName: c.contractName,
+        clientName: c.clientName,
+        contractValue: String(c.contractValue),
+        currencyCode: c.currencyCode,
+        defaultBillingMethod: c.defaultBillingMethod,
+        defaultMarginPct: String(c.defaultMarginPct),
+        retentionPct: String(c.retentionPct),
+        status: c.status,
       })
-      const loaded: MilestoneRow[] = (c.milestones ?? []).map((m: Record<string, unknown>) => ({
+      const loaded: MilestoneRow[] = c.milestones.map((m: Record<string, unknown>) => ({
         id: String(m.id),
         name: String(m.name ?? ''),
         sequence: String(m.sequence ?? '0'),
@@ -173,6 +174,10 @@ export default function ContractForm() {
         navigate(`/projects/contracts/${id}`)
       } else {
         const res = await createContract({ variables: { projectId: selectedProjectId, input } })
+        if (!res.data?.createProjectContract) {
+          addToast({ type: 'error', message: 'Contract creation did not return a result' })
+          return
+        }
         addToast({ type: 'success', message: 'Contract created' })
         navigate(`/projects/contracts/${res.data.createProjectContract.id}`)
       }
@@ -190,7 +195,7 @@ export default function ContractForm() {
     try {
       await createMilestone({
         variables: {
-          contractId: id,
+          contractId: id ?? '',
           input: {
             name: newMilestone.name.trim(),
             sequence: parseInt(newMilestone.sequence) || 0,
@@ -382,7 +387,7 @@ export default function ContractForm() {
                 variant="ghost"
                 size="sm"
                 loading={savingMilestoneId === m.id}
-                onClick={() => handleSaveMilestone(m)}
+                onClick={() => void handleSaveMilestone(m)}
               >
                 Save
               </Button>
@@ -390,7 +395,8 @@ export default function ContractForm() {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  setConfirmDeleteMilestone(m.id!)
+                  if (!m.id) return
+                  setConfirmDeleteMilestone(m.id)
                 }}
                 style={{ color: '#ef4444' }}
               >
@@ -409,7 +415,7 @@ export default function ContractForm() {
 
       <Card style={{ marginTop: '20px' }}>
         <form
-          onSubmit={handleSubmit}
+          onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}
         >
           {!isEdit && !urlProjectId && (
@@ -819,7 +825,7 @@ export default function ContractForm() {
                     variant="primary"
                     size="sm"
                     loading={addingMilestone}
-                    onClick={handleAddMilestone}
+                    onClick={(...args: Parameters<typeof handleAddMilestone>) => void handleAddMilestone(...args)}
                     style={{ marginTop: '19px' }}
                   >
                     Add
@@ -837,10 +843,10 @@ export default function ContractForm() {
         message="Remove this milestone? This cannot be undone."
         confirmLabel="Delete"
         confirmVariant="danger"
-        onConfirm={async () => {
+        onConfirm={() => void (async () => {
           if (confirmDeleteMilestone) await handleDeleteMilestone(confirmDeleteMilestone)
           setConfirmDeleteMilestone(null)
-        }}
+        })()}
         onCancel={() => {
           setConfirmDeleteMilestone(null)
         }}

@@ -14,20 +14,21 @@ import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
 import { useToastStore } from '../../../store/toastStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { BankAccountsQuery, BankAccountsQueryVariables, CreateBankAccountMutation, CreateBankAccountMutationVariables, DeleteBankAccountMutation, DeleteBankAccountMutationVariables, UpdateBankAccountMutation, UpdateBankAccountMutationVariables } from '../../../graphql/generated'
 
 interface BankAccount {
   id: string
   accountName: string
   bankName: string
-  beneficiaryName?: string
-  accountNumber?: string
-  iban?: string
-  swift?: string
-  branchCode?: string
-  bankAddress?: string
-  intermediaryBankName?: string
-  intermediarySwift?: string
-  intermediaryCountry?: string
+  beneficiaryName?: string | null
+  accountNumber?: string | null
+  iban?: string | null
+  swift?: string | null
+  branchCode?: string | null
+  bankAddress?: string | null
+  intermediaryBankName?: string | null
+  intermediarySwift?: string | null
+  intermediaryCountry?: string | null
   currencyCode: string
   isActive: boolean
   createdAt: string
@@ -60,12 +61,12 @@ export default function BankAccountsPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [confirmDelete, setConfirmDelete] = useState<BankAccount | null>(null)
 
-  const { data, loading, refetch } = useQuery(BANK_ACCOUNTS_QUERY, {
+  const { data, loading, refetch } = useQuery<BankAccountsQuery, BankAccountsQueryVariables>(BANK_ACCOUNTS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
-  const [createAccount, { loading: creating }] = useMutation(CREATE_BANK_ACCOUNT)
-  const [updateAccount, { loading: updating }] = useMutation(UPDATE_BANK_ACCOUNT)
-  const [deleteAccount, { loading: deleting }] = useMutation(DELETE_BANK_ACCOUNT)
+  const [createAccount, { loading: creating }] = useMutation<CreateBankAccountMutation, CreateBankAccountMutationVariables>(CREATE_BANK_ACCOUNT)
+  const [updateAccount, { loading: updating }] = useMutation<UpdateBankAccountMutation, UpdateBankAccountMutationVariables>(UPDATE_BANK_ACCOUNT)
+  const [deleteAccount, { loading: deleting }] = useMutation<DeleteBankAccountMutation, DeleteBankAccountMutationVariables>(DELETE_BANK_ACCOUNT)
 
   const accounts: BankAccount[] = data?.bankAccounts ?? []
 

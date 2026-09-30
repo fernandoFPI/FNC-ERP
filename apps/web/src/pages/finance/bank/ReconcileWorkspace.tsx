@@ -873,7 +873,9 @@ export default function ReconcileWorkspace() {
               return (
                 <div
                   key={line.id}
-                  onClick={() => !isMatched && toggleBank(line.id)}
+                  onClick={() => {
+                    if (!isMatched) toggleBank(line.id)
+                  }}
                   style={{
                     padding: '10px 14px',
                     borderBottom: `1px solid ${theme.border}`,
@@ -951,7 +953,7 @@ export default function ReconcileWorkspace() {
                         style={{
                           fontSize: '13px',
                           fontWeight: 600,
-                          color: net >= 0 ? '#22c55e' : (theme.danger ?? '#ef4444'),
+                          color: net >= 0 ? '#22c55e' : theme.danger,
                           margin: 0,
                           fontFamily: 'monospace',
                         }}
@@ -1032,7 +1034,9 @@ export default function ReconcileWorkspace() {
               return (
                 <div
                   key={entry.id}
-                  onClick={() => !isReconciled && toggleGl(entry.id)}
+                  onClick={() => {
+                    if (!isReconciled) toggleGl(entry.id)
+                  }}
                   style={{
                     padding: '10px 14px',
                     borderBottom: `1px solid ${theme.border}`,
@@ -1097,7 +1101,7 @@ export default function ReconcileWorkspace() {
                         style={{
                           fontSize: '13px',
                           fontWeight: 600,
-                          color: net >= 0 ? '#22c55e' : (theme.danger ?? '#ef4444'),
+                          color: net >= 0 ? '#22c55e' : theme.danger,
                           margin: 0,
                           fontFamily: 'monospace',
                         }}

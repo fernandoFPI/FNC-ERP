@@ -85,7 +85,9 @@ export function FileAttachments({
       .then((r) => {
         setAttachments(r.data as unknown as Attachment[])
       })
-      .catch(() => {})
+      .catch(() => {
+        /* ignore: attachment fetch failure just leaves the list empty */
+      })
       .finally(() => {
         setLoading(false)
       })
@@ -212,7 +214,7 @@ export function FileAttachments({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => handleDownload(a.file_id)}
+                onClick={() => void handleDownload(a.file_id)}
                 icon={
                   <svg
                     width="13"
@@ -232,7 +234,7 @@ export function FileAttachments({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleDelete(a.id)}
+                  onClick={() => void handleDelete(a.id)}
                   icon={
                     <svg
                       width="13"
@@ -263,7 +265,7 @@ export function FileAttachments({
             style={{ display: 'none' }}
             onChange={(e) => {
               const f = e.target.files?.[0]
-              if (f) handleUpload(f)
+              if (f) void handleUpload(f)
             }}
           />
           <div
@@ -288,7 +290,7 @@ export function FileAttachments({
               e.preventDefault()
               setDragOver(false)
               const f = e.dataTransfer.files[0]
-              if (f) handleUpload(f)
+              if (f) void handleUpload(f)
             }}
           >
             {uploading ? (

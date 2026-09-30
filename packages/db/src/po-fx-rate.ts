@@ -1,4 +1,4 @@
-import { pool } from './client.js'
+import { pool, firstRowOrThrow } from './client.js'
 
 export interface PoFxRate {
   company_id: string
@@ -33,7 +33,7 @@ export async function upsertPoFxRate(
      RETURNING company_id, currency_code, rate_to_base, is_default, updated_at`,
     [companyId, currencyCode.toUpperCase(), rateToBase, updatedBy],
   )
-  return result.rows[0]!
+  return firstRowOrThrow(result)
 }
 
 export async function deletePoFxRate(companyId: string, currencyCode: string): Promise<void> {

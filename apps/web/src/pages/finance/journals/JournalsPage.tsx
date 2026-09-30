@@ -25,17 +25,18 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
+import type { CombineJournalEntriesMutation, CombineJournalEntriesMutationVariables, JournalEntriesQuery, JournalEntriesQueryVariables } from '../../../graphql/generated'
 
 interface JournalEntry {
   id: string
   reference: string
   entry_date: string
   status: string
-  description?: string
-  source_type?: string
-  total_debit?: string
-  total_credit?: string
-  created_by_email?: string
+  description?: string | null
+  source_type?: string | null
+  total_debit?: string | null
+  total_credit?: string | null
+  created_by_email?: string | null
 }
 
 const STATUS_OPTIONS = [
@@ -79,7 +80,7 @@ const SOURCE_META: Record<string, { label: string; variant: BadgeVariant }> = {
   bank_entry: { label: 'Bank Entry', variant: 'neutral' },
 }
 
-function sourceMeta(sourceType?: string): { label: string; variant: BadgeVariant } {
+function sourceMeta(sourceType?: string | null): { label: string; variant: BadgeVariant } {
   const key = sourceType ?? 'manual'
   return (
     SOURCE_META[key] ?? {
@@ -126,21 +127,21 @@ export default function JournalsPage() {
   const [showCombineDialog, setShowCombineDialog] = useState(false)
   const [combineDesc, setCombineDesc] = useState('')
 
-  const { data, loading, refetch } = useQuery(JOURNAL_ENTRIES_QUERY, {
+  const { data, loading, refetch } = useQuery<JournalEntriesQuery, JournalEntriesQueryVariables>(JOURNAL_ENTRIES_QUERY, {
     variables: {
       status: statusFilter || undefined,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
-      sourceType: sourceFilter || undefined,
     },
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('journal_entry', () => void refetch())
 
-  const [combineEntries, { loading: combining }] = useMutation(COMBINE_JOURNAL_ENTRIES)
+  const [combineEntries, { loading: combining }] = useMutation<CombineJournalEntriesMutation, CombineJournalEntriesMutationVariables>(COMBINE_JOURNAL_ENTRIES)
 
-  const entries: JournalEntry[] = data?.journalEntries ?? []
+  const entries: JournalEntry[] = (data?.journalEntries ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const filtered = entries.filter((e) => {
+    if (sourceFilter && e.source_type !== sourceFilter) return false
     if (search) {
       const q = search.toLowerCase()
       if (!e.reference.toLowerCase().includes(q) && !(e.description ?? '').toLowerCase().includes(q)) {
@@ -180,12 +181,12 @@ export default function JournalsPage() {
           description: combineDesc.trim() || undefined,
         },
       })
-      const ref = result.data?.combineJournalEntries?.reference as string | undefined
+      const ref = result.data?.combineJournalEntries.reference
       addToast({ type: 'success', message: `Journals combined into ${ref ?? 'new entry'}` })
       setSelectedIds(new Set())
       setShowCombineDialog(false)
       setCombineDesc('')
-      const newId = result.data?.combineJournalEntries?.id as string | undefined
+      const newId = result.data?.combineJournalEntries.id
       if (newId) navigate(`/finance/journals/${newId}`)
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -347,7 +348,7 @@ export default function JournalsPage() {
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
@@ -518,7 +519,7 @@ export default function JournalsPage() {
               >
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleCombine} loading={combining}>
+              <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleCombine>) => void handleCombine(...args)} loading={combining}>
                 Combine Entries
               </Button>
             </div>

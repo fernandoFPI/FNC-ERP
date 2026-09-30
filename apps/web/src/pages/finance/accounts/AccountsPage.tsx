@@ -10,6 +10,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
+import type { AccountsQuery, AccountsQueryVariables } from '../../../graphql/generated'
 
 interface Account {
   id: string
@@ -18,10 +19,10 @@ interface Account {
   account_type: string
   is_active: boolean
   currency_code: string
-  parent_name?: string
-  is_reconcilable?: boolean
-  is_header?: boolean
-  account_category?: string
+  parent_name?: string | null
+  is_reconcilable?: boolean | null
+  is_header?: boolean | null
+  account_category?: string | null
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -46,12 +47,12 @@ export default function AccountsPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
 
-  const { data, loading, refetch } = useQuery(ACCOUNTS_QUERY, {
+  const { data, loading, refetch } = useQuery<AccountsQuery, AccountsQueryVariables>(ACCOUNTS_QUERY, {
     variables: { type: typeFilter || undefined, isActive: undefined },
     fetchPolicy: 'cache-and-network',
   })
 
-  const accounts: Account[] = data?.accounts ?? []
+  const accounts: Account[] = (data?.accounts ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const filtered = accounts.filter((a) => {
     if (!search) return true
     const q = search.toLowerCase()
@@ -167,7 +168,7 @@ export default function AccountsPage() {
             },
           ]}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         />
         <Table
           columns={columns}

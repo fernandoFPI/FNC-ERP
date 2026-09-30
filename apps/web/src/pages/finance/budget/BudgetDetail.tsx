@@ -5,7 +5,6 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
-import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
 import { usePermission } from '../../../hooks/usePermission'
 

@@ -62,7 +62,7 @@ function priorityVariant(
     normal: 'info',
     low: 'neutral',
   }
-  return m[p?.toLowerCase()] ?? 'neutral'
+  return m[p.toLowerCase()] ?? 'neutral'
 }
 
 function statusVariant(
@@ -74,7 +74,7 @@ function statusVariant(
     dismissed: 'neutral',
     resolved: 'success',
   }
-  return m[s?.toLowerCase()] ?? 'neutral'
+  return m[s.toLowerCase()] ?? 'neutral'
 }
 
 export default function DLQPage() {
@@ -118,7 +118,7 @@ export default function DLQPage() {
       addToast({ type: 'success', message: 'Entry queued for retry' })
       setRetryTarget(null)
       setNotes('')
-      refetch()
+      void refetch()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -131,7 +131,7 @@ export default function DLQPage() {
       addToast({ type: 'success', message: 'Entry dismissed' })
       setDismissTarget(null)
       setNotes('')
-      refetch()
+      void refetch()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -178,7 +178,7 @@ export default function DLQPage() {
       )
       addToast({ type: 'success', message: `${selectedIds.size} event(s) queued for retry` })
       setSelectedIds(new Set())
-      refetch()
+      void refetch()
     } catch {
       addToast({ type: 'error', message: 'Bulk retry failed' })
     } finally {
@@ -202,7 +202,7 @@ export default function DLQPage() {
       setSelectedIds(new Set())
       setBulkDismissOpen(false)
       setBulkDismissNotes('')
-      refetch()
+      void refetch()
     } catch {
       addToast({ type: 'error', message: 'Bulk dismiss failed' })
     } finally {
@@ -372,7 +372,7 @@ export default function DLQPage() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh
@@ -410,7 +410,7 @@ export default function DLQPage() {
           ]}
           resultCount={sortedItems.length}
           onRefresh={() => {
-            refetch()
+            void refetch()
           }}
         />
       </Card>
@@ -601,7 +601,7 @@ export default function DLQPage() {
               size="md"
               onClick={() => {
                 if (retryTarget)
-                  retryEntry({ variables: { dlqId: retryTarget.id, notes: notes || undefined } })
+                  void retryEntry({ variables: { dlqId: retryTarget.id, notes: notes || undefined } })
               }}
               loading={retrying}
             >
@@ -645,7 +645,7 @@ export default function DLQPage() {
               variant="danger"
               size="md"
               onClick={() => {
-                if (dismissTarget) dismissEntry({ variables: { dlqId: dismissTarget.id, notes } })
+                if (dismissTarget) void dismissEntry({ variables: { dlqId: dismissTarget.id, notes } })
               }}
               loading={dismissing}
               disabled={notes.trim().length < 10}

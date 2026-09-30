@@ -1,9 +1,10 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query, pool } from '@fnc-erp/db'
+import { query, pool, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const accountsRouter: IRouter = Router()
@@ -21,9 +22,9 @@ const CreateAccountSchema = z.object({
 
 const UpdateAccountSchema = CreateAccountSchema.partial().omit({ code: true })
 
-accountsRouter.get('/', requirePermission('finance.accounts.view', 'view'), async (req, res) => {
+accountsRouter.get('/', requirePermission('finance.accounts.view', 'view'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const { type, is_active, category, is_postable } = req.query
 
     let sql = `SELECT * FROM chart_of_accounts WHERE company_id = $1`
@@ -57,11 +58,11 @@ accountsRouter.get('/', requirePermission('finance.accounts.view', 'view'), asyn
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch accounts', err)
   }
-})
+}))
 
-accountsRouter.get('/:id', requirePermission('finance.accounts.view', 'view'), async (req, res) => {
+accountsRouter.get('/:id', requirePermission('finance.accounts.view', 'view'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const result = await query(
       `SELECT coa.*, parent.code AS parent_code, parent.name AS parent_name
        FROM chart_of_accounts coa
@@ -78,11 +79,11 @@ accountsRouter.get('/:id', requirePermission('finance.accounts.view', 'view'), a
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch account', err)
   }
-})
+}))
 
-accountsRouter.post('/', requirePermission('finance.accounts.edit', 'edit'), async (req, res) => {
+accountsRouter.post('/', requirePermission('finance.accounts.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const parsed = CreateAccountSchema.safeParse(req.body)
     if (!parsed.success) {
       sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -107,10 +108,10 @@ accountsRouter.post('/', requirePermission('finance.accounts.edit', 'edit'), asy
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
       [companyId, code, name, account_type, parent_id ?? null, currency_code, is_reconcilable],
     )
-    const account = result.rows[0]!
+    const account = firstRowOrThrow(result)
     await logAudit({
       companyId,
-      userId: req.auth!.userId,
+      userId: getAuth(req).userId,
       action: 'CREATE',
       tableName: 'chart_of_accounts',
       recordId: account['id'] as string,
@@ -125,11 +126,11 @@ accountsRouter.post('/', requirePermission('finance.accounts.edit', 'edit'), asy
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create account', err)
   }
-})
+}))
 
-accountsRouter.put('/:id', requirePermission('finance.accounts.edit', 'edit'), async (req, res) => {
+accountsRouter.put('/:id', requirePermission('finance.accounts.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const parsed = UpdateAccountSchema.safeParse(req.body)
     if (!parsed.success) {
       sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -187,24 +188,24 @@ accountsRouter.put('/:id', requirePermission('finance.accounts.edit', 'edit'), a
     )
     await logAudit({
       companyId,
-      userId: req.auth!.userId,
+      userId: getAuth(req).userId,
       action: 'UPDATE',
       tableName: 'chart_of_accounts',
-      recordId: req.params['id']!,
+      recordId: requireParam(req, 'id'),
       newValues: parsed.data,
     })
     sendOk(res, result.rows[0])
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update account', err)
   }
-})
+}))
 
 accountsRouter.delete(
   '/:id',
   requirePermission('finance.accounts.admin', 'admin'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const lines = await query(
         'SELECT COUNT(*) FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id WHERE jl.account_id = $1 AND je.company_id = $2',
         [req.params['id'], companyId],
@@ -219,25 +220,25 @@ accountsRouter.delete(
       )
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'DELETE',
         tableName: 'chart_of_accounts',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
       })
       sendOk(res, { deleted: true })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete account', err)
     }
-  },
+  }),
 )
 
 // Account ledger
 accountsRouter.get(
   '/:id/ledger',
   requirePermission('finance.accounts.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const { from_date, to_date, page = '1', limit = '50' } = req.query
       const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
 
@@ -265,7 +266,7 @@ accountsRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch ledger', err)
     }
-  },
+  }),
 )
 
 // Placeholder for pool export (used by other route files via shared import)

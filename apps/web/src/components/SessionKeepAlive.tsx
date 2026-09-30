@@ -24,10 +24,11 @@ export function SessionKeepAlive() {
       const currentRefreshToken = useAuthStore.getState().refreshToken
       if (!currentRefreshToken) return
       try {
-        const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/v1/auth/refresh`, {
-          refreshToken: currentRefreshToken,
-        })
-        const payload = (res.data?.data ?? res.data) as { accessToken: string }
+        const res = await axios.post<{ data?: { accessToken: string }; accessToken?: string }>(
+          `${import.meta.env.VITE_API_URL}/api/v1/auth/refresh`,
+          { refreshToken: currentRefreshToken },
+        )
+        const payload = (res.data.data ?? res.data) as { accessToken: string }
         const { accessToken } = payload
         const store = useAuthStore.getState()
         store.setAccessToken(accessToken)

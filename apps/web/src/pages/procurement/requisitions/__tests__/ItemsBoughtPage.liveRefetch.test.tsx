@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 // Unlike ItemsBoughtPage.test.tsx's static mocks, useQuery here keeps live,
 // updatable data via a real useState — so calling refetch() actually causes
@@ -15,11 +17,11 @@ const mockUseMutation = vi.fn()
 let liveLines: Record<string, unknown>[] = []
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
     useQuery: (doc: unknown) => {
-      const opName = (doc as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name?.value
+      const opName = (doc as { definitions?: { kind?: string; name?: { value?: string } }[] }).definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value
       const [, forceUpdate] = useState(0)
       if (opName === 'Vendors') {
         return {
@@ -52,7 +54,7 @@ vi.mock('@apollo/client', async (importOriginal) => {
       }
       return { data: undefined, loading: false }
     },
-    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    useMutation: (...args: unknown[]): unknown => mockUseMutation(...args),
     useLazyQuery: () => [vi.fn(), { data: undefined, loading: false }],
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
@@ -70,7 +72,7 @@ vi.mock('../../../../store/authStore', () => ({
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => mockNavigate, useParams: () => ({ id: 'req-1' }) }
 })
 
@@ -114,7 +116,7 @@ beforeEach(() => {
   global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }) as unknown as typeof fetch
 
   mockUseMutation.mockImplementation((doc: unknown, opts?: { onCompleted?: (d?: unknown) => void }) => {
-    const opName = (doc as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name?.value
+    const opName = (doc as { definitions?: { kind?: string; name?: { value?: string } }[] }).definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value
     if (opName === 'EnsureCashPurchaseVendor') {
       return [vi.fn().mockResolvedValue({ data: { ensureCashPurchaseVendor: { id: 'vendor-cash' } } }), { loading: false }]
     }
@@ -175,7 +177,8 @@ describe('ItemsBoughtPage — shared vendor/receipt survive a real refetch cycle
 
     fireEvent.click(screen.getByLabelText(/attach one receipt for all items/i))
     const file = new File(['x'], 'invoice.jpg', { type: 'image/jpeg' })
-    const globalFileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const globalFileInput = container.querySelector('input[type="file"]')
+    if (!globalFileInput) throw new Error('Expected a file input in the container')
     fireEvent.change(globalFileInput, { target: { files: [file] } })
 
     // Sanity: both toggles configured, both lines' vendor pickers are the
@@ -186,7 +189,7 @@ describe('ItemsBoughtPage — shared vendor/receipt survive a real refetch cycle
     // Record the purchase for line 1 only.
     const recordButtons = screen.getAllByRole('button', { name: /^record purchase$/i })
     expect(recordButtons).toHaveLength(2)
-    fireEvent.click(recordButtons[0]!)
+    fireEvent.click(recordButtons[0])
 
     // Let the async handler (upload + mutation + onCompleted->refetch) settle.
     await waitFor(() => {

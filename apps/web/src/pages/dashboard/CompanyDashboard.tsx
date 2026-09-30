@@ -139,7 +139,7 @@ export default function CompanyDashboard() {
 
   useEffect(() => {
     if (activeCompany?.id) {
-      refetch({ companyId: activeCompany.id })
+      void refetch({ companyId: activeCompany.id })
     }
   }, [activeCompany?.id])
 
@@ -152,7 +152,7 @@ export default function CompanyDashboard() {
               title="Failed to load dashboard"
               message="Could not fetch data from the server."
             >
-              <Button variant="secondary" size="sm" onClick={() => refetch()}>
+              <Button variant="secondary" size="sm" onClick={() => void refetch()}>
                 Retry
               </Button>
             </EmptyState>
@@ -298,7 +298,7 @@ export default function CompanyDashboard() {
             </p>
             {loading ? (
               <div className="skeleton" style={{ height: '260px', borderRadius: '8px' }} />
-            ) : (data?.revenueVsTarget?.length ?? 0) > 0 ? (
+            ) : (data?.revenueVsTarget.length ?? 0) > 0 ? (
               <BarChart
                 data={data?.revenueVsTarget ?? []}
                 xKey="month"
@@ -323,7 +323,7 @@ export default function CompanyDashboard() {
             </p>
             {loading ? (
               <div className="skeleton" style={{ height: '260px', borderRadius: '8px' }} />
-            ) : (data?.spendByCategory?.length ?? 0) > 0 ? (
+            ) : (data?.spendByCategory.length ?? 0) > 0 ? (
               <HorizontalBarChart
                 data={(data?.spendByCategory ?? []).map((d) => ({
                   label: d.category,
@@ -402,7 +402,7 @@ export default function CompanyDashboard() {
                   />
                 ))}
               </div>
-            ) : (data?.activityFeed?.length ?? 0) === 0 ? (
+            ) : (data?.activityFeed.length ?? 0) === 0 ? (
               <EmptyState message="No recent activity" />
             ) : (
               <div style={{ padding: '8px 0' }}>

@@ -1,11 +1,12 @@
-import { Router } from 'express'
+import { Router, type Request, type Response } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
-import { query, withTransaction, nextDocumentNumber, type PoolClient } from '@fnc-erp/db'
+import { query, withTransaction, nextDocumentNumber, type PoolClient, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
-export const employeeAdvancesRouter: import('express').Router = Router()
+export const employeeAdvancesRouter: Router = Router()
 
 // Thrown by resolveAdvanceAccounts for expected, user-actionable setup gaps
 // (missing Settings config, stale references) — callers catch this
@@ -93,7 +94,7 @@ async function resolveAdvanceAccounts(
         parentAcct['currency_code'],
       ],
     )
-    advanceAccountId = newAcctRes.rows[0]!.id as string
+    advanceAccountId = firstRowOrThrow(newAcctRes).id as string
     await client.query(`UPDATE employees SET advance_control_account_id=$1 WHERE id=$2`, [
       advanceAccountId,
       employeeId,
@@ -130,7 +131,7 @@ const selfRequestSchema = z.object({
 employeeAdvancesRouter.get(
   '/',
   requirePermission('finance.advances.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       status: z.string().optional(),
       employee_id: z.string().uuid().optional(),
@@ -141,7 +142,7 @@ employeeAdvancesRouter.get(
     try {
       const { status, employee_id, project_id, limit, offset } = schema.parse(req.query)
       const conditions: string[] = ['a.company_id = $1']
-      const params: unknown[] = [req.auth!.companyId]
+      const params: unknown[] = [getAuth(req).companyId]
       let p = 2
       if (status) {
         conditions.push(`a.status = $${p++}`)
@@ -167,7 +168,7 @@ employeeAdvancesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load advances', err)
     }
-  },
+  }),
 )
 
 // ─── Summary KPIs ───────────────────────────────────────────────────────────
@@ -175,7 +176,7 @@ employeeAdvancesRouter.get(
 employeeAdvancesRouter.get(
   '/summary',
   requirePermission('finance.advances.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT
@@ -185,13 +186,13 @@ employeeAdvancesRouter.get(
            COALESCE(SUM(outstanding_amount) FILTER (WHERE status IN ('approved','partially_settled')), 0) AS total_outstanding,
            COUNT(*) FILTER (WHERE status='settled') AS settled_count
          FROM employee_advances WHERE company_id=$1`,
-        [req.auth!.companyId],
+        [getAuth(req).companyId],
       )
       sendOk(res, r.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load summary', err)
     }
-  },
+  }),
 )
 
 // ─── Get advance with settlements + returns ────────────────────────────────
@@ -206,11 +207,11 @@ employeeAdvancesRouter.get(
 employeeAdvancesRouter.get(
   '/:id([0-9a-fA-F-]{36})',
   requirePermission('finance.advances.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const a = await query(`SELECT * FROM employee_advances WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!a.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Advance not found')
@@ -232,7 +233,7 @@ employeeAdvancesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load advance', err)
     }
-  },
+  }),
 )
 
 // ─── Create advance (draft) ─────────────────────────────────────────────────
@@ -240,16 +241,16 @@ employeeAdvancesRouter.get(
 employeeAdvancesRouter.post(
   '/',
   requirePermission('finance.advances.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const d = advanceSchema.parse(req.body)
-      const advanceNumber = await nextDocumentNumber(req.auth!.companyId, 'employee_advance', 'ADV')
+      const advanceNumber = await nextDocumentNumber(getAuth(req).companyId, 'employee_advance', 'ADV')
       const row = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const { cashAccountId, advanceAccountId } = await resolveAdvanceAccounts(
             client,
-            req.auth!.companyId,
+            getAuth(req).companyId,
             d.employee_id,
             d.currency_code,
           )
@@ -259,7 +260,7 @@ employeeAdvancesRouter.post(
                 currency_code, fx_rate, amount, cash_account_id, advance_account_id, notes, created_by)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               advanceNumber,
               d.employee_id,
               d.employee_name,
@@ -272,18 +273,18 @@ employeeAdvancesRouter.post(
               cashAccountId,
               advanceAccountId,
               d.notes ?? null,
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          return r.rows[0]
+          return firstRowOrThrow(r)
         },
       )
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'INSERT',
         tableName: 'employee_advances',
-        recordId: row!.id as string,
+        recordId: row.id as string,
         newValues: { advance_number: advanceNumber, amount: d.amount },
       })
       sendOk(res, row, 201)
@@ -294,7 +295,7 @@ employeeAdvancesRouter.post(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create advance', err)
     }
-  },
+  }),
 )
 
 // ─── Employee self-service request ──────────────────────────────────────────
@@ -306,27 +307,27 @@ employeeAdvancesRouter.post(
 // mounted ahead of this router in app.ts is the only gate. Lands directly
 // as pending_approval; approval is the existing POST /:id/approve, unchanged.
 
-employeeAdvancesRouter.post('/request-self', async (req, res) => {
+employeeAdvancesRouter.post('/request-self', asyncHandler(async (req, res) => {
   try {
     const d = selfRequestSchema.parse(req.body)
     const result = await withTransaction(
-      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
       async (client) => {
         const empRes = await client.query(
           `SELECT id, first_name, last_name FROM employees WHERE user_id=$1 AND company_id=$2`,
-          [req.auth!.userId, req.auth!.companyId],
+          [getAuth(req).userId, getAuth(req).companyId],
         )
         const emp = empRes.rows[0] as Record<string, unknown> | undefined
         if (!emp) return { error: 'NO_EMPLOYEE_LINK' as const }
 
         const { cashAccountId, advanceAccountId } = await resolveAdvanceAccounts(
           client,
-          req.auth!.companyId,
+          getAuth(req).companyId,
           emp['id'] as string,
           d.currency_code,
         )
         const advanceNumber = await nextDocumentNumber(
-          req.auth!.companyId,
+          getAuth(req).companyId,
           'employee_advance',
           'ADV',
         )
@@ -337,7 +338,7 @@ employeeAdvancesRouter.post('/request-self', async (req, res) => {
               currency_code, fx_rate, amount, cash_account_id, advance_account_id, status, submitted_at, created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$10,$11,'pending_approval',NOW(),$12) RETURNING *`,
           [
-            req.auth!.companyId,
+            getAuth(req).companyId,
             advanceNumber,
             emp['id'],
             employeeName,
@@ -348,7 +349,7 @@ employeeAdvancesRouter.post('/request-self', async (req, res) => {
             d.amount,
             cashAccountId,
             advanceAccountId,
-            req.auth!.userId,
+            getAuth(req).userId,
           ],
         )
         return { advance: r.rows[0] }
@@ -360,8 +361,8 @@ employeeAdvancesRouter.post('/request-self', async (req, res) => {
     }
     const advance = result.advance as Record<string, unknown>
     await logAudit({
-      companyId: req.auth!.companyId,
-      userId: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      userId: getAuth(req).userId,
       action: 'INSERT',
       tableName: 'employee_advances',
       recordId: advance['id'] as string,
@@ -379,18 +380,18 @@ employeeAdvancesRouter.post('/request-self', async (req, res) => {
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to submit advance request', err)
   }
-})
+}))
 
 // ─── Update advance (draft only) ────────────────────────────────────────────
 
 employeeAdvancesRouter.put(
   '/:id',
   requirePermission('finance.advances.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const existing = await query(
         `SELECT status FROM employee_advances WHERE id=$1 AND company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!existing.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Advance not found')
@@ -402,11 +403,11 @@ employeeAdvancesRouter.put(
       }
       const d = advanceSchema.parse(req.body)
       const row = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const { cashAccountId, advanceAccountId } = await resolveAdvanceAccounts(
             client,
-            req.auth!.companyId,
+            getAuth(req).companyId,
             d.employee_id,
             d.currency_code,
           )
@@ -442,7 +443,7 @@ employeeAdvancesRouter.put(
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update advance', err)
     }
-  },
+  }),
 )
 
 // ─── Submit advance ─────────────────────────────────────────────────────────
@@ -450,12 +451,12 @@ employeeAdvancesRouter.put(
 employeeAdvancesRouter.post(
   '/:id/submit',
   requirePermission('finance.advances.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `UPDATE employee_advances SET status='pending_approval', submitted_at=NOW(), updated_at=NOW()
          WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING *`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Advance is not in draft status')
@@ -465,7 +466,7 @@ employeeAdvancesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to submit advance', err)
     }
-  },
+  }),
 )
 
 // ─── Approve advance (issues cash, posts journal) ───────────────────────────
@@ -486,13 +487,13 @@ const approveAdvanceSchema = z.object({
 employeeAdvancesRouter.post(
   '/:id/approve',
   requirePermission('finance.advances.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const d = approveAdvanceSchema.parse(req.body)
       if (d.cost_center_id) {
         const ccCheck = await query(`SELECT id FROM cost_centers WHERE id=$1 AND company_id=$2`, [
           d.cost_center_id,
-          req.auth!.companyId,
+          getAuth(req).companyId,
         ])
         if (!ccCheck.rows[0]) {
           sendError(res, 400, 'INVALID_COST_CENTER', 'Cost center not found in this company')
@@ -500,11 +501,11 @@ employeeAdvancesRouter.post(
         }
       }
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const advRes = await client.query(
             `SELECT * FROM employee_advances WHERE id=$1 AND company_id=$2 AND status='pending_approval' FOR UPDATE`,
-            [req.params['id'], req.auth!.companyId],
+            [req.params['id'], getAuth(req).companyId],
           )
           if (!advRes.rows[0]) return null
           const adv = advRes.rows[0] as Record<string, unknown>
@@ -514,14 +515,14 @@ employeeAdvancesRouter.post(
              VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'employee_advance_issuance', $4, $5, NOW(), $5)
              RETURNING id`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               adv['advance_number'],
               `Employee advance issued: ${adv['employee_name'] as string}`,
               adv['id'],
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const jeId = jeRes.rows[0]!.id as string
+          const jeId = firstRowOrThrow(jeRes).id as string
           const amountCompanyCurrency = (adv['amount'] as number) * (adv['fx_rate'] as number)
 
           await client.query(
@@ -555,7 +556,7 @@ employeeAdvancesRouter.post(
             `UPDATE employee_advances SET status='approved', approved_by=$1, approved_at=NOW(), journal_entry_id=$2,
                cost_center_id=COALESCE($3, cost_center_id), updated_at=NOW()
              WHERE id=$4 RETURNING *`,
-            [req.auth!.userId, jeId, d.cost_center_id ?? null, req.params['id']],
+            [getAuth(req).userId, jeId, d.cost_center_id ?? null, req.params['id']],
           )
           return updated.rows[0]
         },
@@ -565,8 +566,8 @@ employeeAdvancesRouter.post(
         return
       }
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'employee_advances',
         recordId: req.params['id'],
@@ -576,7 +577,7 @@ employeeAdvancesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve advance', err)
     }
-  },
+  }),
 )
 
 // ─── Reject advance ─────────────────────────────────────────────────────────
@@ -584,14 +585,14 @@ employeeAdvancesRouter.post(
 employeeAdvancesRouter.post(
   '/:id/reject',
   requirePermission('finance.advances.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({ reason: z.string().min(1) })
     try {
       const { reason } = schema.parse(req.body)
       const r = await query(
         `UPDATE employee_advances SET status='rejected', rejected_by=$1, rejected_at=NOW(), rejection_reason=$2, updated_at=NOW()
          WHERE id=$3 AND company_id=$4 AND status='pending_approval' RETURNING *`,
-        [req.auth!.userId, reason, req.params['id'], req.auth!.companyId],
+        [getAuth(req).userId, reason, req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Advance is not pending approval')
@@ -601,7 +602,7 @@ employeeAdvancesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to reject advance', err)
     }
-  },
+  }),
 )
 
 // ─── Void advance (reverses issuance journal, only if untouched) ───────────
@@ -616,16 +617,16 @@ employeeAdvancesRouter.post(
 employeeAdvancesRouter.post(
   '/:id/void',
   requirePermission('finance.advances.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({ reason: z.string().min(1) })
     try {
       const { reason } = schema.parse(req.body)
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const advRes = await client.query(
             `SELECT * FROM employee_advances WHERE id=$1 AND company_id=$2 AND status='approved' FOR UPDATE`,
-            [req.params['id'], req.auth!.companyId],
+            [req.params['id'], getAuth(req).companyId],
           )
           if (!advRes.rows[0]) return { error: 'INVALID_STATUS' as const }
           const adv = advRes.rows[0] as Record<string, unknown>
@@ -648,14 +649,14 @@ employeeAdvancesRouter.post(
              VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'cancellation', $4, $5, NOW(), $5)
              RETURNING id`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               `REV-${adv['advance_number'] as string}`,
               `Void of advance ${adv['advance_number'] as string}: ${reason}`,
               adv['journal_entry_id'],
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const revId = revRes.rows[0]!.id as string
+          const revId = firstRowOrThrow(revRes).id as string
 
           for (const line of origLines.rows as Record<string, unknown>[]) {
             await client.query(
@@ -684,13 +685,13 @@ employeeAdvancesRouter.post(
           const updated = await client.query(
             `UPDATE employee_advances SET status='cancelled', voided_by=$1, voided_at=NOW(), void_reason=$2, updated_at=NOW()
              WHERE id=$3 RETURNING *`,
-            [req.auth!.userId, reason, req.params['id']],
+            [getAuth(req).userId, reason, req.params['id']],
           )
           return { advance: updated.rows[0] }
         },
       )
       if ('error' in result) {
-        const messages: Record<string, string> = {
+        const messages = {
           INVALID_STATUS: 'Advance is not in a voidable state',
           HAS_ACTIVITY: 'Cannot void an advance that already has settlements or returns',
         }
@@ -698,13 +699,13 @@ employeeAdvancesRouter.post(
           res,
           result.error === 'INVALID_STATUS' ? 409 : 422,
           result.error,
-          messages[result.error]!,
+          messages[result.error],
         )
         return
       }
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'employee_advances',
         recordId: req.params['id'],
@@ -714,7 +715,7 @@ employeeAdvancesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to void advance', err)
     }
-  },
+  }),
 )
 
 // ─── Per-advance ledger (chronological running balance) ────────────────────
@@ -728,11 +729,11 @@ employeeAdvancesRouter.post(
 employeeAdvancesRouter.get(
   '/:id/ledger',
   requirePermission('finance.advances.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const adv = await query(`SELECT id FROM employee_advances WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!adv.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Advance not found')
@@ -758,7 +759,7 @@ employeeAdvancesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load ledger', err)
     }
-  },
+  }),
 )
 
 // ─── Pending PO line items (settlement queue) ───────────────────────────────
@@ -772,11 +773,11 @@ employeeAdvancesRouter.get(
 employeeAdvancesRouter.get(
   '/:id([0-9a-fA-F-]{36})/pending-po-lines',
   requirePermission('finance.advances.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const adv = await query(`SELECT id FROM employee_advances WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!adv.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Advance not found')
@@ -797,13 +798,13 @@ employeeAdvancesRouter.get(
          WHERE po.company_id=$1 AND po.funding_advance_id=$2 AND po.status='completed'
            AND pl.advance_settlement_id IS NULL
          ORDER BY po.po_number, pl.line_number`,
-        [req.auth!.companyId, req.params['id']],
+        [getAuth(req).companyId, req.params['id']],
       )
       sendOk(res, r.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load pending PO line items', err)
     }
-  },
+  }),
 )
 
 // ─── Company-wide outstanding dashboard ─────────────────────────────────────
@@ -811,7 +812,7 @@ employeeAdvancesRouter.get(
 employeeAdvancesRouter.get(
   '/dashboard',
   requirePermission('finance.advances.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const [advances, byEmployee] = await Promise.all([
         query(
@@ -820,7 +821,7 @@ employeeAdvancesRouter.get(
            FROM employee_advances
            WHERE company_id=$1 AND status IN ('approved','partially_settled')
            ORDER BY outstanding_amount DESC`,
-          [req.auth!.companyId],
+          [getAuth(req).companyId],
         ),
         query(
           `SELECT employee_id, employee_name,
@@ -833,14 +834,14 @@ employeeAdvancesRouter.get(
            WHERE company_id=$1 AND status IN ('approved','partially_settled')
            GROUP BY employee_id, employee_name
            ORDER BY total_outstanding DESC`,
-          [req.auth!.companyId],
+          [getAuth(req).companyId],
         ),
       ])
       sendOk(res, { advances: advances.rows, by_employee: byEmployee.rows })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load dashboard', err)
     }
-  },
+  }),
 )
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -896,7 +897,7 @@ const settlementFromPOLinesSchema = z.object({
 employeeAdvancesRouter.get(
   '/settlements',
   requirePermission('finance.advances.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       advance_id: z.string().uuid().optional(),
       status: z.string().optional(),
@@ -906,7 +907,7 @@ employeeAdvancesRouter.get(
     try {
       const { advance_id, status, limit, offset } = schema.parse(req.query)
       const conditions: string[] = ['s.company_id = $1']
-      const params: unknown[] = [req.auth!.companyId]
+      const params: unknown[] = [getAuth(req).companyId]
       let p = 2
       if (advance_id) {
         conditions.push(`s.advance_id = $${p++}`)
@@ -929,7 +930,7 @@ employeeAdvancesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load settlements', err)
     }
-  },
+  }),
 )
 
 // ─── Get settlement with lines ──────────────────────────────────────────────
@@ -937,14 +938,14 @@ employeeAdvancesRouter.get(
 employeeAdvancesRouter.get(
   '/settlements/:id',
   requirePermission('finance.advances.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const s = await query(
         `SELECT s.*, a.advance_number, a.currency_code AS advance_currency_code
          FROM advance_settlements s
          JOIN employee_advances a ON a.id = s.advance_id
          WHERE s.id=$1 AND s.company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!s.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Settlement not found')
@@ -965,7 +966,7 @@ employeeAdvancesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load settlement', err)
     }
-  },
+  }),
 )
 
 // ─── Create settlement from bundled PO lines (posts immediately) ───────────
@@ -976,24 +977,21 @@ employeeAdvancesRouter.get(
 // total) but inlined into creation instead of a separate approve step,
 // since selecting which PO lines to bundle *is* the review for this path.
 
-async function createSettlementFromPOLines(
-  req: import('express').Request,
-  res: import('express').Response,
-): Promise<void> {
+async function createSettlementFromPOLines(req: Request, res: Response): Promise<void> {
   try {
     const d = settlementFromPOLinesSchema.parse(req.body)
     const settlementNumber = await nextDocumentNumber(
-      req.auth!.companyId,
+      getAuth(req).companyId,
       'advance_settlement',
       'SET',
     )
     const result = await withTransaction(
-      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
       async (client) => {
         const advRes = await client.query(
           `SELECT * FROM employee_advances
            WHERE id=$1 AND company_id=$2 AND status IN ('approved','partially_settled') FOR UPDATE`,
-          [d.advance_id, req.auth!.companyId],
+          [d.advance_id, getAuth(req).companyId],
         )
         if (!advRes.rows[0]) return { error: 'INVALID_STATUS' as const }
         const advance = advRes.rows[0] as Record<string, unknown>
@@ -1025,7 +1023,7 @@ async function createSettlementFromPOLines(
            LEFT JOIN analytic_accounts aa ON aa.id = p.analytic_account_id
            WHERE pl.id = ANY($1::uuid[]) AND po.company_id=$2 AND po.funding_advance_id=$3
              AND po.status='completed' AND pl.advance_settlement_id IS NULL`,
-          [d.po_line_ids, req.auth!.companyId, d.advance_id],
+          [d.po_line_ids, getAuth(req).companyId, d.advance_id],
         )
         if (linesRes.rows.length !== d.po_line_ids.length) {
           return { error: 'INELIGIBLE_LINES' as const }
@@ -1050,7 +1048,7 @@ async function createSettlementFromPOLines(
               description, currency_code, total_amount, notes, status, created_by, approved_by, approved_at)
            VALUES ($1,$2,$3,$4,$5,COALESCE($6,CURRENT_DATE),$7,$8,$9,$10,'approved',$11,$11,NOW()) RETURNING *`,
           [
-            req.auth!.companyId,
+            getAuth(req).companyId,
             settlementNumber,
             d.advance_id,
             advance['employee_id'],
@@ -1061,7 +1059,7 @@ async function createSettlementFromPOLines(
             advance['currency_code'],
             totalAmount,
             d.notes ?? null,
-            req.auth!.userId,
+            getAuth(req).userId,
           ],
         )
         const settlement = sRes.rows[0] as Record<string, unknown>
@@ -1071,14 +1069,14 @@ async function createSettlementFromPOLines(
            VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'advance_settlement', $4, $5, NOW(), $5)
            RETURNING id`,
           [
-            req.auth!.companyId,
+            getAuth(req).companyId,
             settlementNumber,
             `Advance settlement: ${advance['employee_name'] as string}`,
             settlement['id'],
-            req.auth!.userId,
+            getAuth(req).userId,
           ],
         )
-        const jeId = jeRes.rows[0]!.id as string
+        const jeId = firstRowOrThrow(jeRes).id as string
         const advFxRate = parseFloat(String(advance['fx_rate']))
         const insertedLines = []
 
@@ -1091,7 +1089,7 @@ async function createSettlementFromPOLines(
              VALUES ($1,$2,COALESCE($3,CURRENT_DATE),$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
             [
               settlement['id'],
-              req.auth!.companyId,
+              getAuth(req).companyId,
               d.settlement_date ?? null,
               line['gl_account_id'],
               line['project_id'],
@@ -1160,7 +1158,7 @@ async function createSettlementFromPOLines(
       },
     )
     if ('error' in result) {
-      const messages: Record<string, string> = {
+      const messages = {
         INVALID_STATUS: 'Advance is not approved or partially settled',
         INELIGIBLE_LINES:
           'One or more selected PO lines are no longer eligible (already settled, PO not completed, or not funded by this advance)',
@@ -1169,13 +1167,13 @@ async function createSettlementFromPOLines(
           'A project-tagged PO line references a project with no analytic account configured — set one before this line can settle',
       }
       const statusCode = result.error === 'INVALID_STATUS' ? 409 : 422
-      sendError(res, statusCode, result.error, messages[result.error]!)
+      sendError(res, statusCode, result.error, messages[result.error])
       return
     }
     const settlement = result.settlement as Record<string, unknown>
     await logAudit({
-      companyId: req.auth!.companyId,
-      userId: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      userId: getAuth(req).userId,
       action: 'INSERT',
       tableName: 'advance_settlements',
       recordId: settlement['id'] as string,
@@ -1196,7 +1194,7 @@ async function createSettlementFromPOLines(
 employeeAdvancesRouter.post(
   '/settlements',
   requirePermission('finance.advances.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     if (Array.isArray((req.body as Record<string, unknown> | undefined)?.['po_line_ids'])) {
       await createSettlementFromPOLines(req, res)
       return
@@ -1205,7 +1203,7 @@ employeeAdvancesRouter.post(
       const d = settlementSchema.parse(req.body)
       const adv = await query(
         `SELECT id, employee_id, employee_name, currency_code, fx_rate, status FROM employee_advances WHERE id=$1 AND company_id=$2`,
-        [d.advance_id, req.auth!.companyId],
+        [d.advance_id, getAuth(req).companyId],
       )
       if (!adv.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Advance not found')
@@ -1219,13 +1217,13 @@ employeeAdvancesRouter.post(
 
       const totalAmount = d.lines.reduce((sum, l) => sum + l.amount, 0)
       const settlementNumber = await nextDocumentNumber(
-        req.auth!.companyId,
+        getAuth(req).companyId,
         'advance_settlement',
         'SET',
       )
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const sRes = await client.query(
             `INSERT INTO advance_settlements
@@ -1233,7 +1231,7 @@ employeeAdvancesRouter.post(
                 description, currency_code, total_amount, notes, created_by)
              VALUES ($1,$2,$3,$4,$5,COALESCE($6,CURRENT_DATE),$7,$8,$9,$10,$11) RETURNING *`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               settlementNumber,
               d.advance_id,
               advance['employee_id'],
@@ -1243,10 +1241,10 @@ employeeAdvancesRouter.post(
               advance['currency_code'],
               totalAmount,
               d.notes ?? null,
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const settlement = sRes.rows[0]!
+          const settlement = firstRowOrThrow(sRes)
           const lines = []
           for (const line of d.lines) {
             const lr = await client.query(
@@ -1257,7 +1255,7 @@ employeeAdvancesRouter.post(
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
               [
                 settlement.id,
-                req.auth!.companyId,
+                getAuth(req).companyId,
                 line.line_date,
                 line.gl_account_id,
                 line.category_id ?? null,
@@ -1279,8 +1277,8 @@ employeeAdvancesRouter.post(
         },
       )
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'INSERT',
         tableName: 'advance_settlements',
         recordId: result.id as string,
@@ -1290,7 +1288,7 @@ employeeAdvancesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create settlement', err)
     }
-  },
+  }),
 )
 
 // ─── Update settlement (draft only) ─────────────────────────────────────────
@@ -1298,13 +1296,13 @@ employeeAdvancesRouter.post(
 employeeAdvancesRouter.put(
   '/settlements/:id',
   requirePermission('finance.advances.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const existing = await query(
         `SELECT s.status, a.currency_code AS advance_currency_code, a.fx_rate AS advance_fx_rate
          FROM advance_settlements s JOIN employee_advances a ON a.id = s.advance_id
          WHERE s.id=$1 AND s.company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!existing.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Settlement not found')
@@ -1321,7 +1319,7 @@ employeeAdvancesRouter.put(
       const totalAmount = d.lines.reduce((sum, l) => sum + l.amount, 0)
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const sRes = await client.query(
             `UPDATE advance_settlements SET
@@ -1348,7 +1346,7 @@ employeeAdvancesRouter.put(
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
               [
                 req.params['id'],
-                req.auth!.companyId,
+                getAuth(req).companyId,
                 line.line_date,
                 line.gl_account_id,
                 line.category_id ?? null,
@@ -1373,7 +1371,7 @@ employeeAdvancesRouter.put(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update settlement', err)
     }
-  },
+  }),
 )
 
 // ─── Submit settlement ───────────────────────────────────────────────────────
@@ -1381,13 +1379,13 @@ employeeAdvancesRouter.put(
 employeeAdvancesRouter.post(
   '/settlements/:id/submit',
   requirePermission('finance.advances.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const existing = await query(
         `SELECT s.total_amount, a.outstanding_amount
          FROM advance_settlements s JOIN employee_advances a ON a.id = s.advance_id
          WHERE s.id=$1 AND s.company_id=$2 AND s.status='draft'`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!existing.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Settlement is not in draft status')
@@ -1410,13 +1408,13 @@ employeeAdvancesRouter.post(
       const r = await query(
         `UPDATE advance_settlements SET status='submitted', submitted_at=NOW(), updated_at=NOW()
          WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING *`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       sendOk(res, r.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to submit settlement', err)
     }
-  },
+  }),
 )
 
 // ─── Approve settlement (posts journal, reduces outstanding) ───────────────
@@ -1428,10 +1426,10 @@ employeeAdvancesRouter.post(
 employeeAdvancesRouter.post(
   '/settlements/:id/approve',
   requirePermission('finance.advances.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const sRes = await client.query(
             `SELECT s.*, a.advance_account_id, a.currency_code AS advance_currency_code,
@@ -1441,7 +1439,7 @@ employeeAdvancesRouter.post(
              JOIN employee_advances a ON a.id = s.advance_id
              WHERE s.id=$1 AND s.company_id=$2 AND s.status='submitted' AND a.status IN ('approved','partially_settled')
              FOR UPDATE OF a`,
-            [req.params['id'], req.auth!.companyId],
+            [req.params['id'], getAuth(req).companyId],
           )
           if (!sRes.rows[0]) return { error: 'INVALID_STATUS' as const }
           const s = sRes.rows[0] as Record<string, unknown>
@@ -1474,14 +1472,14 @@ employeeAdvancesRouter.post(
              VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'advance_settlement', $4, $5, NOW(), $5)
              RETURNING id`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               s['settlement_number'],
               `Advance settlement: ${s['employee_name'] as string}`,
               s['id'],
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const jeId = jeRes.rows[0]!.id as string
+          const jeId = firstRowOrThrow(jeRes).id as string
 
           for (const line of lines.rows as Record<string, unknown>[]) {
             const amt = parseFloat(String(line['amount']))
@@ -1522,7 +1520,7 @@ employeeAdvancesRouter.post(
           const updatedSettlement = await client.query(
             `UPDATE advance_settlements SET status='approved', approved_by=$1, approved_at=NOW(), journal_entry_id=$2, updated_at=NOW()
              WHERE id=$3 RETURNING *`,
-            [req.auth!.userId, jeId, req.params['id']],
+            [getAuth(req).userId, jeId, req.params['id']],
           )
 
           const newSettled = parseFloat(String(s['settled_amount'])) + totalAmount
@@ -1539,19 +1537,19 @@ employeeAdvancesRouter.post(
         },
       )
       if ('error' in result) {
-        const messages: Record<string, string> = {
+        const messages = {
           INVALID_STATUS: 'Settlement is not in submitted status',
           OVER_SETTLEMENT: 'Settlement total exceeds the advance’s outstanding balance',
           PROJECT_MISSING_ANALYTIC_ACCOUNT:
             'A project-tagged line references a project with no analytic account configured — set one before this line can post',
         }
         const statusCode = result.error === 'INVALID_STATUS' ? 409 : 422
-        sendError(res, statusCode, result.error, messages[result.error]!)
+        sendError(res, statusCode, result.error, messages[result.error])
         return
       }
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'advance_settlements',
         recordId: req.params['id'],
@@ -1561,7 +1559,7 @@ employeeAdvancesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve settlement', err)
     }
-  },
+  }),
 )
 
 // ─── Reject settlement ───────────────────────────────────────────────────────
@@ -1569,14 +1567,14 @@ employeeAdvancesRouter.post(
 employeeAdvancesRouter.post(
   '/settlements/:id/reject',
   requirePermission('finance.advances.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({ reason: z.string().min(1) })
     try {
       const { reason } = schema.parse(req.body)
       const r = await query(
         `UPDATE advance_settlements SET status='rejected', rejected_by=$1, rejected_at=NOW(), rejection_reason=$2, updated_at=NOW()
          WHERE id=$3 AND company_id=$4 AND status='submitted' RETURNING *`,
-        [req.auth!.userId, reason, req.params['id'], req.auth!.companyId],
+        [getAuth(req).userId, reason, req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Settlement is not in submitted status')
@@ -1586,7 +1584,7 @@ employeeAdvancesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to reject settlement', err)
     }
-  },
+  }),
 )
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -1614,7 +1612,7 @@ const returnSchema = z.object({
 employeeAdvancesRouter.get(
   '/returns',
   requirePermission('finance.advances.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       advance_id: z.string().uuid().optional(),
       status: z.string().optional(),
@@ -1624,7 +1622,7 @@ employeeAdvancesRouter.get(
     try {
       const { advance_id, status, limit, offset } = schema.parse(req.query)
       const conditions: string[] = ['r.company_id = $1']
-      const params: unknown[] = [req.auth!.companyId]
+      const params: unknown[] = [getAuth(req).companyId]
       let p = 2
       if (advance_id) {
         conditions.push(`r.advance_id = $${p++}`)
@@ -1647,7 +1645,7 @@ employeeAdvancesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load returns', err)
     }
-  },
+  }),
 )
 
 // ─── Get return ──────────────────────────────────────────────────────────
@@ -1655,14 +1653,14 @@ employeeAdvancesRouter.get(
 employeeAdvancesRouter.get(
   '/returns/:id',
   requirePermission('finance.advances.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `SELECT r.*, a.advance_number, a.employee_name
          FROM advance_returns r
          JOIN employee_advances a ON a.id = r.advance_id
          WHERE r.id=$1 AND r.company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Return not found')
@@ -1672,7 +1670,7 @@ employeeAdvancesRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load return', err)
     }
-  },
+  }),
 )
 
 // ─── Create return (draft) ──────────────────────────────────────────────
@@ -1680,12 +1678,12 @@ employeeAdvancesRouter.get(
 employeeAdvancesRouter.post(
   '/returns',
   requirePermission('finance.advances.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const d = returnSchema.parse(req.body)
       const adv = await query(
         `SELECT id, cash_account_id, status, outstanding_amount FROM employee_advances WHERE id=$1 AND company_id=$2`,
-        [d.advance_id, req.auth!.companyId],
+        [d.advance_id, getAuth(req).companyId],
       )
       if (!adv.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Advance not found')
@@ -1713,35 +1711,35 @@ employeeAdvancesRouter.post(
         return
       }
 
-      const returnNumber = await nextDocumentNumber(req.auth!.companyId, 'advance_return', 'RET')
+      const returnNumber = await nextDocumentNumber(getAuth(req).companyId, 'advance_return', 'RET')
       const r = await query(
         `INSERT INTO advance_returns
            (company_id, return_number, advance_id, return_date, amount, cash_account_id, description, created_by)
          VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,$8) RETURNING *`,
         [
-          req.auth!.companyId,
+          getAuth(req).companyId,
           returnNumber,
           d.advance_id,
           d.return_date ?? null,
           d.amount,
           d.cash_account_id ?? advance['cash_account_id'],
           d.description ?? null,
-          req.auth!.userId,
+          getAuth(req).userId,
         ],
       )
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'INSERT',
         tableName: 'advance_returns',
-        recordId: r.rows[0]!['id'] as string,
+        recordId: firstRowOrThrow(r)['id'] as string,
         newValues: { return_number: returnNumber, amount: d.amount },
       })
       sendOk(res, r.rows[0], 201)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create return', err)
     }
-  },
+  }),
 )
 
 // ─── Update return (draft only) ─────────────────────────────────────────
@@ -1749,13 +1747,13 @@ employeeAdvancesRouter.post(
 employeeAdvancesRouter.put(
   '/returns/:id',
   requirePermission('finance.advances.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const existing = await query(
         `SELECT r.status, a.cash_account_id AS advance_cash_account_id, a.outstanding_amount
          FROM advance_returns r JOIN employee_advances a ON a.id = r.advance_id
          WHERE r.id=$1 AND r.company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!existing.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Return not found')
@@ -1791,7 +1789,7 @@ employeeAdvancesRouter.put(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update return', err)
     }
-  },
+  }),
 )
 
 // ─── Approve return (posts journal, reduces outstanding) ───────────────────
@@ -1799,10 +1797,10 @@ employeeAdvancesRouter.put(
 employeeAdvancesRouter.post(
   '/returns/:id/approve',
   requirePermission('finance.advances.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const rRes = await client.query(
             `SELECT ret.*, a.advance_account_id, a.currency_code AS advance_currency_code,
@@ -1812,7 +1810,7 @@ employeeAdvancesRouter.post(
              JOIN employee_advances a ON a.id = ret.advance_id
              WHERE ret.id=$1 AND ret.company_id=$2 AND ret.status='draft' AND a.status IN ('approved','partially_settled')
              FOR UPDATE OF a`,
-            [req.params['id'], req.auth!.companyId],
+            [req.params['id'], getAuth(req).companyId],
           )
           if (!rRes.rows[0]) return { error: 'INVALID_STATUS' as const }
           const ret = rRes.rows[0] as Record<string, unknown>
@@ -1827,14 +1825,14 @@ employeeAdvancesRouter.post(
              VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'advance_return', $4, $5, NOW(), $5)
              RETURNING id`,
             [
-              req.auth!.companyId,
+              getAuth(req).companyId,
               ret['return_number'],
               `Advance return: ${ret['return_number'] as string}`,
               ret['id'],
-              req.auth!.userId,
+              getAuth(req).userId,
             ],
           )
-          const jeId = jeRes.rows[0]!.id as string
+          const jeId = firstRowOrThrow(jeRes).id as string
           const fxRate = parseFloat(String(ret['advance_fx_rate']))
           const amountCompanyCurrency = amt * fxRate
 
@@ -1868,7 +1866,7 @@ employeeAdvancesRouter.post(
           const updatedReturn = await client.query(
             `UPDATE advance_returns SET status='approved', approved_by=$1, approved_at=NOW(), journal_entry_id=$2, updated_at=NOW()
              WHERE id=$3 RETURNING *`,
-            [req.auth!.userId, jeId, req.params['id']],
+            [getAuth(req).userId, jeId, req.params['id']],
           )
 
           const newReturned = parseFloat(String(ret['returned_amount'])) + amt
@@ -1885,7 +1883,7 @@ employeeAdvancesRouter.post(
         },
       )
       if ('error' in result) {
-        const messages: Record<string, string> = {
+        const messages = {
           INVALID_STATUS: 'Return is not in draft status',
           OVER_RETURN: 'Return amount exceeds the advance’s outstanding balance',
         }
@@ -1893,13 +1891,13 @@ employeeAdvancesRouter.post(
           res,
           result.error === 'INVALID_STATUS' ? 409 : 422,
           result.error,
-          messages[result.error]!,
+          messages[result.error],
         )
         return
       }
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'advance_returns',
         recordId: req.params['id'],
@@ -1909,7 +1907,7 @@ employeeAdvancesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve return', err)
     }
-  },
+  }),
 )
 
 // ─── Cancel return (draft only) ─────────────────────────────────────────
@@ -1917,12 +1915,12 @@ employeeAdvancesRouter.post(
 employeeAdvancesRouter.post(
   '/returns/:id/cancel',
   requirePermission('finance.advances.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `UPDATE advance_returns SET status='cancelled', updated_at=NOW()
          WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING *`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Return is not in draft status')
@@ -1932,5 +1930,5 @@ employeeAdvancesRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to cancel return', err)
     }
-  },
+  }),
 )

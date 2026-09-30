@@ -1,6 +1,7 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
-import { query } from '@fnc-erp/db'
+import { query, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -20,9 +21,9 @@ export const reportsRouter: IRouter = Router()
 reportsRouter.get(
   '/trial-balance',
   requirePermission('finance.reports.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const { as_of_date } = req.query
 
       const params: unknown[] = [companyId]
@@ -54,15 +55,15 @@ reportsRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to generate trial balance', err)
     }
-  },
+  }),
 )
 
 reportsRouter.get(
   '/profit-loss',
   requirePermission('finance.reports.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const { from_date, to_date, cost_center_id } = req.query
 
       const params: unknown[] = [companyId]
@@ -100,15 +101,15 @@ reportsRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to generate P&L', err)
     }
-  },
+  }),
 )
 
 reportsRouter.get(
   '/balance-sheet',
   requirePermission('finance.reports.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const { as_of_date } = req.query
 
       const params: unknown[] = [companyId]
@@ -138,15 +139,15 @@ reportsRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to generate balance sheet', err)
     }
-  },
+  }),
 )
 
 reportsRouter.get(
   '/account-balance',
   requirePermission('finance.reports.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const { account_id, as_of_date } = req.query
       if (!account_id) {
         sendError(res, 400, 'MISSING_PARAM', 'account_id is required')
@@ -174,5 +175,5 @@ reportsRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch account balance', err)
     }
-  },
+  }),
 )

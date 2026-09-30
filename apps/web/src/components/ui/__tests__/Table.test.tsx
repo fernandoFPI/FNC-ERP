@@ -46,7 +46,9 @@ describe('Table', () => {
   it('calls onRowClick when row clicked', () => {
     const fn = vi.fn()
     wrap(<Table columns={columns} data={data} onRowClick={fn} />)
-    fireEvent.click(screen.getByText('Alpha').closest('tr')!)
+    const row = screen.getByText('Alpha').closest('tr')
+    if (!row) throw new Error('Expected a <tr> ancestor for Alpha')
+    fireEvent.click(row)
     expect(fn).toHaveBeenCalledWith(data[0])
   })
 

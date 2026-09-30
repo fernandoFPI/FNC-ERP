@@ -3,7 +3,8 @@ import type { IRouter, Request, Response } from 'express'
 import { z } from 'zod'
 import { pool, query } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { getAuth } from '@fnc-erp/auth'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const locationRouter: IRouter = Router({ mergeParams: true })
@@ -35,7 +36,7 @@ locationRouter.get('/', requirePermission('rental.assets.view', 'view'), async (
        WHERE elh.asset_id = $1
        ORDER BY elh.effective_at DESC
        LIMIT 1`,
-      [(req.params as Record<string, string>)['id']!],
+      [requireParam(req, 'id')],
     )
     sendOk(res, current.rows[0] ?? null)
   } catch (err) {
@@ -62,7 +63,7 @@ locationRouter.get('/history', requirePermission('rental.assets.view', 'view'), 
        WHERE elh.asset_id = $1
        ORDER BY elh.effective_at DESC
        LIMIT $2 OFFSET $3`,
-      [(req.params as Record<string, string>)['id']!, limit, offset],
+      [requireParam(req, 'id'), limit, offset],
     )
     sendOk(res, history.rows)
   } catch (err) {
@@ -78,11 +79,12 @@ locationRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async 
     return
   }
   const d = parsed.data
+  const assetId = requireParam(req, 'id')
 
   try {
     const assetRes = await query(
       `SELECT id FROM equipment_assets WHERE id = $1 AND company_id = $2`,
-      [(req.params as Record<string, string>)['id']!, req.auth!.companyId],
+      [assetId, getAuth(req).companyId],
     )
     if (!assetRes.rows[0]) {
       sendError(res, 404, 'ASSET_NOT_FOUND', 'Asset not found')
@@ -101,17 +103,17 @@ locationRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async 
             location_name, movement_type, recorded_by, recorded_via, notes)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING *`,
-        [(req.params as Record<string, string>)['id']!, d.stock_location_id ?? null, d.project_id ?? null,
+        [assetId, d.stock_location_id ?? null, d.project_id ?? null,
          d.gps_lat ?? null, d.gps_lng ?? null, d.gps_accuracy_meters ?? null,
          d.location_name ?? null, d.movement_type,
-         req.auth!.userId, d.recorded_via, d.notes ?? null],
+         getAuth(req).userId, d.recorded_via, d.notes ?? null],
       )
       locationRecord = result.rows[0] as Record<string, unknown>
 
       if (d.stock_location_id) {
         await client.query(
           `UPDATE equipment_assets SET current_location_id = $1, updated_at = NOW() WHERE id = $2`,
-          [d.stock_location_id, (req.params as Record<string, string>)['id']!],
+          [d.stock_location_id, assetId],
         )
       }
 
@@ -119,12 +121,12 @@ locationRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async 
         `UPDATE equipment_asset_stats
          SET last_location_update = NOW(), updated_at = NOW()
          WHERE asset_id = $1`,
-        [(req.params as Record<string, string>)['id']!],
+        [assetId],
       )
 
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.auth!.companyId,
+        userId: getAuth(req).userId,
+        companyId: getAuth(req).companyId,
         action: 'ASSET_LOCATION_UPDATED',
         tableName: 'equipment_location_history',
         recordId: locationRecord['id'] as string,
@@ -164,7 +166,7 @@ export async function getFleetLocations(req: Request, res: Response): Promise<vo
        LEFT JOIN stock_locations sl ON sl.id = elh.stock_location_id
        WHERE ea.company_id = $1 AND ea.is_active = true
        ORDER BY ea.id, elh.effective_at DESC NULLS LAST`,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
     sendOk(res, locations.rows)
   } catch (err) {

@@ -17,6 +17,7 @@ import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { useToastStore } from '../../../store/toastStore'
+import type { FxRateStalenessQuery, FxRateStalenessQueryVariables, FxRatesQuery, FxRatesQueryVariables, TriggerFxSyncMutation, TriggerFxSyncMutationVariables, UpsertFxRateMutation, UpsertFxRateMutationVariables } from '../../../graphql/generated'
 
 interface FXRate {
   id: string
@@ -24,15 +25,15 @@ interface FXRate {
   to_currency: string
   rate: string
   rate_date: string
-  source?: string
-  created_at?: string
+  source?: string | null
+  created_at?: string | null
 }
 
 interface StalenessStatus {
   currencyPair: string
-  lastRate?: number
-  lastRateDate?: string
-  ageHours?: number
+  lastRate?: number | null
+  lastRateDate?: string | null
+  ageHours?: number | null
   status: string
   message: string
 }
@@ -54,20 +55,20 @@ export default function FXRatesPage() {
     data: ratesData,
     loading: ratesLoading,
     refetch,
-  } = useQuery(FX_RATES_QUERY, {
+  } = useQuery<FxRatesQuery, FxRatesQueryVariables>(FX_RATES_QUERY, {
     variables: {},
     fetchPolicy: 'cache-and-network',
   })
 
-  const { data: stalenessData } = useQuery(FX_STALENESS_QUERY, {
+  const { data: stalenessData } = useQuery<FxRateStalenessQuery, FxRateStalenessQueryVariables>(FX_STALENESS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
 
-  const [upsertRate, { loading: upserting }] = useMutation(UPSERT_FX_RATE)
-  const [triggerSync, { loading: syncing }] = useMutation(TRIGGER_FX_SYNC)
+  const [upsertRate, { loading: upserting }] = useMutation<UpsertFxRateMutation, UpsertFxRateMutationVariables>(UPSERT_FX_RATE)
+  const [triggerSync, { loading: syncing }] = useMutation<TriggerFxSyncMutation, TriggerFxSyncMutationVariables>(TRIGGER_FX_SYNC)
 
   const rates: FXRate[] = ratesData?.fxRates ?? []
-  const pairs: StalenessStatus[] = stalenessData?.fxRateStaleness?.pairs ?? []
+  const pairs: StalenessStatus[] = stalenessData?.fxRateStaleness.pairs ?? []
 
   async function handleUpsert(e: React.FormEvent) {
     e.preventDefault()
@@ -101,7 +102,7 @@ export default function FXRatesPage() {
     try {
       await triggerSync()
       addToast({ type: 'success', message: 'FX sync triggered' })
-      setTimeout(() => refetch(), 2000)
+      setTimeout(() => void refetch(), 2000)
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -148,7 +149,7 @@ export default function FXRatesPage() {
         subtitle="Exchange rate management"
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="ghost" size="sm" onClick={handleSync} loading={syncing}>
+            <Button variant="ghost" size="sm" onClick={(...args: Parameters<typeof handleSync>) => void handleSync(...args)} loading={syncing}>
               Sync Rates
             </Button>
             <Button
@@ -230,7 +231,7 @@ export default function FXRatesPage() {
         title="Add / Update FX Rate"
       >
         <form
-          onSubmit={handleUpsert}
+          onSubmit={(...args: Parameters<typeof handleUpsert>) => void handleUpsert(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <div

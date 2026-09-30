@@ -115,7 +115,7 @@ export const useAuthStore = create<AuthState>()(
 
         // Admins have implicit full access — no DB lookup needed
         if (user.role === 'system_admin' || user.role === 'company_admin') {
-          set((state) => ({ user: { ...state.user!, permissions: {} } }))
+          set({ user: { ...user, permissions: {} } })
           return
         }
 
@@ -143,9 +143,7 @@ export const useAuthStore = create<AuthState>()(
             }
           }
 
-          set((state) => ({
-            user: { ...state.user!, permissions: flat },
-          }))
+          set({ user: { ...user, permissions: flat } })
         } catch {
           // On failure keep existing permissions — don't lock the user out
         }

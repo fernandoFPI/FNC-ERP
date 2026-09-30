@@ -59,7 +59,7 @@ export function UsageLogForm({
   return (
     <Modal open={open} onClose={onClose} title={`Log Usage — ${assetName}`}>
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
         style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
       >
         <Input
@@ -102,7 +102,7 @@ export function UsageLogForm({
           <div
             style={{
               padding: '12px',
-              background: theme.warningBg ?? theme.accentBg,
+              background: theme.warningBg,
               border: `1px solid ${theme.warning}`,
               borderRadius: '6px',
               fontSize: '13px',

@@ -3,9 +3,10 @@ import type { IRouter } from 'express'
 import { pool, query, withTransaction } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
+import { getAuth } from '@fnc-erp/auth'
 import { projectStateMachine } from '@fnc-erp/workflow'
 import { logger } from '@fnc-erp/logger'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import {
   canManageProject,
@@ -115,7 +116,7 @@ async function getNextStageSequence(projectId: string): Promise<number> {
     `SELECT COALESCE(MAX(sequence), 0) + 1 AS next_seq FROM project_stages WHERE project_id = $1`,
     [projectId],
   )
-  return result.rows[0]?.['next_seq'] as number ?? 1
+  return (result.rows[0]?.['next_seq'] as number) ?? 1
 }
 
 async function checkCompletionBlockers(projectId: string): Promise<string[]> {
@@ -136,9 +137,9 @@ async function checkCompletionBlockers(projectId: string): Promise<string[]> {
     ),
   ])
 
-  const poCount = parseInt(openPOs.rows[0]?.['count'] as string ?? '0')
-  const moCount = parseInt(activeMOs.rows[0]?.['count'] as string ?? '0')
-  const stageCount = parseInt(incompleteStages.rows[0]?.['count'] as string ?? '0')
+  const poCount = parseInt((openPOs.rows[0]?.['count'] as string) ?? '0')
+  const moCount = parseInt((activeMOs.rows[0]?.['count'] as string) ?? '0')
+  const stageCount = parseInt((incompleteStages.rows[0]?.['count'] as string) ?? '0')
 
   if (poCount > 0) blockers.push(`${poCount} open purchase order(s) must be completed first`)
   if (moCount > 0) blockers.push(`${moCount} active manufacturing order(s) must be completed first`)
@@ -216,7 +217,7 @@ projectsRouter.get('/', requirePermission('projects.view', 'view'), async (req, 
     const offset = (page - 1) * limit
 
     const conditions = [`p.company_id = $1`]
-    const values: unknown[] = [req.auth!.companyId]
+    const values: unknown[] = [getAuth(req).companyId]
     let p = 1
 
     if (status) {
@@ -273,8 +274,8 @@ projectsRouter.get('/', requirePermission('projects.view', 'view'), async (req, 
       pagination: {
         page,
         limit,
-        total: parseInt(total.rows[0]?.['count'] as string ?? '0'),
-        totalPages: Math.ceil(parseInt(total.rows[0]?.['count'] as string ?? '0') / limit),
+        total: parseInt((total.rows[0]?.['count'] as string) ?? '0'),
+        totalPages: Math.ceil(parseInt((total.rows[0]?.['count'] as string) ?? '0') / limit),
       },
     })
   } catch (err) {
@@ -287,12 +288,12 @@ projectsRouter.get('/', requirePermission('projects.view', 'view'), async (req, 
 projectsRouter.get('/:id', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
     const ctx = {
-      userId: req.auth!.userId,
-      companyId: req.auth!.companyId,
-      projectId: req.params['id']!,
+      userId: getAuth(req).userId,
+      companyId: getAuth(req).companyId,
+      projectId: requireParam(req, 'id'),
     }
 
-    const canView = await canViewProject(ctx, req.auth!.role)
+    const canView = await canViewProject(ctx, getAuth(req).role)
     if (!canView) {
       return sendError(res, 403, 'FORBIDDEN', 'Access denied to this project')
     }
@@ -389,7 +390,7 @@ projectsRouter.get('/:id', requirePermission('projects.view', 'view'), async (re
       LEFT JOIN project_stages ps ON ps.project_id = p.id
       WHERE p.id = $1 AND p.company_id = $2
       GROUP BY p.id, e.first_name, e.last_name, e.id, c.name, aa.name, cc.name`,
-      [req.params['id'], req.auth!.companyId],
+      [req.params['id'], getAuth(req).companyId],
     )
 
     if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
@@ -406,9 +407,9 @@ projectsRouter.get('/:id', requirePermission('projects.view', 'view'), async (re
 
 projectsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
-    const role = req.auth!.role
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
+    const role = getAuth(req).role
     const b = req.body as Record<string, unknown>
 
     if (!b['name']) return sendError(res, 400, 'MISSING_NAME', 'Project name is required')
@@ -488,12 +489,12 @@ projectsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req,
 
 projectsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
+    const id = requireParam(req, 'id')
     const ctx = { userId, companyId, projectId: id }
 
-    const canManage = await canManageProject(ctx, req.auth!.role)
+    const canManage = await canManageProject(ctx, getAuth(req).role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
     const b = req.body as Record<string, unknown>
@@ -546,8 +547,8 @@ projectsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (re
 
 projectsRouter.post('/:id/start', requirePermission('projects.approve', 'approve'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -564,8 +565,8 @@ projectsRouter.post('/:id/start', requirePermission('projects.approve', 'approve
 
 projectsRouter.post('/:id/hold', requirePermission('projects.approve', 'approve'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const { reason } = req.body as { reason?: string }
     if (!reason?.trim()) return sendError(res, 400, 'REASON_REQUIRED', 'Hold reason is required')
 
@@ -585,8 +586,8 @@ projectsRouter.post('/:id/hold', requirePermission('projects.approve', 'approve'
 
 projectsRouter.post('/:id/resume', requirePermission('projects.approve', 'approve'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -603,8 +604,8 @@ projectsRouter.post('/:id/resume', requirePermission('projects.approve', 'approv
 
 projectsRouter.post('/:id/submit', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -621,8 +622,8 @@ projectsRouter.post('/:id/submit', requirePermission('projects.edit', 'edit'), a
 
 projectsRouter.post('/:id/approve', requirePermission('projects.approve', 'approve'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -639,8 +640,8 @@ projectsRouter.post('/:id/approve', requirePermission('projects.approve', 'appro
 
 projectsRouter.post('/:id/reject-back', requirePermission('projects.approve', 'approve'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const { reason } = req.body as { reason?: string }
     if (!reason?.trim()) return sendError(res, 400, 'REASON_REQUIRED', 'Rejection reason is required')
 
@@ -660,8 +661,8 @@ projectsRouter.post('/:id/reject-back', requirePermission('projects.approve', 'a
 
 projectsRouter.post('/:id/complete', requirePermission('projects.approve', 'approve'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -683,8 +684,8 @@ projectsRouter.post('/:id/complete', requirePermission('projects.approve', 'appr
 
 projectsRouter.post('/:id/cancel', requirePermission('projects.approve', 'approve'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const { reason } = req.body as { reason?: string }
     if (!reason?.trim()) return sendError(res, 400, 'REASON_REQUIRED', 'Cancellation reason is required')
 
@@ -711,8 +712,8 @@ projectsRouter.post('/:id/cancel', requirePermission('projects.approve', 'approv
 
 projectsRouter.post('/:id/cancel-after-approval', requirePermission('projects.approve', 'approve'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const { reason } = req.body as { reason?: string }
     if (!reason?.trim()) return sendError(res, 400, 'REASON_REQUIRED', 'Reason is required')
 
@@ -744,8 +745,8 @@ projectsRouter.get('/:id/stages', requirePermission('projects.view', 'view'), as
 
 projectsRouter.post('/:id/stages', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -765,7 +766,7 @@ projectsRouter.post('/:id/stages', requirePermission('projects.edit', 'edit'), a
 projectsRouter.patch('/:id/stages/:stageId', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
     const { id, stageId } = req.params as { id: string; stageId: string }
-    const { userId, companyId, role } = req.auth!
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -809,7 +810,7 @@ projectsRouter.patch('/:id/stages/:stageId', requirePermission('projects.edit', 
 projectsRouter.put('/:id/stages/:stageId', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
     const { id, stageId } = req.params as { id: string; stageId: string }
-    const { userId, companyId, role } = req.auth!
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -845,7 +846,7 @@ projectsRouter.post('/:id/stages/:stageId/complete', requirePermission('projects
 
 projectsRouter.get('/:id/members', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const projectId = req.params['id']!
+    const projectId = requireParam(req, 'id')
     const membersResult = await query(
       `SELECT pm.*, e.first_name || ' ' || e.last_name AS employee_name, e.job_title, e.employee_number
        FROM project_members pm JOIN employees e ON e.id = pm.employee_id
@@ -863,8 +864,8 @@ projectsRouter.get('/:id/members', requirePermission('projects.view', 'view'), a
     )
     const permsMap: Record<string, Record<string, string>> = {}
     for (const row of permsResult.rows as Array<{ member_id: string; tab_key: string; access_level: string }>) {
-      if (!permsMap[row.member_id]) permsMap[row.member_id] = {}
-      permsMap[row.member_id]![row.tab_key] = row.access_level
+      const bucket = permsMap[row.member_id] ?? (permsMap[row.member_id] = {})
+      bucket[row.tab_key] = row.access_level
     }
     const enriched = members.map(m => ({ ...m, permissions: permsMap[m['id'] as string] ?? {} }))
     sendOk(res, enriched)
@@ -877,7 +878,7 @@ projectsRouter.get('/:id/members', requirePermission('projects.view', 'view'), a
 // (national_id, phone, hire/termination dates, etc.), just a name to pick.
 projectsRouter.get('/:id/team-candidates', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const { companyId } = req.auth!
+    const { companyId } = getAuth(req)
     const result = await query(
       `SELECT id, first_name, last_name, job_title
        FROM employees
@@ -893,7 +894,7 @@ projectsRouter.get('/:id/team-candidates', requirePermission('projects.edit', 'e
 projectsRouter.put('/:id/members/:memberId/permissions', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
     const { id, memberId } = req.params as { id: string; memberId: string }
-    const { userId, companyId, role } = req.auth!
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -929,8 +930,8 @@ projectsRouter.put('/:id/members/:memberId/permissions', requirePermission('proj
 
 projectsRouter.post('/:id/members', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const { userId, companyId, role } = req.auth!
+    const id = requireParam(req, 'id')
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -949,8 +950,10 @@ projectsRouter.post('/:id/members', requirePermission('projects.edit', 'edit'), 
     const empName = (empRow.rows[0] as Record<string, unknown>)?.['name'] ?? 'Unknown'
     await query(
       `INSERT INTO project_activity_log (project_id, actor_id, event_type, summary) VALUES ($1,$2,$3,$4)`,
-      [id, userId ?? null, 'team_add', `Team member added: ${String(empName)}`],
-    ).catch(() => {})
+      [id, userId, 'team_add', `Team member added: ${String(empName)}`],
+    ).catch(() => {
+      // best-effort activity log entry — don't block the main flow on it
+    })
     ;(async () => {
       const uRes = await query<{ user_id: string | null }>(
         `SELECT user_id FROM employees WHERE id=$1`, [b['employee_id']],
@@ -966,7 +969,9 @@ projectsRouter.post('/:id/members', requirePermission('projects.edit', 'edit'), 
             data: { projectId: id, projectName: projName, role: b['role'] ?? null } })],
         )
       }
-    })().catch(() => {})
+    })().catch(() => {
+      // best-effort notification — don't block the main flow on it
+    })
     sendOk(res, result.rows[0], 201)
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to add member', err) }
 })
@@ -974,7 +979,7 @@ projectsRouter.post('/:id/members', requirePermission('projects.edit', 'edit'), 
 projectsRouter.delete('/:id/members/:memberId', requirePermission('projects.cancel', 'approve'), async (req, res) => {
   try {
     const { id, memberId } = req.params as { id: string; memberId: string }
-    const { userId, companyId, role } = req.auth!
+    const { userId, companyId, role } = getAuth(req)
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
@@ -988,8 +993,10 @@ projectsRouter.delete('/:id/members/:memberId', requirePermission('projects.canc
     await query(`UPDATE project_members SET is_active = false, updated_at = NOW() WHERE id = $1 AND project_id = $2`, [memberId, id])
     await query(
       `INSERT INTO project_activity_log (project_id, actor_id, event_type, summary) VALUES ($1,$2,$3,$4)`,
-      [id, userId ?? null, 'team_remove', `Team member removed: ${String(empName)}`],
-    ).catch(() => {})
+      [id, userId, 'team_remove', `Team member removed: ${String(empName)}`],
+    ).catch(() => {
+      // best-effort activity log entry — don't block the main flow on it
+    })
     if (empUserId) {
       ;(async () => {
         const projRes = await query<{ name: string }>(`SELECT name FROM projects WHERE id=$1`, [id])
@@ -1000,7 +1007,9 @@ projectsRouter.delete('/:id/members/:memberId', requirePermission('projects.canc
             body: `You have been removed from the project "${projName}"`,
             data: { projectId: id, projectName: projName } })],
         )
-      })().catch(() => {})
+      })().catch(() => {
+        // best-effort notification — don't block the main flow on it
+      })
     }
     sendOk(res, { deleted: true })
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to remove member', err) }
@@ -1010,8 +1019,8 @@ projectsRouter.delete('/:id/members/:memberId', requirePermission('projects.canc
 
 projectsRouter.get('/:id/budget', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const proj = await query('SELECT id FROM projects WHERE id = $1 AND company_id = $2', [id, companyId])
     if (!proj.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
     const result = await query(
@@ -1029,7 +1038,7 @@ projectsRouter.get('/:id/budget', requirePermission('projects.view', 'view'), as
 
 projectsRouter.post('/:id/budget-lines', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const id = req.params['id']!
+    const id = requireParam(req, 'id')
     const b = req.body as Record<string, unknown>
     const result = await query(
       `INSERT INTO project_budget_lines (project_id, category, description, account_id, budgeted_amount, currency_code)
@@ -1050,8 +1059,8 @@ projectsRouter.delete('/:id/budget-lines/:lineId', requirePermission('projects.c
 
 projectsRouter.get('/:id/profitability', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const result = await query(`SELECT * FROM v_project_profitability WHERE project_id = $1 AND company_id = $2`, [id, companyId])
     if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
     sendOk(res, result.rows[0])
@@ -1060,8 +1069,8 @@ projectsRouter.get('/:id/profitability', requirePermission('projects.view', 'vie
 
 projectsRouter.get('/:id/costs', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const { source_type, from_date, to_date } = req.query as Record<string, string>
     const proj = await query('SELECT id FROM projects WHERE id = $1 AND company_id = $2', [id, companyId])
     if (!proj.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
@@ -1078,8 +1087,8 @@ projectsRouter.get('/:id/costs', requirePermission('projects.view', 'view'), asy
 
 projectsRouter.get('/:id/manufacturing-orders', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const result = await query(
       'SELECT * FROM manufacturing_orders WHERE project_id = $1 AND company_id = $2 ORDER BY created_at DESC',
       [id, companyId],

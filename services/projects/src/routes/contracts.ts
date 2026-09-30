@@ -1,9 +1,10 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { pool, query } from '@fnc-erp/db'
+import { pool, query, firstRowOrThrow } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { getAuth } from '@fnc-erp/auth'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const contractsRouter: IRouter = Router()
@@ -42,7 +43,7 @@ contractsRouter.get('/', requirePermission('projects.view', 'view'), async (req,
                                 JOIN project_invoices pi2 ON pi2.id=pip.invoice_id
                                 WHERE pi2.contract_id=pc.id),0) AS total_paid
                FROM project_contracts pc WHERE pc.company_id = $1`
-    const params: unknown[] = [req.auth!.companyId]
+    const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
     if (project_id) { sql += ` AND pc.project_id = $${idx++}`; params.push(project_id) }
     if (status) { sql += ` AND pc.status = $${idx++}`; params.push(status) }
@@ -55,8 +56,8 @@ contractsRouter.get('/', requirePermission('projects.view', 'view'), async (req,
 // GET /projects/contracts/:id
 contractsRouter.get('/:id', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const contract = await query('SELECT * FROM project_contracts WHERE id=$1 AND company_id=$2', [id, companyId])
     if (!contract.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
     const [milestones, invoices] = await Promise.all([
@@ -66,8 +67,8 @@ contractsRouter.get('/:id', requirePermission('projects.view', 'view'), async (r
     ])
     const c = contract.rows[0] as Record<string, unknown>
     const invRows = invoices.rows as Array<{ gross_total: string; status: string; total_paid: string }>
-    const totalInvoiced = invRows.filter(i => i.status !== 'cancelled').reduce((s, i) => s + parseFloat(i.gross_total ?? '0'), 0)
-    const totalPaid = invRows.reduce((s, i) => s + parseFloat(i.total_paid ?? '0'), 0)
+    const totalInvoiced = invRows.filter(i => i.status !== 'cancelled').reduce((s, i) => s + parseFloat(i.gross_total), 0)
+    const totalPaid = invRows.reduce((s, i) => s + parseFloat(i.total_paid), 0)
     sendOk(res, { ...c, milestones: milestones.rows, invoices: invoices.rows, total_invoiced: totalInvoiced, total_paid: totalPaid, outstanding: totalInvoiced - totalPaid })
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch contract', err) }
 })
@@ -75,8 +76,8 @@ contractsRouter.get('/:id', requirePermission('projects.view', 'view'), async (r
 // POST /projects/contracts
 contractsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
     const parsed = ContractSchema.safeParse(req.body)
     if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
@@ -98,7 +99,7 @@ contractsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req
        d.retention_pct, d.contract_date, d.start_date ?? null, d.end_date ?? null,
        d.contract_doc_path ?? null, d.notes ?? null, userId],
     )
-    const contract = result.rows[0]!
+    const contract = firstRowOrThrow(result)
     await logAudit({ companyId, userId, action: 'CREATE', tableName: 'project_contracts', recordId: contract['id'] as string })
     sendOk(res, contract, 201)
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create contract', err) }
@@ -107,8 +108,8 @@ contractsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req
 // PUT /projects/contracts/:id
 contractsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const parsed = ContractSchema.partial().safeParse(req.body)
     if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
@@ -151,8 +152,8 @@ contractsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (r
 // POST /projects/contracts/:id/activate
 contractsRouter.post('/:id/activate', requirePermission('projects.approve', 'approve'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const contract = await query('SELECT pc.*, p.status AS project_status FROM project_contracts pc JOIN projects p ON p.id=pc.project_id WHERE pc.id=$1 AND pc.company_id=$2', [id, companyId])
     if (!contract.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
     const c = contract.rows[0] as { status: string; project_status: string }
@@ -166,8 +167,8 @@ contractsRouter.post('/:id/activate', requirePermission('projects.approve', 'app
 // POST /projects/contracts/:id/complete
 contractsRouter.post('/:id/complete', requirePermission('projects.approve', 'approve'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const unpaid = await query(
       `SELECT COUNT(*) AS cnt FROM project_invoices WHERE contract_id=$1 AND status NOT IN ('paid','cancelled')`,
       [id],

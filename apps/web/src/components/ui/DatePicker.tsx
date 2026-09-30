@@ -88,7 +88,9 @@ export function DatePicker({
           placeholder={placeholder}
           disabled={disabled}
           readOnly
-          onClick={() => !disabled && setOpen((v) => !v)}
+          onClick={() => {
+            if (!disabled) setOpen((v) => !v)
+          }}
           style={{
             height: '36px',
             padding: '0 36px 0 12px',

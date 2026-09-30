@@ -225,7 +225,7 @@ export default function NotificationPreferencesPage() {
 
   function handleSave() {
     const prefs = data?.myPreferences
-    updatePreferences({
+    void updatePreferences({
       variables: {
         input: {
           themePreference: prefs?.themePreference ?? null,
@@ -350,7 +350,7 @@ export default function NotificationPreferencesPage() {
               </div>
               <Card
                 padding="none"
-                style={{ border: `1px solid ${theme.warningBorder ?? theme.border}` }}
+                style={{ border: `1px solid ${theme.warningBorder}` }}
               >
                 <div
                   style={{
@@ -359,7 +359,7 @@ export default function NotificationPreferencesPage() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '10px',
-                    background: theme.warningBg ?? theme.bgSurface,
+                    background: theme.warningBg,
                     borderRadius: '12px 12px 0 0',
                   }}
                 >

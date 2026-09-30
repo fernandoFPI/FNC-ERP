@@ -1,4 +1,4 @@
-import { query, withSystemTransaction } from '@fnc-erp/db'
+import { query, withSystemTransaction, firstRowOrThrow } from '@fnc-erp/db'
 import { createServiceLogger } from '@fnc-erp/logger'
 
 const log = createServiceLogger('asset-depreciation')
@@ -69,7 +69,7 @@ export async function runMonthlyDepreciation(): Promise<void> {
               createdBy,
             ],
           )
-          journalEntryId = jeRes.rows[0]!['id'] as string
+          journalEntryId = firstRowOrThrow(jeRes)['id'] as string
 
           await client.query(
             `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,

@@ -68,7 +68,6 @@ function getPhaseButtons(
   status: ProjectStatus,
   allowedActions: string[],
   isRfq: boolean,
-  rfqLineCount: number,
 ): PhaseButton[] {
   const has = (a: string) => allowedActions.includes(a)
 
@@ -209,8 +208,6 @@ export function ProjectStatusBar({
   status,
   lifecyclePhase = 'enquiry',
   allowedActions,
-  clientDocCount = 0,
-  rfqLineCount = 0,
   isRfq = false,
   onTransitioned,
   timeline,
@@ -343,7 +340,7 @@ export function ProjectStatusBar({
   }
 
   const phase = lifecyclePhase
-  const buttons = getPhaseButtons(phase, status, allowedActions, isRfq, rfqLineCount)
+  const buttons = getPhaseButtons(phase, status, allowedActions, isRfq)
 
   const isSideState = ['on_hold', 'cancelled', 'cancelled_after_approval'].includes(status)
   const sideLabel: Record<string, string> = {
@@ -522,7 +519,7 @@ export function ProjectStatusBar({
                 fontWeight: 500,
               }}
             >
-              {saving ? 'Saving…' : `Confirm & ${pendingBtn?.label}`}
+              {saving ? 'Saving…' : `Confirm & ${pendingBtn.label}`}
             </button>
             <button
               disabled={saving}

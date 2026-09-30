@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
 import { query } from '@fnc-erp/db'
+import { getAuth } from '@fnc-erp/auth'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -9,7 +10,7 @@ export const consolidatedRouter: IRouter = Router()
 // GET /reporting/consolidated/trial-balance?as_of_date
 consolidatedRouter.get('/trial-balance', requirePermission('reporting.consolidated.view', 'view'), async (req, res) => {
   try {
-    if (!['system_admin','company_admin'].includes(req.auth!.role)) {
+    if (!['system_admin','company_admin'].includes(getAuth(req).role)) {
       return sendError(res, 403, 'FORBIDDEN', 'Consolidated reports require system_admin or company_admin role')
     }
     const asOfDate = req.query['as_of_date'] as string | undefined
@@ -38,7 +39,7 @@ consolidatedRouter.get('/trial-balance', requirePermission('reporting.consolidat
 // GET /reporting/consolidated/profit-loss?from_date&to_date
 consolidatedRouter.get('/profit-loss', requirePermission('reporting.consolidated.view', 'view'), async (req, res) => {
   try {
-    if (!['system_admin','company_admin'].includes(req.auth!.role)) {
+    if (!['system_admin','company_admin'].includes(getAuth(req).role)) {
       return sendError(res, 403, 'FORBIDDEN', 'Consolidated reports require system_admin or company_admin role')
     }
     const { from_date, to_date } = req.query
@@ -68,7 +69,7 @@ consolidatedRouter.get('/profit-loss', requirePermission('reporting.consolidated
 // GET /reporting/consolidated/balance-sheet?as_of_date
 consolidatedRouter.get('/balance-sheet', requirePermission('reporting.consolidated.view', 'view'), async (req, res) => {
   try {
-    if (!['system_admin','company_admin'].includes(req.auth!.role)) {
+    if (!['system_admin','company_admin'].includes(getAuth(req).role)) {
       return sendError(res, 403, 'FORBIDDEN', 'Consolidated reports require system_admin or company_admin role')
     }
     const asOfDate = req.query['as_of_date'] as string | undefined

@@ -9,7 +9,7 @@ import { LineItemEditor, type LineItemField } from '../../../components/ui/LineI
 interface MOLine {
   id: string
   component_product_id: string
-  component_name?: string
+  component_name?: string | null
   qty_planned: number
   qty_consumed: number
   unit_cost: number
@@ -19,7 +19,7 @@ interface MO {
   id: string
   qty_planned: number
   planned_cost: number
-  work_center_name?: string
+  work_center_name?: string | null
   lines: MOLine[]
 }
 
@@ -162,7 +162,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
   return (
     <Modal open={open} onClose={onClose} title="Complete Manufacturing Order" size="lg">
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
         style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}
       >
         {/* Section 1: Qty produced */}

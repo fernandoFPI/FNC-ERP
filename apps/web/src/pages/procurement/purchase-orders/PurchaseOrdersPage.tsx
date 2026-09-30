@@ -57,7 +57,7 @@ const STATUS_OPTIONS = [
 
 function downloadCSV(rows: string[][], filename: string) {
   const content = rows
-    .map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))
+    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n')
   const blob = new Blob(['﻿' + content, ''], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
@@ -248,7 +248,7 @@ export default function PurchaseOrdersPage() {
       key: 'priority',
       header: 'Priority',
       render: (o) => {
-        const p = o.priority ?? 'low'
+        const p = o.priority
         const s = PRIORITY_STYLES[p] ?? PRIORITY_STYLES.low
         if (p === 'low') return <span style={{ fontSize: '12px', color: s.color }}>—</span>
         return (

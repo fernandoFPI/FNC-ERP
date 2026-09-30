@@ -30,6 +30,11 @@ vi.mock('@fnc-erp/db', () => ({
   finishJobRun: vi.fn().mockResolvedValue(undefined),
   partialJobRun: vi.fn().mockResolvedValue(undefined),
   failJobRun: vi.fn().mockResolvedValue(undefined),
+  firstRowOrThrow: (result: { rows: unknown[] }) => {
+    const row = result.rows[0]
+    if (row === undefined) throw new Error('Expected at least one row')
+    return row
+  },
 }))
 
 vi.mock('@fnc-erp/logger', () => ({

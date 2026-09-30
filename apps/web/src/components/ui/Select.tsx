@@ -43,7 +43,7 @@ export function Select({
   if (options && !children) {
     const ssOptions = placeholder ? [{ value: '', label: placeholder }, ...options] : options
 
-    function handleChange(val: string) {
+    const handleChange = (val: string) => {
       onChange?.({ target: { value: val } } as React.ChangeEvent<HTMLSelectElement>)
     }
 

@@ -20,6 +20,7 @@ import {
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import type { RequisitionsQuery, RequisitionsQueryVariables } from '../../../graphql/generated'
 
 // myRequisitionsOnly stored as 'true'/'false' — FilterPreset.filters is a
 // flat Record<string, string>, same as every other tracked field here.
@@ -35,9 +36,9 @@ interface Requisition {
   id: string
   requisition_number: string
   status: string
-  priority?: string
-  purpose?: string
-  delivery_destination?: string
+  priority?: string | null
+  purpose?: string | null
+  delivery_destination?: string | null
   project_id?: string | null
   projectName?: string | null
   branch_id?: string | null
@@ -58,7 +59,7 @@ const STATUS_OPTIONS = [
 
 function downloadCSV(rows: string[][], filename: string) {
   const content = rows
-    .map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))
+    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n')
   const blob = new Blob(['﻿' + content, ''], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
@@ -83,7 +84,7 @@ export default function RequisitionsPage() {
   // explicit, visible choice instead.
   const [myRequisitionsOnly, setMyRequisitionsOnly] = useState(false)
 
-  const { data, loading, refetch } = useQuery(REQUISITIONS_QUERY, {
+  const { data, loading, refetch } = useQuery<RequisitionsQuery, RequisitionsQueryVariables>(REQUISITIONS_QUERY, {
     variables: {
       status: statusFilter || undefined,
       myQueueOnly: myRequisitionsOnly || undefined,
@@ -299,7 +300,7 @@ export default function RequisitionsPage() {
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         >
           <FilterPresets
             presets={presets}

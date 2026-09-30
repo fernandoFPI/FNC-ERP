@@ -72,7 +72,7 @@ export function Toast() {
               width: isPhone ? '100%' : undefined,
             }}
           >
-            {hasActions ? (
+            {toast.actions && toast.actions.length > 0 ? (
               <>
                 <div
                   style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%' }}
@@ -117,7 +117,7 @@ export function Toast() {
                   </button>
                 </div>
                 <div style={{ display: 'flex', gap: '6px', paddingLeft: '16px' }}>
-                  {toast.actions!.map((action, i) => (
+                  {toast.actions.map((action, i) => (
                     <button
                       key={i}
                       onClick={() => {

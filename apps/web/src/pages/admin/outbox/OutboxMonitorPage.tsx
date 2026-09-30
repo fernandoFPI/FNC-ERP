@@ -69,7 +69,7 @@ function statusVariant(
     processing: 'info',
     stuck: 'danger',
   }
-  return m[status?.toLowerCase()] ?? 'neutral'
+  return m[status.toLowerCase()] ?? 'neutral'
 }
 
 export default function OutboxMonitorPage() {
@@ -116,7 +116,7 @@ export default function OutboxMonitorPage() {
   })
 
   useEffect(() => {
-    if (monitorData || eventsData) {
+    if (monitorData ?? eventsData) {
       setLastRefreshed(new Date())
     }
   }, [monitorData, eventsData])
@@ -225,7 +225,7 @@ export default function OutboxMonitorPage() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => retryEvent({ variables: { eventId: ev.id } })}
+              onClick={() => void retryEvent({ variables: { eventId: ev.id } })}
               loading={retrying}
             >
               Retry
@@ -501,7 +501,7 @@ export default function OutboxMonitorPage() {
           setConfirmReset(false)
         }}
         onConfirm={() => {
-          resetStuck()
+          void resetStuck()
         }}
         title="Reset Stuck Events"
         message={`Reset ${monitor?.counts.stuck ?? 0} stuck events back to pending? They will be retried.`}

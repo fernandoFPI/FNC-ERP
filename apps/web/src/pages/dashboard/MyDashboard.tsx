@@ -136,7 +136,7 @@ export default function MyDashboard() {
               title="Failed to load dashboard"
               message="Could not fetch data from the server."
             >
-              <Button variant="secondary" size="sm" onClick={() => refetch()}>
+              <Button variant="secondary" size="sm" onClick={() => void refetch()}>
                 Retry
               </Button>
             </EmptyState>
@@ -163,7 +163,7 @@ export default function MyDashboard() {
                   key={link.path}
                   variant="secondary"
                   size="sm"
-                  onClick={() => navigate(link.path)}
+                  onClick={() => { navigate(link.path); }}
                 >
                   {link.label}
                 </Button>
@@ -219,7 +219,7 @@ export default function MyDashboard() {
               }
               loading={loading}
               emptyMessage="Nothing waiting on you right now"
-              onRowClick={(row) => navigate(`/procurement/purchase-orders/${String(row.id)}`)}
+              onRowClick={(row) => { navigate(`/procurement/purchase-orders/${String(row.id)}`); }}
             />
           </Card>
 
@@ -258,7 +258,7 @@ export default function MyDashboard() {
               }
               loading={loading}
               emptyMessage="You're not assigned to any projects yet"
-              onRowClick={(row) => navigate(`/projects/${String(row.id)}`)}
+              onRowClick={(row) => { navigate(`/projects/${String(row.id)}`); }}
             />
           </Card>
         </Grid>
@@ -279,7 +279,7 @@ export default function MyDashboard() {
                 />
               ))}
             </div>
-          ) : (data?.myActivityFeed?.length ?? 0) === 0 ? (
+          ) : (data?.myActivityFeed.length ?? 0) === 0 ? (
             <EmptyState message="No recent activity" />
           ) : (
             <div style={{ padding: '8px 0' }}>

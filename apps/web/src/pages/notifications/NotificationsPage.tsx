@@ -44,8 +44,7 @@ function matchesFilter(n: AppNotification, filter: FilterType): boolean {
   if (filter === 'Leave') return n.type === 'LEAVE_APPROVAL_REQUIRED'
   if (filter === 'Overtime') return n.type === 'OT_APPROVAL_REQUIRED'
   if (filter === 'Payslip') return n.type === 'PAYSLIP_READY'
-  if (filter === 'Manufacturing') return MFG_TYPES.includes(n.type)
-  return true
+  return MFG_TYPES.includes(n.type)
 }
 
 export default function NotificationsPage() {
@@ -62,7 +61,7 @@ export default function NotificationsPage() {
     if (loadedRef.current) return
     loadedRef.current = true
     fetch('/api/v1/notifications?page=1&limit=20')
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<{ notifications?: AppNotification[] }>)
       .then((json) => {
         if (Array.isArray(json.notifications)) {
           useNotificationStore.getState().setNotifications(json.notifications)
@@ -87,7 +86,7 @@ export default function NotificationsPage() {
     pageRef.current++
     try {
       const r = await fetch(`/api/v1/notifications?page=${pageRef.current}&limit=${PAGE_SIZE}`)
-      const json = await r.json()
+      const json = (await r.json()) as { notifications?: AppNotification[] }
       if (Array.isArray(json.notifications)) appendNotifications(json.notifications)
     } catch {
       /* no-op */
@@ -116,7 +115,7 @@ export default function NotificationsPage() {
         subtitle={unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
         actions={
           unreadCount > 0 ? (
-            <Button variant="ghost" size="sm" onClick={handleMarkAllAsRead}>
+            <Button variant="ghost" size="sm" onClick={(...args: Parameters<typeof handleMarkAllAsRead>) => void handleMarkAllAsRead(...args)}>
               Mark all read
             </Button>
           ) : undefined
@@ -211,7 +210,7 @@ export default function NotificationsPage() {
                   <NotificationItem
                     key={n.id}
                     notification={n}
-                    onRead={handleRead}
+                    onRead={(...args: Parameters<typeof handleRead>) => void handleRead(...args)}
                     onNavigate={handleNavigate}
                   />
                 ))}
@@ -235,7 +234,7 @@ export default function NotificationsPage() {
                   <NotificationItem
                     key={n.id}
                     notification={n}
-                    onRead={handleRead}
+                    onRead={(...args: Parameters<typeof handleRead>) => void handleRead(...args)}
                     onNavigate={handleNavigate}
                   />
                 ))}
@@ -247,7 +246,7 @@ export default function NotificationsPage() {
 
       {notifications.length >= PAGE_SIZE && (
         <div style={{ padding: '12px 0', textAlign: 'center' }}>
-          <Button variant="ghost" size="sm" onClick={loadMore}>
+          <Button variant="ghost" size="sm" onClick={(...args: Parameters<typeof loadMore>) => void loadMore(...args)}>
             Load more
           </Button>
         </div>

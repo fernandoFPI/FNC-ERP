@@ -1,9 +1,9 @@
 import { Router, type IRouter, type Request, type Response } from 'express'
-import { query, withSystemTransaction } from '@fnc-erp/db'
-import { requireAuth, requireRole } from '@fnc-erp/auth'
+import { query, withSystemTransaction, asyncHandler } from '@fnc-erp/db'
+import { requireAuth, requireRole, getAuth } from '@fnc-erp/auth'
 import { logAudit } from '@fnc-erp/audit'
 import { createServiceLogger } from '@fnc-erp/logger'
-import { sendError } from '../lib/errors.js'
+import { sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const companyManagementRouter: IRouter = Router()
@@ -11,7 +11,7 @@ export const companyManagementRouter: IRouter = Router()
 const log = createServiceLogger('company-management')
 
 function isAdminOrOwn(req: Request, companyId: string): boolean {
-  return req.auth!.role === 'system_admin' || req.auth!.companyId === companyId
+  return getAuth(req).role === 'system_admin' || getAuth(req).companyId === companyId
 }
 
 // ── GET /auth/companies ────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@ companyManagementRouter.get(
   '/',
   requireAuth(),
   requireRole('system_admin'),
-  async (_req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (_req: Request, res: Response): Promise<void> => {
     try {
       const result = await query(
         `SELECT
@@ -41,7 +41,7 @@ companyManagementRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list companies', err)
     }
-  },
+  }),
 )
 
 // ── GET /auth/companies/:id ────────────────────────────────────────────────────
@@ -50,8 +50,8 @@ companyManagementRouter.get(
   '/:id',
   requireAuth(),
   requirePermission('admin.companies.view', 'view'),
-  async (req: Request, res: Response): Promise<void> => {
-    if (!isAdminOrOwn(req, req.params['id']!)) {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    if (!isAdminOrOwn(req, requireParam(req, 'id'))) {
       sendError(res, 403, 'FORBIDDEN', 'Access denied')
       return
     }
@@ -61,7 +61,7 @@ companyManagementRouter.get(
          FROM companies c
          LEFT JOIN system_configuration sc ON sc.company_id = c.id
          WHERE c.id = $1`,
-        [req.params['id']!],
+        [requireParam(req, 'id')],
       )
       if (!result.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Company not found')
@@ -71,7 +71,7 @@ companyManagementRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch company', err)
     }
-  },
+  }),
 )
 
 // ── POST /auth/companies ───────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ companyManagementRouter.post(
   requireAuth(),
   requireRole('system_admin'),
   requirePermission('admin.companies.admin', 'admin'),
-  async (req: Request, res: Response): Promise<void> => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const {
       name,
       legal_name,
@@ -221,7 +221,7 @@ companyManagementRouter.post(
         }
 
         await logAudit({
-          userId: req.auth!.userId,
+          userId: getAuth(req).userId,
           companyId: undefined,
           action: 'COMPANY_CREATED',
           tableName: 'companies',
@@ -232,7 +232,7 @@ companyManagementRouter.post(
           client,
         })
 
-        log.info({ companyId: cid, name, createdBy: req.auth!.userId }, 'company created')
+        log.info({ companyId: cid, name, createdBy: getAuth(req).userId }, 'company created')
         return cid
       })
 
@@ -241,7 +241,7 @@ companyManagementRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create company', err)
     }
-  },
+  }),
 )
 
 // ── PUT /auth/companies/:id ────────────────────────────────────────────────────
@@ -250,8 +250,8 @@ companyManagementRouter.put(
   '/:id',
   requireAuth(),
   requirePermission('admin.companies.admin', 'admin'),
-  async (req: Request, res: Response): Promise<void> => {
-    if (!isAdminOrOwn(req, req.params['id']!)) {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    if (!isAdminOrOwn(req, requireParam(req, 'id'))) {
       sendError(res, 403, 'FORBIDDEN', 'Access denied')
       return
     }
@@ -322,11 +322,11 @@ companyManagementRouter.put(
         )
 
         await logAudit({
-          userId: req.auth!.userId,
-          companyId: req.params['id']!,
+          userId: getAuth(req).userId,
+          companyId: requireParam(req, 'id'),
           action: 'COMPANY_UPDATED',
           tableName: 'companies',
-          recordId: req.params['id']!,
+          recordId: requireParam(req, 'id'),
           newValues: req.body as Record<string, unknown>,
           client,
         })
@@ -336,7 +336,7 @@ companyManagementRouter.put(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update company', err)
     }
-  },
+  }),
 )
 
 // ── PUT /auth/companies/:id/configuration ──────────────────────────────────────
@@ -345,13 +345,13 @@ companyManagementRouter.put(
   '/:id/configuration',
   requireAuth(),
   requirePermission('admin.companies.admin', 'admin'),
-  async (req: Request, res: Response): Promise<void> => {
-    const role = req.auth!.role
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const role = getAuth(req).role
     if (role !== 'system_admin' && role !== 'company_admin') {
       sendError(res, 403, 'FORBIDDEN', 'Company admin or above required')
       return
     }
-    if (role === 'company_admin' && req.auth!.companyId !== req.params['id']) {
+    if (role === 'company_admin' && getAuth(req).companyId !== req.params['id']) {
       sendError(res, 403, 'FORBIDDEN', 'Access denied')
       return
     }
@@ -374,7 +374,7 @@ companyManagementRouter.put(
       // Ensure a config row exists
       await query(
         `INSERT INTO system_configuration (company_id) VALUES ($1) ON CONFLICT (company_id) DO NOTHING`,
-        [req.params['id']!],
+        [requireParam(req, 'id')],
       )
 
       await query(
@@ -409,11 +409,11 @@ companyManagementRouter.put(
       )
 
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.params['id']!,
+        userId: getAuth(req).userId,
+        companyId: requireParam(req, 'id'),
         action: 'COMPANY_CONFIGURATION_UPDATED',
         tableName: 'system_configuration',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
         newValues: req.body as Record<string, unknown>,
         ipAddress: req.ip ?? undefined,
         userAgent: String(req.headers['user-agent'] ?? ''),
@@ -423,7 +423,7 @@ companyManagementRouter.put(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update configuration', err)
     }
-  },
+  }),
 )
 
 // ── GET /auth/companies/:id/users ──────────────────────────────────────────────
@@ -432,8 +432,8 @@ companyManagementRouter.get(
   '/:id/users',
   requireAuth(),
   requirePermission('admin.companies.view', 'view'),
-  async (req: Request, res: Response): Promise<void> => {
-    if (!isAdminOrOwn(req, req.params['id']!)) {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    if (!isAdminOrOwn(req, requireParam(req, 'id'))) {
       sendError(res, 403, 'FORBIDDEN', 'Access denied')
       return
     }
@@ -454,11 +454,11 @@ companyManagementRouter.get(
          WHERE ucr.company_id = $1
          GROUP BY u.id
          ORDER BY u.email`,
-        [req.params['id']!],
+        [requireParam(req, 'id')],
       )
       res.json({ success: true, data: result.rows })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list company users', err)
     }
-  },
+  }),
 )

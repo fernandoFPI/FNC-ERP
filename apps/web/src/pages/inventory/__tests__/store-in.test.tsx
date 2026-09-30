@@ -4,17 +4,19 @@ import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../theme/ThemeContext'
 import { PO_RECEIPT_QUERY } from '../../../graphql/procurement'
 import { ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
 const mockUseMutation = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
-    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
+    useMutation: (...args: unknown[]): unknown => mockUseMutation(...args),
     useLazyQuery: () => [vi.fn(), { data: undefined, loading: false }],
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
@@ -26,7 +28,7 @@ vi.mock('../../../store/toastStore', () => ({
 }))
 
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => vi.fn(), useParams: () => ({ id: 'rcpt-1' }) }
 })
 

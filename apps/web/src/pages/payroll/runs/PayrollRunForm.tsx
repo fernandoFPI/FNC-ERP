@@ -8,6 +8,7 @@ import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreatePayrollRunMutation, CreatePayrollRunMutationVariables, PayrollRunsQuery, PayrollRunsQueryVariables } from '../../../graphql/generated'
 
 const emptyForm = { period_name: '', start_date: '', end_date: '' }
 
@@ -18,8 +19,8 @@ export default function PayrollRunForm() {
   const [form, setForm] = useState(emptyForm)
   const [overlapWarning, setOverlapWarning] = useState('')
 
-  const { data: runsData } = useQuery(PAYROLL_RUNS_QUERY, { variables: {} })
-  const [createRun, { loading }] = useMutation(CREATE_PAYROLL_RUN)
+  const { data: runsData } = useQuery<PayrollRunsQuery, PayrollRunsQueryVariables>(PAYROLL_RUNS_QUERY, { variables: {} })
+  const [createRun, { loading }] = useMutation<CreatePayrollRunMutation, CreatePayrollRunMutationVariables>(CREATE_PAYROLL_RUN)
 
   function field(k: keyof typeof emptyForm) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -32,8 +33,8 @@ export default function PayrollRunForm() {
     const existingRuns = runsData?.payrollRuns ?? []
     const start = new Date(form.start_date)
     const end = new Date(form.end_date)
-    const overlapping = existingRuns.find(
-      (r: { start_date?: string; end_date?: string; status: string }) => {
+    const overlapping = existingRuns.filter((v): v is NonNullable<typeof v> => v !== null).find(
+      (r) => {
         const rStart = r.start_date ? new Date(r.start_date) : null
         const rEnd = r.end_date ? new Date(r.end_date) : null
         return rStart && rEnd && start <= rEnd && end >= rStart
@@ -75,7 +76,7 @@ export default function PayrollRunForm() {
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '900px' }}>
       <PageHeader title="New Payroll Run" backPath="/payroll/runs" />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <Card
           style={{
             marginTop: '20px',

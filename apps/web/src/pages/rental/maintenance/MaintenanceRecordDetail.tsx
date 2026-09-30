@@ -96,7 +96,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
   }
 
   useEffect(() => {
-    if (open) fetchRecord()
+    if (open) void fetchRecord()
     else {
       setRecord(null)
       setForm({
@@ -115,7 +115,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
     try {
       await api.post(`/rental/assets/${assetId}/maintenance/${recordId}/start`)
       addToast({ type: 'success', message: 'Maintenance started' })
-      fetchRecord()
+      void fetchRecord()
     } catch {
       addToast({ type: 'error', message: 'Failed to start maintenance' })
     } finally {
@@ -136,7 +136,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
         next_service_notes: form.nextServiceNotes || null,
         downtime_hours: form.downtimeHours ? parseFloat(form.downtimeHours) : null,
       })
-      const nextDue = (res.data as { nextServiceDue?: string })?.nextServiceDue
+      const nextDue = (res.data as { nextServiceDue?: string }).nextServiceDue
       addToast({
         type: 'success',
         message: nextDue ? `Next service due: ${nextDue}` : 'Asset returned to available status',
@@ -294,7 +294,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                   variant="primary"
                   size="md"
                   loading={starting}
-                  onClick={handleStart}
+                  onClick={(...args: Parameters<typeof handleStart>) => void handleStart(...args)}
                   style={{ width: '100%' }}
                 >
                   Start Maintenance
@@ -387,7 +387,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     variant="primary"
                     size="md"
                     loading={completing}
-                    onClick={handleComplete}
+                    onClick={(...args: Parameters<typeof handleComplete>) => void handleComplete(...args)}
                     style={{ width: '100%' }}
                   >
                     Complete Maintenance
@@ -479,7 +479,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
         message="This will cancel the maintenance schedule and return the asset to its previous status."
         confirmLabel="Cancel Schedule"
         variant="danger"
-        onConfirm={handleCancel}
+        onConfirm={(...args: Parameters<typeof handleCancel>) => void handleCancel(...args)}
         onCancel={() => {
           setShowCancel(false)
         }}

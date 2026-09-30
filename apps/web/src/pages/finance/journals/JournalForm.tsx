@@ -16,6 +16,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
+import type { AccountsQuery, AccountsQueryVariables, CreateJournalEntryMutation, CreateJournalEntryMutationVariables } from '../../../graphql/generated'
 
 interface JournalLine {
   account_id: string
@@ -42,17 +43,17 @@ export default function JournalForm() {
   const [description, setDescription] = useState('')
   const [lines, setLines] = useState<JournalLine[]>([emptyLine(), emptyLine()])
 
-  const { data: accountsData } = useQuery(ACCOUNTS_QUERY, { variables: {} })
-  const [createEntry, { loading }] = useMutation(CREATE_JOURNAL_ENTRY)
+  const { data: accountsData } = useQuery<AccountsQuery, AccountsQueryVariables>(ACCOUNTS_QUERY, { variables: {} })
+  const [createEntry, { loading }] = useMutation<CreateJournalEntryMutation, CreateJournalEntryMutationVariables>(CREATE_JOURNAL_ENTRY)
 
   const accounts = accountsData?.accounts ?? []
   // Header accounts exist for grouping/reporting only — they can't receive
   // journal lines (enforced by the trg_journal_lines_postable DB trigger), so
   // exclude them here rather than let the picker offer something the submit
   // would reject.
-  const accountOptions = accounts
-    .filter((a: { is_postable?: boolean }) => a.is_postable !== false)
-    .map((a: { id: string; code: string; name: string }) => ({
+  const accountOptions = accounts.filter((v): v is NonNullable<typeof v> => v !== null)
+    .filter((a) => a.is_postable !== false)
+    .map((a) => ({
       value: a.id,
       label: `${a.code} — ${a.name}`,
     }))
@@ -183,7 +184,7 @@ export default function JournalForm() {
         backPath="/finance/journals"
       />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <Card style={{ marginTop: '20px', padding: '20px' }}>
           <div
             style={{

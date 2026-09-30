@@ -1081,7 +1081,7 @@ export function Sidebar({
   const apPendingCount = useAPPendingCount()
   const { canAny, isSystemLevel } = usePermission()
   const activeCompany = useCompanyStore((s) => s.activeCompany)
-  const isFactoryCompany = !!activeCompany?.name?.toLowerCase().includes('factory')
+  const isFactoryCompany = !!activeCompany?.name.toLowerCase().includes('factory')
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('fnc-sidebar-collapsed') === 'true'
@@ -1455,7 +1455,7 @@ export function Sidebar({
           </span>
         )}
         <button
-          onClick={rail ? onToggle : toggleCollapseInternal}
+          onClick={toggleCollapseInternal}
           aria-label={effectiveCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           style={{
             background: theme.bgSurface,

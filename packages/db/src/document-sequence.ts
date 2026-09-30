@@ -1,4 +1,4 @@
-import { pool } from './client.js'
+import { pool, firstRowOrThrow } from './client.js'
 
 export const DOC_TYPES = [
   { key: 'rfq', label: 'RFQ Number', defaultPrefix: 'RFQ' },
@@ -15,6 +15,7 @@ export const DOC_TYPES = [
   { key: 'advance_return', label: 'Advance Return', defaultPrefix: 'RET' },
   { key: 'material_issue', label: 'Store Out', defaultPrefix: 'SO' },
   { key: 'product', label: 'Product SKU', defaultPrefix: 'PRD' },
+  { key: 'daily_report', label: 'Daily Progress Report', defaultPrefix: 'DPR' },
 ] as const
 
 export type DocType = (typeof DOC_TYPES)[number]['key']
@@ -63,7 +64,7 @@ export async function nextDocumentNumber(
       [companyId, docType],
     )
     if (result.rows.length > 0) {
-      const row = result.rows[0]!
+      const row = firstRowOrThrow(result)
       const num = String(row.next_number).padStart(row.pad_length, '0')
       const sep = row.separator
       if (row.year_in_number) {
@@ -134,5 +135,5 @@ export async function upsertDocumentSequence(
       data.separator,
     ],
   )
-  return result.rows[0]!
+  return firstRowOrThrow(result)
 }

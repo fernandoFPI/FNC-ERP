@@ -24,7 +24,7 @@ import {
   APPROVE_REQUISITION_EDIT_REQUEST,
   REJECT_REQUISITION_EDIT_REQUEST,
 } from '../../../graphql/requisitions'
-import { NOTIFY_PO_OWNER_FOR_EDIT_REQUEST, RESOLVE_LINE_FLAG } from '../../../graphql/procurement'
+import { RESOLVE_LINE_FLAG } from '../../../graphql/procurement'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -54,6 +54,7 @@ import {
 } from '../../../lib/requisition-constants'
 import { getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
 import { useToastStore } from '../../../store/toastStore'
+import type { ApproveRequisitionEditRequestMutation, ApproveRequisitionEditRequestMutationVariables, ApproveRequisitionMutation, ApproveRequisitionMutationVariables, CancelRequisitionMutation, CancelRequisitionMutationVariables, ConfirmRequisitionInventoryCheckMutation, ConfirmRequisitionInventoryCheckMutationVariables, ProductsQuery, ProductsQueryVariables, RejectRequisitionApprovalMutation, RejectRequisitionApprovalMutationVariables, RejectRequisitionEditRequestMutation, RejectRequisitionEditRequestMutationVariables, RejectRequisitionToInventoryCheckMutation, RejectRequisitionToInventoryCheckMutationVariables, RejectRequisitionToMarketPricingMutation, RejectRequisitionToMarketPricingMutationVariables, RejectRequisitionVerificationToInventoryCheckMutation, RejectRequisitionVerificationToInventoryCheckMutationVariables, RejectRequisitionVerificationToMarketPricingMutation, RejectRequisitionVerificationToMarketPricingMutationVariables, RejectRequisitionVerificationToStorePricingMutation, RejectRequisitionVerificationToStorePricingMutationVariables, RequisitionChildPurchaseOrdersQuery, RequisitionChildPurchaseOrdersQueryVariables, RequisitionLineProductAvailabilityQuery, RequisitionLineProductAvailabilityQueryVariables, RequisitionQuery, RequisitionQueryVariables, RequisitionStockAvailabilityQuery, RequisitionStockAvailabilityQueryVariables, ResetRequisitionToDraftMutation, ResetRequisitionToDraftMutationVariables, ResolveLineFlagMutation, ResolveLineFlagMutationVariables, SubmitRequisitionEditRequestMutation, SubmitRequisitionEditRequestMutationVariables, SubmitRequisitionMarketPricingMutation, SubmitRequisitionMarketPricingMutationVariables, SubmitRequisitionStorePricingMutation, SubmitRequisitionStorePricingMutationVariables, SubmitRequisitionToInventoryCheckMutation, SubmitRequisitionToInventoryCheckMutationVariables, VerifyRequisitionPricesMutation, VerifyRequisitionPricesMutationVariables } from '../../../graphql/generated'
 
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 
@@ -82,13 +83,13 @@ interface ReqLine {
   sku?: string | null
   qty: string
   uom?: string | null
-  currency_code: string
+  currency_code: string | null
   unit_price: string
   initial_unit_price?: string | null
   qty_from_stock?: string | null
   source_location_id?: string | null
   source_location_name?: string | null
-  source_average_cost?: string | null
+  source_average_cost?: number | null
   store_price?: string | null
   store_price_currency?: string | null
   market_price?: string | null
@@ -180,11 +181,11 @@ interface Requisition {
   expected_delivery_date?: string | null
   created_at: string
   updated_at: string
-  callerHasStoreKeeperPosition?: boolean
-  callerHasStorePricingPosition?: boolean
-  callerHasMarketPricingPosition?: boolean
-  callerHasPriceVerificationPosition?: boolean
-  callerCanApprove?: boolean
+  callerHasStoreKeeperPosition?: boolean | null
+  callerHasStorePricingPosition?: boolean | null
+  callerHasMarketPricingPosition?: boolean | null
+  callerHasPriceVerificationPosition?: boolean | null
+  callerCanApprove?: boolean | null
   currencyTotals: { currency_code: string; subtotal: string; line_count: number }[]
   lines: ReqLine[]
   approval_log: ApprovalLogEntry[]
@@ -213,8 +214,8 @@ interface LineLocationAvailability {
 
 interface LineAvailability {
   lineId: string
-  productId?: string
-  productName?: string
+  productId?: string | null
+  productName?: string | null
   productNameAr?: string | null
   qtyRequired: number
   qtyOnHand: number
@@ -253,34 +254,40 @@ export default function RequisitionDetail() {
   const padding = usePagePadding()
   const { isPhone } = useBreakpoint()
 
-  const { data, loading, refetch } = useQuery(REQUISITION_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<RequisitionQuery, RequisitionQueryVariables>(REQUISITION_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('requisition', () => void refetch())
   const req: Requisition | undefined = data?.requisition
+    ? {
+        ...data.requisition,
+        lines: data.requisition.lines ?? [],
+        approval_log: data.requisition.approval_log ?? [],
+      }
+    : undefined
 
-  const onErr = (e: Error) => addToast({ type: 'error', message: e.message })
+  const onErr = (e: Error) => { addToast({ type: 'error', message: e.message }); }
   const mutOpts = {
     onCompleted: () => void refetch(),
     onError: onErr,
   }
 
-  const [submitToInventory, { loading: lSubmit }] = useMutation(
+  const [submitToInventory, { loading: lSubmit }] = useMutation<SubmitRequisitionToInventoryCheckMutation, SubmitRequisitionToInventoryCheckMutationVariables>(
     SUBMIT_REQUISITION_TO_INVENTORY_CHECK,
     mutOpts,
   )
-  const [confirmInventory, { loading: lConfirm }] = useMutation(
+  const [confirmInventory, { loading: lConfirm }] = useMutation<ConfirmRequisitionInventoryCheckMutation, ConfirmRequisitionInventoryCheckMutationVariables>(
     CONFIRM_REQUISITION_INVENTORY_CHECK,
     mutOpts,
   )
-  const [submitStorePricing, { loading: lStore }] = useMutation(SUBMIT_REQUISITION_STORE_PRICING, mutOpts)
-  const [submitMarketPricing, { loading: lMarket }] = useMutation(
+  const [submitStorePricing, { loading: lStore }] = useMutation<SubmitRequisitionStorePricingMutation, SubmitRequisitionStorePricingMutationVariables>(SUBMIT_REQUISITION_STORE_PRICING, mutOpts)
+  const [submitMarketPricing, { loading: lMarket }] = useMutation<SubmitRequisitionMarketPricingMutation, SubmitRequisitionMarketPricingMutationVariables>(
     SUBMIT_REQUISITION_MARKET_PRICING,
     mutOpts,
   )
-  const [verifyPrices, { loading: lVerify }] = useMutation(VERIFY_REQUISITION_PRICES, mutOpts)
+  const [verifyPrices, { loading: lVerify }] = useMutation<VerifyRequisitionPricesMutation, VerifyRequisitionPricesMutationVariables>(VERIFY_REQUISITION_PRICES, mutOpts)
   // price_verification-only reject destinations — mirror PurchaseOrderDetail's
   // rejectVerificationToMarket/rejectVerificationToStore, plus the two with no
   // PO equivalent (resetToDraft, rejectVerificationToInventory). All share
@@ -293,36 +300,32 @@ export default function RequisitionDetail() {
     },
     onError: onErr,
   }
-  const [rejectVerificationToMarket, { loading: lRejectVerifyMarket }] = useMutation(
+  const [rejectVerificationToMarket, { loading: lRejectVerifyMarket }] = useMutation<RejectRequisitionVerificationToMarketPricingMutation, RejectRequisitionVerificationToMarketPricingMutationVariables>(
     REJECT_REQUISITION_VERIFICATION_TO_MARKET_PRICING,
     rejectOpts,
   )
-  const [rejectVerificationToStore, { loading: lRejectVerifyStore }] = useMutation(
+  const [rejectVerificationToStore, { loading: lRejectVerifyStore }] = useMutation<RejectRequisitionVerificationToStorePricingMutation, RejectRequisitionVerificationToStorePricingMutationVariables>(
     REJECT_REQUISITION_VERIFICATION_TO_STORE_PRICING,
     rejectOpts,
   )
-  const [resetToDraft, { loading: lResetDraft }] = useMutation(RESET_REQUISITION_TO_DRAFT, rejectOpts)
-  const [rejectVerificationToInventory, { loading: lRejectVerifyInventory }] = useMutation(
+  const [resetToDraft, { loading: lResetDraft }] = useMutation<ResetRequisitionToDraftMutation, ResetRequisitionToDraftMutationVariables>(RESET_REQUISITION_TO_DRAFT, rejectOpts)
+  const [rejectVerificationToInventory, { loading: lRejectVerifyInventory }] = useMutation<RejectRequisitionVerificationToInventoryCheckMutation, RejectRequisitionVerificationToInventoryCheckMutationVariables>(
     REJECT_REQUISITION_VERIFICATION_TO_INVENTORY_CHECK,
     rejectOpts,
   )
-  const [notifyOwnerForEdit, { loading: lNotifyOwner }] = useMutation(
-    NOTIFY_PO_OWNER_FOR_EDIT_REQUEST,
-    rejectOpts,
-  )
-  const [approve, { loading: lApprove }] = useMutation(APPROVE_REQUISITION, mutOpts)
-  const [reject, { loading: lReject }] = useMutation(REJECT_REQUISITION_APPROVAL, rejectOpts)
+  const [approve, { loading: lApprove }] = useMutation<ApproveRequisitionMutation, ApproveRequisitionMutationVariables>(APPROVE_REQUISITION, mutOpts)
+  const [reject, { loading: lReject }] = useMutation<RejectRequisitionApprovalMutation, RejectRequisitionApprovalMutationVariables>(REJECT_REQUISITION_APPROVAL, rejectOpts)
   // pending_approval-only reject destinations — mirror REJECT_PO_TO_MARKET;
   // rejectToInventoryCheck has no PO equivalent.
-  const [rejectToMarketPricing, { loading: lRejectToMarket }] = useMutation(
+  const [rejectToMarketPricing, { loading: lRejectToMarket }] = useMutation<RejectRequisitionToMarketPricingMutation, RejectRequisitionToMarketPricingMutationVariables>(
     REJECT_REQUISITION_TO_MARKET_PRICING,
     rejectOpts,
   )
-  const [rejectToInventoryCheck, { loading: lRejectToInventory }] = useMutation(
+  const [rejectToInventoryCheck, { loading: lRejectToInventory }] = useMutation<RejectRequisitionToInventoryCheckMutation, RejectRequisitionToInventoryCheckMutationVariables>(
     REJECT_REQUISITION_TO_INVENTORY_CHECK,
     rejectOpts,
   )
-  const [resolveLineFlag, { loading: lResolveFlag }] = useMutation(RESOLVE_LINE_FLAG, mutOpts)
+  const [resolveLineFlag, { loading: lResolveFlag }] = useMutation<ResolveLineFlagMutation, ResolveLineFlagMutationVariables>(RESOLVE_LINE_FLAG, mutOpts)
   // Mirrors PurchaseOrderDetail's own anyLoading — every button within a
   // reject box (plus that panel's own primary action) shares one combined
   // flag so a click on one disables its siblings too. Without this, the
@@ -331,38 +334,38 @@ export default function RequisitionDetail() {
   // Y" error toast), but nothing stops the race from being triggerable in
   // the first place — this closes that off at the UI layer instead.
   const anyVerifyLoading =
-    lVerify || lResetDraft || lRejectVerifyInventory || lRejectVerifyStore || lRejectVerifyMarket || lNotifyOwner
+    lVerify || lResetDraft || lRejectVerifyInventory || lRejectVerifyStore || lRejectVerifyMarket
   const anyApprovalLoading = lApprove || lReject || lRejectToMarket || lRejectToInventory
-  const [cancel, { loading: lCancel }] = useMutation(CANCEL_REQUISITION, {
+  const [cancel, { loading: lCancel }] = useMutation<CancelRequisitionMutation, CancelRequisitionMutationVariables>(CANCEL_REQUISITION, {
     onCompleted: () => {
       setCancelReason('')
       void refetch()
     },
     onError: onErr,
   })
-  const [submitEditRequest, { loading: leSubmit }] = useMutation(SUBMIT_REQUISITION_EDIT_REQUEST, {
+  const [submitEditRequest, { loading: leSubmit }] = useMutation<SubmitRequisitionEditRequestMutation, SubmitRequisitionEditRequestMutationVariables>(SUBMIT_REQUISITION_EDIT_REQUEST, {
     onCompleted: () => {
       setEditDraft(null)
       void refetch()
     },
     onError: onErr,
   })
-  const [approveEditRequest, { loading: leApprove }] = useMutation(
+  const [approveEditRequest, { loading: leApprove }] = useMutation<ApproveRequisitionEditRequestMutation, ApproveRequisitionEditRequestMutationVariables>(
     APPROVE_REQUISITION_EDIT_REQUEST,
     mutOpts,
   )
-  const [rejectEditRequest, { loading: leReject }] = useMutation(REJECT_REQUISITION_EDIT_REQUEST, mutOpts)
+  const [rejectEditRequest, { loading: leReject }] = useMutation<RejectRequisitionEditRequestMutation, RejectRequisitionEditRequestMutationVariables>(REJECT_REQUISITION_EDIT_REQUEST, mutOpts)
 
   const showChildren = !!req && CHILD_PO_VISIBLE_STATUSES.includes(req.status)
-  const { data: childData } = useQuery(REQUISITION_CHILD_POS_QUERY, {
-    variables: { requisitionId: id },
+  const { data: childData } = useQuery<RequisitionChildPurchaseOrdersQuery, RequisitionChildPurchaseOrdersQueryVariables>(REQUISITION_CHILD_POS_QUERY, {
+    variables: { requisitionId: id ?? '' },
     skip: !id || !showChildren,
     fetchPolicy: 'cache-and-network',
   })
   const children: ChildPO[] = childData?.requisitionChildPurchaseOrders ?? []
 
-  const { data: availData } = useQuery(REQUISITION_STOCK_AVAILABILITY_QUERY, {
-    variables: { requisitionId: id },
+  const { data: availData } = useQuery<RequisitionStockAvailabilityQuery, RequisitionStockAvailabilityQueryVariables>(REQUISITION_STOCK_AVAILABILITY_QUERY, {
+    variables: { requisitionId: id ?? '' },
     skip: !id || !req || req.status !== 'inventory_check',
     fetchPolicy: 'cache-and-network',
   })
@@ -427,7 +430,7 @@ export default function RequisitionDetail() {
     }
   }, [invCheckDraftKey, invQty, invLoc, productOverride])
 
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
     // Same reasoning as RequisitionForm's own line-item picker — the item
     // being corrected here can legitimately live at the central warehouse
     // company, not just this one.
@@ -435,7 +438,7 @@ export default function RequisitionDetail() {
     skip: !req || req.status !== 'inventory_check',
   })
   const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
-    productsData?.products ?? []
+    (productsData?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const productOptions = products.map((p) => ({
     value: p.id,
     label: p.name,
@@ -443,16 +446,16 @@ export default function RequisitionDetail() {
     keywords: p.name_ar ?? undefined,
   }))
   const overrideEntries = Object.entries(productOverride)
-  const { data: previewData } = useQuery(REQUISITION_LINE_PRODUCT_AVAILABILITY_QUERY, {
+  const { data: previewData } = useQuery<RequisitionLineProductAvailabilityQuery, RequisitionLineProductAvailabilityQueryVariables>(REQUISITION_LINE_PRODUCT_AVAILABILITY_QUERY, {
     variables: {
-      requisitionId: id,
+      requisitionId: id ?? '',
       overrides: overrideEntries.map(([lineId, productId]) => ({ lineId, productId })),
     },
     skip: !id || overrideEntries.length === 0,
     fetchPolicy: 'cache-and-network',
   })
   const previewByLine = new Map<string, LineAvailability>(
-    (previewData?.requisitionLineProductAvailability ?? []).map((a: LineAvailability) => [a.lineId, a]),
+    (previewData?.requisitionLineProductAvailability ?? []).map((a) => [a.lineId, a]),
   )
   const [storePrices, setStorePrices] = useState<Record<string, string>>({})
   const [marketPrices, setMarketPrices] = useState<Record<string, string>>({})
@@ -471,7 +474,7 @@ export default function RequisitionDetail() {
     setFlaggedLines((prev) => {
       if (lineId in prev) {
         const next = { ...prev }
-        delete next[lineId]
+        Reflect.deleteProperty(next, lineId)
         return next
       }
       return { ...prev, [lineId]: '' }
@@ -483,7 +486,7 @@ export default function RequisitionDetail() {
   // would just reject anyway.
   const hasValidFlags =
     flaggedLineIds.length > 0 && flaggedLineIds.every((lid) => (flaggedLines[lid] ?? '').trim())
-  const lineFlagsPayload = flaggedLineIds.map((lid) => ({ lineId: lid, reason: flaggedLines[lid]!.trim() }))
+  const lineFlagsPayload = flaggedLineIds.map((lid) => ({ lineId: lid, reason: flaggedLines[lid].trim() }))
   // Auto-composed from the flagged lines, same as PurchaseOrderDetail's own
   // flagAutoReason — rejectReason stays editable on top of it rather than
   // being silently overwritten.
@@ -602,7 +605,7 @@ export default function RequisitionDetail() {
               <input
                 type="checkbox"
                 checked={l.id in flaggedLines}
-                onChange={() => toggleLineFlag(l.id)}
+                onChange={() => { toggleLineFlag(l.id); }}
                 title="Flag this line for rejection"
               />
             ),
@@ -818,11 +821,11 @@ export default function RequisitionDetail() {
         }
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="secondary" size="sm" onClick={() => setShowPrintModal(true)}>
+            <Button variant="secondary" size="sm" onClick={() => { setShowPrintModal(true); }}>
               Print
             </Button>
             {canCancel && (
-              <Button variant="danger" size="sm" onClick={() => setShowCancelBox((v) => !v)}>
+              <Button variant="danger" size="sm" onClick={() => { setShowCancelBox((v) => !v); }}>
                 Cancel
               </Button>
             )}
@@ -837,7 +840,7 @@ export default function RequisitionDetail() {
               <Input
                 label="Reason (optional)"
                 value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
+                onChange={(e) => { setCancelReason(e.target.value); }}
                 placeholder="Why is this requisition being cancelled?"
               />
             </div>
@@ -974,7 +977,7 @@ export default function RequisitionDetail() {
             },
           ]}
           active={activeTab}
-          onChange={(key) => setActiveTab(key as Tab)}
+          onChange={(key) => { setActiveTab(key as Tab); }}
         />
       </div>
 
@@ -1003,7 +1006,7 @@ export default function RequisitionDetail() {
               const color = open ? theme.danger : theme.warning
               // Whoever could have created a flag from that same stage may
               // resolve it — mirrors resolveLineFlag's own backend gate
-              // exactly (procurement_2nd for price_verification-origin,
+              // exactly (organizer for price_verification-origin,
               // dept-head/approver/admin for pending_approval-origin).
               const canResolve =
                 (l.flagged_from_status === 'price_verification' && (isSystemLevel || canVerifyPrice)) ||
@@ -1075,7 +1078,7 @@ export default function RequisitionDetail() {
                       </div>
                       <Textarea
                         value={flaggedLines[l.id] ?? ''}
-                        onChange={(e) => setFlaggedLines((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                        onChange={(e) => { setFlaggedLines((prev) => ({ ...prev, [l.id]: e.target.value })); }}
                         placeholder="What's wrong with this line?"
                         rows={2}
                       />
@@ -1178,9 +1181,10 @@ export default function RequisitionDetail() {
                   style={inputStyle}
                   disabled={line._removed}
                   onChange={(e) => {
-                    const lines = [...editDraft!.lines]
-                    lines[i] = { ...lines[i]!, description: e.target.value }
-                    setEditDraft({ ...editDraft!, lines })
+                    if (!editDraft) return
+                    const lines = [...editDraft.lines]
+                    lines[i] = { ...lines[i], description: e.target.value }
+                    setEditDraft({ ...editDraft, lines })
                   }}
                 />
               ),
@@ -1196,9 +1200,10 @@ export default function RequisitionDetail() {
                   style={inputStyle}
                   disabled={line._removed}
                   onChange={(e) => {
-                    const lines = [...editDraft!.lines]
-                    lines[i] = { ...lines[i]!, qty: parseFloat(e.target.value) || 0 }
-                    setEditDraft({ ...editDraft!, lines })
+                    if (!editDraft) return
+                    const lines = [...editDraft.lines]
+                    lines[i] = { ...lines[i], qty: parseFloat(e.target.value) || 0 }
+                    setEditDraft({ ...editDraft, lines })
                   }}
                 />
               ),
@@ -1214,9 +1219,10 @@ export default function RequisitionDetail() {
                   style={inputStyle}
                   disabled={line._removed}
                   onChange={(e) => {
-                    const lines = [...editDraft!.lines]
-                    lines[i] = { ...lines[i]!, unit_price: parseFloat(e.target.value) || 0 }
-                    setEditDraft({ ...editDraft!, lines })
+                    if (!editDraft) return
+                    const lines = [...editDraft.lines]
+                    lines[i] = { ...lines[i], unit_price: parseFloat(e.target.value) || 0 }
+                    setEditDraft({ ...editDraft, lines })
                   }}
                 />
               ),
@@ -1231,9 +1237,10 @@ export default function RequisitionDetail() {
                   style={inputStyle}
                   disabled={line._removed}
                   onChange={(e) => {
-                    const lines = [...editDraft!.lines]
-                    lines[i] = { ...lines[i]!, uom: e.target.value }
-                    setEditDraft({ ...editDraft!, lines })
+                    if (!editDraft) return
+                    const lines = [...editDraft.lines]
+                    lines[i] = { ...lines[i], uom: e.target.value }
+                    setEditDraft({ ...editDraft, lines })
                   }}
                 />
               ),
@@ -1247,12 +1254,12 @@ export default function RequisitionDetail() {
                   <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Request an edit</div>
                   {hasPendingEdit && <Badge variant="warning">Pending review — submit locked</Badge>}
                   {!editDraft && !hasPendingEdit && canRequestEdit && (
-                    <Button size="sm" variant="secondary" onClick={() => setEditDraft(initEditDraft())}>
+                    <Button size="sm" variant="secondary" onClick={() => { setEditDraft(initEditDraft()); }}>
                       Start editing
                     </Button>
                   )}
                   {editDraft && (
-                    <Button size="sm" variant="secondary" onClick={() => setEditDraft(null)}>
+                    <Button size="sm" variant="secondary" onClick={() => { setEditDraft(null); }}>
                       Cancel
                     </Button>
                   )}
@@ -1275,14 +1282,14 @@ export default function RequisitionDetail() {
                         <Input
                           label="Notes"
                           value={editDraft.notes}
-                          onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })}
+                          onChange={(e) => { setEditDraft({ ...editDraft, notes: e.target.value }); }}
                         />
                       </div>
                       <div style={{ flex: '1 1 160px' }}>
                         <Select
                           label="Priority"
                           value={editDraft.priority}
-                          onChange={(e) => setEditDraft({ ...editDraft, priority: e.target.value })}
+                          onChange={(e) => { setEditDraft({ ...editDraft, priority: e.target.value }); }}
                         >
                           <option value="low">Low</option>
                           <option value="high">High</option>
@@ -1296,7 +1303,7 @@ export default function RequisitionDetail() {
                             value={editDraft.delivery_destination}
                             disabled={!deliveryDestinationEditable}
                             onChange={(e) =>
-                              setEditDraft({ ...editDraft, delivery_destination: e.target.value })
+                              { setEditDraft({ ...editDraft, delivery_destination: e.target.value }); }
                             }
                           >
                             <option value="">— Not set —</option>
@@ -1318,14 +1325,14 @@ export default function RequisitionDetail() {
                       rows={editDraft.lines}
                       onRemoveRow={(i) => {
                         const lines = [...editDraft.lines]
-                        lines[i] = { ...lines[i]!, _removed: !lines[i]!._removed }
+                        lines[i] = { ...lines[i], _removed: !lines[i]._removed }
                         setEditDraft({ ...editDraft, lines })
                       }}
                       onAddRow={() =>
-                        setEditDraft({
+                        { setEditDraft({
                           ...editDraft,
                           linesAdded: [...editDraft.linesAdded, { description: '', qty: 1, unit_price: 0, uom: 'unit' }],
-                        })
+                        }); }
                       }
                     />
 
@@ -1340,7 +1347,7 @@ export default function RequisitionDetail() {
                               style={{ ...inputStyle, flex: '1 1 200px' }}
                               onChange={(e) => {
                                 const linesAdded = [...editDraft.linesAdded]
-                                linesAdded[i] = { ...linesAdded[i]!, description: e.target.value }
+                                linesAdded[i] = { ...linesAdded[i], description: e.target.value }
                                 setEditDraft({ ...editDraft, linesAdded })
                               }}
                             />
@@ -1351,7 +1358,7 @@ export default function RequisitionDetail() {
                               style={{ ...inputStyle, width: '80px' }}
                               onChange={(e) => {
                                 const linesAdded = [...editDraft.linesAdded]
-                                linesAdded[i] = { ...linesAdded[i]!, qty: parseFloat(e.target.value) || 0 }
+                                linesAdded[i] = { ...linesAdded[i], qty: parseFloat(e.target.value) || 0 }
                                 setEditDraft({ ...editDraft, linesAdded })
                               }}
                             />
@@ -1362,7 +1369,7 @@ export default function RequisitionDetail() {
                               style={{ ...inputStyle, width: '100px' }}
                               onChange={(e) => {
                                 const linesAdded = [...editDraft.linesAdded]
-                                linesAdded[i] = { ...linesAdded[i]!, unit_price: parseFloat(e.target.value) || 0 }
+                                linesAdded[i] = { ...linesAdded[i], unit_price: parseFloat(e.target.value) || 0 }
                                 setEditDraft({ ...editDraft, linesAdded })
                               }}
                             />
@@ -1517,7 +1524,7 @@ export default function RequisitionDetail() {
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                               <input
                                 value={reviewNotes[er.id] ?? ''}
-                                onChange={(e) => setReviewNotes((p) => ({ ...p, [er.id]: e.target.value }))}
+                                onChange={(e) => { setReviewNotes((p) => ({ ...p, [er.id]: e.target.value })); }}
                                 placeholder="Rejection reason (required)"
                                 style={{ ...inputStyle, width: '220px' }}
                               />
@@ -1649,7 +1656,7 @@ export default function RequisitionDetail() {
                           setInvQty((prev) => ({ ...prev, [l.id]: '' }))
                           setInvLoc((prev) => {
                             const next = { ...prev }
-                            delete next[l.id]
+                            Reflect.deleteProperty(next, l.id)
                             return next
                           })
                           setReselectOpenFor(null)
@@ -1912,7 +1919,7 @@ export default function RequisitionDetail() {
                             type="number"
                             min="0"
                             value={storePrices[l.id] ?? String(defaultPrice)}
-                            onChange={(e) => setStorePrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                            onChange={(e) => { setStorePrices((prev) => ({ ...prev, [l.id]: e.target.value })); }}
                             placeholder="0.00"
                           />
                         </div>
@@ -1933,7 +1940,7 @@ export default function RequisitionDetail() {
                               parseFloat(
                                 storePrices[l.id] ?? String(l.store_price ?? l.source_average_cost ?? '0'),
                               ) || 0,
-                            currencyCode: l.currency_code,
+                            currencyCode: l.currency_code ?? 'IQD',
                           })),
                         },
                       })
@@ -2008,7 +2015,7 @@ export default function RequisitionDetail() {
                           type="number"
                           min="0"
                           value={raw ?? ''}
-                          onChange={(e) => setMarketPrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                          onChange={(e) => { setMarketPrices((prev) => ({ ...prev, [l.id]: e.target.value })); }}
                           placeholder="0.00"
                           error={missing ? 'Required' : invalid ? 'Enter a valid price' : undefined}
                         />
@@ -2017,7 +2024,7 @@ export default function RequisitionDetail() {
                         <Select
                           label="Currency"
                           value={marketCurrency[l.id] ?? l.currency_code}
-                          onChange={(e) => setMarketCurrency((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                          onChange={(e) => { setMarketCurrency((prev) => ({ ...prev, [l.id]: e.target.value })); }}
                           options={CURRENCIES.map((c) => ({ value: c, label: c }))}
                         />
                       </div>
@@ -2025,7 +2032,7 @@ export default function RequisitionDetail() {
                         <Input
                           label="Vendor quote ref (optional)"
                           value={quoteRefs[l.id] ?? ''}
-                          onChange={(e) => setQuoteRefs((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                          onChange={(e) => { setQuoteRefs((prev) => ({ ...prev, [l.id]: e.target.value })); }}
                         />
                       </div>
                     </div>
@@ -2055,7 +2062,7 @@ export default function RequisitionDetail() {
                             id: req.id,
                             linePrices: purchaseLines.map((l) => ({
                               lineId: l.id,
-                              marketPrice: parseFloat(marketPrices[l.id]!),
+                              marketPrice: parseFloat(marketPrices[l.id]),
                               currencyCode: marketCurrency[l.id] ?? l.currency_code,
                               vendorQuoteRef: quoteRefs[l.id] || undefined,
                             })),
@@ -2083,7 +2090,7 @@ export default function RequisitionDetail() {
           </div>
           {!canVerifyPrice ? (
             <div style={{ fontSize: '13px', color: theme.textMuted }}>
-              Only 2nd Procurement (or an admin) can act here.
+              Only the organizer (or an admin) can act here.
             </div>
           ) : (() => {
             // Same purchaseLines filter as the market-pricing panel above —
@@ -2127,7 +2134,7 @@ export default function RequisitionDetail() {
                             type="number"
                             min="0"
                             value={raw}
-                            onChange={(e) => setVerifiedPrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                            onChange={(e) => { setVerifiedPrices((prev) => ({ ...prev, [l.id]: e.target.value })); }}
                             placeholder="0.00"
                             error={missing ? 'Required' : invalid ? 'Enter a valid price' : undefined}
                           />
@@ -2195,7 +2202,7 @@ export default function RequisitionDetail() {
                 <Textarea
                   label="Overall reason (auto-filled from flagged lines — edit as needed)"
                   value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
+                  onChange={(e) => { setRejectReason(e.target.value); }}
                   placeholder={flagAutoReason || 'Enter reason…'}
                   rows={2}
                 />
@@ -2251,16 +2258,6 @@ export default function RequisitionDetail() {
                   >
                     Market Pricing
                   </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={!effectiveRejectReason.trim()}
-                    loading={anyVerifyLoading}
-                    onClick={() =>
-                      void notifyOwnerForEdit({ variables: { requisitionId: req.id, reason: effectiveRejectReason } })
-                    }
-                  >
-                    Owner (Request Edit)
-                  </Button>
                 </div>
               </div>
             </div>
@@ -2309,7 +2306,7 @@ export default function RequisitionDetail() {
                 <Textarea
                   label="Overall reason (auto-filled from flagged lines — edit as needed)"
                   value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
+                  onChange={(e) => { setRejectReason(e.target.value); }}
                   placeholder={flagAutoReason || 'Enter reason…'}
                   rows={2}
                 />
@@ -2367,7 +2364,7 @@ export default function RequisitionDetail() {
             Recording purchases per vendor happens on the Items Bought screen.
           </div>
           {req.status === 'items_bought' && (
-            <Button variant="primary" size="sm" onClick={() => navigate(`/procurement/requisitions/${req.id}/items-bought`)}>
+            <Button variant="primary" size="sm" onClick={() => { navigate(`/procurement/requisitions/${req.id}/items-bought`); }}>
               Go to Items Bought
             </Button>
           )}
@@ -2414,7 +2411,7 @@ export default function RequisitionDetail() {
             ]}
             data={children}
             rowKey="id"
-            onRowClick={(c: ChildPO) => navigate(`/procurement/purchase-orders/${c.id}`)}
+            onRowClick={(c: ChildPO) => { navigate(`/procurement/purchase-orders/${c.id}`); }}
           />
         </Card>
       )}
@@ -2489,7 +2486,7 @@ export default function RequisitionDetail() {
                 justifyContent: 'center',
                 padding: '24px',
               }}
-              onClick={() => setShowPrintModal(false)}
+              onClick={() => { setShowPrintModal(false); }}
             >
               <div
                 style={{
@@ -2503,7 +2500,7 @@ export default function RequisitionDetail() {
                   flexDirection: 'column',
                   overflow: 'hidden',
                 }}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); }}
               >
                 {/* Dialog header */}
                 <div
@@ -2520,7 +2517,7 @@ export default function RequisitionDetail() {
                     Print Requisition — {req.requisition_number}
                   </span>
                   <button
-                    onClick={() => setShowPrintModal(false)}
+                    onClick={() => { setShowPrintModal(false); }}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -2560,7 +2557,7 @@ export default function RequisitionDetail() {
                           qty: parseFloat(l.qty) || 0,
                           qty_from_stock: qtyFromStock,
                           uom: l.uom ?? '',
-                          currency_code: l.currency_code,
+                          currency_code: l.currency_code ?? 'IQD',
                           unit_price: parseFloat(l.unit_price) || 0,
                           total: parseFloat(l.total) || 0,
                           store_price: l.store_price != null ? parseFloat(l.store_price) || 0 : null,
@@ -2600,7 +2597,7 @@ export default function RequisitionDetail() {
                   }}
                 >
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <Button variant="ghost" size="sm" onClick={() => setShowPrintModal(false)}>
+                    <Button variant="ghost" size="sm" onClick={() => { setShowPrintModal(false); }}>
                       Cancel
                     </Button>
                     <Button

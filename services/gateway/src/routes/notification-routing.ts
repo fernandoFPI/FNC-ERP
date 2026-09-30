@@ -1,7 +1,7 @@
 import { Router, type IRouter } from 'express'
 import { z } from 'zod'
-import { requireAuth, requireRole } from '@fnc-erp/auth'
-import { listNotificationRouting, setNotificationRouting, NOTIFICATION_ROUTES } from '@fnc-erp/db'
+import { requireAuth, requireRole, getAuth } from '@fnc-erp/auth'
+import { listNotificationRouting, setNotificationRouting, NOTIFICATION_ROUTES, asyncHandler } from '@fnc-erp/db'
 import { logger } from '@fnc-erp/logger'
 import type { Request, Response } from 'express'
 
@@ -22,7 +22,7 @@ const updateSchema = z.object({
 
 // GET /api/v1/admin/notification-routing
 // Returns all known routes merged with any DB overrides
-notificationRoutingRouter.get('/', ...requireAdmin, async (req: Request, res: Response) => {
+notificationRoutingRouter.get('/', ...requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const rows = await listNotificationRouting()
     const rowMap = new Map(rows.map((r) => [r.key, r]))
@@ -44,11 +44,11 @@ notificationRoutingRouter.get('/', ...requireAdmin, async (req: Request, res: Re
     log.error({ err }, 'notification-routing GET failed')
     res.status(500).json({ error: 'INTERNAL_ERROR' })
   }
-})
+}))
 
 // PUT /api/v1/admin/notification-routing
 // Bulk update: [{ key, email_enabled }]
-notificationRoutingRouter.put('/', ...requireAdmin, async (req: Request, res: Response) => {
+notificationRoutingRouter.put('/', ...requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const parsed = updateSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.issues })
@@ -56,7 +56,7 @@ notificationRoutingRouter.put('/', ...requireAdmin, async (req: Request, res: Re
   }
 
   const validKeys = new Set<string>(NOTIFICATION_ROUTES.map((r) => r.key))
-  const userId = req.auth!.userId
+  const userId = getAuth(req).userId
 
   try {
     for (const { key, email_enabled } of parsed.data.updates) {
@@ -70,4 +70,4 @@ notificationRoutingRouter.put('/', ...requireAdmin, async (req: Request, res: Re
     log.error({ err }, 'notification-routing PUT failed')
     res.status(500).json({ error: 'INTERNAL_ERROR' })
   }
-})
+}))

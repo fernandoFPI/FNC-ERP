@@ -2,16 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../theme/ThemeContext'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 const mockUseQuery = vi.fn()
 const mockUseMutation = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
-    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
+    useMutation: (...args: unknown[]): unknown => mockUseMutation(...args),
     gql: actual.gql,
   }
 })
@@ -27,7 +29,7 @@ vi.mock('../../../store/authStore', () => ({
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
@@ -67,7 +69,12 @@ function baseReceipt(overrides: Record<string, unknown> = {}) {
 
 function mockReceipts(receipts: Record<string, unknown>[]) {
   mockUseQuery.mockImplementation((doc: unknown) => {
-    const opName = (doc as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name?.value
+    // definitions[0] isn't reliably the operation — gql fragment composition
+    // (queries built from `${SomeFieldsFragment}`) can put FragmentDefinition
+    // nodes before the OperationDefinition in the array, so find it by kind
+    // instead of assuming position 0.
+    const opDoc = doc as { definitions?: { kind?: string; name?: { value?: string } }[] }
+    const opName = opDoc.definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value
     if (opName === 'POReceipts') {
       return {
         data: { poReceipts: receipts },

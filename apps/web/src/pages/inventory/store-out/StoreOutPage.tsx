@@ -29,6 +29,7 @@ import { EmptyState } from '../../../components/ui/EmptyState'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { useToastStore } from '../../../store/toastStore'
 import { useTheme } from '../../../theme/ThemeContext'
+import type { AddMaterialIssueLineMutation, AddMaterialIssueLineMutationVariables, CancelMaterialIssueMutation, CancelMaterialIssueMutationVariables, CreateMaterialIssueMutation, CreateMaterialIssueMutationVariables, DeleteMaterialIssueLineMutation, DeleteMaterialIssueLineMutationVariables, IssueMaterialIssueMutation, IssueMaterialIssueMutationVariables, MaterialIssuesQuery, MaterialIssuesQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, PurchaseOrderQuery, PurchaseOrderQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, RequisitionsQuery, RequisitionsQueryVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
 
 interface MILine {
   id: string
@@ -63,8 +64,8 @@ interface Product {
   name: string
   name_ar?: string | null
   sku: string
-  average_cost: number | null
-  uom: string | null
+  average_cost: string | null
+  uom: string
 }
 interface PendingLine {
   key: number
@@ -125,7 +126,7 @@ export default function StoreOutPage() {
   const [draftFromLocationId, setDraftFromLocationId] = useState('')
 
   // Queries
-  const { data, loading, refetch } = useQuery(MATERIAL_ISSUES_QUERY, {
+  const { data, loading, refetch } = useQuery<MaterialIssuesQuery, MaterialIssuesQueryVariables>(MATERIAL_ISSUES_QUERY, {
     variables: {
       ...(projectFilter ? { projectId: projectFilter } : {}),
       ...(statusFilter ? { status: statusFilter } : {}),
@@ -135,11 +136,11 @@ export default function StoreOutPage() {
     },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: projectsData } = useQuery(PROJECTS_QUERY, {
+  const { data: projectsData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     variables: { limit: 200, includeAll: true },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: poData } = useQuery(PURCHASE_ORDERS_QUERY, {
+  const { data: poData } = useQuery<PurchaseOrdersQuery, PurchaseOrdersQueryVariables>(PURCHASE_ORDERS_QUERY, {
     variables: { projectId: formProjectId },
     skip: !formProjectId,
     fetchPolicy: 'cache-and-network',
@@ -147,25 +148,25 @@ export default function StoreOutPage() {
   // Full line detail for whichever PO is linked in the modal — lets "Add
   // all items from PO" pre-fill Items to Issue instead of re-entering each
   // product/qty/cost by hand.
-  const { data: linkedPoData } = useQuery(PURCHASE_ORDER_QUERY, {
+  const { data: linkedPoData } = useQuery<PurchaseOrderQuery, PurchaseOrderQueryVariables>(PURCHASE_ORDER_QUERY, {
     variables: { id: formPoId },
     skip: !formPoId,
     fetchPolicy: 'cache-and-network',
   })
   // Unscoped — for the page-level "search by PO" filter, separate from the
   // New Store Out modal's own project-scoped PO picker above.
-  const { data: allPosData } = useQuery(PURCHASE_ORDERS_QUERY, {
+  const { data: allPosData } = useQuery<PurchaseOrdersQuery, PurchaseOrdersQueryVariables>(PURCHASE_ORDERS_QUERY, {
     variables: {},
     fetchPolicy: 'cache-and-network',
   })
-  const { data: requisitionsData } = useQuery(REQUISITIONS_QUERY, {
+  const { data: requisitionsData } = useQuery<RequisitionsQuery, RequisitionsQueryVariables>(REQUISITIONS_QUERY, {
     variables: {},
     fetchPolicy: 'cache-and-network',
   })
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
-  const { data: locationsData } = useQuery(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
+  const { data: locationsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
 
   const issues = (data?.materialIssues ?? []) as MI[]
   // Client-side — every issue's own line items (productName/sku) are already
@@ -196,7 +197,9 @@ export default function StoreOutPage() {
     code: string
     name: string
   }[]
-  const products = (productsData?.products ?? []) as Product[]
+  const products: Product[] = (productsData?.products ?? []).filter(
+    (p): p is NonNullable<typeof p> => p !== null,
+  )
   const locations = (locationsData?.stockLocations ?? []) as {
     id: string
     name: string
@@ -218,15 +221,15 @@ export default function StoreOutPage() {
     product_id: string | null
     product_name: string | null
     sku: string | null
-    qty_received: number | null
-    unit_price: number
+    qty_received: string | null
+    unit_price: string
   }
-  const linkedPoLines = (linkedPoData?.purchaseOrder?.lines ?? []) as LinkedPOLine[]
+  const linkedPoLines: LinkedPOLine[] = linkedPoData?.purchaseOrder?.lines ?? []
   // Only lines actually received (and not already staged in this modal) are
   // real candidates to issue out of the warehouse.
   const autoFillCandidates = linkedPoLines.filter(
-    (l) =>
-      l.product_id &&
+    (l): l is LinkedPOLine & { product_id: string } =>
+      !!l.product_id &&
       (parseFloat(String(l.qty_received ?? 0)) || 0) > 0 &&
       !pendingLines.some((p) => p.productId === l.product_id),
   )
@@ -278,8 +281,8 @@ export default function StoreOutPage() {
   ]
 
   // Mutations
-  const [createIssue, { loading: creating }] = useMutation(CREATE_MATERIAL_ISSUE)
-  const [addLine, { loading: addingLine }] = useMutation(ADD_MATERIAL_ISSUE_LINE, {
+  const [createIssue, { loading: creating }] = useMutation<CreateMaterialIssueMutation, CreateMaterialIssueMutationVariables>(CREATE_MATERIAL_ISSUE)
+  const [addLine, { loading: addingLine }] = useMutation<AddMaterialIssueLineMutation, AddMaterialIssueLineMutationVariables>(ADD_MATERIAL_ISSUE_LINE, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Item added' })
       setDraftProductId('')
@@ -292,13 +295,13 @@ export default function StoreOutPage() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [deleteLine] = useMutation(DELETE_MATERIAL_ISSUE_LINE, {
+  const [deleteLine] = useMutation<DeleteMaterialIssueLineMutation, DeleteMaterialIssueLineMutationVariables>(DELETE_MATERIAL_ISSUE_LINE, {
     onCompleted: () => void refetch(),
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [issueMI, { loading: issuing }] = useMutation(ISSUE_MATERIAL_ISSUE, {
+  const [issueMI, { loading: issuing }] = useMutation<IssueMaterialIssueMutation, IssueMaterialIssueMutationVariables>(ISSUE_MATERIAL_ISSUE, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Store-out issued — cost committed to project' })
       setConfirmIssue(null)
@@ -309,7 +312,7 @@ export default function StoreOutPage() {
       setConfirmIssue(null)
     },
   })
-  const [cancelMI, { loading: cancelling }] = useMutation(CANCEL_MATERIAL_ISSUE, {
+  const [cancelMI, { loading: cancelling }] = useMutation<CancelMaterialIssueMutation, CancelMaterialIssueMutationVariables>(CANCEL_MATERIAL_ISSUE, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Store-out cancelled' })
       setConfirmCancel(null)
@@ -363,7 +366,7 @@ export default function StoreOutPage() {
       ...prev,
       ...autoFillCandidates.map((l) => ({
         key: ++pendingKey.current,
-        productId: l.product_id!,
+        productId: l.product_id,
         productName: l.product_name ?? '',
         sku: l.sku ?? '',
         qty: String(parseFloat(String(l.qty_received))),
@@ -384,7 +387,7 @@ export default function StoreOutPage() {
           notes: formNotes || null,
         },
       })
-      const issueId: string = res.data?.createMaterialIssue?.id
+      const issueId: string | undefined = res.data?.createMaterialIssue.id
       if (!issueId) throw new Error('No issue ID returned')
       for (const line of pendingLines) {
         await addLine({
@@ -887,7 +890,7 @@ export default function StoreOutPage() {
                       data={si.lines}
                       rowKey="id"
                       emptyMessage={
-                        si.poId || si.requisitionId
+                        si.poId ?? si.requisitionId
                           ? 'No items on this store-out.'
                           : 'No items yet — add one below.'
                       }

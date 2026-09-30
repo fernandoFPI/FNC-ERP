@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
-import { query, withTransaction } from '@fnc-erp/db'
+import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
-export const budgetRouter: import('express').Router = Router()
+export const budgetRouter: Router = Router()
 
 const budgetSchema = z.object({
   name: z.string().min(1),
@@ -16,7 +17,7 @@ const budgetSchema = z.object({
 
 // ─── List budgets ─────────────────────────────────────────────────────────────
 
-budgetRouter.get('/', requirePermission('finance.budget.view', 'view'), async (req, res) => {
+budgetRouter.get('/', requirePermission('finance.budget.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const r = await query(
       `SELECT b.*,
@@ -27,21 +28,21 @@ budgetRouter.get('/', requirePermission('finance.budget.view', 'view'), async (r
        WHERE b.company_id = $1
        GROUP BY b.id
        ORDER BY b.fiscal_year DESC, b.name`,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
     sendOk(res, r.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load budgets', err)
   }
-})
+}))
 
 // ─── Get budget with lines ────────────────────────────────────────────────────
 
-budgetRouter.get('/:id', requirePermission('finance.budget.view', 'view'), async (req, res) => {
+budgetRouter.get('/:id', requirePermission('finance.budget.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const b = await query(`SELECT * FROM gl_budgets WHERE id=$1 AND company_id=$2`, [
       req.params['id'],
-      req.auth!.companyId,
+      getAuth(req).companyId,
     ])
     if (!b.rows[0]) {
       sendError(res, 404, 'NOT_FOUND', 'Budget not found')
@@ -59,31 +60,31 @@ budgetRouter.get('/:id', requirePermission('finance.budget.view', 'view'), async
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load budget', err)
   }
-})
+}))
 
 // ─── Create budget ────────────────────────────────────────────────────────────
 
-budgetRouter.post('/', requirePermission('finance.budget.edit', 'edit'), async (req, res) => {
+budgetRouter.post('/', requirePermission('finance.budget.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
     const d = budgetSchema.parse(req.body)
     const r = await query(
       `INSERT INTO gl_budgets (company_id, name, fiscal_year, currency_code, notes, created_by)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
       [
-        req.auth!.companyId,
+        getAuth(req).companyId,
         d.name,
         d.fiscal_year,
         d.currency_code,
         d.notes ?? null,
-        req.auth!.userId,
+        getAuth(req).userId,
       ],
     )
     await logAudit({
-      companyId: req.auth!.companyId,
-      userId: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      userId: getAuth(req).userId,
       action: 'INSERT',
       tableName: 'gl_budgets',
-      recordId: r.rows[0]!['id'] as string,
+      recordId: firstRowOrThrow(r)['id'] as string,
       newValues: { name: d.name, fiscal_year: d.fiscal_year },
     })
     sendOk(res, r.rows[0], 201)
@@ -94,16 +95,16 @@ budgetRouter.post('/', requirePermission('finance.budget.edit', 'edit'), async (
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create budget', err)
   }
-})
+}))
 
 // ─── Update budget header ─────────────────────────────────────────────────────
 
-budgetRouter.put('/:id', requirePermission('finance.budget.edit', 'edit'), async (req, res) => {
+budgetRouter.put('/:id', requirePermission('finance.budget.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
     const d = budgetSchema.parse(req.body)
     const existing = await query(`SELECT status FROM gl_budgets WHERE id=$1 AND company_id=$2`, [
       req.params['id'],
-      req.auth!.companyId,
+      getAuth(req).companyId,
     ])
     if (!existing.rows[0]) {
       sendError(res, 404, 'NOT_FOUND', 'Budget not found')
@@ -121,20 +122,20 @@ budgetRouter.put('/:id', requirePermission('finance.budget.edit', 'edit'), async
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update budget', err)
   }
-})
+}))
 
 // ─── Change status (activate / lock) ─────────────────────────────────────────
 
 budgetRouter.patch(
   '/:id/status',
   requirePermission('finance.budget.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({ status: z.enum(['draft', 'active', 'locked']) })
     try {
       const { status } = schema.parse(req.body)
       const r = await query(
         `UPDATE gl_budgets SET status=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3 RETURNING *`,
-        [status, req.params['id'], req.auth!.companyId],
+        [status, req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Budget not found')
@@ -144,16 +145,16 @@ budgetRouter.patch(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update budget status', err)
     }
-  },
+  }),
 )
 
 // ─── Delete budget ────────────────────────────────────────────────────────────
 
-budgetRouter.delete('/:id', requirePermission('finance.budget.edit', 'edit'), async (req, res) => {
+budgetRouter.delete('/:id', requirePermission('finance.budget.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
     const existing = await query(`SELECT status FROM gl_budgets WHERE id=$1 AND company_id=$2`, [
       req.params['id'],
-      req.auth!.companyId,
+      getAuth(req).companyId,
     ])
     if (!existing.rows[0]) {
       sendError(res, 404, 'NOT_FOUND', 'Budget not found')
@@ -168,14 +169,14 @@ budgetRouter.delete('/:id', requirePermission('finance.budget.edit', 'edit'), as
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete budget', err)
   }
-})
+}))
 
 // ─── Upsert budget lines (bulk) ───────────────────────────────────────────────
 
 budgetRouter.post(
   '/:id/lines',
   requirePermission('finance.budget.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       lines: z
         .array(
@@ -191,7 +192,7 @@ budgetRouter.post(
     try {
       const budget = await query(`SELECT status FROM gl_budgets WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!budget.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Budget not found')
@@ -204,7 +205,7 @@ budgetRouter.post(
 
       const { lines } = schema.parse(req.body)
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const saved = []
           for (const line of lines) {
@@ -216,7 +217,7 @@ budgetRouter.post(
              RETURNING *`,
               [
                 req.params['id'],
-                req.auth!.companyId,
+                getAuth(req).companyId,
                 line.account_id,
                 line.period,
                 line.amount,
@@ -232,7 +233,7 @@ budgetRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to save budget lines', err)
     }
-  },
+  }),
 )
 
 // ─── Delete a single budget line ──────────────────────────────────────────────
@@ -240,7 +241,7 @@ budgetRouter.post(
 budgetRouter.delete(
   '/:budgetId/lines/:lineId',
   requirePermission('finance.budget.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(
         `DELETE FROM gl_budget_lines WHERE id=$1 AND budget_id=$2 RETURNING id`,
@@ -254,7 +255,7 @@ budgetRouter.delete(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete line', err)
     }
-  },
+  }),
 )
 
 // ─── Budget vs Actual report ──────────────────────────────────────────────────
@@ -262,7 +263,7 @@ budgetRouter.delete(
 budgetRouter.get(
   '/:id/vs-actual',
   requirePermission('finance.budget.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       period_from: z
         .string()
@@ -276,7 +277,7 @@ budgetRouter.get(
     try {
       const b = await query(`SELECT * FROM gl_budgets WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!b.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Budget not found')
@@ -324,7 +325,7 @@ budgetRouter.get(
          AND bl.company_id = $1
        GROUP BY a.id, a.code, a.name, a.account_type
        ORDER BY a.code`,
-        [req.auth!.companyId, req.params['id'], pFrom, pTo, budget['currency_code']],
+        [getAuth(req).companyId, req.params['id'], pFrom, pTo, budget['currency_code']],
       )
 
       const rows = r.rows.map((row) => ({
@@ -362,5 +363,5 @@ budgetRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to compute budget vs actual', err)
     }
-  },
+  }),
 )

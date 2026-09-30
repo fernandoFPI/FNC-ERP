@@ -138,7 +138,7 @@ export default function PayrollCostReport() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

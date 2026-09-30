@@ -818,7 +818,7 @@ export function InvoiceBuilder({
                     margin: '0 auto 16px',
                     maxWidth: '360px',
                     padding: '10px 14px',
-                    background: theme.dangerBg ?? '#fef2f2',
+                    background: theme.dangerBg,
                     border: `1px solid ${theme.danger}`,
                     borderRadius: '8px',
                     fontSize: '12px',
@@ -829,7 +829,7 @@ export function InvoiceBuilder({
                   {error}
                 </div>
               )}
-              <Button variant="primary" size="lg" onClick={handleConfirm} loading={loading}>
+              <Button variant="primary" size="lg" onClick={(...args: Parameters<typeof handleConfirm>) => void handleConfirm(...args)} loading={loading}>
                 Create Invoice
               </Button>
             </div>

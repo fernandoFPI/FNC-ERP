@@ -23,6 +23,11 @@ vi.mock('@fnc-erp/db', () => ({
   query: vi.fn(),
   withTransaction: vi.fn(),
   buildHealthStatus: vi.fn(),
+  asyncHandler:
+    (fn: (req: unknown, res: unknown, next: (err?: unknown) => void) => Promise<void>) =>
+    (req: unknown, res: unknown, next: (err?: unknown) => void) => {
+      fn(req, res, next).catch(next)
+    },
 }))
 
 vi.mock('@fnc-erp/logger', () => ({
@@ -51,6 +56,10 @@ vi.mock('@fnc-erp/auth', () => ({
     next()
   },
   requireRole: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+  getAuth: (req: Record<string, unknown>) => {
+    if (!req['auth']) throw new Error('Unauthorized')
+    return req['auth']
+  },
 }))
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'

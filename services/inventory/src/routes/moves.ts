@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query, pool } from '@fnc-erp/db'
+import { query, pool, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { isIntercoMove } from '../lib/interco-detector.js'
 import { sendOk, sendError } from '../lib/errors.js'
@@ -22,9 +23,9 @@ const CreateMoveSchema = z.object({
   notes: z.string().optional(),
 })
 
-movesRouter.get('/', requirePermission('inventory.stock_moves.view', 'view'), async (req, res) => {
+movesRouter.get('/', requirePermission('inventory.stock_moves.view', 'view'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const { product_id, location_id, from_date, to_date, page = '1', limit = '50' } = req.query
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
 
@@ -57,10 +58,10 @@ movesRouter.get('/', requirePermission('inventory.stock_moves.view', 'view'), as
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch moves', err)
   }
-})
+}))
 
-movesRouter.post('/', requirePermission('inventory.stock_moves.edit', 'edit'), async (req, res) => {
-  const companyId = req.auth!.companyId
+movesRouter.post('/', requirePermission('inventory.stock_moves.edit', 'edit'), asyncHandler(async (req, res) => {
+  const companyId = getAuth(req).companyId
   const parsed = CreateMoveSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -108,7 +109,7 @@ movesRouter.post('/', requirePermission('inventory.stock_moves.edit', 'edit'), a
               source_type: source_type ?? 'manual',
               source_id: source_id ?? null,
               notes: notes ?? null,
-              moved_by: req.auth!.userId,
+              moved_by: getAuth(req).userId,
               from_company_id: detection.fromCompanyId,
               to_company_id: detection.toCompanyId,
               market_price: (req.body as Record<string, unknown>)['market_price'] ?? null,
@@ -214,15 +215,15 @@ movesRouter.post('/', requirePermission('inventory.stock_moves.edit', 'edit'), a
         source_type ?? null,
         source_id ?? null,
         notes ?? null,
-        req.auth!.userId,
+        getAuth(req).userId,
       ],
     )
-    const move = moveResult.rows[0]!
+    const move = firstRowOrThrow(moveResult)
 
     await client.query('COMMIT')
     await logAudit({
       companyId,
-      userId: req.auth!.userId,
+      userId: getAuth(req).userId,
       action: 'CREATE',
       tableName: 'stock_moves',
       recordId: move.id as string,
@@ -235,4 +236,4 @@ movesRouter.post('/', requirePermission('inventory.stock_moves.edit', 'edit'), a
   } finally {
     client.release()
   }
-})
+}))

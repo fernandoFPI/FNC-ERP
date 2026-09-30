@@ -106,8 +106,8 @@ export const REQUISITION_STATUS_ACTIONS: Record<
   },
   price_verification: {
     label: 'Submit for approval',
-    description: '2nd procurement cross-checks market prices and submits directly for approval',
-    requiredPosition: 'procurement_2nd',
+    description: 'The organizer cross-checks market prices and submits directly for approval',
+    isOrganizer: true,
   },
   pending_approval: {
     label: 'Approve',

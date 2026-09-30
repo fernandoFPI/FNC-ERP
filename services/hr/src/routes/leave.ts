@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -16,18 +17,18 @@ const LeaveRequestSchema = z.object({
   reason: z.string().optional(),
 })
 
-leaveRouter.get('/types', requirePermission('hr.leave.view', 'view'), async (req, res) => {
+leaveRouter.get('/types', requirePermission('hr.leave.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const result = await query(`SELECT * FROM leave_types WHERE company_id = $1 ORDER BY name`, [
-      req.auth!.companyId,
+      getAuth(req).companyId,
     ])
     sendOk(res, result.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch leave types', err)
   }
-})
+}))
 
-leaveRouter.get('/requests', requirePermission('hr.leave.view', 'view'), async (req, res) => {
+leaveRouter.get('/requests', requirePermission('hr.leave.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const { employee_id, status, page = '1', limit = '50' } = req.query
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
@@ -36,7 +37,7 @@ leaveRouter.get('/requests', requirePermission('hr.leave.view', 'view'), async (
                JOIN employees e ON e.id = lr.employee_id
                JOIN leave_types lt ON lt.id = lr.leave_type_id
                WHERE lr.company_id = $1`
-    const params: unknown[] = [req.auth!.companyId]
+    const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
     if (employee_id) {
       sql += ` AND lr.employee_id = $${idx++}`
@@ -53,9 +54,9 @@ leaveRouter.get('/requests', requirePermission('hr.leave.view', 'view'), async (
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch leave requests', err)
   }
-})
+}))
 
-leaveRouter.post('/requests', requirePermission('hr.leave.edit', 'edit'), async (req, res) => {
+leaveRouter.post('/requests', requirePermission('hr.leave.edit', 'edit'), asyncHandler(async (req, res) => {
   const parsed = LeaveRequestSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -66,7 +67,7 @@ leaveRouter.post('/requests', requirePermission('hr.leave.edit', 'edit'), async 
     // Verify employee belongs to company
     const emp = await query(`SELECT id FROM employees WHERE id = $1 AND company_id = $2`, [
       employee_id,
-      req.auth!.companyId,
+      getAuth(req).companyId,
     ])
     if (!emp.rows[0]) {
       sendError(res, 404, 'NOT_FOUND', 'Employee not found')
@@ -75,7 +76,7 @@ leaveRouter.post('/requests', requirePermission('hr.leave.edit', 'edit'), async 
     // Verify leave type belongs to company
     const lt = await query(
       `SELECT id, requires_approval FROM leave_types WHERE id = $1 AND company_id = $2`,
-      [leave_type_id, req.auth!.companyId],
+      [leave_type_id, getAuth(req).companyId],
     )
     if (!lt.rows[0]) {
       sendError(res, 404, 'NOT_FOUND', 'Leave type not found')
@@ -88,18 +89,18 @@ leaveRouter.post('/requests', requirePermission('hr.leave.edit', 'edit'), async 
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [
         employee_id,
-        req.auth!.companyId,
+        getAuth(req).companyId,
         leave_type_id,
         start_date,
         end_date,
         total_days,
         reason ?? null,
         initialStatus,
-        req.auth!.userId,
+        getAuth(req).userId,
       ],
     )
     if (requiresApproval) {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       ;(async () => {
         const empRes = await query<{ first_name: string; last_name: string }>(
           `SELECT first_name, last_name FROM employees WHERE id=$1`,
@@ -126,7 +127,7 @@ leaveRouter.post('/requests', requirePermission('hr.leave.edit', 'edit'), async 
                 title: `Leave request: ${empName}`,
                 body: `${empName} has submitted a leave request from ${start_date} to ${end_date} (${total_days} days)${reason ? ': ' + reason : ''}`,
                 data: {
-                  leaveRequestId: result.rows[0]!['id'],
+                  leaveRequestId: firstRowOrThrow(result)['id'],
                   employeeName: empName,
                   startDate: start_date,
                   endDate: end_date,
@@ -135,23 +136,25 @@ leaveRouter.post('/requests', requirePermission('hr.leave.edit', 'edit'), async 
             ],
           )
         }
-      })().catch(() => {})
+      })().catch(() => {
+        // best-effort notification — don't block the main flow on it
+      })
     }
-    sendOk(res, result.rows[0]!, 201)
+    sendOk(res, firstRowOrThrow(result), 201)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create leave request', err)
   }
-})
+}))
 
 leaveRouter.post(
   '/requests/:id/approve',
   requirePermission('hr.leave.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await query(
         `UPDATE leave_requests SET status = 'approved', reviewed_by = $1, reviewed_at = NOW(), updated_at = NOW()
        WHERE id = $2 AND company_id = $3 AND status = 'pending' RETURNING *`,
-        [req.auth!.userId, req.params['id'], req.auth!.companyId],
+        [getAuth(req).userId, req.params['id'], getAuth(req).companyId],
       )
       if (!result.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Leave request not found or not pending')
@@ -171,7 +174,7 @@ leaveRouter.post(
             [
               JSON.stringify({
                 userId,
-                companyId: req.auth!.companyId,
+                companyId: getAuth(req).companyId,
                 title: 'Leave request approved',
                 body: `Your leave request from ${String(lr['start_date'])} to ${String(lr['end_date'])} (${String(lr['total_days'])} days) has been approved`,
                 data: {
@@ -183,23 +186,25 @@ leaveRouter.post(
             ],
           )
         }
-      })().catch(() => {})
+      })().catch(() => {
+        // best-effort notification — don't block the main flow on it
+      })
       sendOk(res, result.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve leave request', err)
     }
-  },
+  }),
 )
 
 leaveRouter.post(
   '/requests/:id/reject',
   requirePermission('hr.leave.approve', 'approve'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const result = await query(
         `UPDATE leave_requests SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW(), updated_at = NOW()
        WHERE id = $2 AND company_id = $3 AND status = 'pending' RETURNING *`,
-        [req.auth!.userId, req.params['id'], req.auth!.companyId],
+        [getAuth(req).userId, req.params['id'], getAuth(req).companyId],
       )
       if (!result.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Leave request not found or not pending')
@@ -219,7 +224,7 @@ leaveRouter.post(
             [
               JSON.stringify({
                 userId,
-                companyId: req.auth!.companyId,
+                companyId: getAuth(req).companyId,
                 title: 'Leave request not approved',
                 body: `Your leave request from ${String(lr['start_date'])} to ${String(lr['end_date'])} has not been approved`,
                 data: {
@@ -231,10 +236,12 @@ leaveRouter.post(
             ],
           )
         }
-      })().catch(() => {})
+      })().catch(() => {
+        // best-effort notification — don't block the main flow on it
+      })
       sendOk(res, result.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to reject leave request', err)
     }
-  },
+  }),
 )

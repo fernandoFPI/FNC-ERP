@@ -130,7 +130,7 @@ export default function InventoryValuationReport() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

@@ -13,6 +13,7 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
+import type { PaymentVouchersQuery, PaymentVouchersQueryVariables } from '../../../graphql/generated'
 
 const FILTER_DEFAULTS = { search: '', status: '', fromDate: '', toDate: '' }
 
@@ -24,10 +25,10 @@ interface PaymentVoucher {
   status: string
   total_amount_iqd: string
   total_amount_usd: string
-  created_by_email?: string
-  auditor_email?: string
-  audited_at?: string
-  journal_count?: string
+  created_by_email?: string | null
+  auditor_email?: string | null
+  audited_at?: string | null
+  journal_count?: string | null
   created_at: string
 }
 
@@ -58,7 +59,7 @@ export default function PaymentVouchersPage() {
     FILTER_DEFAULTS,
   )
 
-  const { data, loading, refetch } = useQuery(PAYMENT_VOUCHERS_QUERY, {
+  const { data, loading, refetch } = useQuery<PaymentVouchersQuery, PaymentVouchersQueryVariables>(PAYMENT_VOUCHERS_QUERY, {
     variables: {
       status: statusFilter || undefined,
       fromDate: fromDate || undefined,
@@ -176,7 +177,7 @@ export default function PaymentVouchersPage() {
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         >
           <FilterPresets
             presets={presets}

@@ -546,11 +546,11 @@ export default function ExpenseClaimDetail() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={async () => {
+                onClick={() => void (async () => {
                   await act('reject', { reason: rejectReason })
                   setShowReject(false)
                   setRejectReason('')
-                }}
+                })()}
                 disabled={acting || !rejectReason}
               >
                 Reject Claim

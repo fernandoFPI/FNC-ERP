@@ -18,6 +18,7 @@ import { Select } from '../../../components/ui/Select'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { useToastStore } from '../../../store/toastStore'
 import { formatCurrency } from '../../../lib/format'
+import type { ActivateRentalContractMutation, ActivateRentalContractMutationVariables, CloseRentalContractMutation, CloseRentalContractMutationVariables, GenerateRentalInvoiceMutation, GenerateRentalInvoiceMutationVariables, RentalContractQuery, RentalContractQueryVariables } from '../../../graphql/generated'
 
 export default function RentalContractDetail() {
   const { id } = useParams<{ id: string }>()
@@ -33,13 +34,13 @@ export default function RentalContractDetail() {
   )
   const [whtRatePct, setWhtRatePct] = useState('3')
 
-  const { data, loading, refetch } = useQuery(RENTAL_CONTRACT_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<RentalContractQuery, RentalContractQueryVariables>(RENTAL_CONTRACT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
   })
-  const [activateContract, { loading: activating }] = useMutation(ACTIVATE_RENTAL_CONTRACT)
-  const [closeContract, { loading: closing }] = useMutation(CLOSE_RENTAL_CONTRACT)
-  const [generateInvoice, { loading: invoicing }] = useMutation(GENERATE_RENTAL_INVOICE)
+  const [activateContract, { loading: activating }] = useMutation<ActivateRentalContractMutation, ActivateRentalContractMutationVariables>(ACTIVATE_RENTAL_CONTRACT)
+  const [closeContract, { loading: closing }] = useMutation<CloseRentalContractMutation, CloseRentalContractMutationVariables>(CLOSE_RENTAL_CONTRACT)
+  const [generateInvoice, { loading: invoicing }] = useMutation<GenerateRentalInvoiceMutation, GenerateRentalInvoiceMutationVariables>(GENERATE_RENTAL_INVOICE)
 
   const contract = data?.rentalContract
 
@@ -47,7 +48,7 @@ export default function RentalContractDetail() {
     try {
       await fn()
       addToast({ type: 'success', message: msg })
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -60,7 +61,7 @@ export default function RentalContractDetail() {
       () =>
         generateInvoice({
           variables: {
-            contractId: id,
+            contractId: id ?? '',
             periodStart,
             periodEnd,
             whtApplies,
@@ -71,7 +72,7 @@ export default function RentalContractDetail() {
       'Invoice generated',
     )
     setShowInvoiceModal(false)
-    refetch()
+    void refetch()
   }
 
   if (loading || !contract)
@@ -99,7 +100,7 @@ export default function RentalContractDetail() {
                 variant="primary"
                 size="sm"
                 onClick={() =>
-                  handleAction(() => activateContract({ variables: { id } }), 'Contract activated')
+                  void handleAction(() => activateContract({ variables: { id: id ?? '' } }), 'Contract activated')
                 }
                 loading={activating}
               >
@@ -121,7 +122,7 @@ export default function RentalContractDetail() {
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    handleAction(() => closeContract({ variables: { id } }), 'Contract closed')
+                    void handleAction(() => closeContract({ variables: { id: id ?? '' } }), 'Contract closed')
                   }
                   loading={closing}
                 >
@@ -169,7 +170,7 @@ export default function RentalContractDetail() {
             [
               'Deposit',
               contract.deposit_amount
-                ? `${parseFloat(contract.deposit_amount).toLocaleString()} ${cur}`
+                ? `${contract.deposit_amount.toLocaleString()} ${cur}`
                 : '—',
             ],
             ['Start Date', contract.start_date],
@@ -312,7 +313,7 @@ export default function RentalContractDetail() {
         title="Generate Rental Invoice"
       >
         <form
-          onSubmit={handleGenerateInvoice}
+          onSubmit={(...args: Parameters<typeof handleGenerateInvoice>) => void handleGenerateInvoice(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <div

@@ -39,6 +39,7 @@ import {
   RECHARGE_STATUS_VARIANTS,
   type RechargeRequestSummary,
 } from '../../../components/ui/RechargeRequestCard'
+import type { CancelRechargeRequestMutation, CancelRechargeRequestMutationVariables, ConfirmRechargeReceiptMutation, ConfirmRechargeReceiptMutationVariables, CreateRechargeRequestMutation, CreateRechargeRequestMutationVariables, EmployeesQuery, EmployeesQueryVariables, FulfillRechargeRequestMutation, FulfillRechargeRequestMutationVariables, RechargeBundlesQuery, RechargeBundlesQueryVariables, RechargeCostCenterQuery, RechargeCostCenterQueryVariables, RechargeMonthlySummaryQuery, RechargeMonthlySummaryQueryVariables, RechargeRequestsQuery, RechargeRequestsQueryVariables } from '../../../graphql/generated'
 
 interface RechargeBundle {
   id: string
@@ -112,9 +113,9 @@ export default function RechargeRequestsPage() {
   const [fulfillPreview, setFulfillPreview] = useState<string | null>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
 
-  const { data: costCenterData } = useQuery(RECHARGE_COST_CENTER_QUERY)
-  const { data: bundlesData } = useQuery(RECHARGE_BUNDLES_QUERY, { variables: { activeOnly: true } })
-  const { data: employeesData } = useQuery(EMPLOYEES_QUERY, {
+  const { data: costCenterData } = useQuery<RechargeCostCenterQuery, RechargeCostCenterQueryVariables>(RECHARGE_COST_CENTER_QUERY)
+  const { data: bundlesData } = useQuery<RechargeBundlesQuery, RechargeBundlesQueryVariables>(RECHARGE_BUNDLES_QUERY, { variables: { activeOnly: true } })
+  const { data: employeesData } = useQuery<EmployeesQuery, EmployeesQueryVariables>(EMPLOYEES_QUERY, {
     variables: { is_active: true },
     skip: !canAdmin,
   })
@@ -122,12 +123,12 @@ export default function RechargeRequestsPage() {
     data: mineData,
     loading: mineLoading,
     refetch: refetchMine,
-  } = useQuery(RECHARGE_REQUESTS_QUERY, { variables: { scope: 'mine' }, fetchPolicy: 'cache-and-network' })
+  } = useQuery<RechargeRequestsQuery, RechargeRequestsQueryVariables>(RECHARGE_REQUESTS_QUERY, { variables: { scope: 'mine' }, fetchPolicy: 'cache-and-network' })
   const {
     data: toFulfillData,
     loading: toFulfillLoading,
     refetch: refetchToFulfill,
-  } = useQuery(RECHARGE_REQUESTS_QUERY, {
+  } = useQuery<RechargeRequestsQuery, RechargeRequestsQueryVariables>(RECHARGE_REQUESTS_QUERY, {
     variables: { scope: 'toFulfill' },
     fetchPolicy: 'cache-and-network',
   })
@@ -135,7 +136,7 @@ export default function RechargeRequestsPage() {
     data: filedByMeData,
     loading: filedByMeLoading,
     refetch: refetchFiledByMe,
-  } = useQuery(RECHARGE_REQUESTS_QUERY, {
+  } = useQuery<RechargeRequestsQuery, RechargeRequestsQueryVariables>(RECHARGE_REQUESTS_QUERY, {
     variables: { scope: 'filedByMe' },
     skip: !canAdmin,
     fetchPolicy: 'cache-and-network',
@@ -151,23 +152,23 @@ export default function RechargeRequestsPage() {
   const now = new Date()
   const [summaryYear, setSummaryYear] = useState(now.getFullYear())
   const [summaryMonth, setSummaryMonth] = useState(now.getMonth() + 1)
-  const { data: summaryData, loading: summaryLoading } = useQuery(RECHARGE_MONTHLY_SUMMARY_QUERY, {
+  const { data: summaryData, loading: summaryLoading } = useQuery<RechargeMonthlySummaryQuery, RechargeMonthlySummaryQueryVariables>(RECHARGE_MONTHLY_SUMMARY_QUERY, {
     variables: { year: summaryYear, month: summaryMonth },
     skip: !canSeeSummary,
     fetchPolicy: 'cache-and-network',
   })
 
-  const [createRequest, { loading: creating }] = useMutation(CREATE_RECHARGE_REQUEST)
-  const [cancelRequest] = useMutation(CANCEL_RECHARGE_REQUEST)
-  const [fulfillRequest, { loading: fulfilling }] = useMutation(FULFILL_RECHARGE_REQUEST)
-  const [confirmReceipt, { loading: confirming }] = useMutation(CONFIRM_RECHARGE_RECEIPT)
+  const [createRequest, { loading: creating }] = useMutation<CreateRechargeRequestMutation, CreateRechargeRequestMutationVariables>(CREATE_RECHARGE_REQUEST)
+  const [cancelRequest] = useMutation<CancelRechargeRequestMutation, CancelRechargeRequestMutationVariables>(CANCEL_RECHARGE_REQUEST)
+  const [fulfillRequest, { loading: fulfilling }] = useMutation<FulfillRechargeRequestMutation, FulfillRechargeRequestMutationVariables>(FULFILL_RECHARGE_REQUEST)
+  const [confirmReceipt, { loading: confirming }] = useMutation<ConfirmRechargeReceiptMutation, ConfirmRechargeReceiptMutationVariables>(CONFIRM_RECHARGE_RECEIPT)
 
   const bundles: RechargeBundle[] = bundlesData?.rechargeBundles ?? []
   // Only employees with a linked login can be picked — they're the one who
   // needs to confirm receipt in the app once the recharge arrives.
   const employees: { id: string; first_name: string; last_name: string; user_id?: string | null }[] =
-    (employeesData?.employees ?? []).filter(
-      (e: { user_id?: string | null }) => !!e.user_id,
+    (employeesData?.employees ?? []).filter((v): v is NonNullable<typeof v> => v !== null).filter(
+      (e) => !!e.user_id,
     )
   const mine: RechargeRequest[] = mineData?.rechargeRequests ?? []
   const toFulfill: RechargeRequest[] = toFulfillData?.rechargeRequests ?? []

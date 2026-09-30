@@ -6,7 +6,7 @@ import { rolesRouter } from './routes/roles.js'
 import { companyManagementRouter } from './routes/company-management.js'
 import { userPermissionsRouter } from './routes/user-permissions.js'
 import { roleTemplatesRouter } from './routes/role-templates.js'
-import { buildHealthStatus } from '@fnc-erp/db'
+import { buildHealthStatus, asyncHandler } from '@fnc-erp/db'
 import { HTTP_STATUS } from '@fnc-erp/config'
 
 export function createApp(): express.Application {
@@ -17,10 +17,10 @@ export function createApp(): express.Application {
   app.use(express.json({ limit: '1mb' }))
   app.use(express.urlencoded({ extended: true }))
 
-  app.get('/health', async (_req, res) => {
+  app.get('/health', asyncHandler(async (_req, res) => {
     const health = await buildHealthStatus('auth')
     res.status(health.status === 'down' ? 503 : 200).json(health)
-  })
+  }))
 
   app.use('/auth', authRouter)
   app.use('/auth', passwordResetRouter)

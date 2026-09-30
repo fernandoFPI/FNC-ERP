@@ -127,7 +127,7 @@ export function LineItemEditor<T extends object>({
           <div
             style={{
               background: theme.bgSurface,
-              border: `1px solid ${theme.accentBorder ?? theme.border}`,
+              border: `1px solid ${theme.accentBorder}`,
               borderRadius: '12px',
               padding: '14px',
               display: 'flex',
@@ -147,7 +147,7 @@ export function LineItemEditor<T extends object>({
                     gap: '12px',
                     padding: '4px 0',
                     borderTop:
-                      i === 0 ? 'none' : `0.5px solid ${theme.tableBorder ?? theme.border}`,
+                      i === 0 ? 'none' : `0.5px solid ${theme.tableBorder}`,
                   }}
                 >
                   <div style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted }}>
@@ -270,7 +270,7 @@ export function LineItemEditor<T extends object>({
           </tbody>
           {footerRow && rows.length > 0 && (
             <tfoot>
-              <tr style={{ borderTop: `2px solid ${theme.tableBorder ?? theme.border}` }}>
+              <tr style={{ borderTop: `2px solid ${theme.tableBorder}` }}>
                 {fields.map((f) => (
                   <td
                     key={f.key}

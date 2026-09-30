@@ -125,7 +125,7 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
   const navigate = useNavigate()
   const { canAny, isSystemLevel } = usePermission()
   const activeCompany = useCompanyStore((s) => s.activeCompany)
-  const isFactoryCompany = !!activeCompany?.name?.toLowerCase().includes('factory')
+  const isFactoryCompany = !!activeCompany?.name.toLowerCase().includes('factory')
   const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [groups, setGroups] = useState<SearchGroup[]>([])

@@ -3,7 +3,6 @@ import { useTheme } from '../../../../theme/ThemeContext'
 import { PageHeader } from '../../../../components/ui/PageHeader'
 import { Card } from '../../../../components/ui/Card'
 import { Button } from '../../../../components/ui/Button'
-import { Input } from '../../../../components/ui/Input'
 import { Badge } from '../../../../components/ui/Badge'
 import { useToastStore } from '../../../../store/toastStore'
 import { api } from '../../../../lib/axios'
@@ -101,7 +100,7 @@ export default function DocumentNumberingPage() {
       await api.put(`/admin/document-sequences/${seq.doc_type}`, payload)
       addToast({ type: 'success', message: `${seq.label} sequence saved` })
       const newEdits = { ...edits }
-      delete newEdits[seq.doc_type]
+      Reflect.deleteProperty(newEdits, seq.doc_type)
       setEdits(newEdits)
       load()
     } catch {
@@ -281,7 +280,7 @@ export default function DocumentNumberingPage() {
                           size="sm"
                           onClick={() => {
                             const next = { ...edits }
-                            delete next[seq.doc_type]
+                            Reflect.deleteProperty(next, seq.doc_type)
                             setEdits(next)
                           }}
                         >

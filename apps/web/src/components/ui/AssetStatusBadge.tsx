@@ -49,7 +49,7 @@ export function AssetStatusBadge({ status, maintenanceStatus }: Props) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-      <Badge variant={STATUS_VARIANT[status] ?? 'neutral'}>{status.replace('_', ' ')}</Badge>
+      <Badge variant={STATUS_VARIANT[status]}>{status.replace('_', ' ')}</Badge>
       {maintenanceStatus &&
         maintenanceStatus !== 'ok' &&
         (maintenanceStatus === 'overdue' ? (

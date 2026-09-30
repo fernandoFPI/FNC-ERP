@@ -16,6 +16,7 @@ import {
   REQUISITION_STATUS_ACTIONS,
 } from '../../../lib/requisition-constants'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import type { MyRequisitionApprovalQueueQuery, MyRequisitionApprovalQueueQueryVariables } from '../../../graphql/generated'
 
 interface QueueItem {
   id: string
@@ -44,7 +45,7 @@ export default function MyRequisitionQueue() {
   const navigate = useNavigate()
   const currentUserId = useAuthStore((s) => s.user?.id)
 
-  const { data, loading, refetch } = useQuery(MY_REQUISITION_QUEUE_QUERY, {
+  const { data, loading, refetch } = useQuery<MyRequisitionApprovalQueueQuery, MyRequisitionApprovalQueueQueryVariables>(MY_REQUISITION_QUEUE_QUERY, {
     fetchPolicy: 'cache-and-network',
     pollInterval: 60_000,
   })

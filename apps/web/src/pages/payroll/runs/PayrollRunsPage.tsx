@@ -12,16 +12,17 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { PermissionGate } from '../../../components/ui/PermissionGate'
+import type { PayrollRunsQuery, PayrollRunsQueryVariables } from '../../../graphql/generated'
 
 interface PayrollRun {
   id: string
   period_name: string
-  start_date?: string
-  end_date?: string
+  start_date?: string | null
+  end_date?: string | null
   status: string
   total_gross?: string
   total_net?: string
-  total_deductions?: string
+  total_deductions?: string | null
   created_at?: string
 }
 
@@ -49,12 +50,12 @@ export default function PayrollRunsPage() {
   const navigate = useNavigate()
   const [statusFilter, setStatusFilter] = useState('')
 
-  const { data, loading, refetch } = useQuery(PAYROLL_RUNS_QUERY, {
+  const { data, loading, refetch } = useQuery<PayrollRunsQuery, PayrollRunsQueryVariables>(PAYROLL_RUNS_QUERY, {
     variables: { status: statusFilter || undefined },
     fetchPolicy: 'cache-and-network',
   })
 
-  const runs: PayrollRun[] = data?.payrollRuns ?? []
+  const runs: PayrollRun[] = (data?.payrollRuns ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   const columns: Column<PayrollRun>[] = [
     {
@@ -142,7 +143,7 @@ export default function PayrollRunsPage() {
               },
             ]}
             resultCount={runs.length}
-            onRefresh={() => refetch()}
+            onRefresh={() => void refetch()}
           />
         </div>
         <Table

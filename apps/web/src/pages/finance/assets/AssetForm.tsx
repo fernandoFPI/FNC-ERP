@@ -79,7 +79,9 @@ export default function AssetForm() {
         setCategories(cRes.data)
         setAccounts(aRes.data)
       })
-      .catch(() => {})
+      .catch(() => {
+        /* ignore: selects just stay empty if reference data fails to load */
+      })
 
     if (isEdit && id) {
       api
@@ -104,7 +106,9 @@ export default function AssetForm() {
             notes: a.notes ?? '',
           })
         })
-        .catch(() => {})
+        .catch(() => {
+          /* ignore: form just stays at defaults if the asset fetch fails */
+        })
     }
   }, [id, isEdit])
 
@@ -396,7 +400,7 @@ export default function AssetForm() {
               )}
             </>,
           )}
-          {form.purchase_cost && form.salvage_value !== undefined && form.useful_life_months && (
+          {form.purchase_cost && form.useful_life_months && (
             <div
               style={{
                 padding: '10px 12px',

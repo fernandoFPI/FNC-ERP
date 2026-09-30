@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 
 export const pushRouter: IRouter = Router()
@@ -14,8 +15,8 @@ const SubscribeSchema = z.object({
 })
 
 // POST /push/subscribe
-pushRouter.post('/subscribe', async (req, res) => {
-  const userId = req.auth!.userId
+pushRouter.post('/subscribe', asyncHandler(async (req, res) => {
+  const userId = getAuth(req).userId
   const parsed = SubscribeSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -31,15 +32,15 @@ pushRouter.post('/subscribe', async (req, res) => {
        RETURNING *`,
       [userId, endpoint, p256dh, auth, user_agent ?? null],
     )
-    sendOk(res, result.rows[0]!, 201)
+    sendOk(res, firstRowOrThrow(result), 201)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to save subscription', err)
   }
-})
+}))
 
 // DELETE /push/subscribe
-pushRouter.delete('/subscribe', async (req, res) => {
-  const userId = req.auth!.userId
+pushRouter.delete('/subscribe', asyncHandler(async (req, res) => {
+  const userId = getAuth(req).userId
   const { endpoint } = req.body as { endpoint?: string }
   if (!endpoint) {
     sendError(res, 400, 'MISSING_ENDPOINT', 'endpoint is required')
@@ -54,4 +55,4 @@ pushRouter.delete('/subscribe', async (req, res) => {
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to remove subscription', err)
   }
-})
+}))

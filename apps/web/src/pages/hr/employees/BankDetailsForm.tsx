@@ -11,6 +11,7 @@ import { Input } from '../../../components/ui/Input'
 import { PermissionGate } from '../../../components/ui/PermissionGate'
 import { useToastStore } from '../../../store/toastStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { BankDetailsSummaryQuery, BankDetailsSummaryQueryVariables, RevealBankDetailsMutation, RevealBankDetailsMutationVariables, UpdateBankDetailsMutation, UpdateBankDetailsMutationVariables } from '../../../graphql/generated'
 
 interface BankDetails {
   bank_name?: string
@@ -36,14 +37,14 @@ export function BankDetailsForm({ employeeId }: Props) {
   const [editForm, setEditForm] = useState<BankDetails>({})
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const { data: summaryData, refetch: refetchSummary } = useQuery(BANK_DETAILS_SUMMARY_QUERY, {
+  const { data: summaryData, refetch: refetchSummary } = useQuery<BankDetailsSummaryQuery, BankDetailsSummaryQueryVariables>(BANK_DETAILS_SUMMARY_QUERY, {
     variables: { employee_id: employeeId },
     skip: !expanded,
     fetchPolicy: 'cache-and-network',
   })
 
-  const [revealMutation, { loading: revealing }] = useMutation(REVEAL_BANK_DETAILS)
-  const [updateMutation, { loading: saving }] = useMutation(UPDATE_BANK_DETAILS)
+  const [revealMutation, { loading: revealing }] = useMutation<RevealBankDetailsMutation, RevealBankDetailsMutationVariables>(REVEAL_BANK_DETAILS)
+  const [updateMutation, { loading: saving }] = useMutation<UpdateBankDetailsMutation, UpdateBankDetailsMutationVariables>(UPDATE_BANK_DETAILS)
 
   useEffect(
     () => () => {
@@ -54,10 +55,10 @@ export function BankDetailsForm({ employeeId }: Props) {
 
   function startCountdown() {
     setCountdown(REVEAL_SECONDS)
-    timerRef.current = setInterval(() => {
+    const intervalId = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          clearInterval(timerRef.current!)
+          clearInterval(intervalId)
           timerRef.current = null
           setRevealed(null)
           return 0
@@ -65,11 +66,13 @@ export function BankDetailsForm({ employeeId }: Props) {
         return prev - 1
       })
     }, 1000)
+    timerRef.current = intervalId
   }
 
   async function handleReveal() {
     try {
       const res = await revealMutation({ variables: { employee_id: employeeId } })
+      if (!res.data?.revealBankDetails) throw new Error('No bank details returned')
       setRevealed(res.data.revealBankDetails as BankDetails)
       startCountdown()
     } catch (err) {
@@ -97,7 +100,7 @@ export function BankDetailsForm({ employeeId }: Props) {
         clearInterval(timerRef.current)
         timerRef.current = null
       }
-      refetchSummary()
+      void refetchSummary()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -209,7 +212,7 @@ export function BankDetailsForm({ employeeId }: Props) {
                 >
                   Cancel
                 </Button>
-                <Button variant="primary" size="sm" loading={saving} onClick={handleSave}>
+                <Button variant="primary" size="sm" loading={saving} onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)}>
                   Save
                 </Button>
               </div>
@@ -284,7 +287,7 @@ export function BankDetailsForm({ employeeId }: Props) {
                         variant="secondary"
                         size="sm"
                         loading={revealing}
-                        onClick={handleReveal}
+                        onClick={(...args: Parameters<typeof handleReveal>) => void handleReveal(...args)}
                       >
                         Reveal
                       </Button>

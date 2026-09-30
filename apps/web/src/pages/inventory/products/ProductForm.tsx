@@ -17,6 +17,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { Checkbox } from '../../../components/ui/Checkbox'
 import { useToastStore } from '../../../store/toastStore'
 import { useProductStoreCategories } from '../../../hooks/useProductStoreCategories'
+import type { CreateProductMutation, CreateProductMutationVariables, ProductQuery, ProductQueryVariables, UpdateProductMutation, UpdateProductMutationVariables } from '../../../graphql/generated'
 
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 
@@ -49,8 +50,8 @@ export default function ProductForm() {
     is_active: true,
   })
 
-  const { data: productData } = useQuery(PRODUCT_QUERY, {
-    variables: { id },
+  const { data: productData } = useQuery<ProductQuery, ProductQueryVariables>(PRODUCT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !isEdit,
   })
   const { categories: storeCategories } = useProductStoreCategories()
@@ -59,24 +60,24 @@ export default function ProductForm() {
     const p = productData?.product
     if (!p) return
     setForm({
-      sku: p.sku ?? '',
-      name: p.name ?? '',
+      sku: p.sku,
+      name: p.name,
       name_ar: p.name_ar ?? '',
       description: p.description ?? '',
       category: p.category ?? '',
       sub_category: p.sub_category ?? '',
-      uom: p.uom ?? 'pc',
-      valuation_method: p.valuation_method ?? 'last_cost',
+      uom: p.uom,
+      valuation_method: p.valuation_method,
       standard_cost: String(p.standard_cost ?? '0'),
       cost_currency: p.cost_currency ?? '',
       reorder_point: p.reorder_point ? String(p.reorder_point) : '',
       reorder_qty: p.reorder_qty ? String(p.reorder_qty) : '',
-      is_active: p.is_active ?? true,
+      is_active: p.is_active,
     })
   }, [productData])
 
-  const [createProduct, { loading: creating }] = useMutation(CREATE_PRODUCT)
-  const [updateProduct, { loading: updating }] = useMutation(UPDATE_PRODUCT)
+  const [createProduct, { loading: creating }] = useMutation<CreateProductMutation, CreateProductMutationVariables>(CREATE_PRODUCT)
+  const [updateProduct, { loading: updating }] = useMutation<UpdateProductMutation, UpdateProductMutationVariables>(UPDATE_PRODUCT)
 
   const field =
     (key: keyof typeof form) =>
@@ -128,7 +129,7 @@ export default function ProductForm() {
         backPath="/inventory/products"
       />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <Card
           style={{
             marginTop: '20px',
@@ -203,7 +204,14 @@ export default function ProductForm() {
               </Select>
             )}
             <Input label="UOM" value={form.uom} onChange={field('uom')} placeholder="pc, kg, L…" />
-            <Select label="Valuation" value="last_cost" disabled onChange={() => {}}>
+            <Select
+              label="Valuation"
+              value="last_cost"
+              disabled
+              onChange={() => {
+                /* disabled: value is fixed, no-op required to keep this a controlled input */
+              }}
+            >
               <option value="last_cost">Last Recorded Cost</option>
             </Select>
           </div>

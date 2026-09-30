@@ -36,7 +36,7 @@ export interface InvoiceRenderData {
   invoiceDate: string
   dueDate: string
   billingMethod: string
-  paymentTermsDays: number
+  paymentTermsDays: number | null
   currencyCode: string
   paymentType?: string
   projectCode?: string | null
@@ -57,7 +57,7 @@ export interface InvoiceRenderData {
   companyBranchPhone?: string | null
   grossTotal: number
   retentionAmount: number
-  retentionPct: number
+  retentionPct: number | null
   netPayable: number
   whtApplies?: boolean
   whtAmount?: number
@@ -85,14 +85,14 @@ export function buildInvoiceHTML(
   stampImage?: string | null,
   qrDataUrl?: string | null,
 ): string {
-  const cur = inv.currencyCode ?? 'IQD'
+  const cur = inv.currencyCode
   const pt = paymentType ?? inv.paymentType ?? 'wire_transfer'
   const stamp = stampImage ?? inv.companyStampImage ?? null
   const letterhead = inv.companyLetterheadImage ?? null
 
   const subtotal = inv.lines.reduce((s, l) => s + l.subtotal, 0)
   const marginTotal = inv.lines.reduce((s, l) => s + l.marginAmount, 0)
-  const taxTotal = inv.lines.reduce((s, l) => s + (l.taxAmount ?? 0), 0)
+  const taxTotal = inv.lines.reduce((s, l) => s + l.taxAmount, 0)
   const hasMargin = marginTotal > 0
   const hasTax = taxTotal > 0
   const retentionPct = inv.retentionPct ?? 0
@@ -120,8 +120,8 @@ export function buildInvoiceHTML(
       ${
         hasTax
           ? `
-        <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;${bg}">${(l.taxPct ?? 0).toFixed(1)}%</td>
-        <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;${bg}">${fmt(l.taxAmount ?? 0, cur)}</td>
+        <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;${bg}">${l.taxPct.toFixed(1)}%</td>
+        <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;${bg}">${fmt(l.taxAmount, cur)}</td>
       `
           : ''
       }
@@ -695,7 +695,7 @@ ${
         <tr><td style="color:#888;padding-right:10px;white-space:nowrap">Invoice date</td><td style="font-weight:500">${fmtDate(inv.invoiceDate)}</td></tr>
         <tr><td style="color:#888;white-space:nowrap">Due date</td><td style="color:#c53030;font-weight:600">${fmtDate(inv.dueDate)}</td></tr>
         <tr><td style="color:#888;white-space:nowrap">Payment terms</td><td>Net ${inv.paymentTermsDays ?? 30} days</td></tr>
-        <tr><td style="color:#888;white-space:nowrap">Billing method</td><td style="text-transform:capitalize">${(inv.billingMethod ?? '').replace(/_/g, ' ')}</td></tr>
+        <tr><td style="color:#888;white-space:nowrap">Billing method</td><td style="text-transform:capitalize">${inv.billingMethod.replace(/_/g, ' ')}</td></tr>
       </table>
     </div>
     <div style="padding:16px 20px">

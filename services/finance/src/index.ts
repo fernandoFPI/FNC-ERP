@@ -31,9 +31,8 @@ async function start() {
   const shutdown = async () => {
     log.info('Finance service shutting down')
     server.closeIdleConnections()
-    server.close(async () => {
-      await pool.end()
-      process.exit(0)
+    server.close(() => {
+      void pool.end().then(() => process.exit(0))
     })
   }
   process.on('SIGTERM', () => {

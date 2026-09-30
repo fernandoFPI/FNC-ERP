@@ -93,7 +93,7 @@ const PAYMENT_METHODS: Record<string, string> = {
 }
 
 function fmtAmt(v: string | number) {
-  return parseFloat(String(v ?? 0)).toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return parseFloat(String(v)).toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -173,7 +173,9 @@ export default function VendorInvoiceDetail() {
         const list: PORow[] = Array.isArray(d) ? d : ((d as { items?: PORow[] }).items ?? [])
         setPoOptions(list.map((p) => ({ value: p.id, label: p.po_number })))
       })
-      .catch(() => {})
+      .catch(() => {
+        /* ignore: link-PO dropdown just stays empty if this fails */
+      })
   }, [invoice])
 
   async function handleLinkPO() {
@@ -382,7 +384,7 @@ export default function VendorInvoiceDetail() {
           }}
         >
           This invoice is <strong>{daysOverdue} days overdue</strong>. Due{' '}
-          {inv.due_date?.slice(0, 10)}.
+          {inv.due_date.slice(0, 10)}.
         </div>
       )}
       {inv.rejection_reason && (
@@ -479,12 +481,12 @@ export default function VendorInvoiceDetail() {
             label="Invoice number"
             value={<span style={{ fontFamily: 'monospace' }}>{inv.invoice_number}</span>}
           />
-          <Row label="Invoice date" value={inv.invoice_date?.slice(0, 10)} />
+          <Row label="Invoice date" value={inv.invoice_date.slice(0, 10)} />
           <Row
             label="Due date"
             value={
               <span style={{ color: isOverdue ? theme.danger : theme.textPrimary }}>
-                {inv.due_date?.slice(0, 10)}
+                {inv.due_date.slice(0, 10)}
               </span>
             }
           />
@@ -680,7 +682,7 @@ export default function VendorInvoiceDetail() {
               {inv.payments.map((pmt) => (
                 <tr key={pmt.id} style={{ borderBottom: `1px solid ${theme.tableBorder}` }}>
                   <td style={{ padding: '8px 14px', color: theme.textSecondary }}>
-                    {pmt.payment_date?.slice(0, 10)}
+                    {pmt.payment_date.slice(0, 10)}
                   </td>
                   <td style={{ padding: '8px 14px' }}>
                     <AmountDisplay
@@ -789,7 +791,7 @@ export default function VendorInvoiceDetail() {
           >
             Cancel
           </Button>
-          <Button variant="danger" size="sm" onClick={handleReject} disabled={actionLoading}>
+          <Button variant="danger" size="sm" onClick={(...args: Parameters<typeof handleReject>) => void handleReject(...args)} disabled={actionLoading}>
             Reject invoice
           </Button>
         </div>
@@ -871,7 +873,7 @@ export default function VendorInvoiceDetail() {
           >
             Cancel
           </Button>
-          <Button variant="primary" size="sm" onClick={handlePay} disabled={payLoading}>
+          <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handlePay>) => void handlePay(...args)} disabled={payLoading}>
             Record payment
           </Button>
         </div>

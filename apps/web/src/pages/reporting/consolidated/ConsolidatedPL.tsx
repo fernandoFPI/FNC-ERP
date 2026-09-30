@@ -89,7 +89,7 @@ export default function ConsolidatedPL() {
 
   const inputStyle = {
     background: theme.bgSurface,
-    border: `1px solid ${(theme as unknown as Record<string, string>).borderInput ?? theme.border}`,
+    border: `1px solid ${theme.borderInput}`,
     borderRadius: '8px',
     padding: '6px 10px',
     fontSize: '12px',
@@ -107,7 +107,7 @@ export default function ConsolidatedPL() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

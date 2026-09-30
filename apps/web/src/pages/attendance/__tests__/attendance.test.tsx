@@ -2,14 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../theme/ThemeContext'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 const mockUseQuery = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
     useMutation: vi.fn().mockReturnValue([vi.fn(), { loading: false }]),
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
@@ -23,7 +25,7 @@ vi.mock('../../../store/toastStore', () => ({ useToastStore: () => vi.fn() }))
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof ReactRouterDomModule>()
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
@@ -157,31 +159,36 @@ describe('AttendancePage', () => {
 
 // ── PunchHistory ───────────────────────────────────────────────────────────────
 describe('PunchHistory', () => {
+  // Shape matches the real ATTENDANCE_LOGS_QUERY result (a flat array, real
+  // field names) — PunchHistory.tsx used to assume a richer, never-actually-
+  // implemented shape ({logs,total} wrapper, is_valid/work_location_name/
+  // rejection_reason fields with no schema backing); fixed to map from what
+  // the query really returns (geofence_valid, distance_from_location_m,
+  // work_location_id), so this mock follows suit.
   const logs = [
     {
       id: 'p1',
       employee_name: 'Ahmad Hassan',
       punch_type: 'in',
       punched_at: '2026-06-15T08:00:00Z',
-      is_valid: true,
-      work_location_name: 'Main Office',
-      distance_from_zone: -10,
+      geofence_valid: true,
+      work_location_id: 'loc-1',
+      distance_from_location_m: '-10',
     },
     {
       id: 'p2',
       employee_name: 'Sara Ali',
       punch_type: 'out',
       punched_at: '2026-06-15T17:00:00Z',
-      is_valid: false,
-      work_location_name: 'Main Office',
-      distance_from_zone: 500,
-      rejection_reason: 'Outside geofence',
+      geofence_valid: false,
+      work_location_id: 'loc-1',
+      distance_from_location_m: '500',
     },
   ]
 
   beforeEach(() => {
     mockUseQuery.mockReturnValue({
-      data: { attendanceLogs: { logs, total: 2 } },
+      data: { attendanceLogs: logs },
       loading: false,
       refetch: vi.fn(),
     })
@@ -192,12 +199,6 @@ describe('PunchHistory', () => {
     wrap(<PunchHistory />)
     expect(screen.getByText('Ahmad Hassan')).toBeInTheDocument()
     expect(screen.getByText('Sara Ali')).toBeInTheDocument()
-  })
-
-  it('shows rejection reason for invalid punches', async () => {
-    const PunchHistory = (await import('../PunchHistory')).default
-    wrap(<PunchHistory />)
-    expect(screen.getByText('Outside geofence')).toBeInTheDocument()
   })
 
   it('shows summary stats at top', async () => {

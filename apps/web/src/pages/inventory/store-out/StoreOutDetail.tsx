@@ -13,6 +13,7 @@ import { buildStoreOutHTML } from '../../../lib/storeOutHtml'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useCompany } from '../../../hooks/useCompany'
+import type { MaterialIssueQuery, MaterialIssueQueryVariables } from '../../../graphql/generated'
 
 interface MILine {
   id: string
@@ -57,12 +58,12 @@ export default function StoreOutDetail() {
   const [showPrintModal, setShowPrintModal] = useState(false)
   const printIframeRef = useRef<HTMLIFrameElement>(null)
 
-  const { data, loading } = useQuery(MATERIAL_ISSUE_QUERY, {
-    variables: { id },
+  const { data, loading } = useQuery<MaterialIssueQuery, MaterialIssueQueryVariables>(MATERIAL_ISSUE_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
-  const mi: MI | undefined = data?.materialIssue
+  const mi: MI | undefined = data?.materialIssue ?? undefined
 
   if (loading && !mi)
     return <div style={{ padding: '48px', color: theme.textMuted }}>Loading…</div>

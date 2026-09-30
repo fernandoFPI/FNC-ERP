@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { pushToUser } from '../lib/ws-manager.js'
 
@@ -16,10 +17,10 @@ const CreateNotificationSchema = z.object({
 })
 
 // GET /notifications — list for authenticated user (unread first)
-notificationsRouter.get('/', async (req, res) => {
+notificationsRouter.get('/', asyncHandler(async (req, res) => {
   try {
-    const userId = req.auth!.userId
-    const companyId = req.auth!.companyId
+    const userId = getAuth(req).userId
+    const companyId = getAuth(req).companyId
     const { unread_only, page = '1', limit = '50' } = req.query
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
 
@@ -37,11 +38,11 @@ notificationsRouter.get('/', async (req, res) => {
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch notifications', err)
   }
-})
+}))
 
 // POST /notifications — create and push in real time (internal/service use)
-notificationsRouter.post('/', async (req, res) => {
-  const companyId = req.auth!.companyId
+notificationsRouter.post('/', asyncHandler(async (req, res) => {
+  const companyId = getAuth(req).companyId
   const parsed = CreateNotificationSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -55,22 +56,22 @@ notificationsRouter.post('/', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
       [companyId, user_id, type, title, body, data ? JSON.stringify(data) : null],
     )
-    const row = result.rows[0]!
+    const row = firstRowOrThrow(result)
     pushToUser(user_id, { event: 'notification', data: row })
     sendOk(res, row, 201)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create notification', err)
   }
-})
+}))
 
 // PATCH /notifications/:id/read — mark single notification as read
-notificationsRouter.patch('/:id/read', async (req, res) => {
+notificationsRouter.patch('/:id/read', asyncHandler(async (req, res) => {
   try {
-    const userId = req.auth!.userId
+    const userId = getAuth(req).userId
     const result = await query(
       `UPDATE notifications SET is_read = TRUE, read_at = NOW()
        WHERE id = $1 AND user_id = $2 RETURNING *`,
-      [req.params.id, userId],
+      [req.params['id'], userId],
     )
     const row = result.rows[0]
     if (!row) {
@@ -81,13 +82,13 @@ notificationsRouter.patch('/:id/read', async (req, res) => {
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark as read', err)
   }
-})
+}))
 
 // POST /notifications/read-all — mark all unread for user as read
-notificationsRouter.post('/read-all', async (req, res) => {
+notificationsRouter.post('/read-all', asyncHandler(async (req, res) => {
   try {
-    const userId = req.auth!.userId
-    const companyId = req.auth!.companyId
+    const userId = getAuth(req).userId
+    const companyId = getAuth(req).companyId
     const result = await query(
       `UPDATE notifications SET is_read = TRUE, read_at = NOW()
        WHERE user_id = $1 AND company_id = $2 AND is_read = FALSE`,
@@ -97,13 +98,13 @@ notificationsRouter.post('/read-all', async (req, res) => {
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark all as read', err)
   }
-})
+}))
 
 // GET /notifications/unread-count
-notificationsRouter.get('/unread-count', async (req, res) => {
+notificationsRouter.get('/unread-count', asyncHandler(async (req, res) => {
   try {
-    const userId = req.auth!.userId
-    const companyId = req.auth!.companyId
+    const userId = getAuth(req).userId
+    const companyId = getAuth(req).companyId
     const result = await query(
       `SELECT COUNT(*)::int AS count FROM notifications WHERE user_id = $1 AND company_id = $2 AND is_read = FALSE`,
       [userId, companyId],
@@ -112,4 +113,4 @@ notificationsRouter.get('/unread-count', async (req, res) => {
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get unread count', err)
   }
-})
+}))

@@ -12,6 +12,7 @@ import { BOMLinesEditor } from '../../../components/ui/BOMLinesEditor'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { useBOMCostPreview } from '../../../hooks/useBOMCostPreview'
 import { useToastStore } from '../../../store/toastStore'
+import type { BomQuery, BomQueryVariables, CreateBomMutation, CreateBomMutationVariables, ProductsQuery, ProductsQueryVariables, UpdateBomMutation, UpdateBomMutationVariables } from '../../../graphql/generated'
 
 export default function BOMForm() {
   const navigate = useNavigate()
@@ -26,26 +27,18 @@ export default function BOMForm() {
   })
   const [lines, setLines] = useState<BOMLine[]>([])
 
-  const { data: bomData } = useQuery(BOM_QUERY, { variables: { id }, skip: !isEdit })
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, { variables: { is_active: true } })
-  const [createBOM, { loading: creating }] = useMutation(CREATE_BOM)
-  const [updateBOM, { loading: updating }] = useMutation(UPDATE_BOM)
+  const { data: bomData } = useQuery<BomQuery, BomQueryVariables>(BOM_QUERY, { variables: { id: id ?? '' }, skip: !isEdit })
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY)
+  const [createBOM, { loading: creating }] = useMutation<CreateBomMutation, CreateBomMutationVariables>(CREATE_BOM)
+  const [updateBOM, { loading: updating }] = useMutation<UpdateBomMutation, UpdateBomMutationVariables>(UPDATE_BOM)
 
-  const products = (productsData?.products ?? []).map(
-    (p: {
-      id: string
-      sku: string
-      name: string
-      name_ar?: string | null
-      average_cost: string
-      standard_cost?: string
-      uom: string
-    }) => ({
+  const products = (productsData?.products ?? []).filter((v): v is NonNullable<typeof v> => v !== null && v.is_active).map(
+    (p) => ({
       id: p.id,
       sku: p.sku,
       name: p.name,
       name_ar: p.name_ar,
-      standard_cost: parseFloat(p.standard_cost ?? p.average_cost ?? '0'),
+      standard_cost: parseFloat(p.average_cost),
       uom: p.uom,
     }),
   )
@@ -70,21 +63,13 @@ export default function BOMForm() {
       })
       setLines(
         (b.lines ?? []).map(
-          (l: {
-            id: string
-            component_product_id: string
-            component_name?: string
-            qty: number
-            uom: string
-            unit_cost: number
-            sequence: number
-          }) => ({
+          (l) => ({
             id: l.id,
             component_product_id: l.component_product_id,
             component_name: l.component_name ?? '',
             qty: l.qty,
             uom: l.uom,
-            unit_cost: l.unit_cost,
+            unit_cost: l.unit_cost ?? 0,
           }),
         ),
       )
@@ -113,7 +98,7 @@ export default function BOMForm() {
         component_product_id: l.component_product_id,
         qty: l.qty,
         uom: l.uom,
-        unit_cost: l.unit_cost ?? 0,
+        unit_cost: l.unit_cost,
         sequence: idx + 1,
       })),
     }
@@ -130,6 +115,10 @@ export default function BOMForm() {
           variables: { input },
           refetchQueries: [{ query: BOMS_QUERY }],
         })
+        if (!res.data?.createBOM) {
+          addToast({ type: 'error', message: 'BOM creation did not return a result' })
+          return
+        }
         addToast({ type: 'success', message: 'BOM created' })
         navigate(`/manufacturing/boms/${res.data.createBOM.id}`)
       }
@@ -146,7 +135,7 @@ export default function BOMForm() {
       />
 
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
         style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}
       >
         <Card style={{ padding: '20px' }}>

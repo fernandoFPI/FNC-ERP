@@ -8,10 +8,11 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
+import type { BoMsQuery, BoMsQueryVariables } from '../../../graphql/generated'
 
 interface BOM {
   id: string
-  product_name?: string
+  product_name?: string | null
   version: string
   qty_produced: string
   is_active: boolean
@@ -21,7 +22,7 @@ export default function BOMsPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
 
-  const { data, loading } = useQuery(BOMS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const { data, loading } = useQuery<BoMsQuery, BoMsQueryVariables>(BOMS_QUERY, { fetchPolicy: 'cache-and-network' })
   const boms: BOM[] = data?.boms ?? []
 
   const columns: Column<BOM>[] = [

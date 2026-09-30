@@ -9,6 +9,7 @@ import { Button } from '../../../components/ui/Button'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { ProductQuery, ProductQueryVariables } from '../../../graphql/generated'
 
 // Every product is valued at last-recorded-cost (see migration
 // 203_stock_balance_last_cost.sql); migration 257 makes 'last_cost' the
@@ -17,8 +18,8 @@ const VALUATION_METHOD_LABEL = 'Last Recorded Cost'
 
 interface ProductBalance {
   location_id: string
-  location_name?: string
-  location_type?: string
+  location_name?: string | null
+  location_type?: string | null
   qty_on_hand: string
   qty_reserved: string
   available: string
@@ -53,8 +54,8 @@ export default function ProductDetail() {
   const navigate = useNavigate()
   const { theme } = useTheme()
 
-  const { data, loading } = useQuery(PRODUCT_QUERY, {
-    variables: { id },
+  const { data, loading } = useQuery<ProductQuery, ProductQueryVariables>(PRODUCT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })

@@ -154,7 +154,7 @@ export default function LoginPage() {
       if (axios.isAxiosError(err)) {
         const status = err.response?.status
         if (status === 429) {
-          const retryAfter = err.response?.headers?.['retry-after'] ?? '60'
+          const retryAfter = String(err.response?.headers['retry-after'] ?? '60')
           setError(`Too many attempts. Please wait ${retryAfter} seconds.`)
         } else {
           const msg = (err.response?.data as { message?: string })?.message
@@ -254,9 +254,7 @@ export default function LoginPage() {
                         padding: '10px 12px',
                         borderRadius: '10px',
                         border: `1px solid ${isLoggingIn ? theme.accent : 'transparent'}`,
-                        background: isLoggingIn
-                          ? (theme.accentBg ?? `${theme.accent}14`)
-                          : 'transparent',
+                        background: isLoggingIn ? theme.accentBg : 'transparent',
                         cursor: autoLoggingIn ? 'default' : 'pointer',
                         textAlign: 'left',
                         transition: 'background 120ms, border-color 120ms',
@@ -417,7 +415,7 @@ export default function LoginPage() {
           {/* ── Login form ───────────────────────────────────────────────── */}
           {view === 'form' && (
             <form
-              onSubmit={handleSubmit}
+              onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
               style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
             >
               <Input

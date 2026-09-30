@@ -12,6 +12,7 @@ import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { useToastStore } from '../../../store/toastStore'
+import type { AccountingPeriodsQuery, AccountingPeriodsQueryVariables, CloseAccountingPeriodMutation, CloseAccountingPeriodMutationVariables, CreateAccountingPeriodMutation, CreateAccountingPeriodMutationVariables } from '../../../graphql/generated'
 
 interface AccountingPeriod {
   id: string
@@ -19,8 +20,8 @@ interface AccountingPeriod {
   start_date: string
   end_date: string
   status: string
-  closed_by_email?: string
-  closed_at?: string
+  closed_by_email?: string | null
+  closed_at?: string | null
 }
 
 export default function PeriodsPage() {
@@ -30,11 +31,11 @@ export default function PeriodsPage() {
   const [closingId, setClosingId] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', start_date: '', end_date: '' })
 
-  const { data, loading, refetch } = useQuery(ACCOUNTING_PERIODS_QUERY, {
+  const { data, loading } = useQuery<AccountingPeriodsQuery, AccountingPeriodsQueryVariables>(ACCOUNTING_PERIODS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
-  const [createPeriod, { loading: creating }] = useMutation(CREATE_PERIOD)
-  const [closePeriod, { loading: closing }] = useMutation(CLOSE_PERIOD)
+  const [createPeriod, { loading: creating }] = useMutation<CreateAccountingPeriodMutation, CreateAccountingPeriodMutationVariables>(CREATE_PERIOD)
+  const [closePeriod, { loading: closing }] = useMutation<CloseAccountingPeriodMutation, CloseAccountingPeriodMutationVariables>(CLOSE_PERIOD)
 
   const periods: AccountingPeriod[] = data?.accountingPeriods ?? []
 
@@ -146,7 +147,7 @@ export default function PeriodsPage() {
         title="Create Accounting Period"
       >
         <form
-          onSubmit={handleCreate}
+          onSubmit={(...args: Parameters<typeof handleCreate>) => void handleCreate(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <Input
@@ -207,7 +208,7 @@ export default function PeriodsPage() {
         message="Once closed, no new journal entries can be posted to this period. This action cannot be undone."
         confirmLabel="Close Period"
         variant="danger"
-        onConfirm={handleClose}
+        onConfirm={(...args: Parameters<typeof handleClose>) => void handleClose(...args)}
         onCancel={() => {
           setClosingId(null)
         }}

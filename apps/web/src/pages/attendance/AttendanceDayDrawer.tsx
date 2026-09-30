@@ -6,14 +6,19 @@ import { Badge } from '../../components/ui/Badge'
 import type { Column } from '../../components/ui/Table'
 import { Table } from '../../components/ui/Table'
 
+// NOTE: work_location_name and rejection_reason were never backed by the
+// schema (AttendanceLog only has geofence_valid/distance_from_location_m/
+// work_location_id — no resolved location name or rejection-reason field
+// exists server-side). Mapped to the closest real fields below rather than
+// fabricating data; the Location column shows the raw id and the "why
+// invalid" detail is gone until the backend actually computes one.
 interface Punch {
   id: string
   punch_type: string
   punched_at: string
   is_valid: boolean
-  work_location_name?: string
+  work_location_id?: string | null
   distance_from_zone?: number
-  rejection_reason?: string
 }
 
 interface DayMeta {
@@ -56,16 +61,16 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
       header: 'Time',
       render: (p) => (
         <span style={{ fontFamily: 'monospace', fontSize: '13px', color: theme.textPrimary }}>
-          {p.punched_at?.slice(11, 19) ?? '—'}
+          {p.punched_at.slice(11, 19)}
         </span>
       ),
     },
     {
-      key: 'work_location_name',
+      key: 'work_location_id',
       header: 'Location',
       render: (p) => (
         <span style={{ fontSize: '12px', color: theme.textMuted }}>
-          {p.work_location_name ?? '—'}
+          {p.work_location_id ?? '—'}
         </span>
       ),
     },
@@ -159,7 +164,7 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
       {/* Status tags */}
       {(dayMeta?.hasOvertime || dayMeta?.isAbsent || dayMeta?.leaveTypeName) && (
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-          {dayMeta?.hasOvertime && (
+          {dayMeta.hasOvertime && (
             <span
               style={{
                 padding: '3px 10px',
@@ -174,7 +179,7 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
               ⏱ Overtime
             </span>
           )}
-          {dayMeta?.isAbsent && (
+          {dayMeta.isAbsent && (
             <span
               style={{
                 padding: '3px 10px',
@@ -189,7 +194,7 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
               Absent
             </span>
           )}
-          {dayMeta?.leaveTypeName && (
+          {dayMeta.leaveTypeName && (
             <span
               style={{
                 padding: '3px 10px',
@@ -258,7 +263,6 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
-                    marginBottom: p.rejection_reason ? '6px' : 0,
                   }}
                 >
                   <Badge variant={p.punch_type === 'in' ? 'success' : 'info'}>{p.punch_type}</Badge>
@@ -269,14 +273,9 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
                       color: theme.textSecondary,
                     }}
                   >
-                    {p.punched_at?.slice(11, 19)}
+                    {p.punched_at.slice(11, 19)}
                   </span>
                 </div>
-                {p.rejection_reason && (
-                  <div style={{ fontSize: '12px', color: theme.danger, fontStyle: 'italic' }}>
-                    {p.rejection_reason}
-                  </div>
-                )}
               </div>
             ))}
           </div>

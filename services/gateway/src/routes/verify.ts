@@ -1,9 +1,9 @@
 import { Router, type Router as ExpressRouter, type Request, type Response } from 'express'
-import { query } from '@fnc-erp/db'
+import { query, asyncHandler } from '@fnc-erp/db'
 
 export const verifyRouter: ExpressRouter = Router()
 
-verifyRouter.get('/invoice/:token', async (req: Request, res: Response): Promise<void> => {
+verifyRouter.get('/invoice/:token', asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { token } = req.params as { token: string }
 
   try {
@@ -112,4 +112,4 @@ verifyRouter.get('/invoice/:token', async (req: Request, res: Response): Promise
   } catch {
     res.status(500).json({ success: false, error: { message: 'Verification lookup failed' } })
   }
-})
+}))

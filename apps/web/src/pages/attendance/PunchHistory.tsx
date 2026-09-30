@@ -8,17 +8,24 @@ import { FilterBar } from '../../components/ui/FilterBar'
 import type { Column } from '../../components/ui/Table'
 import { Table } from '../../components/ui/Table'
 import { Badge } from '../../components/ui/Badge'
+import type { AttendanceLogsQuery, AttendanceLogsQueryVariables } from '../../graphql/generated'
 
+// NOTE: this page was built against a richer attendanceLogs shape
+// (isValid/limit filters, a {logs} wrapper, work_location_name,
+// rejection_reason, device_id) that ATTENDANCE_LOGS_QUERY / the
+// AttendanceLog schema type never actually implements — it only supports
+// employee_id/from_date/to_date and returns the flat fields below. Mapped to
+// the closest real fields (validity/distance) and filtered client-side
+// instead of via a server isValid arg; work_location_name, rejection_reason
+// and device_id have no backing field at all and are dropped.
 interface PunchLog {
   id: string
-  employee_name?: string
+  employee_name?: string | null
   punch_type: string
   punched_at: string
   is_valid: boolean
-  work_location_name?: string
+  work_location_id?: string | null
   distance_from_zone?: number
-  rejection_reason?: string
-  device_id?: string
 }
 
 const VALID_OPTIONS = [
@@ -39,24 +46,30 @@ export default function PunchHistory() {
 
   const isValidBool = validFilter === 'true' ? true : validFilter === 'false' ? false : undefined
 
-  const { data, loading, refetch } = useQuery(ATTENDANCE_LOGS_QUERY, {
+  const { data, loading, refetch } = useQuery<AttendanceLogsQuery, AttendanceLogsQueryVariables>(ATTENDANCE_LOGS_QUERY, {
     variables: {
-      fromDate: `${fromDate}T00:00:00`,
-      toDate: `${toDate}T23:59:59`,
-      isValid: isValidBool,
-      limit: 100,
+      from_date: `${fromDate}T00:00:00`,
+      to_date: `${toDate}T23:59:59`,
     },
     fetchPolicy: 'cache-and-network',
   })
 
-  const logs: PunchLog[] = data?.attendanceLogs?.logs ?? []
+  const logs: PunchLog[] = (data?.attendanceLogs ?? [])
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    .map((l) => ({
+      id: l.id,
+      employee_name: l.employee_name,
+      punch_type: l.punch_type,
+      punched_at: l.punched_at,
+      is_valid: l.geofence_valid ?? true,
+      work_location_id: l.work_location_id,
+      distance_from_zone: l.distance_from_location_m != null ? Number(l.distance_from_location_m) : undefined,
+    }))
   const filtered = logs.filter((l) => {
+    if (isValidBool !== undefined && l.is_valid !== isValidBool) return false
     if (!search) return true
     const q = search.toLowerCase()
-    return (
-      (l.employee_name ?? '').toLowerCase().includes(q) ||
-      (l.work_location_name ?? '').toLowerCase().includes(q)
-    )
+    return (l.employee_name ?? '').toLowerCase().includes(q)
   })
 
   const total = logs.length
@@ -76,7 +89,7 @@ export default function PunchHistory() {
       header: 'Date',
       render: (l) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textSecondary }}>
-          {l.punched_at?.slice(0, 10) ?? '—'}
+          {l.punched_at.slice(0, 10)}
         </span>
       ),
     },
@@ -92,16 +105,16 @@ export default function PunchHistory() {
       header: 'Time',
       render: (l) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textSecondary }}>
-          {l.punched_at?.slice(11, 19) ?? '—'}
+          {l.punched_at.slice(11, 19)}
         </span>
       ),
     },
     {
-      key: 'work_location_name',
+      key: 'work_location_id',
       header: 'Location',
       render: (l) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
-          {l.work_location_name ?? '—'}
+          {l.work_location_id ?? '—'}
         </span>
       ),
     },
@@ -132,14 +145,6 @@ export default function PunchHistory() {
           {l.is_valid ? 'Valid' : 'Invalid'}
         </Badge>
       ),
-    },
-    {
-      key: 'rejection_reason',
-      header: 'Reason',
-      render: (l) =>
-        l.rejection_reason ? (
-          <span style={{ fontSize: '11px', color: theme.danger }}>{l.rejection_reason}</span>
-        ) : null,
     },
   ]
 
@@ -217,7 +222,7 @@ export default function PunchHistory() {
             onFromDateChange={setFromDate}
             onToDateChange={setToDate}
             resultCount={filtered.length}
-            onRefresh={() => refetch()}
+            onRefresh={() => void refetch()}
           />
         </div>
         <Table columns={columns} data={filtered} loading={loading} rowKey="id" />

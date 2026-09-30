@@ -14,22 +14,22 @@ import { useFilterPresets } from '../../../hooks/useFilterPresets'
 const FILTER_DEFAULTS = { search: '', status: '' }
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { EquipmentAssetsQuery, EquipmentAssetsQueryVariables } from '../../../graphql/generated'
 
 const ASSET_STATUSES = ['available', 'rented', 'maintenance', 'reserved', 'retired']
-const CATEGORIES = ['vehicle', 'machinery', 'equipment', 'tool', 'other']
 
 interface Asset {
   id: string
   asset_number: string
   name: string
-  category?: string
+  category?: string | null
   status: string
   daily_rate: string
   currency_code: string
-  total_hours?: number
-  maintenance_status?: string
-  condition_rating?: number
-  last_maintenance_date?: string
+  total_hours?: number | null
+  maintenance_status?: string | null
+  condition_rating?: number | null
+  last_maintenance_date?: string | null
 }
 
 export default function FleetOverviewPage() {
@@ -43,7 +43,7 @@ export default function FleetOverviewPage() {
     FILTER_DEFAULTS,
   )
 
-  const { data, loading, refetch } = useQuery(EQUIPMENT_ASSETS_QUERY, {
+  const { data, refetch } = useQuery<EquipmentAssetsQuery, EquipmentAssetsQueryVariables>(EQUIPMENT_ASSETS_QUERY, {
     variables: { status: statusFilter },
     fetchPolicy: 'cache-and-network',
   })
@@ -178,7 +178,7 @@ export default function FleetOverviewPage() {
           search={search}
           onSearchChange={setSearch}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         >
           <FilterPresets
             presets={presets}

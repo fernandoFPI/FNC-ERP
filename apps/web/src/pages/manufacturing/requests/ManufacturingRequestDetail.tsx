@@ -14,12 +14,12 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
 import { usePermission } from '../../../hooks/usePermission'
 import { PageHeader } from '../../../components/ui/PageHeader'
-import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { ApproveManufacturingRequestMutation, ApproveManufacturingRequestMutationVariables, CancelManufacturingRequestMutation, CancelManufacturingRequestMutationVariables, CreateMoFromRequestMutation, CreateMoFromRequestMutationVariables, ManufacturingRequestQuery, ManufacturingRequestQueryVariables, RejectManufacturingRequestMutation, RejectManufacturingRequestMutationVariables, SubmitManufacturingRequestMutation, SubmitManufacturingRequestMutationVariables } from '../../../graphql/generated'
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'info' | 'success' | 'danger'> = {
   draft: 'neutral',
@@ -55,8 +55,8 @@ export default function ManufacturingRequestDetail() {
     scheduledEnd: '',
   })
 
-  const { data, loading, refetch } = useQuery(MANUFACTURING_REQUEST_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<ManufacturingRequestQuery, ManufacturingRequestQueryVariables>(MANUFACTURING_REQUEST_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
   })
   const { data: bomsData } = useQuery<{
@@ -67,11 +67,11 @@ export default function ManufacturingRequestDetail() {
   }>(WORK_CENTERS_QUERY, { variables: { isActive: true, allCompanies: true } })
   const boms = bomsData?.boms ?? []
   const workCenters = wcData?.workCenters ?? []
-  const [submitMR, { loading: submitting }] = useMutation(SUBMIT_MANUFACTURING_REQUEST)
-  const [approveMR, { loading: approving }] = useMutation(APPROVE_MANUFACTURING_REQUEST)
-  const [rejectMR, { loading: rejecting }] = useMutation(REJECT_MANUFACTURING_REQUEST)
-  const [cancelMR, { loading: cancelling }] = useMutation(CANCEL_MANUFACTURING_REQUEST)
-  const [createMO, { loading: creatingMO }] = useMutation(CREATE_MO_FROM_REQUEST)
+  const [submitMR, { loading: submitting }] = useMutation<SubmitManufacturingRequestMutation, SubmitManufacturingRequestMutationVariables>(SUBMIT_MANUFACTURING_REQUEST)
+  const [approveMR, { loading: approving }] = useMutation<ApproveManufacturingRequestMutation, ApproveManufacturingRequestMutationVariables>(APPROVE_MANUFACTURING_REQUEST)
+  const [rejectMR, { loading: rejecting }] = useMutation<RejectManufacturingRequestMutation, RejectManufacturingRequestMutationVariables>(REJECT_MANUFACTURING_REQUEST)
+  const [cancelMR, { loading: cancelling }] = useMutation<CancelManufacturingRequestMutation, CancelManufacturingRequestMutationVariables>(CANCEL_MANUFACTURING_REQUEST)
+  const [createMO, { loading: creatingMO }] = useMutation<CreateMoFromRequestMutation, CreateMoFromRequestMutationVariables>(CREATE_MO_FROM_REQUEST)
 
   const mr = data?.manufacturingRequest
 
@@ -79,7 +79,7 @@ export default function ManufacturingRequestDetail() {
     try {
       await fn()
       addToast({ type: 'success', message: msg })
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -91,7 +91,7 @@ export default function ManufacturingRequestDetail() {
       return
     }
     await handleAction(
-      () => rejectMR({ variables: { id, reason: rejectReason } }),
+      () => rejectMR({ variables: { id: id ?? '', reason: rejectReason } }),
       'Request rejected',
     )
     setShowReject(false)
@@ -107,7 +107,7 @@ export default function ManufacturingRequestDetail() {
       () =>
         createMO({
           variables: {
-            requestId: id,
+            requestId: id ?? '',
             bomId: moForm.bomId,
             workCenterId: moForm.workCenterId || null,
             scheduledStart: moForm.scheduledStart || null,
@@ -333,8 +333,8 @@ export default function ManufacturingRequestDetail() {
               size="sm"
               loading={submitting}
               onClick={() =>
-                handleAction(
-                  () => submitMR({ variables: { id } }),
+                void handleAction(
+                  () => submitMR({ variables: { id: id ?? '' } }),
                   'Request submitted for approval',
                 )
               }
@@ -349,7 +349,7 @@ export default function ManufacturingRequestDetail() {
                 size="sm"
                 loading={approving}
                 onClick={() =>
-                  handleAction(() => approveMR({ variables: { id } }), 'Request approved')
+                  void handleAction(() => approveMR({ variables: { id: id ?? '' } }), 'Request approved')
                 }
               >
                 Approve
@@ -382,7 +382,7 @@ export default function ManufacturingRequestDetail() {
               size="sm"
               loading={cancelling}
               onClick={() =>
-                handleAction(() => cancelMR({ variables: { id } }), 'Request cancelled')
+                void handleAction(() => cancelMR({ variables: { id: id ?? '' } }), 'Request cancelled')
               }
             >
               Cancel Request
@@ -425,7 +425,7 @@ export default function ManufacturingRequestDetail() {
               >
                 Cancel
               </Button>
-              <Button variant="danger" size="sm" loading={rejecting} onClick={handleReject}>
+              <Button variant="danger" size="sm" loading={rejecting} onClick={(...args: Parameters<typeof handleReject>) => void handleReject(...args)}>
                 Reject
               </Button>
             </div>
@@ -505,7 +505,7 @@ export default function ManufacturingRequestDetail() {
               >
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" loading={creatingMO} onClick={handleCreateMO}>
+              <Button variant="primary" size="sm" loading={creatingMO} onClick={(...args: Parameters<typeof handleCreateMO>) => void handleCreateMO(...args)}>
                 Create MO
               </Button>
             </div>

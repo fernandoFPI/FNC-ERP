@@ -3,7 +3,8 @@ import type { IRouter, Request, Response } from 'express'
 import { z } from 'zod'
 import { pool, query } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { getAuth } from '@fnc-erp/auth'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const maintenanceRouter: IRouter = Router({ mergeParams: true })
@@ -60,7 +61,7 @@ maintenanceRouter.get('/schedules', requirePermission('rental.maintenance.view',
        JOIN equipment_asset_stats eas ON eas.asset_id = ms.asset_id
        WHERE ms.asset_id = $1 AND ms.company_id = $2
        ORDER BY ms.name`,
-      [(req.params as Record<string, string>)['id']!, req.auth!.companyId],
+      [requireParam(req, 'id'), getAuth(req).companyId],
     )
     sendOk(res, schedules.rows)
   } catch (err) {
@@ -87,6 +88,8 @@ maintenanceRouter.post('/schedules', requirePermission('rental.maintenance.edit'
   }
 
   try {
+    const assetId = requireParam(req, 'id')
+    const { userId, companyId } = getAuth(req)
     const result = await query(
       `INSERT INTO maintenance_schedules
          (asset_id, company_id, name, maintenance_type, trigger_type,
@@ -94,14 +97,14 @@ maintenanceRouter.post('/schedules', requirePermission('rental.maintenance.edit'
           estimated_cost, currency_code)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING *`,
-      [(req.params as Record<string, string>)['id']!, req.auth!.companyId, d.name, d.maintenance_type,
+      [assetId, companyId, d.name, d.maintenance_type,
        d.trigger_type, d.interval_hours ?? null, d.interval_days ?? null,
        d.warn_before_hours, d.warn_before_days, d.estimated_cost ?? null, d.currency_code],
     )
 
     await logAudit({
-      userId: req.auth!.userId,
-      companyId: req.auth!.companyId,
+      userId,
+      companyId,
       action: 'MAINTENANCE_SCHEDULE_CREATED',
       tableName: 'maintenance_schedules',
       recordId: (result.rows[0] as Record<string, unknown>)['id'] as string,
@@ -126,7 +129,7 @@ maintenanceRouter.get('/records', requirePermission('rental.maintenance.view', '
     const limit = Math.min(100, parseInt((req.query['limit'] as string) ?? '20'))
     const offset = (page - 1) * limit
 
-    const params: unknown[] = [(req.params as Record<string, string>)['id']!, req.auth!.companyId]
+    const params: unknown[] = [requireParam(req, 'id'), getAuth(req).companyId]
     let idx = 3
     const conditions: string[] = []
     if (status) { conditions.push(`mr.status = $${idx++}`); params.push(status) }
@@ -162,6 +165,8 @@ maintenanceRouter.post('/records', requirePermission('rental.maintenance.edit', 
   const d = parsed.data
 
   try {
+    const assetId = requireParam(req, 'id')
+    const { userId, companyId } = getAuth(req)
     const result = await query(
       `INSERT INTO maintenance_records
          (asset_id, schedule_id, company_id, status, due_date,
@@ -169,16 +174,16 @@ maintenanceRouter.post('/records', requirePermission('rental.maintenance.edit', 
           actual_cost, currency_code, findings, created_by)
        VALUES ($1,$2,$3,'scheduled',$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING *`,
-      [(req.params as Record<string, string>)['id']!, d.schedule_id ?? null, req.auth!.companyId,
+      [assetId, d.schedule_id ?? null, companyId,
        d.due_date ?? null, d.due_at_engine_hours ?? null,
        d.performed_by ?? null, d.performed_by_external,
        d.estimated_cost ?? null, d.currency_code,
-       d.notes ?? null, req.auth!.userId],
+       d.notes ?? null, userId],
     )
 
     await logAudit({
-      userId: req.auth!.userId,
-      companyId: req.auth!.companyId,
+      userId,
+      companyId,
       action: 'MAINTENANCE_SCHEDULED',
       tableName: 'maintenance_records',
       recordId: (result.rows[0] as Record<string, unknown>)['id'] as string,
@@ -196,6 +201,9 @@ maintenanceRouter.post('/records', requirePermission('rental.maintenance.edit', 
 // POST /rental/assets/:id/maintenance/records/:recordId/start
 maintenanceRouter.post('/records/:recordId/start', requirePermission('rental.maintenance.edit', 'edit'), async (req, res) => {
   try {
+    const assetId = requireParam(req, 'id')
+    const recordId = requireParam(req, 'recordId')
+    const { userId, companyId } = getAuth(req)
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -204,40 +212,39 @@ maintenanceRouter.post('/records/:recordId/start', requirePermission('rental.mai
         `UPDATE maintenance_records
          SET status = 'in_progress', started_at = NOW(), updated_at = NOW()
          WHERE id = $1 AND asset_id = $2 AND status = 'scheduled'`,
-        [req.params['recordId'], (req.params as Record<string, string>)['id']!],
+        [recordId, assetId],
       )
       await client.query(
         `UPDATE equipment_assets SET status = 'maintenance', updated_at = NOW() WHERE id = $1`,
-        [(req.params as Record<string, string>)['id']!],
+        [assetId],
       )
       await client.query(
         `INSERT INTO equipment_location_history
            (asset_id, movement_type, recorded_by, recorded_via, notes)
          VALUES ($1,'maintenance_in',$2,'web',$3)`,
-        [(req.params as Record<string, string>)['id']!, req.auth!.userId, (req.body as Record<string, unknown>)['notes'] ?? 'Taken offline for maintenance'],
+        [assetId, userId, (req.body as Record<string, unknown>)['notes'] ?? 'Taken offline for maintenance'],
       )
       await client.query(
         `UPDATE equipment_asset_stats
          SET maintenance_status = 'in_maintenance', updated_at = NOW()
          WHERE asset_id = $1`,
-        [(req.params as Record<string, string>)['id']!],
+        [assetId],
       )
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.auth!.companyId,
+        userId,
+        companyId,
         action: 'MAINTENANCE_STARTED',
         tableName: 'maintenance_records',
-        recordId: req.params['recordId']!,
+        recordId,
         client,
       })
-      const assetId = (req.params as Record<string, string>)['id']!
       const assetRes = await client.query<{ name: string; asset_number: string }>(
         `SELECT name, asset_number FROM equipment_assets WHERE id=$1`, [assetId]
       )
       const assetLabel = assetRes.rows[0] ? `${assetRes.rows[0].asset_number} - ${assetRes.rows[0].name}` : assetId
-      const fuRes = await client.query(`SELECT DISTINCT u.id AS user_id FROM users u JOIN user_company_roles ucr ON ucr.user_id=u.id WHERE ucr.company_id=$1 AND (ucr.role IN ('company_admin','system_admin') OR (ucr.module='finance' AND ucr.role IN ('module_admin','module_user'))) AND u.is_active=true`, [req.auth!.companyId])
+      const fuRes = await client.query(`SELECT DISTINCT u.id AS user_id FROM users u JOIN user_company_roles ucr ON ucr.user_id=u.id WHERE ucr.company_id=$1 AND (ucr.role IN ('company_admin','system_admin') OR (ucr.module='finance' AND ucr.role IN ('module_admin','module_user'))) AND u.is_active=true`, [companyId])
       for (const u of fuRes.rows) {
-        await client.query(`INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','MAINTENANCE_STARTED',$1)`, [JSON.stringify({ userId: u['user_id'], companyId: req.auth!.companyId, title: `Maintenance started: ${assetLabel}`, body: `Asset ${assetLabel} has been taken offline for maintenance`, data: { assetId, recordId: req.params['recordId'] } })])
+        await client.query(`INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','MAINTENANCE_STARTED',$1)`, [JSON.stringify({ userId: u['user_id'], companyId, title: `Maintenance started: ${assetLabel}`, body: `Asset ${assetLabel} has been taken offline for maintenance`, data: { assetId, recordId } })])
       }
       await client.query('COMMIT')
     } catch (err) {
@@ -262,6 +269,9 @@ maintenanceRouter.post('/records/:recordId/complete', requirePermission('rental.
   const d = parsed.data
 
   try {
+    const assetId = requireParam(req, 'id')
+    const recordId = requireParam(req, 'recordId')
+    const { userId, companyId } = getAuth(req)
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -278,7 +288,7 @@ maintenanceRouter.post('/records/:recordId/complete', requirePermission('rental.
          d.findings ?? null, d.parts_replaced ?? null,
          d.next_service_notes ?? null, d.downtime_hours ?? null,
          d.service_report_path ?? null,
-         req.params['recordId'], (req.params as Record<string, string>)['id']!],
+         recordId, assetId],
       )
       await client.query(
         `UPDATE equipment_asset_stats
@@ -287,35 +297,34 @@ maintenanceRouter.post('/records/:recordId/complete', requirePermission('rental.
              maintenance_status = 'ok',
              updated_at = NOW()
          WHERE asset_id = $2`,
-        [d.engine_hours_at_service ?? null, (req.params as Record<string, string>)['id']!],
+        [d.engine_hours_at_service ?? null, assetId],
       )
       await client.query(
         `UPDATE equipment_assets SET status = 'available', updated_at = NOW() WHERE id = $1`,
-        [(req.params as Record<string, string>)['id']!],
+        [assetId],
       )
       await client.query(
         `INSERT INTO equipment_location_history
            (asset_id, movement_type, recorded_by, recorded_via, notes)
          VALUES ($1,'maintenance_out',$2,'web','Returned from maintenance')`,
-        [(req.params as Record<string, string>)['id']!, req.auth!.userId],
+        [assetId, userId],
       )
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.auth!.companyId,
+        userId,
+        companyId,
         action: 'MAINTENANCE_COMPLETED',
         tableName: 'maintenance_records',
-        recordId: req.params['recordId']!,
+        recordId,
         newValues: { actual_cost: d.actual_cost, findings: d.findings },
         client,
       })
-      const assetId2 = (req.params as Record<string, string>)['id']!
       const assetRes2 = await client.query<{ name: string; asset_number: string }>(
-        `SELECT name, asset_number FROM equipment_assets WHERE id=$1`, [assetId2]
+        `SELECT name, asset_number FROM equipment_assets WHERE id=$1`, [assetId]
       )
-      const assetLabel2 = assetRes2.rows[0] ? `${assetRes2.rows[0].asset_number} - ${assetRes2.rows[0].name}` : assetId2
-      const fuRes2 = await client.query(`SELECT DISTINCT u.id AS user_id FROM users u JOIN user_company_roles ucr ON ucr.user_id=u.id WHERE ucr.company_id=$1 AND (ucr.role IN ('company_admin','system_admin') OR (ucr.module='finance' AND ucr.role IN ('module_admin','module_user'))) AND u.is_active=true`, [req.auth!.companyId])
+      const assetLabel2 = assetRes2.rows[0] ? `${assetRes2.rows[0].asset_number} - ${assetRes2.rows[0].name}` : assetId
+      const fuRes2 = await client.query(`SELECT DISTINCT u.id AS user_id FROM users u JOIN user_company_roles ucr ON ucr.user_id=u.id WHERE ucr.company_id=$1 AND (ucr.role IN ('company_admin','system_admin') OR (ucr.module='finance' AND ucr.role IN ('module_admin','module_user'))) AND u.is_active=true`, [companyId])
       for (const u of fuRes2.rows) {
-        await client.query(`INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','MAINTENANCE_COMPLETED',$1)`, [JSON.stringify({ userId: u['user_id'], companyId: req.auth!.companyId, title: `Maintenance completed: ${assetLabel2}`, body: `Asset ${assetLabel2} has been returned to service${d.actual_cost != null ? `. Cost: ${d.actual_cost} IQD` : ''}`, data: { assetId: assetId2, recordId: req.params['recordId'], actualCost: d.actual_cost } })])
+        await client.query(`INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','MAINTENANCE_COMPLETED',$1)`, [JSON.stringify({ userId: u['user_id'], companyId, title: `Maintenance completed: ${assetLabel2}`, body: `Asset ${assetLabel2} has been returned to service${d.actual_cost != null ? `. Cost: ${d.actual_cost} IQD` : ''}`, data: { assetId, recordId, actualCost: d.actual_cost } })])
       }
       await client.query('COMMIT')
     } catch (err) {
@@ -354,7 +363,7 @@ export async function getUpcomingMaintenance(req: Request, res: Response): Promi
          CASE WHEN mr.due_date < NOW()::DATE THEN 0 ELSE 1 END,
          mr.due_date ASC NULLS LAST
        LIMIT 100`,
-      [daysAhead, req.auth!.companyId],
+      [daysAhead, getAuth(req).companyId],
     )
     sendOk(res, upcoming.rows)
   } catch (err) {

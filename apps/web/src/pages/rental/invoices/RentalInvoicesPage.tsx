@@ -7,6 +7,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { RentalInvoicesQuery, RentalInvoicesQueryVariables } from '../../../graphql/generated'
 
 interface RentalInvoice {
   id: string
@@ -23,13 +24,13 @@ interface RentalInvoice {
   status: string
   invoice_date: string
   due_date: string
-  paid_at?: string
+  paid_at?: string | null
 }
 
 export default function RentalInvoicesPage() {
   const { theme } = useTheme()
 
-  const { data, loading } = useQuery(RENTAL_INVOICES_QUERY, { fetchPolicy: 'cache-and-network' })
+  const { data, loading } = useQuery<RentalInvoicesQuery, RentalInvoicesQueryVariables>(RENTAL_INVOICES_QUERY, { fetchPolicy: 'cache-and-network' })
   const invoices: RentalInvoice[] = data?.rentalInvoices ?? []
 
   const columns: Column<RentalInvoice>[] = [

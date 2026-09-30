@@ -7,31 +7,32 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import type { TimelineEvent } from '../../../components/ui/Timeline'
 import { Timeline } from '../../../components/ui/Timeline'
+import type { StockLotQuery, StockLotQueryVariables } from '../../../graphql/generated'
 
 interface LotMove {
   id: string
   move_date: string
-  direction?: 'in' | 'out'
-  from_location_name?: string
-  to_location_name?: string
+  direction?: string | null
+  from_location_name?: string | null
+  to_location_name?: string | null
   qty: string
   source_type: string
-  reference?: string
-  moved_by_email?: string
+  reference?: string | null
+  moved_by_email?: string | null
 }
 
 interface StockLotDetail {
   id: string
   lot_number: string
   product_id: string
-  product_name?: string
-  sku?: string
-  expiry_date?: string
+  product_name?: string | null
+  sku?: string | null
+  expiry_date?: string | null
   created_at: string
-  current_qty?: string
-  current_location_id?: string
-  current_location_name?: string
-  moves?: LotMove[]
+  current_qty?: string | null
+  current_location_id?: string | null
+  current_location_name?: string | null
+  moves?: LotMove[] | null
 }
 
 function expiryBadge(expiryDate?: string) {
@@ -53,7 +54,7 @@ function moveToEvent(move: LotMove): TimelineEvent {
     id: move.id,
     title: `${isIn ? '↓ In' : '↑ Out'} · ${parseFloat(move.qty).toLocaleString()} units`,
     description: `${locationDesc}${move.reference ? ` · Ref: ${move.reference}` : ''} · ${move.source_type}`,
-    user: move.moved_by_email,
+    user: move.moved_by_email ?? undefined,
     timestamp: move.move_date,
     variant: isIn ? 'success' : 'default',
   }
@@ -64,13 +65,13 @@ export default function LotTraceability() {
   const navigate = useNavigate()
   const { theme } = useTheme()
 
-  const { data, loading } = useQuery(STOCK_LOT_QUERY, {
-    variables: { id },
+  const { data, loading } = useQuery<StockLotQuery, StockLotQueryVariables>(STOCK_LOT_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
 
-  const lot: StockLotDetail | undefined = data?.stockLot
+  const lot: StockLotDetail | undefined = data?.stockLot ?? undefined
   const moves: LotMove[] = lot?.moves ?? []
   const events: TimelineEvent[] = moves.map(moveToEvent)
 

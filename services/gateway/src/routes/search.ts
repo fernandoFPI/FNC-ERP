@@ -1,6 +1,6 @@
 import { Router, type IRouter } from 'express'
-import { requireAuth } from '@fnc-erp/auth'
-import { pool } from '@fnc-erp/db'
+import { requireAuth, getAuth } from '@fnc-erp/auth'
+import { pool, asyncHandler } from '@fnc-erp/db'
 import { logger } from '@fnc-erp/logger'
 import type { Request, Response } from 'express'
 
@@ -34,14 +34,14 @@ function fmt(n: number | string | null, currency: string | null): string {
 }
 
 // GET /api/v1/search?q=<query>
-searchRouter.get('/', requireAuth(), async (req: Request, res: Response) => {
+searchRouter.get('/', requireAuth(), asyncHandler(async (req: Request, res: Response) => {
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : ''
   if (q.length < 2) {
     res.json({ groups: [] })
     return
   }
 
-  const companyId = req.auth!.companyId
+  const companyId = getAuth(req).companyId
   const pattern = `%${q}%`
 
   try {
@@ -50,7 +50,7 @@ searchRouter.get('/', requireAuth(), async (req: Request, res: Response) => {
       pool.query<{
         id: string
         po_number: string
-        vendor_name: string
+        vendor_name: string | null
         status: string
         total_amount: string
         currency_code: string
@@ -276,4 +276,4 @@ searchRouter.get('/', requireAuth(), async (req: Request, res: Response) => {
     log.error({ err, q }, 'search failed')
     res.status(500).json({ error: 'INTERNAL_ERROR' })
   }
-})
+}))

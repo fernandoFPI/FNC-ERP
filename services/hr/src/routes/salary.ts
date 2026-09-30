@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query, withTransaction } from '@fnc-erp/db'
+import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -19,11 +20,11 @@ const SalaryConfigSchema = z.object({
   effective_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 })
 
-salaryRouter.get('/:employeeId', requirePermission('hr.salary.view', 'view'), async (req, res) => {
+salaryRouter.get('/:employeeId', requirePermission('hr.salary.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const emp = await query(`SELECT id FROM employees WHERE id = $1 AND company_id = $2`, [
       req.params['employeeId'],
-      req.auth!.companyId,
+      getAuth(req).companyId,
     ])
     if (!emp.rows[0]) {
       sendError(res, 404, 'NOT_FOUND', 'Employee not found')
@@ -37,16 +38,16 @@ salaryRouter.get('/:employeeId', requirePermission('hr.salary.view', 'view'), as
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch salary configs', err)
   }
-})
+}))
 
 salaryRouter.get(
   '/:employeeId/current',
   requirePermission('hr.salary.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const emp = await query(`SELECT id FROM employees WHERE id = $1 AND company_id = $2`, [
         req.params['employeeId'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       if (!emp.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Employee not found')
@@ -64,11 +65,11 @@ salaryRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch salary config', err)
     }
-  },
+  }),
 )
 
 // POST — creates new salary config, closes previous one
-salaryRouter.post('/', requirePermission('hr.salary.edit', 'edit'), async (req, res) => {
+salaryRouter.post('/', requirePermission('hr.salary.edit', 'edit'), asyncHandler(async (req, res) => {
   const parsed = SalaryConfigSchema.safeParse(req.body)
   if (!parsed.success) {
     sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -76,7 +77,7 @@ salaryRouter.post('/', requirePermission('hr.salary.edit', 'edit'), async (req, 
   }
 
   const d = parsed.data
-  const companyId = req.auth!.companyId
+  const companyId = getAuth(req).companyId
 
   try {
     // Verify employee belongs to company
@@ -90,7 +91,7 @@ salaryRouter.post('/', requirePermission('hr.salary.edit', 'edit'), async (req, 
     }
 
     const newConfig = await withTransaction(
-      { companyId, userId: req.auth!.userId, role: 'company_admin' },
+      { companyId, userId: getAuth(req).userId, role: 'company_admin' },
       async (client) => {
         // Close existing active config — PostgreSQL handles date arithmetic to avoid JS timezone issues
         await client.query(
@@ -114,14 +115,14 @@ salaryRouter.post('/', requirePermission('hr.salary.edit', 'edit'), async (req, 
             d.income_tax_pct,
             d.social_security_pct,
             d.effective_from,
-            req.auth!.userId,
+            getAuth(req).userId,
           ],
         )
-        return result.rows[0]!
+        return firstRowOrThrow(result)
       },
     )
     sendOk(res, newConfig, 201)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create salary config', err)
   }
-})
+}))

@@ -1,7 +1,8 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query } from '@fnc-erp/db'
+import { query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
@@ -18,11 +19,11 @@ const Schema = z.object({
   notes: z.string().optional(),
 })
 
-lotsRouter.get('/', requirePermission('inventory.lots.view', 'view'), async (req, res) => {
+lotsRouter.get('/', requirePermission('inventory.lots.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const { product_id } = req.query
     let sql = `SELECT sl.* FROM stock_lots sl JOIN products p ON p.id = sl.product_id WHERE p.company_id = $1`
-    const params: unknown[] = [req.auth!.companyId]
+    const params: unknown[] = [getAuth(req).companyId]
     if (product_id) {
       sql += ` AND sl.product_id = $2`
       params.push(product_id)
@@ -33,11 +34,11 @@ lotsRouter.get('/', requirePermission('inventory.lots.view', 'view'), async (req
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch lots', err)
   }
-})
+}))
 
-lotsRouter.post('/', requirePermission('inventory.lots.edit', 'edit'), async (req, res) => {
+lotsRouter.post('/', requirePermission('inventory.lots.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const parsed = Schema.safeParse(req.body)
     if (!parsed.success) {
       sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -61,10 +62,10 @@ lotsRouter.post('/', requirePermission('inventory.lots.edit', 'edit'), async (re
     )
     await logAudit({
       companyId,
-      userId: req.auth!.userId,
+      userId: getAuth(req).userId,
       action: 'CREATE',
       tableName: 'stock_lots',
-      recordId: result.rows[0]!['id'] as string,
+      recordId: firstRowOrThrow(result)['id'] as string,
     })
     sendOk(res, result.rows[0], 201)
   } catch (err: unknown) {
@@ -75,4 +76,4 @@ lotsRouter.post('/', requirePermission('inventory.lots.edit', 'edit'), async (re
     }
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create lot', err)
   }
-})
+}))

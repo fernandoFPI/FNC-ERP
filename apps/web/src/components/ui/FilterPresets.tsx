@@ -138,7 +138,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                     }}
                     onMouseEnter={(e) => {
                       const row = e.currentTarget.parentElement
-                      if (row) row.style.background = theme.bgSurfaceHover ?? theme.border
+                      if (row) row.style.background = theme.bgSurfaceHover
                     }}
                     onMouseLeave={(e) => {
                       const row = e.currentTarget.parentElement
@@ -204,7 +204,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
             style={{
               padding: '10px 12px',
               borderTop: `1px solid ${theme.border}`,
-              background: theme.bgSidebar ?? theme.bgSurface,
+              background: theme.bgSidebar,
             }}
           >
             <div

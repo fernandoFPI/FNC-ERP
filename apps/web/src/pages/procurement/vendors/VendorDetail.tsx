@@ -13,6 +13,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
+import type { PurchaseOrdersQuery, PurchaseOrdersQueryVariables, VendorQuery, VendorQueryVariables } from '../../../graphql/generated'
 
 interface PurchaseOrder {
   id: string
@@ -61,8 +62,8 @@ export default function VendorDetail() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
-  const { data: vendorData, loading } = useQuery(VENDOR_QUERY, { variables: { id }, skip: !id })
-  const { data: ordersData } = useQuery(PURCHASE_ORDERS_QUERY, {
+  const { data: vendorData, loading } = useQuery<VendorQuery, VendorQueryVariables>(VENDOR_QUERY, { variables: { id: id ?? '' }, skip: !id })
+  const { data: ordersData } = useQuery<PurchaseOrdersQuery, PurchaseOrdersQueryVariables>(PURCHASE_ORDERS_QUERY, {
     variables: { vendorId: id },
     skip: !id,
   })
@@ -92,7 +93,7 @@ export default function VendorDetail() {
   }, [activeTab, id, addToast])
 
   const vendor = vendorData?.vendor
-  const orders: PurchaseOrder[] = ordersData?.purchaseOrders ?? []
+  const orders: PurchaseOrder[] = (ordersData?.purchaseOrders ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   if (loading && !vendor)
     return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
@@ -156,7 +157,7 @@ export default function VendorDetail() {
       header: 'Invoice date',
       mobileSecondary: true,
       render: (inv) => (
-        <span style={{ color: theme.textMuted }}>{inv.invoice_date?.slice(0, 10)}</span>
+        <span style={{ color: theme.textMuted }}>{inv.invoice_date.slice(0, 10)}</span>
       ),
     },
     {
@@ -177,7 +178,7 @@ export default function VendorDetail() {
         const isOverdue = inv.days_overdue > 0 && !['paid', 'cancelled'].includes(inv.status)
         return (
           <span style={{ color: isOverdue ? theme.danger : theme.textMuted }}>
-            {inv.due_date?.slice(0, 10)}
+            {inv.due_date.slice(0, 10)}
           </span>
         )
       },
@@ -282,7 +283,6 @@ export default function VendorDetail() {
           <InfoRow label="Name" value={vendor.contact_name} />
           <InfoRow label="Email" value={vendor.contact_email} />
           <InfoRow label="Phone" value={vendor.contact_phone} />
-          <InfoRow label="Invoice Email" value={vendor.email} />
         </Card>
       </div>
 

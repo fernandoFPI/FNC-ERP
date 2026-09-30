@@ -9,6 +9,7 @@ import {
 } from '@apollo/client'
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions'
 import { getMainDefinition } from '@apollo/client/utilities'
+import { Kind, OperationTypeNode } from 'graphql'
 import { setContext } from '@apollo/client/link/context'
 import { onError } from '@apollo/client/link/error'
 import { createClient } from 'graphql-ws'
@@ -40,7 +41,7 @@ const wsLink = new GraphQLWsLink(
 const splitLink = split(
   ({ query }) => {
     const def = getMainDefinition(query)
-    return def.kind === 'OperationDefinition' && def.operation === 'subscription'
+    return def.kind === Kind.OPERATION_DEFINITION && def.operation === OperationTypeNode.SUBSCRIPTION
   },
   wsLink,
   httpLink,
@@ -76,7 +77,7 @@ async function refreshAccessToken(): Promise<string | null> {
       body: JSON.stringify({ refreshToken }),
     })
     if (!response.ok) return null
-    const data = await response.json()
+    const data = (await response.json()) as { data?: { accessToken?: string } }
     const newToken = data.data?.accessToken
     if (newToken) {
       useAuthStore.getState().setAccessToken(newToken)
@@ -139,7 +140,8 @@ const errorLink = onError(({ networkError, operation, forward }) => {
 const tourLink = new ApolloLink((operation, forward) => {
   if (!useTourStore.getState().isActive) return forward(operation)
   const def = getMainDefinition(operation.query)
-  if (def.kind !== 'OperationDefinition' || def.operation !== 'mutation') return forward(operation)
+  if (def.kind !== Kind.OPERATION_DEFINITION || def.operation !== OperationTypeNode.MUTATION)
+    return forward(operation)
   return fromPromise(
     new Promise<{ data: Record<string, unknown> }>((resolve) => {
       setTimeout(() => {

@@ -5,7 +5,7 @@ import { ThemeProvider } from '../../../../theme/ThemeContext'
 
 const mockGet = vi.fn()
 vi.mock('../../../../lib/axios', () => ({
-  api: { get: (...args: unknown[]) => mockGet(...args) },
+  api: { get: (...args: unknown[]): unknown => mockGet(...args) },
 }))
 
 vi.mock('../../../../store/authStore', () => ({
@@ -72,7 +72,9 @@ describe('MyExpenseClaimsPage — projects.view permission does not block catego
     expect(addToast).not.toHaveBeenCalled()
     // Let the /projects rejection's own catch (setProjects/setLoading) settle
     // before the test ends, so React doesn't warn about an act()-less update.
-    await projectsCall.catch(() => {})
+    await projectsCall.catch(() => {
+      /* expected rejection, already asserted above */
+    })
   })
 
   it('shows an error toast when claims/categories themselves fail to load', async () => {

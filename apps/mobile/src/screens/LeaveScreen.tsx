@@ -65,7 +65,7 @@ function LeaveScreenBase({ leaves }: { leaves: LeaveRequest[] }) {
       contentContainerStyle={styles.list}
       data={leaves}
       keyExtractor={(l) => l.id}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />}
+      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={(...args: Parameters<typeof onRefresh>) => void onRefresh(...args)} />}
       ListHeaderComponent={
         pending.length > 0 ? (
           <Text style={styles.sectionTitle}>Pending ({pending.length})</Text>

@@ -15,7 +15,6 @@ import {
   REJECT_PO_TO_MARKET,
   REJECT_PO_VERIFICATION_TO_MARKET_PRICING,
   REJECT_PO_VERIFICATION_TO_STORE_PRICING,
-  NOTIFY_PO_OWNER_FOR_EDIT_REQUEST,
   REOPEN_PO,
   CANCEL_PO,
   SEND_PO_TO_AUDIT,
@@ -79,26 +78,27 @@ import {
   buildTourDemoPO,
   buildTourDemoStockAvailability,
 } from '../../../components/help/tourDemoPO'
+import type { AccountsQuery, AccountsQueryVariables, AddPoLineCommentMutation, AddPoLineCommentMutationVariables, AdminCorrectPoMutation, AdminCorrectPoMutationVariables, AdminSetPoStatusMutation, AdminSetPoStatusMutationVariables, AnalyticAccountsQuery, AnalyticAccountsQueryVariables, ApprovePoEditRequestMutation, ApprovePoEditRequestMutationVariables, ApprovePoMutation, ApprovePoMutationVariables, ApproveStockIssuanceMutation, ApproveStockIssuanceMutationVariables, CancelPoMutation, CancelPoMutationVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CompletePoMutation, CompletePoMutationVariables, ConfirmPoInventoryCheckMutation, ConfirmPoInventoryCheckMutationVariables, CostCentersQuery, CostCentersQueryVariables, DeletePoMutation, DeletePoMutationVariables, EmployeesQuery, EmployeesQueryVariables, EntityAttachmentsQuery, EntityAttachmentsQueryVariables, FailPoAuditMutation, FailPoAuditMutationVariables, FinishBuyingPoMutation, FinishBuyingPoMutationVariables, MarkPoLineBoughtMutation, MarkPoLineBoughtMutationVariables, PassPoAuditMutation, PassPoAuditMutationVariables, PoFxRatesQuery, PoFxRatesQueryVariables, PoStockAvailabilityQuery, PoStockAvailabilityQueryVariables, ProductsQuery, ProductsQueryVariables, PurchaseOrderLifecycleQuery, PurchaseOrderLifecycleQueryVariables, RejectPoEditRequestMutation, RejectPoEditRequestMutationVariables, RejectPoMutation, RejectPoMutationVariables, RejectPoToMarketPricingMutation, RejectPoToMarketPricingMutationVariables, RejectPoVerificationToMarketPricingMutation, RejectPoVerificationToMarketPricingMutationVariables, RejectPoVerificationToStorePricingMutation, RejectPoVerificationToStorePricingMutationVariables, ReopenPoMutation, ReopenPoMutationVariables, ResolveLineFlagMutation, ResolveLineFlagMutationVariables, ResolvePoLineCommentMutation, ResolvePoLineCommentMutationVariables, SendPoToAuditMutation, SendPoToAuditMutationVariables, SetPoFundingMutation, SetPoFundingMutationVariables, SetPoLineAccountingMutation, SetPoLineAccountingMutationVariables, SetPoLineActualPriceMutation, SetPoLineActualPriceMutationVariables, SetPoLineAuditStatusMutation, SetPoLineAuditStatusMutationVariables, SetPoPriorityMutation, SetPoPriorityMutationVariables, SetPoReceiverMutation, SetPoReceiverMutationVariables, SetPoVendorMutation, SetPoVendorMutationVariables, StockLocationsQuery, StockLocationsQueryVariables, SubmitPoEditRequestMutation, SubmitPoEditRequestMutationVariables, SubmitPoMarketPricingMutation, SubmitPoMarketPricingMutationVariables, SubmitPoPriceVerificationMutation, SubmitPoPriceVerificationMutationVariables, SubmitPoStorePricingMutation, SubmitPoStorePricingMutationVariables, SubmitPoToInventoryCheckMutation, SubmitPoToInventoryCheckMutationVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
 
 export interface POLine {
   id: string
-  product_id: string
-  product_name: string
+  product_id: string | null
+  product_name: string | null
   product_name_ar?: string | null
-  description: string
+  description: string | null
   qty: number
   uom: string
   qty_received: number
   actual_unit_price?: number | null
   store_price?: number
-  store_price_currency?: string
+  store_price_currency?: string | null
   market_price?: number
-  market_price_currency?: string
+  market_price_currency?: string | null
   fx_rate_to_base?: number | null
-  requested_currency_code?: string
+  requested_currency_code?: string | null
   verified_price?: number
-  verified_price_currency?: string
-  in_stock?: boolean
+  verified_price_currency?: string | null
+  in_stock?: boolean | null
   qty_from_stock: number
   source_location_id?: string | null
   source_location_name?: string | null
@@ -108,7 +108,7 @@ export interface POLine {
   unit_price: number
   initial_unit_price?: number | null
   total: number
-  audit_status?: 'pending' | 'ok' | 'flagged' | null
+  audit_status?: string | null
   audit_note?: string | null
   audit_flagged_by_email?: string | null
   audit_flagged_at?: string | null
@@ -178,28 +178,28 @@ export interface PO {
   // PO's current stage. When true, every other field is withheld by the
   // resolver — not just hidden here — so don't rely on any field below
   // rendering meaningfully in that case.
-  viewerRestricted?: boolean
+  viewerRestricted?: boolean | null
   currency_code: string
-  base_currency_code: string
-  total_amount: number
-  subtotal: number
+  base_currency_code: string | null
+  total_amount: string
+  subtotal: string | null
   currencyTotals: { currency_code: string; subtotal: string; line_count: number }[]
   vendor_id?: string | null
-  vendor_name?: string
+  vendor_name?: string | null
   analytic_account_id?: string | null
-  delivery_destination?: 'inventory' | 'jobsite' | null
-  project_id?: string
-  organizer_id?: string
-  assigned_approver_id?: string
-  store_keeper_id?: string
-  store_pricing_id?: string
-  procurement_officer_id?: string
-  procurement_2nd_id?: string
+  delivery_destination?: string | null
+  project_id?: string | null
+  organizer_id?: string | null
+  assigned_approver_id?: string | null
+  store_keeper_id?: string | null
+  store_pricing_id?: string | null
+  procurement_officer_id?: string | null
+  procurement_2nd_id?: string | null
   assigned_receiver_id?: string | null
   assigned_receiver_name?: string | null
-  purpose?: string
-  linkedProjectId?: string
-  linkedMoId?: string
+  purpose?: string | null
+  linkedProjectId?: string | null
+  linkedMoId?: string | null
   projectCode?: string | null
   projectName?: string | null
   branch_id?: string | null
@@ -218,9 +218,9 @@ export interface PO {
   callerHasMarketPricingPosition?: boolean | null
   callerHasStoreKeeperPosition?: boolean | null
   callerIsFinanceTeam?: boolean | null
-  expected_delivery_date?: string
-  notes?: string
-  created_by_email?: string
+  expected_delivery_date?: string | null
+  notes?: string | null
+  created_by_email?: string | null
   created_at: string
   updated_at: string
   lines: POLine[]
@@ -228,40 +228,43 @@ export interface PO {
     id: string
     receipt_number?: string | null
     status: string
-    receipt_date: string
+    receipt_date: string | null
     location_id?: string | null
-    location_name?: string
-    received_by_email?: string
-    received_by_name?: string
+    location_name?: string | null
+    received_by_email?: string | null
+    received_by_name?: string | null
     received_from_name?: string | null
-    location_notes?: string
-    notes?: string
-    created_at: string
+    location_notes?: string | null
+    notes?: string | null
+    created_at: string | null
     lines: {
       id?: string | null
       po_line_id: string
-      description: string
+      description: string | null
       qty_received: number
       actual_unit_price?: number | null
     }[]
     photos: {
       id: string
       fileId: string
-      label?: string
+      label?: string | null
       category: string
       originalFilename: string
-      downloadUrl?: string
+      downloadUrl?: string | null
       createdAt: string
     }[]
   }[]
   approval_log: {
     id: string
     action: string
-    user_email: string
-    notes?: string
+    user_email: string | null
+    notes?: string | null
     created_at: string
   }[]
-  edit_requests: POEditRequest[]
+  edit_requests: POEditRequest[] | null
+  // True when a Daily Report logged this PO under Machinery without the
+  // required live photo — see MachineryPhotoAlertNotice below.
+  machineryPhotoAlert?: boolean | null
 }
 
 interface LineComment {
@@ -276,14 +279,14 @@ interface LineComment {
 
 interface POEditRequest {
   id: string
-  po_id: string
-  status: 'pending' | 'approved' | 'rejected'
+  po_id: string | null
+  status: string
   changes: string
-  request_notes?: string
-  requested_by_email?: string
-  reviewed_by_email?: string
-  review_notes?: string
-  reviewed_at?: string
+  request_notes?: string | null
+  requested_by_email?: string | null
+  reviewed_by_email?: string | null
+  review_notes?: string | null
+  reviewed_at?: string | null
   created_at: string
 }
 
@@ -525,6 +528,33 @@ function DraftReceiptsNotice({
   )
 }
 
+// A Daily Report logged this PO under Machinery without the required live
+// photo (see project_daily_report_machinery). Advisory only — it doesn't
+// block the PO's workflow, just flags it here so management notices; the
+// same gap already triggered a notification to dept heads/admins when it
+// was logged. Clears itself once every gap is backfilled with a photo.
+function MachineryPhotoAlertNotice({ po }: { po: PO }) {
+  if (!po.machineryPhotoAlert) return null
+  return (
+    <div
+      style={{
+        padding: '10px 14px',
+        borderRadius: '8px',
+        background: '#fef2f2',
+        border: '1px solid #fecaca',
+        fontSize: '13px',
+        color: '#991b1b',
+        fontWeight: 600,
+        marginBottom: '12px',
+      }}
+    >
+      ⚠ A Daily Report logged machinery against this PO without a live photo. Management has been
+      notified — attach the missing photo from the project's Execution → Daily Reports tab to clear
+      this.
+    </div>
+  )
+}
+
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -568,7 +598,7 @@ export default function PurchaseOrderDetail() {
         {ph.downloadUrl ? (
           <div
             onClick={() => {
-              openLightbox(ph.downloadUrl!)
+              if (ph.downloadUrl) openLightbox(ph.downloadUrl)
             }}
             style={{
               cursor: 'zoom-in',
@@ -697,7 +727,7 @@ export default function PurchaseOrderDetail() {
   function clearFlag(lineId: string) {
     setLineFlagNotes((prev) => {
       const n = { ...prev }
-      delete n[lineId]
+      Reflect.deleteProperty(n, lineId)
       return n
     })
   }
@@ -811,7 +841,9 @@ export default function PurchaseOrderDetail() {
       .then((r) => {
         setPoReturns(Array.isArray(r.data) ? r.data : [])
       })
-      .catch(() => {})
+      .catch(() => {
+        /* ignore: returns list just stays empty if this fails */
+      })
   }, [id])
 
   interface RawComment {
@@ -852,13 +884,47 @@ export default function PurchaseOrderDetail() {
     setLineComments(grouped)
   }, [lineCommentsData])
 
-  const { data, loading, refetch } = useQuery(PO_LIFECYCLE_QUERY, {
-    variables: { id },
+  const { data, loading, refetch } = useQuery<PurchaseOrderLifecycleQuery, PurchaseOrderLifecycleQueryVariables>(PO_LIFECYCLE_QUERY, {
+    variables: { id: id ?? '' },
     skip: isTourDemo,
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('purchase_order', () => void refetch())
-  const po: PO | undefined = isTourDemo ? buildTourDemoPO(tourStatus) : data?.purchaseOrder
+  // The real query returns several line fields (qty, prices, totals) as
+  // decimal strings — this file's arithmetic throughout assumes real
+  // numbers (POLine's own long-standing type), so normalize once here
+  // rather than pushing string-handling into every one of its ~30+ usage
+  // sites across this file.
+  const po: PO | undefined = isTourDemo
+    ? buildTourDemoPO(tourStatus)
+    : data?.purchaseOrder
+      ? {
+          ...data.purchaseOrder,
+          lines: (data.purchaseOrder.lines ?? []).map((l) => ({
+            ...l,
+            qty: parseFloat(l.qty) || 0,
+            qty_received: parseFloat(l.qty_received ?? '0') || 0,
+            actual_unit_price: l.actual_unit_price != null ? parseFloat(l.actual_unit_price) : null,
+            store_price: l.store_price != null ? parseFloat(l.store_price) : undefined,
+            market_price: l.market_price != null ? parseFloat(l.market_price) : undefined,
+            verified_price: l.verified_price != null ? parseFloat(l.verified_price) : undefined,
+            qty_from_stock: parseFloat(l.qty_from_stock ?? '0') || 0,
+            unit_price: parseFloat(l.unit_price) || 0,
+            initial_unit_price: l.initial_unit_price != null ? parseFloat(l.initial_unit_price) : null,
+            total: parseFloat(l.total) || 0,
+            uom: l.uom ?? '',
+          })),
+          approval_log: data.purchaseOrder.approval_log ?? [],
+          receipts: (data.purchaseOrder.receipts ?? []).map((r) => ({
+            ...r,
+            lines: r.lines.map((rl) => ({
+              ...rl,
+              qty_received: parseFloat(rl.qty_received) || 0,
+              actual_unit_price: rl.actual_unit_price != null ? parseFloat(rl.actual_unit_price) : null,
+            })),
+          })),
+        }
+      : undefined
   const showAdminCorrectionTab =
     currentUserRole === 'system_admin' && !!po && ADMIN_CORRECTION_PO_STATUSES.includes(po.status)
 
@@ -894,7 +960,7 @@ export default function PurchaseOrderDetail() {
     api
       .get<{ items: APInv[] }>('/finance/vendor-invoices', { params: { po_id: id, limit: 1 } })
       .then(async (r) => {
-        const byPoId = r.data?.items?.[0] ?? null
+        const byPoId = r.data.items[0] ?? null
         if (byPoId) {
           setApInvoice(byPoId)
           return
@@ -905,7 +971,7 @@ export default function PurchaseOrderDetail() {
           const r2 = await api.get<{ items: APInv[] }>('/finance/vendor-invoices', {
             params: { invoice_number: autoNum, cross_company: 'true', limit: 1 },
           })
-          setApInvoice(r2.data?.items?.[0] ?? null)
+          setApInvoice(r2.data.items[0] ?? null)
         } else {
           setApInvoice(null)
         }
@@ -915,16 +981,16 @@ export default function PurchaseOrderDetail() {
       })
   }, [id, po?.po_number])
 
-  const { data: stockData } = useQuery(PO_STOCK_AVAILABILITY_QUERY, {
-    variables: { poId: id },
-    skip: po?.status !== 'inventory_check' || isTourDemo || po?.viewerRestricted,
+  const { data: stockData } = useQuery<PoStockAvailabilityQuery, PoStockAvailabilityQueryVariables>(PO_STOCK_AVAILABILITY_QUERY, {
+    variables: { poId: id ?? '' },
+    skip: po?.status !== 'inventory_check' || isTourDemo || (po.viewerRestricted ?? false),
     fetchPolicy: 'cache-and-network',
   })
   const stockAvailability: {
     lineId: string
-    productId?: string
-    productName?: string
-    description?: string
+    productId?: string | null
+    productName?: string | null
+    description?: string | null
     qtyRequired: number
     qtyOnHand: number
     qtyAvailable: number
@@ -952,17 +1018,17 @@ export default function PurchaseOrderDetail() {
     },
     onError: onErr,
   }
-  const [submitToInventory, { loading: l1 }] = useMutation(SUBMIT_PO_TO_INVENTORY, mutOpts)
-  const [confirmInventory, { loading: l2 }] = useMutation(CONFIRM_PO_INVENTORY, mutOpts)
-  const [approveIssuance, { loading: lIssue }] = useMutation(APPROVE_STOCK_ISSUANCE, mutOpts)
-  const [submitStorePricing, { loading: l3 }] = useMutation(SUBMIT_PO_STORE_PRICING, mutOpts)
-  const [submitMarketPricing, { loading: l4 }] = useMutation(SUBMIT_PO_MARKET_PRICING, mutOpts)
-  const [submitPriceVerification, { loading: l5 }] = useMutation(
+  const [submitToInventory, { loading: l1 }] = useMutation<SubmitPoToInventoryCheckMutation, SubmitPoToInventoryCheckMutationVariables>(SUBMIT_PO_TO_INVENTORY, mutOpts)
+  const [confirmInventory, { loading: l2 }] = useMutation<ConfirmPoInventoryCheckMutation, ConfirmPoInventoryCheckMutationVariables>(CONFIRM_PO_INVENTORY, mutOpts)
+  const [approveIssuance, { loading: lIssue }] = useMutation<ApproveStockIssuanceMutation, ApproveStockIssuanceMutationVariables>(APPROVE_STOCK_ISSUANCE, mutOpts)
+  const [submitStorePricing, { loading: l3 }] = useMutation<SubmitPoStorePricingMutation, SubmitPoStorePricingMutationVariables>(SUBMIT_PO_STORE_PRICING, mutOpts)
+  const [submitMarketPricing, { loading: l4 }] = useMutation<SubmitPoMarketPricingMutation, SubmitPoMarketPricingMutationVariables>(SUBMIT_PO_MARKET_PRICING, mutOpts)
+  const [submitPriceVerification, { loading: l5 }] = useMutation<SubmitPoPriceVerificationMutation, SubmitPoPriceVerificationMutationVariables>(
     SUBMIT_PO_PRICE_VERIFICATION,
     mutOpts,
   )
-  const [approvePO, { loading: l8 }] = useMutation(APPROVE_PO, mutOpts)
-  const [rejectPO, { loading: l6 }] = useMutation(REJECT_PO, {
+  const [approvePO, { loading: l8 }] = useMutation<ApprovePoMutation, ApprovePoMutationVariables>(APPROVE_PO, mutOpts)
+  const [rejectPO, { loading: l6 }] = useMutation<RejectPoMutation, RejectPoMutationVariables>(REJECT_PO, {
     onCompleted: () => {
       setRejectReason('')
       setLineFlagNotes({})
@@ -970,7 +1036,7 @@ export default function PurchaseOrderDetail() {
     },
     onError: onErr,
   })
-  const [rejectToMarket, { loading: l7 }] = useMutation(REJECT_PO_TO_MARKET, {
+  const [rejectToMarket, { loading: l7 }] = useMutation<RejectPoToMarketPricingMutation, RejectPoToMarketPricingMutationVariables>(REJECT_PO_TO_MARKET, {
     onCompleted: () => {
       setRejectReason('')
       setLineFlagNotes({})
@@ -978,7 +1044,7 @@ export default function PurchaseOrderDetail() {
     },
     onError: onErr,
   })
-  const [rejectVerificationToMarket, { loading: l10 }] = useMutation(
+  const [rejectVerificationToMarket, { loading: l10 }] = useMutation<RejectPoVerificationToMarketPricingMutation, RejectPoVerificationToMarketPricingMutationVariables>(
     REJECT_PO_VERIFICATION_TO_MARKET_PRICING,
     {
       onCompleted: () => {
@@ -989,7 +1055,7 @@ export default function PurchaseOrderDetail() {
       onError: onErr,
     },
   )
-  const [rejectVerificationToStore, { loading: l11 }] = useMutation(
+  const [rejectVerificationToStore, { loading: l11 }] = useMutation<RejectPoVerificationToStorePricingMutation, RejectPoVerificationToStorePricingMutationVariables>(
     REJECT_PO_VERIFICATION_TO_STORE_PRICING,
     {
       onCompleted: () => {
@@ -1000,49 +1066,42 @@ export default function PurchaseOrderDetail() {
       onError: onErr,
     },
   )
-  const [resolveLineFlag, { loading: lResolveFlag }] = useMutation(RESOLVE_LINE_FLAG, mutOpts)
-  const [notifyOwnerForEdit] = useMutation(NOTIFY_PO_OWNER_FOR_EDIT_REQUEST, {
-    onCompleted: () => {
-      setRejectReason('')
-      addToast({ type: 'success', message: 'Owner notified to submit an edit request' })
-    },
-    onError: onErr,
-  })
-  const [reopenPO] = useMutation(REOPEN_PO, mutOpts)
-  const [cancelPO] = useMutation(CANCEL_PO, {
+  const [resolveLineFlag, { loading: lResolveFlag }] = useMutation<ResolveLineFlagMutation, ResolveLineFlagMutationVariables>(RESOLVE_LINE_FLAG, mutOpts)
+  const [reopenPO] = useMutation<ReopenPoMutation, ReopenPoMutationVariables>(REOPEN_PO, mutOpts)
+  const [cancelPO] = useMutation<CancelPoMutation, CancelPoMutationVariables>(CANCEL_PO, {
     onCompleted: () => {
       setRejectReason('')
       void refetch()
     },
     onError: onErr,
   })
-  const [sendToAudit, { loading: lAudit }] = useMutation(SEND_PO_TO_AUDIT, mutOpts)
-  const [passAudit, { loading: lPass }] = useMutation(PASS_PO_AUDIT, mutOpts)
-  const [failAudit] = useMutation(FAIL_PO_AUDIT, {
+  const [sendToAudit, { loading: lAudit }] = useMutation<SendPoToAuditMutation, SendPoToAuditMutationVariables>(SEND_PO_TO_AUDIT, mutOpts)
+  const [passAudit, { loading: lPass }] = useMutation<PassPoAuditMutation, PassPoAuditMutationVariables>(PASS_PO_AUDIT, mutOpts)
+  const [failAudit] = useMutation<FailPoAuditMutation, FailPoAuditMutationVariables>(FAIL_PO_AUDIT, {
     onCompleted: () => {
       void refetch()
     },
     onError: onErr,
   })
-  const [setLineAuditStatus] = useMutation(SET_PO_LINE_AUDIT_STATUS, {
+  const [setLineAuditStatus] = useMutation<SetPoLineAuditStatusMutation, SetPoLineAuditStatusMutationVariables>(SET_PO_LINE_AUDIT_STATUS, {
     onCompleted: () => {
       void refetch()
     },
     onError: onErr,
   })
-  const [setLineAccounting] = useMutation(SET_PO_LINE_ACCOUNTING, {
+  const [setLineAccounting] = useMutation<SetPoLineAccountingMutation, SetPoLineAccountingMutationVariables>(SET_PO_LINE_ACCOUNTING, {
     onCompleted: () => {
       void refetch()
     },
     onError: onErr,
   })
-  const [markLineBought] = useMutation(MARK_PO_LINE_BOUGHT, {
+  const [markLineBought] = useMutation<MarkPoLineBoughtMutation, MarkPoLineBoughtMutationVariables>(MARK_PO_LINE_BOUGHT, {
     onCompleted: () => {
       void refetch()
     },
     onError: onErr,
   })
-  const [finishBuyingPO, { loading: finishingBuying }] = useMutation(FINISH_BUYING_PO, {
+  const [finishBuyingPO, { loading: finishingBuying }] = useMutation<FinishBuyingPoMutation, FinishBuyingPoMutationVariables>(FINISH_BUYING_PO, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Buying finished — moved to Goods Received' })
       void refetch()
@@ -1051,15 +1110,15 @@ export default function PurchaseOrderDetail() {
   })
   // Whether at least one buyer receipt (vendor receipt photo/PDF) has been
   // uploaded — gates the "Finish Buying" button alongside the checklist.
-  const { data: buyerReceiptData } = useQuery(ENTITY_ATTACHMENTS_QUERY, {
-    variables: { entityType: 'purchase_order', entityId: id },
+  const { data: buyerReceiptData } = useQuery<EntityAttachmentsQuery, EntityAttachmentsQueryVariables>(ENTITY_ATTACHMENTS_QUERY, {
+    variables: { entityType: 'purchase_order', entityId: id ?? '' },
     skip: !id || (po?.status !== 'items_bought' && po?.status !== 'bought'),
     fetchPolicy: 'cache-and-network',
   })
   const hasBuyerReceipt = (
     (buyerReceiptData?.entityAttachments as { file: { category: string } }[] | undefined) ?? []
   ).some((a) => a.file.category === 'po_receipt_document')
-  const [setPOFunding, { loading: settingFunding }] = useMutation(SET_PO_FUNDING, {
+  const [setPOFunding, { loading: settingFunding }] = useMutation<SetPoFundingMutation, SetPoFundingMutationVariables>(SET_PO_FUNDING, {
     onCompleted: () => {
       setFundingChoice('')
       setFundingEmployeeId('')
@@ -1068,18 +1127,18 @@ export default function PurchaseOrderDetail() {
     },
     onError: onErr,
   })
-  const [completePO, { loading: l9 }] = useMutation(COMPLETE_PO, {
+  const [completePO, { loading: l9 }] = useMutation<CompletePoMutation, CompletePoMutationVariables>(COMPLETE_PO, {
     ...mutOpts,
     onError: (err) => {
       addToast({ type: 'error', message: err.message })
     },
   })
-  const [deletePO] = useMutation(DELETE_PO, {
+  const [deletePO] = useMutation<DeletePoMutation, DeletePoMutationVariables>(DELETE_PO, {
     onCompleted: () => {
       navigate('/procurement/purchase-orders')
     },
   })
-  const [submitEditRequest, { loading: leR }] = useMutation(SUBMIT_PO_EDIT_REQUEST, {
+  const [submitEditRequest, { loading: leR }] = useMutation<SubmitPoEditRequestMutation, SubmitPoEditRequestMutationVariables>(SUBMIT_PO_EDIT_REQUEST, {
     onCompleted: () => {
       setEditDraft(null)
       setEditRequestNotes('')
@@ -1089,7 +1148,7 @@ export default function PurchaseOrderDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [approveEditRequest, { loading: leA }] = useMutation(APPROVE_PO_EDIT_REQUEST, {
+  const [approveEditRequest, { loading: leA }] = useMutation<ApprovePoEditRequestMutation, ApprovePoEditRequestMutationVariables>(APPROVE_PO_EDIT_REQUEST, {
     onCompleted: () => {
       setReviewNotes({})
       void refetch()
@@ -1098,7 +1157,7 @@ export default function PurchaseOrderDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [rejectEditRequest, { loading: leJ }] = useMutation(REJECT_PO_EDIT_REQUEST, {
+  const [rejectEditRequest, { loading: leJ }] = useMutation<RejectPoEditRequestMutation, RejectPoEditRequestMutationVariables>(REJECT_PO_EDIT_REQUEST, {
     onCompleted: () => {
       setReviewNotes({})
       void refetch()
@@ -1107,7 +1166,7 @@ export default function PurchaseOrderDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [adminSetPOStatus, { loading: adminSetting }] = useMutation(ADMIN_SET_PO_STATUS, {
+  const [adminSetPOStatus, { loading: adminSetting }] = useMutation<AdminSetPoStatusMutation, AdminSetPoStatusMutationVariables>(ADMIN_SET_PO_STATUS, {
     onCompleted: () => {
       setAdminPoStatus('')
       addToast({ type: 'success', message: 'Status updated' })
@@ -1117,7 +1176,7 @@ export default function PurchaseOrderDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [setPriority, { loading: settingPriority }] = useMutation(SET_PO_PRIORITY, {
+  const [setPriority, { loading: settingPriority }] = useMutation<SetPoPriorityMutation, SetPoPriorityMutationVariables>(SET_PO_PRIORITY, {
     onCompleted: () => {
       void refetch()
     },
@@ -1125,7 +1184,7 @@ export default function PurchaseOrderDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [setReceiver] = useMutation(SET_PO_RECEIVER, {
+  const [setReceiver] = useMutation<SetPoReceiverMutation, SetPoReceiverMutationVariables>(SET_PO_RECEIVER, {
     onCompleted: () => {
       void refetch()
     },
@@ -1133,7 +1192,7 @@ export default function PurchaseOrderDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [setVendor] = useMutation(SET_PO_VENDOR, {
+  const [setVendor] = useMutation<SetPoVendorMutation, SetPoVendorMutationVariables>(SET_PO_VENDOR, {
     onCompleted: () => {
       void refetch()
     },
@@ -1141,7 +1200,7 @@ export default function PurchaseOrderDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [setLineActualPrice] = useMutation(SET_PO_LINE_ACTUAL_PRICE, {
+  const [setLineActualPrice] = useMutation<SetPoLineActualPriceMutation, SetPoLineActualPriceMutationVariables>(SET_PO_LINE_ACTUAL_PRICE, {
     onCompleted: () => {
       void refetch()
     },
@@ -1149,9 +1208,9 @@ export default function PurchaseOrderDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
-  const [addLineComment] = useMutation(ADD_PO_LINE_COMMENT)
-  const [resolveLineComment] = useMutation(RESOLVE_PO_LINE_COMMENT)
-  const [adminCorrectPO, { loading: adminCorrecting }] = useMutation(ADMIN_CORRECT_PO, {
+  const [addLineComment] = useMutation<AddPoLineCommentMutation, AddPoLineCommentMutationVariables>(ADD_PO_LINE_COMMENT)
+  const [resolveLineComment] = useMutation<ResolvePoLineCommentMutation, ResolvePoLineCommentMutationVariables>(RESOLVE_PO_LINE_COMMENT)
+  const [adminCorrectPO, { loading: adminCorrecting }] = useMutation<AdminCorrectPoMutation, AdminCorrectPoMutationVariables>(ADMIN_CORRECT_PO, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Correction applied.' })
       setAdminCorrectionDraft(null)
@@ -1162,28 +1221,28 @@ export default function PurchaseOrderDetail() {
     },
   })
 
-  const { data: employeesData } = useQuery(EMPLOYEES_QUERY, {
+  const { data: employeesData } = useQuery<EmployeesQuery, EmployeesQueryVariables>(EMPLOYEES_QUERY, {
     variables: { is_active: true },
     fetchPolicy: 'cache-first',
   })
-  const employees: { id: string; first_name: string; last_name: string; job_title?: string }[] =
-    employeesData?.employees ?? []
+  const employees: { id: string; first_name: string; last_name: string; job_title?: string | null }[] =
+    (employeesData?.employees ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
-  const { data: vendorsData } = useQuery(VENDORS_QUERY, {
+  const { data: vendorsData } = useQuery<VendorsQuery, VendorsQueryVariables>(VENDORS_QUERY, {
     variables: {},
     fetchPolicy: 'cache-first',
   })
-  const vendors: { id: string; name: string }[] = vendorsData?.vendors ?? []
+  const vendors: { id: string; name: string }[] = (vendorsData?.vendors ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   // Admin-correction-only data sources — skipped unless the tab can
   // actually be shown, since most viewers will never need them.
-  const { data: analyticAccountsData } = useQuery(ANALYTIC_ACCOUNTS_QUERY, {
+  const { data: analyticAccountsData } = useQuery<AnalyticAccountsQuery, AnalyticAccountsQueryVariables>(ANALYTIC_ACCOUNTS_QUERY, {
     fetchPolicy: 'cache-first',
     skip: !showAdminCorrectionTab,
   })
   const analyticAccounts: { id: string; name: string; code: string }[] =
     analyticAccountsData?.analyticAccounts ?? []
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
     // Same reasoning as RequisitionForm/PurchaseOrderForm's own line-item
     // picker — the item being corrected here can legitimately live at the
     // central warehouse company, not just this one.
@@ -1192,14 +1251,14 @@ export default function PurchaseOrderDetail() {
     skip: !showAdminCorrectionTab,
   })
   const adminCorrectionProducts: { id: string; sku: string; name: string }[] =
-    productsData?.products ?? []
-  const { data: branchesData } = useQuery(COMPANY_BRANCHES_QUERY, {
+    (productsData?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
+  const { data: branchesData } = useQuery<CompanyBranchesQuery, CompanyBranchesQueryVariables>(COMPANY_BRANCHES_QUERY, {
     variables: { companyId: currentCompanyId },
     fetchPolicy: 'cache-first',
     skip: !showAdminCorrectionTab || !currentCompanyId,
   })
   const branches: { id: string; name: string }[] = branchesData?.companyBranches ?? []
-  const { data: stockLocationsData } = useQuery(STOCK_LOCATIONS_QUERY, {
+  const { data: stockLocationsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, {
     variables: { isActive: true },
     fetchPolicy: 'cache-first',
     skip: !showAdminCorrectionTab,
@@ -1207,7 +1266,7 @@ export default function PurchaseOrderDetail() {
   const stockLocations: { id: string; name: string; type: string }[] =
     stockLocationsData?.stockLocations ?? []
 
-  const { data: fxRatesData } = useQuery(PO_FX_RATES_QUERY, { fetchPolicy: 'cache-first' })
+  const { data: fxRatesData } = useQuery<PoFxRatesQuery, PoFxRatesQueryVariables>(PO_FX_RATES_QUERY, { fetchPolicy: 'cache-first' })
   const marketPricingCurrencyOptions = (() => {
     const base = fxRatesData?.poFxRates?.base_currency ?? 'IQD'
     const configured: string[] = (
@@ -1225,19 +1284,19 @@ export default function PurchaseOrderDetail() {
   // invoice exists there to hang that gate off of instead).
   const needsLineAccountingOptions =
     (po?.status === 'invoiced' || po?.status === 'payment_pending') &&
-    !!po?.funding_decided &&
-    (po?.funding_source === 'employee_advance' || po?.funding_source === 'vendor_ap')
-  const { data: accountsData } = useQuery(ACCOUNTS_QUERY, {
+    !!po.funding_decided &&
+    (po.funding_source === 'employee_advance' || po.funding_source === 'vendor_ap')
+  const { data: accountsData } = useQuery<AccountsQuery, AccountsQueryVariables>(ACCOUNTS_QUERY, {
     variables: { isActive: true },
     fetchPolicy: 'cache-first',
     skip: !needsLineAccountingOptions,
   })
-  const { data: costCentersData } = useQuery(COST_CENTERS_QUERY, {
+  const { data: costCentersData } = useQuery<CostCentersQuery, CostCentersQueryVariables>(COST_CENTERS_QUERY, {
     fetchPolicy: 'cache-first',
     skip: !needsLineAccountingOptions,
   })
-  const glAccountOptions: { value: string; label: string }[] = (accountsData?.accounts ?? []).map(
-    (a: { id: string; code: string; name: string }) => ({
+  const glAccountOptions: { value: string; label: string }[] = (accountsData?.accounts ?? []).filter((v): v is NonNullable<typeof v> => v !== null).map(
+    (a) => ({
       value: a.id,
       label: `${a.code} — ${a.name}`,
     }),
@@ -1421,9 +1480,10 @@ export default function PurchaseOrderDetail() {
         maxWidth: '1800px',
       }}
     >
+      <MachineryPhotoAlertNotice po={po} />
       <PageHeader
         title={po.po_number}
-        subtitle={`${po.vendor_name ?? 'No vendor'} • Created ${po.created_at?.slice(0, 10) ?? ''}${
+        subtitle={`${po.vendor_name ?? 'No vendor'} • Created ${po.created_at.slice(0, 10)}${
           po.project_id
             ? ` • Project: ${[po.projectCode, po.projectName].filter(Boolean).join(' — ')}`
             : ''
@@ -1434,7 +1494,7 @@ export default function PurchaseOrderDetail() {
             <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
             {po.requisitionNumber && (
               <span
-                onClick={() => navigate(`/procurement/requisitions/${po.requisition_id}`)}
+                onClick={() => { navigate(`/procurement/requisitions/${po.requisition_id}`); }}
                 title="Open the requisition this PO was forked from"
                 style={{
                   padding: '4px 10px',
@@ -1475,7 +1535,7 @@ export default function PurchaseOrderDetail() {
                   border: '#ef4444',
                 },
               ]
-              const current = po.priority ?? 'low'
+              const current = po.priority
               // Priority is only editable while still in draft — it shouldn't
               // change once inventory/pricing/approval decisions have started
               // being made around it.
@@ -2939,7 +2999,7 @@ export default function PurchaseOrderDetail() {
                           void submitMarketPricing({
                             variables: {
                               id: po.id,
-                              vendorId: po.vendor_id || undefined,
+                              vendorId: po.vendor_id ?? undefined,
                               linePrices: purchaseLines.map((line) => {
                                 const mp = marketPrices[line.id] ?? {
                                   price: String(line.market_price ?? ''),
@@ -3139,18 +3199,6 @@ export default function PurchaseOrderDetail() {
                           >
                             Store Pricing
                           </Button>
-                          <Button
-                            variant="secondary"
-                            disabled={!effectiveRejectReason.trim()}
-                            loading={anyLoading}
-                            onClick={() =>
-                              void notifyOwnerForEdit({
-                                variables: { id: po.id, reason: effectiveRejectReason },
-                              })
-                            }
-                          >
-                            Owner (Request Edit)
-                          </Button>
                         </div>
                       </div>
                     </div>
@@ -3316,10 +3364,10 @@ export default function PurchaseOrderDetail() {
                         }}
                       >
                         {po.lines.map((line, idx) => {
-                          const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
-                          const totalQty = parseFloat(String(line.qty ?? 0))
+                          const fromStock = parseFloat(String(line.qty_from_stock))
+                          const totalQty = parseFloat(String(line.qty))
                           const toBuy = Math.max(0, totalQty - fromStock)
-                          const poPrice = parseFloat(String(line.unit_price ?? 0))
+                          const poPrice = parseFloat(String(line.unit_price))
                           const actualPrice =
                             line.actual_unit_price != null
                               ? parseFloat(String(line.actual_unit_price))
@@ -3487,14 +3535,20 @@ export default function PurchaseOrderDetail() {
                                         ✓ Saved
                                       </span>
                                     )}
-                                    {variancePct != null && Math.abs(variancePct) > 0.01 && (
-                                      <span
-                                        style={{ fontSize: '10px', fontWeight: 600, color: varColor }}
-                                      >
-                                        {variance! > 0 ? '▲' : '▼'} {variance! > 0 ? '+' : ''}
-                                        {variancePct.toFixed(1)}% vs PO
-                                      </span>
-                                    )}
+                                    {variance != null &&
+                                      variancePct != null &&
+                                      Math.abs(variancePct) > 0.01 && (
+                                        <span
+                                          style={{
+                                            fontSize: '10px',
+                                            fontWeight: 600,
+                                            color: varColor,
+                                          }}
+                                        >
+                                          {variance > 0 ? '▲' : '▼'} {variance > 0 ? '+' : ''}
+                                          {variancePct.toFixed(1)}% vs PO
+                                        </span>
+                                      )}
                                   </div>
                                 )}
                                 <AmountDisplay
@@ -3577,9 +3631,9 @@ export default function PurchaseOrderDetail() {
               {po.status === 'goods_received' &&
                 (() => {
                   const fullyCovered = po.lines.every((line) => {
-                    const ord = parseFloat(String(line.qty ?? 0))
-                    const rcv = parseFloat(String(line.qty_received ?? 0))
-                    const fromStk = parseFloat(String(line.qty_from_stock ?? 0))
+                    const ord = parseFloat(String(line.qty))
+                    const rcv = parseFloat(String(line.qty_received))
+                    const fromStk = parseFloat(String(line.qty_from_stock))
                     return rcv + fromStk >= ord
                   })
                   // sendPOToAudit only requires one confirmed receipt to exist
@@ -3596,7 +3650,7 @@ export default function PurchaseOrderDetail() {
                   // showing "Record Receipt" even after delivery was recorded.
                   const hasAnyReceipt =
                     po.receipts.some((r) => r.status === 'confirmed') ||
-                    po.lines.some((line) => parseFloat(String(line.qty_received ?? 0)) > 0)
+                    po.lines.some((line) => parseFloat(String(line.qty_received)) > 0)
                   if (!hasAnyReceipt) {
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -3696,9 +3750,9 @@ export default function PurchaseOrderDetail() {
                           minimumFractionDigits: 0,
                           maximumFractionDigits: 2,
                         })
-                      const rcv = parseFloat(String(line.qty_received ?? 0))
-                      const fromStk = parseFloat(String(line.qty_from_stock ?? 0))
-                      const ord = parseFloat(String(line.qty ?? 0))
+                      const rcv = parseFloat(String(line.qty_received))
+                      const fromStk = parseFloat(String(line.qty_from_stock))
+                      const ord = parseFloat(String(line.qty))
                       const fulfilled = Math.min(ord, rcv + fromStk)
                       const pct = ord > 0 ? Math.min(100, Math.round((fulfilled / ord) * 100)) : 0
                       const color =
@@ -3915,9 +3969,9 @@ export default function PurchaseOrderDetail() {
                                   minimumFractionDigits: 0,
                                   maximumFractionDigits: 2,
                                 })
-                              const rcv = parseFloat(String(line.qty_received ?? 0))
-                              const fromStk = parseFloat(String(line.qty_from_stock ?? 0))
-                              const ord = parseFloat(String(line.qty ?? 0))
+                              const rcv = parseFloat(String(line.qty_received))
+                              const fromStk = parseFloat(String(line.qty_from_stock))
+                              const ord = parseFloat(String(line.qty))
                               const fulfilled = Math.min(ord, rcv + fromStk)
                               const pct =
                                 ord > 0 ? Math.min(100, Math.round((fulfilled / ord) * 100)) : 0
@@ -4014,13 +4068,13 @@ export default function PurchaseOrderDetail() {
                                   minimumFractionDigits: 0,
                                   maximumFractionDigits: 2,
                                 })
-                              const poPrice = parseFloat(String(line.unit_price ?? 0))
+                              const poPrice = parseFloat(String(line.unit_price))
                               const actualPrice =
                                 line.actual_unit_price != null
                                   ? parseFloat(String(line.actual_unit_price))
                                   : null
-                              const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
-                              const totalQty = parseFloat(String(line.qty ?? 0))
+                              const fromStock = parseFloat(String(line.qty_from_stock))
+                              const totalQty = parseFloat(String(line.qty))
                               const toBuy = Math.max(0, totalQty - fromStock)
                               const variance =
                                 actualPrice != null && poPrice > 0 ? actualPrice - poPrice : null
@@ -4096,10 +4150,10 @@ export default function PurchaseOrderDetail() {
                                             ? '#fff7ed'
                                             : variance === 0
                                               ? '#f0fdf4'
-                                              : variance! > 0
+                                              : (variance ?? 0) > 0
                                                 ? '#fef2f2'
                                                 : '#f0fdf4',
-                                        border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : variance! > 0 ? '#fca5a5' : '#86efac'}`,
+                                        border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : (variance ?? 0) > 0 ? '#fca5a5' : '#86efac'}`,
                                       }}
                                     >
                                       <div
@@ -4136,19 +4190,21 @@ export default function PurchaseOrderDetail() {
                                           ? fmtN(actualPrice)
                                           : 'Not entered yet — buyer hasn’t recorded a price'}
                                       </div>
-                                      {variancePct != null && Math.abs(variancePct) > 0.01 && (
-                                        <div
-                                          style={{
-                                            fontSize: '11px',
-                                            fontWeight: 600,
-                                            color: varColor,
-                                            marginTop: '3px',
-                                          }}
-                                        >
-                                          {variance! > 0 ? '▲' : '▼'} {variance! > 0 ? '+' : ''}
-                                          {variancePct.toFixed(1)}% vs PO
-                                        </div>
-                                      )}
+                                      {variance != null &&
+                                        variancePct != null &&
+                                        Math.abs(variancePct) > 0.01 && (
+                                          <div
+                                            style={{
+                                              fontSize: '11px',
+                                              fontWeight: 600,
+                                              color: varColor,
+                                              marginTop: '3px',
+                                            }}
+                                          >
+                                            {variance > 0 ? '▲' : '▼'} {variance > 0 ? '+' : ''}
+                                            {variancePct.toFixed(1)}% vs PO
+                                          </div>
+                                        )}
                                     </div>
                                   )}
                                   {/* Purchase Total (only purchased qty) */}
@@ -4296,7 +4352,7 @@ export default function PurchaseOrderDetail() {
                                       })
                                       setFlaggingLines((p) => {
                                         const n = { ...p }
-                                        delete n[line.id]
+                                        Reflect.deleteProperty(n, line.id)
                                         return n
                                       })
                                     }}
@@ -4321,7 +4377,7 @@ export default function PurchaseOrderDetail() {
                                     onClick={() => {
                                       setFlaggingLines((p) => {
                                         const n = { ...p }
-                                        delete n[line.id]
+                                        Reflect.deleteProperty(n, line.id)
                                         return n
                                       })
                                     }}
@@ -4817,7 +4873,7 @@ export default function PurchaseOrderDetail() {
                       <input
                         type="checkbox"
                         checked={line.id in lineFlagNotes}
-                        onChange={() => (line.id in lineFlagNotes ? clearFlag(line.id) : flagLine(line.id))}
+                        onChange={() => { line.id in lineFlagNotes ? clearFlag(line.id) : flagLine(line.id); }}
                         title="Flag this line for rejection"
                       />
                     ),
@@ -4893,7 +4949,7 @@ export default function PurchaseOrderDetail() {
               header: 'Qty',
               mobilePriority: 4,
               render: (line) => {
-                const fromStock = parseFloat(String(line.qty_from_stock ?? 0)) || 0
+                const fromStock = parseFloat(String(line.qty_from_stock)) || 0
                 const toPurchase = Math.max(0, line.qty - fromStock)
                 return (
                   <div>
@@ -5120,7 +5176,7 @@ export default function PurchaseOrderDetail() {
                         />
                       )}
                       {flagStyle
-                        ? `${FLAG_COLORS[activeFlag!].label} · ${openCount} open`
+                        ? `${flagStyle.label} · ${openCount} open`
                         : totalCount > 0
                           ? `💬 ${totalCount}`
                           : '+ Note'}
@@ -5259,7 +5315,7 @@ export default function PurchaseOrderDetail() {
                           </div>
                           <Textarea
                             value={lineFlagNotes[line.id] ?? ''}
-                            onChange={(e) => setFlagNote(line.id, e.target.value)}
+                            onChange={(e) => { setFlagNote(line.id, e.target.value); }}
                             placeholder="What's wrong with this line?"
                             rows={2}
                           />
@@ -5300,7 +5356,7 @@ export default function PurchaseOrderDetail() {
           {po.receipts.map((r) => {
             const receiptLineColumns: Column<{
               po_line_id: string
-              description: string
+              description: string | null
               qty_received: number
             }>[] = [
               {
@@ -5415,7 +5471,7 @@ export default function PurchaseOrderDetail() {
                       {r.notes}
                     </div>
                   )}
-                  {r.photos && r.photos.length > 0 && (
+                  {r.photos.length > 0 && (
                     <div style={{ marginBottom: '16px' }}>
                       {(() => {
                         const vendorDocs = r.photos.filter(
@@ -5694,7 +5750,7 @@ export default function PurchaseOrderDetail() {
             expected_delivery_date: po.expected_delivery_date ?? '',
             lines: po.lines.map((l) => ({
               id: l.id,
-              description: l.description,
+              description: l.description ?? '',
               // qty/unit_price come off the wire as numeric strings (e.g.
               // "1.0000") despite the POLine type claiming number — parse
               // them so the edit-request inputs don't show trailing zeros.
@@ -6236,7 +6292,7 @@ export default function PurchaseOrderDetail() {
                       lines?: { edited?: unknown[]; added?: unknown[]; removed?: string[] }
                     } = {}
                     try {
-                      parsed = JSON.parse(er.changes)
+                      parsed = JSON.parse(er.changes) as typeof parsed
                     } catch {
                       /* ignore */
                     }
@@ -6465,18 +6521,18 @@ export default function PurchaseOrderDetail() {
 
           const initAdminDraft = (): AdminCorrectionDraft => ({
             vendor_id: po.vendor_id ?? '',
-            currency_code: po.currency_code ?? '',
+            currency_code: po.currency_code,
             analytic_account_id: po.analytic_account_id ?? '',
             notes: po.notes ?? '',
             expected_delivery_date: po.expected_delivery_date ?? '',
-            priority: po.priority ?? 'low',
+            priority: po.priority,
             assigned_receiver_id: po.assigned_receiver_id ?? '',
             branch_id: po.branch_id ?? '',
             delivery_destination: po.delivery_destination ?? '',
             lines: po.lines.map((l) => ({
               id: l.id,
               product_id: l.product_id ?? '',
-              description: l.description,
+              description: l.description ?? '',
               qty: parseFloat(String(l.qty)) || 0,
               unit_price: parseFloat(String(l.unit_price)) || 0,
               uom: l.uom,
@@ -6505,11 +6561,11 @@ export default function PurchaseOrderDetail() {
             const header: Record<string, { from: unknown; to: unknown }> = {}
             const headerFields: [keyof AdminCorrectionDraft, string][] = [
               ['vendor_id', po.vendor_id ?? ''],
-              ['currency_code', po.currency_code ?? ''],
+              ['currency_code', po.currency_code],
               ['analytic_account_id', po.analytic_account_id ?? ''],
               ['notes', po.notes ?? ''],
               ['expected_delivery_date', po.expected_delivery_date ?? ''],
-              ['priority', po.priority ?? ''],
+              ['priority', po.priority],
               ['assigned_receiver_id', po.assigned_receiver_id ?? ''],
               ['branch_id', po.branch_id ?? ''],
               ['delivery_destination', po.delivery_destination ?? ''],
@@ -7820,12 +7876,12 @@ export default function PurchaseOrderDetail() {
                 srcDoc={buildPurchaseOrderHTML({
                   po_number: po.po_number,
                   status: getPOStatusLabel(po.status),
-                  priority: po.priority ?? 'low',
+                  priority: po.priority,
                   created_at: po.created_at,
                   expected_delivery_date: po.expected_delivery_date,
                   currency_code: po.currency_code,
-                  total_amount: po.total_amount,
-                  subtotal: po.subtotal ?? po.total_amount,
+                  total_amount: parseFloat(po.total_amount),
+                  subtotal: po.subtotal != null ? parseFloat(po.subtotal) : parseFloat(po.total_amount),
                   vendor_name: po.vendor_name,
                   created_by_email: po.created_by_email,
                   companyName: po.company_name,
@@ -7834,7 +7890,7 @@ export default function PurchaseOrderDetail() {
                     amount: parseFloat(ct.subtotal) || 0,
                   })),
                   lines: po.lines.map((l) => ({
-                    description: l.description,
+                    description: l.description ?? '',
                     product_name: l.product_name,
                     product_name_ar: l.product_name_ar,
                     qty: l.qty,

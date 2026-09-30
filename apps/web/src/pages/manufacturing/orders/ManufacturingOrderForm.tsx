@@ -13,15 +13,14 @@ import { Card } from '../../../components/ui/Card'
 import { Input } from '../../../components/ui/Input'
 import { Button } from '../../../components/ui/Button'
 import { useToastStore } from '../../../store/toastStore'
-import { useTheme } from '../../../theme/ThemeContext'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
+import type { BoMsQuery, BoMsQueryVariables, CreateManufacturingOrderMutation, CreateManufacturingOrderMutationVariables, ProjectsQuery, ProjectsQueryVariables, WorkCentersQuery, WorkCentersQueryVariables } from '../../../graphql/generated'
 
 export default function ManufacturingOrderForm() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const addToast = useToastStore((s) => s.addToast)
-  const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
 
   const [form, setForm] = useState({
@@ -34,24 +33,14 @@ export default function ManufacturingOrderForm() {
     notes: '',
   })
 
-  const { data: bomsData } = useQuery(BOMS_QUERY, { variables: { isActive: true } })
-  const { data: wcsData } = useQuery(WORK_CENTERS_QUERY, { variables: { isActive: true } })
-  const { data: projData } = useQuery(PROJECTS_QUERY, { variables: { status: 'active' } })
-  const [createMO, { loading }] = useMutation(CREATE_MANUFACTURING_ORDER)
+  const { data: bomsData } = useQuery<BoMsQuery, BoMsQueryVariables>(BOMS_QUERY, { variables: { isActive: true } })
+  const { data: wcsData } = useQuery<WorkCentersQuery, WorkCentersQueryVariables>(WORK_CENTERS_QUERY, { variables: { isActive: true } })
+  const { data: projData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, { variables: { status: 'active' } })
+  const [createMO, { loading }] = useMutation<CreateManufacturingOrderMutation, CreateManufacturingOrderMutationVariables>(CREATE_MANUFACTURING_ORDER)
 
   const boms = bomsData?.boms ?? []
   const workCenters = wcsData?.workCenters ?? []
-  const projects = projData?.projects?.data ?? []
-
-  const selectStyle: React.CSSProperties = {
-    width: '100%',
-    background: theme.bgSurface,
-    color: theme.textPrimary,
-    border: `1px solid ${theme.border}`,
-    borderRadius: '6px',
-    padding: '8px 12px',
-    fontSize: '13px',
-  }
+  const projects = projData?.projects.data ?? []
 
   // auto-select work center if only one
   useEffect(() => {
@@ -80,6 +69,10 @@ export default function ManufacturingOrderForm() {
         variables: { input },
         refetchQueries: [{ query: MANUFACTURING_ORDERS_QUERY }],
       })
+      if (!res.data?.createManufacturingOrder) {
+        addToast({ type: 'error', message: 'Manufacturing order creation did not return a result' })
+        return
+      }
       addToast({ type: 'success', message: 'Manufacturing order created' })
       navigate(`/manufacturing/orders/${res.data.createManufacturingOrder.id}`)
     } catch (err) {
@@ -92,7 +85,7 @@ export default function ManufacturingOrderForm() {
       <PageHeader title="New Manufacturing Order" subtitle="Create from BOM" />
       <Card style={{ marginTop: '20px' }}>
         <form
-          onSubmit={handleSubmit}
+          onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}
         >
           <div
@@ -110,7 +103,7 @@ export default function ManufacturingOrderForm() {
                   setForm((f) => ({ ...f, bom_id: v }))
                 }}
                 placeholder="Select BOM…"
-                options={boms.map((b: { id: string; product_name?: string; version: string }) => ({
+                options={boms.map((b) => ({
                   value: b.id,
                   label: `${b.product_name} v${b.version}`,
                 }))}

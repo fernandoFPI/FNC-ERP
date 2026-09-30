@@ -33,7 +33,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllEnvs()
-  document.removeEventListener('visibilitychange', () => {})
 })
 
 describe('VersionCheck', () => {
@@ -88,8 +87,10 @@ describe('VersionCheck', () => {
     await vi.advanceTimersByTimeAsync(0)
     await vi.advanceTimersByTimeAsync(60_000)
 
-    const toastArg = addToast.mock.calls[0]![0] as { actions: { label: string; onClick: () => void }[] }
-    toastArg.actions[0]!.onClick()
+    const firstCallArgs = (addToast.mock.calls as unknown[][]).at(0)
+    if (!firstCallArgs) throw new Error('Expected addToast to have been called')
+    const toastArg = firstCallArgs[0] as { actions: { label: string; onClick: () => void }[] }
+    toastArg.actions[0].onClick()
     expect(reloadSpy).toHaveBeenCalledTimes(1)
   })
 })

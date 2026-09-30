@@ -102,7 +102,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 function statusColor(status: string) {
-  return STATUS_COLORS[status?.toLowerCase()] ?? '#94a3b8'
+  return STATUS_COLORS[status.toLowerCase()] ?? '#94a3b8'
 }
 
 function ScatterTooltip({
@@ -166,7 +166,7 @@ export default function ExecutiveDashboard() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh

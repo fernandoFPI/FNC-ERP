@@ -378,7 +378,7 @@ export default function ExpenseCategoriesPage() {
           >
             Cancel
           </Button>
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+          <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)} disabled={saving}>
             {saving ? 'Saving…' : editing ? 'Update' : 'Create'}
           </Button>
         </div>
@@ -389,7 +389,7 @@ export default function ExpenseCategoriesPage() {
         onClose={() => {
           setDeactivatingId(null)
         }}
-        onConfirm={handleDeactivate}
+        onConfirm={(...args: Parameters<typeof handleDeactivate>) => void handleDeactivate(...args)}
         title="Deactivate category"
         message="This will deactivate the category. It will no longer appear in dropdowns for new lines. Existing entries are unaffected."
         confirmLabel="Deactivate"

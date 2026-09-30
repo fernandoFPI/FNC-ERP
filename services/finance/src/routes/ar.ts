@@ -1,6 +1,7 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
-import { query } from '@fnc-erp/db'
+import { query, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -9,7 +10,7 @@ export const arRouter: IRouter = Router()
 // ── GET /finance/ar/summary ───────────────────────────────────
 // Unified AR: project invoices + rental invoices combined
 // rental_invoices has no due_date/amount_paid/company_id — proxied via join + billing_period_end
-arRouter.get('/summary', requirePermission('finance.ar.view', 'view'), async (req, res) => {
+arRouter.get('/summary', requirePermission('finance.ar.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const result = await query(
       `
@@ -70,20 +71,20 @@ arRouter.get('/summary', requirePermission('finance.ar.view', 'view'), async (re
         )::integer                                                           AS overdue_count
       FROM all_inv
     `,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
 
     sendOk(res, result.rows[0])
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get AR summary', err)
   }
-})
+}))
 
 // ── GET /finance/ar/wht-recoverable ──────────────────────────
 // WHT withheld by clients from FNC invoices (client_withholds scenario) YTD
-arRouter.get('/wht-recoverable', requirePermission('finance.ar.view', 'view'), async (req, res) => {
+arRouter.get('/wht-recoverable', requirePermission('finance.ar.view', 'view'), asyncHandler(async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const year = new Date().getFullYear()
     const result = await query(
       `SELECT
@@ -109,11 +110,11 @@ arRouter.get('/wht-recoverable', requirePermission('finance.ar.view', 'view'), a
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get WHT recoverable', err)
   }
-})
+}))
 
 // ── GET /finance/ar/invoices ──────────────────────────────────
 // All outstanding AR invoices unified, oldest overdue first
-arRouter.get('/invoices', requirePermission('finance.ar.view', 'view'), async (req, res) => {
+arRouter.get('/invoices', requirePermission('finance.ar.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const {
       source_type,
@@ -183,18 +184,18 @@ arRouter.get('/invoices', requirePermission('finance.ar.view', 'view'), async (r
         days_overdue DESC, due_date ASC
       LIMIT $2 OFFSET $3
     `,
-      [req.auth!.companyId, parseInt(limit), offset],
+      [getAuth(req).companyId, parseInt(limit), offset],
     )
 
     sendOk(res, result.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list AR invoices', err)
   }
-})
+}))
 
 // ── GET /finance/ar/by-client ─────────────────────────────────
 // Outstanding AR grouped by client, highest balance first
-arRouter.get('/by-client', requirePermission('finance.ar.view', 'view'), async (req, res) => {
+arRouter.get('/by-client', requirePermission('finance.ar.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const result = await query(
       `
@@ -235,11 +236,11 @@ arRouter.get('/by-client', requirePermission('finance.ar.view', 'view'), async (
       GROUP BY client_name
       ORDER BY total_outstanding DESC
     `,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
 
     sendOk(res, result.rows)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get AR by client', err)
   }
-})
+}))

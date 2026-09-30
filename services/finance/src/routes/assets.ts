@@ -1,8 +1,9 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { query, withTransaction } from '@fnc-erp/db'
-import { sendOk, sendError } from '../lib/errors.js'
+import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
@@ -94,22 +95,22 @@ async function nextAssetNumber(companyId: string): Promise<string> {
 assetsRouter.get(
   '/categories',
   requirePermission('finance.assets.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const r = await query(`SELECT * FROM asset_categories WHERE company_id=$1 ORDER BY name`, [
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       sendOk(res, r.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list categories', err)
     }
-  },
+  }),
 )
 
 assetsRouter.post(
   '/categories',
   requirePermission('finance.assets.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const schema = z.object({
       name: z.string().min(1),
       default_depreciation_method: z
@@ -124,7 +125,7 @@ assetsRouter.post(
         `INSERT INTO asset_categories (company_id, name, default_depreciation_method, default_useful_life_months, default_declining_rate)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
         [
-          req.auth!.companyId,
+          getAuth(req).companyId,
           d.name,
           d.default_depreciation_method,
           d.default_useful_life_months ?? null,
@@ -135,12 +136,12 @@ assetsRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create category', err)
     }
-  },
+  }),
 )
 
 // ─── Summary / KPIs ──────────────────────────────────────────────────────────
 
-assetsRouter.get('/summary', requirePermission('finance.assets.view', 'view'), async (req, res) => {
+assetsRouter.get('/summary', requirePermission('finance.assets.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const r = await query(
       `SELECT
@@ -160,20 +161,20 @@ assetsRouter.get('/summary', requirePermission('finance.assets.view', 'view'), a
              )
          )::int AS pending_this_month
        FROM fixed_assets WHERE company_id=$1`,
-      [req.auth!.companyId],
+      [getAuth(req).companyId],
     )
     sendOk(res, r.rows[0])
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get summary', err)
   }
-})
+}))
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 
-assetsRouter.get('/', requirePermission('finance.assets.view', 'view'), async (req, res) => {
+assetsRouter.get('/', requirePermission('finance.assets.view', 'view'), asyncHandler(async (req, res) => {
   try {
-    const { status, category_id, search } = req.query
-    const params: unknown[] = [req.auth!.companyId]
+    const { status, category_id, search } = req.query as Record<string, string>
+    const params: unknown[] = [getAuth(req).companyId]
     let where = `fa.company_id=$1`
     if (status) {
       params.push(status)
@@ -200,7 +201,7 @@ assetsRouter.get('/', requirePermission('finance.assets.view', 'view'), async (r
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list assets', err)
   }
-})
+}))
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
@@ -223,10 +224,10 @@ const createSchema = z.object({
   notes: z.string().optional(),
 })
 
-assetsRouter.post('/', requirePermission('finance.assets.edit', 'edit'), async (req, res) => {
+assetsRouter.post('/', requirePermission('finance.assets.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
     const d = createSchema.parse(req.body)
-    const assetNumber = await nextAssetNumber(req.auth!.companyId)
+    const assetNumber = await nextAssetNumber(getAuth(req).companyId)
     const r = await query(
       `INSERT INTO fixed_assets
          (company_id, asset_number, name, description, category_id, serial_number, location,
@@ -236,7 +237,7 @@ assetsRouter.post('/', requirePermission('finance.assets.edit', 'edit'), async (
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$9,$14,$15,$16,$17,$18,$19)
        RETURNING *`,
       [
-        req.auth!.companyId,
+        getAuth(req).companyId,
         assetNumber,
         d.name,
         d.description ?? null,
@@ -254,26 +255,26 @@ assetsRouter.post('/', requirePermission('finance.assets.edit', 'edit'), async (
         d.dep_expense_account_id ?? null,
         d.vendor_id ?? null,
         d.notes ?? null,
-        req.auth!.userId,
+        getAuth(req).userId,
       ],
     )
     await logAudit({
-      companyId: req.auth!.companyId,
-      userId: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      userId: getAuth(req).userId,
       action: 'CREATE',
       tableName: 'fixed_assets',
-      recordId: r.rows[0]!['id'] as string,
+      recordId: firstRowOrThrow(r)['id'] as string,
       newValues: d,
     })
     sendOk(res, r.rows[0], 201)
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create asset', err)
   }
-})
+}))
 
 // ─── Get by ID ────────────────────────────────────────────────────────────────
 
-assetsRouter.get('/:id', requirePermission('finance.assets.view', 'view'), async (req, res) => {
+assetsRouter.get('/:id', requirePermission('finance.assets.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const [assetRes, scheduleRes] = await Promise.all([
       query(
@@ -287,7 +288,7 @@ assetsRouter.get('/:id', requirePermission('finance.assets.view', 'view'), async
          LEFT JOIN chart_of_accounts a2 ON a2.id=fa.accum_dep_account_id
          LEFT JOIN chart_of_accounts a3 ON a3.id=fa.dep_expense_account_id
          WHERE fa.id=$1 AND fa.company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+        [req.params['id'], getAuth(req).companyId],
       ),
       query(`SELECT * FROM asset_depreciation_schedule WHERE asset_id=$1 ORDER BY period`, [
         req.params['id'],
@@ -301,15 +302,15 @@ assetsRouter.get('/:id', requirePermission('finance.assets.view', 'view'), async
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get asset', err)
   }
-})
+}))
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 
-assetsRouter.patch('/:id', requirePermission('finance.assets.edit', 'edit'), async (req, res) => {
+assetsRouter.patch('/:id', requirePermission('finance.assets.edit', 'edit'), asyncHandler(async (req, res) => {
   try {
     const asset = await query(`SELECT * FROM fixed_assets WHERE id=$1 AND company_id=$2`, [
       req.params['id'],
-      req.auth!.companyId,
+      getAuth(req).companyId,
     ])
     if (!asset.rows[0]) {
       sendError(res, 404, 'NOT_FOUND', 'Asset not found')
@@ -363,35 +364,35 @@ assetsRouter.patch('/:id', requirePermission('finance.assets.edit', 'edit'), asy
       return
     }
     fields.push(`updated_at=NOW()`)
-    params.push(req.params['id'], req.auth!.companyId)
+    params.push(req.params['id'], getAuth(req).companyId)
     const r = await query(
       `UPDATE fixed_assets SET ${fields.join(',')} WHERE id=$${idx++} AND company_id=$${idx} RETURNING *`,
       params,
     )
     await logAudit({
-      companyId: req.auth!.companyId,
-      userId: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      userId: getAuth(req).userId,
       action: 'UPDATE',
       tableName: 'fixed_assets',
-      recordId: req.params['id']!,
+      recordId: requireParam(req, 'id'),
       newValues: d,
     })
     sendOk(res, r.rows[0])
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update asset', err)
   }
-})
+}))
 
 // ─── Activate ─────────────────────────────────────────────────────────────────
 
 assetsRouter.post(
   '/:id/activate',
   requirePermission('finance.assets.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const existing = await query(`SELECT * FROM fixed_assets WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       const asset = existing.rows[0]
       if (!asset) {
@@ -417,7 +418,7 @@ assetsRouter.post(
       )
 
       const result = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           for (const line of schedule) {
             await client.query(
@@ -442,8 +443,8 @@ assetsRouter.post(
       )
 
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'fixed_assets',
         recordId: asset['id'] as string,
@@ -457,7 +458,7 @@ assetsRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to activate asset', err)
     }
-  },
+  }),
 )
 
 // ─── Run Depreciation (single period) ────────────────────────────────────────
@@ -465,7 +466,7 @@ assetsRouter.post(
 assetsRouter.post(
   '/run-depreciation',
   requirePermission('finance.assets.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const period =
       (req.body.period as string | undefined) ??
       (() => {
@@ -479,9 +480,9 @@ assetsRouter.post(
         `SELECT COUNT(*) AS cnt FROM asset_depreciation_schedule ads
        JOIN fixed_assets fa ON fa.id=ads.asset_id
        WHERE fa.company_id=$1 AND ads.period=$2 AND ads.status='pending' AND fa.status='active'`,
-        [req.auth!.companyId, period],
+        [getAuth(req).companyId, period],
       )
-      if (Number(pendingCheck.rows[0]!['cnt']) === 0) {
+      if (Number(firstRowOrThrow(pendingCheck)['cnt']) === 0) {
         sendOk(res, {
           posted: 0,
           period,
@@ -491,7 +492,7 @@ assetsRouter.post(
       }
 
       const posted = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const lines = await client.query(
             `SELECT ads.*, fa.name AS asset_name, fa.asset_number, fa.purchase_cost, fa.salvage_value,
@@ -500,7 +501,7 @@ assetsRouter.post(
            JOIN fixed_assets fa ON fa.id=ads.asset_id
            WHERE fa.company_id=$1 AND ads.period=$2 AND ads.status='pending' AND fa.status='active'
            FOR UPDATE OF ads`,
-            [req.auth!.companyId, period],
+            [getAuth(req).companyId, period],
           )
           const postedIds: string[] = []
           for (const line of lines.rows) {
@@ -514,14 +515,14 @@ assetsRouter.post(
                 `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status, created_by)
                VALUES ($1,$2,$3,$4,'depreciation','posted',$5) RETURNING id`,
                 [
-                  req.auth!.companyId,
+                  getAuth(req).companyId,
                   `DEP-${line.asset_number as string}-${period}`,
                   `Depreciation: ${line.asset_name as string} — ${period}`,
                   `${period}-01`,
-                  req.auth!.userId,
+                  getAuth(req).userId,
                 ],
               )
-              journalEntryId = jeRes.rows[0]!.id as string
+              journalEntryId = firstRowOrThrow(jeRes).id as string
               await client.query(
                 `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
                 [
@@ -565,7 +566,7 @@ assetsRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to run depreciation', err)
     }
-  },
+  }),
 )
 
 // ─── Dispose ──────────────────────────────────────────────────────────────────
@@ -573,7 +574,7 @@ assetsRouter.post(
 assetsRouter.post(
   '/:id/dispose',
   requirePermission('finance.assets.edit', 'edit'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const disposeSchema = z.object({
       disposal_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       disposal_proceeds: z.coerce.number().min(0).default(0),
@@ -586,7 +587,7 @@ assetsRouter.post(
 
       const existing = await query(`SELECT * FROM fixed_assets WHERE id=$1 AND company_id=$2`, [
         req.params['id'],
-        req.auth!.companyId,
+        getAuth(req).companyId,
       ])
       const asset = existing.rows[0]
       if (!asset) {
@@ -610,21 +611,21 @@ assetsRouter.post(
       const purchaseCost = Number(asset['purchase_cost'])
 
       const updated = await withTransaction(
-        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           if (asset['asset_account_id'] && asset['accum_dep_account_id']) {
             const jeRes = await client.query(
               `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status, created_by)
              VALUES ($1,$2,$3,$4,'asset_disposal','posted',$5) RETURNING id`,
               [
-                req.auth!.companyId,
+                getAuth(req).companyId,
                 `DISP-${asset['asset_number'] as string}`,
                 `Disposal: ${asset['name'] as string}`,
                 d.disposal_date,
-                req.auth!.userId,
+                getAuth(req).userId,
               ],
             )
-            const jeId = jeRes.rows[0]!.id as string
+            const jeId = firstRowOrThrow(jeRes).id as string
             await client.query(
               `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
               [
@@ -691,8 +692,8 @@ assetsRouter.post(
       )
 
       await logAudit({
-        companyId: req.auth!.companyId,
-        userId: req.auth!.userId,
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'fixed_assets',
         recordId: asset['id'] as string,
@@ -702,5 +703,5 @@ assetsRouter.post(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to dispose asset', err)
     }
-  },
+  }),
 )

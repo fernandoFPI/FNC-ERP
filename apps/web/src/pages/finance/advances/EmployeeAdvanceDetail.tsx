@@ -1264,10 +1264,10 @@ export default function EmployeeAdvanceDetail() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={async () => {
+                onClick={() => void (async () => {
                   await act('approve', { cost_center_id: approveCostCenterId || undefined })
                   setShowApprove(false)
-                }}
+                })()}
                 disabled={acting}
               >
                 Approve &amp; Issue
@@ -1317,11 +1317,11 @@ export default function EmployeeAdvanceDetail() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={async () => {
+                onClick={() => void (async () => {
                   await act('reject', { reason: rejectReason })
                   setShowReject(false)
                   setRejectReason('')
-                }}
+                })()}
                 disabled={acting || !rejectReason}
               >
                 Reject Advance
@@ -1370,13 +1370,13 @@ export default function EmployeeAdvanceDetail() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={async () => {
+                onClick={() => void (async () => {
                   await actOnSettlement(rejectingSettlementId, 'reject', {
                     reason: settlementRejectReason,
                   })
                   setRejectingSettlementId(null)
                   setSettlementRejectReason('')
-                }}
+                })()}
                 disabled={acting || !settlementRejectReason}
               >
                 Reject Settlement
@@ -1642,11 +1642,11 @@ export default function EmployeeAdvanceDetail() {
               <Button
                 variant="danger"
                 size="sm"
-                onClick={async () => {
+                onClick={() => void (async () => {
                   await act('void', { reason: voidReason })
                   setShowVoid(false)
                   setVoidReason('')
-                }}
+                })()}
                 disabled={acting || !voidReason}
               >
                 Void Advance

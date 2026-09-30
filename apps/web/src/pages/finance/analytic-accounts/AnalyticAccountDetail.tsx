@@ -79,7 +79,7 @@ export default function AnalyticAccountDetail() {
         <div className="skeleton" style={{ height: 300 }} />
       </div>
     )
-  if (error || !account)
+  if (error ?? !account)
     return (
       <div style={{ padding: '24px' }}>
         <Button
@@ -329,7 +329,7 @@ export default function AnalyticAccountDetail() {
                       const isDebit = parseFloat(line.debit) > 0
                       const isCredit = parseFloat(line.credit) > 0
                       const amt = isDebit ? parseFloat(line.debit) : parseFloat(line.credit)
-                      const cur = line.currency_code?.trim() || 'IQD'
+                      const cur = line.currency_code.trim() || 'IQD'
                       return (
                         <>
                           <span style={{ color: isCredit ? theme.success : theme.textPrimary }}>

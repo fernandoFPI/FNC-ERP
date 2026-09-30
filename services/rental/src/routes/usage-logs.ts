@@ -3,8 +3,9 @@ import type { IRouter } from 'express'
 import { z } from 'zod'
 import { pool, query } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
+import { getAuth } from '@fnc-erp/auth'
 import { logger } from '@fnc-erp/logger'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const usageLogsRouter: IRouter = Router({ mergeParams: true })
@@ -31,7 +32,7 @@ usageLogsRouter.get('/', requirePermission('rental.assets.view', 'view'), async 
     const limit = Math.min(100, parseInt((req.query['limit'] as string) ?? '30'))
     const offset = (page - 1) * limit
 
-    const params: unknown[] = [(req.params as Record<string, string>)['id']!]
+    const params: unknown[] = [requireParam(req, 'id')]
     const conditions: string[] = []
     let idx = 2
     if (from_date) { conditions.push(`eul.log_date >= $${idx++}`); params.push(from_date) }
@@ -56,7 +57,7 @@ usageLogsRouter.get('/', requirePermission('rental.assets.view', 'view'), async 
 
     const stats = await query(
       `SELECT * FROM equipment_asset_stats WHERE asset_id = $1`,
-      [(req.params as Record<string, string>)['id']!],
+      [requireParam(req, 'id')],
     )
 
     sendOk(res, { logs: logs.rows, stats: stats.rows[0] ?? null })
@@ -70,7 +71,7 @@ usageLogsRouter.get('/summary', requirePermission('rental.assets.view', 'view'),
   try {
     const { from_date, to_date } = req.query as Record<string, string>
 
-    const params: unknown[] = [(req.params as Record<string, string>)['id']!]
+    const params: unknown[] = [requireParam(req, 'id')]
     const conditions: string[] = []
     let idx = 2
     if (from_date) { conditions.push(`log_date >= $${idx++}`); params.push(from_date) }
@@ -108,12 +109,12 @@ usageLogsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async
 
   const { log_date, hours_operated, fuel_consumed_liters, odometer_km,
           engine_hours, contract_id, project_id, notes, recorded_via } = parsed.data
-  const assetId = (req.params as Record<string, string>)['id']!!
+  const assetId = requireParam(req, 'id')
 
   try {
     const assetRes = await query(
       `SELECT id, status FROM equipment_assets WHERE id = $1 AND company_id = $2`,
-      [assetId, req.auth!.companyId],
+      [assetId, getAuth(req).companyId],
     )
     if (!assetRes.rows[0]) {
       sendError(res, 404, 'ASSET_NOT_FOUND', 'Asset not found')
@@ -150,13 +151,13 @@ usageLogsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async
          RETURNING *`,
         [assetId, contract_id ?? null, project_id ?? null, log_date,
          hours_operated, fuel_consumed_liters ?? null, odometer_km ?? null,
-         engine_hours ?? null, req.auth!.userId, recorded_via, notes ?? null],
+         engine_hours ?? null, getAuth(req).userId, recorded_via, notes ?? null],
       )
       usageLog = result.rows[0] as Record<string, unknown>
 
       await logAudit({
-        userId: req.auth!.userId,
-        companyId: req.auth!.companyId,
+        userId: getAuth(req).userId,
+        companyId: getAuth(req).companyId,
         action: 'USAGE_LOG_SUBMITTED',
         tableName: 'equipment_usage_logs',
         recordId: usageLog['id'] as string,
@@ -208,7 +209,7 @@ usageLogsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async
 
 // POST /rental/assets/:id/usage/:logId/verify
 usageLogsRouter.post('/:logId/verify', requirePermission('rental.assets.edit', 'edit'), async (req, res) => {
-  const role = req.auth!.role
+  const role = getAuth(req).role
   if (!['module_admin', 'company_admin', 'system_admin'].includes(role)) {
     sendError(res, 403, 'FORBIDDEN', 'Module admin or above required to verify usage logs')
     return
@@ -219,7 +220,7 @@ usageLogsRouter.post('/:logId/verify', requirePermission('rental.assets.edit', '
       `UPDATE equipment_usage_logs
        SET is_verified = true, verified_by = $1, verified_at = NOW(), updated_at = NOW()
        WHERE id = $2 AND asset_id = $3`,
-      [req.auth!.userId, req.params['logId'], (req.params as Record<string, string>)['id']!],
+      [getAuth(req).userId, req.params['logId'], requireParam(req, 'id')],
     )
     sendOk(res, { message: 'Usage log verified' })
   } catch (err) {

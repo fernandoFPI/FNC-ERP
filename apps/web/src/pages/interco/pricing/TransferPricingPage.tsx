@@ -78,7 +78,7 @@ export default function TransferPricingPage() {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Transfer pricing updated' })
       setEditing(false)
-      refetchSettings()
+      void refetchSettings()
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -142,7 +142,7 @@ export default function TransferPricingPage() {
   }
 
   function handleSave() {
-    updatePricing({
+    void updatePricing({
       variables: {
         companyId: selectedCompanyId,
         input: {

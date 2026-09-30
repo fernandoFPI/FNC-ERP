@@ -17,22 +17,23 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { EmployeeAvatar } from '../../../components/ui/EmployeeAvatar'
 import { PermissionGate } from '../../../components/ui/PermissionGate'
+import type { DepartmentsQuery, DepartmentsQueryVariables, EmployeesQuery, EmployeesQueryVariables } from '../../../graphql/generated'
 
 interface Employee {
   id: string
-  employee_number?: string
+  employee_number?: string | null
   first_name: string
   last_name: string
-  job_title?: string
-  employment_type?: string
+  job_title?: string | null
+  employment_type?: string | null
   status: string
-  department_name?: string
-  hire_date?: string
+  department_name?: string | null
+  hire_date?: string | null
 }
 
 function downloadCSV(rows: string[][], filename: string) {
   const content = rows
-    .map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))
+    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n')
   const blob = new Blob(['﻿' + content, ''], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
@@ -55,7 +56,7 @@ export default function EmployeesPage() {
     FILTER_DEFAULTS,
   )
 
-  const { data, loading, refetch } = useQuery(EMPLOYEES_QUERY, {
+  const { data, loading, refetch } = useQuery<EmployeesQuery, EmployeesQueryVariables>(EMPLOYEES_QUERY, {
     variables: {
       department_id: deptFilter || undefined,
       is_active: showInactive ? undefined : true,
@@ -63,12 +64,12 @@ export default function EmployeesPage() {
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('employee', () => void refetch())
-  const { data: deptData } = useQuery(DEPARTMENTS_QUERY)
+  const { data: deptData } = useQuery<DepartmentsQuery, DepartmentsQueryVariables>(DEPARTMENTS_QUERY)
 
-  const employees: Employee[] = data?.employees ?? []
+  const employees: Employee[] = (data?.employees ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const departments = deptData?.departments ?? []
 
-  const deptOptions = departments.map((d: { id: string; name: string }) => ({
+  const deptOptions = departments.filter((v): v is NonNullable<typeof v> => v !== null).map((d) => ({
     value: d.id,
     label: d.name,
   }))
@@ -207,7 +208,7 @@ export default function EmployeesPage() {
               },
             ]}
             resultCount={filtered.length}
-            onRefresh={() => refetch()}
+            onRefresh={() => void refetch()}
           >
             <button
               onClick={() => {

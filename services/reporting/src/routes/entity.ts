@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
 import { query } from '@fnc-erp/db'
+import { getAuth } from '@fnc-erp/auth'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -9,7 +10,7 @@ export const entityRouter: IRouter = Router()
 // GET /reporting/trial-balance?company_id&as_of_date
 entityRouter.get('/trial-balance', requirePermission('reporting.financial.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const asOfDate = req.query['as_of_date'] as string | undefined
     const dateClause = asOfDate ? `AND je.entry_date <= '${asOfDate}'` : ''
     const result = await query(
@@ -33,7 +34,7 @@ entityRouter.get('/trial-balance', requirePermission('reporting.financial.view',
 // GET /reporting/profit-loss?company_id&from_date&to_date
 entityRouter.get('/profit-loss', requirePermission('reporting.financial.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const { from_date, to_date } = req.query
     let dateClause = `je.company_id = $1 AND je.status = 'posted'`
     const params: unknown[] = [companyId]
@@ -61,7 +62,7 @@ entityRouter.get('/profit-loss', requirePermission('reporting.financial.view', '
 // GET /reporting/balance-sheet?company_id&as_of_date
 entityRouter.get('/balance-sheet', requirePermission('reporting.financial.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
     const asOfDate = req.query['as_of_date'] as string | undefined
     const dateClause = asOfDate ? `AND je.entry_date <= '${asOfDate}'` : ''
     const result = await query(
@@ -84,9 +85,9 @@ entityRouter.get('/balance-sheet', requirePermission('reporting.financial.view',
 // Indirect method: Net Income → working capital adjustments → investing → financing
 entityRouter.get('/cash-flow', requirePermission('reporting.financial.view', 'view'), async (req, res) => {
   try {
-    const companyId = (req.query['company_id'] as string) || req.auth!.companyId
-    const fromDate = (req.query['from_date'] as string) ?? new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]!
-    const toDate = (req.query['to_date'] as string) ?? new Date().toISOString().split('T')[0]!
+    const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
+    const fromDate = (req.query['from_date'] as string) ?? new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10)
+    const toDate = (req.query['to_date'] as string) ?? new Date().toISOString().slice(0, 10)
 
     const [netIncomeRes, assetRes, liabilityRes, equityRes, cashRes] = await Promise.all([
       // Net income for the period

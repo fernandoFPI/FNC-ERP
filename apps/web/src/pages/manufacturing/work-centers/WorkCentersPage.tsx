@@ -16,6 +16,7 @@ import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreateWorkCenterMutation, CreateWorkCenterMutationVariables, UpdateWorkCenterMutation, UpdateWorkCenterMutationVariables, WorkCentersQuery, WorkCentersQueryVariables } from '../../../graphql/generated'
 
 interface WorkCenter {
   id: string
@@ -41,11 +42,11 @@ export default function WorkCentersPage() {
     is_active: true,
   })
 
-  const { data, loading, refetch } = useQuery(WORK_CENTERS_QUERY, {
+  const { data, loading, refetch } = useQuery<WorkCentersQuery, WorkCentersQueryVariables>(WORK_CENTERS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
-  const [createWC, { loading: creating }] = useMutation(CREATE_WORK_CENTER)
-  const [updateWC, { loading: updating }] = useMutation(UPDATE_WORK_CENTER)
+  const [createWC, { loading: creating }] = useMutation<CreateWorkCenterMutation, CreateWorkCenterMutationVariables>(CREATE_WORK_CENTER)
+  const [updateWC, { loading: updating }] = useMutation<UpdateWorkCenterMutation, UpdateWorkCenterMutationVariables>(UPDATE_WORK_CENTER)
 
   const workCenters: WorkCenter[] = data?.workCenters ?? []
 
@@ -93,7 +94,7 @@ export default function WorkCentersPage() {
         addToast({ type: 'success', message: 'Work center created' })
       }
       setShowForm(false)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -181,7 +182,7 @@ export default function WorkCentersPage() {
         title={editId ? 'Edit Work Center' : 'New Work Center'}
       >
         <form
-          onSubmit={handleSubmit}
+          onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>

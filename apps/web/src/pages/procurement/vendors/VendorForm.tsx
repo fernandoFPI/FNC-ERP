@@ -15,6 +15,7 @@ import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { Checkbox } from '../../../components/ui/Checkbox'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreateVendorMutation, CreateVendorMutationVariables, UpdateVendorMutation, UpdateVendorMutationVariables, VendorQuery, VendorQueryVariables } from '../../../graphql/generated'
 
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED', 'SAR']
 
@@ -80,8 +81,8 @@ export default function VendorForm() {
     is_active: true,
   })
 
-  const { data: vendorData } = useQuery(VENDOR_QUERY, {
-    variables: { id },
+  const { data: vendorData } = useQuery<VendorQuery, VendorQueryVariables>(VENDOR_QUERY, {
+    variables: { id: id ?? '' },
     skip: !isEdit,
   })
 
@@ -89,11 +90,11 @@ export default function VendorForm() {
     const v = vendorData?.vendor
     if (!v) return
     setForm({
-      name: v.name ?? '',
+      name: v.name,
       legal_name: v.legal_name ?? '',
       tax_id: v.tax_id ?? '',
-      currency_code: v.currency_code ?? 'IQD',
-      payment_terms_days: String(v.payment_terms_days ?? 30),
+      currency_code: v.currency_code,
+      payment_terms_days: String(v.payment_terms_days),
       country_code: v.country_code ?? '',
       city: v.city ?? '',
       address: v.address ?? '',
@@ -101,12 +102,12 @@ export default function VendorForm() {
       contact_email: v.contact_email ?? '',
       contact_phone: v.contact_phone ?? '',
       bank_name: v.bank_name ?? '',
-      is_active: v.is_active ?? true,
+      is_active: v.is_active,
     })
   }, [vendorData])
 
-  const [createVendor, { loading: creating }] = useMutation(CREATE_VENDOR)
-  const [updateVendor, { loading: updating }] = useMutation(UPDATE_VENDOR)
+  const [createVendor, { loading: creating }] = useMutation<CreateVendorMutation, CreateVendorMutationVariables>(CREATE_VENDOR)
+  const [updateVendor, { loading: updating }] = useMutation<UpdateVendorMutation, UpdateVendorMutationVariables>(UPDATE_VENDOR)
 
   const field =
     (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -148,7 +149,7 @@ export default function VendorForm() {
         backPath="/procurement/vendors"
       />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <Card
           style={{
             marginTop: '20px',

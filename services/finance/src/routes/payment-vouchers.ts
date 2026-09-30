@@ -1,9 +1,10 @@
 import { Router } from 'express'
+import { getAuth } from '@fnc-erp/auth'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { pool, query } from '@fnc-erp/db'
+import { pool, query, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const paymentVouchersRouter: IRouter = Router()
@@ -39,9 +40,9 @@ const CreateVoucherSchema = z.object({
 paymentVouchersRouter.get(
   '/',
   requirePermission('finance.journals.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const { status, from_date, to_date, page = '1', limit = '50' } = req.query
       const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
 
@@ -76,16 +77,16 @@ paymentVouchersRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch payment vouchers', err)
     }
-  },
+  }),
 )
 
 // ── GET /:id — single voucher with lines + linked journals ────────────────────
 paymentVouchersRouter.get(
   '/:id',
   requirePermission('finance.journals.view', 'view'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const companyId = req.auth!.companyId
+      const companyId = getAuth(req).companyId
       const pv = await query(
         `SELECT pv.*,
               COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_email,
@@ -125,15 +126,15 @@ paymentVouchersRouter.get(
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch payment voucher', err)
     }
-  },
+  }),
 )
 
 // ── POST / — create payment voucher ──────────────────────────────────────────
 paymentVouchersRouter.post(
   '/',
   requirePermission('finance.journals.edit', 'edit'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
     const parsed = CreateVoucherSchema.safeParse(req.body)
     if (!parsed.success) {
       sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -181,13 +182,12 @@ paymentVouchersRouter.post(
           notes ?? null,
           total_iqd,
           total_usd,
-          req.auth!.userId,
+          getAuth(req).userId,
         ],
       )
       const pv = pvResult.rows[0] as { id: string }
 
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i]!
+      for (const [i, l] of lines.entries()) {
         await client.query(
           `INSERT INTO payment_voucher_lines
            (payment_voucher_id, statement, acct_1, acct_2, acct_3, acct_4, acct_5,
@@ -224,7 +224,7 @@ paymentVouchersRouter.post(
 
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'CREATE',
         tableName: 'payment_vouchers',
         recordId: pv.id,
@@ -240,16 +240,16 @@ paymentVouchersRouter.post(
     } finally {
       client.release()
     }
-  },
+  }),
 )
 
 // ── PATCH /:id — update draft voucher ────────────────────────────────────────
 paymentVouchersRouter.patch(
   '/:id',
   requirePermission('finance.journals.edit', 'edit'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
-    const pvId = req.params['id']!
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
+    const pvId = requireParam(req, 'id')
     const parsed = CreateVoucherSchema.partial().safeParse(req.body)
     if (!parsed.success) {
       sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
@@ -276,8 +276,8 @@ paymentVouchersRouter.patch(
         return
       }
 
-      const total_iqd = d.lines ? d.lines.reduce((s, l) => s + (l.amount_iqd ?? 0), 0) : undefined
-      const total_usd = d.lines ? d.lines.reduce((s, l) => s + (l.amount_usd ?? 0), 0) : undefined
+      const total_iqd = d.lines ? d.lines.reduce((s, l) => s + l.amount_iqd, 0) : undefined
+      const total_usd = d.lines ? d.lines.reduce((s, l) => s + l.amount_usd, 0) : undefined
 
       // funding_source_type/petty_cash_float_id/recon_bank_account_id must
       // change together — independently COALESCEing each one (as every other
@@ -330,8 +330,7 @@ paymentVouchersRouter.patch(
 
       if (d.lines) {
         await client.query(`DELETE FROM payment_voucher_lines WHERE payment_voucher_id=$1`, [pvId])
-        for (let i = 0; i < d.lines.length; i++) {
-          const l = d.lines[i]!
+        for (const [i, l] of d.lines.entries()) {
           await client.query(
             `INSERT INTO payment_voucher_lines (payment_voucher_id, statement, acct_1, acct_2, acct_3, acct_4, acct_5, amount_iqd, amount_usd, sequence)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
@@ -343,8 +342,8 @@ paymentVouchersRouter.patch(
               l.acct_3 ?? null,
               l.acct_4 ?? null,
               l.acct_5 ?? null,
-              l.amount_iqd ?? 0,
-              l.amount_usd ?? 0,
+              l.amount_iqd,
+              l.amount_usd,
               l.sequence || i + 1,
             ],
           )
@@ -378,15 +377,15 @@ paymentVouchersRouter.patch(
     } finally {
       client.release()
     }
-  },
+  }),
 )
 
 // ── POST /:id/approve — auditor approves ─────────────────────────────────────
 paymentVouchersRouter.post(
   '/:id/approve',
   requirePermission('finance.journals.approve', 'approve'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
     try {
       const pv = await query(
         `SELECT id, status, created_by, voucher_number, total_amount_iqd, total_amount_usd FROM payment_vouchers WHERE id=$1 AND company_id=$2`,
@@ -409,14 +408,14 @@ paymentVouchersRouter.post(
       }
       const r = await query(
         `UPDATE payment_vouchers SET status='approved', audited_by=$1, audited_at=NOW(), updated_at=NOW() WHERE id=$2 RETURNING *`,
-        [req.auth!.userId, req.params['id']],
+        [getAuth(req).userId, req.params['id']],
       )
       await logAudit({
         companyId,
-        userId: req.auth!.userId,
+        userId: getAuth(req).userId,
         action: 'UPDATE',
         tableName: 'payment_vouchers',
-        recordId: req.params['id']!,
+        recordId: requireParam(req, 'id'),
         newValues: { status: 'approved' },
       })
       if (pvRow.created_by) {
@@ -431,21 +430,23 @@ paymentVouchersRouter.post(
               data: { pvId: req.params['id'], voucherNumber: pvRow.voucher_number },
             }),
           ],
-        ).catch(() => {})
+        ).catch(() => {
+          // best-effort notification — don't block the main flow on it
+        })
       }
       sendOk(res, r.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve payment voucher', err)
     }
-  },
+  }),
 )
 
 // ── POST /:id/mark-paid — mark as paid ───────────────────────────────────────
 paymentVouchersRouter.post(
   '/:id/mark-paid',
   requirePermission('finance.journals.approve', 'approve'),
-  async (req, res) => {
-    const companyId = req.auth!.companyId
+  asyncHandler(async (req, res) => {
+    const companyId = getAuth(req).companyId
     try {
       const pv = await query(
         `SELECT id, status, created_by, audited_by, voucher_number FROM payment_vouchers WHERE id=$1 AND company_id=$2`,
@@ -467,7 +468,7 @@ paymentVouchersRouter.post(
       }
       const r = await query(
         `UPDATE payment_vouchers SET status='paid', cashier_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
-        [req.auth!.userId, req.params['id']],
+        [getAuth(req).userId, req.params['id']],
       )
       // Notify the creator and auditor that the voucher has been paid
       for (const userId of [pvRow2.created_by, pvRow2.audited_by].filter(Boolean) as string[]) {
@@ -482,11 +483,13 @@ paymentVouchersRouter.post(
               data: { pvId: req.params['id'], voucherNumber: pvRow2.voucher_number },
             }),
           ],
-        ).catch(() => {})
+        ).catch(() => {
+          // best-effort notification — don't block the main flow on it
+        })
       }
       sendOk(res, r.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark as paid', err)
     }
-  },
+  }),
 )

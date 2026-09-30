@@ -235,7 +235,9 @@ export default function POReturnForm() {
                 entityType: 'po_return',
                 entityId: r.data.id,
               })
-              .catch(() => {}),
+              .catch(() => {
+                /* ignore: one failed attachment link shouldn't block the return */
+              }),
           ),
         )
       }

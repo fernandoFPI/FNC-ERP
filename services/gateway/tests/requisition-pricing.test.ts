@@ -463,7 +463,7 @@ describe('price_verification reject destinations', () => {
     expect((await getBalance(productId, warehouseId)).reserved).toBe(5)
   })
 
-  it('requires the procurement_2nd position (or admin) to act on any of the four', async () => {
+  it('requires the organizer (or admin) to act on any of the four', async () => {
     const { reqId } = await makeReqAtPriceVerification({ qtyOrdered: 2, marketPrice: 5 })
     const strangerCtx = {
       auth: { companyId: TEST_COMPANY_ID, userId: '00000000-0000-0000-0000-000000000099', role: 'user', module: 'all', sessionId: 'g1-test-stranger' },
@@ -474,6 +474,6 @@ describe('price_verification reject destinations', () => {
         { id: reqId, reason: 'x' },
         strangerCtx as never,
       ),
-    ).rejects.toThrow(/procurement_2nd position required/i)
+    ).rejects.toThrow(/organizer or an admin/i)
   })
 })

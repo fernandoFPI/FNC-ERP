@@ -23,6 +23,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
+import type { AttachFileMutation, AttachFileMutationVariables, EmployeesQuery, EmployeesQueryVariables, PurchaseOrderQuery, PurchaseOrderQueryVariables, RecordDirectDeliveryMutation, RecordDirectDeliveryMutationVariables, RecordReceiptMutation, RecordReceiptMutationVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
 
 interface ReceiptLine {
   po_line_id: string
@@ -230,8 +231,8 @@ export default function ReceiptForm() {
     {},
   )
 
-  const { data: poData } = useQuery(PURCHASE_ORDER_QUERY, {
-    variables: { id },
+  const { data: poData } = useQuery<PurchaseOrderQuery, PurchaseOrderQueryVariables>(PURCHASE_ORDER_QUERY, {
+    variables: { id: id ?? '' },
     skip: !id || isTourDemo,
   })
   const demoPurchaseOrder = isTourDemo ? buildTourDemoReceiptPO() : undefined
@@ -240,16 +241,8 @@ export default function ReceiptForm() {
     const purchaseOrder = demoPurchaseOrder ?? poData?.purchaseOrder
     if (purchaseOrder && !initialized) {
       setLines(
-        purchaseOrder.lines.map(
-          (l: {
-            id: string
-            description?: string
-            sku?: string | null
-            qty: string
-            qty_received?: string
-            qty_from_stock?: string
-            unit_price?: string
-          }) => {
+        (purchaseOrder.lines ?? []).map(
+          (l) => {
             const orderedQty = parseFloat(l.qty)
             const receivedSoFar = parseFloat(l.qty_received ?? '0')
             const fromStock = parseFloat(l.qty_from_stock ?? '0')
@@ -262,14 +255,14 @@ export default function ReceiptForm() {
               qty_received_so_far: receivedSoFar,
               qty_from_stock: fromStock,
               qty_to_receive: String(toReceive),
-              po_unit_price: parseFloat(l.unit_price ?? '0'),
+              po_unit_price: parseFloat(l.unit_price),
               selected: false,
             }
           },
         ),
       )
       // Pre-fill receiver from PO's designated receiver if set
-      const poReceiverName = purchaseOrder.assigned_receiver_name as string | null
+      const poReceiverName = purchaseOrder.assigned_receiver_name
       if (poReceiverName) {
         // Find this employee in the list to get their ID, or just store the name
         const matched = employees.find((e) => `${e.first_name} ${e.last_name}` === poReceiverName)
@@ -283,32 +276,32 @@ export default function ReceiptForm() {
     }
   }, [poData, demoPurchaseOrder, initialized])
 
-  const { data: locationsData } = useQuery(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
-  const { data: employeesData } = useQuery(EMPLOYEES_QUERY, { variables: { is_active: true } })
-  const [recordReceipt] = useMutation(RECORD_RECEIPT)
-  const [recordDirectDelivery] = useMutation(RECORD_DIRECT_DELIVERY)
-  const [attachFile] = useMutation(ATTACH_FILE)
+  const { data: locationsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
+  const { data: employeesData } = useQuery<EmployeesQuery, EmployeesQueryVariables>(EMPLOYEES_QUERY, { variables: { is_active: true } })
+  const [recordReceipt] = useMutation<RecordReceiptMutation, RecordReceiptMutationVariables>(RECORD_RECEIPT)
+  const [recordDirectDelivery] = useMutation<RecordDirectDeliveryMutation, RecordDirectDeliveryMutationVariables>(RECORD_DIRECT_DELIVERY)
+  const [attachFile] = useMutation<AttachFileMutation, AttachFileMutationVariables>(ATTACH_FILE)
 
   const po = demoPurchaseOrder ?? poData?.purchaseOrder
   // Decided once, at PO creation (PurchaseOrderForm) — not a per-receipt
   // choice, since the from-stock portion's auto Store Out already has to
   // know this at PO approval time, long before anyone reaches receiving.
-  const isJobsite = po?.purpose === 'project' && po?.delivery_destination === 'jobsite'
+  const isJobsite = po?.purpose === 'project' && po.delivery_destination === 'jobsite'
   const locations = locationsData?.stockLocations ?? []
   const employees: {
     id: string
     first_name: string
     last_name: string
-    employee_number: string
-    user_id?: string
-  }[] = employeesData?.employees ?? []
+    employee_number: string | null
+    user_id?: string | null
+  }[] = (employeesData?.employees ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   const employeeOptions = [
     { value: '', label: 'Select receiver…' },
     ...employees.map((e) => ({
       value: e.id,
       label: `${e.first_name} ${e.last_name}`,
-      sublabel: e.employee_number,
+      sublabel: e.employee_number ?? undefined,
     })),
   ]
 
@@ -356,7 +349,7 @@ export default function ReceiptForm() {
   function handleDrop(e: React.DragEvent<HTMLDivElement>, kind: PhotoKind) {
     e.preventDefault()
     setDragOverKind(null)
-    addFiles(Array.from(e.dataTransfer.files ?? []), kind)
+    addFiles(Array.from(e.dataTransfer.files), kind)
   }
 
   function removePhoto(photoId: string) {
@@ -382,7 +375,7 @@ export default function ReceiptForm() {
       variables: {
         fileId,
         entityType: 'purchase_order',
-        entityId: id,
+        entityId: id ?? '',
         label: photo.label || (photo.kind === 'vendor_receipt' ? 'Vendor Receipt' : 'Materials Received'),
       },
     })
@@ -405,7 +398,7 @@ export default function ReceiptForm() {
           if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
           setDragOverKind((prev) => (prev === kind ? null : prev))
         }}
-        onDrop={(e) => handleDrop(e, kind)}
+        onDrop={(e) => { handleDrop(e, kind); }}
         style={{
           display: 'flex',
           flexWrap: 'wrap',
@@ -528,7 +521,7 @@ export default function ReceiptForm() {
         ))}
         <button
           type="button"
-          onClick={() => openCamera(kind)}
+          onClick={() => { openCamera(kind); }}
           style={{
             width: '140px',
             height: '100px',
@@ -550,7 +543,7 @@ export default function ReceiptForm() {
         </button>
         <button
           type="button"
-          onClick={() => openGallery(kind)}
+          onClick={() => { openGallery(kind); }}
           style={{
             width: '140px',
             height: '100px',
@@ -613,7 +606,7 @@ export default function ReceiptForm() {
         if (!isRetry) {
           await recordDirectDelivery({
             variables: {
-              poId: id,
+              poId: id ?? '',
               input: {
                 received_date: form.receipt_date,
                 notes: form.notes || undefined,
@@ -672,7 +665,7 @@ export default function ReceiptForm() {
       if (receiveAll) {
         const { data: receiptData } = await recordReceipt({
           variables: {
-            poId: id,
+            poId: id ?? '',
             input: {
               receipt_date: form.receipt_date,
               location_id: form.location_id || undefined,
@@ -687,7 +680,8 @@ export default function ReceiptForm() {
             },
           },
         })
-        receiptIds = [receiptData.recordReceipt.id as string]
+        if (!receiptData?.recordReceipt) throw new Error('Receipt creation did not return a result')
+        receiptIds = [receiptData.recordReceipt.id]
       } else {
         // Group lines by their effective receiver (per-line override, falling back
         // to the top "Received By" field), then file one draft receipt per distinct
@@ -707,7 +701,7 @@ export default function ReceiptForm() {
         for (const { name, lines: groupLines } of groups.values()) {
           const { data: receiptData } = await recordReceipt({
             variables: {
-              poId: id,
+              poId: id ?? '',
               input: {
                 receipt_date: form.receipt_date,
                 location_id: form.location_id || undefined,
@@ -722,7 +716,8 @@ export default function ReceiptForm() {
               },
             },
           })
-          newIds.push(receiptData.recordReceipt.id as string)
+          if (!receiptData?.recordReceipt) throw new Error('Receipt creation did not return a result')
+          newIds.push(receiptData.recordReceipt.id)
         }
         receiptIds = newIds
       }
@@ -917,7 +912,7 @@ export default function ReceiptForm() {
                   if (!empId) {
                     setLineReceivers((prev) => {
                       const next = { ...prev }
-                      delete next[line.po_line_id]
+                      Reflect.deleteProperty(next, line.po_line_id)
                       return next
                     })
                     return
@@ -977,7 +972,7 @@ export default function ReceiptForm() {
       >
         <span>
           <span style={{ color: theme.textMuted }}>Vendor:</span>{' '}
-          <strong style={{ color: theme.textPrimary }}>{po?.vendor_name || '—'}</strong>
+          <strong style={{ color: theme.textPrimary }}>{po?.vendor_name ?? '—'}</strong>
         </span>
         <span>
           <span style={{ color: theme.textMuted }}>PO Date:</span>{' '}
@@ -987,7 +982,7 @@ export default function ReceiptForm() {
         </span>
       </div>
 
-      <form ref={formRef} onSubmit={handleSubmit}>
+      <form ref={formRef} onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'stretch' }}>
           {/* Left column ~70%: Receipt Information */}
           <div style={{ flex: '2 1 560px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -1088,7 +1083,7 @@ export default function ReceiptForm() {
                         }}
                       >
                         <option value="">Select location…</option>
-                        {locations.map((l: { id: string; name: string; code?: string }) => (
+                        {locations.map((l) => (
                           <option key={l.id} value={l.id}>
                             {l.name}
                             {l.code ? ` (${l.code})` : ''}

@@ -1,9 +1,10 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
 import { z } from 'zod'
-import { pool, query } from '@fnc-erp/db'
+import { pool, query, firstRowOrThrow } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { sendOk, sendError } from '../lib/errors.js'
+import { getAuth } from '@fnc-erp/auth'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const contractsRouter: IRouter = Router()
@@ -58,7 +59,7 @@ contractsRouter.get('/', requirePermission('rental.contracts.view', 'view'), asy
     const limit = Math.min(100, parseInt(req.query['limit'] as string || '20'))
     const offset = (page - 1) * limit
     let sql = `SELECT rc.* FROM rental_contracts rc WHERE rc.company_id = $1`
-    const params: unknown[] = [req.auth!.companyId]
+    const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
     if (status) { sql += ` AND rc.status = $${idx++}`; params.push(status) }
     if (rental_type) { sql += ` AND rc.rental_type = $${idx++}`; params.push(rental_type) }
@@ -71,7 +72,7 @@ contractsRouter.get('/', requirePermission('rental.contracts.view', 'view'), asy
 
 contractsRouter.get('/:id', requirePermission('rental.contracts.view', 'view'), async (req, res) => {
   try {
-    const contract = await query('SELECT * FROM rental_contracts WHERE id=$1 AND company_id=$2', [req.params['id'], req.auth!.companyId])
+    const contract = await query('SELECT * FROM rental_contracts WHERE id=$1 AND company_id=$2', [req.params['id'], getAuth(req).companyId])
     if (!contract.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
     const [lines, invoices] = await Promise.all([
       query(`SELECT rcl.*, ea.name AS asset_name, ea.asset_number FROM rental_contract_lines rcl
@@ -84,8 +85,8 @@ contractsRouter.get('/:id', requirePermission('rental.contracts.view', 'view'), 
 
 contractsRouter.post('/', requirePermission('rental.contracts.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const userId = req.auth!.userId
+    const companyId = getAuth(req).companyId
+    const userId = getAuth(req).userId
     const parsed = ContractSchema.safeParse(req.body)
     if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
@@ -113,7 +114,7 @@ contractsRouter.post('/', requirePermission('rental.contracts.edit', 'edit'), as
          d.currency_code, d.start_date, d.end_date ?? null,
          d.revenue_account_id ?? null, d.analytic_account_id ?? null, userId],
       )
-      const contract = result.rows[0]!
+      const contract = firstRowOrThrow(result)
       const contractId = contract['id'] as string
 
       for (const line of d.lines) {
@@ -151,8 +152,8 @@ async function notifyFinance(companyId: string, eventType: string, payload: Reco
 
 contractsRouter.post('/:id/activate', requirePermission('rental.contracts.admin', 'admin'), async (req, res) => {
   try {
-    const id = req.params['id']!
-    const companyId = req.auth!.companyId
+    const id = requireParam(req, 'id')
+    const companyId = getAuth(req).companyId
     const contract = await query('SELECT * FROM rental_contracts WHERE id=$1 AND company_id=$2', [id, companyId])
     if (!contract.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
     const c = contract.rows[0] as { status: string; start_date: string; contract_number: string }
@@ -162,15 +163,17 @@ contractsRouter.post('/:id/activate', requirePermission('rental.contracts.admin'
       title: `Contract activated: ${c.contract_number}`,
       body: `Rental contract ${c.contract_number} is now active`,
       data: { contractId: id, contractNumber: c.contract_number },
-    }).catch(() => {})
+    }).catch(() => {
+      // best-effort notification — don't block the main flow on it
+    })
     sendOk(res, { id, status: 'active' })
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to activate contract', err) }
 })
 
 contractsRouter.post('/:id/complete', requirePermission('rental.contracts.admin', 'admin'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const contract = await query('SELECT status, contract_number FROM rental_contracts WHERE id=$1 AND company_id=$2', [id, companyId])
     if (!contract.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
     const contractRow = contract.rows[0] as { status: string; contract_number: string }
@@ -190,7 +193,9 @@ contractsRouter.post('/:id/complete', requirePermission('rental.contracts.admin'
         title: `Contract completed: ${contractRow.contract_number}`,
         body: `Rental contract ${contractRow.contract_number} has been completed and assets returned to inventory`,
         data: { contractId: id, contractNumber: contractRow.contract_number },
-      }).catch(() => {})
+      }).catch(() => {
+        // best-effort notification — don't block the main flow on it
+      })
       sendOk(res, { id, status: 'completed' })
     } catch (err) {
       await client.query('ROLLBACK')
@@ -203,8 +208,8 @@ contractsRouter.post('/:id/complete', requirePermission('rental.contracts.admin'
 
 contractsRouter.post('/:id/cancel', requirePermission('rental.contracts.admin', 'admin'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const reason = (req.body as { reason?: string }).reason ?? ''
     const contract = await query('SELECT status, contract_number FROM rental_contracts WHERE id=$1 AND company_id=$2', [id, companyId])
     if (!contract.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
@@ -223,7 +228,9 @@ contractsRouter.post('/:id/cancel', requirePermission('rental.contracts.admin', 
         title: `Contract cancelled: ${contractRow.contract_number}`,
         body: `Rental contract ${contractRow.contract_number} has been cancelled${reason ? ': ' + reason : ''}`,
         data: { contractId: id, contractNumber: contractRow.contract_number },
-      }).catch(() => {})
+      }).catch(() => {
+        // best-effort notification — don't block the main flow on it
+      })
       sendOk(res, { id, status: 'cancelled' })
     } catch (err) {
       await client.query('ROLLBACK')
@@ -251,8 +258,8 @@ const InvoiceSchema = z.object({
 
 contractsRouter.post('/:id/invoices', requirePermission('rental.contracts.edit', 'edit'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
     const parsed = InvoiceSchema.safeParse(req.body)
     if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const { billing_period_start, billing_period_end } = parsed.data
@@ -283,8 +290,8 @@ contractsRouter.post('/:id/invoices', requirePermission('rental.contracts.edit',
       dailyRate += Number(line['daily_rate']) * Number(line['qty'])
     }
 
-    const invoiceDate = new Date().toISOString().split('T')[0]!
-    const dueDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0]!
+    const invoiceDate = new Date().toISOString().slice(0, 10)
+    const dueDate = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
 
     const invoiceNumber = await generateInvoiceNumber(id)
     const result = await query(
@@ -319,7 +326,7 @@ contractsRouter.post('/:id/invoices', requirePermission('rental.contracts.edit',
 
 contractsRouter.post('/invoices/:invoiceId/issue', requirePermission('rental.contracts.admin', 'admin'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const result = await query(
       `UPDATE rental_invoices SET status='issued' WHERE id=$1 AND status='draft' RETURNING *`,
       [req.params['invoiceId']],
@@ -330,14 +337,16 @@ contractsRouter.post('/invoices/:invoiceId/issue', requirePermission('rental.con
       title: `Rental invoice issued: ${String(inv['invoice_number'] ?? '')}`,
       body: `Rental invoice ${String(inv['invoice_number'] ?? '')} has been issued`,
       data: { invoiceId: req.params['invoiceId'], contractId: inv['contract_id'], invoiceNumber: inv['invoice_number'] },
-    }).catch(() => {})
+    }).catch(() => {
+      // best-effort notification — don't block the main flow on it
+    })
     sendOk(res, result.rows[0])
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to issue invoice', err) }
 })
 
 contractsRouter.post('/invoices/:invoiceId/mark-paid', requirePermission('rental.contracts.admin', 'admin'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const result = await query(
       `UPDATE rental_invoices SET status='paid' WHERE id=$1 AND status='issued' RETURNING *`,
       [req.params['invoiceId']],
@@ -348,7 +357,9 @@ contractsRouter.post('/invoices/:invoiceId/mark-paid', requirePermission('rental
       title: `Rental invoice paid: ${String(inv['invoice_number'] ?? '')}`,
       body: `Rental invoice ${String(inv['invoice_number'] ?? '')} has been marked as paid`,
       data: { invoiceId: req.params['invoiceId'], contractId: inv['contract_id'], invoiceNumber: inv['invoice_number'] },
-    }).catch(() => {})
+    }).catch(() => {
+      // best-effort notification — don't block the main flow on it
+    })
     sendOk(res, result.rows[0])
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark invoice paid', err) }
 })

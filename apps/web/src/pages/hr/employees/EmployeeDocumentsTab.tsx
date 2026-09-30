@@ -16,24 +16,9 @@ import { Input } from '../../../components/ui/Input'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { AttachFileMutation, AttachFileMutationVariables, DetachFileMutation, DetachFileMutationVariables, EntityAttachmentsQuery, EntityAttachmentsQueryVariables, FileDownloadUrlQuery, FileDownloadUrlQueryVariables, RequestUploadUrlMutation, RequestUploadUrlMutationVariables } from '../../../graphql/generated'
 
-interface GQLFile {
-  id: string
-  originalFilename: string
-  mimeType: string
-  sizeBytes: number
-  category: string
-  uploadedAt?: string
-}
-
-interface Attachment {
-  id: string
-  file: GQLFile
-  label?: string
-  isPrimary: boolean
-  createdAt: string
-  uploadedByEmail?: string
-}
+type Attachment = EntityAttachmentsQuery['entityAttachments'][number]
 
 const CATEGORY_OPTIONS = [
   { value: 'contract', label: 'Contract' },
@@ -69,15 +54,15 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Attachment | null>(null)
 
-  const { data, loading, refetch } = useQuery(ENTITY_ATTACHMENTS_QUERY, {
+  const { data, loading, refetch } = useQuery<EntityAttachmentsQuery, EntityAttachmentsQueryVariables>(ENTITY_ATTACHMENTS_QUERY, {
     variables: { entityType: 'employee', entityId: employeeId },
     fetchPolicy: 'cache-and-network',
   })
 
-  const [requestUploadUrl] = useMutation(REQUEST_UPLOAD_URL)
-  const [attachFile] = useMutation(ATTACH_FILE)
-  const [detachFile, { loading: detaching }] = useMutation(DETACH_FILE)
-  const [getDownloadUrl] = useLazyQuery(FILE_DOWNLOAD_URL_QUERY)
+  const [requestUploadUrl] = useMutation<RequestUploadUrlMutation, RequestUploadUrlMutationVariables>(REQUEST_UPLOAD_URL)
+  const [attachFile] = useMutation<AttachFileMutation, AttachFileMutationVariables>(ATTACH_FILE)
+  const [detachFile, { loading: detaching }] = useMutation<DetachFileMutation, DetachFileMutationVariables>(DETACH_FILE)
+  const [getDownloadUrl] = useLazyQuery<FileDownloadUrlQuery, FileDownloadUrlQueryVariables>(FILE_DOWNLOAD_URL_QUERY)
 
   const attachments: Attachment[] = data?.entityAttachments ?? []
 
@@ -107,10 +92,11 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
           category: uploadCategory,
         },
       })
+      if (!urlData) throw new Error('Failed to request upload URL')
       const { fileId } = urlData.requestUploadUrl
 
       // Upload through gateway proxy — avoids browser-to-B2 CORS issues and works in dev mode
-      const apiBase = import.meta.env.VITE_API_URL as string
+      const apiBase = import.meta.env.VITE_API_URL
       const proxyRes = await fetch(`${apiBase}/api/v1/files/${fileId}/content`, {
         method: 'POST',
         body: pendingFile,
@@ -123,7 +109,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
         const errJson = (await proxyRes.json().catch(() => ({}))) as {
           error?: { message?: string }
         }
-        throw new Error(errJson?.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
+        throw new Error(errJson.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
       }
 
       await attachFile({
@@ -138,7 +124,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
       addToast({ type: 'success', message: 'Document uploaded' })
       setUploadModalOpen(false)
       setPendingFile(null)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     } finally {
@@ -149,7 +135,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
   async function handleDownload(fileId: string, filename: string) {
     try {
       const { data: dlData } = await getDownloadUrl({ variables: { fileId } })
-      const url = dlData?.fileDownloadUrl?.downloadUrl
+      const url = dlData?.fileDownloadUrl.downloadUrl
       if (!url) throw new Error('No download URL')
       const a = document.createElement('a')
       a.href = url
@@ -171,7 +157,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
       })
       addToast({ type: 'success', message: 'Document removed' })
       setDeleteTarget(null)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -258,7 +244,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {att.label || att.file.originalFilename}
+                    {att.label ?? att.file.originalFilename}
                   </div>
                   <div
                     style={{
@@ -289,7 +275,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDownload(att.file.id, att.file.originalFilename)}
+                    onClick={() => void handleDownload(att.file.id, att.file.originalFilename)}
                   >
                     Download
                   </Button>
@@ -330,7 +316,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
             >
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleUpload} loading={uploading}>
+            <Button variant="primary" onClick={(...args: Parameters<typeof handleUpload>) => void handleUpload(...args)} loading={uploading}>
               Upload
             </Button>
           </>
@@ -391,14 +377,14 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
             >
               Cancel
             </Button>
-            <Button variant="danger" onClick={handleDetach} loading={detaching}>
+            <Button variant="danger" onClick={(...args: Parameters<typeof handleDetach>) => void handleDetach(...args)} loading={detaching}>
               Remove
             </Button>
           </>
         }
       >
         <p style={{ margin: 0, color: theme.textPrimary, fontSize: '13px' }}>
-          Remove <strong>{deleteTarget?.label || deleteTarget?.file.originalFilename}</strong> from
+          Remove <strong>{deleteTarget?.label ?? deleteTarget?.file.originalFilename}</strong> from
           this employee's record? The file will be detached but not permanently deleted.
         </p>
       </Modal>

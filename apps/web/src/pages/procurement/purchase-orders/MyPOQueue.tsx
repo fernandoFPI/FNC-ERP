@@ -13,6 +13,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { getPOStatusVariant, getPOStatusLabel, PO_STATUS_ACTIONS } from '../../../lib/po-constants'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import type { MyPoQueueQuery, MyPoQueueQueryVariables } from '../../../graphql/generated'
 
 interface QueueItem {
   id: string
@@ -22,10 +23,10 @@ interface QueueItem {
   total_amount: string
   created_at: string
   updated_at: string
-  organizer_id?: string
-  project_id?: string
-  vendor_id?: string
-  vendor_name?: string
+  organizer_id?: string | null
+  project_id?: string | null
+  vendor_id?: string | null
+  vendor_name?: string | null
 }
 
 function daysWaiting(dateStr: string): number {
@@ -39,7 +40,7 @@ export default function MyPOQueue() {
   const navigate = useNavigate()
   const currentUserId = useAuthStore((s) => s.user?.id)
 
-  const { data, loading, refetch } = useQuery(MY_PO_QUEUE_QUERY, {
+  const { data, loading, refetch } = useQuery<MyPoQueueQuery, MyPoQueueQueryVariables>(MY_PO_QUEUE_QUERY, {
     fetchPolicy: 'cache-and-network',
     pollInterval: 60_000,
   })

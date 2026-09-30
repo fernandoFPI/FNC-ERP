@@ -6,7 +6,7 @@ import {
   type FetchedRate,
 } from '@fnc-erp/fx'
 import { checkRateStaleness } from '@fnc-erp/fx/staleness'
-import { pool, withTransaction, getSystemConfig, startJobRun, finishJobRun, partialJobRun, failJobRun } from '@fnc-erp/db'
+import { pool, withTransaction, getSystemConfig, startJobRun, finishJobRun, partialJobRun, failJobRun, firstRowOrThrow } from '@fnc-erp/db'
 import { logger } from '@fnc-erp/logger'
 import { env } from '@fnc-erp/config'
 
@@ -55,7 +55,7 @@ export async function syncFXRates(
   if (fetchedRates.length === 0 && openExchangeRatesAppId) {
     try {
       const fallbackRates = await fetchFromOpenExchangeRates(openExchangeRatesAppId)
-      if (fallbackRates && fallbackRates.length > 0) {
+      if (fallbackRates.length > 0) {
         fetchedRates = fallbackRates
         source = 'open_exchange_rates'
       }
@@ -76,7 +76,7 @@ export async function syncFXRates(
      RETURNING id`,
     [syncType, triggeredBy ?? null, source, JSON.stringify(fetchedRates)],
   )
-  const syncLogId = syncLogResult.rows[0]!['id']
+  const syncLogId = firstRowOrThrow(syncLogResult)['id']
 
   // ── Step 4: Validate and persist rates ────────────────────
   let ratesUpdated = 0

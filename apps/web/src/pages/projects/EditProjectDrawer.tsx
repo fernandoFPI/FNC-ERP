@@ -5,6 +5,7 @@ import { PROJECT_QUERY, UPDATE_PROJECT } from '../../graphql/projects'
 import { usePermission } from '../../hooks/usePermission'
 import { SearchableSelect } from '../../components/ui/SearchableSelect'
 import { api } from '../../lib/axios'
+import type { ProjectQuery, ProjectQueryVariables, UpdateProjectMutation, UpdateProjectMutationVariables } from '../../graphql/generated'
 
 interface Employee {
   id: string
@@ -57,12 +58,12 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
     setCustomTypeMode(false)
   }
 
-  const { data } = useQuery(PROJECT_QUERY, {
-    variables: { id: projectId },
+  const { data } = useQuery<ProjectQuery, ProjectQueryVariables>(PROJECT_QUERY, {
+    variables: { id: projectId ?? '' },
     skip: !projectId || !open,
     fetchPolicy: 'cache-and-network',
   })
-  const [updateProject] = useMutation(UPDATE_PROJECT)
+  const [updateProject] = useMutation<UpdateProjectMutation, UpdateProjectMutationVariables>(UPDATE_PROJECT)
 
   useEffect(() => {
     if (!open) return
@@ -71,18 +72,20 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
       .then((r) => {
         setEmployees(Array.isArray(r.data) ? r.data : [])
       })
-      .catch(() => {})
+      .catch(() => {
+        /* ignore: employee picker just stays empty if this fails */
+      })
   }, [open])
 
   useEffect(() => {
     const p = data?.project
     if (!p) return
     setForm({
-      name: p.name ?? '',
+      name: p.name,
       rfqNumber: p.rfqNumber ?? '',
       contractName: p.contractName ?? '',
       projectLocation: p.projectLocation ?? '',
-      projectType: p.projectType ?? 'construction',
+      projectType: p.projectType,
       clientName: p.clientName ?? '',
       clientContact: p.clientContact ?? '',
       projectValue: p.projectValue != null ? String(p.projectValue) : '',
@@ -380,7 +383,7 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
             Cancel
           </button>
           <button
-            onClick={handleSave}
+            onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)}
             disabled={saving}
             style={{
               padding: '8px 16px',

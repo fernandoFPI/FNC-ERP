@@ -10,6 +10,7 @@ import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { useToastStore } from '../../../store/toastStore'
+import type { EmployeeQuery, EmployeeQueryVariables, EmployeeSalaryConfigQuery, EmployeeSalaryConfigQueryVariables, UpdateSalaryConfigMutation, UpdateSalaryConfigMutationVariables } from '../../../graphql/generated'
 
 const CURRENCIES = [
   { value: 'IQD', label: 'IQD' },
@@ -37,22 +38,22 @@ export default function SalaryConfigForm() {
 
   const [form, setForm] = useState(emptyForm)
 
-  const { data: empData } = useQuery(EMPLOYEE_QUERY, {
-    variables: { id: employeeId },
+  const { data: empData } = useQuery<EmployeeQuery, EmployeeQueryVariables>(EMPLOYEE_QUERY, {
+    variables: { id: employeeId ?? '' },
     skip: !employeeId,
   })
-  const { data: salaryData } = useQuery(EMPLOYEE_SALARY_CONFIG_QUERY, {
-    variables: { employee_id: employeeId },
+  const { data: salaryData } = useQuery<EmployeeSalaryConfigQuery, EmployeeSalaryConfigQueryVariables>(EMPLOYEE_SALARY_CONFIG_QUERY, {
+    variables: { employee_id: employeeId ?? '' },
     skip: !employeeId,
   })
-  const [updateSalary, { loading }] = useMutation(UPDATE_SALARY_CONFIG)
+  const [updateSalary, { loading }] = useMutation<UpdateSalaryConfigMutation, UpdateSalaryConfigMutationVariables>(UPDATE_SALARY_CONFIG)
 
   useEffect(() => {
     const s = salaryData?.employeeSalaryConfig
     if (s) {
       setForm({
-        base_salary: s.base_salary ?? '0',
-        currency_code: s.currency_code ?? 'IQD',
+        base_salary: s.base_salary,
+        currency_code: s.currency_code,
         housing_allowance: s.housing_allowance ?? '0',
         transport_allowance: s.transport_allowance ?? '0',
         other_allowances: s.other_allowances ?? '0',
@@ -85,7 +86,7 @@ export default function SalaryConfigForm() {
     try {
       await updateSalary({
         variables: {
-          employee_id: employeeId,
+          employee_id: employeeId ?? '',
           input: {
             base_salary: parseFloat(form.base_salary),
             currency_code: form.currency_code,
@@ -112,7 +113,7 @@ export default function SalaryConfigForm() {
         backPath={`/hr/employees/${employeeId}`}
       />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
           <Card style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>

@@ -14,16 +14,7 @@ import { Grid } from '../../components/ui/Grid'
 import { AttendanceCalendar } from '../../components/ui/AttendanceCalendar'
 import { useAuthStore } from '../../store/authStore'
 import { AttendanceDayDrawer } from './AttendanceDayDrawer'
-
-interface Punch {
-  id: string
-  punch_type: string
-  punched_at: string
-  is_valid: boolean
-  work_location_name?: string
-  distance_from_zone?: number
-  rejection_reason?: string
-}
+import type { AttendanceCalendarQuery, AttendanceCalendarQueryVariables, AttendanceLogsQuery, AttendanceLogsQueryVariables, AttendanceSummaryQuery, AttendanceSummaryQueryVariables } from '../../graphql/generated'
 
 export default function AttendancePage() {
   const { theme } = useTheme()
@@ -36,33 +27,44 @@ export default function AttendancePage() {
   const monthStr = `${calMonth.getFullYear()}-${String(calMonth.getMonth() + 1).padStart(2, '0')}`
   const empId = user?.id ?? ''
 
-  const { data: calData, loading: calLoading } = useQuery(ATTENDANCE_CALENDAR_QUERY, {
+  const { data: calData, loading: calLoading } = useQuery<AttendanceCalendarQuery, AttendanceCalendarQueryVariables>(ATTENDANCE_CALENDAR_QUERY, {
     variables: { employeeId: empId, month: monthStr },
     skip: !empId,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: summaryData } = useQuery(ATTENDANCE_SUMMARY_QUERY, {
+  const { data: summaryData } = useQuery<AttendanceSummaryQuery, AttendanceSummaryQueryVariables>(ATTENDANCE_SUMMARY_QUERY, {
     variables: { employeeId: empId, month: monthStr },
     skip: !empId,
   })
 
   const selectedStart = selectedDate ? `${selectedDate}T00:00:00` : ''
   const selectedEnd = selectedDate ? `${selectedDate}T23:59:59` : ''
-  const { data: dayData, loading: dayLoading } = useQuery(ATTENDANCE_LOGS_QUERY, {
+  const { data: dayData, loading: dayLoading } = useQuery<AttendanceLogsQuery, AttendanceLogsQueryVariables>(ATTENDANCE_LOGS_QUERY, {
     variables: { employee_id: empId, from_date: selectedStart, to_date: selectedEnd },
     skip: !selectedDate || !empId,
   })
 
-  const calDays = calData?.attendanceCalendar ?? []
+  const calDays = (calData?.attendanceCalendar ?? []).filter(
+    (x): x is NonNullable<typeof x> => x !== null,
+  )
   const summary = summaryData?.attendanceSummary
-  const dayPunches: Punch[] = dayData?.attendanceLogs ?? []
+  const dayPunches = (dayData?.attendanceLogs ?? [])
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    .map((p) => ({
+      id: p.id,
+      punch_type: p.punch_type,
+      punched_at: p.punched_at,
+      is_valid: p.geofence_valid ?? true,
+      work_location_id: p.work_location_id,
+      distance_from_zone: p.distance_from_location_m != null ? Number(p.distance_from_location_m) : undefined,
+    }))
 
   const selectedDay = calDays.find((d: { date: string }) => d.date === selectedDate)
   const dayMeta = selectedDay
     ? {
         hoursWorked: selectedDay.hoursWorked ?? 0,
-        hasOvertime: selectedDay.hasOvertime ?? false,
-        isAbsent: selectedDay.isAbsent ?? false,
+        hasOvertime: selectedDay.hasOvertime,
+        isAbsent: selectedDay.isAbsent,
         leaveTypeName: selectedDay.leaveTypeName ?? undefined,
       }
     : undefined

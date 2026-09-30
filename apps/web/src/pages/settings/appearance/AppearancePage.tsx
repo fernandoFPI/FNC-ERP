@@ -1,7 +1,6 @@
 ﻿import { useQuery, useMutation } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
-import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { Select } from '../../../components/ui/Select'
@@ -62,11 +61,11 @@ export default function AppearancePage() {
 
   function handleThemeChange(key: ThemeKey) {
     setTheme(key)
-    updatePreferences({ variables: { input: { themePreference: key } } })
+    void updatePreferences({ variables: { input: { themePreference: key } } })
   }
 
   function handleFormatChange(field: 'dateFormat' | 'numberFormat', value: string) {
-    updatePreferences({
+    void updatePreferences({
       variables: {
         input: {
           themePreference: prefs?.themePreference ?? themeKey,

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from 'express'
 import { z } from 'zod'
-import { requireAuth, requireRole } from '@fnc-erp/auth'
-import { listDocumentSequences, upsertDocumentSequence, DOC_TYPES } from '@fnc-erp/db'
+import { requireAuth, requireRole, getAuth } from '@fnc-erp/auth'
+import { listDocumentSequences, upsertDocumentSequence, DOC_TYPES, asyncHandler } from '@fnc-erp/db'
 import { logger } from '@fnc-erp/logger'
 import type { Request, Response } from 'express'
 
@@ -21,9 +21,9 @@ const upsertSchema = z.object({
 
 // GET /api/v1/admin/document-sequences
 // Returns all sequences for the caller's company, with defaults for unconfigured types
-documentSequencesRouter.get('/', ...requireAdmin, async (req: Request, res: Response) => {
+documentSequencesRouter.get('/', ...requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const companyId = req.auth!.companyId
+    const companyId = getAuth(req).companyId
     const rows = await listDocumentSequences(companyId)
     const rowMap = new Map(rows.map((r) => [r.doc_type, r]))
 
@@ -54,10 +54,10 @@ documentSequencesRouter.get('/', ...requireAdmin, async (req: Request, res: Resp
     log.error({ err }, 'document-sequences GET failed')
     res.status(500).json({ error: 'INTERNAL_ERROR' })
   }
-})
+}))
 
 // PUT /api/v1/admin/document-sequences/:docType
-documentSequencesRouter.put('/:docType', ...requireAdmin, async (req: Request, res: Response) => {
+documentSequencesRouter.put('/:docType', ...requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const parsed = upsertSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.issues })
@@ -71,7 +71,7 @@ documentSequencesRouter.put('/:docType', ...requireAdmin, async (req: Request, r
   }
 
   try {
-    const row = await upsertDocumentSequence(req.auth!.companyId, docType, parsed.data)
+    const row = await upsertDocumentSequence(getAuth(req).companyId, docType, parsed.data)
     res.json({
       ...row,
       preview: buildPreview(
@@ -86,7 +86,7 @@ documentSequencesRouter.put('/:docType', ...requireAdmin, async (req: Request, r
     log.error({ err }, 'document-sequences PUT failed')
     res.status(500).json({ error: 'INTERNAL_ERROR' })
   }
-})
+}))
 
 function buildPreview(
   prefix: string,

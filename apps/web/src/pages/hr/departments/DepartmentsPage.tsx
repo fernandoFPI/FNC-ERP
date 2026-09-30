@@ -11,6 +11,7 @@ import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { useToastStore } from '../../../store/toastStore'
+import type { CreateDepartmentMutation, CreateDepartmentMutationVariables, DepartmentsQuery, DepartmentsQueryVariables, UpdateDepartmentMutation, UpdateDepartmentMutationVariables } from '../../../graphql/generated'
 
 interface Department {
   id: string
@@ -27,13 +28,13 @@ export default function DepartmentsPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm())
 
-  const { data, loading, refetch } = useQuery(DEPARTMENTS_QUERY, {
+  const { data, loading, refetch } = useQuery<DepartmentsQuery, DepartmentsQueryVariables>(DEPARTMENTS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
-  const [createDept, { loading: creating }] = useMutation(CREATE_DEPARTMENT)
-  const [updateDept, { loading: updating }] = useMutation(UPDATE_DEPARTMENT)
+  const [createDept, { loading: creating }] = useMutation<CreateDepartmentMutation, CreateDepartmentMutationVariables>(CREATE_DEPARTMENT)
+  const [updateDept, { loading: updating }] = useMutation<UpdateDepartmentMutation, UpdateDepartmentMutationVariables>(UPDATE_DEPARTMENT)
 
-  const departments: Department[] = data?.departments ?? []
+  const departments: Department[] = (data?.departments ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   function openCreate() {
     setForm(emptyForm())
@@ -57,7 +58,7 @@ export default function DepartmentsPage() {
         addToast({ type: 'success', message: 'Department created' })
       }
       setModalOpen(false)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -128,7 +129,7 @@ export default function DepartmentsPage() {
             >
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleSubmit} loading={creating || updating}>
+            <Button variant="primary" onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)} loading={creating || updating}>
               Save
             </Button>
           </>

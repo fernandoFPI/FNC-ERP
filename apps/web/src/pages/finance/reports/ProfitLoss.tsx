@@ -7,6 +7,7 @@ import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { BarChart } from '../../../components/charts/BarChart'
+import type { ProfitLossQuery, ProfitLossQueryVariables } from '../../../graphql/generated'
 
 interface PLLine {
   account_id: string
@@ -24,7 +25,7 @@ export default function ProfitLoss() {
   const [toDate, setToDate] = useState(today)
   const [queried, setQueried] = useState(false)
 
-  const { data, loading, refetch } = useQuery(PROFIT_LOSS_QUERY, {
+  const { data, loading, refetch } = useQuery<ProfitLossQuery, ProfitLossQueryVariables>(PROFIT_LOSS_QUERY, {
     variables: { fromDate, toDate },
     skip: !queried,
     fetchPolicy: 'network-only',
@@ -35,7 +36,7 @@ export default function ProfitLoss() {
   const expenses: PLLine[] = report?.expenses ?? []
 
   function run() {
-    if (queried) refetch()
+    if (queried) void refetch()
     else setQueried(true)
   }
 

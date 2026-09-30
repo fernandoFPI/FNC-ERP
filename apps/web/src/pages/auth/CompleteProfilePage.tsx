@@ -14,15 +14,6 @@ interface ProfileResponse {
   lastName: string
 }
 
-interface ExistingProfile {
-  firstName: string | null
-  lastName: string | null
-  jobTitle: string | null
-  phone: string | null
-  emergencyPhone: string | null
-  profilePicture: string | null
-}
-
 export default function CompleteProfilePage() {
   const { theme } = useTheme()
   const navigate = useNavigate()

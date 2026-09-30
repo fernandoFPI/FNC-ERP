@@ -10,13 +10,16 @@ interface PunchSummary {
 
 interface AttendanceDaySummary {
   date: string
-  punches: PunchSummary[]
-  hoursWorked?: number
+  // Not selected by ATTENDANCE_CALENDAR_QUERY (this is a month overview, not
+  // the day-detail drawer) and never read in this component — optional so
+  // callers backed by that query don't need to fabricate it.
+  punches?: PunchSummary[]
+  hoursWorked?: number | null
   hasOvertime: boolean
   isAbsent: boolean
   isWeekend: boolean
   isLeave: boolean
-  leaveTypeName?: string
+  leaveTypeName?: string | null
 }
 
 interface AttendanceCalendarProps {

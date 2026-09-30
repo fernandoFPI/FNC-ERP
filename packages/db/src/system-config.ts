@@ -1,5 +1,5 @@
 import { createDecipheriv } from 'crypto'
-import { pool } from './client.js'
+import { pool, firstRowOrThrow } from './client.js'
 
 const ALGORITHM = 'aes-256-gcm'
 
@@ -46,7 +46,7 @@ export async function getSystemConfig(key: string): Promise<string | null> {
       [key],
     )
     if (result.rows.length > 0) {
-      const row = result.rows[0]!
+      const row = firstRowOrThrow(result)
       try {
         return row.is_sensitive ? decryptValue(row.value) : row.value
       } catch {

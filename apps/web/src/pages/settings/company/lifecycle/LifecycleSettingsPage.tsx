@@ -13,6 +13,7 @@ import {
   UPDATE_BID_SIMPLE_MODE,
   UPDATE_HIDE_RISK_REGISTER,
 } from '../../../../graphql/projects'
+import type { LifecycleConfigQuery, LifecycleConfigQueryVariables, UpdateBidSimpleModeMutation, UpdateBidSimpleModeMutationVariables, UpdateHideRiskRegisterMutation, UpdateHideRiskRegisterMutationVariables, UpdateLifecycleModuleMutation, UpdateLifecycleModuleMutationVariables, UpdateLifecyclePhaseMutation, UpdateLifecyclePhaseMutationVariables } from '../../../../graphql/generated'
 
 interface Phase {
   key: string
@@ -52,18 +53,18 @@ export default function LifecycleSettingsPage() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
-  const { data, loading, refetch } = useQuery(LIFECYCLE_CONFIG_QUERY, {
+  const { data, loading, refetch } = useQuery<LifecycleConfigQuery, LifecycleConfigQueryVariables>(LIFECYCLE_CONFIG_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
-  const [savePhase] = useMutation(UPDATE_LIFECYCLE_PHASE)
-  const [saveModule] = useMutation(UPDATE_LIFECYCLE_MODULE)
-  const [saveSimpleMode] = useMutation(UPDATE_BID_SIMPLE_MODE)
-  const [saveHideRisk] = useMutation(UPDATE_HIDE_RISK_REGISTER)
+  const [savePhase] = useMutation<UpdateLifecyclePhaseMutation, UpdateLifecyclePhaseMutationVariables>(UPDATE_LIFECYCLE_PHASE)
+  const [saveModule] = useMutation<UpdateLifecycleModuleMutation, UpdateLifecycleModuleMutationVariables>(UPDATE_LIFECYCLE_MODULE)
+  const [saveSimpleMode] = useMutation<UpdateBidSimpleModeMutation, UpdateBidSimpleModeMutationVariables>(UPDATE_BID_SIMPLE_MODE)
+  const [saveHideRisk] = useMutation<UpdateHideRiskRegisterMutation, UpdateHideRiskRegisterMutationVariables>(UPDATE_HIDE_RISK_REGISTER)
 
-  const phases: Phase[] = data?.lifecycleConfig?.phases ?? []
-  const modules: ModuleGate[] = data?.lifecycleConfig?.modules ?? []
-  const bidSimpleModeEnabled: boolean = data?.lifecycleConfig?.bidSimpleModeEnabled ?? false
-  const hideRiskRegister: boolean = data?.lifecycleConfig?.hideRiskRegister ?? true
+  const phases: Phase[] = data?.lifecycleConfig.phases ?? []
+  const modules: ModuleGate[] = data?.lifecycleConfig.modules ?? []
+  const bidSimpleModeEnabled: boolean = data?.lifecycleConfig.bidSimpleModeEnabled ?? false
+  const hideRiskRegister: boolean = data?.lifecycleConfig.hideRiskRegister ?? true
 
   const [phaseEdits, setPhaseEdits] = useState<
     Record<string, { label: string; optional: boolean }>

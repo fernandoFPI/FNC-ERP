@@ -4,8 +4,6 @@ import { AppShell } from '../components/shell/AppShell'
 import { PrivateRoute } from './PrivateRoute'
 import { PermissionRoute } from './PermissionRoute'
 import { Spinner } from '../components/ui/Spinner'
-import { EmptyState } from '../components/ui/EmptyState'
-import { Card } from '../components/ui/Card'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 const NotFoundPage = lazy(() => import('../pages/errors/NotFoundPage'))
 
@@ -303,18 +301,6 @@ function PageSpinner() {
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}
     >
       <Spinner size="lg" />
-    </div>
-  )
-}
-
-function ComingSoon({ module }: { module: string }) {
-  return (
-    <div
-      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}
-    >
-      <Card padding="lg" style={{ maxWidth: '400px', width: '100%' }}>
-        <EmptyState title={module} message="Coming in the next phase. Check back soon!" />
-      </Card>
     </div>
   )
 }

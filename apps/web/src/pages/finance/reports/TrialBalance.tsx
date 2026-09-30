@@ -9,6 +9,7 @@ import { Input } from '../../../components/ui/Input'
 import { Badge } from '../../../components/ui/Badge'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import type { TrialBalanceQuery, TrialBalanceQueryVariables } from '../../../graphql/generated'
 
 interface TBLine {
   id: string
@@ -25,18 +26,18 @@ export default function TrialBalance() {
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
   const [queried, setQueried] = useState(false)
 
-  const { data, loading, refetch } = useQuery(TRIAL_BALANCE_QUERY, {
+  const { data, loading, refetch } = useQuery<TrialBalanceQuery, TrialBalanceQueryVariables>(TRIAL_BALANCE_QUERY, {
     variables: { asOfDate },
     skip: !queried,
     fetchPolicy: 'network-only',
   })
 
-  const rows: TBLine[] = data?.trialBalance ?? []
+  const rows: TBLine[] = (data?.trialBalance ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const totalDebit = rows.reduce((s, r) => s + parseFloat(r.total_debit || '0'), 0)
   const totalCredit = rows.reduce((s, r) => s + parseFloat(r.total_credit || '0'), 0)
 
   function run() {
-    if (queried) refetch()
+    if (queried) void refetch()
     else setQueried(true)
   }
 

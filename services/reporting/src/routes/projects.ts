@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
 import { query } from '@fnc-erp/db'
-import { sendOk, sendError } from '../lib/errors.js'
+import { getAuth } from '@fnc-erp/auth'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const projectsReportRouter: IRouter = Router()
@@ -10,7 +11,7 @@ export const projectsReportRouter: IRouter = Router()
 projectsReportRouter.get('/profitability', requirePermission('reporting.operational.view', 'view'), async (req, res) => {
   try {
     const { company_id, status, project_type } = req.query
-    const companyId = (company_id as string) || req.auth!.companyId
+    const companyId = (company_id as string) || getAuth(req).companyId
     let sql = `SELECT * FROM v_project_profitability WHERE company_id = $1`
     const params: unknown[] = [companyId]
     let idx = 2
@@ -24,8 +25,8 @@ projectsReportRouter.get('/profitability', requirePermission('reporting.operatio
 // GET /reporting/projects/:id/detail
 projectsReportRouter.get('/:id/detail', requirePermission('reporting.operational.view', 'view'), async (req, res) => {
   try {
-    const companyId = req.auth!.companyId
-    const id = req.params['id']!
+    const companyId = getAuth(req).companyId
+    const id = requireParam(req, 'id')
 
     const [project, budgetVsActual, costTimeline, mos, rentalContracts] = await Promise.all([
       query('SELECT * FROM v_project_profitability WHERE project_id=$1 AND company_id=$2', [id, companyId]),

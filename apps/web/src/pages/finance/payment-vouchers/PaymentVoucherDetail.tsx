@@ -23,6 +23,7 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { api } from '../../../lib/axios'
 import type { VoucherPrintLine, VoucherPrintJournal } from '../../../lib/voucherHtml'
 import { buildPaymentVoucherHTML } from '../../../lib/voucherHtml'
+import type { ApprovePaymentVoucherMutation, ApprovePaymentVoucherMutationVariables, CreatePaymentVoucherMutation, CreatePaymentVoucherMutationVariables, MarkPaymentVoucherPaidMutation, MarkPaymentVoucherPaidMutationVariables, UpdatePaymentVoucherMutation, UpdatePaymentVoucherMutationVariables } from '../../../graphql/generated'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -213,10 +214,10 @@ export default function PaymentVoucherDetail() {
   }, [])
 
   // Mutations
-  const [createVoucher, { loading: creating }] = useMutation(CREATE_PAYMENT_VOUCHER)
-  const [updateVoucher, { loading: updating }] = useMutation(UPDATE_PAYMENT_VOUCHER)
-  const [approveVoucher, { loading: approving }] = useMutation(APPROVE_PAYMENT_VOUCHER)
-  const [markVoucherPaid, { loading: markingPaid }] = useMutation(MARK_PAYMENT_VOUCHER_PAID)
+  const [createVoucher, { loading: creating }] = useMutation<CreatePaymentVoucherMutation, CreatePaymentVoucherMutationVariables>(CREATE_PAYMENT_VOUCHER)
+  const [updateVoucher, { loading: updating }] = useMutation<UpdatePaymentVoucherMutation, UpdatePaymentVoucherMutationVariables>(UPDATE_PAYMENT_VOUCHER)
+  const [approveVoucher, { loading: approving }] = useMutation<ApprovePaymentVoucherMutation, ApprovePaymentVoucherMutationVariables>(APPROVE_PAYMENT_VOUCHER)
+  const [markVoucherPaid, { loading: markingPaid }] = useMutation<MarkPaymentVoucherPaidMutation, MarkPaymentVoucherPaidMutationVariables>(MARK_PAYMENT_VOUCHER_PAID)
 
   // Populate form from loaded voucher
   const voucher: VoucherDetail | undefined = voucherData?.paymentVoucher
@@ -238,14 +239,14 @@ export default function PaymentVoucherDetail() {
       voucher.lines.length > 0
         ? voucher.lines.map((l) => ({
             ...l,
-            statement: l.statement ?? '',
+            statement: l.statement,
             acct_1: l.acct_1 ?? '',
             acct_2: l.acct_2 ?? '',
             acct_3: l.acct_3 ?? '',
             acct_4: l.acct_4 ?? '',
             acct_5: l.acct_5 ?? '',
-            amount_iqd: l.amount_iqd ?? '',
-            amount_usd: l.amount_usd ?? '',
+            amount_iqd: l.amount_iqd,
+            amount_usd: l.amount_usd,
           }))
         : [EMPTY_LINE()],
     )
@@ -303,6 +304,10 @@ export default function PaymentVoucherDetail() {
           variables: { input: buildInput() },
           refetchQueries: [{ query: PAYMENT_VOUCHERS_QUERY }],
         })
+        if (!data?.createPaymentVoucher) {
+          addToast({ type: 'error', message: 'Voucher creation did not return a result' })
+          return
+        }
         addToast({
           type: 'success',
           message: `Voucher ${data.createPaymentVoucher.voucher_number} created`,
@@ -319,7 +324,7 @@ export default function PaymentVoucherDetail() {
           refetchQueries: [{ query: PAYMENT_VOUCHER_QUERY, variables: { id: effectiveId } }],
         })
         addToast({ type: 'success', message: 'Voucher saved' })
-        refetch()
+        void refetch()
       }
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -331,12 +336,12 @@ export default function PaymentVoucherDetail() {
   async function handleApprove() {
     try {
       await approveVoucher({
-        variables: { id },
+        variables: { id: id ?? '' },
         refetchQueries: [{ query: PAYMENT_VOUCHER_QUERY, variables: { id } }],
       })
       addToast({ type: 'success', message: 'Voucher approved' })
       setShowApproveDialog(false)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -345,12 +350,12 @@ export default function PaymentVoucherDetail() {
   async function handleMarkPaid() {
     try {
       await markVoucherPaid({
-        variables: { id },
+        variables: { id: id ?? '' },
         refetchQueries: [{ query: PAYMENT_VOUCHER_QUERY, variables: { id } }],
       })
       addToast({ type: 'success', message: 'Voucher marked as paid' })
       setShowPaidDialog(false)
-      refetch()
+      void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -630,7 +635,7 @@ export default function PaymentVoucherDetail() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={handleSave}
+                onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)}
                 loading={saving || creating || updating}
               >
                 {isNew ? 'Create Voucher' : 'Save Changes'}
@@ -1187,7 +1192,7 @@ export default function PaymentVoucherDetail() {
         message="Approve this payment voucher? This marks it as auditor-approved and ready for payment."
         confirmLabel="Approve"
         variant="primary"
-        onConfirm={handleApprove}
+        onConfirm={(...args: Parameters<typeof handleApprove>) => void handleApprove(...args)}
         onCancel={() => {
           setShowApproveDialog(false)
         }}
@@ -1199,7 +1204,7 @@ export default function PaymentVoucherDetail() {
         message="Confirm that this payment has been disbursed by the cashier?"
         confirmLabel="Mark Paid"
         variant="primary"
-        onConfirm={handleMarkPaid}
+        onConfirm={(...args: Parameters<typeof handleMarkPaid>) => void handleMarkPaid(...args)}
         onCancel={() => {
           setShowPaidDialog(false)
         }}

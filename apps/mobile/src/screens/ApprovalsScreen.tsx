@@ -179,7 +179,7 @@ function ApprovalsScreenBase({ approvals }: { approvals: PendingApproval[] }) {
             <Text style={styles.emptySubtitle}>Pull to refresh</Text>
           </View>
         }
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={(...args: Parameters<typeof onRefresh>) => void onRefresh(...args)} />}
         contentContainerStyle={styles.list}
       />
     </View>

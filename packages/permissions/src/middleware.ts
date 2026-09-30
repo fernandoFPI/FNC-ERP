@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express'
 import { createClient } from 'redis'
-import { query } from '@fnc-erp/db'
+import { query, asyncHandler } from '@fnc-erp/db'
 import { env } from '@fnc-erp/config'
 import type { AuthContext } from '@fnc-erp/types'
 import { ACCESS_LEVEL_ORDER } from './registry.js'
@@ -102,7 +102,7 @@ export function requirePermission(
   permissionKey: string,
   requiredLevel: AccessLevel,
 ): RequestHandler {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     if (!req.auth) {
       res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED' } })
       return
@@ -133,5 +133,5 @@ export function requirePermission(
 
     req.permissionLevel = actual
     next()
-  }
+  })
 }

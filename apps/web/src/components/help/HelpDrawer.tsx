@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
-import { findTopic, findTopicByKey, allTopics, helpGroups, type HelpTopic } from './helpContent'
+import { findTopic, allTopics, helpGroups, type HelpTopic } from './helpContent'
 import { startTour, tours } from './tours'
 import 'driver.js/dist/driver.css'
 
@@ -49,9 +49,10 @@ export function HelpDrawer({ open, onClose }: Props) {
 
   function handleTourStart() {
     if (!displayTopic?.tourKey) return
+    const tourKey = displayTopic.tourKey
     onClose()
     setTimeout(() => {
-      startTour(displayTopic.tourKey!, navigate, theme)
+      startTour(tourKey, navigate, theme)
     }, 300)
   }
 

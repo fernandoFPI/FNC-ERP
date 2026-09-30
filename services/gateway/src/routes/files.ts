@@ -1,7 +1,7 @@
 import express, { Router, type IRouter } from 'express'
 import { z } from 'zod'
-import { requireAuth } from '@fnc-erp/auth'
-import { query, withTransaction } from '@fnc-erp/db'
+import { requireAuth, getAuth } from '@fnc-erp/auth'
+import { query, withTransaction, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { env } from '@fnc-erp/config'
 import {
@@ -33,7 +33,7 @@ const uploadUrlSchema = z.object({
 })
 
 // ── POST /api/v1/files/upload-url ─────────────────────────────
-filesRouter.post('/upload-url', requireAuth(), async (req, res) => {
+filesRouter.post('/upload-url', requireAuth(), asyncHandler(async (req, res) => {
   const parsed = uploadUrlSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({
@@ -62,8 +62,8 @@ filesRouter.post('/upload-url', requireAuth(), async (req, res) => {
       mimeType,
       sizeBytes,
       category,
-      companyId: req.auth!.companyId,
-      uploadedBy: req.auth!.userId,
+      companyId: getAuth(req).companyId,
+      uploadedBy: getAuth(req).userId,
     })
 
     await query(
@@ -71,8 +71,8 @@ filesRouter.post('/upload-url', requireAuth(), async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')`,
       [
         upload.fileId,
-        req.auth!.companyId,
-        req.auth!.userId,
+        getAuth(req).companyId,
+        getAuth(req).userId,
         upload.fileKey,
         filename,
         mimeType,
@@ -96,10 +96,10 @@ filesRouter.post('/upload-url', requireAuth(), async (req, res) => {
       error: { code: 'INTERNAL_ERROR', message: 'Failed to generate upload URL' },
     })
   }
-})
+}))
 
 // ── POST /api/v1/files/confirm ─────────────────────────────────
-filesRouter.post('/confirm', requireAuth(), async (req, res) => {
+filesRouter.post('/confirm', requireAuth(), asyncHandler(async (req, res) => {
   const fileId = (req.body as { fileId?: string }).fileId
   if (!fileId) {
     res
@@ -114,7 +114,7 @@ filesRouter.post('/confirm', requireAuth(), async (req, res) => {
     original_filename: string
     category: string
     size_bytes: string
-  }>('SELECT * FROM files WHERE id=$1 AND company_id=$2', [fileId, req.auth!.companyId])
+  }>('SELECT * FROM files WHERE id=$1 AND company_id=$2', [fileId, getAuth(req).companyId])
 
   if (!file.rows[0]) {
     res
@@ -134,8 +134,8 @@ filesRouter.post('/confirm', requireAuth(), async (req, res) => {
     await query(`UPDATE files SET status='uploaded', uploaded_at=NOW() WHERE id=$1`, [fileId])
 
     await logAudit({
-      userId: req.auth!.userId,
-      companyId: req.auth!.companyId,
+      userId: getAuth(req).userId,
+      companyId: getAuth(req).companyId,
       action: 'CREATE',
       tableName: 'files',
       recordId: fileId,
@@ -162,10 +162,10 @@ filesRouter.post('/confirm', requireAuth(), async (req, res) => {
       error: { code: 'INTERNAL_ERROR', message: 'Failed to confirm upload' },
     })
   }
-})
+}))
 
 // ── GET /api/v1/files/:fileId/download-url ─────────────────────
-filesRouter.get('/:fileId/download-url', requireAuth(), async (req, res) => {
+filesRouter.get('/:fileId/download-url', requireAuth(), asyncHandler(async (req, res) => {
   const fileId = req.params.fileId
 
   const file = await query<{
@@ -177,7 +177,7 @@ filesRouter.get('/:fileId/download-url', requireAuth(), async (req, res) => {
     status: string
   }>(`SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status != 'deleted'`, [
     fileId,
-    req.auth!.companyId,
+    getAuth(req).companyId,
   ])
 
   if (!file.rows[0]) {
@@ -210,7 +210,7 @@ filesRouter.get('/:fileId/download-url', requireAuth(), async (req, res) => {
       error: { code: 'INTERNAL_ERROR', message: 'Failed to generate download URL' },
     })
   }
-})
+}))
 
 // ── POST /api/v1/files/:fileId/content ────────────────────────
 // Proxy upload: browser posts raw binary; gateway streams to B2 server-side.
@@ -219,11 +219,11 @@ filesRouter.post(
   '/:fileId/content',
   requireAuth(),
   express.raw({ type: '*/*', limit: '50mb' }),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const fileId = req.params.fileId
     const file = await query<{ id: string; file_key: string; mime_type: string; status: string }>(
       `SELECT id, file_key, mime_type, status FROM files WHERE id=$1 AND company_id=$2`,
-      [fileId, req.auth!.companyId],
+      [fileId, getAuth(req).companyId],
     )
     if (!file.rows[0]) {
       res
@@ -248,7 +248,7 @@ filesRouter.post(
         .status(500)
         .json({ success: false, error: { code: 'UPLOAD_FAILED', message: (err as Error).message } })
     }
-  },
+  }),
 )
 
 // ── GET /api/v1/files/:fileId/content ─────────────────────────
@@ -256,11 +256,11 @@ filesRouter.post(
 // browser can read them via fetch() — e.g. to parse a ZIP client-side — without
 // hitting storage-provider CORS restrictions. The plain "Download" button still
 // uses the presigned download-url directly; this is only for in-browser reads.
-filesRouter.get('/:fileId/content', requireAuth(), async (req, res) => {
+filesRouter.get('/:fileId/content', requireAuth(), asyncHandler(async (req, res) => {
   const fileId = req.params.fileId
   const file = await query<{ file_key: string; mime_type: string; status: string }>(
     `SELECT file_key, mime_type, status FROM files WHERE id=$1 AND company_id=$2`,
-    [fileId, req.auth!.companyId],
+    [fileId, getAuth(req).companyId],
   )
   if (!file.rows[0] || file.rows[0].status === 'deleted') {
     res
@@ -277,10 +277,10 @@ filesRouter.get('/:fileId/content', requireAuth(), async (req, res) => {
       .status(500)
       .json({ success: false, error: { code: 'DOWNLOAD_FAILED', message: (err as Error).message } })
   }
-})
+}))
 
 // ── GET /api/v1/files/attachments?entityType=X&entityId=Y ──────
-filesRouter.get('/attachments', requireAuth(), async (req, res) => {
+filesRouter.get('/attachments', requireAuth(), asyncHandler(async (req, res) => {
   const { entityType, entityId } = req.query as { entityType?: string; entityId?: string }
   if (!entityType || !entityId) {
     res.status(400).json({
@@ -297,7 +297,7 @@ filesRouter.get('/attachments', requireAuth(), async (req, res) => {
        JOIN files f ON f.id = da.file_id
        WHERE da.entity_type=$1 AND da.entity_id=$2 AND f.company_id=$3 AND f.status != 'deleted'
        ORDER BY da.created_at`,
-      [entityType, entityId, req.auth!.companyId],
+      [entityType, entityId, getAuth(req).companyId],
     )
     // Generate short-lived download URLs for each file
     const withUrls = await Promise.all(
@@ -324,10 +324,10 @@ filesRouter.get('/attachments', requireAuth(), async (req, res) => {
       error: { code: 'INTERNAL_ERROR', message: 'Failed to list attachments' },
     })
   }
-})
+}))
 
 // ── POST /api/v1/files/attach ──────────────────────────────────
-filesRouter.post('/attach', requireAuth(), async (req, res) => {
+filesRouter.post('/attach', requireAuth(), asyncHandler(async (req, res) => {
   const { fileId, entityType, entityId, label, description } = req.body as {
     fileId?: string
     entityType?: string
@@ -347,7 +347,7 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
   }
   const file = await query<{ id: string; original_filename: string }>(
     `SELECT id, original_filename FROM files WHERE id=$1 AND company_id=$2 AND status='uploaded'`,
-    [fileId, req.auth!.companyId],
+    [fileId, getAuth(req).companyId],
   )
   if (!file.rows[0]) {
     res.status(404).json({
@@ -361,17 +361,17 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
       `INSERT INTO document_attachments (file_id, entity_type, entity_id, label, description, uploaded_by)
        VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (file_id, entity_type, entity_id) DO NOTHING`,
-      [fileId, entityType, entityId, label ?? null, description ?? null, req.auth!.userId],
+      [fileId, entityType, entityId, label ?? null, description ?? null, getAuth(req).userId],
     )
     await query(`UPDATE files SET status='attached' WHERE id=$1`, [fileId])
-    const fileLabel = label ?? file.rows[0]!.original_filename
+    const fileLabel = label ?? file.rows[0].original_filename
     // Log to project activity when attaching to an RFQ phase
     if (entityType === 'rfq_phase') {
       const phase = await query<{ project_id: string; phase_type: string }>(
         `SELECT rp.project_id, rp.phase_type FROM rfq_phases rp
          JOIN projects p ON p.id = rp.project_id
          WHERE rp.id=$1 AND p.company_id=$2`,
-        [entityId, req.auth!.companyId],
+        [entityId, getAuth(req).companyId],
       )
       if (phase.rows[0]) {
         const phaseLabel =
@@ -382,15 +382,15 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
           `INSERT INTO project_activity_log (project_id, actor_id, event_type, summary) VALUES ($1,$2,$3,$4)`,
           [
             phase.rows[0].project_id,
-            req.auth!.userId,
+            getAuth(req).userId,
             'rfq_phase_file',
             `File uploaded to ${phaseLabel} phase: "${label ?? fileId}"`,
           ],
         )
         void notifyProjectFileUploadGW(
           phase.rows[0].project_id,
-          req.auth!.companyId,
-          req.auth!.userId,
+          getAuth(req).companyId,
+          getAuth(req).userId,
           `RFQ ${phaseLabel} Phase File`,
           fileLabel,
         )
@@ -398,13 +398,13 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
     } else if (entityType === 'project') {
       const proj = await query<{ id: string }>(
         `SELECT id FROM projects WHERE id=$1 AND company_id=$2`,
-        [entityId, req.auth!.companyId],
+        [entityId, getAuth(req).companyId],
       )
       if (proj.rows[0]) {
         void notifyProjectFileUploadGW(
           entityId,
-          req.auth!.companyId,
-          req.auth!.userId,
+          getAuth(req).companyId,
+          getAuth(req).userId,
           'Project Attachment',
           fileLabel,
         )
@@ -416,12 +416,12 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
       .status(500)
       .json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to attach file' } })
   }
-})
+}))
 
 // ── DELETE /api/v1/files/attachments/:attachmentId ────────────
 // Detaches the attachment record and, if the file has no other
 // attachments, removes it from storage and marks it deleted.
-filesRouter.delete('/attachments/:attachmentId', requireAuth(), async (req, res) => {
+filesRouter.delete('/attachments/:attachmentId', requireAuth(), asyncHandler(async (req, res) => {
   const attachmentId = req.params.attachmentId
   const attachment = await query<{
     id: string
@@ -435,7 +435,7 @@ filesRouter.delete('/attachments/:attachmentId', requireAuth(), async (req, res)
      FROM document_attachments da
      JOIN files f ON f.id = da.file_id
      WHERE da.id=$1 AND f.company_id=$2`,
-    [attachmentId, req.auth!.companyId],
+    [attachmentId, getAuth(req).companyId],
   )
   if (!attachment.rows[0]) {
     res
@@ -479,7 +479,7 @@ filesRouter.delete('/attachments/:attachmentId', requireAuth(), async (req, res)
           `INSERT INTO project_activity_log (project_id, actor_id, event_type, summary) VALUES ($1,$2,$3,$4)`,
           [
             phase.rows[0].project_id,
-            req.auth!.userId,
+            getAuth(req).userId,
             'rfq_phase_file_delete',
             `File removed from ${phaseLabel} phase: "${label ?? fileId}"`,
           ],
@@ -493,10 +493,10 @@ filesRouter.delete('/attachments/:attachmentId', requireAuth(), async (req, res)
       error: { code: 'INTERNAL_ERROR', message: 'Failed to delete attachment' },
     })
   }
-})
+}))
 
 // ── DELETE /api/v1/files/:fileId ───────────────────────────────
-filesRouter.delete('/:fileId', requireAuth(), async (req, res) => {
+filesRouter.delete('/:fileId', requireAuth(), asyncHandler(async (req, res) => {
   const fileId = req.params.fileId
 
   const file = await query<{
@@ -504,7 +504,7 @@ filesRouter.delete('/:fileId', requireAuth(), async (req, res) => {
     file_key: string
     original_filename: string
     status: string
-  }>(`SELECT * FROM files WHERE id=$1 AND company_id=$2`, [fileId, req.auth!.companyId])
+  }>(`SELECT * FROM files WHERE id=$1 AND company_id=$2`, [fileId, getAuth(req).companyId])
 
   if (!file.rows[0]) {
     res
@@ -530,15 +530,15 @@ filesRouter.delete('/:fileId', requireAuth(), async (req, res) => {
 
   try {
     await withTransaction(
-      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
       async (client) => {
         await deleteFile(file.rows[0].file_key)
         await client.query(`UPDATE files SET status='deleted', deleted_at=NOW() WHERE id=$1`, [
           fileId,
         ])
         await logAudit({
-          userId: req.auth!.userId,
-          companyId: req.auth!.companyId,
+          userId: getAuth(req).userId,
+          companyId: getAuth(req).companyId,
           action: 'DELETE',
           tableName: 'files',
           recordId: fileId,
@@ -553,4 +553,4 @@ filesRouter.delete('/:fileId', requireAuth(), async (req, res) => {
       .status(500)
       .json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to delete file' } })
   }
-})
+}))

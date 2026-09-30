@@ -44,7 +44,7 @@ export default function NotificationRoutingPage() {
   }, [load])
 
   function getEnabled(key: string, fallback: boolean): boolean {
-    return edits[key] !== undefined ? edits[key] : fallback
+    return edits[key] ?? fallback
   }
 
   function toggle(key: string, current: boolean) {

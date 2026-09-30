@@ -9,7 +9,7 @@ interface VerifyResponse {
   bankAccount: BankAccount | null
 }
 
-const VERIFY_URL = import.meta.env.VITE_API_URL as string
+const VERIFY_URL = import.meta.env.VITE_API_URL
 
 function fmt(n: number, cur: string) {
   return (
@@ -222,9 +222,9 @@ export default function InvoiceVerifyPage() {
       return
     }
     fetch(`${VERIFY_URL}/api/v1/verify/invoice/${token}`)
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<{ success?: boolean; data?: VerifyResponse }>)
       .then((body) => {
-        if (body.success) setResult(body.data as VerifyResponse)
+        if (body.success && body.data) setResult(body.data)
         else setError(true)
       })
       .catch(() => {
@@ -332,7 +332,7 @@ export default function InvoiceVerifyPage() {
                   <div className="vp-status-sub">
                     {valid
                       ? 'This invoice was issued by FNC Group and is authentic.'
-                      : `This invoice has been ${result?.reason ?? 'revoked'} and is no longer valid.`}
+                      : `This invoice has been ${result.reason ?? 'revoked'} and is no longer valid.`}
                   </div>
                 </div>
 

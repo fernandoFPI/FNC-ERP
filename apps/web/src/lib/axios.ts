@@ -65,10 +65,11 @@ api.interceptors.response.use(
       const store = useAuthStore.getState()
       if (store.refreshToken) {
         try {
-          const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/v1/auth/refresh`, {
-            refreshToken: store.refreshToken,
-          })
-          const payload = (res.data?.data ?? res.data) as { accessToken: string }
+          const res = await axios.post<{ data?: { accessToken: string }; accessToken?: string }>(
+            `${import.meta.env.VITE_API_URL}/api/v1/auth/refresh`,
+            { refreshToken: store.refreshToken },
+          )
+          const payload = (res.data.data ?? res.data) as { accessToken: string }
           const { accessToken } = payload
 
           store.setAccessToken(accessToken)
@@ -94,6 +95,6 @@ api.interceptors.response.use(
         window.location.href = '/login'
       }
     }
-    return Promise.reject(error)
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)))
   },
 )

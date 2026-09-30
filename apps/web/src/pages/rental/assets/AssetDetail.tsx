@@ -19,6 +19,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 import { MaintenanceRecordDetail } from '../maintenance/MaintenanceRecordDetail'
+import type { EquipmentAssetQuery, EquipmentAssetQueryVariables, LogUsageMutation, LogUsageMutationVariables, SubmitConditionReportMutation, SubmitConditionReportMutationVariables } from '../../../graphql/generated'
 
 const TABS = ['Overview', 'Usage Logs', 'Maintenance', 'Condition Reports'].map((t) => ({
   key: t,
@@ -44,16 +45,16 @@ export default function AssetDetail() {
   const [showConditionForm, setShowConditionForm] = useState(false)
   const [maintenanceDetail, setMaintenanceDetail] = useState<string | null>(null)
 
-  const { data, loading } = useQuery(EQUIPMENT_ASSET_QUERY, { variables: { id }, skip: !id })
-  const [logUsage] = useMutation(LOG_USAGE)
-  const [submitCondition] = useMutation(SUBMIT_CONDITION_REPORT)
+  const { data, loading } = useQuery<EquipmentAssetQuery, EquipmentAssetQueryVariables>(EQUIPMENT_ASSET_QUERY, { variables: { id: id ?? '' }, skip: !id })
+  const [logUsage] = useMutation<LogUsageMutation, LogUsageMutationVariables>(LOG_USAGE)
+  const [submitCondition] = useMutation<SubmitConditionReportMutation, SubmitConditionReportMutationVariables>(SUBMIT_CONDITION_REPORT)
 
   const asset = data?.equipmentAsset
 
   async function handleUsageLog(entry: UsageLogEntry) {
     try {
       await logUsage({
-        variables: { input: { ...entry, asset_id: id } },
+        variables: { input: { ...entry, asset_id: id ?? '' } },
         refetchQueries: [{ query: EQUIPMENT_ASSET_QUERY, variables: { id } }],
       })
       addToast({ type: 'success', message: 'Usage logged' })
@@ -66,7 +67,7 @@ export default function AssetDetail() {
   async function handleConditionReport(report: ConditionReport) {
     try {
       await submitCondition({
-        variables: { input: { ...report, asset_id: id } },
+        variables: { input: { ...report, asset_id: id ?? '' } },
         refetchQueries: [{ query: EQUIPMENT_ASSET_QUERY, variables: { id } }],
       })
       addToast({ type: 'success', message: 'Condition report submitted' })
@@ -131,7 +132,17 @@ export default function AssetDetail() {
         subtitle={`${asset.asset_number} · ${asset.category ?? 'Equipment'}`}
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <AssetStatusBadge status={asset.status} maintenanceStatus={asset.maintenance_status} />
+            <AssetStatusBadge
+              status={asset.status as 'available' | 'rented' | 'maintenance' | 'retired' | 'reserved'}
+              maintenanceStatus={
+                (asset.maintenance_status ?? undefined) as
+                  | 'ok'
+                  | 'due_soon'
+                  | 'overdue'
+                  | 'in_progress'
+                  | undefined
+              }
+            />
             <Button
               variant="ghost"
               size="sm"
@@ -195,9 +206,9 @@ export default function AssetDetail() {
           value={`${asset.condition_rating ?? '—'}/5`}
           subtitle="latest rating"
           iconColor={
-            asset.condition_rating >= 4
+            (asset.condition_rating ?? 0) >= 4
               ? 'success'
-              : asset.condition_rating >= 3
+              : (asset.condition_rating ?? 0) >= 3
                 ? 'warning'
                 : 'danger'
           }
@@ -234,7 +245,7 @@ export default function AssetDetail() {
                 [
                   'Purchase Price',
                   asset.purchase_price
-                    ? `${parseFloat(asset.purchase_price).toLocaleString()} ${asset.currency_code}`
+                    ? `${asset.purchase_price.toLocaleString()} ${asset.currency_code}`
                     : '—',
                 ],
                 [
@@ -362,15 +373,7 @@ export default function AssetDetail() {
               Maintenance Schedule
             </div>
             {(asset.maintenanceSchedules ?? []).map(
-              (ms: {
-                id: string
-                maintenance_type: string
-                scheduled_date: string
-                status: string
-                description?: string
-                estimated_cost?: number
-                assigned_to?: string
-              }) => (
+              (ms) => (
                 <div
                   key={ms.id}
                   style={{
@@ -463,13 +466,7 @@ export default function AssetDetail() {
               </Button>
             </div>
             {(asset.conditionReports ?? []).map(
-              (r: {
-                id: string
-                report_date: string
-                rating: number
-                notes?: string
-                created_by_email?: string
-              }) => (
+              (r) => (
                 <div
                   key={r.id}
                   style={{ padding: '12px 0', borderBottom: `1px solid ${theme.border}` }}
@@ -524,7 +521,7 @@ export default function AssetDetail() {
         open={showUsageForm}
         assetId={id ?? ''}
         assetName={asset.name}
-        maintenanceDueHours={asset.maintenance_due_hours}
+        maintenanceDueHours={asset.maintenance_due_hours ?? undefined}
         currentHours={asset.total_hours ?? 0}
         onSubmit={handleUsageLog}
         onClose={() => {

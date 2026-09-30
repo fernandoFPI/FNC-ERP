@@ -15,6 +15,7 @@
   ],
   "rules": {
     "prettier/prettier": "error",
+    "@typescript-eslint/restrict-template-expressions": ["error", { "allowNumber": true }],
     "@typescript-eslint/no-explicit-any": "error",
     "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
     "@typescript-eslint/consistent-type-imports": ["error", { "prefer": "type-imports" }],
@@ -22,5 +23,13 @@
     "@typescript-eslint/await-thenable": "error",
     "no-console": ["warn", { "allow": ["warn", "error"] }]
   },
-  "ignorePatterns": ["dist/", "node_modules/", "*.js", "*.cjs", "*.mjs"]
+  "ignorePatterns": [
+    "dist/",
+    "node_modules/",
+    "*.js",
+    "*.cjs",
+    "*.mjs",
+    "apps/web/src/graphql/generated.ts",
+    "apps/web/src/graphql/schema-types.ts"
+  ]
 }

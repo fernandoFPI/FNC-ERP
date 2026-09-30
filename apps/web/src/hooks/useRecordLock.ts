@@ -120,11 +120,11 @@ export function useRecordLock(entityType: string, entityId: string | undefined):
     const onActivity = () => {
       lastActivityRef.current = Date.now()
     }
-    ACTIVITY_EVENTS.forEach((ev) => window.addEventListener(ev, onActivity, { passive: true }))
+    ACTIVITY_EVENTS.forEach((ev) => { window.addEventListener(ev, onActivity, { passive: true }); })
 
     return () => {
       clearInterval(heartbeat)
-      ACTIVITY_EVENTS.forEach((ev) => window.removeEventListener(ev, onActivity))
+      ACTIVITY_EVENTS.forEach((ev) => { window.removeEventListener(ev, onActivity); })
       if (heldRef.current) {
         void apolloClient.mutate({
           mutation: RELEASE_LOCK_MUTATION,

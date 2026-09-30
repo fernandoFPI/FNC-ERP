@@ -11,8 +11,8 @@ vi.mock('@apollo/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@apollo/client')>()
   return {
     ...actual,
-    useQuery: (...args: unknown[]) => mockUseQuery(...args),
-    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    useQuery: (...args: unknown[]): unknown => mockUseQuery(...args),
+    useMutation: (...args: unknown[]): unknown => mockUseMutation(...args),
     gql: actual.gql,
   }
 })
@@ -71,7 +71,7 @@ beforeEach(() => {
   mockUseMutation.mockReturnValue([vi.fn().mockResolvedValue({ data: {} }), { loading: false }])
 
   mockUseQuery.mockImplementation((doc: unknown) => {
-    const opName = (doc as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name?.value
+    const opName = (doc as { definitions?: { name?: { value?: string } }[] }).definitions?.[0]?.name?.value
     if (opName === 'GetUserPOPositions') {
       return { data: { userPOPositions: [] }, loading: false }
     }
@@ -96,9 +96,9 @@ describe('PendingCatalogItemsPage — Link Existing product search', () => {
     fireEvent.click(screen.getByText('Link Existing'))
 
     await waitFor(() => {
-      const productsCall = mockUseQuery.mock.calls.find((c) => {
+      const productsCall = (mockUseQuery.mock.calls as unknown[][]).find((c) => {
         const doc = c[0] as { definitions?: { name?: { value?: string } }[] }
-        return doc?.definitions?.[0]?.name?.value === 'Products'
+        return doc.definitions?.[0]?.name?.value === 'Products'
       })
       expect(productsCall?.[1]).toMatchObject({ fetchPolicy: 'cache-and-network' })
     })

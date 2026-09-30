@@ -131,7 +131,7 @@ export default function PayrollTaxReport() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              refetch()
+              void refetch()
             }}
           >
             Refresh
