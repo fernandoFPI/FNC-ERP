@@ -41,6 +41,16 @@ export const CHILD_PO_STATUSES = [
 
 export const CHILD_PO_TERMINAL_STATUSES = ['closed', 'rejected', 'cancelled', 'deleted'] as const
 
+// Combined, de-duplicated list of every status a PO row can actually carry —
+// parent vocabulary (draft..completed) interleaved by sequence with the
+// child-PO-only statuses (bought, finance_review, payment_pending, closed).
+// For list-page filters (chips, status dropdown), which show both
+// vocabularies side by side in one table. NOT for StatusBar, which must
+// stay vocabulary-specific — see getStatusesForPO.
+export const ALL_PO_STATUSES = [...PO_STATUSES, ...CHILD_PO_STATUSES]
+  .filter((s, i, arr) => arr.findIndex((x) => x.key === s.key) === i)
+  .sort((a, b) => a.sequence - b.sequence)
+
 /** Picks the right ordered status list for a StatusBar, based on whether this PO is a G1 child. */
 export function getStatusesForPO(po: { requisition_id?: string | null }): typeof PO_STATUSES | typeof CHILD_PO_STATUSES {
   return po.requisition_id ? CHILD_PO_STATUSES : PO_STATUSES
@@ -69,12 +79,8 @@ export const PO_POSITIONS = [
     label: 'Procurement Officer',
     description: 'Adds vendor quotes during the Market pricing stage.',
   },
-  {
-    key: 'procurement_2nd',
-    label: '2nd Procurement',
-    description:
-      'Cross-checks market prices and submits for approval during the Price verification stage.',
-  },
+  // Price verification has no dedicated position — the organizer
+  // cross-checks their own market prices and submits for approval.
   {
     key: 'po_admin',
     label: 'PO Admin',
@@ -119,8 +125,8 @@ export const PO_STATUS_ACTIONS: Record<
   },
   price_verification: {
     label: 'Submit for approval',
-    description: '2nd procurement cross-checks market prices and submits directly for approval',
-    requiredPosition: 'procurement_2nd',
+    description: 'The organizer cross-checks market prices and submits directly for approval',
+    isOrganizer: true,
   },
   pending_approval: {
     label: 'Approve',

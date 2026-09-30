@@ -12,11 +12,12 @@ import { Badge } from '../../../components/ui/Badge'
 import { FilterChipStrip } from '../../../components/ui/FilterChipStrip'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
-import { PO_STATUSES, getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
+import { ALL_PO_STATUSES, getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
 import { useToastStore } from '../../../store/toastStore'
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import type { ApprovePoMutation, ApprovePoMutationVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables } from '../../../graphql/generated'
 
 // myPOsOnly stored as 'true'/'false' — FilterPreset.filters is a flat
 // Record<string, string>, same as every other tracked field here.
@@ -32,15 +33,15 @@ const PRIORITY_STYLES: Record<string, { color: string; bg: string; border: strin
 interface PurchaseOrder {
   id: string
   po_number: string
-  vendor_name?: string
-  vendor_id: string
+  vendor_name?: string | null
+  vendor_id: string | null
   status: string
   priority: string
   total_amount: string
-  viewerCanSeeTotals?: boolean
+  viewerCanSeeTotals?: boolean | null
   currency_code: string
   created_at: string
-  expected_delivery_date?: string
+  expected_delivery_date?: string | null
   invoice_count: number
   project_id?: string | null
   projectCode?: string | null
@@ -50,7 +51,7 @@ interface PurchaseOrder {
 }
 
 const STATUS_OPTIONS = [
-  ...PO_STATUSES.map((s) => ({ value: s.key, label: s.label })),
+  ...ALL_PO_STATUSES.map((s) => ({ value: s.key, label: s.label })),
   { value: 'deleted', label: 'Deleted' },
 ]
 
@@ -88,7 +89,7 @@ export default function PurchaseOrdersPage() {
   const projectIdFilter = urlParams.get('project_id') ?? ''
   const projectNameFilter = urlParams.get('project_name') ?? ''
 
-  const { data, loading, refetch } = useQuery(PURCHASE_ORDERS_QUERY, {
+  const { data, loading, refetch } = useQuery<PurchaseOrdersQuery, PurchaseOrdersQueryVariables>(PURCHASE_ORDERS_QUERY, {
     variables: {
       status: statusFilter || undefined,
       projectId: projectIdFilter || undefined,
@@ -98,7 +99,7 @@ export default function PurchaseOrdersPage() {
   })
   useEntityChanged('purchase_order', () => void refetch())
 
-  const [approvePOMutation] = useMutation(APPROVE_PO)
+  const [approvePOMutation] = useMutation<ApprovePoMutation, ApprovePoMutationVariables>(APPROVE_PO)
 
   const currentFilters = { search, status: statusFilter, fromDate, toDate, myPOsOnly: String(myPOsOnly) }
   const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
@@ -107,7 +108,7 @@ export default function PurchaseOrdersPage() {
     { name: 'My Purchase Orders', filters: { ...FILTER_DEFAULTS, myPOsOnly: 'true' } },
   )
 
-  const orders: PurchaseOrder[] = data?.purchaseOrders ?? []
+  const orders: PurchaseOrder[] = (data?.purchaseOrders ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   // Server-computed (see purchaseOrders resolver) — admin/finance only.
   // Every row carries the same value for a given viewer, so any row will do.
   const canSeeTotals = orders[0]?.viewerCanSeeTotals ?? false
@@ -507,7 +508,7 @@ export default function PurchaseOrdersPage() {
           allCount={orders.length}
           activeKey={statusFilter}
           onChange={setStatusFilter}
-          chips={[...PO_STATUSES, { key: 'deleted', label: 'Deleted' } as const].map((s) => ({
+          chips={[...ALL_PO_STATUSES, { key: 'deleted', label: 'Deleted' } as const].map((s) => ({
             key: s.key,
             label: s.label,
             count: orders.filter((o) => o.status === s.key).length,
@@ -535,7 +536,7 @@ export default function PurchaseOrdersPage() {
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           resultCount={filtered.length}
-          onRefresh={() => refetch()}
+          onRefresh={() => void refetch()}
         >
           <FilterPresets
             presets={presets}
