@@ -10,10 +10,13 @@ export function createApp(): Express {
   app.disable('etag')
   app.use(express.json())
 
-  app.get('/health', asyncHandler(async (_req, res) => {
-    const health = await buildHealthStatus('notifications')
-    res.status(health.status === 'down' ? 503 : 200).json(health)
-  }))
+  app.get(
+    '/health',
+    asyncHandler(async (_req, res) => {
+      const health = await buildHealthStatus('notifications')
+      res.status(health.status === 'down' ? 503 : 200).json(health)
+    }),
+  )
 
   app.use(requireAuth())
 

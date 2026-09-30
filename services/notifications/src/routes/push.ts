@@ -15,44 +15,50 @@ const SubscribeSchema = z.object({
 })
 
 // POST /push/subscribe
-pushRouter.post('/subscribe', asyncHandler(async (req, res) => {
-  const userId = getAuth(req).userId
-  const parsed = SubscribeSchema.safeParse(req.body)
-  if (!parsed.success) {
-    sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
-    return
-  }
+pushRouter.post(
+  '/subscribe',
+  asyncHandler(async (req, res) => {
+    const userId = getAuth(req).userId
+    const parsed = SubscribeSchema.safeParse(req.body)
+    if (!parsed.success) {
+      sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+      return
+    }
 
-  const { endpoint, p256dh, auth, user_agent } = parsed.data
-  try {
-    const result = await query(
-      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent)
+    const { endpoint, p256dh, auth, user_agent } = parsed.data
+    try {
+      const result = await query(
+        `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent)
        VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (user_id, endpoint) DO UPDATE SET p256dh = $3, auth = $4, updated_at = NOW()
        RETURNING *`,
-      [userId, endpoint, p256dh, auth, user_agent ?? null],
-    )
-    sendOk(res, firstRowOrThrow(result), 201)
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to save subscription', err)
-  }
-}))
+        [userId, endpoint, p256dh, auth, user_agent ?? null],
+      )
+      sendOk(res, firstRowOrThrow(result), 201)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to save subscription', err)
+    }
+  }),
+)
 
 // DELETE /push/subscribe
-pushRouter.delete('/subscribe', asyncHandler(async (req, res) => {
-  const userId = getAuth(req).userId
-  const { endpoint } = req.body as { endpoint?: string }
-  if (!endpoint) {
-    sendError(res, 400, 'MISSING_ENDPOINT', 'endpoint is required')
-    return
-  }
-  try {
-    await query('DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2', [
-      userId,
-      endpoint,
-    ])
-    sendOk(res, { deleted: true })
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to remove subscription', err)
-  }
-}))
+pushRouter.delete(
+  '/subscribe',
+  asyncHandler(async (req, res) => {
+    const userId = getAuth(req).userId
+    const { endpoint } = req.body as { endpoint?: string }
+    if (!endpoint) {
+      sendError(res, 400, 'MISSING_ENDPOINT', 'endpoint is required')
+      return
+    }
+    try {
+      await query('DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2', [
+        userId,
+        endpoint,
+      ])
+      sendOk(res, { deleted: true })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to remove subscription', err)
+    }
+  }),
+)

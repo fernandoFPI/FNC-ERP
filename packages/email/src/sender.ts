@@ -28,7 +28,12 @@ function toEmailAddress(address: string) {
 }
 
 function defaultConfigFromEnv(): EmailConfig | null {
-  if (!env.MSGRAPH_TENANT_ID || !env.MSGRAPH_CLIENT_ID || !env.MSGRAPH_CLIENT_SECRET || !env.MSGRAPH_SENDER_ADDRESS) {
+  if (
+    !env.MSGRAPH_TENANT_ID ||
+    !env.MSGRAPH_CLIENT_ID ||
+    !env.MSGRAPH_CLIENT_SECRET ||
+    !env.MSGRAPH_SENDER_ADDRESS
+  ) {
     return null
   }
   const config: EmailConfig = {
