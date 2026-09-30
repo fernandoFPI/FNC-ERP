@@ -34,7 +34,7 @@ async function start() {
     }
   })
 
-  const shutdown = async () => {
+  const shutdown = () => {
     log.info('Gateway shutting down')
     server.closeIdleConnections()
     server.close(() => {
@@ -43,10 +43,10 @@ async function start() {
   }
 
   process.on('SIGTERM', () => {
-    void shutdown()
+    shutdown()
   })
   process.on('SIGINT', () => {
-    void shutdown()
+    shutdown()
   })
 }
 
