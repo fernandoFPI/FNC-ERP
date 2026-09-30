@@ -24,27 +24,31 @@ const CreateProductSchema = z.object({
 
 const UpdateProductSchema = CreateProductSchema.partial().omit({ sku: true })
 
-productsRouter.get('/', requirePermission('inventory.products.view', 'view'), asyncHandler(async (req, res) => {
-  try {
-    const { category, is_active } = req.query
-    let sql = `SELECT * FROM products WHERE company_id = $1`
-    const params: unknown[] = [getAuth(req).companyId]
-    let idx = 2
-    if (category) {
-      sql += ` AND category = $${idx++}`
-      params.push(category)
+productsRouter.get(
+  '/',
+  requirePermission('inventory.products.view', 'view'),
+  asyncHandler(async (req, res) => {
+    try {
+      const { category, is_active } = req.query
+      let sql = `SELECT * FROM products WHERE company_id = $1`
+      const params: unknown[] = [getAuth(req).companyId]
+      let idx = 2
+      if (category) {
+        sql += ` AND category = $${idx++}`
+        params.push(category)
+      }
+      if (is_active !== undefined) {
+        sql += ` AND is_active = $${idx++}`
+        params.push(is_active === 'true')
+      }
+      sql += ' ORDER BY sku'
+      const result = await query(sql, params)
+      sendOk(res, result.rows)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch products', err)
     }
-    if (is_active !== undefined) {
-      sql += ` AND is_active = $${idx++}`
-      params.push(is_active === 'true')
-    }
-    sql += ' ORDER BY sku'
-    const result = await query(sql, params)
-    sendOk(res, result.rows)
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch products', err)
-  }
-}))
+  }),
+)
 
 productsRouter.get(
   '/:id',
@@ -67,61 +71,65 @@ productsRouter.get(
   }),
 )
 
-productsRouter.post('/', requirePermission('inventory.products.edit', 'edit'), asyncHandler(async (req, res) => {
-  try {
-    const companyId = getAuth(req).companyId
-    const parsed = CreateProductSchema.safeParse(req.body)
-    if (!parsed.success) {
-      sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
-      return
-    }
-    const {
-      sku,
-      name,
-      description,
-      category,
-      uom,
-      valuation_method,
-      standard_cost,
-      reorder_point,
-      reorder_qty,
-      is_storable,
-    } = parsed.data
-    const result = await query(
-      `INSERT INTO products (company_id, sku, name, description, category, uom, valuation_method, standard_cost, reorder_point, reorder_qty, is_storable)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [
-        companyId,
+productsRouter.post(
+  '/',
+  requirePermission('inventory.products.edit', 'edit'),
+  asyncHandler(async (req, res) => {
+    try {
+      const companyId = getAuth(req).companyId
+      const parsed = CreateProductSchema.safeParse(req.body)
+      if (!parsed.success) {
+        sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+        return
+      }
+      const {
         sku,
         name,
-        description ?? null,
-        category ?? null,
+        description,
+        category,
         uom,
         valuation_method,
         standard_cost,
-        reorder_point ?? null,
-        reorder_qty ?? null,
+        reorder_point,
+        reorder_qty,
         is_storable,
-      ],
-    )
-    const product = firstRowOrThrow(result)
-    await logAudit({
-      companyId,
-      userId: getAuth(req).userId,
-      action: 'CREATE',
-      tableName: 'products',
-      recordId: product['id'] as string,
-    })
-    sendOk(res, product, 201)
-  } catch (err: unknown) {
-    const e = err as { code?: string }
-    if (e.code === '23505') {
-      sendError(res, 409, 'DUPLICATE_SKU', 'SKU already exists for this company')
-      return
+      } = parsed.data
+      const result = await query(
+        `INSERT INTO products (company_id, sku, name, description, category, uom, valuation_method, standard_cost, reorder_point, reorder_qty, is_storable)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        [
+          companyId,
+          sku,
+          name,
+          description ?? null,
+          category ?? null,
+          uom,
+          valuation_method,
+          standard_cost,
+          reorder_point ?? null,
+          reorder_qty ?? null,
+          is_storable,
+        ],
+      )
+      const product = firstRowOrThrow(result)
+      await logAudit({
+        companyId,
+        userId: getAuth(req).userId,
+        action: 'CREATE',
+        tableName: 'products',
+        recordId: product['id'] as string,
+      })
+      sendOk(res, product, 201)
+    } catch (err: unknown) {
+      const e = err as { code?: string }
+      if (e.code === '23505') {
+        sendError(res, 409, 'DUPLICATE_SKU', 'SKU already exists for this company')
+        return
+      }
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create product', err)
     }
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create product', err)
-  }
-}))
+  }),
+)
 
 productsRouter.put(
   '/:id',

@@ -27,7 +27,7 @@ async function start() {
     process.exit(1)
   })
 
-  const shutdown = async () => {
+  const shutdown = () => {
     log.info('Inventory service shutting down')
     server.closeIdleConnections()
     server.close(() => {
@@ -35,10 +35,10 @@ async function start() {
     })
   }
   process.on('SIGTERM', () => {
-    void shutdown()
+    shutdown()
   })
   process.on('SIGINT', () => {
-    void shutdown()
+    shutdown()
   })
 }
 

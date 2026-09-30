@@ -19,61 +19,69 @@ const Schema = z.object({
   notes: z.string().optional(),
 })
 
-lotsRouter.get('/', requirePermission('inventory.lots.view', 'view'), asyncHandler(async (req, res) => {
-  try {
-    const { product_id } = req.query
-    let sql = `SELECT sl.* FROM stock_lots sl JOIN products p ON p.id = sl.product_id WHERE p.company_id = $1`
-    const params: unknown[] = [getAuth(req).companyId]
-    if (product_id) {
-      sql += ` AND sl.product_id = $2`
-      params.push(product_id)
+lotsRouter.get(
+  '/',
+  requirePermission('inventory.lots.view', 'view'),
+  asyncHandler(async (req, res) => {
+    try {
+      const { product_id } = req.query
+      let sql = `SELECT sl.* FROM stock_lots sl JOIN products p ON p.id = sl.product_id WHERE p.company_id = $1`
+      const params: unknown[] = [getAuth(req).companyId]
+      if (product_id) {
+        sql += ` AND sl.product_id = $2`
+        params.push(product_id)
+      }
+      sql += ' ORDER BY sl.lot_number'
+      const result = await query(sql, params)
+      sendOk(res, result.rows)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch lots', err)
     }
-    sql += ' ORDER BY sl.lot_number'
-    const result = await query(sql, params)
-    sendOk(res, result.rows)
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch lots', err)
-  }
-}))
+  }),
+)
 
-lotsRouter.post('/', requirePermission('inventory.lots.edit', 'edit'), asyncHandler(async (req, res) => {
-  try {
-    const companyId = getAuth(req).companyId
-    const parsed = Schema.safeParse(req.body)
-    if (!parsed.success) {
-      sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
-      return
-    }
-    const { product_id, lot_number, expiry_date, notes } = parsed.data
+lotsRouter.post(
+  '/',
+  requirePermission('inventory.lots.edit', 'edit'),
+  asyncHandler(async (req, res) => {
+    try {
+      const companyId = getAuth(req).companyId
+      const parsed = Schema.safeParse(req.body)
+      if (!parsed.success) {
+        sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+        return
+      }
+      const { product_id, lot_number, expiry_date, notes } = parsed.data
 
-    // Verify product belongs to company
-    const prod = await query('SELECT id FROM products WHERE id = $1 AND company_id = $2', [
-      product_id,
-      companyId,
-    ])
-    if (!prod.rows[0]) {
-      sendError(res, 400, 'INVALID_PRODUCT', 'Product not found in this company')
-      return
-    }
+      // Verify product belongs to company
+      const prod = await query('SELECT id FROM products WHERE id = $1 AND company_id = $2', [
+        product_id,
+        companyId,
+      ])
+      if (!prod.rows[0]) {
+        sendError(res, 400, 'INVALID_PRODUCT', 'Product not found in this company')
+        return
+      }
 
-    const result = await query(
-      `INSERT INTO stock_lots (product_id, lot_number, expiry_date, notes) VALUES ($1,$2,$3,$4) RETURNING *`,
-      [product_id, lot_number, expiry_date ?? null, notes ?? null],
-    )
-    await logAudit({
-      companyId,
-      userId: getAuth(req).userId,
-      action: 'CREATE',
-      tableName: 'stock_lots',
-      recordId: firstRowOrThrow(result)['id'] as string,
-    })
-    sendOk(res, result.rows[0], 201)
-  } catch (err: unknown) {
-    const e = err as { code?: string }
-    if (e.code === '23505') {
-      sendError(res, 409, 'DUPLICATE_LOT', 'Lot number already exists for this product')
-      return
+      const result = await query(
+        `INSERT INTO stock_lots (product_id, lot_number, expiry_date, notes) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [product_id, lot_number, expiry_date ?? null, notes ?? null],
+      )
+      await logAudit({
+        companyId,
+        userId: getAuth(req).userId,
+        action: 'CREATE',
+        tableName: 'stock_lots',
+        recordId: firstRowOrThrow(result)['id'] as string,
+      })
+      sendOk(res, result.rows[0], 201)
+    } catch (err: unknown) {
+      const e = err as { code?: string }
+      if (e.code === '23505') {
+        sendError(res, 409, 'DUPLICATE_LOT', 'Lot number already exists for this product')
+        return
+      }
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create lot', err)
     }
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create lot', err)
-  }
-}))
+  }),
+)

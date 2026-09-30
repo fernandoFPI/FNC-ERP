@@ -23,6 +23,11 @@ vi.mock('@fnc-erp/db', () => ({
   },
   query: vi.fn(),
   withTransaction: vi.fn(),
+  asyncHandler:
+    (fn: (req: unknown, res: unknown, next: (err?: unknown) => void) => Promise<void>) =>
+    (req: unknown, res: unknown, next: (err?: unknown) => void) => {
+      fn(req, res, next).catch(next)
+    },
 }))
 
 vi.mock('@fnc-erp/logger', () => ({
@@ -38,6 +43,10 @@ vi.mock('@fnc-erp/auth', () => ({
       role: 'company_admin', module: 'all', sessionId: 'session-1',
     }
     next()
+  },
+  getAuth: (req: Record<string, unknown>) => {
+    if (!req['auth']) throw new Error('Unauthorized')
+    return req['auth']
   },
 }))
 
