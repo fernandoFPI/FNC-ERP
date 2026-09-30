@@ -28,13 +28,15 @@ export async function cleanupPendingFiles(): Promise<void> {
         await deleteFile(file.file_key)
       } catch (err) {
         // B2 returns NoSuchKey if upload never happened — that is fine
-        jobLog.warn({ fileId: file.id, err }, 'B2 delete failed for pending file — may not exist in B2')
+        jobLog.warn(
+          { fileId: file.id, err },
+          'B2 delete failed for pending file — may not exist in B2',
+        )
       }
 
-      await pool.query(
-        `UPDATE files SET status='orphaned', deleted_at=NOW() WHERE id=$1`,
-        [file.id],
-      )
+      await pool.query(`UPDATE files SET status='orphaned', deleted_at=NOW() WHERE id=$1`, [
+        file.id,
+      ])
     }
 
     jobLog.info({ count: orphaned.rows.length }, 'orphaned pending file cleanup complete')
@@ -63,12 +65,14 @@ export async function reviewUnattachedFiles(): Promise<void> {
 
     if (unattached.rows.length === 0) return
 
-    jobLog.warn({ count: unattached.rows.length }, 'files uploaded but never attached after 7 days — marking orphaned')
-
-    await pool.query(
-      `UPDATE files SET status='orphaned' WHERE id = ANY($1)`,
-      [unattached.rows.map((f) => f.id)],
+    jobLog.warn(
+      { count: unattached.rows.length },
+      'files uploaded but never attached after 7 days — marking orphaned',
     )
+
+    await pool.query(`UPDATE files SET status='orphaned' WHERE id = ANY($1)`, [
+      unattached.rows.map((f) => f.id),
+    ])
   } catch (err) {
     jobLog.error({ err }, 'unattached file review job failed')
   }

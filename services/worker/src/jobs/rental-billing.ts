@@ -66,17 +66,21 @@ async function autoGenerateRentalInvoice(contract: ContractRow, lines: LineRow[]
 
   await pool.query(
     `INSERT INTO service_outbox (service, event_type, payload) VALUES ('finance','RENTAL_INVOICE_JOURNAL_REQUESTED', $1)`,
-    [JSON.stringify({
-      invoice_id: invoiceResult.rows[0]?.['id'],
-      contract_id: contract.id,
-      company_id: contract.company_id,
-      amount: totalAmount,
-      revenue_account_id: contract.revenue_account_id,
-      analytic_account_id: contract.analytic_account_id,
-    })],
+    [
+      JSON.stringify({
+        invoice_id: invoiceResult.rows[0]?.['id'],
+        contract_id: contract.id,
+        company_id: contract.company_id,
+        amount: totalAmount,
+        revenue_account_id: contract.revenue_account_id,
+        analytic_account_id: contract.analytic_account_id,
+      }),
+    ],
   )
 
-  console.warn(`[worker] Auto-generated rental invoice ${invoiceNumber} for contract ${contract.contract_number} (${contract.currency_code} ${totalAmount})`)
+  console.warn(
+    `[worker] Auto-generated rental invoice ${invoiceNumber} for contract ${contract.contract_number} (${contract.currency_code} ${totalAmount})`,
+  )
 }
 
 /**

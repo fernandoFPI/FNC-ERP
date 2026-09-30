@@ -1,5 +1,12 @@
 import cron from 'node-cron'
-import { checkConnection, pool, startJobRun, finishJobRun, failJobRun, recordCompletedJobRun } from '@fnc-erp/db'
+import {
+  checkConnection,
+  pool,
+  startJobRun,
+  finishJobRun,
+  failJobRun,
+  recordCompletedJobRun,
+} from '@fnc-erp/db'
 import { createServiceLogger } from '@fnc-erp/logger'
 import { env } from '@fnc-erp/config'
 import { processOutbox } from './jobs/outbox-processor.js'
@@ -38,7 +45,9 @@ function wrapCron(jobName: string, fn: () => Promise<void>): () => void {
         await finishJobRun(runId)
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
-        await failJobRun(runId, msg).catch(() => {/* ignore secondary failure */})
+        await failJobRun(runId, msg).catch(() => {
+          /* ignore secondary failure */
+        })
         log.error({ err, jobName }, `${jobName} job failed`)
       }
     })()
@@ -106,8 +115,12 @@ async function start() {
     process.exit(0)
   }
 
-  process.on('SIGTERM', () => { void shutdown() })
-  process.on('SIGINT', () => { void shutdown() })
+  process.on('SIGTERM', () => {
+    void shutdown()
+  })
+  process.on('SIGINT', () => {
+    void shutdown()
+  })
 }
 
 void start()

@@ -35,8 +35,14 @@ usageLogsRouter.get('/', requirePermission('rental.assets.view', 'view'), async 
     const params: unknown[] = [requireParam(req, 'id')]
     const conditions: string[] = []
     let idx = 2
-    if (from_date) { conditions.push(`eul.log_date >= $${idx++}`); params.push(from_date) }
-    if (to_date) { conditions.push(`eul.log_date <= $${idx++}`); params.push(to_date) }
+    if (from_date) {
+      conditions.push(`eul.log_date >= $${idx++}`)
+      params.push(from_date)
+    }
+    if (to_date) {
+      conditions.push(`eul.log_date <= $${idx++}`)
+      params.push(to_date)
+    }
     params.push(limit, offset)
 
     const where = conditions.length ? `AND ${conditions.join(' AND ')}` : ''
@@ -55,10 +61,9 @@ usageLogsRouter.get('/', requirePermission('rental.assets.view', 'view'), async 
       params,
     )
 
-    const stats = await query(
-      `SELECT * FROM equipment_asset_stats WHERE asset_id = $1`,
-      [requireParam(req, 'id')],
-    )
+    const stats = await query(`SELECT * FROM equipment_asset_stats WHERE asset_id = $1`, [
+      requireParam(req, 'id'),
+    ])
 
     sendOk(res, { logs: logs.rows, stats: stats.rows[0] ?? null })
   } catch (err) {
@@ -67,19 +72,28 @@ usageLogsRouter.get('/', requirePermission('rental.assets.view', 'view'), async 
 })
 
 // GET /rental/assets/:id/usage/summary
-usageLogsRouter.get('/summary', requirePermission('rental.assets.view', 'view'), async (req, res) => {
-  try {
-    const { from_date, to_date } = req.query as Record<string, string>
+usageLogsRouter.get(
+  '/summary',
+  requirePermission('rental.assets.view', 'view'),
+  async (req, res) => {
+    try {
+      const { from_date, to_date } = req.query as Record<string, string>
 
-    const params: unknown[] = [requireParam(req, 'id')]
-    const conditions: string[] = []
-    let idx = 2
-    if (from_date) { conditions.push(`log_date >= $${idx++}`); params.push(from_date) }
-    if (to_date) { conditions.push(`log_date <= $${idx++}`); params.push(to_date) }
+      const params: unknown[] = [requireParam(req, 'id')]
+      const conditions: string[] = []
+      let idx = 2
+      if (from_date) {
+        conditions.push(`log_date >= $${idx++}`)
+        params.push(from_date)
+      }
+      if (to_date) {
+        conditions.push(`log_date <= $${idx++}`)
+        params.push(to_date)
+      }
 
-    const where = conditions.length ? `AND ${conditions.join(' AND ')}` : ''
-    const summary = await query(
-      `SELECT
+      const where = conditions.length ? `AND ${conditions.join(' AND ')}` : ''
+      const summary = await query(
+        `SELECT
          COUNT(*)                                          AS days_logged,
          SUM(hours_operated)                              AS total_hours,
          AVG(hours_operated)                              AS avg_hours_per_day,
@@ -90,14 +104,15 @@ usageLogsRouter.get('/summary', requirePermission('rental.assets.view', 'view'),
          COUNT(*) FILTER (WHERE is_verified = false)      AS unverified_days
        FROM equipment_usage_logs
        WHERE asset_id = $1 ${where}`,
-      params,
-    )
+        params,
+      )
 
-    sendOk(res, summary.rows[0] ?? null)
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch usage summary', err)
-  }
-})
+      sendOk(res, summary.rows[0] ?? null)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch usage summary', err)
+    }
+  },
+)
 
 // POST /rental/assets/:id/usage
 usageLogsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async (req, res) => {
@@ -107,8 +122,17 @@ usageLogsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async
     return
   }
 
-  const { log_date, hours_operated, fuel_consumed_liters, odometer_km,
-          engine_hours, contract_id, project_id, notes, recorded_via } = parsed.data
+  const {
+    log_date,
+    hours_operated,
+    fuel_consumed_liters,
+    odometer_km,
+    engine_hours,
+    contract_id,
+    project_id,
+    notes,
+    recorded_via,
+  } = parsed.data
   const assetId = requireParam(req, 'id')
 
   try {
@@ -149,9 +173,19 @@ usageLogsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async
            recorded_by          = EXCLUDED.recorded_by,
            updated_at           = NOW()
          RETURNING *`,
-        [assetId, contract_id ?? null, project_id ?? null, log_date,
-         hours_operated, fuel_consumed_liters ?? null, odometer_km ?? null,
-         engine_hours ?? null, getAuth(req).userId, recorded_via, notes ?? null],
+        [
+          assetId,
+          contract_id ?? null,
+          project_id ?? null,
+          log_date,
+          hours_operated,
+          fuel_consumed_liters ?? null,
+          odometer_km ?? null,
+          engine_hours ?? null,
+          getAuth(req).userId,
+          recorded_via,
+          notes ?? null,
+        ],
       )
       usageLog = result.rows[0] as Record<string, unknown>
 
@@ -174,10 +208,9 @@ usageLogsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async
     }
 
     // Check if usage triggered a maintenance warning
-    const statsRes = await query(
-      `SELECT * FROM equipment_asset_stats WHERE asset_id = $1`,
-      [assetId],
-    )
+    const statsRes = await query(`SELECT * FROM equipment_asset_stats WHERE asset_id = $1`, [
+      assetId,
+    ])
     const stat = statsRes.rows[0] as Record<string, unknown> | undefined
     let maintenanceWarning = null
     if (stat?.['next_maintenance_due_hours']) {
@@ -208,23 +241,26 @@ usageLogsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async
 })
 
 // POST /rental/assets/:id/usage/:logId/verify
-usageLogsRouter.post('/:logId/verify', requirePermission('rental.assets.edit', 'edit'), async (req, res) => {
-  const role = getAuth(req).role
-  if (!['module_admin', 'company_admin', 'system_admin'].includes(role)) {
-    sendError(res, 403, 'FORBIDDEN', 'Module admin or above required to verify usage logs')
-    return
-  }
+usageLogsRouter.post(
+  '/:logId/verify',
+  requirePermission('rental.assets.edit', 'edit'),
+  async (req, res) => {
+    const role = getAuth(req).role
+    if (!['module_admin', 'company_admin', 'system_admin'].includes(role)) {
+      sendError(res, 403, 'FORBIDDEN', 'Module admin or above required to verify usage logs')
+      return
+    }
 
-  try {
-    await query(
-      `UPDATE equipment_usage_logs
+    try {
+      await query(
+        `UPDATE equipment_usage_logs
        SET is_verified = true, verified_by = $1, verified_at = NOW(), updated_at = NOW()
        WHERE id = $2 AND asset_id = $3`,
-      [getAuth(req).userId, req.params['logId'], requireParam(req, 'id')],
-    )
-    sendOk(res, { message: 'Usage log verified' })
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to verify usage log', err)
-  }
-})
-
+        [getAuth(req).userId, req.params['logId'], requireParam(req, 'id')],
+      )
+      sendOk(res, { message: 'Usage log verified' })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to verify usage log', err)
+    }
+  },
+)

@@ -45,14 +45,17 @@ locationRouter.get('/', requirePermission('rental.assets.view', 'view'), async (
 })
 
 // GET /rental/assets/:id/location/history
-locationRouter.get('/history', requirePermission('rental.assets.view', 'view'), async (req, res) => {
-  try {
-    const page = Math.max(1, parseInt((req.query['page'] as string) ?? '1'))
-    const limit = Math.min(100, parseInt((req.query['limit'] as string) ?? '50'))
-    const offset = (page - 1) * limit
+locationRouter.get(
+  '/history',
+  requirePermission('rental.assets.view', 'view'),
+  async (req, res) => {
+    try {
+      const page = Math.max(1, parseInt((req.query['page'] as string) ?? '1'))
+      const limit = Math.min(100, parseInt((req.query['limit'] as string) ?? '50'))
+      const offset = (page - 1) * limit
 
-    const history = await query(
-      `SELECT elh.*,
+      const history = await query(
+        `SELECT elh.*,
               sl.name AS stock_location_name,
               p.name  AS project_name,
               u.email AS recorded_by_email
@@ -63,13 +66,14 @@ locationRouter.get('/history', requirePermission('rental.assets.view', 'view'), 
        WHERE elh.asset_id = $1
        ORDER BY elh.effective_at DESC
        LIMIT $2 OFFSET $3`,
-      [requireParam(req, 'id'), limit, offset],
-    )
-    sendOk(res, history.rows)
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch location history', err)
-  }
-})
+        [requireParam(req, 'id'), limit, offset],
+      )
+      sendOk(res, history.rows)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch location history', err)
+    }
+  },
+)
 
 // POST /rental/assets/:id/location
 locationRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async (req, res) => {
@@ -103,10 +107,19 @@ locationRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async 
             location_name, movement_type, recorded_by, recorded_via, notes)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING *`,
-        [assetId, d.stock_location_id ?? null, d.project_id ?? null,
-         d.gps_lat ?? null, d.gps_lng ?? null, d.gps_accuracy_meters ?? null,
-         d.location_name ?? null, d.movement_type,
-         getAuth(req).userId, d.recorded_via, d.notes ?? null],
+        [
+          assetId,
+          d.stock_location_id ?? null,
+          d.project_id ?? null,
+          d.gps_lat ?? null,
+          d.gps_lng ?? null,
+          d.gps_accuracy_meters ?? null,
+          d.location_name ?? null,
+          d.movement_type,
+          getAuth(req).userId,
+          d.recorded_via,
+          d.notes ?? null,
+        ],
       )
       locationRecord = result.rows[0] as Record<string, unknown>
 
@@ -130,7 +143,11 @@ locationRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async 
         action: 'ASSET_LOCATION_UPDATED',
         tableName: 'equipment_location_history',
         recordId: locationRecord['id'] as string,
-        newValues: { movement_type: d.movement_type, location_name: d.location_name, project_id: d.project_id },
+        newValues: {
+          movement_type: d.movement_type,
+          location_name: d.location_name,
+          project_id: d.project_id,
+        },
         client,
       })
 
@@ -173,4 +190,3 @@ export async function getFleetLocations(req: Request, res: Response): Promise<vo
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch fleet locations', err)
   }
 }
-

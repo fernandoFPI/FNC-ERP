@@ -31,35 +31,55 @@ assetsRouter.get('/', requirePermission('rental.assets.view', 'view'), async (re
     let sql = `SELECT * FROM equipment_assets WHERE company_id = $1`
     const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
-    if (status) { sql += ` AND status = $${idx++}`; params.push(status) }
-    if (category) { sql += ` AND category = $${idx++}`; params.push(category) }
-    if (is_active !== undefined) { sql += ` AND is_active = $${idx++}`; params.push(is_active === 'true') }
+    if (status) {
+      sql += ` AND status = $${idx++}`
+      params.push(status)
+    }
+    if (category) {
+      sql += ` AND category = $${idx++}`
+      params.push(category)
+    }
+    if (is_active !== undefined) {
+      sql += ` AND is_active = $${idx++}`
+      params.push(is_active === 'true')
+    }
     sql += ' ORDER BY name LIMIT 500'
     sendOk(res, (await query(sql, params)).rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch assets', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch assets', err)
+  }
 })
 
-assetsRouter.get('/availability', requirePermission('rental.assets.view', 'view'), async (req, res) => {
-  try {
-    const { from_date, to_date, category } = req.query
-    let sql = `SELECT a.* FROM equipment_assets a
+assetsRouter.get(
+  '/availability',
+  requirePermission('rental.assets.view', 'view'),
+  async (req, res) => {
+    try {
+      const { from_date, to_date, category } = req.query
+      let sql = `SELECT a.* FROM equipment_assets a
                WHERE a.company_id = $1 AND a.status = 'available' AND a.is_active = true`
-    const params: unknown[] = [getAuth(req).companyId]
-    let idx = 2
-    if (category) { sql += ` AND a.category = $${idx++}`; params.push(category) }
-    if (from_date && to_date) {
-      sql += ` AND NOT EXISTS (
+      const params: unknown[] = [getAuth(req).companyId]
+      let idx = 2
+      if (category) {
+        sql += ` AND a.category = $${idx++}`
+        params.push(category)
+      }
+      if (from_date && to_date) {
+        sql += ` AND NOT EXISTS (
         SELECT 1 FROM rental_contracts rc
         JOIN rental_contract_lines rcl ON rcl.contract_id = rc.id
         WHERE rcl.asset_id = a.id AND rc.status IN ('active','draft')
           AND rc.start_date <= $${idx++} AND (rc.end_date IS NULL OR rc.end_date >= $${idx++})
       )`
-      params.push(to_date, from_date)
+        params.push(to_date, from_date)
+      }
+      sql += ' ORDER BY a.name'
+      sendOk(res, (await query(sql, params)).rows)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch availability', err)
     }
-    sql += ' ORDER BY a.name'
-    sendOk(res, (await query(sql, params)).rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch availability', err) }
-})
+  },
+)
 
 assetsRouter.get('/:id', requirePermission('rental.assets.view', 'view'), async (req, res) => {
   try {
@@ -73,45 +93,78 @@ assetsRouter.get('/:id', requirePermission('rental.assets.view', 'view'), async 
     )
     if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Asset not found')
     sendOk(res, result.rows[0])
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch asset', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch asset', err)
+  }
 })
 
 assetsRouter.post('/', requirePermission('rental.assets.edit', 'edit'), async (req, res) => {
   try {
     const companyId = getAuth(req).companyId
     const parsed = Schema.safeParse(req.body)
-    if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+    if (!parsed.success)
+      return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
     const result = await query(
       `INSERT INTO equipment_assets (company_id, asset_number, name, category, model, serial_number,
          year_of_manufacture, daily_rate, weekly_rate, monthly_rate, currency_code,
          purchase_cost, purchase_date, notes)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
-      [companyId, d.asset_number, d.name, d.category ?? null, d.model ?? null, d.serial_number ?? null,
-       d.year_of_manufacture ?? null, d.daily_rate, d.weekly_rate ?? null, d.monthly_rate ?? null,
-       d.currency_code, d.purchase_cost ?? null, d.purchase_date ?? null, d.notes ?? null],
+      [
+        companyId,
+        d.asset_number,
+        d.name,
+        d.category ?? null,
+        d.model ?? null,
+        d.serial_number ?? null,
+        d.year_of_manufacture ?? null,
+        d.daily_rate,
+        d.weekly_rate ?? null,
+        d.monthly_rate ?? null,
+        d.currency_code,
+        d.purchase_cost ?? null,
+        d.purchase_date ?? null,
+        d.notes ?? null,
+      ],
     )
     const asset = firstRowOrThrow(result)
-    await logAudit({ companyId, userId: getAuth(req).userId, action: 'CREATE', tableName: 'equipment_assets', recordId: asset['id'] as string })
+    await logAudit({
+      companyId,
+      userId: getAuth(req).userId,
+      action: 'CREATE',
+      tableName: 'equipment_assets',
+      recordId: asset['id'] as string,
+    })
     sendOk(res, asset, 201)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create asset', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create asset', err)
+  }
 })
 
 assetsRouter.put('/:id', requirePermission('rental.assets.edit', 'edit'), async (req, res) => {
   try {
     const companyId = getAuth(req).companyId
     const parsed = Schema.partial().safeParse(req.body)
-    if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+    if (!parsed.success)
+      return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
     const updates: string[] = []
     const params: unknown[] = []
     let idx = 1
     const fields: Array<[string, unknown]> = [
-      ['name', d.name], ['category', d.category], ['model', d.model], ['daily_rate', d.daily_rate],
-      ['weekly_rate', d.weekly_rate], ['monthly_rate', d.monthly_rate], ['notes', d.notes],
+      ['name', d.name],
+      ['category', d.category],
+      ['model', d.model],
+      ['daily_rate', d.daily_rate],
+      ['weekly_rate', d.weekly_rate],
+      ['monthly_rate', d.monthly_rate],
+      ['notes', d.notes],
     ]
     for (const [col, val] of fields) {
-      if (val !== undefined) { updates.push(`${col} = $${idx++}`); params.push(val) }
+      if (val !== undefined) {
+        updates.push(`${col} = $${idx++}`)
+        params.push(val)
+      }
     }
     if (updates.length === 0) return sendError(res, 400, 'NO_CHANGES', 'No fields to update')
     updates.push('updated_at = NOW()')
@@ -122,16 +175,24 @@ assetsRouter.put('/:id', requirePermission('rental.assets.edit', 'edit'), async 
     )
     if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Asset not found')
     sendOk(res, result.rows[0])
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update asset', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update asset', err)
+  }
 })
 
-assetsRouter.post('/:id/retire', requirePermission('rental.assets.edit', 'edit'), async (req, res) => {
-  try {
-    await query(
-      `UPDATE equipment_assets SET status='disposed', is_active=false, updated_at=NOW()
+assetsRouter.post(
+  '/:id/retire',
+  requirePermission('rental.assets.edit', 'edit'),
+  async (req, res) => {
+    try {
+      await query(
+        `UPDATE equipment_assets SET status='disposed', is_active=false, updated_at=NOW()
        WHERE id=$1 AND company_id=$2`,
-      [req.params['id'], getAuth(req).companyId],
-    )
-    sendOk(res, { retired: true })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to retire asset', err) }
-})
+        [req.params['id'], getAuth(req).companyId],
+      )
+      sendOk(res, { retired: true })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to retire asset', err)
+    }
+  },
+)

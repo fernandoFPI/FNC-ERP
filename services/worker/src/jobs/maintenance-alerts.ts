@@ -22,8 +22,7 @@ export async function runMaintenanceDueCheck(): Promise<void> {
   const runId = await startJobRun('maintenance-due-check')
   log.info('running maintenance alert check')
   try {
-
-  const dueSoon = await pool.query<Record<string, unknown>>(`
+    const dueSoon = await pool.query<Record<string, unknown>>(`
     SELECT
       ea.id          AS asset_id,
       ea.name        AS asset_name,
@@ -57,51 +56,57 @@ export async function runMaintenanceDueCheck(): Promise<void> {
       )
   `)
 
-  for (const asset of dueSoon.rows) {
-    const hoursRemaining = asset['hours_remaining'] != null ? Number(asset['hours_remaining']) : null
-    const daysRemaining  = asset['days_remaining']  != null ? Number(asset['days_remaining'])  : null
+    for (const asset of dueSoon.rows) {
+      const hoursRemaining =
+        asset['hours_remaining'] != null ? Number(asset['hours_remaining']) : null
+      const daysRemaining = asset['days_remaining'] != null ? Number(asset['days_remaining']) : null
 
-    const isOverdue =
-      (hoursRemaining !== null && hoursRemaining <= 0) ||
-      (daysRemaining  !== null && daysRemaining  <= 0)
+      const isOverdue =
+        (hoursRemaining !== null && hoursRemaining <= 0) ||
+        (daysRemaining !== null && daysRemaining <= 0)
 
-    const urgency = isOverdue ? 'overdue' : 'due_soon'
+      const urgency = isOverdue ? 'overdue' : 'due_soon'
 
-    log.warn({
-      assetId: asset['asset_id'],
-      assetName: asset['asset_name'],
-      scheduleName: asset['schedule_name'],
-      urgency,
-      hoursRemaining,
-      daysRemaining,
-    }, `maintenance ${urgency}`)
+      log.warn(
+        {
+          assetId: asset['asset_id'],
+          assetName: asset['asset_name'],
+          scheduleName: asset['schedule_name'],
+          urgency,
+          hoursRemaining,
+          daysRemaining,
+        },
+        `maintenance ${urgency}`,
+      )
 
-    await pool.query(
-      `UPDATE equipment_asset_stats
+      await pool.query(
+        `UPDATE equipment_asset_stats
        SET maintenance_status = $1, updated_at = NOW()
        WHERE asset_id = $2`,
-      [urgency, asset['asset_id']],
-    )
+        [urgency, asset['asset_id']],
+      )
 
-    await pool.query(
-      `INSERT INTO service_outbox (service, event_type, payload)
+      await pool.query(
+        `INSERT INTO service_outbox (service, event_type, payload)
        VALUES ('notifications','MAINTENANCE_DUE_ALERT',$1::jsonb)`,
-      [JSON.stringify({
-        assetId:         asset['asset_id'],
-        assetName:       asset['asset_name'],
-        assetNumber:     asset['asset_number'],
-        companyId:       asset['company_id'],
-        scheduleName:    asset['schedule_name'],
-        maintenanceType: asset['maintenance_type'],
-        urgency,
-        hoursRemaining,
-        daysRemaining,
-      })],
-    )
-  }
+        [
+          JSON.stringify({
+            assetId: asset['asset_id'],
+            assetName: asset['asset_name'],
+            assetNumber: asset['asset_number'],
+            companyId: asset['company_id'],
+            scheduleName: asset['schedule_name'],
+            maintenanceType: asset['maintenance_type'],
+            urgency,
+            hoursRemaining,
+            daysRemaining,
+          }),
+        ],
+      )
+    }
 
-  log.info({ alertsSent: dueSoon.rows.length }, 'maintenance alert check complete')
-  await finishJobRun(runId, { alertsSent: dueSoon.rows.length })
+    log.info({ alertsSent: dueSoon.rows.length }, 'maintenance alert check complete')
+    await finishJobRun(runId, { alertsSent: dueSoon.rows.length })
   } catch (err) {
     await failJobRun(runId, err instanceof Error ? err.message : String(err))
     throw err
@@ -120,10 +125,13 @@ export async function markOverdueRecords(): Promise<void> {
     )
 
     if (result.rows.length > 0) {
-      log.warn({
-        count: result.rows.length,
-        records: result.rows.map((r) => r.id),
-      }, 'maintenance records marked overdue')
+      log.warn(
+        {
+          count: result.rows.length,
+          records: result.rows.map((r) => r.id),
+        },
+        'maintenance records marked overdue',
+      )
     }
     await finishJobRun(runId, { markedOverdue: result.rows.length })
   } catch (err) {

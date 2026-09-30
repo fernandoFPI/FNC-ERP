@@ -58,14 +58,17 @@ export async function sendLowStockAlerts(): Promise<void> {
     )
 
     for (const admin of admins.rows) {
-      const productList = items.map(i => `${i.product_name} (${i.qty_on_hand} ≤ ${i.reorder_point})`).join(', ')
+      const productList = items
+        .map((i) => `${i.product_name} (${i.qty_on_hand} ≤ ${i.reorder_point})`)
+        .join(', ')
       await pool.query(
         `INSERT INTO notifications (company_id, user_id, type, title, body, data)
          VALUES ($1,$2,'LOW_STOCK_ALERT','Low Stock Alert',$3,$4)`,
         [
-          companyId, admin.user_id,
+          companyId,
+          admin.user_id,
           `${items.length} product(s) at or below reorder point in ${companyName}: ${productList}`,
-          JSON.stringify({ product_ids: items.map(i => i.product_id) }),
+          JSON.stringify({ product_ids: items.map((i) => i.product_id) }),
         ],
       )
     }

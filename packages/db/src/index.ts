@@ -22,12 +22,7 @@ export {
   PRODUCT_CATEGORY_SKU_PREFIXES,
 } from './document-sequence.js'
 export type { DocumentSequence, DocType } from './document-sequence.js'
-export {
-  listPoFxRates,
-  upsertPoFxRate,
-  deletePoFxRate,
-  setDefaultPoFxRate,
-} from './po-fx-rate.js'
+export { listPoFxRates, upsertPoFxRate, deletePoFxRate, setDefaultPoFxRate } from './po-fx-rate.js'
 export type { PoFxRate } from './po-fx-rate.js'
 export {
   listProductStoreCategories,

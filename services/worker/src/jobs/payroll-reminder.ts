@@ -21,7 +21,9 @@ export async function sendPayrollReminders(): Promise<void> {
   const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' })
 
   // Fetch all active companies
-  const companiesResult = await pool.query<CompanyRow>(`SELECT id, name FROM companies WHERE is_active = TRUE`)
+  const companiesResult = await pool.query<CompanyRow>(
+    `SELECT id, name FROM companies WHERE is_active = TRUE`,
+  )
   const companies = companiesResult.rows
 
   for (const company of companies) {
@@ -32,7 +34,9 @@ export async function sendPayrollReminders(): Promise<void> {
       [company.id, periodName],
     )
     if ((existing.rowCount ?? 0) > 0) {
-      console.warn(`[worker] Payroll already created for ${company.name} (${periodName}), skipping reminder`)
+      console.warn(
+        `[worker] Payroll already created for ${company.name} (${periodName}), skipping reminder`,
+      )
       continue
     }
 
@@ -46,10 +50,16 @@ export async function sendPayrollReminders(): Promise<void> {
       await pool.query(
         `INSERT INTO notifications (company_id, user_id, type, title, body)
          VALUES ($1,$2,'PAYROLL_REMINDER','Payroll Reminder',$3)`,
-        [company.id, admin.user_id, `Reminder: ${monthName} payroll has not been processed for ${company.name}. Please process before month-end.`],
+        [
+          company.id,
+          admin.user_id,
+          `Reminder: ${monthName} payroll has not been processed for ${company.name}. Please process before month-end.`,
+        ],
       )
     }
 
-    console.warn(`[worker] Payroll reminder sent to ${admins.rowCount ?? 0} admins for ${company.name}`)
+    console.warn(
+      `[worker] Payroll reminder sent to ${admins.rowCount ?? 0} admins for ${company.name}`,
+    )
   }
 }

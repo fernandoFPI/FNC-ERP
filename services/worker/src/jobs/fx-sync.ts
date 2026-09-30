@@ -6,7 +6,16 @@ import {
   type FetchedRate,
 } from '@fnc-erp/fx'
 import { checkRateStaleness } from '@fnc-erp/fx/staleness'
-import { pool, withTransaction, getSystemConfig, startJobRun, finishJobRun, partialJobRun, failJobRun, firstRowOrThrow } from '@fnc-erp/db'
+import {
+  pool,
+  withTransaction,
+  getSystemConfig,
+  startJobRun,
+  finishJobRun,
+  partialJobRun,
+  failJobRun,
+  firstRowOrThrow,
+} from '@fnc-erp/db'
 import { logger } from '@fnc-erp/logger'
 import { env } from '@fnc-erp/config'
 
@@ -89,7 +98,11 @@ export async function syncFXRates(
         `Rate validation failed for ${fetched.fromCurrency}/${fetched.toCurrency}: ${validation.reason ?? ''}`,
       )
       log.warn(
-        { pair: `${fetched.fromCurrency}/${fetched.toCurrency}`, rate: fetched.rate, reason: validation.reason },
+        {
+          pair: `${fetched.fromCurrency}/${fetched.toCurrency}`,
+          rate: fetched.rate,
+          reason: validation.reason,
+        },
         'rate failed validation — skipped',
       )
       ratesSkipped++
@@ -110,9 +123,7 @@ export async function syncFXRates(
 
           const previousRate = prev.rows[0] ? parseFloat(prev.rows[0].rate) : null
           const changePct =
-            previousRate != null
-              ? ((fetched.rate - previousRate) / previousRate) * 100
-              : null
+            previousRate != null ? ((fetched.rate - previousRate) / previousRate) * 100 : null
 
           // Upsert rate — skip if same pair+date already exists
           const result = await client.query<{ id: string }>(
@@ -186,7 +197,10 @@ export async function syncFXRates(
     } catch (err: unknown) {
       const msg = `Failed to persist ${fetched.fromCurrency}/${fetched.toCurrency}: ${err instanceof Error ? err.message : String(err)}`
       errors.push(msg)
-      log.error({ err, pair: `${fetched.fromCurrency}/${fetched.toCurrency}` }, 'failed to persist rate')
+      log.error(
+        { err, pair: `${fetched.fromCurrency}/${fetched.toCurrency}` },
+        'failed to persist rate',
+      )
     }
   }
 
@@ -222,7 +236,14 @@ export async function syncFXRates(
   }
 
   log.info(
-    { syncType, status: finalStatus, ratesUpdated, ratesSkipped, errors: errors.length, durationMs },
+    {
+      syncType,
+      status: finalStatus,
+      ratesUpdated,
+      ratesSkipped,
+      errors: errors.length,
+      durationMs,
+    },
     'FX rate sync complete',
   )
 
@@ -280,33 +301,33 @@ const TRACKED_PAIRS = [
 async function runStalenessCheck(): Promise<void> {
   const runId = await startJobRun('fx-staleness-check')
   try {
-  const companies = await pool.query<{ id: string }>(
-    `SELECT id FROM companies WHERE is_active = true`,
-  )
+    const companies = await pool.query<{ id: string }>(
+      `SELECT id FROM companies WHERE is_active = true`,
+    )
 
-  for (const company of companies.rows) {
-    const statuses = await checkRateStaleness(company.id, TRACKED_PAIRS)
+    for (const company of companies.rows) {
+      const statuses = await checkRateStaleness(company.id, TRACKED_PAIRS)
 
-    for (const status of statuses) {
-      if (status.status === 'critical' || status.status === 'missing') {
-        await pool.query(
-          `INSERT INTO service_outbox (service, event_type, payload)
+      for (const status of statuses) {
+        if (status.status === 'critical' || status.status === 'missing') {
+          await pool.query(
+            `INSERT INTO service_outbox (service, event_type, payload)
            VALUES ('notifications','FX_RATE_STALE_ALERT',$1::jsonb)`,
-          [
-            JSON.stringify({
-              companyId: company.id,
-              currencyPair: status.currencyPair,
-              status: status.status,
-              ageHours: status.ageHours,
-              lastRate: status.lastRate,
-              message: status.message,
-            }),
-          ],
-        )
+            [
+              JSON.stringify({
+                companyId: company.id,
+                currencyPair: status.currencyPair,
+                status: status.status,
+                ageHours: status.ageHours,
+                lastRate: status.lastRate,
+                message: status.message,
+              }),
+            ],
+          )
+        }
       }
     }
-  }
-  await finishJobRun(runId)
+    await finishJobRun(runId)
   } catch (err) {
     await failJobRun(runId, err instanceof Error ? err.message : String(err))
     throw err

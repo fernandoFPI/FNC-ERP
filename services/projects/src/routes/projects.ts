@@ -8,10 +8,7 @@ import { projectStateMachine } from '@fnc-erp/workflow'
 import { logger } from '@fnc-erp/logger'
 import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
-import {
-  canManageProject,
-  canViewProject,
-} from '../lib/project-authorization.js'
+import { canManageProject, canViewProject } from '../lib/project-authorization.js'
 
 export const projectsRouter: IRouter = Router()
 
@@ -53,10 +50,9 @@ async function transitionProject(
   } = {},
 ) {
   await withTransaction({ companyId, userId, role }, async (client) => {
-    const current = await client.query(
-      `SELECT status FROM projects WHERE id = $1 FOR UPDATE`,
-      [projectId],
-    )
+    const current = await client.query(`SELECT status FROM projects WHERE id = $1 FOR UPDATE`, [
+      projectId,
+    ])
     if (!current.rows[0]) throw { status: 404, code: 'NOT_FOUND', message: 'Project not found' }
 
     const fromStatus = current.rows[0].status as string
@@ -66,14 +62,16 @@ async function transitionProject(
 
     // Build update
     const fields: Array<[string, unknown]> = [['status', toStatus]]
-    if (extras.hold_reason !== undefined)  fields.push(['hold_reason',   extras.hold_reason])
+    if (extras.hold_reason !== undefined) fields.push(['hold_reason', extras.hold_reason])
     if (extras.cancel_reason !== undefined) fields.push(['cancel_reason', extras.cancel_reason])
-    if (extras.submitted_at !== undefined)  fields.push(['submitted_at',  extras.submitted_at])
-    if (extras.approved_at !== undefined)   fields.push(['approved_at',   extras.approved_at])
-    if (extras.completed_at !== undefined)  fields.push(['completed_at',  extras.completed_at])
-    if (extras.cancelled_at !== undefined)  fields.push(['cancelled_at',  extras.cancelled_at])
+    if (extras.submitted_at !== undefined) fields.push(['submitted_at', extras.submitted_at])
+    if (extras.approved_at !== undefined) fields.push(['approved_at', extras.approved_at])
+    if (extras.completed_at !== undefined) fields.push(['completed_at', extras.completed_at])
+    if (extras.cancelled_at !== undefined) fields.push(['cancelled_at', extras.cancelled_at])
 
-    const setClause = [...fields.map(([k], i) => `${k} = $${i + 2}`), 'updated_at = NOW()'].join(', ')
+    const setClause = [...fields.map(([k], i) => `${k} = $${i + 2}`), 'updated_at = NOW()'].join(
+      ', ',
+    )
     const values = [projectId, ...fields.map(([, v]) => v)]
 
     await client.query(`UPDATE projects SET ${setClause} WHERE id = $1`, values)
@@ -95,12 +93,13 @@ async function transitionProject(
 
 async function generateProjectCode(client: PoolClient, companyId: string): Promise<string> {
   const company = await client.query(`SELECT name FROM companies WHERE id = $1`, [companyId])
-  const prefix = (company.rows[0]?.name as string | undefined)
-    ?.split(' ')
-    .map((w: string) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 3) ?? 'PRJ'
+  const prefix =
+    (company.rows[0]?.name as string | undefined)
+      ?.split(' ')
+      .map((w: string) => w[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 3) ?? 'PRJ'
 
   const year = new Date().getFullYear()
   const count = await client.query(
@@ -170,7 +169,10 @@ async function notifyProjectTeam(
     for (const member of members.rows) {
       await query(
         `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
-        [notification.type, JSON.stringify({ userId: member['user_id'], projectId, ...notification })],
+        [
+          notification.type,
+          JSON.stringify({ userId: member['user_id'], projectId, ...notification }),
+        ],
       )
     }
   } catch {
@@ -197,7 +199,10 @@ async function notifyProjectAdmins(
     for (const admin of admins.rows) {
       await query(
         `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
-        [notification.type, JSON.stringify({ userId: admin['user_id'], companyId, projectId, ...notification })],
+        [
+          notification.type,
+          JSON.stringify({ userId: admin['user_id'], companyId, projectId, ...notification }),
+        ],
       )
     }
   } catch {
@@ -209,11 +214,9 @@ async function notifyProjectAdmins(
 
 projectsRouter.get('/', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const {
-      status, project_type, project_manager_id, search,
-    } = req.query as Record<string, string>
-    const page = Math.max(1, parseInt(req.query['page'] as string || '1'))
-    const limit = Math.min(100, Math.max(1, parseInt(req.query['limit'] as string || '20')))
+    const { status, project_type, project_manager_id, search } = req.query as Record<string, string>
+    const page = Math.max(1, parseInt((req.query['page'] as string) || '1'))
+    const limit = Math.min(100, Math.max(1, parseInt((req.query['limit'] as string) || '20')))
     const offset = (page - 1) * limit
 
     const conditions = [`p.company_id = $1`]
@@ -225,10 +228,18 @@ projectsRouter.get('/', requirePermission('projects.view', 'view'), async (req, 
       conditions.push(`p.status = ANY($${++p}::text[])`)
       values.push(statuses)
     }
-    if (project_type) { conditions.push(`p.project_type = $${++p}`); values.push(project_type) }
-    if (project_manager_id) { conditions.push(`p.project_manager_id = $${++p}`); values.push(project_manager_id) }
+    if (project_type) {
+      conditions.push(`p.project_type = $${++p}`)
+      values.push(project_type)
+    }
+    if (project_manager_id) {
+      conditions.push(`p.project_manager_id = $${++p}`)
+      values.push(project_manager_id)
+    }
     if (search) {
-      conditions.push(`(p.name ILIKE $${++p} OR p.code ILIKE $${p} OR p.rfq_number ILIKE $${p} OR p.project_location ILIKE $${p})`)
+      conditions.push(
+        `(p.name ILIKE $${++p} OR p.code ILIKE $${p} OR p.rfq_number ILIKE $${p} OR p.project_location ILIKE $${p})`,
+      )
       values.push(`%${search}%`)
     }
 
@@ -263,10 +274,7 @@ projectsRouter.get('/', requirePermission('projects.view', 'view'), async (req, 
         LIMIT $${p + 1} OFFSET $${p + 2}`,
         values,
       ),
-      query(
-        `SELECT COUNT(*) FROM projects p ${where}`,
-        values.slice(0, p),
-      ),
+      query(`SELECT COUNT(*) FROM projects p ${where}`, values.slice(0, p)),
     ])
 
     sendOk(res, {
@@ -415,7 +423,8 @@ projectsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req,
     if (!b['name']) return sendError(res, 400, 'MISSING_NAME', 'Project name is required')
 
     await withTransaction({ companyId, userId, role }, async (client) => {
-      const projectCode = (b['code'] as string | undefined) ?? await generateProjectCode(client, companyId)
+      const projectCode =
+        (b['code'] as string | undefined) ?? (await generateProjectCode(client, companyId))
 
       const analyticAccount = await client.query(
         `INSERT INTO analytic_accounts (company_id, name, code, is_active) VALUES ($1,$2,$3,true) RETURNING id`,
@@ -439,17 +448,29 @@ projectsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req,
           $19,$20,$21,$22,'pending',$23
         ) RETURNING *`,
         [
-          companyId, b['name'], projectCode,
-          b['description'] ?? null, b['project_type'] ?? 'construction',
-          b['client_name'] ?? null, b['client_contact'] ?? null,
-          b['rfq_number'] ?? null, b['contract_name'] ?? null, b['project_location'] ?? null,
-          b['receiving_date'] ?? null, b['submission_date'] ?? null,
-          b['project_value'] ?? null, b['project_value_currency'] ?? 'IQD',
-          b['planned_start_date'] ?? null, b['planned_end_date'] ?? null,
-          b['budget_amount'] ?? 0, b['budget_currency'] ?? 'IQD',
-          b['project_manager_id'] ?? null, b['cost_center_id'] ?? null,
+          companyId,
+          b['name'],
+          projectCode,
+          b['description'] ?? null,
+          b['project_type'] ?? 'construction',
+          b['client_name'] ?? null,
+          b['client_contact'] ?? null,
+          b['rfq_number'] ?? null,
+          b['contract_name'] ?? null,
+          b['project_location'] ?? null,
+          b['receiving_date'] ?? null,
+          b['submission_date'] ?? null,
+          b['project_value'] ?? null,
+          b['project_value_currency'] ?? 'IQD',
+          b['planned_start_date'] ?? null,
+          b['planned_end_date'] ?? null,
+          b['budget_amount'] ?? 0,
+          b['budget_currency'] ?? 'IQD',
+          b['project_manager_id'] ?? null,
+          b['cost_center_id'] ?? null,
           analyticAccount.rows[0].id,
-          b['remarks'] ?? null, userId,
+          b['remarks'] ?? null,
+          userId,
         ],
       )
 
@@ -462,8 +483,14 @@ projectsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req,
           await client.query(
             `INSERT INTO project_budget_lines (project_id, category, description, account_id, budgeted_amount, currency_code)
              VALUES ($1,$2,$3,$4,$5,$6)`,
-            [row['id'], bl['category'], bl['description'] ?? null, bl['account_id'] ?? null,
-             bl['budgeted_amount'] ?? 0, bl['currency_code'] ?? b['budget_currency'] ?? 'IQD'],
+            [
+              row['id'],
+              bl['category'],
+              bl['description'] ?? null,
+              bl['account_id'] ?? null,
+              bl['budgeted_amount'] ?? 0,
+              bl['currency_code'] ?? b['budget_currency'] ?? 'IQD',
+            ],
           )
         }
       }
@@ -471,8 +498,11 @@ projectsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req,
       await recordStatusChange(client, row['id'] as string, null, 'pending', userId)
 
       await logAudit({
-        userId, companyId,
-        action: 'PROJECT_CREATED', tableName: 'projects', recordId: row['id'] as string,
+        userId,
+        companyId,
+        action: 'PROJECT_CREATED',
+        tableName: 'projects',
+        recordId: row['id'] as string,
         newValues: { name: b['name'], code: projectCode, status: 'pending' },
         client,
       })
@@ -523,20 +553,38 @@ projectsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (re
         updated_at             = NOW()
       WHERE id = $20 AND company_id = $21`,
       [
-        b['name'] ?? null, b['description'] ?? null, b['project_type'] ?? null,
-        b['client_name'] ?? null, b['client_contact'] ?? null,
-        b['rfq_number'] ?? null, b['contract_name'] ?? null, b['project_location'] ?? null,
-        b['receiving_date'] ?? null, b['submission_date'] ?? null,
-        b['project_value'] ?? null, b['project_value_currency'] ?? null,
-        b['planned_start_date'] ?? null, b['planned_end_date'] ?? null,
-        b['budget_amount'] ?? null, b['budget_currency'] ?? null,
-        b['project_manager_id'] ?? null, b['cost_center_id'] ?? null,
+        b['name'] ?? null,
+        b['description'] ?? null,
+        b['project_type'] ?? null,
+        b['client_name'] ?? null,
+        b['client_contact'] ?? null,
+        b['rfq_number'] ?? null,
+        b['contract_name'] ?? null,
+        b['project_location'] ?? null,
+        b['receiving_date'] ?? null,
+        b['submission_date'] ?? null,
+        b['project_value'] ?? null,
+        b['project_value_currency'] ?? null,
+        b['planned_start_date'] ?? null,
+        b['planned_end_date'] ?? null,
+        b['budget_amount'] ?? null,
+        b['budget_currency'] ?? null,
+        b['project_manager_id'] ?? null,
+        b['cost_center_id'] ?? null,
         b['remarks'] ?? null,
-        id, companyId,
+        id,
+        companyId,
       ],
     )
 
-    await logAudit({ userId, companyId, action: 'PROJECT_UPDATED', tableName: 'projects', recordId: id, newValues: b })
+    await logAudit({
+      userId,
+      companyId,
+      action: 'PROJECT_UPDATED',
+      tableName: 'projects',
+      recordId: id,
+      newValues: b,
+    })
     sendOk(res, { message: 'Project updated' })
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update project', err)
@@ -545,62 +593,92 @@ projectsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (re
 
 // ── STATUS TRANSITION ROUTES ───────────────────────────────────
 
-projectsRouter.post('/:id/start', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const id = requireParam(req, 'id')
-    const { userId, companyId, role } = getAuth(req)
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+projectsRouter.post(
+  '/:id/start',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const { userId, companyId, role } = getAuth(req)
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
-    await transitionProject(id, companyId, userId, role, 'start', 'ongoing')
-    await notifyProjectTeam(id, { type: 'PROJECT_STARTED', title: 'Project started', body: 'Your project has moved to ongoing status' })
-    sendOk(res, { message: 'Project started' })
-  } catch (err: unknown) {
-    const e = err as { status?: number; name?: string; message?: string; code?: string }
-    if (e.name === 'WorkflowError') return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
-    if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
-    sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
-  }
-})
+      await transitionProject(id, companyId, userId, role, 'start', 'ongoing')
+      await notifyProjectTeam(id, {
+        type: 'PROJECT_STARTED',
+        title: 'Project started',
+        body: 'Your project has moved to ongoing status',
+      })
+      sendOk(res, { message: 'Project started' })
+    } catch (err: unknown) {
+      const e = err as { status?: number; name?: string; message?: string; code?: string }
+      if (e.name === 'WorkflowError')
+        return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
+      if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
+      sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
+    }
+  },
+)
 
-projectsRouter.post('/:id/hold', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const id = requireParam(req, 'id')
-    const { userId, companyId, role } = getAuth(req)
-    const { reason } = req.body as { reason?: string }
-    if (!reason?.trim()) return sendError(res, 400, 'REASON_REQUIRED', 'Hold reason is required')
+projectsRouter.post(
+  '/:id/hold',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const { userId, companyId, role } = getAuth(req)
+      const { reason } = req.body as { reason?: string }
+      if (!reason?.trim()) return sendError(res, 400, 'REASON_REQUIRED', 'Hold reason is required')
 
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
-    await transitionProject(id, companyId, userId, role, 'hold', 'on_hold', { hold_reason: reason, reason })
-    await notifyProjectTeam(id, { type: 'PROJECT_ON_HOLD', title: 'Project placed on hold', body: `Project on hold: ${reason}` })
-    sendOk(res, { message: 'Project placed on hold' })
-  } catch (err: unknown) {
-    const e = err as { status?: number; name?: string; message?: string; code?: string }
-    if (e.name === 'WorkflowError') return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
-    if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
-    sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
-  }
-})
+      await transitionProject(id, companyId, userId, role, 'hold', 'on_hold', {
+        hold_reason: reason,
+        reason,
+      })
+      await notifyProjectTeam(id, {
+        type: 'PROJECT_ON_HOLD',
+        title: 'Project placed on hold',
+        body: `Project on hold: ${reason}`,
+      })
+      sendOk(res, { message: 'Project placed on hold' })
+    } catch (err: unknown) {
+      const e = err as { status?: number; name?: string; message?: string; code?: string }
+      if (e.name === 'WorkflowError')
+        return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
+      if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
+      sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
+    }
+  },
+)
 
-projectsRouter.post('/:id/resume', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const id = requireParam(req, 'id')
-    const { userId, companyId, role } = getAuth(req)
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+projectsRouter.post(
+  '/:id/resume',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const { userId, companyId, role } = getAuth(req)
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
-    await transitionProject(id, companyId, userId, role, 'resume', 'ongoing')
-    await notifyProjectTeam(id, { type: 'PROJECT_RESUMED', title: 'Project resumed', body: 'Project has resumed from on hold' })
-    sendOk(res, { message: 'Project resumed' })
-  } catch (err: unknown) {
-    const e = err as { status?: number; name?: string; message?: string; code?: string }
-    if (e.name === 'WorkflowError') return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
-    if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
-    sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
-  }
-})
+      await transitionProject(id, companyId, userId, role, 'resume', 'ongoing')
+      await notifyProjectTeam(id, {
+        type: 'PROJECT_RESUMED',
+        title: 'Project resumed',
+        body: 'Project has resumed from on hold',
+      })
+      sendOk(res, { message: 'Project resumed' })
+    } catch (err: unknown) {
+      const e = err as { status?: number; name?: string; message?: string; code?: string }
+      if (e.name === 'WorkflowError')
+        return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
+      if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
+      sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
+    }
+  },
+)
 
 projectsRouter.post('/:id/submit', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
@@ -609,127 +687,211 @@ projectsRouter.post('/:id/submit', requirePermission('projects.edit', 'edit'), a
     const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
-    await transitionProject(id, companyId, userId, role, 'submit', 'submitted', { submitted_at: new Date().toISOString() })
-    await notifyProjectAdmins(id, companyId, { type: 'PROJECT_SUBMITTED', title: 'Project submitted for approval', body: 'A project has been submitted and requires your approval' })
+    await transitionProject(id, companyId, userId, role, 'submit', 'submitted', {
+      submitted_at: new Date().toISOString(),
+    })
+    await notifyProjectAdmins(id, companyId, {
+      type: 'PROJECT_SUBMITTED',
+      title: 'Project submitted for approval',
+      body: 'A project has been submitted and requires your approval',
+    })
     sendOk(res, { message: 'Project submitted to client' })
   } catch (err: unknown) {
     const e = err as { status?: number; name?: string; message?: string; code?: string }
-    if (e.name === 'WorkflowError') return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
+    if (e.name === 'WorkflowError')
+      return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
     if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
     sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
   }
 })
 
-projectsRouter.post('/:id/approve', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const id = requireParam(req, 'id')
-    const { userId, companyId, role } = getAuth(req)
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+projectsRouter.post(
+  '/:id/approve',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const { userId, companyId, role } = getAuth(req)
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
-    await transitionProject(id, companyId, userId, role, 'approve', 'approved', { approved_at: new Date().toISOString() })
-    await notifyProjectTeam(id, { type: 'PROJECT_APPROVED', title: 'Project approved', body: 'Your project has been approved' })
-    sendOk(res, { message: 'Project approved' })
-  } catch (err: unknown) {
-    const e = err as { status?: number; name?: string; message?: string; code?: string }
-    if (e.name === 'WorkflowError') return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
-    if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
-    sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
-  }
-})
-
-projectsRouter.post('/:id/reject-back', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const id = requireParam(req, 'id')
-    const { userId, companyId, role } = getAuth(req)
-    const { reason } = req.body as { reason?: string }
-    if (!reason?.trim()) return sendError(res, 400, 'REASON_REQUIRED', 'Rejection reason is required')
-
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
-
-    await transitionProject(id, companyId, userId, role, 'reject_back', 'ongoing', { reason })
-    await notifyProjectTeam(id, { type: 'PROJECT_REJECTED_BACK', title: 'Project returned for rework', body: `Client rejected submission: ${reason}` })
-    sendOk(res, { message: 'Project returned to ongoing' })
-  } catch (err: unknown) {
-    const e = err as { status?: number; name?: string; message?: string; code?: string }
-    if (e.name === 'WorkflowError') return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
-    if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
-    sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
-  }
-})
-
-projectsRouter.post('/:id/complete', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const id = requireParam(req, 'id')
-    const { userId, companyId, role } = getAuth(req)
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
-
-    const blockers = await checkCompletionBlockers(id)
-    if (blockers.length > 0) {
-      return sendError(res, 400, 'COMPLETION_BLOCKED', 'Project cannot be completed — resolve blockers first', { blockers })
+      await transitionProject(id, companyId, userId, role, 'approve', 'approved', {
+        approved_at: new Date().toISOString(),
+      })
+      await notifyProjectTeam(id, {
+        type: 'PROJECT_APPROVED',
+        title: 'Project approved',
+        body: 'Your project has been approved',
+      })
+      sendOk(res, { message: 'Project approved' })
+    } catch (err: unknown) {
+      const e = err as { status?: number; name?: string; message?: string; code?: string }
+      if (e.name === 'WorkflowError')
+        return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
+      if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
+      sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
     }
+  },
+)
 
-    await transitionProject(id, companyId, userId, role, 'complete', 'completed', { completed_at: new Date().toISOString() })
-    await notifyProjectTeam(id, { type: 'PROJECT_COMPLETED', title: 'Project completed', body: 'The project has been marked as complete' })
-    sendOk(res, { message: 'Project completed' })
-  } catch (err: unknown) {
-    const e = err as { status?: number; name?: string; message?: string; code?: string }
-    if (e.name === 'WorkflowError') return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
-    if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
-    sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
-  }
-})
+projectsRouter.post(
+  '/:id/reject-back',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const { userId, companyId, role } = getAuth(req)
+      const { reason } = req.body as { reason?: string }
+      if (!reason?.trim())
+        return sendError(res, 400, 'REASON_REQUIRED', 'Rejection reason is required')
 
-projectsRouter.post('/:id/cancel', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const id = requireParam(req, 'id')
-    const { userId, companyId, role } = getAuth(req)
-    const { reason } = req.body as { reason?: string }
-    if (!reason?.trim()) return sendError(res, 400, 'REASON_REQUIRED', 'Cancellation reason is required')
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
-
-    const existing = await query('SELECT status FROM projects WHERE id = $1 AND company_id = $2', [id, companyId])
-    if (!existing.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
-    const finalStatuses = ['completed', 'cancelled', 'cancelled_after_approval']
-    if (finalStatuses.includes(existing.rows[0]?.['status'] as string)) {
-      return sendError(res, 400, 'ALREADY_FINAL', `Cannot cancel a project in ${existing.rows[0]?.['status']} status`)
+      await transitionProject(id, companyId, userId, role, 'reject_back', 'ongoing', { reason })
+      await notifyProjectTeam(id, {
+        type: 'PROJECT_REJECTED_BACK',
+        title: 'Project returned for rework',
+        body: `Client rejected submission: ${reason}`,
+      })
+      sendOk(res, { message: 'Project returned to ongoing' })
+    } catch (err: unknown) {
+      const e = err as { status?: number; name?: string; message?: string; code?: string }
+      if (e.name === 'WorkflowError')
+        return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
+      if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
+      sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
     }
+  },
+)
 
-    await transitionProject(id, companyId, userId, role, 'cancel', 'cancelled', { cancel_reason: reason, reason, cancelled_at: new Date().toISOString() })
-    await notifyProjectTeam(id, { type: 'PROJECT_CANCELLED', title: 'Project cancelled', body: `Project has been cancelled: ${reason}` })
-    sendOk(res, { message: 'Project cancelled' })
-  } catch (err: unknown) {
-    const e = err as { status?: number; name?: string; message?: string; code?: string }
-    if (e.name === 'WorkflowError') return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
-    if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
-    sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
-  }
-})
+projectsRouter.post(
+  '/:id/complete',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const { userId, companyId, role } = getAuth(req)
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
-projectsRouter.post('/:id/cancel-after-approval', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const id = requireParam(req, 'id')
-    const { userId, companyId, role } = getAuth(req)
-    const { reason } = req.body as { reason?: string }
-    if (!reason?.trim()) return sendError(res, 400, 'REASON_REQUIRED', 'Reason is required')
+      const blockers = await checkCompletionBlockers(id)
+      if (blockers.length > 0) {
+        return sendError(
+          res,
+          400,
+          'COMPLETION_BLOCKED',
+          'Project cannot be completed — resolve blockers first',
+          { blockers },
+        )
+      }
 
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+      await transitionProject(id, companyId, userId, role, 'complete', 'completed', {
+        completed_at: new Date().toISOString(),
+      })
+      await notifyProjectTeam(id, {
+        type: 'PROJECT_COMPLETED',
+        title: 'Project completed',
+        body: 'The project has been marked as complete',
+      })
+      sendOk(res, { message: 'Project completed' })
+    } catch (err: unknown) {
+      const e = err as { status?: number; name?: string; message?: string; code?: string }
+      if (e.name === 'WorkflowError')
+        return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
+      if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
+      sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
+    }
+  },
+)
 
-    await transitionProject(id, companyId, userId, role, 'cancel_after_approval', 'cancelled_after_approval', { cancel_reason: reason, reason, cancelled_at: new Date().toISOString() })
-    await notifyProjectTeam(id, { type: 'PROJECT_CANCELLED_AFTER_APPROVAL', title: 'Project cancelled', body: `Project has been cancelled after approval: ${reason}` })
-    sendOk(res, { message: 'Project cancelled after approval' })
-  } catch (err: unknown) {
-    const e = err as { status?: number; name?: string; message?: string; code?: string }
-    if (e.name === 'WorkflowError') return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
-    if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
-    sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
-  }
-})
+projectsRouter.post(
+  '/:id/cancel',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const { userId, companyId, role } = getAuth(req)
+      const { reason } = req.body as { reason?: string }
+      if (!reason?.trim())
+        return sendError(res, 400, 'REASON_REQUIRED', 'Cancellation reason is required')
+
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+
+      const existing = await query(
+        'SELECT status FROM projects WHERE id = $1 AND company_id = $2',
+        [id, companyId],
+      )
+      if (!existing.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
+      const finalStatuses = ['completed', 'cancelled', 'cancelled_after_approval']
+      if (finalStatuses.includes(existing.rows[0]?.['status'] as string)) {
+        return sendError(
+          res,
+          400,
+          'ALREADY_FINAL',
+          `Cannot cancel a project in ${existing.rows[0]?.['status']} status`,
+        )
+      }
+
+      await transitionProject(id, companyId, userId, role, 'cancel', 'cancelled', {
+        cancel_reason: reason,
+        reason,
+        cancelled_at: new Date().toISOString(),
+      })
+      await notifyProjectTeam(id, {
+        type: 'PROJECT_CANCELLED',
+        title: 'Project cancelled',
+        body: `Project has been cancelled: ${reason}`,
+      })
+      sendOk(res, { message: 'Project cancelled' })
+    } catch (err: unknown) {
+      const e = err as { status?: number; name?: string; message?: string; code?: string }
+      if (e.name === 'WorkflowError')
+        return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
+      if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
+      sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
+    }
+  },
+)
+
+projectsRouter.post(
+  '/:id/cancel-after-approval',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const { userId, companyId, role } = getAuth(req)
+      const { reason } = req.body as { reason?: string }
+      if (!reason?.trim()) return sendError(res, 400, 'REASON_REQUIRED', 'Reason is required')
+
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+
+      await transitionProject(
+        id,
+        companyId,
+        userId,
+        role,
+        'cancel_after_approval',
+        'cancelled_after_approval',
+        { cancel_reason: reason, reason, cancelled_at: new Date().toISOString() },
+      )
+      await notifyProjectTeam(id, {
+        type: 'PROJECT_CANCELLED_AFTER_APPROVAL',
+        title: 'Project cancelled',
+        body: `Project has been cancelled after approval: ${reason}`,
+      })
+      sendOk(res, { message: 'Project cancelled after approval' })
+    } catch (err: unknown) {
+      const e = err as { status?: number; name?: string; message?: string; code?: string }
+      if (e.name === 'WorkflowError')
+        return sendError(res, 409, 'INVALID_TRANSITION', e.message ?? 'Invalid transition')
+      if (e.status) return sendError(res, e.status, e.code ?? 'ERROR', e.message ?? 'Error')
+      sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
+    }
+  },
+)
 
 // ── STAGE ROUTES ───────────────────────────────────────────────
 
@@ -740,7 +902,9 @@ projectsRouter.get('/:id/stages', requirePermission('projects.view', 'view'), as
       [req.params['id']],
     )
     sendOk(res, result.rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch stages', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch stages', err)
+  }
 })
 
 projectsRouter.post('/:id/stages', requirePermission('projects.edit', 'edit'), async (req, res) => {
@@ -751,37 +915,52 @@ projectsRouter.post('/:id/stages', requirePermission('projects.edit', 'edit'), a
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
     const b = req.body as Record<string, unknown>
-    const seq = (b['sequence'] as number | undefined) ?? await getNextStageSequence(id)
+    const seq = (b['sequence'] as number | undefined) ?? (await getNextStageSequence(id))
 
     const result = await query(
       `INSERT INTO project_stages
          (project_id, name, sequence, status, completion_pct, planned_start_date, planned_end_date, notes, assigned_to)
        VALUES ($1,$2,$3,'pending',0,$4,$5,$6,$7) RETURNING *`,
-      [id, b['name'], seq, b['planned_start_date'] ?? null, b['planned_end_date'] ?? null, b['notes'] ?? null, b['assigned_to'] ?? null],
+      [
+        id,
+        b['name'],
+        seq,
+        b['planned_start_date'] ?? null,
+        b['planned_end_date'] ?? null,
+        b['notes'] ?? null,
+        b['assigned_to'] ?? null,
+      ],
     )
     sendOk(res, result.rows[0], 201)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create stage', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create stage', err)
+  }
 })
 
-projectsRouter.patch('/:id/stages/:stageId', requirePermission('projects.edit', 'edit'), async (req, res) => {
-  try {
-    const { id, stageId } = req.params as { id: string; stageId: string }
-    const { userId, companyId, role } = getAuth(req)
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+projectsRouter.patch(
+  '/:id/stages/:stageId',
+  requirePermission('projects.edit', 'edit'),
+  async (req, res) => {
+    try {
+      const { id, stageId } = req.params as { id: string; stageId: string }
+      const { userId, companyId, role } = getAuth(req)
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
-    const b = req.body as Record<string, unknown>
+      const b = req.body as Record<string, unknown>
 
-    // Auto-set actual dates based on status changes
-    const actualStart = b['status'] === 'active' && b['actual_start_date'] === undefined
-      ? new Date().toISOString().split('T')[0]
-      : (b['actual_start_date'] ?? null)
-    const actualEnd = b['status'] === 'completed' && b['actual_end_date'] === undefined
-      ? new Date().toISOString().split('T')[0]
-      : (b['actual_end_date'] ?? null)
+      // Auto-set actual dates based on status changes
+      const actualStart =
+        b['status'] === 'active' && b['actual_start_date'] === undefined
+          ? new Date().toISOString().split('T')[0]
+          : (b['actual_start_date'] ?? null)
+      const actualEnd =
+        b['status'] === 'completed' && b['actual_end_date'] === undefined
+          ? new Date().toISOString().split('T')[0]
+          : (b['actual_end_date'] ?? null)
 
-    const result = await query(
-      `UPDATE project_stages SET
+      const result = await query(
+        `UPDATE project_stages SET
         name               = COALESCE($1, name),
         completion_pct     = COALESCE($2, completion_pct),
         status             = COALESCE($3, status),
@@ -792,55 +971,89 @@ projectsRouter.patch('/:id/stages/:stageId', requirePermission('projects.edit', 
         notes              = COALESCE($8, notes),
         updated_at         = NOW()
       WHERE id = $9 AND project_id = $10 RETURNING *`,
-      [
-        b['name'] ?? null, b['completion_pct'] ?? null, b['status'] ?? null,
-        b['planned_start_date'] ?? null, b['planned_end_date'] ?? null,
-        actualStart, actualEnd, b['notes'] ?? null,
-        stageId, id,
-      ],
-    )
-    if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Stage not found')
+        [
+          b['name'] ?? null,
+          b['completion_pct'] ?? null,
+          b['status'] ?? null,
+          b['planned_start_date'] ?? null,
+          b['planned_end_date'] ?? null,
+          actualStart,
+          actualEnd,
+          b['notes'] ?? null,
+          stageId,
+          id,
+        ],
+      )
+      if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Stage not found')
 
-    await logAudit({ userId, companyId, action: 'PROJECT_STAGE_UPDATED', tableName: 'project_stages', recordId: stageId, newValues: b })
-    sendOk(res, result.rows[0])
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update stage', err) }
-})
+      await logAudit({
+        userId,
+        companyId,
+        action: 'PROJECT_STAGE_UPDATED',
+        tableName: 'project_stages',
+        recordId: stageId,
+        newValues: b,
+      })
+      sendOk(res, result.rows[0])
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update stage', err)
+    }
+  },
+)
 
 // Keep backward-compat PUT alias
-projectsRouter.put('/:id/stages/:stageId', requirePermission('projects.edit', 'edit'), async (req, res) => {
-  try {
-    const { id, stageId } = req.params as { id: string; stageId: string }
-    const { userId, companyId, role } = getAuth(req)
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+projectsRouter.put(
+  '/:id/stages/:stageId',
+  requirePermission('projects.edit', 'edit'),
+  async (req, res) => {
+    try {
+      const { id, stageId } = req.params as { id: string; stageId: string }
+      const { userId, companyId, role } = getAuth(req)
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
-    const b = req.body as Record<string, unknown>
-    const result = await query(
-      `UPDATE project_stages SET
+      const b = req.body as Record<string, unknown>
+      const result = await query(
+        `UPDATE project_stages SET
         name           = COALESCE($1, name),
         sequence       = COALESCE($2, sequence),
         completion_pct = COALESCE($3, completion_pct),
         updated_at     = NOW()
       WHERE id = $4 AND project_id = $5 RETURNING *`,
-      [b['name'] ?? null, b['sequence'] ?? null, b['completion_pct'] ?? null, stageId, id],
-    )
-    if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Stage not found')
-    sendOk(res, result.rows[0])
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update stage', err) }
-})
+        [b['name'] ?? null, b['sequence'] ?? null, b['completion_pct'] ?? null, stageId, id],
+      )
+      if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Stage not found')
+      sendOk(res, result.rows[0])
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update stage', err)
+    }
+  },
+)
 
-projectsRouter.post('/:id/stages/:stageId/complete', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const { id, stageId } = req.params as { id: string; stageId: string }
-    const stageResult = await query(
-      `UPDATE project_stages SET status='completed', completion_pct=100, actual_end_date=NOW()::date, updated_at=NOW() WHERE id=$1 AND project_id=$2 RETURNING name`,
-      [stageId, id],
-    )
-    const stageName = String((stageResult.rows[0] as Record<string, unknown> | undefined)?.['name'] ?? '')
-    await notifyProjectTeam(id, { type: 'PROJECT_STAGE_COMPLETED', title: `Stage completed: ${stageName}`, body: `The stage "${stageName}" has been marked as complete` })
-    sendOk(res, { id: stageId, status: 'completed' })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to complete stage', err) }
-})
+projectsRouter.post(
+  '/:id/stages/:stageId/complete',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const { id, stageId } = req.params as { id: string; stageId: string }
+      const stageResult = await query(
+        `UPDATE project_stages SET status='completed', completion_pct=100, actual_end_date=NOW()::date, updated_at=NOW() WHERE id=$1 AND project_id=$2 RETURNING name`,
+        [stageId, id],
+      )
+      const stageName = String(
+        (stageResult.rows[0] as Record<string, unknown> | undefined)?.['name'] ?? '',
+      )
+      await notifyProjectTeam(id, {
+        type: 'PROJECT_STAGE_COMPLETED',
+        title: `Stage completed: ${stageName}`,
+        body: `The stage "${stageName}" has been marked as complete`,
+      })
+      sendOk(res, { id: stageId, status: 'completed' })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to complete stage', err)
+    }
+  },
+)
 
 // ── TEAM ROUTES ────────────────────────────────────────────────
 
@@ -857,163 +1070,242 @@ projectsRouter.get('/:id/members', requirePermission('projects.view', 'view'), a
     if (members.length === 0) return sendOk(res, [])
 
     // Attach per-member permission overrides
-    const memberIds = members.map(m => m['id'] as string)
+    const memberIds = members.map((m) => m['id'] as string)
     const permsResult = await query(
       `SELECT member_id, tab_key, access_level FROM project_member_permissions WHERE member_id = ANY($1)`,
       [memberIds],
     )
     const permsMap: Record<string, Record<string, string>> = {}
-    for (const row of permsResult.rows as Array<{ member_id: string; tab_key: string; access_level: string }>) {
+    for (const row of permsResult.rows as Array<{
+      member_id: string
+      tab_key: string
+      access_level: string
+    }>) {
       const bucket = permsMap[row.member_id] ?? (permsMap[row.member_id] = {})
       bucket[row.tab_key] = row.access_level
     }
-    const enriched = members.map(m => ({ ...m, permissions: permsMap[m['id'] as string] ?? {} }))
+    const enriched = members.map((m) => ({ ...m, permissions: permsMap[m['id'] as string] ?? {} }))
     sendOk(res, enriched)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch members', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch members', err)
+  }
 })
 
 // Employee picker for the "Add Team Member" form — minimal fields only
 // (id/name/job_title), gated by projects.edit rather than hr.employees.view.
 // Assigning someone to a project team doesn't need full HR visibility
 // (national_id, phone, hire/termination dates, etc.), just a name to pick.
-projectsRouter.get('/:id/team-candidates', requirePermission('projects.edit', 'edit'), async (req, res) => {
-  try {
-    const { companyId } = getAuth(req)
-    const result = await query(
-      `SELECT id, first_name, last_name, job_title
+projectsRouter.get(
+  '/:id/team-candidates',
+  requirePermission('projects.edit', 'edit'),
+  async (req, res) => {
+    try {
+      const { companyId } = getAuth(req)
+      const result = await query(
+        `SELECT id, first_name, last_name, job_title
        FROM employees
        WHERE company_id = $1 AND status = 'active'
        ORDER BY first_name, last_name
        LIMIT 200`,
-      [companyId],
-    )
-    sendOk(res, result.rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch team candidates', err) }
-})
-
-projectsRouter.put('/:id/members/:memberId/permissions', requirePermission('projects.edit', 'edit'), async (req, res) => {
-  try {
-    const { id, memberId } = req.params as { id: string; memberId: string }
-    const { userId, companyId, role } = getAuth(req)
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
-
-    // Verify member belongs to this project
-    const check = await query(`SELECT id FROM project_members WHERE id=$1 AND project_id=$2`, [memberId, id])
-    if (check.rows.length === 0) return sendError(res, 404, 'NOT_FOUND', 'Member not found')
-
-    const perms = req.body as Record<string, string>
-    const validTabs = ['overview','client_documents','rfq_lines','bidding','team','execution','procurement','cost_control','variation_orders','meetings','planning','attachments']
-    const validLevels = ['none','view','edit']
-
-    // Delete existing overrides then re-insert
-    await query(`DELETE FROM project_member_permissions WHERE member_id=$1`, [memberId])
-    for (const [tab, level] of Object.entries(perms)) {
-      if (!validTabs.includes(tab) || !validLevels.includes(level)) continue
-      await query(
-        `INSERT INTO project_member_permissions (member_id, tab_key, access_level) VALUES ($1,$2,$3)`,
-        [memberId, tab, level],
+        [companyId],
       )
+      sendOk(res, result.rows)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch team candidates', err)
     }
+  },
+)
 
-    const updated = await query(
-      `SELECT tab_key, access_level FROM project_member_permissions WHERE member_id=$1`,
-      [memberId],
-    )
-    const result: Record<string, string> = {}
-    for (const row of updated.rows as Array<{ tab_key: string; access_level: string }>) {
-      result[row.tab_key] = row.access_level
+projectsRouter.put(
+  '/:id/members/:memberId/permissions',
+  requirePermission('projects.edit', 'edit'),
+  async (req, res) => {
+    try {
+      const { id, memberId } = req.params as { id: string; memberId: string }
+      const { userId, companyId, role } = getAuth(req)
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+
+      // Verify member belongs to this project
+      const check = await query(`SELECT id FROM project_members WHERE id=$1 AND project_id=$2`, [
+        memberId,
+        id,
+      ])
+      if (check.rows.length === 0) return sendError(res, 404, 'NOT_FOUND', 'Member not found')
+
+      const perms = req.body as Record<string, string>
+      const validTabs = [
+        'overview',
+        'client_documents',
+        'rfq_lines',
+        'bidding',
+        'team',
+        'execution',
+        'procurement',
+        'cost_control',
+        'variation_orders',
+        'meetings',
+        'planning',
+        'attachments',
+      ]
+      const validLevels = ['none', 'view', 'edit']
+
+      // Delete existing overrides then re-insert
+      await query(`DELETE FROM project_member_permissions WHERE member_id=$1`, [memberId])
+      for (const [tab, level] of Object.entries(perms)) {
+        if (!validTabs.includes(tab) || !validLevels.includes(level)) continue
+        await query(
+          `INSERT INTO project_member_permissions (member_id, tab_key, access_level) VALUES ($1,$2,$3)`,
+          [memberId, tab, level],
+        )
+      }
+
+      const updated = await query(
+        `SELECT tab_key, access_level FROM project_member_permissions WHERE member_id=$1`,
+        [memberId],
+      )
+      const result: Record<string, string> = {}
+      for (const row of updated.rows as Array<{ tab_key: string; access_level: string }>) {
+        result[row.tab_key] = row.access_level
+      }
+      sendOk(res, result)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update member permissions', err)
     }
-    sendOk(res, result)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update member permissions', err) }
-})
+  },
+)
 
-projectsRouter.post('/:id/members', requirePermission('projects.edit', 'edit'), async (req, res) => {
-  try {
-    const id = requireParam(req, 'id')
-    const { userId, companyId, role } = getAuth(req)
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+projectsRouter.post(
+  '/:id/members',
+  requirePermission('projects.edit', 'edit'),
+  async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const { userId, companyId, role } = getAuth(req)
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
-    const b = req.body as Record<string, unknown>
-    const memberType = (['technical', 'commercial', 'both'] as const).includes(b['member_type'] as 'technical' | 'commercial' | 'both')
-      ? (b['member_type'] as string)
-      : 'technical'
-    const result = await query(
-      `INSERT INTO project_members (project_id, employee_id, role, member_type, allocated_hours, start_date, end_date)
+      const b = req.body as Record<string, unknown>
+      const memberType = (['technical', 'commercial', 'both'] as const).includes(
+        b['member_type'] as 'technical' | 'commercial' | 'both',
+      )
+        ? (b['member_type'] as string)
+        : 'technical'
+      const result = await query(
+        `INSERT INTO project_members (project_id, employee_id, role, member_type, allocated_hours, start_date, end_date)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (project_id, employee_id) DO UPDATE SET is_active = true, role = EXCLUDED.role, member_type = EXCLUDED.member_type, updated_at = NOW()
        RETURNING *`,
-      [id, b['employee_id'], b['role'] ?? null, memberType, b['allocated_hours'] ?? null, b['start_date'] ?? null, b['end_date'] ?? null],
-    )
-    const empRow = await query(`SELECT first_name||' '||last_name AS name FROM employees WHERE id=$1`, [b['employee_id']])
-    const empName = (empRow.rows[0] as Record<string, unknown>)?.['name'] ?? 'Unknown'
-    await query(
-      `INSERT INTO project_activity_log (project_id, actor_id, event_type, summary) VALUES ($1,$2,$3,$4)`,
-      [id, userId, 'team_add', `Team member added: ${String(empName)}`],
-    ).catch(() => {
-      // best-effort activity log entry — don't block the main flow on it
-    })
-    ;(async () => {
-      const uRes = await query<{ user_id: string | null }>(
-        `SELECT user_id FROM employees WHERE id=$1`, [b['employee_id']],
+        [
+          id,
+          b['employee_id'],
+          b['role'] ?? null,
+          memberType,
+          b['allocated_hours'] ?? null,
+          b['start_date'] ?? null,
+          b['end_date'] ?? null,
+        ],
       )
-      const assignedUserId = uRes.rows[0]?.user_id
-      if (assignedUserId) {
-        const projRes = await query<{ name: string }>(`SELECT name FROM projects WHERE id=$1`, [id])
-        const projName = String(projRes.rows[0]?.name ?? id)
-        await query(
-          `INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','PROJECT_MEMBER_ADDED',$1)`,
-          [JSON.stringify({ userId: assignedUserId, companyId, title: `Added to project: ${projName}`,
-            body: `You have been added to the project "${projName}" as ${String(b['role'] ?? 'member')}`,
-            data: { projectId: id, projectName: projName, role: b['role'] ?? null } })],
-        )
-      }
-    })().catch(() => {
-      // best-effort notification — don't block the main flow on it
-    })
-    sendOk(res, result.rows[0], 201)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to add member', err) }
-})
-
-projectsRouter.delete('/:id/members/:memberId', requirePermission('projects.cancel', 'approve'), async (req, res) => {
-  try {
-    const { id, memberId } = req.params as { id: string; memberId: string }
-    const { userId, companyId, role } = getAuth(req)
-    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
-    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
-
-    const empRow = await query(
-      `SELECT e.first_name||' '||e.last_name AS name, e.user_id FROM project_members pm JOIN employees e ON e.id = pm.employee_id WHERE pm.id=$1`,
-      [memberId],
-    )
-    const empData = empRow.rows[0] as Record<string, unknown> | undefined
-    const empName = empData?.['name'] ?? 'Unknown'
-    const empUserId = empData?.['user_id'] as string | null | undefined
-    await query(`UPDATE project_members SET is_active = false, updated_at = NOW() WHERE id = $1 AND project_id = $2`, [memberId, id])
-    await query(
-      `INSERT INTO project_activity_log (project_id, actor_id, event_type, summary) VALUES ($1,$2,$3,$4)`,
-      [id, userId, 'team_remove', `Team member removed: ${String(empName)}`],
-    ).catch(() => {
-      // best-effort activity log entry — don't block the main flow on it
-    })
-    if (empUserId) {
+      const empRow = await query(
+        `SELECT first_name||' '||last_name AS name FROM employees WHERE id=$1`,
+        [b['employee_id']],
+      )
+      const empName = (empRow.rows[0] as Record<string, unknown>)?.['name'] ?? 'Unknown'
+      await query(
+        `INSERT INTO project_activity_log (project_id, actor_id, event_type, summary) VALUES ($1,$2,$3,$4)`,
+        [id, userId, 'team_add', `Team member added: ${String(empName)}`],
+      ).catch(() => {
+        // best-effort activity log entry — don't block the main flow on it
+      })
       ;(async () => {
-        const projRes = await query<{ name: string }>(`SELECT name FROM projects WHERE id=$1`, [id])
-        const projName = String(projRes.rows[0]?.name ?? id)
-        await query(
-          `INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','PROJECT_MEMBER_REMOVED',$1)`,
-          [JSON.stringify({ userId: empUserId, companyId, title: `Removed from project: ${projName}`,
-            body: `You have been removed from the project "${projName}"`,
-            data: { projectId: id, projectName: projName } })],
+        const uRes = await query<{ user_id: string | null }>(
+          `SELECT user_id FROM employees WHERE id=$1`,
+          [b['employee_id']],
         )
+        const assignedUserId = uRes.rows[0]?.user_id
+        if (assignedUserId) {
+          const projRes = await query<{ name: string }>(`SELECT name FROM projects WHERE id=$1`, [
+            id,
+          ])
+          const projName = String(projRes.rows[0]?.name ?? id)
+          await query(
+            `INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','PROJECT_MEMBER_ADDED',$1)`,
+            [
+              JSON.stringify({
+                userId: assignedUserId,
+                companyId,
+                title: `Added to project: ${projName}`,
+                body: `You have been added to the project "${projName}" as ${String(b['role'] ?? 'member')}`,
+                data: { projectId: id, projectName: projName, role: b['role'] ?? null },
+              }),
+            ],
+          )
+        }
       })().catch(() => {
         // best-effort notification — don't block the main flow on it
       })
+      sendOk(res, result.rows[0], 201)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to add member', err)
     }
-    sendOk(res, { deleted: true })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to remove member', err) }
-})
+  },
+)
+
+projectsRouter.delete(
+  '/:id/members/:memberId',
+  requirePermission('projects.cancel', 'approve'),
+  async (req, res) => {
+    try {
+      const { id, memberId } = req.params as { id: string; memberId: string }
+      const { userId, companyId, role } = getAuth(req)
+      const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+      if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+
+      const empRow = await query(
+        `SELECT e.first_name||' '||e.last_name AS name, e.user_id FROM project_members pm JOIN employees e ON e.id = pm.employee_id WHERE pm.id=$1`,
+        [memberId],
+      )
+      const empData = empRow.rows[0] as Record<string, unknown> | undefined
+      const empName = empData?.['name'] ?? 'Unknown'
+      const empUserId = empData?.['user_id'] as string | null | undefined
+      await query(
+        `UPDATE project_members SET is_active = false, updated_at = NOW() WHERE id = $1 AND project_id = $2`,
+        [memberId, id],
+      )
+      await query(
+        `INSERT INTO project_activity_log (project_id, actor_id, event_type, summary) VALUES ($1,$2,$3,$4)`,
+        [id, userId, 'team_remove', `Team member removed: ${String(empName)}`],
+      ).catch(() => {
+        // best-effort activity log entry — don't block the main flow on it
+      })
+      if (empUserId) {
+        ;(async () => {
+          const projRes = await query<{ name: string }>(`SELECT name FROM projects WHERE id=$1`, [
+            id,
+          ])
+          const projName = String(projRes.rows[0]?.name ?? id)
+          await query(
+            `INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','PROJECT_MEMBER_REMOVED',$1)`,
+            [
+              JSON.stringify({
+                userId: empUserId,
+                companyId,
+                title: `Removed from project: ${projName}`,
+                body: `You have been removed from the project "${projName}"`,
+                data: { projectId: id, projectName: projName },
+              }),
+            ],
+          )
+        })().catch(() => {
+          // best-effort notification — don't block the main flow on it
+        })
+      }
+      sendOk(res, { deleted: true })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to remove member', err)
+    }
+  },
+)
 
 // ── BUDGET ROUTES (preserved) ──────────────────────────────────
 
@@ -1021,7 +1313,10 @@ projectsRouter.get('/:id/budget', requirePermission('projects.view', 'view'), as
   try {
     const companyId = getAuth(req).companyId
     const id = requireParam(req, 'id')
-    const proj = await query('SELECT id FROM projects WHERE id = $1 AND company_id = $2', [id, companyId])
+    const proj = await query('SELECT id FROM projects WHERE id = $1 AND company_id = $2', [
+      id,
+      companyId,
+    ])
     if (!proj.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
     const result = await query(
       `SELECT bl.category, bl.budgeted_amount,
@@ -1033,66 +1328,119 @@ projectsRouter.get('/:id/budget', requirePermission('projects.view', 'view'), as
       [id],
     )
     sendOk(res, result.rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch budget', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch budget', err)
+  }
 })
 
-projectsRouter.post('/:id/budget-lines', requirePermission('projects.edit', 'edit'), async (req, res) => {
-  try {
-    const id = requireParam(req, 'id')
-    const b = req.body as Record<string, unknown>
-    const result = await query(
-      `INSERT INTO project_budget_lines (project_id, category, description, account_id, budgeted_amount, currency_code)
+projectsRouter.post(
+  '/:id/budget-lines',
+  requirePermission('projects.edit', 'edit'),
+  async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const b = req.body as Record<string, unknown>
+      const result = await query(
+        `INSERT INTO project_budget_lines (project_id, category, description, account_id, budgeted_amount, currency_code)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [id, b['category'], b['description'] ?? null, b['account_id'] ?? null, b['budgeted_amount'], b['currency_code'] ?? 'IQD'],
-    )
-    sendOk(res, result.rows[0], 201)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to add budget line', err) }
-})
+        [
+          id,
+          b['category'],
+          b['description'] ?? null,
+          b['account_id'] ?? null,
+          b['budgeted_amount'],
+          b['currency_code'] ?? 'IQD',
+        ],
+      )
+      sendOk(res, result.rows[0], 201)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to add budget line', err)
+    }
+  },
+)
 
-projectsRouter.delete('/:id/budget-lines/:lineId', requirePermission('projects.cancel', 'approve'), async (req, res) => {
-  try {
-    const { id, lineId } = req.params as { id: string; lineId: string }
-    await query('DELETE FROM project_budget_lines WHERE id = $1 AND project_id = $2', [lineId, id])
-    sendOk(res, { deleted: true })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete budget line', err) }
-})
+projectsRouter.delete(
+  '/:id/budget-lines/:lineId',
+  requirePermission('projects.cancel', 'approve'),
+  async (req, res) => {
+    try {
+      const { id, lineId } = req.params as { id: string; lineId: string }
+      await query('DELETE FROM project_budget_lines WHERE id = $1 AND project_id = $2', [
+        lineId,
+        id,
+      ])
+      sendOk(res, { deleted: true })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete budget line', err)
+    }
+  },
+)
 
-projectsRouter.get('/:id/profitability', requirePermission('projects.view', 'view'), async (req, res) => {
-  try {
-    const companyId = getAuth(req).companyId
-    const id = requireParam(req, 'id')
-    const result = await query(`SELECT * FROM v_project_profitability WHERE project_id = $1 AND company_id = $2`, [id, companyId])
-    if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
-    sendOk(res, result.rows[0])
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch profitability', err) }
-})
+projectsRouter.get(
+  '/:id/profitability',
+  requirePermission('projects.view', 'view'),
+  async (req, res) => {
+    try {
+      const companyId = getAuth(req).companyId
+      const id = requireParam(req, 'id')
+      const result = await query(
+        `SELECT * FROM v_project_profitability WHERE project_id = $1 AND company_id = $2`,
+        [id, companyId],
+      )
+      if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
+      sendOk(res, result.rows[0])
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch profitability', err)
+    }
+  },
+)
 
 projectsRouter.get('/:id/costs', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
     const companyId = getAuth(req).companyId
     const id = requireParam(req, 'id')
     const { source_type, from_date, to_date } = req.query as Record<string, string>
-    const proj = await query('SELECT id FROM projects WHERE id = $1 AND company_id = $2', [id, companyId])
+    const proj = await query('SELECT id FROM projects WHERE id = $1 AND company_id = $2', [
+      id,
+      companyId,
+    ])
     if (!proj.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
     let sql = `SELECT * FROM project_cost_actuals WHERE project_id = $1`
     const params: unknown[] = [id]
     let idx = 2
-    if (source_type) { sql += ` AND source_type = $${idx++}`; params.push(source_type) }
-    if (from_date) { sql += ` AND entry_date >= $${idx++}`; params.push(from_date) }
-    if (to_date) { sql += ` AND entry_date <= $${idx++}`; params.push(to_date) }
+    if (source_type) {
+      sql += ` AND source_type = $${idx++}`
+      params.push(source_type)
+    }
+    if (from_date) {
+      sql += ` AND entry_date >= $${idx++}`
+      params.push(from_date)
+    }
+    if (to_date) {
+      sql += ` AND entry_date <= $${idx++}`
+      params.push(to_date)
+    }
     sql += ' ORDER BY entry_date DESC LIMIT 500'
     sendOk(res, (await query(sql, params)).rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch costs', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch costs', err)
+  }
 })
 
-projectsRouter.get('/:id/manufacturing-orders', requirePermission('projects.view', 'view'), async (req, res) => {
-  try {
-    const companyId = getAuth(req).companyId
-    const id = requireParam(req, 'id')
-    const result = await query(
-      'SELECT * FROM manufacturing_orders WHERE project_id = $1 AND company_id = $2 ORDER BY created_at DESC',
-      [id, companyId],
-    )
-    sendOk(res, result.rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch MOs', err) }
-})
+projectsRouter.get(
+  '/:id/manufacturing-orders',
+  requirePermission('projects.view', 'view'),
+  async (req, res) => {
+    try {
+      const companyId = getAuth(req).companyId
+      const id = requireParam(req, 'id')
+      const result = await query(
+        'SELECT * FROM manufacturing_orders WHERE project_id = $1 AND company_id = $2 ORDER BY created_at DESC',
+        [id, companyId],
+      )
+      sendOk(res, result.rows)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch MOs', err)
+    }
+  },
+)

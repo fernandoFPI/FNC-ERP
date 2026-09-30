@@ -31,10 +31,17 @@ async function start() {
   const shutdown = async () => {
     log.info('projects service shutting down')
     server.closeIdleConnections()
-    server.close(async () => { await pool.end(); process.exit(0) })
+    server.close(async () => {
+      await pool.end()
+      process.exit(0)
+    })
   }
-  process.on('SIGTERM', () => { void shutdown() })
-  process.on('SIGINT', () => { void shutdown() })
+  process.on('SIGTERM', () => {
+    void shutdown()
+  })
+  process.on('SIGINT', () => {
+    void shutdown()
+  })
 }
 
 void start()

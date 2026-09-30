@@ -71,7 +71,10 @@ export async function buildMilestoneLines(
   milestoneIds: string[],
 ): Promise<InvoiceLineInput[]> {
   const result = await ctx.client.query<{
-    id: string; name: string; billable_amount: string; currency_code: string
+    id: string
+    name: string
+    billable_amount: string
+    currency_code: string
   }>(
     `SELECT id, name, billable_amount, currency_code
      FROM project_milestones
@@ -86,7 +89,7 @@ export async function buildMilestoneLines(
     )
   }
 
-  return result.rows.map(m => ({
+  return result.rows.map((m) => ({
     source_type: 'milestone',
     source_id: m['id'],
     description: m['name'],
@@ -114,22 +117,27 @@ export async function buildProgressLines(
     throw new BillingError('INVALID_PROGRESS', 'Progress cannot exceed 100%')
   }
 
-  const result = await ctx.client.query<{ contract_value: string; contract_name: string; currency_code: string }>(
-    `SELECT contract_value, contract_name, currency_code FROM project_contracts WHERE id = $1`,
-    [ctx.contractId],
-  )
+  const result = await ctx.client.query<{
+    contract_value: string
+    contract_name: string
+    currency_code: string
+  }>(`SELECT contract_value, contract_name, currency_code FROM project_contracts WHERE id = $1`, [
+    ctx.contractId,
+  ])
   const c = result.rows[0]!
   const billablePct = (progressPct - previousProgressPct) / 100
   const billableAmount = parseFloat(c['contract_value']) * billablePct
 
-  return [{
-    source_type: 'manual',
-    description: `Progress billing: ${previousProgressPct}% → ${progressPct}% complete`,
-    qty: 1,
-    unit_cost: billableAmount,
-    margin_pct: 0,
-    currency_code: c['currency_code'],
-  }]
+  return [
+    {
+      source_type: 'manual',
+      description: `Progress billing: ${previousProgressPct}% → ${progressPct}% complete`,
+      qty: 1,
+      unit_cost: billableAmount,
+      margin_pct: 0,
+      currency_code: c['currency_code'],
+    },
+  ]
 }
 
 // ── COST PLUS BILLING ──────────────────────────────────────────
@@ -143,8 +151,12 @@ export async function buildCostPlusLines(
   // Manufacturing orders
   if (options.includeCompletedMOs) {
     const mos = await ctx.client.query<{
-      id: string; mo_number: string; product_name: string
-      qty_produced: string; actual_cost: string; unit_cost: string
+      id: string
+      mo_number: string
+      product_name: string
+      qty_produced: string
+      actual_cost: string
+      unit_cost: string
     }>(
       `SELECT mo.id, mo.mo_number, p.name AS product_name,
               mo.qty_produced, mo.actual_cost,
@@ -161,14 +173,17 @@ export async function buildCostPlusLines(
       let components: MOComponent[] | undefined
       if (options.displayMode === 'detailed') {
         const cons = await ctx.client.query<{
-          product_name: string; qty_consumed: string; unit_cost: string; total_cost: string
+          product_name: string
+          qty_consumed: string
+          unit_cost: string
+          total_cost: string
         }>(
           `SELECT p.name AS product_name, mc.qty_consumed, mc.unit_cost, mc.total_cost
            FROM mo_consumptions mc JOIN products p ON p.id = mc.component_product_id
            WHERE mc.mo_id = $1`,
           [mo['id']],
         )
-        components = cons.rows.map(c => ({
+        components = cons.rows.map((c) => ({
           product_name: c['product_name'],
           qty: parseFloat(c['qty_consumed']),
           unit_cost: parseFloat(c['unit_cost']),
@@ -179,9 +194,10 @@ export async function buildCostPlusLines(
       const moLine: InvoiceLineInput = {
         source_type: 'manufacturing_order',
         source_id: mo['id'],
-        description: options.displayMode === 'summarised'
-          ? `${mo['product_name']} (MO: ${mo['mo_number']})`
-          : `${mo['product_name']} — component breakdown (MO: ${mo['mo_number']})`,
+        description:
+          options.displayMode === 'summarised'
+            ? `${mo['product_name']} (MO: ${mo['mo_number']})`
+            : `${mo['product_name']} — component breakdown (MO: ${mo['mo_number']})`,
         qty: parseFloat(mo['qty_produced']),
         unit_cost: parseFloat(mo['unit_cost']),
         margin_pct: options.defaultMarginPct,
@@ -196,8 +212,13 @@ export async function buildCostPlusLines(
   // Purchase order receipts (matched to project via analytic account)
   if (options.includeReceivedPOs) {
     const receipts = await ctx.client.query<{
-      receipt_id: string; po_number: string; vendor_name: string
-      description: string; qty_received: string; unit_price: string; currency_code: string
+      receipt_id: string
+      po_number: string
+      vendor_name: string
+      description: string
+      qty_received: string
+      unit_price: string
+      currency_code: string
     }>(
       `SELECT por.id AS receipt_id, po.po_number, v.name AS vendor_name,
               pol.description, prl.qty_received, pol.unit_price, po.currency_code
@@ -229,8 +250,11 @@ export async function buildCostPlusLines(
   // Stock issues (direct inventory issue to project)
   if (options.includeStockIssues) {
     const issues = await ctx.client.query<{
-      id: string; product_name: string; qty_issued: string
-      unit_cost: string; issue_number: string
+      id: string
+      product_name: string
+      qty_issued: string
+      unit_cost: string
+      issue_number: string
     }>(
       `SELECT pmil.id, p.name AS product_name, pmil.qty_issued,
               pmil.unit_cost, pmi.issue_number
@@ -257,8 +281,12 @@ export async function buildCostPlusLines(
   // Rental invoices linked to this project
   if (options.includeRental) {
     const rental = await ctx.client.query<{
-      id: string; contract_number: string; asset_name: string
-      days_billed: string; amount: string; currency_code: string
+      id: string
+      contract_number: string
+      asset_name: string
+      days_billed: string
+      amount: string
+      currency_code: string
     }>(
       `SELECT ri.id, rc.contract_number,
               STRING_AGG(ea.name, ', ') AS asset_name,
@@ -294,11 +322,12 @@ export async function buildCostPlusLines(
 
 export async function buildLumpSumLines(ctx: BillingContext): Promise<InvoiceLineInput[]> {
   const contractResult = await ctx.client.query<{
-    contract_value: string; contract_name: string; currency_code: string
-  }>(
-    `SELECT contract_value, contract_name, currency_code FROM project_contracts WHERE id = $1`,
-    [ctx.contractId],
-  )
+    contract_value: string
+    contract_name: string
+    currency_code: string
+  }>(`SELECT contract_value, contract_name, currency_code FROM project_contracts WHERE id = $1`, [
+    ctx.contractId,
+  ])
   const c = contractResult.rows[0]!
 
   const existing = await ctx.client.query<{ cnt: string }>(
@@ -306,17 +335,22 @@ export async function buildLumpSumLines(ctx: BillingContext): Promise<InvoiceLin
     [ctx.contractId],
   )
   if (parseInt(existing.rows[0]?.['cnt'] ?? '0') > 0) {
-    throw new BillingError('LUMP_SUM_ALREADY_INVOICED', 'A lump sum contract can only have one invoice')
+    throw new BillingError(
+      'LUMP_SUM_ALREADY_INVOICED',
+      'A lump sum contract can only have one invoice',
+    )
   }
 
-  return [{
-    source_type: 'manual',
-    description: `Contract completion — ${c['contract_name']}`,
-    qty: 1,
-    unit_cost: parseFloat(c['contract_value']),
-    margin_pct: 0,
-    currency_code: c['currency_code'],
-  }]
+  return [
+    {
+      source_type: 'manual',
+      description: `Contract completion — ${c['contract_name']}`,
+      qty: 1,
+      unit_cost: parseFloat(c['contract_value']),
+      margin_pct: 0,
+      currency_code: c['currency_code'],
+    },
+  ]
 }
 
 // ── CALCULATORS ────────────────────────────────────────────────
@@ -328,10 +362,7 @@ export function calculateLineAmounts(line: InvoiceLineInput): LineAmounts {
   return { subtotal, margin_amount, line_total }
 }
 
-export function calculateInvoiceTotals(
-  lines: LineAmounts[],
-  retentionPct: number,
-): InvoiceTotals {
+export function calculateInvoiceTotals(lines: LineAmounts[], retentionPct: number): InvoiceTotals {
   const subtotal = lines.reduce((s, l) => s + l.subtotal, 0)
   const margin_total = lines.reduce((s, l) => s + l.margin_amount, 0)
   const gross_total = lines.reduce((s, l) => s + l.line_total, 0)
@@ -350,19 +381,27 @@ export async function markSourcesInvoiced(
     if (!line.source_id) continue
     switch (line.source_type) {
       case 'manufacturing_order':
-        await client.query(`UPDATE manufacturing_orders SET is_invoiced=true WHERE id=$1`, [line.source_id])
+        await client.query(`UPDATE manufacturing_orders SET is_invoiced=true WHERE id=$1`, [
+          line.source_id,
+        ])
         break
       case 'purchase_order':
         await client.query(`UPDATE po_receipts SET is_invoiced=true WHERE id=$1`, [line.source_id])
         break
       case 'stock_issue':
-        await client.query(`UPDATE project_material_issue_lines SET is_invoiced=true WHERE id=$1`, [line.source_id])
+        await client.query(`UPDATE project_material_issue_lines SET is_invoiced=true WHERE id=$1`, [
+          line.source_id,
+        ])
         break
       case 'rental':
-        await client.query(`UPDATE rental_invoices SET is_invoiced=true WHERE id=$1`, [line.source_id])
+        await client.query(`UPDATE rental_invoices SET is_invoiced=true WHERE id=$1`, [
+          line.source_id,
+        ])
         break
       case 'milestone':
-        await client.query(`UPDATE project_milestones SET status='invoiced' WHERE id=$1`, [line.source_id])
+        await client.query(`UPDATE project_milestones SET status='invoiced' WHERE id=$1`, [
+          line.source_id,
+        ])
         break
     }
   }
@@ -404,6 +443,9 @@ export async function buildInvoiceLines(
     case 'fixed_lump_sum':
       return buildLumpSumLines(ctx)
     default:
-      throw new BillingError('UNKNOWN_BILLING_METHOD', `Unknown billing method: ${String(params.billing_method)}`)
+      throw new BillingError(
+        'UNKNOWN_BILLING_METHOD',
+        `Unknown billing method: ${String(params.billing_method)}`,
+      )
   }
 }

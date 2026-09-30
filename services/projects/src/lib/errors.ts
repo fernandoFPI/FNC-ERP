@@ -1,6 +1,12 @@
 import type { Request, Response } from 'express'
 
-export function sendError(res: Response, status: number, code: string, message: string, details?: unknown): void {
+export function sendError(
+  res: Response,
+  status: number,
+  code: string,
+  message: string,
+  details?: unknown,
+): void {
   res.status(status).json({ success: false, error: { code, message, details } })
 }
 

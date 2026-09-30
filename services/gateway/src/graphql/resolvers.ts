@@ -347,11 +347,10 @@ async function capLineReservationToQtyOrdered(
     )
   }
   const newQtyFromStock = Math.min(oldQtyFromStock, newQtyOrdered)
-  await client.query(`UPDATE po_lines SET qty_from_stock=$1, in_stock=($1::numeric>=$3::numeric) WHERE id=$2`, [
-    newQtyFromStock,
-    lineId,
-    newQtyOrdered,
-  ])
+  await client.query(
+    `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1::numeric>=$3::numeric) WHERE id=$2`,
+    [newQtyFromStock, lineId, newQtyOrdered],
+  )
 }
 
 async function getConfirmedIssuedQtyForLine(client: PoolClient, lineId: string): Promise<number> {
@@ -654,7 +653,12 @@ async function applyPOEditChanges(
       const qty = Number(line.qty ?? 0),
         price = Number(line.unit_price ?? 0)
       const currencyCode = (line.currency_code as string | undefined) ?? baseCurrencyCode
-      const fxRateToBase = await resolveFxRateToBase(client, companyId, currencyCode, baseCurrencyCode)
+      const fxRateToBase = await resolveFxRateToBase(
+        client,
+        companyId,
+        currencyCode,
+        baseCurrencyCode,
+      )
       await client.query(
         `INSERT INTO po_lines (po_id,line_number,description,product_id,qty_ordered,unit_price,initial_unit_price,currency_code,fx_rate_to_base,uom,total_price)
          VALUES ($1,(SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE po_id=$1),$2,$3,$4,$5,$5,$6,$7,$8,$9)`,
@@ -723,7 +727,13 @@ async function applyRequisitionEditChanges(
   reqId: string,
   changes: EditChanges,
 ): Promise<void> {
-  const allowed = ['notes', 'priority', 'delivery_destination', 'branch_id', 'expected_delivery_date']
+  const allowed = [
+    'notes',
+    'priority',
+    'delivery_destination',
+    'branch_id',
+    'expected_delivery_date',
+  ]
   if (changes.header && Object.keys(changes.header).length > 0) {
     const sets: string[] = []
     const vals: unknown[] = []
@@ -806,7 +816,16 @@ async function applyRequisitionEditChanges(
       await client.query(
         `INSERT INTO po_lines (requisition_id,line_number,description,product_id,qty_ordered,unit_price,initial_unit_price,currency_code,uom,total_price)
          VALUES ($1,(SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE requisition_id=$1),$2,$3,$4,$5,$5,$6,$7,$8)`,
-        [reqId, line.description, line.product_id ?? null, qty, price, currencyCode, line.uom ?? 'unit', qty * price],
+        [
+          reqId,
+          line.description,
+          line.product_id ?? null,
+          qty,
+          price,
+          currencyCode,
+          line.uom ?? 'unit',
+          qty * price,
+        ],
       )
     }
   }
@@ -1100,7 +1119,13 @@ async function applyAdminPOCorrection(
       diff.to,
       poId,
     ])
-    changedFields.push({ table: 'purchase_orders', recordId: poId, field, from: diff.from, to: diff.to })
+    changedFields.push({
+      table: 'purchase_orders',
+      recordId: poId,
+      field,
+      from: diff.from,
+      to: diff.to,
+    })
   }
 
   // ── Lines ───────────────────────────────────────────────────────────────
@@ -1292,7 +1317,9 @@ async function applyAdminPOCorrection(
           })
         }
         if (!newProductId) {
-          await client.query(`UPDATE po_lines SET qty_from_stock=0, in_stock=false WHERE id=$1`, [e.id])
+          await client.query(`UPDATE po_lines SET qty_from_stock=0, in_stock=false WHERE id=$1`, [
+            e.id,
+          ])
         }
       }
       await client.query(`UPDATE po_lines SET product_id=$1 WHERE id=$2`, [newProductId, e.id])
@@ -1345,7 +1372,11 @@ async function applyAdminPOCorrection(
       // (unissued) portion of the reservation has no stock_moves row to
       // correct, only a stock_balances.qty_reserved claim at the OLD
       // location. Move it to the new location too.
-      if (oldQtyFromStock > 0 && line.source_location_id && newLocationId !== line.source_location_id) {
+      if (
+        oldQtyFromStock > 0 &&
+        line.source_location_id &&
+        newLocationId !== line.source_location_id
+      ) {
         const confirmed = await getConfirmedIssuedQtyForLine(client, e.id)
         const stillReserved = Math.max(oldQtyFromStock - confirmed, 0)
         if (stillReserved > 0) {
@@ -1371,7 +1402,13 @@ async function applyAdminPOCorrection(
         poId,
       ])
     }
-    changedFields.push({ table: 'po_lines', recordId: e.id, field: e.field, from: e.from, to: e.to })
+    changedFields.push({
+      table: 'po_lines',
+      recordId: e.id,
+      field: e.field,
+      from: e.from,
+      to: e.to,
+    })
   }
 
   if (priceAffectedLineIds.size > 0) {
@@ -1402,7 +1439,11 @@ async function applyAdminPOCorrection(
       )
       if (!receiptRes.rows[0]) throw new Error(`Receipt ${re.id} not found`)
       if (receiptRes.rows[0].status === 'confirmed') {
-        const lines = await client.query<{ id: string; po_line_id: string; product_id: string | null }>(
+        const lines = await client.query<{
+          id: string
+          po_line_id: string
+          product_id: string | null
+        }>(
           `SELECT prl.id, prl.po_line_id, pl.product_id FROM po_receipt_lines prl
            JOIN po_lines pl ON pl.id = prl.po_line_id WHERE prl.receipt_id=$1`,
           [re.id],
@@ -1439,7 +1480,13 @@ async function applyAdminPOCorrection(
       re.id,
       poId,
     ])
-    changedFields.push({ table: 'po_receipts', recordId: re.id, field: re.field, from: re.from, to: re.to })
+    changedFields.push({
+      table: 'po_receipts',
+      recordId: re.id,
+      field: re.field,
+      from: re.from,
+      to: re.to,
+    })
   }
 
   // ── Receipt lines ────────────────────────────────────────────────────────
@@ -1629,9 +1676,7 @@ async function reqTransition(
   // earlier transitions.
   actorPosition?: string,
 ): Promise<void> {
-  const cur = await client.query(`SELECT status FROM requisitions WHERE id=$1 FOR UPDATE`, [
-    reqId,
-  ])
+  const cur = await client.query(`SELECT status FROM requisitions WHERE id=$1 FOR UPDATE`, [reqId])
   if (!cur.rows[0])
     throw Object.assign(new Error('Requisition not found'), { extensions: { code: 'NOT_FOUND' } })
   const cs = cur.rows[0].status as RequisitionStatus
@@ -2018,7 +2063,10 @@ async function evaluateRequisitionCompletion(
   reqId: string,
   auth: GWAuth,
 ): Promise<void> {
-  const reqRow = await client.query<{ status: string }>(`SELECT status FROM requisitions WHERE id=$1`, [reqId])
+  const reqRow = await client.query<{ status: string }>(
+    `SELECT status FROM requisitions WHERE id=$1`,
+    [reqId],
+  )
   if (!reqRow.rows[0] || reqRow.rows[0].status !== 'sourcing') return
 
   const unresolved = await client.query<{ c: string }>(
@@ -2867,7 +2915,10 @@ async function fetchFullPurchaseOrderGW(
   ])
   if (!po.rows[0]) return null
   const branchScope = await branchScopedPOFilterGW(auth)
-  if (branchScope && !branchScope.includes((po.rows[0] as Record<string, unknown>).branch_id as string)) {
+  if (
+    branchScope &&
+    !branchScope.includes((po.rows[0] as Record<string, unknown>).branch_id as string)
+  ) {
     return null
   }
   const poRowForBuyer = po.rows[0] as Record<string, unknown>
@@ -2939,7 +2990,10 @@ async function fetchFullPurchaseOrderGW(
           const fileKey = ph.fileKey as string | undefined
           if (!fileKey) return { ...ph, downloadUrl: null }
           try {
-            const { downloadUrl } = await generateDownloadUrl(fileKey, ph.originalFilename as string)
+            const { downloadUrl } = await generateDownloadUrl(
+              fileKey,
+              ph.originalFilename as string,
+            )
             return { ...ph, downloadUrl }
           } catch {
             return { ...ph, downloadUrl: null }
@@ -3208,9 +3262,11 @@ async function requirePermGW(
 // every other viewer gets. Returns the branch ids to scope to, or null if
 // no scoping applies (this user sees POs exactly as they always have —
 // true for everyone until an admin explicitly assigns them to a branch).
-async function branchScopedPOFilterGW(
-  auth: { userId: string; companyId: string; role: string },
-): Promise<string[] | null> {
+async function branchScopedPOFilterGW(auth: {
+  userId: string
+  companyId: string
+  role: string
+}): Promise<string[] | null> {
   if (isPermissionBypassGW(auth.role)) return null
   const perms = await loadPermissions(auth.userId, auth.companyId)
   if (meetsLevel(perms['procurement.po.edit'], 'edit')) return null
@@ -3304,7 +3360,9 @@ async function getCallerCompaniesGW(auth: {
   role: string
 }): Promise<{ id: string; name: string }[]> {
   if (auth.role === 'system_admin') {
-    const r = await query<{ id: string; name: string }>(`SELECT id, name FROM companies ORDER BY name`)
+    const r = await query<{ id: string; name: string }>(
+      `SELECT id, name FROM companies ORDER BY name`,
+    )
     return r.rows
   }
   const r = await query<{ id: string; name: string }>(
@@ -3527,7 +3585,10 @@ async function notifyPositionHoldersForRequisitionGW(
   for (const holder of holders.rows) {
     await query(
       `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
-      [notification.type, JSON.stringify({ userId: holder.user_id, requisitionId, ...notification })],
+      [
+        notification.type,
+        JSON.stringify({ userId: holder.user_id, requisitionId, ...notification }),
+      ],
     )
   }
 }
@@ -3536,7 +3597,11 @@ async function notifyPositionHoldersForRequisitionGW(
 // notified (dept heads + admins who haven't opted out) and the full admin
 // list as a last resort, decides who actually gets pinged. Exported only for
 // that test.
-export function resolveRequisitionApprovalRecipients<T>(deptHeads: T[], eligibleAdmins: T[], allAdmins: T[]): T[] {
+export function resolveRequisitionApprovalRecipients<T>(
+  deptHeads: T[],
+  eligibleAdmins: T[],
+  allAdmins: T[],
+): T[] {
   const recipients = [...deptHeads, ...eligibleAdmins]
   // Every admin opted out and there's no department head to fall back on —
   // rather than let the requisition sit at pending_approval with nobody
@@ -3584,7 +3649,11 @@ async function notifyDeptHeadsAndAdminsForRequisitionGW(
           [],
         )
       : { rows: [] }
-  const recipients = resolveRequisitionApprovalRecipients(deptHeads.rows, admins.rows, allAdmins.rows)
+  const recipients = resolveRequisitionApprovalRecipients(
+    deptHeads.rows,
+    admins.rows,
+    allAdmins.rows,
+  )
   for (const r of recipients) {
     await query(
       `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
@@ -3675,10 +3744,10 @@ async function recordProductCostChange(
 ): Promise<void> {
   const { productId, newCost, currencyCode, sourceType, sourceId, sourceLabel, userId } = params
   if (!(newCost > 0)) return
-  const current = await client.query<{ standard_cost: string | null; cost_currency: string | null }>(
-    `SELECT standard_cost, cost_currency FROM products WHERE id=$1 FOR UPDATE`,
-    [productId],
-  )
+  const current = await client.query<{
+    standard_cost: string | null
+    cost_currency: string | null
+  }>(`SELECT standard_cost, cost_currency FROM products WHERE id=$1 FOR UPDATE`, [productId])
   const oldCost =
     current.rows[0]?.standard_cost != null ? parseFloat(current.rows[0].standard_cost) : null
   const oldCurrency = current.rows[0]?.cost_currency ?? null
@@ -3691,7 +3760,16 @@ async function recordProductCostChange(
   await client.query(
     `INSERT INTO product_cost_history (product_id, old_cost, new_cost, currency_code, source_type, source_id, source_label, changed_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [productId, oldCost, newCost, currencyCode, sourceType, sourceId ?? null, sourceLabel ?? null, userId],
+    [
+      productId,
+      oldCost,
+      newCost,
+      currencyCode,
+      sourceType,
+      sourceId ?? null,
+      sourceLabel ?? null,
+      userId,
+    ],
   )
 }
 
@@ -5526,10 +5604,7 @@ function tqToGQL(row: Record<string, unknown>): Record<string, unknown> {
 // Shared by projectTQs/projectTQ/uploadTQFile — same document_attachments +
 // download-url pattern as RFI/NCR/etc. (see e.g. projectRFIs), factored out
 // here since TQ needs it from more than one call site.
-async function fetchTQFilesGW(
-  tqId: string,
-  companyId: string,
-): Promise<Record<string, unknown>[]> {
+async function fetchTQFilesGW(tqId: string, companyId: string): Promise<Record<string, unknown>[]> {
   const files = await query(
     `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key
      FROM document_attachments da JOIN files f ON f.id=da.file_id
@@ -6002,7 +6077,7 @@ export const resolvers = {
       )
       if (!gatePoRow.rows[0]) return []
       const canViewStock =
-        await hasProcurementAuthorityGW(auth) ||
+        (await hasProcurementAuthorityGW(auth)) ||
         (await userIsOrganizerGW(auth.userId, args.poId, auth.companyId)) ||
         (await callerHasCurrentStagePositionGW(auth, args.poId, gatePoRow.rows[0].status))
       if (!canViewStock) return []
@@ -6117,9 +6192,14 @@ export const resolvers = {
       )
       if (!gateReqRow.rows[0]) return []
       const canViewStock =
-        await hasProcurementAuthorityGW(auth) ||
+        (await hasProcurementAuthorityGW(auth)) ||
         (await userIsOrganizerForRequisitionGW(auth.userId, args.requisitionId, auth.companyId)) ||
-        (await userHasPositionForRequisitionGW(auth.userId, auth.companyId, args.requisitionId, 'store_keeper'))
+        (await userHasPositionForRequisitionGW(
+          auth.userId,
+          auth.companyId,
+          args.requisitionId,
+          'store_keeper',
+        ))
       if (!canViewStock) return []
       const result = await query(
         `SELECT
@@ -6211,9 +6291,14 @@ export const resolvers = {
       )
       if (!gateReqRow.rows[0]) throw new Error('Requisition not found')
       const canViewStock =
-        await hasProcurementAuthorityGW(auth) ||
+        (await hasProcurementAuthorityGW(auth)) ||
         (await userIsOrganizerForRequisitionGW(auth.userId, args.requisitionId, auth.companyId)) ||
-        (await userHasPositionForRequisitionGW(auth.userId, auth.companyId, args.requisitionId, 'store_keeper'))
+        (await userHasPositionForRequisitionGW(
+          auth.userId,
+          auth.companyId,
+          args.requisitionId,
+          'store_keeper',
+        ))
       if (!canViewStock) throw new Error('Not authorized to view stock for this requisition')
 
       const isSysAdmin = auth.role === 'system_admin'
@@ -6411,7 +6496,9 @@ export const resolvers = {
       // hidden by the frontend column. viewerCanSeeTotals lets the frontend
       // hide the column outright instead of rendering a misleading '0'.
       const auth = ctx.auth as GWAuth
-      const canSeeTotals = await hasProcurementAuthorityGW(auth) || (await isUserFinanceTeamGW(auth.userId, auth.companyId))
+      const canSeeTotals =
+        (await hasProcurementAuthorityGW(auth)) ||
+        (await isUserFinanceTeamGW(auth.userId, auth.companyId))
       return result.rows.map((r) => ({
         ...(r as Record<string, unknown>),
         total_amount: canSeeTotals ? (r as Record<string, unknown>).total_amount : '0',
@@ -6522,11 +6609,7 @@ export const resolvers = {
     // (that's exactly how it got there), which is a valid status for
     // recordReceipt to accept but a dead end for a human picking a PO to
     // receive against — nothing left to enter.
-    receivablePurchaseOrders: async (
-      _: unknown,
-      args: { projectId?: string },
-      ctx: GQLContext,
-    ) => {
+    receivablePurchaseOrders: async (_: unknown, args: { projectId?: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const auth = ctx.auth as GWAuth
       const branchScope = await branchScopedPOFilterGW(auth)
@@ -6746,11 +6829,7 @@ export const resolvers = {
     // everything. Scoped to companies the SEARCHING user themselves has
     // active access to (not global search) so this can't be used to pull
     // PII out of unrelated companies.
-    findEmployeeAcrossCompanies: async (
-      _: unknown,
-      args: { email: string },
-      ctx: GQLContext,
-    ) => {
+    findEmployeeAcrossCompanies: async (_: unknown, args: { email: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
       const email = args.email.trim().toLowerCase()
       if (!email) return null
@@ -7107,7 +7186,8 @@ export const resolvers = {
         // in the system at all — group those by the typed name instead, or
         // every such request (regardless of who it's actually for) would
         // collapse into a single misleading "unknown requester" bucket.
-        const requesterKey = (req.requestedBy as string | null) ?? `name:${req.requestedForName as string}`
+        const requesterKey =
+          (req.requestedBy as string | null) ?? `name:${req.requestedForName as string}`
         const key = `${requesterKey}::${req.bundleCurrencyCode as string}`
         const list = groups.get(key)
         if (list) list.push(req)
@@ -8120,7 +8200,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
-      if (!(await verifyAttachmentEntityOwnershipGW(args.entityType, args.entityId, ctx.auth.companyId)))
+      if (
+        !(await verifyAttachmentEntityOwnershipGW(
+          args.entityType,
+          args.entityId,
+          ctx.auth.companyId,
+        ))
+      )
         return []
       // A G1 child PO's own receipts were never attached at
       // entity_type='purchase_order' — they were attached per vendor
@@ -8702,7 +8788,11 @@ export const resolvers = {
       // no PO at all can never actually be completed through this flow.
       // Harmless for the poId-scoped case (that condition already implies
       // it); load-bearing once productId alone can match across every PO.
-      const conditions: string[] = ['pmi.company_id=$1', "pmi.status='issued'", 'pmi.po_id IS NOT NULL']
+      const conditions: string[] = [
+        'pmi.company_id=$1',
+        "pmi.status='issued'",
+        'pmi.po_id IS NOT NULL',
+      ]
       const params: unknown[] = [ctx.auth.companyId]
       if (args.poId) {
         conditions.push(`pmi.po_id=$${params.length + 1}`)
@@ -9811,10 +9901,27 @@ export const resolvers = {
         callerIsAssignedApprover,
         callerHasReqAdmin,
       ] = await Promise.all([
-        isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'store_keeper'),
-        isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'store_pricing'),
         isAdmin ||
-          userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_officer'),
+          userHasPositionForRequisitionGW(
+            ctx.auth.userId,
+            ctx.auth.companyId,
+            args.id,
+            'store_keeper',
+          ),
+        isAdmin ||
+          userHasPositionForRequisitionGW(
+            ctx.auth.userId,
+            ctx.auth.companyId,
+            args.id,
+            'store_pricing',
+          ),
+        isAdmin ||
+          userHasPositionForRequisitionGW(
+            ctx.auth.userId,
+            ctx.auth.companyId,
+            args.id,
+            'procurement_officer',
+          ),
         // price_verification has no dedicated position — organizer/admin
         // only (see verifyRequisitionPrices). Field name kept as-is even
         // though it's no longer position-based, to avoid a wider rename.
@@ -9822,7 +9929,8 @@ export const resolvers = {
         // G1 Phase 3 Milestone A screen 3 — gates the Items Bought screen,
         // mirroring recordLinePurchase/markRequisitionLineShort/
         // finishBuyingRequisition's own shared authorization exactly.
-        isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'buyer'),
+        isAdmin ||
+          userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'buyer'),
         userIsDeptHeadForRequisitionGW(ctx.auth.userId, args.id),
         userIsAssignedApproverForRequisitionGW(ctx.auth.userId, args.id),
         callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId),
@@ -9843,7 +9951,8 @@ export const resolvers = {
         // approver OR po_admin position) — also reused as-is by screen 3
         // to gate the over-tolerance override, since approveTolerancePurchase
         // shares this exact same authorization set.
-        callerCanApprove: isAdmin || callerIsDeptHead || callerIsAssignedApprover || callerHasReqAdmin,
+        callerCanApprove:
+          isAdmin || callerIsDeptHead || callerIsAssignedApprover || callerHasReqAdmin,
       }
     },
 
@@ -9918,7 +10027,8 @@ export const resolvers = {
         [ctx.auth.userId, ctx.auth.companyId],
       )
       const employeeId: string | null = (empResult.rows[0]?.id as string | null) ?? null
-      const departmentId: string | null = (empResult.rows[0]?.department_id as string | null) ?? null
+      const departmentId: string | null =
+        (empResult.rows[0]?.department_id as string | null) ?? null
       return (
         await query(
           `SELECT DISTINCT req.*, cb.name AS branch_name,
@@ -9984,10 +10094,10 @@ export const resolvers = {
           po_number: string
           status: string
           priority: string
-        }>(`SELECT id, po_number, status, priority FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
-          args.id,
-          auth.companyId,
-        ])
+        }>(
+          `SELECT id, po_number, status, priority FROM purchase_orders WHERE id=$1 AND company_id=$2`,
+          [args.id, auth.companyId],
+        )
         if (!gateRow.rows[0]) return null
         const poStub = gateRow.rows[0]
         const isAdmin = await hasProcurementAuthorityGW(auth)
@@ -10818,7 +10928,13 @@ export const resolvers = {
         [args.fileId, ctx.auth.companyId],
       )
       if (!file.rows[0]) throw new Error('File not found or not yet uploaded')
-      if (!(await verifyAttachmentEntityOwnershipGW(args.entityType, args.entityId, ctx.auth.companyId)))
+      if (
+        !(await verifyAttachmentEntityOwnershipGW(
+          args.entityType,
+          args.entityId,
+          ctx.auth.companyId,
+        ))
+      )
         throw new Error('Entity not found')
       const client = await pool.connect()
       try {
@@ -10868,7 +10984,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (!(await verifyAttachmentEntityOwnershipGW(args.entityType, args.entityId, ctx.auth.companyId)))
+      if (
+        !(await verifyAttachmentEntityOwnershipGW(
+          args.entityType,
+          args.entityId,
+          ctx.auth.companyId,
+        ))
+      )
         throw new Error('Entity not found')
       const client = await pool.connect()
       try {
@@ -11204,7 +11326,9 @@ export const resolvers = {
         account_category,
       } = args.input
       if ((is_active ?? true) && !/^\d{4}(-\d{2})?$/.test(code)) {
-        throw new Error('Account code must be 4 digits, optionally with a -NN suffix (e.g. 1200 or 3111-01)')
+        throw new Error(
+          'Account code must be 4 digits, optionally with a -NN suffix (e.g. 1200 or 3111-01)',
+        )
       }
       const r = await query(
         `INSERT INTO chart_of_accounts
@@ -11254,7 +11378,9 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
       if (i.code !== undefined && i.is_active !== false && !/^\d{4}(-\d{2})?$/.test(i.code)) {
-        throw new Error('Account code must be 4 digits, optionally with a -NN suffix (e.g. 1200 or 3111-01)')
+        throw new Error(
+          'Account code must be 4 digits, optionally with a -NN suffix (e.g. 1200 or 3111-01)',
+        )
       }
       // Build the SET clause from only the fields actually present in the
       // input, so an explicit null (e.g. "clear the category") is applied
@@ -12190,10 +12316,12 @@ export const resolvers = {
                 .sort((a, b) => a.po_line_id.localeCompare(b.po_line_id))
             const newLines = norm(i.lines)
             for (const draft of recentDrafts.rows) {
-              const draftLinesRes = await client.query<{ po_line_id: string; qty_received: string }>(
-                `SELECT po_line_id, qty_received FROM po_receipt_lines WHERE receipt_id=$1`,
-                [draft.id],
-              )
+              const draftLinesRes = await client.query<{
+                po_line_id: string
+                qty_received: string
+              }>(`SELECT po_line_id, qty_received FROM po_receipt_lines WHERE receipt_id=$1`, [
+                draft.id,
+              ])
               const draftLines = norm(
                 draftLinesRes.rows.map((l) => ({
                   po_line_id: l.po_line_id,
@@ -12358,10 +12486,11 @@ export const resolvers = {
               `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true LIMIT 1`,
               [requireAuth(ctx).companyId],
             )
-            resolvedToLocationId = (warehouseRes.rows[0]?.id ?? fallbackRes.rows[0]?.id) as
-              | string
-              | null
-              | undefined ?? null
+            resolvedToLocationId =
+              ((warehouseRes.rows[0]?.id ?? fallbackRes.rows[0]?.id) as
+                | string
+                | null
+                | undefined) ?? null
             if (!resolvedToLocationId)
               throw new Error(
                 'No active stock location is configured for this company. Set one up in Inventory, or pick a receiving location on this receipt.',
@@ -12668,7 +12797,9 @@ export const resolvers = {
               'goods_received',
               'receive_goods',
               requireAuth(ctx),
-              i.notes ? `Delivered directly to jobsite — ${i.notes}` : 'Delivered directly to jobsite',
+              i.notes
+                ? `Delivered directly to jobsite — ${i.notes}`
+                : 'Delivered directly to jobsite',
             )
           }
 
@@ -12741,7 +12872,11 @@ export const resolvers = {
       const sku =
         manualSku ||
         (generated
-          ? await nextDocumentNumber(ctx.auth.companyId, `product_${generated.slug}`, generated.prefix)
+          ? await nextDocumentNumber(
+              ctx.auth.companyId,
+              `product_${generated.slug}`,
+              generated.prefix,
+            )
           : await nextDocumentNumber(ctx.auth.companyId, 'product', 'PRD'))
       const r = await query(
         `INSERT INTO products (company_id,sku,name,name_ar,description,category,sub_category,uom,valuation_method,standard_cost,cost_currency,reorder_point,reorder_qty,is_active)
@@ -12895,7 +13030,10 @@ export const resolvers = {
       // company (Al Watanyia) doesn't run its own inventory and the item
       // really belongs in another company's catalog (Nishtimani Factory).
       const targetCompanyId = args.companyId ?? ctx.auth.companyId
-      if (targetCompanyId !== ctx.auth.companyId && !(await callerHasCompanyAccessGW(ctx.auth, targetCompanyId)))
+      if (
+        targetCompanyId !== ctx.auth.companyId &&
+        !(await callerHasCompanyAccessGW(ctx.auth, targetCompanyId))
+      )
         throw new Error('Target company not found or not accessible to you')
       const pendingRes = await query(
         `SELECT * FROM pending_product_catalog_items WHERE id=$1 AND company_id=$2 AND status='pending'`,
@@ -13004,7 +13142,10 @@ export const resolvers = {
       // always the caller's own company's, but the existing product it links
       // to may live in a different company the caller has a role in.
       const targetCompanyId = args.companyId ?? ctx.auth.companyId
-      if (targetCompanyId !== ctx.auth.companyId && !(await callerHasCompanyAccessGW(ctx.auth, targetCompanyId)))
+      if (
+        targetCompanyId !== ctx.auth.companyId &&
+        !(await callerHasCompanyAccessGW(ctx.auth, targetCompanyId))
+      )
         throw new Error('Target company not found or not accessible to you')
       const pendingRes = await query(
         `SELECT * FROM pending_product_catalog_items WHERE id=$1 AND company_id=$2 AND status='pending'`,
@@ -13141,7 +13282,9 @@ export const resolvers = {
                 l.product_id,
               ])
               const p = prodRes.rows[0] as { sku: string | null; name: string | null } | undefined
-              const label = p?.sku ? `${p.sku} (${p.name ?? l.product_id})` : (p?.name ?? l.product_id)
+              const label = p?.sku
+                ? `${p.sku} (${p.name ?? l.product_id})`
+                : (p?.name ?? l.product_id)
               throw new Error(
                 `Insufficient stock to transfer ${label} — ${onHand} on hand at the source location, ${l.qty} required`,
               )
@@ -13923,7 +14066,8 @@ export const resolvers = {
       )
 
       const documentNumber =
-        args.documentNumber ?? (await nextDocumentNumber(ctx.auth.companyId, 'client_document', 'CD'))
+        args.documentNumber ??
+        (await nextDocumentNumber(ctx.auth.companyId, 'client_document', 'CD'))
 
       const ins = await query(
         `INSERT INTO project_client_documents
@@ -16180,7 +16324,9 @@ export const resolvers = {
         args.projectId,
         ctx.auth.companyId,
         ctx.auth.userId,
-        args.bidType === 'technical' ? 'Bid Package File (Technical)' : 'Bid Package File (Commercial)',
+        args.bidType === 'technical'
+          ? 'Bid Package File (Technical)'
+          : 'Bid Package File (Commercial)',
         String(args.title ?? f.original_filename),
       )
       return bidPackageFileList(args.projectId, ctx.auth.companyId)
@@ -22261,7 +22407,12 @@ export const resolvers = {
       if (issue.po_id || issue.requisition_id) {
         const isAdmin = await hasProcurementAuthorityGW(ctx.auth)
         const hasPosition = issue.po_id
-          ? await userHasPositionGW(ctx.auth.userId, ctx.auth.companyId, String(issue.po_id), 'store_keeper')
+          ? await userHasPositionGW(
+              ctx.auth.userId,
+              ctx.auth.companyId,
+              String(issue.po_id),
+              'store_keeper',
+            )
           : await userHasPositionForRequisitionGW(
               ctx.auth.userId,
               ctx.auth.companyId,
@@ -22292,7 +22443,11 @@ export const resolvers = {
           }[]
         }
       >()
-      const intercoTransactionsCreated: { id: string; fromCompanyId: string; toCompanyId: string }[] = []
+      const intercoTransactionsCreated: {
+        id: string
+        fromCompanyId: string
+        toCompanyId: string
+      }[] = []
       try {
         await client.query('BEGIN')
 
@@ -22605,11 +22760,15 @@ export const resolvers = {
             ],
           )
           const transactionId = tx.rows[0].id as string
-          await client.query(`UPDATE interco_stock_transfers SET interco_transaction_id=$1 WHERE id=$2`, [
-            transactionId,
-            transferId,
-          ])
-          intercoTransactionsCreated.push({ id: transactionId, fromCompanyId, toCompanyId: companyId })
+          await client.query(
+            `UPDATE interco_stock_transfers SET interco_transaction_id=$1 WHERE id=$2`,
+            [transactionId, transferId],
+          )
+          intercoTransactionsCreated.push({
+            id: transactionId,
+            fromCompanyId,
+            toCompanyId: companyId,
+          })
         }
 
         // If this Store Out is linked to a PO tied to a manufacturing order,
@@ -22617,10 +22776,9 @@ export const resolvers = {
         // consumed — matches the stock move above happening here instead of
         // at PO approval.
         if (issue.po_id) {
-          const poRes = await client.query(
-            `SELECT linked_mo_id FROM purchase_orders WHERE id=$1`,
-            [issue.po_id],
-          )
+          const poRes = await client.query(`SELECT linked_mo_id FROM purchase_orders WHERE id=$1`, [
+            issue.po_id,
+          ])
           const linkedMoId = poRes.rows[0]?.linked_mo_id as string | null
           if (linkedMoId) {
             for (const line of issueLinesRes.rows as Record<string, unknown>[]) {
@@ -22850,7 +23008,12 @@ export const resolvers = {
           poId: string
           returnDate?: string
           notes?: string
-          lines: { issueLineId?: string; poLineId?: string; toLocationId: string; qtyReturned: number }[]
+          lines: {
+            issueLineId?: string
+            poLineId?: string
+            toLocationId: string
+            qtyReturned: number
+          }[]
         }
       },
       ctx: GQLContext,
@@ -22890,7 +23053,15 @@ export const resolvers = {
         const headerRes = await client.query<{ id: string }>(
           `INSERT INTO project_material_returns (company_id, project_id, po_id, return_number, return_date, notes, created_by)
            VALUES ($1,$2,$3,$4,COALESCE($5::date,CURRENT_DATE),$6,$7) RETURNING id`,
-          [ctx.auth.companyId, projectId, input.poId, returnNumber, input.returnDate ?? null, input.notes ?? null, ctx.auth.userId],
+          [
+            ctx.auth.companyId,
+            projectId,
+            input.poId,
+            returnNumber,
+            input.returnDate ?? null,
+            input.notes ?? null,
+            ctx.auth.userId,
+          ],
         )
         returnId = headerRes.rows[0].id
         let totalReturnCost = 0
@@ -22937,9 +23108,13 @@ export const resolvers = {
             if (polLine.po_id !== input.poId)
               throw new Error(`PO line ${line.poLineId} does not belong to this purchase order`)
             if (polLine.delivery_destination !== 'jobsite')
-              throw new Error(`PO line ${line.poLineId} was not a direct-to-jobsite delivery — nothing to return this way`)
+              throw new Error(
+                `PO line ${line.poLineId} was not a direct-to-jobsite delivery — nothing to return this way`,
+              )
             if (!polLine.product_id)
-              throw new Error(`PO line ${line.poLineId} has no catalog product — cannot return it to stock`)
+              throw new Error(
+                `PO line ${line.poLineId} has no catalog product — cannot return it to stock`,
+              )
 
             const productLabel = polLine.sku
               ? `${polLine.sku} (${polLine.product_name ?? polLine.product_id})`
@@ -22979,7 +23154,7 @@ export const resolvers = {
             const dest = destRes.rows[0]
             if (!dest) throw new Error('Destination stock location not found')
             if (dest.company_id !== ctx.auth.companyId)
-              throw new Error('Returning to a different company\'s location is not supported yet')
+              throw new Error("Returning to a different company's location is not supported yet")
             if (['virtual_in', 'virtual_out'].includes(dest.type))
               throw new Error('Choose a real warehouse or site location to return material to')
 
@@ -23035,7 +23210,16 @@ export const resolvers = {
               `INSERT INTO project_material_return_lines
                  (return_id, po_line_id, product_id, to_location_id, qty_returned, unit_cost, total_cost, stock_move_id)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-              [returnId, line.poLineId, polLine.product_id, line.toLocationId, qty, unitCost, totalCost, moveRes.rows[0].id],
+              [
+                returnId,
+                line.poLineId,
+                polLine.product_id,
+                line.toLocationId,
+                qty,
+                unitCost,
+                totalCost,
+                moveRes.rows[0].id,
+              ],
             )
             continue
           }
@@ -23076,7 +23260,9 @@ export const resolvers = {
           if (issueLine.issue_status !== 'issued')
             throw new Error(`Store Out line ${issueLineId} was never issued — nothing to return`)
           if (!issueLine.to_location_id)
-            throw new Error(`Store Out line ${issueLineId} has no recorded consumption location to return from`)
+            throw new Error(
+              `Store Out line ${issueLineId} has no recorded consumption location to return from`,
+            )
 
           const productLabel = issueLine.sku
             ? `${issueLine.sku} (${issueLine.product_name ?? issueLine.product_id})`
@@ -23101,7 +23287,7 @@ export const resolvers = {
           const dest = destRes.rows[0]
           if (!dest) throw new Error('Destination stock location not found')
           if (dest.company_id !== ctx.auth.companyId)
-            throw new Error('Returning to a different company\'s location is not supported yet')
+            throw new Error("Returning to a different company's location is not supported yet")
           if (['virtual_in', 'virtual_out'].includes(dest.type))
             throw new Error('Choose a real warehouse or site location to return material to')
 
@@ -23130,7 +23316,16 @@ export const resolvers = {
             `INSERT INTO project_material_return_lines
                (return_id, issue_line_id, product_id, to_location_id, qty_returned, unit_cost, total_cost, stock_move_id)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-            [returnId, issueLineId, issueLine.product_id, line.toLocationId, qty, unitCost, totalCost, moveRes.rows[0].id],
+            [
+              returnId,
+              issueLineId,
+              issueLine.product_id,
+              line.toLocationId,
+              qty,
+              unitCost,
+              totalCost,
+              moveRes.rows[0].id,
+            ],
           )
         }
 
@@ -23217,7 +23412,7 @@ export const resolvers = {
 
     adminSetPOStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (!await hasProcurementAuthorityGW(ctx.auth)) throw new Error('Forbidden: admin only')
+      if (!(await hasProcurementAuthorityGW(ctx.auth))) throw new Error('Forbidden: admin only')
       const r = await query(
         `UPDATE purchase_orders SET status=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3 RETURNING *`,
         [args.status, args.id, ctx.auth.companyId],
@@ -23295,10 +23490,10 @@ export const resolvers = {
       const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
       if (!isAdmin && !hasPos && !isOrganizer)
         throw new Error('procurement_officer position or PO organizer required')
-      const poCheck = await query(`SELECT status FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
-        args.id,
-        auth.companyId,
-      ])
+      const poCheck = await query(
+        `SELECT status FROM purchase_orders WHERE id=$1 AND company_id=$2`,
+        [args.id, auth.companyId],
+      )
       if (!poCheck.rows[0]) throw new Error('PO not found')
       // Vendor is normally chosen during market pricing (030_po_lifecycle_redesign.sql),
       // not at creation — this control lets it be set/corrected any time up through
@@ -23348,9 +23543,16 @@ export const resolvers = {
       // legacy assigned_buyer_user_id fallback (POs created before the buyer
       // position redesign), OR the new branch-scoped 'buyer' position.
       const isFrozenBuyer = check.rows[0].assigned_buyer_user_id === auth.userId
-      const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
-      if (!await hasProcurementAuthorityGW(auth) && !isFrozenBuyer && !hasBuyerPosition)
-        throw new Error('Only a buyer position holder for this PO can set the actual price on this PO')
+      const hasBuyerPosition = await userHasPositionGW(
+        auth.userId,
+        auth.companyId,
+        args.poId,
+        'buyer',
+      )
+      if (!(await hasProcurementAuthorityGW(auth)) && !isFrozenBuyer && !hasBuyerPosition)
+        throw new Error(
+          'Only a buyer position holder for this PO can set the actual price on this PO',
+        )
       const r = await query(
         `UPDATE po_lines
          SET actual_unit_price=$1::NUMERIC,
@@ -24074,9 +24276,7 @@ export const resolvers = {
 
         if (args.lines !== undefined) {
           // Delete lines that were removed (exist in DB but not in the new list)
-          const keptIds = args.lines
-            .map((l) => l.id)
-            .filter((id): id is string => Boolean(id))
+          const keptIds = args.lines.map((l) => l.id).filter((id): id is string => Boolean(id))
           if (keptIds.length > 0) {
             await client.query(
               `DELETE FROM project_invoice_lines WHERE invoice_id=$1 AND id NOT IN (${keptIds.map((_, i) => `$${i + 2}`).join(',')})`,
@@ -24712,7 +24912,10 @@ export const resolvers = {
           )
           const consumptions = consRes.rows as Record<string, unknown>[]
           const productNameById = new Map(
-            consumptions.map((c) => [String(c.component_product_id), c.product_name as string | null]),
+            consumptions.map((c) => [
+              String(c.component_product_id),
+              c.product_name as string | null,
+            ]),
           )
 
           // Merge with input lines (input overrides planned qty if provided)
@@ -25771,11 +25974,7 @@ export const resolvers = {
       return true
     },
 
-    setRechargeCostCenter: async (
-      _: unknown,
-      args: { costCenterId: string },
-      ctx: GQLContext,
-    ) => {
+    setRechargeCostCenter: async (_: unknown, args: { costCenterId: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'hr.recharge.admin', 'admin')
       const ccCheck = await query(`SELECT 1 FROM cost_centers WHERE id=$1 AND company_id=$2`, [
@@ -25927,7 +26126,10 @@ export const resolvers = {
       // request; it only extends to requests this caller actually created.
       const isAdmin =
         isPermissionBypassGW(ctx.auth.role) ||
-        meetsLevel((await loadPermissions(ctx.auth.userId, ctx.auth.companyId))['hr.recharge.admin'], 'admin')
+        meetsLevel(
+          (await loadPermissions(ctx.auth.userId, ctx.auth.companyId))['hr.recharge.admin'],
+          'admin',
+        )
       const r = await query(
         `UPDATE recharge_requests SET status='cancelled', updated_at=NOW()
          WHERE id=$1 AND company_id=$2 AND (requested_by=$3 OR ($4 AND created_by=$3)) AND status='pending' RETURNING id`,
@@ -26076,7 +26278,7 @@ export const resolvers = {
         title: 'Your recharge is on its way',
         body:
           reqRow.rows[0].requested_by === null
-            ? 'The recharge you requested on someone else\'s behalf has been sent — confirm receipt once you\'ve verified it with them.'
+            ? "The recharge you requested on someone else's behalf has been sent — confirm receipt once you've verified it with them."
             : 'Your phone recharge has been sent — please confirm receipt to view the proof.',
         requestId: args.id,
       })
@@ -29034,11 +29236,7 @@ const phase5QueryResolvers = {
   // PROJECT_SITE_INSTRUCTIONS_QUERY referenced a field that existed on
   // neither this schema nor any resolver). Modeled directly on projectRFIs
   // below, the one sibling QA/QC list query that does have a resolver.
-  projectSiteInstructions: async (
-    _: unknown,
-    args: { projectId: string },
-    ctx: GQLContext,
-  ) => {
+  projectSiteInstructions: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'projects.qaqc.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
@@ -30245,10 +30443,10 @@ const phase5MutationResolvers = {
 
     if (args.requisitionId) {
       const reqId = args.requisitionId
-      const reqRow = await query(
-        `SELECT status FROM requisitions WHERE id=$1 AND company_id=$2`,
-        [reqId, ctx.auth.companyId],
-      )
+      const reqRow = await query(`SELECT status FROM requisitions WHERE id=$1 AND company_id=$2`, [
+        reqId,
+        ctx.auth.companyId,
+      ])
       if (!reqRow.rows[0]) throw new Error('Requisition not found')
       const reqStatus = (reqRow.rows[0] as { status: string }).status
 
@@ -30457,7 +30655,9 @@ const phase5MutationResolvers = {
           `UPDATE po_edit_requests SET status='approved',reviewed_by=$1,review_notes=$2,reviewed_at=NOW() WHERE id=$3`,
           [ctx.auth.userId, args.reviewNotes ?? null, args.requestId],
         )
-        const reqStatusRow = await client.query(`SELECT status FROM requisitions WHERE id=$1`, [reqId])
+        const reqStatusRow = await client.query(`SELECT status FROM requisitions WHERE id=$1`, [
+          reqId,
+        ])
         const currentStatus = reqStatusRow.rows[0]?.status ?? 'unknown'
         const changeSummary = buildEditChangeSummary(changes)
         const logNotes = [args.reviewNotes, changeSummary].filter(Boolean).join(' — ')
@@ -30671,8 +30871,7 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'procurement.po.edit', 'edit')
     const i = args.input
-    if (!i.lines || i.lines.length === 0)
-      throw new Error('A requisition needs at least one line')
+    if (!i.lines || i.lines.length === 0) throw new Error('A requisition needs at least one line')
     if (i.assigned_receiver_id) {
       const empCheck = await query(`SELECT id FROM employees WHERE id=$1 AND company_id=$2`, [
         i.assigned_receiver_id,
@@ -30820,7 +31019,9 @@ const phase5MutationResolvers = {
       'store_keeper',
     )
     if (!isAdmin && !isOrganizer && !isStoreKeeper)
-      throw new Error('Only the requisition owner or a Store Keeper can confirm the inventory check')
+      throw new Error(
+        'Only the requisition owner or a Store Keeper can confirm the inventory check',
+      )
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const isSysAdmin = auth.role === 'system_admin'
 
@@ -30922,7 +31123,11 @@ const phase5MutationResolvers = {
         await client.query(
           `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
            VALUES ($1,'inventory_check','inventory_check','item_swapped',$2,$3)`,
-          [args.id, auth.userId, `Item(s) reselected at inventory check: ${swapSummaries.join('; ')}`],
+          [
+            args.id,
+            auth.userId,
+            `Item(s) reselected at inventory check: ${swapSummaries.join('; ')}`,
+          ],
         )
       }
 
@@ -31044,11 +31249,10 @@ const phase5MutationResolvers = {
         // recordProductCostChange) — falls back to the company's default
         // currency only when the product has never had a real cost at all.
         const storeCurrency = line.cost_currency ?? baseCurrencyCode
-        await client.query(`UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`, [
-          storePrice,
-          storeCurrency,
-          line.id,
-        ])
+        await client.query(
+          `UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`,
+          [storePrice, storeCurrency, line.id],
+        )
         autoFilledLines.push({
           lineId: line.id,
           productId: line.product_id,
@@ -31100,7 +31304,10 @@ const phase5MutationResolvers = {
           empId,
           args.id,
         ])
-      await markLinesAddressed(client, args.lineStockQtys.map((l) => l.lineId))
+      await markLinesAddressed(
+        client,
+        args.lineStockQtys.map((l) => l.lineId),
+      )
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -31185,7 +31392,10 @@ const phase5MutationResolvers = {
           empId,
           args.id,
         ])
-      await markLinesAddressed(client, (args.linePrices ?? []).map((lp) => lp.lineId))
+      await markLinesAddressed(
+        client,
+        (args.linePrices ?? []).map((lp) => lp.lineId),
+      )
       await reqTransition(
         client,
         args.id,
@@ -31283,7 +31493,10 @@ const phase5MutationResolvers = {
           empId,
           args.id,
         ])
-      await markLinesAddressed(client, (args.linePrices ?? []).map((lp) => lp.lineId))
+      await markLinesAddressed(
+        client,
+        (args.linePrices ?? []).map((lp) => lp.lineId),
+      )
       await reqTransition(
         client,
         args.id,
@@ -31395,7 +31608,14 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'price_verification')
+      await applyLineFlags(
+        client,
+        args.id,
+        'requisition_id',
+        args.lineFlags,
+        auth.userId,
+        'price_verification',
+      )
       await reqTransition(
         client,
         args.id,
@@ -31436,7 +31656,14 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'price_verification')
+      await applyLineFlags(
+        client,
+        args.id,
+        'requisition_id',
+        args.lineFlags,
+        auth.userId,
+        'price_verification',
+      )
       await reqTransition(
         client,
         args.id,
@@ -31477,7 +31704,14 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'price_verification')
+      await applyLineFlags(
+        client,
+        args.id,
+        'requisition_id',
+        args.lineFlags,
+        auth.userId,
+        'price_verification',
+      )
       await releaseRequisitionStockReservations(client, args.id)
       await reqTransition(
         client,
@@ -31514,7 +31748,14 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'price_verification')
+      await applyLineFlags(
+        client,
+        args.id,
+        'requisition_id',
+        args.lineFlags,
+        auth.userId,
+        'price_verification',
+      )
       await releaseRequisitionStockReservations(client, args.id)
       await reqTransition(
         client,
@@ -31701,7 +31942,14 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'pending_approval')
+      await applyLineFlags(
+        client,
+        args.id,
+        'requisition_id',
+        args.lineFlags,
+        auth.userId,
+        'pending_approval',
+      )
       // Unlike rejectPO (pending_approval -> rejected, a terminal status
       // needing a separate reopen action), rejecting a requisition goes
       // straight back to draft in one step — see reqStateMachine's header
@@ -31753,11 +32001,20 @@ const phase5MutationResolvers = {
     const reqRow = await query(`SELECT status FROM requisitions WHERE id=$1`, [args.id])
     if (!reqRow.rows[0]) throw new Error('Requisition not found')
     if (reqRow.rows[0].status !== 'pending_approval')
-      throw new Error(`Cannot reject to market pricing from status '${reqRow.rows[0].status as string}'`)
+      throw new Error(
+        `Cannot reject to market pricing from status '${reqRow.rows[0].status as string}'`,
+      )
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'pending_approval')
+      await applyLineFlags(
+        client,
+        args.id,
+        'requisition_id',
+        args.lineFlags,
+        auth.userId,
+        'pending_approval',
+      )
       await reqTransition(
         client,
         args.id,
@@ -31800,11 +32057,20 @@ const phase5MutationResolvers = {
     const reqRow = await query(`SELECT status FROM requisitions WHERE id=$1`, [args.id])
     if (!reqRow.rows[0]) throw new Error('Requisition not found')
     if (reqRow.rows[0].status !== 'pending_approval')
-      throw new Error(`Cannot reject to inventory check from status '${reqRow.rows[0].status as string}'`)
+      throw new Error(
+        `Cannot reject to inventory check from status '${reqRow.rows[0].status as string}'`,
+      )
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'pending_approval')
+      await applyLineFlags(
+        client,
+        args.id,
+        'requisition_id',
+        args.lineFlags,
+        auth.userId,
+        'pending_approval',
+      )
       await releaseRequisitionStockReservations(client, args.id)
       await reqTransition(
         client,
@@ -31876,7 +32142,9 @@ const phase5MutationResolvers = {
     if (line.requisition_status !== 'items_bought')
       throw new Error('Requisition must be in items_bought status to record a purchase')
     if (line.short_marked_at)
-      throw new Error('This line was marked short — no further purchases can be recorded against it')
+      throw new Error(
+        'This line was marked short — no further purchases can be recorded against it',
+      )
 
     const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasBuyerPosition = await userHasPositionForRequisitionGW(
@@ -31919,7 +32187,9 @@ const phase5MutationResolvers = {
       )
       if (!locked.rows[0]) throw new Error('Requisition line not found')
       if (locked.rows[0].short_marked_at)
-        throw new Error('This line was marked short — no further purchases can be recorded against it')
+        throw new Error(
+          'This line was marked short — no further purchases can be recorded against it',
+        )
       const qtyOrdered = parseFloat(locked.rows[0].qty_ordered)
       const qtyFromStock = parseFloat(locked.rows[0].qty_from_stock ?? '0')
       const alreadyBought = await client.query<{ total: string }>(
@@ -31929,14 +32199,18 @@ const phase5MutationResolvers = {
       const alreadyQty = parseFloat(alreadyBought.rows[0]?.total ?? '0')
       const remaining = qtyOrdered - qtyFromStock - alreadyQty
       if (qty > remaining + 0.0001)
-        throw new Error(`Cannot record ${qty} — only ${remaining} remaining to purchase on this line`)
+        throw new Error(
+          `Cannot record ${qty} — only ${remaining} remaining to purchase on this line`,
+        )
 
       // Tolerance is only meaningful when this purchase's currency matches
       // the currency approved_unit_price was snapshotted in — no-conversion
       // policy means there's no honest way to compare across currencies, so
       // a purchase in a different currency is simply never flagged.
       const approvedPrice =
-        locked.rows[0].approved_unit_price != null ? parseFloat(locked.rows[0].approved_unit_price) : null
+        locked.rows[0].approved_unit_price != null
+          ? parseFloat(locked.rows[0].approved_unit_price)
+          : null
       let overTolerance = false
       if (approvedPrice != null && currencyCode === locked.rows[0].currency_code) {
         const tol = await client.query<{ tolerance_pct: string; tolerance_abs: string }>(
@@ -32020,13 +32294,18 @@ const phase5MutationResolvers = {
       [args.purchaseId],
     )
     const purchase = row.rows[0]
-    if (!purchase || purchase.company_id !== auth.companyId) throw new Error('Purchase entry not found')
-    if (!purchase.over_tolerance) throw new Error('This purchase is not over tolerance — nothing to approve')
+    if (!purchase || purchase.company_id !== auth.companyId)
+      throw new Error('Purchase entry not found')
+    if (!purchase.over_tolerance)
+      throw new Error('This purchase is not over tolerance — nothing to approve')
     if (purchase.tolerance_approved_by) throw new Error('This purchase has already been approved')
 
     const isAdmin = await hasProcurementAuthorityGW(auth)
     const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, purchase.requisition_id)
-    const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, purchase.requisition_id)
+    const isApprover = await userIsAssignedApproverForRequisitionGW(
+      auth.userId,
+      purchase.requisition_id,
+    )
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
     if (!isAdmin && !isDeptHead && !isApprover && !isReqAdmin)
       throw new Error('Not authorized to approve an over-tolerance purchase for this requisition')
@@ -32035,7 +32314,9 @@ const phase5MutationResolvers = {
     // for them) rather than this one, which is specifically about a
     // supervisor who happens to also be the recorder.
     if (purchase.bought_by === auth.userId)
-      throw new Error('The buyer who recorded this purchase cannot also approve its tolerance override — a different supervisor must review it')
+      throw new Error(
+        'The buyer who recorded this purchase cannot also approve its tolerance override — a different supervisor must review it',
+      )
 
     await query(`UPDATE po_line_purchases SET tolerance_approved_by=$1 WHERE id=$2`, [
       auth.userId,
@@ -32092,8 +32373,11 @@ const phase5MutationResolvers = {
       [args.lineId],
     )
     const remaining =
-      parseFloat(line.qty_ordered) - parseFloat(line.qty_from_stock ?? '0') - parseFloat(boughtRes.rows[0]?.total ?? '0')
-    if (remaining <= 0) throw new Error('This line has nothing remaining to purchase — cannot mark short')
+      parseFloat(line.qty_ordered) -
+      parseFloat(line.qty_from_stock ?? '0') -
+      parseFloat(boughtRes.rows[0]?.total ?? '0')
+    if (remaining <= 0)
+      throw new Error('This line has nothing remaining to purchase — cannot mark short')
 
     const r = await query(
       `UPDATE po_lines SET short_reason=$1, short_marked_by=$2, short_marked_at=NOW() WHERE id=$3 RETURNING *`,
@@ -32123,7 +32407,12 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasBuyerPosition = await userHasPositionForRequisitionGW(auth.userId, auth.companyId, args.id, 'buyer')
+    const hasBuyerPosition = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'buyer',
+    )
     if (!isAdmin && !hasBuyerPosition)
       throw new Error('Only a buyer position holder for this requisition can finish buying')
 
@@ -32158,7 +32447,9 @@ const phase5MutationResolvers = {
       [args.id],
     )
     if (parseInt(unresolved.rows[0]?.c ?? '0', 10) > 0)
-      throw new Error('Every purchased line must be fully bought or marked short before finishing buying')
+      throw new Error(
+        'Every purchased line must be fully bought or marked short before finishing buying',
+      )
 
     // Gate 2: every recorded purchase has a receipt attached (mirrors
     // finishBuyingPO's "at least one receipt" gate, but per-entry since
@@ -32276,16 +32567,17 @@ const phase5MutationResolvers = {
             // Whatever isn't a vendor purchase (stock portion and/or the
             // accepted short shortfall) stays on the original row.
             const remainderQty = qtyOrdered - totalEntryQty
-            await client.query(`UPDATE po_lines SET qty_ordered=$1, total_price=$1*unit_price WHERE id=$2`, [
-              remainderQty,
-              line.id,
-            ])
+            await client.query(
+              `UPDATE po_lines SET qty_ordered=$1, total_price=$1*unit_price WHERE id=$2`,
+              [remainderQty, line.id],
+            )
           }
 
           for (let i = 0; i < entries.length; i++) {
             const entry = entries[i]
             const childId = childByVendor.get(entry.vendor_id)
-            if (childId === undefined) throw new Error(`No PO created for vendor ${entry.vendor_id}`)
+            if (childId === undefined)
+              throw new Error(`No PO created for vendor ${entry.vendor_id}`)
             const nextLineNumber = (lineNumberCounters.get(childId) ?? 0) + 1
             lineNumberCounters.set(childId, nextLineNumber)
             const qty = parseFloat(entry.qty)
@@ -32372,7 +32664,11 @@ const phase5MutationResolvers = {
   // evaluator afterward: a cancelled child's lines count as resolved (see
   // evaluateRequisitionCompletion), so this might be the last thing
   // blocking the requisition from completing.
-  cancelChildPurchaseOrder: async (_: unknown, args: { id: string; reason?: string }, ctx: GQLContext) => {
+  cancelChildPurchaseOrder: async (
+    _: unknown,
+    args: { id: string; reason?: string },
+    ctx: GQLContext,
+  ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const poRow = await query<{
@@ -32380,15 +32676,21 @@ const phase5MutationResolvers = {
       company_id: string
       requisition_id: string | null
       organizer_id: string | null
-    }>(`SELECT status, company_id, requisition_id, organizer_id FROM purchase_orders WHERE id=$1`, [args.id])
+    }>(`SELECT status, company_id, requisition_id, organizer_id FROM purchase_orders WHERE id=$1`, [
+      args.id,
+    ])
     const po = poRow.rows[0]
     if (!po || po.company_id !== auth.companyId) throw new Error('Purchase order not found')
     if (!po.requisition_id)
-      throw new Error('cancelChildPurchaseOrder only applies to a G1 child PO — use cancelPO for a standalone one')
+      throw new Error(
+        'cancelChildPurchaseOrder only applies to a G1 child PO — use cancelPO for a standalone one',
+      )
     const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = po.organizer_id === auth.userId
     if (!isAdmin && !isOrganizer)
-      throw new Error('Only the requisition organizer or an admin can cancel this child purchase order')
+      throw new Error(
+        'Only the requisition organizer or an admin can cancel this child purchase order',
+      )
     if (po.status !== 'bought')
       throw new Error(
         `Cannot cancel child PO in status '${po.status}' — it's already past goods_received or already terminal`,
@@ -32416,7 +32718,11 @@ const phase5MutationResolvers = {
   // the automatic checks can't resolve on their own. Supervisor-gated
   // (same set as approveTolerancePurchase) since it's an override, not a
   // routine buying-stage action.
-  closeRequisitionLine: async (_: unknown, args: { lineId: string; reason: string }, ctx: GQLContext) => {
+  closeRequisitionLine: async (
+    _: unknown,
+    args: { lineId: string; reason: string },
+    ctx: GQLContext,
+  ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     if (!args.reason.trim()) throw new Error('reason is required')
@@ -32489,7 +32795,8 @@ const phase5MutationResolvers = {
       `SELECT status, company_id FROM requisitions WHERE id=$1`,
       [args.id],
     )
-    if (!reqRow.rows[0] || reqRow.rows[0].company_id !== auth.companyId) throw new Error('Requisition not found')
+    if (!reqRow.rows[0] || reqRow.rows[0].company_id !== auth.companyId)
+      throw new Error('Requisition not found')
     const fromStatus = reqRow.rows[0].status as RequisitionStatus
     if (!reqStateMachine.canTransition(fromStatus, 'cancel'))
       throw new Error(`Cannot cancel requisition in status '${fromStatus}'`)
@@ -32601,7 +32908,12 @@ const phase5MutationResolvers = {
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
-    const isStoreKeeper = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'store_keeper')
+    const isStoreKeeper = await userHasPositionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'store_keeper',
+    )
     if (!isAdmin && !isOrganizer && !isStoreKeeper)
       throw new Error('Only the PO owner or a Store Keeper can confirm the inventory check')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
@@ -32786,7 +33098,12 @@ const phase5MutationResolvers = {
           // getting a fresh, possibly wrongly-converted one.
           let fxRateToBase: number | undefined
           try {
-            fxRateToBase = await resolveFxRateToBase(client, auth.companyId, storeCurrency, baseCurrencyCode)
+            fxRateToBase = await resolveFxRateToBase(
+              client,
+              auth.companyId,
+              storeCurrency,
+              baseCurrencyCode,
+            )
           } catch {
             fxRateToBase = undefined
           }
@@ -32799,18 +33116,16 @@ const phase5MutationResolvers = {
               [storePrice, storeCurrency, qtyFromStock * storePrice, fxRateToBase, line.id],
             )
           } else {
-            await client.query(`UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`, [
-              storePrice,
-              storeCurrency,
-              line.id,
-            ])
+            await client.query(
+              `UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`,
+              [storePrice, storeCurrency, line.id],
+            )
           }
         } else {
-          await client.query(`UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`, [
-            storePrice,
-            storeCurrency,
-            line.id,
-          ])
+          await client.query(
+            `UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`,
+            [storePrice, storeCurrency, line.id],
+          )
         }
         autoFilledLines.push({
           lineId: line.id,
@@ -32879,7 +33194,10 @@ const phase5MutationResolvers = {
           empId,
           args.id,
         ])
-      await markLinesAddressed(client, args.lineStockQtys.map((l) => l.lineId))
+      await markLinesAddressed(
+        client,
+        args.lineStockQtys.map((l) => l.lineId),
+      )
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -33001,7 +33319,10 @@ const phase5MutationResolvers = {
           args.id,
         ])
       await recalcPO(client, args.id)
-      await markLinesAddressed(client, (args.linePrices ?? []).map((lp) => lp.lineId))
+      await markLinesAddressed(
+        client,
+        (args.linePrices ?? []).map((lp) => lp.lineId),
+      )
       await poTransition(
         client,
         args.id,
@@ -33053,8 +33374,7 @@ const phase5MutationResolvers = {
     // actual procurement_officer (or admin) may enter market prices/pick a
     // vendor; a PO stuck for lack of an assignee needs the position
     // assigned via PO Positions, not a bypass here.
-    if (!isAdmin && !hasPos)
-      throw new Error('procurement_officer position required')
+    if (!isAdmin && !hasPos) throw new Error('procurement_officer position required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     // Price verification is organizer/admin only now (no dedicated
     // position) — fetched here so the post-commit notification below can
@@ -33092,7 +33412,14 @@ const phase5MutationResolvers = {
              total_price = qty_ordered * $1
            WHERE id=$4 AND po_id=$5
            RETURNING product_id`,
-          [lp.marketPrice, lp.currencyCode, lp.vendorQuoteRef ?? null, lp.lineId, args.id, fxRateToBase],
+          [
+            lp.marketPrice,
+            lp.currencyCode,
+            lp.vendorQuoteRef ?? null,
+            lp.lineId,
+            args.id,
+            fxRateToBase,
+          ],
         )
         // Cache this real, vendor-quoted price+currency on the product itself —
         // confirmPOInventoryCheck's auto-fill of Store Pricing reads it back for
@@ -33121,7 +33448,10 @@ const phase5MutationResolvers = {
           args.id,
         ])
       await recalcPO(client, args.id)
-      await markLinesAddressed(client, (args.linePrices ?? []).map((lp) => lp.lineId))
+      await markLinesAddressed(
+        client,
+        (args.linePrices ?? []).map((lp) => lp.lineId),
+      )
       await poTransition(
         client,
         args.id,
@@ -33231,7 +33561,14 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'po_id', args.lineFlags, auth.userId, 'pending_approval')
+      await applyLineFlags(
+        client,
+        args.id,
+        'po_id',
+        args.lineFlags,
+        auth.userId,
+        'pending_approval',
+      )
       await poTransition(
         client,
         args.id,
@@ -33275,7 +33612,14 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'po_id', args.lineFlags, auth.userId, 'price_verification')
+      await applyLineFlags(
+        client,
+        args.id,
+        'po_id',
+        args.lineFlags,
+        auth.userId,
+        'price_verification',
+      )
       await poTransition(
         client,
         args.id,
@@ -33316,7 +33660,14 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'po_id', args.lineFlags, auth.userId, 'price_verification')
+      await applyLineFlags(
+        client,
+        args.id,
+        'po_id',
+        args.lineFlags,
+        auth.userId,
+        'price_verification',
+      )
       await poTransition(
         client,
         args.id,
@@ -33437,7 +33788,14 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyLineFlags(client, args.id, 'po_id', args.lineFlags, auth.userId, 'pending_approval')
+      await applyLineFlags(
+        client,
+        args.id,
+        'po_id',
+        args.lineFlags,
+        auth.userId,
+        'pending_approval',
+      )
       await releasePOStockReservations(client, args.id)
       await poTransition(
         client,
@@ -33654,7 +34012,9 @@ const phase5MutationResolvers = {
     // stamped with requisition_id by the Phase 1 migration keeps its
     // requisition_id but must stay on the old vocab until Milestone B's
     // status remap. See poHasNewVocabBuyRecordsGW's comment.
-    const auditTargetStatus = (await poHasNewVocabBuyRecordsGW(args.id)) ? 'finance_review' : 'finance_audit'
+    const auditTargetStatus = (await poHasNewVocabBuyRecordsGW(args.id))
+      ? 'finance_review'
+      : 'finance_audit'
     // goods_received no longer guarantees a receipt was ever recorded — it's
     // now also reachable via the buyer's checklist alone (markPOLineBought),
     // with zero receipts. That used to be implicit (a confirmed receipt was
@@ -33679,7 +34039,14 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await poTransition(client, args.id, 'goods_received', auditTargetStatus, 'send_to_audit', auth)
+      await poTransition(
+        client,
+        args.id,
+        'goods_received',
+        auditTargetStatus,
+        'send_to_audit',
+        auth,
+      )
       // Reset all line audit statuses to pending
       await client.query(
         `UPDATE po_lines SET audit_status='pending', audit_note=NULL WHERE po_id=$1`,
@@ -33917,7 +34284,12 @@ const phase5MutationResolvers = {
     // before the buyer position redesign — new POs never set this column, so
     // they rely purely on the position check.
     const isFrozenBuyer = poRow.rows[0].assigned_buyer_user_id === auth.userId
-    const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
+    const hasBuyerPosition = await userHasPositionGW(
+      auth.userId,
+      auth.companyId,
+      args.poId,
+      'buyer',
+    )
     if (!isAdmin && !isFrozenBuyer && !hasBuyerPosition)
       throw new Error('Only a buyer position holder for this PO can mark items bought on this PO')
     // The "Actual price paid" box shows the PO price as its value until the
@@ -33962,15 +34334,21 @@ const phase5MutationResolvers = {
       throw new Error('PO must be in items_bought status to finish buying')
     const isAdmin = await hasProcurementAuthorityGW(auth)
     const isFrozenBuyer = poRow.rows[0].assigned_buyer_user_id === auth.userId
-    const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
+    const hasBuyerPosition = await userHasPositionGW(
+      auth.userId,
+      auth.companyId,
+      args.poId,
+      'buyer',
+    )
     if (!isAdmin && !isFrozenBuyer && !hasBuyerPosition)
       throw new Error('Only a buyer position holder for this PO can finish buying on this PO')
     await withTransaction(
       { companyId: auth.companyId, userId: auth.userId, role: auth.role },
       async (client) => {
-        const cur = await client.query(`SELECT status FROM purchase_orders WHERE id=$1 FOR UPDATE`, [
-          args.poId,
-        ])
+        const cur = await client.query(
+          `SELECT status FROM purchase_orders WHERE id=$1 FOR UPDATE`,
+          [args.poId],
+        )
         if (!cur.rows[0] || cur.rows[0].status !== 'items_bought')
           throw new Error('PO must be in items_bought status to finish buying')
         const remaining = await client.query(
@@ -34060,8 +34438,7 @@ const phase5MutationResolvers = {
         args.id,
       ],
     )
-    if (updateRes.rowCount === 0)
-      throw new Error('Funding source has already been set for this PO')
+    if (updateRes.rowCount === 0) throw new Error('Funding source has already been set for this PO')
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },

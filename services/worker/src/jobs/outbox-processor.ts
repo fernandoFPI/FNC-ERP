@@ -1,4 +1,10 @@
-import { pool, getSystemConfig, isEmailEnabled, withSystemTransaction, firstRowOrThrow } from '@fnc-erp/db'
+import {
+  pool,
+  getSystemConfig,
+  isEmailEnabled,
+  withSystemTransaction,
+  firstRowOrThrow,
+} from '@fnc-erp/db'
 import { env } from '@fnc-erp/config'
 import { logger } from '@fnc-erp/logger'
 import QRCode from 'qrcode'
@@ -63,9 +69,7 @@ async function getEmailConfigForSend(): Promise<EmailConfig | null> {
   return null
 }
 
-async function sendEmail(
-  ...args: Parameters<typeof _sendEmail>
-): Promise<void> {
+async function sendEmail(...args: Parameters<typeof _sendEmail>): Promise<void> {
   const emailConfig = await getEmailConfigForSend()
   await _sendEmail(args[0], emailConfig)
 }
@@ -193,8 +197,8 @@ interface CircuitState {
 }
 
 const CIRCUIT_FAILURE_THRESHOLD = 5
-const CIRCUIT_FAILURE_WINDOW_MS = 60_000   // 1 minute
-const CIRCUIT_OPEN_DURATION_MS = 120_000   // 2 minutes
+const CIRCUIT_FAILURE_WINDOW_MS = 60_000 // 1 minute
+const CIRCUIT_OPEN_DURATION_MS = 120_000 // 2 minutes
 
 const circuitBreakers = new Map<string, CircuitState>()
 
@@ -289,20 +293,14 @@ async function routeToDLQ(event: OutboxRow, config: EventConfig): Promise<void> 
   )
 
   // Mark original event as permanently failed (not retried again)
-  await pool.query(
-    `UPDATE service_outbox SET status='failed' WHERE id=$1`,
-    [event.id],
-  )
+  await pool.query(`UPDATE service_outbox SET status='failed' WHERE id=$1`, [event.id])
 
   if (config.alertOnDlq) {
     await alertSystemAdminsOfDLQEntry(event, config)
   }
 }
 
-async function alertSystemAdminsOfDLQEntry(
-  event: OutboxRow,
-  config: EventConfig,
-): Promise<void> {
+async function alertSystemAdminsOfDLQEntry(event: OutboxRow, config: EventConfig): Promise<void> {
   try {
     const admins = await pool.query<{ id: string; email: string; company_id: string }>(
       `SELECT DISTINCT u.id, u.email, ucr.company_id
@@ -340,7 +338,10 @@ async function alertSystemAdminsOfDLQEntry(
         )
 
       // Email only for critical and high, and only if routing allows
-      if ((config.dlqPriority === 'critical' || config.dlqPriority === 'high') && await isEmailEnabled('email.dlq_alert')) {
+      if (
+        (config.dlqPriority === 'critical' || config.dlqPriority === 'high') &&
+        (await isEmailEnabled('email.dlq_alert'))
+      ) {
         const criticalNote =
           config.dlqPriority === 'critical'
             ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:12px 16px;margin-top:16px">
@@ -459,7 +460,9 @@ export async function processOutbox(): Promise<number> {
   } catch (err) {
     try {
       await client.query('ROLLBACK')
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     log.error({ err }, 'outbox processor lock/batch error')
     client.release()
     return 0
@@ -472,10 +475,7 @@ export async function processOutbox(): Promise<number> {
 
   for (const event of events) {
     if (isCircuitOpen(event.service)) {
-      log.debug(
-        { service: event.service, eventId: event.id },
-        'circuit open — skipping event',
-      )
+      log.debug({ service: event.service, eventId: event.id }, 'circuit open — skipping event')
       // Reset to pending so it's not stuck in processing
       await pool.query(
         `UPDATE service_outbox SET status='pending', attempts=attempts-1 WHERE id=$1`,
@@ -535,12 +535,7 @@ export async function processOutbox(): Promise<number> {
                error_history=$2::jsonb,
                next_retry_at=$3
            WHERE id=$4`,
-          [
-            errorMessage.substring(0, 1000),
-            JSON.stringify(errorHistory),
-            nextRetryAt,
-            event.id,
-          ],
+          [errorMessage.substring(0, 1000), JSON.stringify(errorHistory), nextRetryAt, event.id],
         )
 
         log.warn(
@@ -723,7 +718,10 @@ async function createInvoiceJournal(p: InvoiceJournalPayload): Promise<void> {
     [p.invoice_id],
   )
   if (existing.rows[0]?.journal_entry_id) {
-    log.warn({ invoiceId: p.invoice_id }, 'project invoice journal already exists — skipping duplicate')
+    log.warn(
+      { invoiceId: p.invoice_id },
+      'project invoice journal already exists — skipping duplicate',
+    )
     return
   }
 
@@ -798,7 +796,10 @@ async function createInvoiceJournal(p: InvoiceJournalPayload): Promise<void> {
       [id, revenueAccount['id'], analyticAccountId, grossTotal, p.currency_code, fxRate],
     )
 
-    await client.query(`UPDATE project_invoices SET journal_entry_id=$1 WHERE id=$2`, [id, p.invoice_id])
+    await client.query(`UPDATE project_invoices SET journal_entry_id=$1 WHERE id=$2`, [
+      id,
+      p.invoice_id,
+    ])
     return id
   })
 
@@ -869,13 +870,30 @@ async function createPOCompletionJournal(p: POCompletionJournalPayload): Promise
     await client.query(
       `INSERT INTO journal_lines (journal_entry_id,account_id,analytic_account_id,description,debit,credit,currency_code,fx_rate,amount_company_currency)
        VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8)`,
-      [id, expAccountId, analyticAccountId, `Project expense from PO ${poNumber}`, totalAmount, currencyCode, fxRate, amountCompanyCurrency],
+      [
+        id,
+        expAccountId,
+        analyticAccountId,
+        `Project expense from PO ${poNumber}`,
+        totalAmount,
+        currencyCode,
+        fxRate,
+        amountCompanyCurrency,
+      ],
     )
     // Cr. Accounts Payable
     await client.query(
       `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,currency_code,fx_rate,amount_company_currency)
        VALUES ($1,$2,$3,0,$4,$5,$6,$7)`,
-      [id, apAccountId, `Payable for PO ${poNumber}`, totalAmount, currencyCode, fxRate, amountCompanyCurrency],
+      [
+        id,
+        apAccountId,
+        `Payable for PO ${poNumber}`,
+        totalAmount,
+        currencyCode,
+        fxRate,
+        amountCompanyCurrency,
+      ],
     )
     return id
   })
@@ -884,8 +902,8 @@ async function createPOCompletionJournal(p: POCompletionJournalPayload): Promise
 
 async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {
   const cashAmount = parseFloat(String(p.amount))
-  const whtAmount  = p.wht_applies ? parseFloat(String(p.wht_amount ?? 0)) : 0
-  const arCredit   = cashAmount + whtAmount  // total AR cleared = cash + WHT portion
+  const whtAmount = p.wht_applies ? parseFloat(String(p.wht_amount ?? 0)) : 0
+  const arCredit = cashAmount + whtAmount // total AR cleared = cash + WHT portion
 
   const accounts = await pool.query<{ id: string; code: string }>(
     `SELECT id, code FROM chart_of_accounts WHERE company_id=$1 AND is_active=true
@@ -893,11 +911,11 @@ async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {
           OR code LIKE '23%' OR code LIKE '61%') ORDER BY code`,
     [p.company_id],
   )
-  const cashAccount    = accounts.rows.find((a) => a['code'].startsWith('11'))
-  const arAccount      = accounts.rows.find((a) => a['code'].startsWith('12'))
+  const cashAccount = accounts.rows.find((a) => a['code'].startsWith('11'))
+  const arAccount = accounts.rows.find((a) => a['code'].startsWith('12'))
   const whtRecoverable = accounts.rows.find((a) => a['code'] === '1390')
-  const whtPayable     = accounts.rows.find((a) => a['code'] === '2390')
-  const whtExpense     = accounts.rows.find((a) => a['code'] === '6100')
+  const whtPayable = accounts.rows.find((a) => a['code'] === '2390')
+  const whtExpense = accounts.rows.find((a) => a['code'] === '6100')
   if (!cashAccount || !arAccount) {
     throw new Error(`Missing cash/AR accounts for company ${p.company_id}`)
   }
@@ -925,8 +943,16 @@ async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {
       await client.query(
         `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
          VALUES ($1,$2,$3,0,$4,$3), ($1,$5,$6,0,$4,$6), ($1,$7,0,$8,$4,$8)`,
-        [id, cashAccount['id'], cashAmount, p.currency_code,
-         whtRecoverable['id'], whtAmount, arAccount['id'], arCredit],
+        [
+          id,
+          cashAccount['id'],
+          cashAmount,
+          p.currency_code,
+          whtRecoverable['id'],
+          whtAmount,
+          arAccount['id'],
+          arCredit,
+        ],
       )
     } else if (p.wht_scenario === 'fnc_pays' && whtPayable && whtExpense) {
       // Scenario B: Dr Cash / Cr AR, AND Dr WHT Expense / Cr WHT Payable
@@ -934,8 +960,16 @@ async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {
         `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
          VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3),
                 ($1,$6,$7,0,$4,$7), ($1,$8,0,$7,$4,$7)`,
-        [id, cashAccount['id'], cashAmount, p.currency_code,
-         arAccount['id'], whtExpense['id'], whtAmount, whtPayable['id']],
+        [
+          id,
+          cashAccount['id'],
+          cashAmount,
+          p.currency_code,
+          arAccount['id'],
+          whtExpense['id'],
+          whtAmount,
+          whtPayable['id'],
+        ],
       )
     } else {
       // Fallback: simple Dr Cash / Cr AR (WHT accounts not seeded yet)
@@ -948,7 +982,10 @@ async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {
     return id
   })
 
-  log.info({ jeId, invoiceId: p.invoice_id, whtScenario: p.wht_scenario }, 'AR payment GL journal created')
+  log.info(
+    { jeId, invoiceId: p.invoice_id, whtScenario: p.wht_scenario },
+    'AR payment GL journal created',
+  )
 }
 
 async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promise<void> {
@@ -960,8 +997,12 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
      AND (code LIKE '20%' OR code LIKE '21%' OR code LIKE '50%' OR code LIKE '51%') ORDER BY code`,
     [p.company_id],
   )
-  const apAccount      = accounts.rows.find((a) => a['code'].startsWith('20') || a['code'].startsWith('21'))
-  const expenseAccount = accounts.rows.find((a) => a['code'].startsWith('50') || a['code'].startsWith('51'))
+  const apAccount = accounts.rows.find(
+    (a) => a['code'].startsWith('20') || a['code'].startsWith('21'),
+  )
+  const expenseAccount = accounts.rows.find(
+    (a) => a['code'].startsWith('50') || a['code'].startsWith('51'),
+  )
   if (!apAccount || !expenseAccount) {
     throw new Error(`Missing AP/expense GL accounts for company ${p.company_id}`)
   }
@@ -971,10 +1012,10 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
   // looking up the project's analytic account by invoice_id). The outbox
   // payload never carried these, so the expense line always posted untagged
   // even though the invoice form collects both fields.
-  const invRes = await pool.query<{ cost_center_id: string | null; analytic_account_id: string | null }>(
-    `SELECT cost_center_id, analytic_account_id FROM vendor_invoices WHERE id=$1`,
-    [p.invoice_id],
-  )
+  const invRes = await pool.query<{
+    cost_center_id: string | null
+    analytic_account_id: string | null
+  }>(`SELECT cost_center_id, analytic_account_id FROM vendor_invoices WHERE id=$1`, [p.invoice_id])
   const costCenterId = invRes.rows[0]?.cost_center_id ?? null
   const analyticAccountId = invRes.rows[0]?.analytic_account_id ?? null
 
@@ -1008,7 +1049,16 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
     await client.query(
       `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, cost_center_id, debit, credit, currency_code, fx_rate, amount_company_currency)
        VALUES ($1,$2,$3,$4,$5,0,$6,$7,ROUND($5::numeric*$7::numeric,4)), ($1,$8,NULL,NULL,0,$5,$6,$7,ROUND($5::numeric*$7::numeric,4))`,
-      [id, expenseAccount['id'], analyticAccountId, costCenterId, totalAmount, p.currency_code, fxRate, apAccount['id']],
+      [
+        id,
+        expenseAccount['id'],
+        analyticAccountId,
+        costCenterId,
+        totalAmount,
+        p.currency_code,
+        fxRate,
+        apAccount['id'],
+      ],
     )
     return id
   })
@@ -1017,15 +1067,16 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
 }
 
 async function createVendorPaymentJournal(p: VendorPaymentJournalPayload): Promise<void> {
-  const paymentAmount  = parseFloat(String(p.amount))
-  const totalWht       = p.whtApplies ? parseFloat(String(p.whtAmount ?? 0)) : 0
-  const netPayable     = p.netPayable && p.netPayable > 0 ? p.netPayable : null
+  const paymentAmount = parseFloat(String(p.amount))
+  const totalWht = p.whtApplies ? parseFloat(String(p.whtAmount ?? 0)) : 0
+  const netPayable = p.netPayable && p.netPayable > 0 ? p.netPayable : null
 
   // WHT is applied proportionally to this payment's share of the net payable.
   // This prevents the full invoice WHT from being booked on every partial payment.
-  const proportionalWht = (p.whtApplies && totalWht > 0 && netPayable)
-    ? Math.round((paymentAmount / netPayable) * totalWht * 100) / 100
-    : 0
+  const proportionalWht =
+    p.whtApplies && totalWht > 0 && netPayable
+      ? Math.round((paymentAmount / netPayable) * totalWht * 100) / 100
+      : 0
   const apDebit = paymentAmount + proportionalWht
 
   const accounts = await pool.query<{ id: string; code: string }>(
@@ -1034,8 +1085,10 @@ async function createVendorPaymentJournal(p: VendorPaymentJournalPayload): Promi
     [p.companyId],
   )
   const cashAccount = accounts.rows.find((a) => a['code'].startsWith('11'))
-  const apAccount   = accounts.rows.find((a) => a['code'].startsWith('20') || a['code'].startsWith('21'))
-  const whtPayable  = accounts.rows.find((a) => a['code'] === '2390')
+  const apAccount = accounts.rows.find(
+    (a) => a['code'].startsWith('20') || a['code'].startsWith('21'),
+  )
+  const whtPayable = accounts.rows.find((a) => a['code'] === '2390')
 
   if (!cashAccount || !apAccount) {
     throw new Error(`Missing cash/AP accounts for company ${p.companyId}`)
@@ -1064,13 +1117,24 @@ async function createVendorPaymentJournal(p: VendorPaymentJournalPayload): Promi
       await client.query(
         `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
          VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$6,$4,$6), ($1,$7,0,$8,$4,$8)`,
-        [id, apAccount['id'], apDebit, p.currencyCode,
-         cashAccount['id'], paymentAmount, whtPayable['id'], proportionalWht],
+        [
+          id,
+          apAccount['id'],
+          apDebit,
+          p.currencyCode,
+          cashAccount['id'],
+          paymentAmount,
+          whtPayable['id'],
+          proportionalWht,
+        ],
       )
     }
 
     // Track which journal owns this payment (enables combine + post flow)
-    await client.query(`UPDATE vendor_payments SET journal_entry_id=$1 WHERE id=$2`, [id, p.paymentId])
+    await client.query(`UPDATE vendor_payments SET journal_entry_id=$1 WHERE id=$2`, [
+      id,
+      p.paymentId,
+    ])
 
     // Link journal entry to all source POs
     if (p.poIds && p.poIds.length > 0) {
@@ -1084,7 +1148,10 @@ async function createVendorPaymentJournal(p: VendorPaymentJournalPayload): Promi
     return id
   })
 
-  log.info({ jeId, paymentId: p.paymentId, invoiceId: p.invoiceId }, 'vendor payment AP journal created')
+  log.info(
+    { jeId, paymentId: p.paymentId, invoiceId: p.invoiceId },
+    'vendor payment AP journal created',
+  )
 }
 
 interface MOJournalPayload {
@@ -1111,8 +1178,9 @@ async function createMOJournal(p: MOJournalPayload): Promise<void> {
     [p.company_id],
   )
   const inventoryAccount = accounts.rows.find((a) => a['code'].startsWith('13'))
-  const costAccount = accounts.rows.find((a) => a['code'].startsWith('51')) ??
-                      accounts.rows.find((a) => a['code'].startsWith('50'))
+  const costAccount =
+    accounts.rows.find((a) => a['code'].startsWith('51')) ??
+    accounts.rows.find((a) => a['code'].startsWith('50'))
 
   if (!inventoryAccount || !costAccount) {
     throw new Error(`Missing inventory/cost GL accounts for company ${p.company_id}`)
@@ -1138,10 +1206,10 @@ async function createMOJournal(p: MOJournalPayload): Promise<void> {
       [id, inventoryAccount['id'], actualCost, costAccount['id']],
     )
 
-    await client.query(
-      `UPDATE manufacturing_orders SET journal_entry_id=$1 WHERE id=$2`,
-      [id, p.mo_id],
-    )
+    await client.query(`UPDATE manufacturing_orders SET journal_entry_id=$1 WHERE id=$2`, [
+      id,
+      p.mo_id,
+    ])
     return id
   })
   log.info({ jeId, moId: p.mo_id }, 'MO GL journal created')
@@ -1172,7 +1240,7 @@ async function createRentalInvoiceJournal(p: RentalInvoiceJournalPayload): Promi
   const revenueAccount = p.revenue_account_id
     ? { id: p.revenue_account_id }
     : (accounts.rows.find((a) => a['code'].startsWith('42')) ??
-       accounts.rows.find((a) => a['code'].startsWith('41')))
+      accounts.rows.find((a) => a['code'].startsWith('41')))
 
   if (!arAccount || !revenueAccount) {
     throw new Error(`Missing AR/revenue GL accounts for company ${p.company_id}`)
@@ -1206,26 +1274,29 @@ async function createRentalInvoiceJournal(p: RentalInvoiceJournalPayload): Promi
       [id, revenueAccount['id'], p.analytic_account_id ?? null, amount],
     )
 
-    await client.query(`UPDATE rental_invoices SET journal_entry_id=$1 WHERE id=$2`, [id, p.invoice_id])
+    await client.query(`UPDATE rental_invoices SET journal_entry_id=$1 WHERE id=$2`, [
+      id,
+      p.invoice_id,
+    ])
     return id
   })
   log.info({ jeId, invoiceId: p.invoice_id }, 'rental invoice GL journal created')
 }
 
 interface PayrollJournalPayload {
-  payroll_run_id:   string
-  company_id:       string
-  period_name:      string
-  total_gross:      number
-  total_net:        number
+  payroll_run_id: string
+  company_id: string
+  period_name: string
+  total_gross: number
+  total_net: number
   total_deductions: number
-  end_date:         string
+  end_date: string
 }
 
 async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
-  const totalGross       = parseFloat(String(p.total_gross))
-  const totalNet         = parseFloat(String(p.total_net))
-  const totalDeductions  = parseFloat(String(p.total_deductions))
+  const totalGross = parseFloat(String(p.total_gross))
+  const totalNet = parseFloat(String(p.total_net))
+  const totalDeductions = parseFloat(String(p.total_deductions))
 
   if (totalGross <= 0) return
 
@@ -1233,7 +1304,7 @@ async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
   if (Math.abs(totalGross - totalNet - totalDeductions) > 0.01) {
     throw new Error(
       `Payroll totals out of balance for run ${p.payroll_run_id}: ` +
-      `gross=${totalGross} net=${totalNet} deductions=${totalDeductions}`,
+        `gross=${totalGross} net=${totalNet} deductions=${totalDeductions}`,
     )
   }
 
@@ -1256,14 +1327,14 @@ async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
      ORDER BY code`,
     [p.company_id],
   )
-  const salaryExpense   = accounts.rows.find((a) => a['code'].startsWith('60'))
+  const salaryExpense = accounts.rows.find((a) => a['code'].startsWith('60'))
   const salariesPayable = accounts.rows.find((a) => a['code'].startsWith('26'))
-  const taxSSPayable    = accounts.rows.find((a) => a['code'].startsWith('25'))
+  const taxSSPayable = accounts.rows.find((a) => a['code'].startsWith('25'))
 
   if (!salaryExpense || !salariesPayable || !taxSSPayable) {
     throw new Error(
       `Missing payroll GL accounts for company ${p.company_id} — ` +
-      `need 60x (salary expense), 26x (accrued salaries payable), 25x (payroll tax/SS payable)`,
+        `need 60x (salary expense), 26x (accrued salaries payable), 25x (payroll tax/SS payable)`,
     )
   }
 
@@ -1289,10 +1360,15 @@ async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
        VALUES ($1, $2, $3, 0,   'IQD', $3),
               ($1, $4, 0,  $5,  'IQD', $5),
               ($1, $6, 0,  $7,  'IQD', $7)`,
-      [id,
-       salaryExpense['id'],   totalGross,
-       salariesPayable['id'], totalNet,
-       taxSSPayable['id'],    totalDeductions],
+      [
+        id,
+        salaryExpense['id'],
+        totalGross,
+        salariesPayable['id'],
+        totalNet,
+        taxSSPayable['id'],
+        totalDeductions,
+      ],
     )
 
     await client.query(
@@ -1341,7 +1417,10 @@ async function deliverToReporting(event: OutboxRow): Promise<void> {
 
   switch (event.event_type) {
     case 'PROJECT_INVOICE_PDF_REQUESTED':
-      await handleInvoicePDF(requirePayloadField(p, 'invoice_id'), requirePayloadField(p, 'company_id'))
+      await handleInvoicePDF(
+        requirePayloadField(p, 'invoice_id'),
+        requirePayloadField(p, 'company_id'),
+      )
       break
     case 'PAYSLIP_GENERATION_REQUESTED':
       await handlePayslipPDF(
@@ -1377,7 +1456,7 @@ async function handlePayslipPDF(
     [fileKey, payrollRunId, employeeId],
   )
 
-  if (data.employee.email && await isEmailEnabled('email.payslip')) {
+  if (data.employee.email && (await isEmailEnabled('email.payslip'))) {
     const emailHtml = renderPayslipEmail({
       employeeName: data.employee.name,
       period: data.payrollRun.name,
@@ -1432,12 +1511,12 @@ async function handleInvoicePDF(invoiceId: string, companyId: string): Promise<v
   const fileKey = `${companyId}/${env.PDF_STORAGE_FOLDER}/invoices/${invoiceId}.pdf`
   await uploadBuffer(pdfBuffer, fileKey, 'application/pdf')
 
-  await pool.query(
-    `UPDATE project_invoices SET pdf_path=$1, pdf_generated_at=NOW() WHERE id=$2`,
-    [fileKey, invoiceId],
-  )
+  await pool.query(`UPDATE project_invoices SET pdf_path=$1, pdf_generated_at=NOW() WHERE id=$2`, [
+    fileKey,
+    invoiceId,
+  ])
 
-  if (data.client.email && await isEmailEnabled('email.project_invoice')) {
+  if (data.client.email && (await isEmailEnabled('email.project_invoice'))) {
     const emailHtml = renderInvoiceEmail({
       clientName: data.client.name,
       invoiceNumber: data.invoice.number,
@@ -1475,7 +1554,7 @@ async function handlePOPDF(poId: string, companyId: string): Promise<void> {
 
   await pool.query(`UPDATE purchase_orders SET pdf_path=$1 WHERE id=$2`, [fileKey, poId])
 
-  if (data.vendor.email && await isEmailEnabled('email.po_confirmation')) {
+  if (data.vendor.email && (await isEmailEnabled('email.po_confirmation'))) {
     const emailHtml = renderPOConfirmationEmail({
       vendorName: data.vendor.name,
       poNumber: data.po.number,
@@ -1658,10 +1737,11 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
 
       const urgencyLabel = p['urgency'] === 'overdue' ? '🔴 OVERDUE' : '🟡 Due Soon'
       const hoursRemaining = p['hoursRemaining'] != null ? Number(p['hoursRemaining']) : null
-      const daysRemaining  = p['daysRemaining']  != null ? Number(p['daysRemaining'])  : null
-      const detail = hoursRemaining !== null
-        ? `${Math.abs(hoursRemaining).toFixed(1)} hours ${p['urgency'] === 'overdue' ? 'overdue' : 'remaining'}`
-        : `${Math.abs(daysRemaining ?? 0)} days ${p['urgency'] === 'overdue' ? 'overdue' : 'remaining'}`
+      const daysRemaining = p['daysRemaining'] != null ? Number(p['daysRemaining']) : null
+      const detail =
+        hoursRemaining !== null
+          ? `${Math.abs(hoursRemaining).toFixed(1)} hours ${p['urgency'] === 'overdue' ? 'overdue' : 'remaining'}`
+          : `${Math.abs(daysRemaining ?? 0)} days ${p['urgency'] === 'overdue' ? 'overdue' : 'remaining'}`
 
       for (const admin of admins.rows) {
         await pool
@@ -1670,17 +1750,21 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
                (user_id, company_id, type, title, body, data, push_sent)
              VALUES ($1,$2,'MAINTENANCE_DUE',$3,$4,$5::jsonb,false)`,
             [
-              admin.id, p['companyId'],
+              admin.id,
+              p['companyId'],
               `${urgencyLabel}: ${String(p['assetName'])} — ${String(p['scheduleName'])}`,
               `${String(p['assetNumber'])} — ${String(p['maintenanceType'])} — ${detail}`,
               JSON.stringify(p),
             ],
           )
           .catch((err: unknown) =>
-            log.error({ err, adminId: admin.id }, 'failed to insert maintenance alert notification'),
+            log.error(
+              { err, adminId: admin.id },
+              'failed to insert maintenance alert notification',
+            ),
           )
 
-        if (p['urgency'] === 'overdue' && await isEmailEnabled('email.maintenance_overdue')) {
+        if (p['urgency'] === 'overdue' && (await isEmailEnabled('email.maintenance_overdue'))) {
           await sendEmail({
             to: admin.email,
             subject: `[OVERDUE] Maintenance required: ${String(p['assetName'])} — ${String(p['scheduleName'])}`,
@@ -1750,7 +1834,8 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
                (user_id, company_id, type, title, body, data, push_sent)
              VALUES ($1,$2,'ASSET_CONDITION_ALERT',$3,$4,$5::jsonb,false)`,
             [
-              admin.id, p['companyId'],
+              admin.id,
+              p['companyId'],
               `${conditionLabel}: ${asset?.name ?? String(p['assetId'])} condition report`,
               String(p['issues'] ?? 'No issue description provided'),
               JSON.stringify(p),
@@ -1772,14 +1857,17 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       const invitationUrl = String(p['invitationUrl'] ?? p['inviteUrl'] ?? '')
       let inviterName = p['invitedByName'] ? String(p['invitedByName']) : 'An administrator'
       if (!p['invitedByName'] && p['invitedBy']) {
-        const inviterRes = await pool.query<{ first_name: string | null; last_name: string | null; email: string }>(
-          `SELECT first_name, last_name, email FROM users WHERE id=$1`, [String(p['invitedBy'])]
-        )
+        const inviterRes = await pool.query<{
+          first_name: string | null
+          last_name: string | null
+          email: string
+        }>(`SELECT first_name, last_name, email FROM users WHERE id=$1`, [String(p['invitedBy'])])
         const inviter = inviterRes.rows[0]
         if (inviter) {
-          inviterName = (inviter.first_name && inviter.last_name)
-            ? `${inviter.first_name} ${inviter.last_name}`
-            : inviter.email
+          inviterName =
+            inviter.first_name && inviter.last_name
+              ? `${inviter.first_name} ${inviter.last_name}`
+              : inviter.email
         }
       }
       const inviteHtml = `
@@ -1846,20 +1934,29 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       let companyId = p['companyId'] as string | undefined
       if (!companyId && p['poId']) {
         const coRes = await pool.query<{ company_id: string }>(
-          `SELECT company_id FROM purchase_orders WHERE id=$1`, [String(p['poId'])]
+          `SELECT company_id FROM purchase_orders WHERE id=$1`,
+          [String(p['poId'])],
         )
         companyId = coRes.rows[0]?.company_id
       }
       if (!companyId) {
-        log.warn({ poId: p['poId'], eventType: event.event_type }, 'no company_id for PO notification — skipping')
+        log.warn(
+          { poId: p['poId'], eventType: event.event_type },
+          'no company_id for PO notification — skipping',
+        )
         break
       }
       await pool.query(
         `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,false)`,
-        [String(p['userId']), companyId, event.event_type,
-         String(p['title'] ?? ''), String(p['body'] ?? ''),
-         JSON.stringify({ poId: p['poId'], poNumber: p['poNumber'] })]
+        [
+          String(p['userId']),
+          companyId,
+          event.event_type,
+          String(p['title'] ?? ''),
+          String(p['body'] ?? ''),
+          JSON.stringify({ poId: p['poId'], poNumber: p['poNumber'] }),
+        ],
       )
       break
     }
@@ -1875,7 +1972,11 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
     case 'REQ_MARKET_PRICING_REQUIRED':
     case 'REQ_PRICE_VERIFICATION_REQUIRED':
     case 'REQ_APPROVAL_REQUIRED': {
-      const reqRes = await pool.query<{ company_id: string; requisition_number: string; email: string | null }>(
+      const reqRes = await pool.query<{
+        company_id: string
+        requisition_number: string
+        email: string | null
+      }>(
         `SELECT req.company_id, req.requisition_number, u.email
          FROM requisitions req, users u
          WHERE req.id=$1 AND u.id=$2`,
@@ -1883,7 +1984,10 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       )
       const row = reqRes.rows[0]
       if (!row) {
-        log.warn({ requisitionId: p['requisitionId'], eventType: event.event_type }, 'requisition or user not found for notification — skipping')
+        log.warn(
+          { requisitionId: p['requisitionId'], eventType: event.event_type },
+          'requisition or user not found for notification — skipping',
+        )
         break
       }
       const title = String(p['title'] ?? '')
@@ -1891,10 +1995,19 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       await pool.query(
         `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,false)`,
-        [String(p['userId']), row.company_id, event.event_type, title, body,
-         JSON.stringify({ requisitionId: p['requisitionId'], requisitionNumber: row.requisition_number })]
+        [
+          String(p['userId']),
+          row.company_id,
+          event.event_type,
+          title,
+          body,
+          JSON.stringify({
+            requisitionId: p['requisitionId'],
+            requisitionNumber: row.requisition_number,
+          }),
+        ],
       )
-      if (row.email && await isEmailEnabled('email.requisition_pricing_stage')) {
+      if (row.email && (await isEmailEnabled('email.requisition_pricing_stage'))) {
         const requisitionUrl = `${env.FRONTEND_URL}/procurement/requisitions/${String(p['requisitionId'])}`
         await sendEmail({
           to: row.email,
@@ -1926,7 +2039,8 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
 
     case 'PO_APPROVED_NOTIFICATION': {
       const coRes = await pool.query<{ company_id: string; po_number: string }>(
-        `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`, [String(p['poId'])]
+        `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`,
+        [String(p['poId'])],
       )
       const { company_id, po_number } = coRes.rows[0] ?? {}
       if (!company_id) break
@@ -1934,17 +2048,21 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       await pool.query(
         `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
          VALUES ($1,$2,'PO_APPROVED',$3,$4,$5::jsonb,false)`,
-        [String(p['userId']), company_id,
-         `PO Approved: ${num}`,
-         `Your purchase order ${num} has been approved`,
-         JSON.stringify({ poId: p['poId'], poNumber: num })]
+        [
+          String(p['userId']),
+          company_id,
+          `PO Approved: ${num}`,
+          `Your purchase order ${num} has been approved`,
+          JSON.stringify({ poId: p['poId'], poNumber: num }),
+        ],
       )
       break
     }
 
     case 'PO_READY_FOR_PROCUREMENT': {
       const coRes = await pool.query<{ company_id: string; po_number: string }>(
-        `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`, [String(p['poId'])]
+        `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`,
+        [String(p['poId'])],
       )
       const { company_id, po_number } = coRes.rows[0] ?? {}
       if (!company_id) break
@@ -1952,10 +2070,13 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       await pool.query(
         `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
          VALUES ($1,$2,'PO_READY_FOR_PROCUREMENT',$3,$4,$5::jsonb,false)`,
-        [String(p['userId']), company_id,
-         `PO ready to purchase: ${num}`,
-         `Purchase order ${num} has been approved and is ready to buy.`,
-         JSON.stringify({ poId: p['poId'], poNumber: num })]
+        [
+          String(p['userId']),
+          company_id,
+          `PO ready to purchase: ${num}`,
+          `Purchase order ${num} has been approved and is ready to buy.`,
+          JSON.stringify({ poId: p['poId'], poNumber: num }),
+        ],
       )
       break
     }
@@ -1971,16 +2092,22 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       await pool.query(
         `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,false)`,
-        [String(p['userId']), String(p['companyId']), String(p['type']),
-         String(p['title']), String(p['body']),
-         JSON.stringify({ requestId: p['requestId'] })]
+        [
+          String(p['userId']),
+          String(p['companyId']),
+          String(p['type']),
+          String(p['title']),
+          String(p['body']),
+          JSON.stringify({ requestId: p['requestId'] }),
+        ],
       )
       break
     }
 
     case 'PO_REJECTED_NOTIFICATION': {
       const coRes = await pool.query<{ company_id: string; po_number: string }>(
-        `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`, [String(p['poId'])]
+        `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`,
+        [String(p['poId'])],
       )
       const { company_id, po_number } = coRes.rows[0] ?? {}
       if (!company_id) break
@@ -1988,10 +2115,13 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       await pool.query(
         `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
          VALUES ($1,$2,'PO_REJECTED',$3,$4,$5::jsonb,false)`,
-        [String(p['userId']), company_id,
-         `PO Rejected: ${num}`,
-         `Your purchase order ${num} was rejected${p['reason'] ? ': ' + String(p['reason']) : ''}`,
-         JSON.stringify({ poId: p['poId'], poNumber: num, reason: p['reason'] })]
+        [
+          String(p['userId']),
+          company_id,
+          `PO Rejected: ${num}`,
+          `Your purchase order ${num} was rejected${p['reason'] ? ': ' + String(p['reason']) : ''}`,
+          JSON.stringify({ poId: p['poId'], poNumber: num, reason: p['reason'] }),
+        ],
       )
       break
     }
@@ -2008,7 +2138,8 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
     case 'PROJECT_CANCELLED_AFTER_APPROVAL':
     case 'PROJECT_STAGE_COMPLETED': {
       const projRes = await pool.query<{ company_id: string }>(
-        `SELECT company_id FROM projects WHERE id=$1`, [String(p['projectId'])]
+        `SELECT company_id FROM projects WHERE id=$1`,
+        [String(p['projectId'])],
       )
       const projCompanyId = projRes.rows[0]?.company_id
       if (!projCompanyId) {
@@ -2018,9 +2149,14 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       await pool.query(
         `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,false)`,
-        [String(p['userId']), projCompanyId, event.event_type,
-         String(p['title'] ?? ''), String(p['body'] ?? ''),
-         JSON.stringify({ projectId: p['projectId'] })]
+        [
+          String(p['userId']),
+          projCompanyId,
+          event.event_type,
+          String(p['title'] ?? ''),
+          String(p['body'] ?? ''),
+          JSON.stringify({ projectId: p['projectId'] }),
+        ],
       )
       break
     }
@@ -2060,9 +2196,14 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       await pool.query(
         `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,false)`,
-        [String(p['userId']), String(p['companyId']), event.event_type,
-         String(p['title'] ?? ''), String(p['body'] ?? ''),
-         JSON.stringify(p['data'] ?? {})]
+        [
+          String(p['userId']),
+          String(p['companyId']),
+          event.event_type,
+          String(p['title'] ?? ''),
+          String(p['body'] ?? ''),
+          JSON.stringify(p['data'] ?? {}),
+        ],
       )
       break
     }
@@ -2072,26 +2213,38 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
     case 'VENDOR_INVOICE_APPROVED_NOTIFICATION':
     case 'VENDOR_INVOICE_REJECTED_NOTIFICATION': {
       const viRes = await pool.query<{ company_id: string; invoice_number: string }>(
-        `SELECT company_id, invoice_number FROM vendor_invoices WHERE id=$1`, [String(p['invoiceId'])]
+        `SELECT company_id, invoice_number FROM vendor_invoices WHERE id=$1`,
+        [String(p['invoiceId'])],
       )
       const { company_id, invoice_number } = viRes.rows[0] ?? {}
-      if (!company_id) { log.warn({ invoiceId: p['invoiceId'] }, 'vendor invoice not found for notification'); break }
+      if (!company_id) {
+        log.warn({ invoiceId: p['invoiceId'] }, 'vendor invoice not found for notification')
+        break
+      }
       const num = String(p['invoiceNumber'] ?? invoice_number ?? '')
-      const evTitle = event.event_type === 'VENDOR_INVOICE_APPROVAL_REQUIRED'
-        ? `Invoice pending approval: ${num}`
-        : event.event_type === 'VENDOR_INVOICE_APPROVED_NOTIFICATION'
-          ? `Invoice approved: ${num}`
-          : `Invoice rejected: ${num}`
-      const evBody = event.event_type === 'VENDOR_INVOICE_APPROVAL_REQUIRED'
-        ? `Vendor invoice ${num} has been submitted and requires your approval`
-        : event.event_type === 'VENDOR_INVOICE_APPROVED_NOTIFICATION'
-          ? `Vendor invoice ${num} has been approved`
-          : `Vendor invoice ${num} was rejected${p['reason'] ? ': ' + String(p['reason']) : ''}`
+      const evTitle =
+        event.event_type === 'VENDOR_INVOICE_APPROVAL_REQUIRED'
+          ? `Invoice pending approval: ${num}`
+          : event.event_type === 'VENDOR_INVOICE_APPROVED_NOTIFICATION'
+            ? `Invoice approved: ${num}`
+            : `Invoice rejected: ${num}`
+      const evBody =
+        event.event_type === 'VENDOR_INVOICE_APPROVAL_REQUIRED'
+          ? `Vendor invoice ${num} has been submitted and requires your approval`
+          : event.event_type === 'VENDOR_INVOICE_APPROVED_NOTIFICATION'
+            ? `Vendor invoice ${num} has been approved`
+            : `Vendor invoice ${num} was rejected${p['reason'] ? ': ' + String(p['reason']) : ''}`
       await pool.query(
         `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,false)`,
-        [String(p['userId']), company_id, event.event_type, evTitle, evBody,
-         JSON.stringify({ invoiceId: p['invoiceId'], invoiceNumber: num })]
+        [
+          String(p['userId']),
+          company_id,
+          event.event_type,
+          evTitle,
+          evBody,
+          JSON.stringify({ invoiceId: p['invoiceId'], invoiceNumber: num }),
+        ],
       )
       break
     }

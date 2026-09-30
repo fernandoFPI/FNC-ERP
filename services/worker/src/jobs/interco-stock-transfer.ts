@@ -207,9 +207,7 @@ export async function executeIntercoStockTransfer(
       })
 
       if (pricing.requires_manual_input) {
-        throw new Error(
-          `Market price required for product ${line.product_id} but not provided`,
-        )
+        throw new Error(`Market price required for product ${line.product_id} but not provided`)
       }
 
       const lineValue = line.qty * pricing.transfer_price

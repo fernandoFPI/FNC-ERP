@@ -9,10 +9,10 @@ const APP_URL = process.env['APP_URL'] ?? 'http://localhost:5173'
 
 // Escalation schedule: (reminder_count → days until next reminder)
 const NEXT_REMIND_DAYS: Record<number, number> = {
-  0: 1,   // initial sent → remind on due date (1 day after initial)
-  1: 2,   // due-date reminder → remind 2 days later (1d overdue)
-  2: 4,   // 1d overdue → remind 4 days later (3d overdue threshold)
-  3: 7,   // 3d overdue → remind 7 days later (critical)
+  0: 1, // initial sent → remind on due date (1 day after initial)
+  1: 2, // due-date reminder → remind 2 days later (1d overdue)
+  2: 4, // 1d overdue → remind 4 days later (3d overdue threshold)
+  3: 7, // 3d overdue → remind 7 days later (critical)
 }
 const DEFAULT_NEXT_DAYS = 14
 
@@ -71,21 +71,22 @@ export async function checkEngDocReminders(): Promise<void> {
     `)
 
     for (const rem of overdueRows.rows) {
-      const count      = Number(rem['reminder_count'])
+      const count = Number(rem['reminder_count'])
       const dueDateStr = String(rem['due_date']).slice(0, 10)
       const overdueDays = daysOverdue(dueDateStr)
-      const priority   = priorityForCount(count)
-      const eventType  = eventTypeForCount(count)
-      const role       = String(rem['role'])
-      const docRef     = String(rem['ref_number'])
-      const docTitle   = String(rem['doc_title'])
-      const projName   = String(rem['project_name'])
-      const projId     = String(rem['proj_id'])
-      const companyId  = String(rem['company_id'])
-      const reviewerName  = String(rem['reviewer_name'] ?? '')
+      const priority = priorityForCount(count)
+      const eventType = eventTypeForCount(count)
+      const role = String(rem['role'])
+      const docRef = String(rem['ref_number'])
+      const docTitle = String(rem['doc_title'])
+      const projName = String(rem['project_name'])
+      const projId = String(rem['proj_id'])
+      const companyId = String(rem['company_id'])
+      const reviewerName = String(rem['reviewer_name'] ?? '')
       const reviewerEmail = rem['reviewer_email'] ? String(rem['reviewer_email']) : null
       const reviewerUserId = rem['reviewer_user_id'] ? String(rem['reviewer_user_id']) : null
-      const actionLabel = role === 'checker' ? 'Internal Check Required' : 'Internal Approval Required'
+      const actionLabel =
+        role === 'checker' ? 'Internal Check Required' : 'Internal Approval Required'
 
       // In-app notification to reviewer
       if (reviewerUserId) {
@@ -93,11 +94,18 @@ export async function checkEngDocReminders(): Promise<void> {
           `INSERT INTO notifications (company_id, user_id, type, title, body, data, is_read)
            VALUES ($1, $2, $3, $4, $5, $6::jsonb, FALSE)`,
           [
-            companyId, reviewerUserId,
+            companyId,
+            reviewerUserId,
             `eng_doc_${role}_${eventType}`,
             urgencySubject(count, docRef, role, overdueDays),
             `${docRef} — ${docTitle} requires your ${role} action. ${overdueDays > 0 ? `Now ${overdueDays} day${overdueDays !== 1 ? 's' : ''} overdue.` : 'Due today.'}`,
-            JSON.stringify({ priority, entityType: 'engineering_document', entityId: rem['document_id'], entityRef: docRef, projectId: projId }),
+            JSON.stringify({
+              priority,
+              entityType: 'engineering_document',
+              entityId: rem['document_id'],
+              entityRef: docRef,
+              projectId: projId,
+            }),
           ],
         )
       }
@@ -111,11 +119,11 @@ export async function checkEngDocReminders(): Promise<void> {
           docRef,
           docTitle,
           projectName: projName,
-          fromName:    'FNC ERP System',
+          fromName: 'FNC ERP System',
           actionLabel,
-          dueDate:     dueDateStr,
+          dueDate: dueDateStr,
           daysOverdue: overdueDays,
-          appUrl:      `${APP_URL}/projects/${projId}?tab=rfq_lines`,
+          appUrl: `${APP_URL}/projects/${projId}?tab=rfq_lines`,
         })
         await sendEmail({
           to: reviewerEmail,
@@ -127,7 +135,7 @@ export async function checkEngDocReminders(): Promise<void> {
       // Critical escalation: also notify the project manager
       if (count >= 3) {
         const pmUserId = rem['pm_user_id'] ? String(rem['pm_user_id']) : null
-        const pmEmail  = rem['pm_email'] ? String(rem['pm_email']) : null
+        const pmEmail = rem['pm_email'] ? String(rem['pm_email']) : null
         if (pmUserId && pmEmail) {
           const pmFullName = `${rem['pm_first_name']} ${rem['pm_last_name']}`
 
@@ -135,26 +143,33 @@ export async function checkEngDocReminders(): Promise<void> {
             `INSERT INTO notifications (company_id, user_id, type, title, body, data, is_read)
              VALUES ($1, $2, $3, $4, $5, $6::jsonb, FALSE)`,
             [
-              companyId, pmUserId,
+              companyId,
+              pmUserId,
               'eng_doc_critical_pm_alert',
               `🔴 Critical: ${docRef} ${role} overdue ${overdueDays} days`,
               `${reviewerName} has not completed the ${role} for ${docRef} — ${docTitle}. Now ${overdueDays} days overdue.`,
-              JSON.stringify({ priority: 'critical', entityType: 'engineering_document', entityId: rem['document_id'], entityRef: docRef, projectId: projId }),
+              JSON.stringify({
+                priority: 'critical',
+                entityType: 'engineering_document',
+                entityId: rem['document_id'],
+                entityRef: docRef,
+                projectId: projId,
+              }),
             ],
           )
 
           const pmHtml = renderEngDocNotificationEmail({
             recipientName: pmFullName,
-            eventType:     'critical',
-            role:          'pm',
+            eventType: 'critical',
+            role: 'pm',
             docRef,
             docTitle,
-            projectName:   projName,
-            fromName:      'FNC ERP System',
-            actionLabel:   `${role === 'checker' ? 'Check' : 'Approval'} assigned to ${reviewerName}`,
-            dueDate:       dueDateStr,
-            daysOverdue:   overdueDays,
-            appUrl:        `${APP_URL}/projects/${projId}?tab=rfq_lines`,
+            projectName: projName,
+            fromName: 'FNC ERP System',
+            actionLabel: `${role === 'checker' ? 'Check' : 'Approval'} assigned to ${reviewerName}`,
+            dueDate: dueDateStr,
+            daysOverdue: overdueDays,
+            appUrl: `${APP_URL}/projects/${projId}?tab=rfq_lines`,
           })
           await sendEmail({
             to: pmEmail,
@@ -194,6 +209,8 @@ export async function checkEngDocReminders(): Promise<void> {
 
 // Self-registering: every 2 hours
 cron.schedule('0 */2 * * *', () => {
-  void checkEngDocReminders().catch((e: unknown) => log.error({ err: e }, 'Unhandled reminder error'))
+  void checkEngDocReminders().catch((e: unknown) =>
+    log.error({ err: e }, 'Unhandled reminder error'),
+  )
 })
 log.info({ cron: '0 */2 * * *' }, 'Eng doc reminder cron registered')

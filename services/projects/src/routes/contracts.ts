@@ -17,7 +17,9 @@ const ContractSchema = z.object({
   client_contact: z.string().optional(),
   contract_value: z.number().positive(),
   currency_code: z.string().length(3).default('IQD'),
-  default_billing_method: z.enum(['milestone','progress','cost_plus','fixed_lump_sum']).default('milestone'),
+  default_billing_method: z
+    .enum(['milestone', 'progress', 'cost_plus', 'fixed_lump_sum'])
+    .default('milestone'),
   default_margin_pct: z.number().min(0).max(1).default(0),
   payment_terms_days: z.number().int().min(0).default(30),
   retention_pct: z.number().min(0).max(1).default(0),
@@ -32,8 +34,8 @@ const ContractSchema = z.object({
 contractsRouter.get('/', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
     const { project_id, status } = req.query
-    const page = Math.max(1, parseInt(req.query['page'] as string || '1'))
-    const limit = Math.min(100, parseInt(req.query['limit'] as string || '20'))
+    const page = Math.max(1, parseInt((req.query['page'] as string) || '1'))
+    const limit = Math.min(100, parseInt((req.query['limit'] as string) || '20'))
     const offset = (page - 1) * limit
 
     let sql = `SELECT pc.*,
@@ -45,12 +47,20 @@ contractsRouter.get('/', requirePermission('projects.view', 'view'), async (req,
                FROM project_contracts pc WHERE pc.company_id = $1`
     const params: unknown[] = [getAuth(req).companyId]
     let idx = 2
-    if (project_id) { sql += ` AND pc.project_id = $${idx++}`; params.push(project_id) }
-    if (status) { sql += ` AND pc.status = $${idx++}`; params.push(status) }
+    if (project_id) {
+      sql += ` AND pc.project_id = $${idx++}`
+      params.push(project_id)
+    }
+    if (status) {
+      sql += ` AND pc.status = $${idx++}`
+      params.push(status)
+    }
     sql += ` ORDER BY pc.created_at DESC LIMIT $${idx++} OFFSET $${idx++}`
     params.push(limit, offset)
     sendOk(res, (await query(sql, params)).rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch contracts', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch contracts', err)
+  }
 })
 
 // GET /projects/contracts/:id
@@ -58,19 +68,40 @@ contractsRouter.get('/:id', requirePermission('projects.view', 'view'), async (r
   try {
     const companyId = getAuth(req).companyId
     const id = requireParam(req, 'id')
-    const contract = await query('SELECT * FROM project_contracts WHERE id=$1 AND company_id=$2', [id, companyId])
+    const contract = await query('SELECT * FROM project_contracts WHERE id=$1 AND company_id=$2', [
+      id,
+      companyId,
+    ])
     if (!contract.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
     const [milestones, invoices] = await Promise.all([
       query('SELECT * FROM project_milestones WHERE contract_id=$1 ORDER BY sequence', [id]),
-      query(`SELECT pi.*, COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip WHERE pip.invoice_id=pi.id),0) AS total_paid
-             FROM project_invoices pi WHERE pi.contract_id=$1 ORDER BY pi.created_at DESC`, [id]),
+      query(
+        `SELECT pi.*, COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip WHERE pip.invoice_id=pi.id),0) AS total_paid
+             FROM project_invoices pi WHERE pi.contract_id=$1 ORDER BY pi.created_at DESC`,
+        [id],
+      ),
     ])
     const c = contract.rows[0] as Record<string, unknown>
-    const invRows = invoices.rows as Array<{ gross_total: string; status: string; total_paid: string }>
-    const totalInvoiced = invRows.filter(i => i.status !== 'cancelled').reduce((s, i) => s + parseFloat(i.gross_total), 0)
+    const invRows = invoices.rows as Array<{
+      gross_total: string
+      status: string
+      total_paid: string
+    }>
+    const totalInvoiced = invRows
+      .filter((i) => i.status !== 'cancelled')
+      .reduce((s, i) => s + parseFloat(i.gross_total), 0)
     const totalPaid = invRows.reduce((s, i) => s + parseFloat(i.total_paid), 0)
-    sendOk(res, { ...c, milestones: milestones.rows, invoices: invoices.rows, total_invoiced: totalInvoiced, total_paid: totalPaid, outstanding: totalInvoiced - totalPaid })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch contract', err) }
+    sendOk(res, {
+      ...c,
+      milestones: milestones.rows,
+      invoices: invoices.rows,
+      total_invoiced: totalInvoiced,
+      total_paid: totalPaid,
+      outstanding: totalInvoiced - totalPaid,
+    })
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch contract', err)
+  }
 })
 
 // POST /projects/contracts
@@ -79,11 +110,15 @@ contractsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req
     const companyId = getAuth(req).companyId
     const userId = getAuth(req).userId
     const parsed = ContractSchema.safeParse(req.body)
-    if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+    if (!parsed.success)
+      return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
 
     // Validate project belongs to company
-    const proj = await query('SELECT id FROM projects WHERE id=$1 AND company_id=$2', [d.project_id, companyId])
+    const proj = await query('SELECT id FROM projects WHERE id=$1 AND company_id=$2', [
+      d.project_id,
+      companyId,
+    ])
     if (!proj.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
 
     const result = await query(
@@ -93,16 +128,39 @@ contractsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req
           payment_terms_days, retention_pct, contract_date, start_date, end_date,
           contract_doc_path, notes, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
-      [d.project_id, companyId, d.contract_number, d.contract_name, d.client_name,
-       d.client_contact ?? null, d.contract_value, d.currency_code,
-       d.default_billing_method, d.default_margin_pct, d.payment_terms_days,
-       d.retention_pct, d.contract_date, d.start_date ?? null, d.end_date ?? null,
-       d.contract_doc_path ?? null, d.notes ?? null, userId],
+      [
+        d.project_id,
+        companyId,
+        d.contract_number,
+        d.contract_name,
+        d.client_name,
+        d.client_contact ?? null,
+        d.contract_value,
+        d.currency_code,
+        d.default_billing_method,
+        d.default_margin_pct,
+        d.payment_terms_days,
+        d.retention_pct,
+        d.contract_date,
+        d.start_date ?? null,
+        d.end_date ?? null,
+        d.contract_doc_path ?? null,
+        d.notes ?? null,
+        userId,
+      ],
     )
     const contract = firstRowOrThrow(result)
-    await logAudit({ companyId, userId, action: 'CREATE', tableName: 'project_contracts', recordId: contract['id'] as string })
+    await logAudit({
+      companyId,
+      userId,
+      action: 'CREATE',
+      tableName: 'project_contracts',
+      recordId: contract['id'] as string,
+    })
     sendOk(res, contract, 201)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create contract', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create contract', err)
+  }
 })
 
 // PUT /projects/contracts/:id
@@ -111,17 +169,29 @@ contractsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (r
     const companyId = getAuth(req).companyId
     const id = requireParam(req, 'id')
     const parsed = ContractSchema.partial().safeParse(req.body)
-    if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+    if (!parsed.success)
+      return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
 
-    const existing = await query('SELECT status FROM project_contracts WHERE id=$1 AND company_id=$2', [id, companyId])
+    const existing = await query(
+      'SELECT status FROM project_contracts WHERE id=$1 AND company_id=$2',
+      [id, companyId],
+    )
     if (!existing.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
 
     // Block changing contract_value or billing_method if invoices exist
     if (d.contract_value !== undefined || d.default_billing_method !== undefined) {
-      const invCount = await query(`SELECT COUNT(*) AS cnt FROM project_invoices WHERE contract_id=$1 AND status != 'cancelled'`, [id])
+      const invCount = await query(
+        `SELECT COUNT(*) AS cnt FROM project_invoices WHERE contract_id=$1 AND status != 'cancelled'`,
+        [id],
+      )
       if (parseInt(invCount.rows[0]?.['cnt'] ?? '0') > 0) {
-        return sendError(res, 409, 'HAS_INVOICES', 'Cannot change contract_value or billing_method once invoices exist')
+        return sendError(
+          res,
+          409,
+          'HAS_INVOICES',
+          'Cannot change contract_value or billing_method once invoices exist',
+        )
       }
     }
 
@@ -129,14 +199,23 @@ contractsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (r
     const params: unknown[] = []
     let idx = 1
     const fields: Array<[string, unknown]> = [
-      ['contract_name', d.contract_name], ['client_name', d.client_name],
-      ['client_contact', d.client_contact], ['contract_value', d.contract_value],
-      ['default_billing_method', d.default_billing_method], ['default_margin_pct', d.default_margin_pct],
-      ['payment_terms_days', d.payment_terms_days], ['retention_pct', d.retention_pct],
-      ['start_date', d.start_date], ['end_date', d.end_date], ['notes', d.notes],
+      ['contract_name', d.contract_name],
+      ['client_name', d.client_name],
+      ['client_contact', d.client_contact],
+      ['contract_value', d.contract_value],
+      ['default_billing_method', d.default_billing_method],
+      ['default_margin_pct', d.default_margin_pct],
+      ['payment_terms_days', d.payment_terms_days],
+      ['retention_pct', d.retention_pct],
+      ['start_date', d.start_date],
+      ['end_date', d.end_date],
+      ['notes', d.notes],
     ]
     for (const [col, val] of fields) {
-      if (val !== undefined) { updates.push(`${col} = $${idx++}`); params.push(val) }
+      if (val !== undefined) {
+        updates.push(`${col} = $${idx++}`)
+        params.push(val)
+      }
     }
     if (updates.length === 0) return sendError(res, 400, 'NO_CHANGES', 'No fields to update')
     updates.push('updated_at = NOW()')
@@ -146,37 +225,71 @@ contractsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (r
       params,
     )
     sendOk(res, result.rows[0])
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update contract', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update contract', err)
+  }
 })
 
 // POST /projects/contracts/:id/activate
-contractsRouter.post('/:id/activate', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const companyId = getAuth(req).companyId
-    const id = requireParam(req, 'id')
-    const contract = await query('SELECT pc.*, p.status AS project_status FROM project_contracts pc JOIN projects p ON p.id=pc.project_id WHERE pc.id=$1 AND pc.company_id=$2', [id, companyId])
-    if (!contract.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
-    const c = contract.rows[0] as { status: string; project_status: string }
-    if (c.status !== 'draft') return sendError(res, 409, 'INVALID_STATUS', 'Only draft contracts can be activated')
-    if (c.project_status !== 'active') return sendError(res, 409, 'PROJECT_NOT_ACTIVE', 'Project must be active to activate a contract')
-    await query(`UPDATE project_contracts SET status='active', updated_at=NOW() WHERE id=$1`, [id])
-    sendOk(res, { id, status: 'active' })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to activate contract', err) }
-})
+contractsRouter.post(
+  '/:id/activate',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const companyId = getAuth(req).companyId
+      const id = requireParam(req, 'id')
+      const contract = await query(
+        'SELECT pc.*, p.status AS project_status FROM project_contracts pc JOIN projects p ON p.id=pc.project_id WHERE pc.id=$1 AND pc.company_id=$2',
+        [id, companyId],
+      )
+      if (!contract.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Contract not found')
+      const c = contract.rows[0] as { status: string; project_status: string }
+      if (c.status !== 'draft')
+        return sendError(res, 409, 'INVALID_STATUS', 'Only draft contracts can be activated')
+      if (c.project_status !== 'active')
+        return sendError(
+          res,
+          409,
+          'PROJECT_NOT_ACTIVE',
+          'Project must be active to activate a contract',
+        )
+      await query(`UPDATE project_contracts SET status='active', updated_at=NOW() WHERE id=$1`, [
+        id,
+      ])
+      sendOk(res, { id, status: 'active' })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to activate contract', err)
+    }
+  },
+)
 
 // POST /projects/contracts/:id/complete
-contractsRouter.post('/:id/complete', requirePermission('projects.approve', 'approve'), async (req, res) => {
-  try {
-    const companyId = getAuth(req).companyId
-    const id = requireParam(req, 'id')
-    const unpaid = await query(
-      `SELECT COUNT(*) AS cnt FROM project_invoices WHERE contract_id=$1 AND status NOT IN ('paid','cancelled')`,
-      [id],
-    )
-    if (parseInt(unpaid.rows[0]?.['cnt'] ?? '0') > 0) {
-      return sendError(res, 409, 'UNPAID_INVOICES', 'All invoices must be paid or cancelled before completing the contract')
+contractsRouter.post(
+  '/:id/complete',
+  requirePermission('projects.approve', 'approve'),
+  async (req, res) => {
+    try {
+      const companyId = getAuth(req).companyId
+      const id = requireParam(req, 'id')
+      const unpaid = await query(
+        `SELECT COUNT(*) AS cnt FROM project_invoices WHERE contract_id=$1 AND status NOT IN ('paid','cancelled')`,
+        [id],
+      )
+      if (parseInt(unpaid.rows[0]?.['cnt'] ?? '0') > 0) {
+        return sendError(
+          res,
+          409,
+          'UNPAID_INVOICES',
+          'All invoices must be paid or cancelled before completing the contract',
+        )
+      }
+      await query(
+        `UPDATE project_contracts SET status='completed', updated_at=NOW() WHERE id=$1 AND company_id=$2`,
+        [id, companyId],
+      )
+      sendOk(res, { id, status: 'completed' })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to complete contract', err)
     }
-    await query(`UPDATE project_contracts SET status='completed', updated_at=NOW() WHERE id=$1 AND company_id=$2`, [id, companyId])
-    sendOk(res, { id, status: 'completed' })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to complete contract', err) }
-})
+  },
+)

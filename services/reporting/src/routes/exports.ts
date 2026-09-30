@@ -10,20 +10,30 @@ export const exportsRouter: IRouter = Router()
 // For CSV/XLSX: queue generation via outbox, return job_id
 // Client polls GET /reporting/exports/:job_id
 
-exportsRouter.get('/:jobId', requirePermission('reporting.financial.view', 'view'), async (req, res) => {
-  try {
-    const result = await query<{ id: string; status: string; payload: Record<string, unknown> }>(
-      `SELECT id, status, payload FROM service_outbox WHERE id = $1`,
-      [req.params['jobId']],
-    )
-    if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Export job not found')
-    const job = result.rows[0]
-    sendOk(res, {
-      job_id: job['id'],
-      status: job['status'] === 'processed' ? 'ready' : job['status'] === 'failed' ? 'failed' : 'pending',
-      download_url: job['status'] === 'processed'
-        ? `/reporting/exports/${job['id']}/download`
-        : null,
-    })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to check export job', err) }
-})
+exportsRouter.get(
+  '/:jobId',
+  requirePermission('reporting.financial.view', 'view'),
+  async (req, res) => {
+    try {
+      const result = await query<{ id: string; status: string; payload: Record<string, unknown> }>(
+        `SELECT id, status, payload FROM service_outbox WHERE id = $1`,
+        [req.params['jobId']],
+      )
+      if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Export job not found')
+      const job = result.rows[0]
+      sendOk(res, {
+        job_id: job['id'],
+        status:
+          job['status'] === 'processed'
+            ? 'ready'
+            : job['status'] === 'failed'
+              ? 'failed'
+              : 'pending',
+        download_url:
+          job['status'] === 'processed' ? `/reporting/exports/${job['id']}/download` : null,
+      })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to check export job', err)
+    }
+  },
+)

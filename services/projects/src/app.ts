@@ -7,7 +7,11 @@ import { milestonesRouter } from './routes/milestones.js'
 import { materialIssuesRouter } from './routes/material-issues.js'
 import { invoicesRouter } from './routes/invoices.js'
 import { paymentsRouter } from './routes/payments.js'
-import { projectAttachmentsRouter, contractAttachmentsRouter, invoiceAttachmentsRouter } from './routes/attachments.js'
+import {
+  projectAttachmentsRouter,
+  contractAttachmentsRouter,
+  invoiceAttachmentsRouter,
+} from './routes/attachments.js'
 
 export function createApp(): express.Express {
   const app = express()

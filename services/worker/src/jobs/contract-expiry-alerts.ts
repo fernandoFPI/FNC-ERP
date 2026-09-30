@@ -65,31 +65,47 @@ export async function sendContractExpiryAlerts(): Promise<void> {
     )
 
     const clientLabel = contract.client_name ? ` — ${contract.client_name}` : ''
-    const urgencyLabel = daysLeft === 0 ? 'expires today' : `expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`
+    const urgencyLabel =
+      daysLeft === 0 ? 'expires today' : `expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`
     const title = isUrgent
       ? `Urgent: Contract ${contract.contract_number} ${urgencyLabel}`
       : `Contract expiring soon: ${contract.contract_number}`
     const body = `Rental contract ${contract.contract_number}${clientLabel} ${urgencyLabel} (${contract.end_date}). Please review and take action.`
 
     for (const admin of admins.rows) {
-      await pool.query(
-        `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
+      await pool
+        .query(
+          `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
          VALUES ($1,$2,'CONTRACT_EXPIRY_ALERT',$3,$4,$5::jsonb,false)`,
-        [
-          admin.user_id, contract.company_id, title, body,
-          JSON.stringify({
-            contractId: contract.id,
-            contractNumber: contract.contract_number,
-            endDate: contract.end_date,
-            daysRemaining: daysLeft,
-          }),
-        ],
-      ).catch((err: unknown) =>
-        log.error({ err, contractId: contract.id, userId: admin.user_id }, 'failed to insert contract expiry notification'),
-      )
+          [
+            admin.user_id,
+            contract.company_id,
+            title,
+            body,
+            JSON.stringify({
+              contractId: contract.id,
+              contractNumber: contract.contract_number,
+              endDate: contract.end_date,
+              daysRemaining: daysLeft,
+            }),
+          ],
+        )
+        .catch((err: unknown) =>
+          log.error(
+            { err, contractId: contract.id, userId: admin.user_id },
+            'failed to insert contract expiry notification',
+          ),
+        )
     }
 
-    log.info({ contractId: contract.id, contractNumber: contract.contract_number, daysRemaining: daysLeft }, 'contract expiry alert sent')
+    log.info(
+      {
+        contractId: contract.id,
+        contractNumber: contract.contract_number,
+        daysRemaining: daysLeft,
+      },
+      'contract expiry alert sent',
+    )
   }
 
   log.info({ checked: result.rowCount }, 'contract expiry alert check complete')

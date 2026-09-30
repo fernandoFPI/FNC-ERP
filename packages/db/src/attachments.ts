@@ -143,130 +143,140 @@ export function registerAttachmentRoutes(
   const { entityType, verifyEntitySql } = opts
 
   // GET /:id/attachments
-  router.get('/:id/attachments', asyncHandler(async (req: AuthRequest, res: Response) => {
-    try {
-      const result = await getAttachments(entityType, requireParam(req, 'id'))
-      res.json({ success: true, data: result.rows })
-    } catch (err) {
-      res.status(500).json({
-        success: false,
-        error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch attachments' },
-      })
-    }
-  }))
+  router.get(
+    '/:id/attachments',
+    asyncHandler(async (req: AuthRequest, res: Response) => {
+      try {
+        const result = await getAttachments(entityType, requireParam(req, 'id'))
+        res.json({ success: true, data: result.rows })
+      } catch (err) {
+        res.status(500).json({
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch attachments' },
+        })
+      }
+    }),
+  )
 
   // POST /:id/attachments
-  router.post('/:id/attachments', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const body = req.body as { fileId?: string; label?: string; isPrimary?: boolean }
-    const { fileId, label, isPrimary } = body
+  router.post(
+    '/:id/attachments',
+    asyncHandler(async (req: AuthRequest, res: Response) => {
+      const body = req.body as { fileId?: string; label?: string; isPrimary?: boolean }
+      const { fileId, label, isPrimary } = body
 
-    if (!fileId) {
-      res.status(400).json({
-        success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'fileId is required' },
-      })
-      return
-    }
-
-    const companyId = getAuth(req).companyId
-    const userId = getAuth(req).userId
-    const entityId = requireParam(req, 'id')
-
-    // Verify entity belongs to company
-    const entity = await query(verifyEntitySql, [entityId, companyId])
-    if (!entity.rows[0]) {
-      res
-        .status(404)
-        .json({ success: false, error: { code: 'NOT_FOUND', message: `${entityType} not found` } })
-      return
-    }
-
-    // Verify file belongs to company and is uploaded
-    const file = await query(
-      `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status='uploaded'`,
-      [fileId, companyId],
-    )
-    if (!file.rows[0]) {
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'FILE_NOT_FOUND',
-          message: 'File not found or not yet confirmed as uploaded',
-        },
-      })
-      return
-    }
-
-    try {
-      await withTransaction({ companyId, userId, role: getAuth(req).role }, async (client) => {
-        await createAttachment(client, {
-          entityType,
-          entityId,
-          fileId,
-          label: label ?? null,
-          isPrimary: isPrimary ?? false,
-          uploadedBy: userId,
-        })
-        await logAuditFn({
-          userId,
-          companyId,
-          action: 'CREATE',
-          tableName: 'document_attachments',
-          recordId: entityId,
-          newValues: { fileId, entityType, label },
-          client,
-        })
-      })
-      res.status(201).json({ success: true, data: { message: 'File attached' } })
-    } catch (err) {
-      const msg =
-        err instanceof Error && err.message.includes('unique')
-          ? 'File already attached to this record'
-          : 'Failed to attach file'
-      res.status(409).json({ success: false, error: { code: 'ATTACHMENT_ERROR', message: msg } })
-    }
-  }))
-
-  // DELETE /:id/attachments/:attachmentId
-  router.delete('/:id/attachments/:attachmentId', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const companyId = getAuth(req).companyId
-    const userId = getAuth(req).userId
-    const entityId = requireParam(req, 'id')
-    const attachmentId = requireParam(req, 'attachmentId')
-
-    try {
-      let removed: { fileId: string; filename: string } | null = null
-
-      await withTransaction({ companyId, userId, role: getAuth(req).role }, async (client) => {
-        removed = await removeAttachment(client, attachmentId, entityType, entityId)
-        if (!removed) {
-          return // will 404 below
-        }
-        await logAuditFn({
-          userId,
-          companyId,
-          action: 'DELETE',
-          tableName: 'document_attachments',
-          recordId: entityId,
-          oldValues: { fileId: removed.fileId, filename: removed.filename },
-          client,
-        })
-      })
-
-      if (!removed) {
-        res.status(404).json({
+      if (!fileId) {
+        res.status(400).json({
           success: false,
-          error: { code: 'ATTACHMENT_NOT_FOUND', message: 'Attachment not found' },
+          error: { code: 'VALIDATION_ERROR', message: 'fileId is required' },
         })
         return
       }
 
-      res.json({ success: true, data: { message: 'Attachment removed' } })
-    } catch (err) {
-      res.status(500).json({
-        success: false,
-        error: { code: 'INTERNAL_ERROR', message: 'Failed to remove attachment' },
-      })
-    }
-  }))
+      const companyId = getAuth(req).companyId
+      const userId = getAuth(req).userId
+      const entityId = requireParam(req, 'id')
+
+      // Verify entity belongs to company
+      const entity = await query(verifyEntitySql, [entityId, companyId])
+      if (!entity.rows[0]) {
+        res.status(404).json({
+          success: false,
+          error: { code: 'NOT_FOUND', message: `${entityType} not found` },
+        })
+        return
+      }
+
+      // Verify file belongs to company and is uploaded
+      const file = await query(
+        `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status='uploaded'`,
+        [fileId, companyId],
+      )
+      if (!file.rows[0]) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'FILE_NOT_FOUND',
+            message: 'File not found or not yet confirmed as uploaded',
+          },
+        })
+        return
+      }
+
+      try {
+        await withTransaction({ companyId, userId, role: getAuth(req).role }, async (client) => {
+          await createAttachment(client, {
+            entityType,
+            entityId,
+            fileId,
+            label: label ?? null,
+            isPrimary: isPrimary ?? false,
+            uploadedBy: userId,
+          })
+          await logAuditFn({
+            userId,
+            companyId,
+            action: 'CREATE',
+            tableName: 'document_attachments',
+            recordId: entityId,
+            newValues: { fileId, entityType, label },
+            client,
+          })
+        })
+        res.status(201).json({ success: true, data: { message: 'File attached' } })
+      } catch (err) {
+        const msg =
+          err instanceof Error && err.message.includes('unique')
+            ? 'File already attached to this record'
+            : 'Failed to attach file'
+        res.status(409).json({ success: false, error: { code: 'ATTACHMENT_ERROR', message: msg } })
+      }
+    }),
+  )
+
+  // DELETE /:id/attachments/:attachmentId
+  router.delete(
+    '/:id/attachments/:attachmentId',
+    asyncHandler(async (req: AuthRequest, res: Response) => {
+      const companyId = getAuth(req).companyId
+      const userId = getAuth(req).userId
+      const entityId = requireParam(req, 'id')
+      const attachmentId = requireParam(req, 'attachmentId')
+
+      try {
+        let removed: { fileId: string; filename: string } | null = null
+
+        await withTransaction({ companyId, userId, role: getAuth(req).role }, async (client) => {
+          removed = await removeAttachment(client, attachmentId, entityType, entityId)
+          if (!removed) {
+            return // will 404 below
+          }
+          await logAuditFn({
+            userId,
+            companyId,
+            action: 'DELETE',
+            tableName: 'document_attachments',
+            recordId: entityId,
+            oldValues: { fileId: removed.fileId, filename: removed.filename },
+            client,
+          })
+        })
+
+        if (!removed) {
+          res.status(404).json({
+            success: false,
+            error: { code: 'ATTACHMENT_NOT_FOUND', message: 'Attachment not found' },
+          })
+          return
+        }
+
+        res.json({ success: true, data: { message: 'Attachment removed' } })
+      } catch (err) {
+        res.status(500).json({
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: 'Failed to remove attachment' },
+        })
+      }
+    }),
+  )
 }
