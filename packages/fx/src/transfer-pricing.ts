@@ -10,7 +10,7 @@ export class TransferPricingError extends Error {
   }
 }
 
-export type TransferPricingMethod = 'avco' | 'cost_plus' | 'market' | 'standard'
+export type TransferPricingMethod = 'avco' | 'cost_plus' | 'market' | 'standard' | 'last_cost'
 
 export interface TransferPriceResult {
   method: TransferPricingMethod
@@ -68,6 +68,21 @@ export async function resolveTransferPrice(
   )
   const avco = parseFloat(balanceResult.rows[0]?.weighted_average_cost ?? '0')
 
+  // The single most-recently-moved lot's cost at this location, not blended
+  // across lots by quantity like avco above — "last price recorded", full
+  // stop. Only considers lots that currently still have stock (qty_on_hand >
+  // 0): a transfer can't source from a lot that's already been fully consumed,
+  // however recently it moved.
+  const lastCostResult = await client.query<{ average_cost: string }>(
+    `SELECT average_cost
+     FROM stock_balances
+     WHERE product_id = $1 AND location_id = $2 AND qty_on_hand > 0
+     ORDER BY last_move_at DESC NULLS LAST
+     LIMIT 1`,
+    [productId, fromLocationId],
+  )
+  const lastCost = parseFloat(lastCostResult.rows[0]?.average_cost ?? '0')
+
   const productResult = await client.query<{ standard_cost: string }>(
     `SELECT standard_cost FROM products WHERE id = $1`,
     [productId],
@@ -82,6 +97,16 @@ export async function resolveTransferPrice(
         avco_at_transfer: avco,
         standard_cost_at_transfer: standardCost,
         transfer_price: avco,
+        markup_pct_applied: null,
+        requires_manual_input: false,
+      }
+
+    case 'last_cost':
+      return {
+        method,
+        avco_at_transfer: avco,
+        standard_cost_at_transfer: standardCost,
+        transfer_price: lastCost,
         markup_pct_applied: null,
         requires_manual_input: false,
       }

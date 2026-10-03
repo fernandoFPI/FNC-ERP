@@ -28143,6 +28143,15 @@ const phase5QueryResolvers = {
     }
   },
 
+  // Reads companies.interco_transfer_pricing_method/interco_cost_plus_markup_pct
+  // directly — the columns resolveTransferPrice (packages/fx) actually uses.
+  // Previously read interco_pricing_configs, a same-shaped but entirely
+  // separate table (migration 176) nothing ever wired into real transfer
+  // pricing — editing Settings here had zero effect on what a transfer
+  // actually charged. updatedAt/updatedByEmail now come from the most recent
+  // interco_pricing_config_log entry (still the change-history table; that
+  // part was never broken), falling back to the company row's own updated_at
+  // when no log entry exists yet.
   companyIntercoPricingSettings: async (
     _: unknown,
     args: { companyId: string },
@@ -28151,11 +28160,21 @@ const phase5QueryResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     const r = await query(
-      `SELECT ipc.*, c.name as company_name, u.email as updated_by_email
-       FROM interco_pricing_configs ipc
-       JOIN companies c ON c.id=ipc.company_id
-       LEFT JOIN users u ON u.id=ipc.updated_by
-       WHERE ipc.company_id=$1`,
+      `SELECT c.id AS company_id, c.name AS company_name,
+              c.interco_transfer_pricing_method AS method,
+              c.interco_cost_plus_markup_pct AS cost_plus_markup_pct,
+              c.updated_at,
+              log.changed_at, log.updated_by_email
+       FROM companies c
+       LEFT JOIN LATERAL (
+         SELECT l.created_at AS changed_at, u.email AS updated_by_email
+         FROM interco_pricing_config_log l
+         LEFT JOIN users u ON u.id = l.changed_by
+         WHERE l.company_id = c.id
+         ORDER BY l.created_at DESC
+         LIMIT 1
+       ) log ON true
+       WHERE c.id=$1`,
       [cid],
     )
     if (!r.rows[0]) return null
@@ -28167,8 +28186,8 @@ const phase5QueryResolvers = {
       costPlusMarkupPct: row.cost_plus_markup_pct
         ? parseFloat(String(row.cost_plus_markup_pct))
         : null,
-      updatedAt: row.updated_at,
-      updatedByEmail: row.updated_by_email,
+      updatedAt: row.changed_at ?? row.updated_at,
+      updatedByEmail: row.updated_by_email ?? null,
     }
   },
 
@@ -35182,6 +35201,10 @@ const phase5MutationResolvers = {
     }
   },
 
+  // Writes companies.interco_transfer_pricing_method/interco_cost_plus_markup_pct
+  // directly — see companyIntercoPricingSettings' comment above on why
+  // interco_pricing_configs (the table this used to write) never actually
+  // affected a real transfer's price.
   updateIntercoPricing: async (
     _: unknown,
     args: {
@@ -35192,17 +35215,18 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const prev = await query(
-      `SELECT method, cost_plus_markup_pct FROM interco_pricing_configs WHERE company_id=$1`,
+      `SELECT interco_transfer_pricing_method AS method, interco_cost_plus_markup_pct AS cost_plus_markup_pct
+       FROM companies WHERE id=$1`,
       [args.companyId],
     )
     const prevRow = prev.rows[0] as
       | { method: string; cost_plus_markup_pct: string | null }
       | undefined
+    if (!prevRow) throw new Error('Company not found')
     await query(
-      `INSERT INTO interco_pricing_configs (company_id, method, cost_plus_markup_pct, updated_at, updated_by)
-       VALUES ($1,$2,$3,NOW(),$4)
-       ON CONFLICT (company_id) DO UPDATE SET method=$2, cost_plus_markup_pct=$3, updated_at=NOW(), updated_by=$4`,
-      [args.companyId, args.input.method, args.input.costPlusMarkupPct ?? null, ctx.auth.userId],
+      `UPDATE companies SET interco_transfer_pricing_method=$2, interco_cost_plus_markup_pct=$3, updated_at=NOW()
+       WHERE id=$1`,
+      [args.companyId, args.input.method, args.input.costPlusMarkupPct ?? 0],
     )
     await query(
       `INSERT INTO interco_pricing_config_log
@@ -35211,20 +35235,22 @@ const phase5MutationResolvers = {
       [
         args.companyId,
         ctx.auth.userId,
-        prevRow?.method ?? null,
+        prevRow.method ?? null,
         args.input.method,
-        prevRow?.cost_plus_markup_pct ?? null,
+        prevRow.cost_plus_markup_pct ?? null,
         args.input.costPlusMarkupPct ?? null,
         args.input.notes ?? null,
       ],
     )
     const r = await query(
-      `SELECT ipc.*, c.name as company_name, u.email as updated_by_email
-       FROM interco_pricing_configs ipc
-       JOIN companies c ON c.id=ipc.company_id
-       LEFT JOIN users u ON u.id=ipc.updated_by
-       WHERE ipc.company_id=$1`,
-      [args.companyId],
+      `SELECT c.id AS company_id, c.name AS company_name,
+              c.interco_transfer_pricing_method AS method,
+              c.interco_cost_plus_markup_pct AS cost_plus_markup_pct,
+              u.email AS updated_by_email
+       FROM companies c
+       LEFT JOIN users u ON u.id=$2
+       WHERE c.id=$1`,
+      [args.companyId, ctx.auth.userId],
     )
     const row = r.rows[0] as Record<string, unknown>
     return {
@@ -35234,7 +35260,7 @@ const phase5MutationResolvers = {
       costPlusMarkupPct: row.cost_plus_markup_pct
         ? parseFloat(String(row.cost_plus_markup_pct))
         : null,
-      updatedAt: row.updated_at,
+      updatedAt: new Date().toISOString(),
       updatedByEmail: row.updated_by_email,
     }
   },

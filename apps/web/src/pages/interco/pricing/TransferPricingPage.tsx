@@ -136,7 +136,7 @@ export default function TransferPricingPage() {
   ]
 
   function handleEdit() {
-    setEditMethod(settings?.method ?? 'avco')
+    setEditMethod(settings?.method ?? 'last_cost')
     setEditMarkupPct(String(settings?.costPlusMarkupPct ?? 0))
     setEditing(true)
   }
@@ -223,6 +223,7 @@ export default function TransferPricingPage() {
                   setEditMethod(e.target.value)
                 }}
                 options={[
+                  { value: 'last_cost', label: 'Last Cost Recorded' },
                   { value: 'avco', label: 'AVCO (Average Cost)' },
                   { value: 'cost_plus', label: 'Cost Plus Markup' },
                   { value: 'market', label: 'Market Price' },
