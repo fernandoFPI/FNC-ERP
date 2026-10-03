@@ -82,7 +82,7 @@ export async function invalidatePermissionCache(userId: string, companyId: strin
 // ── LEVEL COMPARISON ──────────────────────────────────────────────────────────
 
 export function meetsLevel(actual: AccessLevel | undefined, required: AccessLevel): boolean {
-  const actualOrder = ACCESS_LEVEL_ORDER[actual ?? 'none'] ?? 0
+  const actualOrder = ACCESS_LEVEL_ORDER[actual ?? 'none']
   const requiredOrder = ACCESS_LEVEL_ORDER[required]
   return actualOrder >= requiredOrder
 }

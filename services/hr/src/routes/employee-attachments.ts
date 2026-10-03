@@ -214,21 +214,24 @@ employeeAttachmentsRouter.delete(
     }
 
     try {
-      let removed: { fileId: string; filename: string } | null = null
-      await withTransaction({ companyId, userId, role: getAuth(req).role }, async (client) => {
-        removed = await removeAttachment(client, attachmentId, 'employee', entityId)
-        if (removed) {
-          await logAudit({
-            userId,
-            companyId,
-            action: 'DELETE',
-            tableName: 'document_attachments',
-            recordId: entityId,
-            oldValues: { fileId: removed.fileId, filename: removed.filename },
-            client,
-          })
-        }
-      })
+      const removed = await withTransaction(
+        { companyId, userId, role: getAuth(req).role },
+        async (client) => {
+          const r = await removeAttachment(client, attachmentId, 'employee', entityId)
+          if (r) {
+            await logAudit({
+              userId,
+              companyId,
+              action: 'DELETE',
+              tableName: 'document_attachments',
+              recordId: entityId,
+              oldValues: { fileId: r.fileId, filename: r.filename },
+              client,
+            })
+          }
+          return r
+        },
+      )
       if (!removed) {
         res.status(404).json({
           success: false,

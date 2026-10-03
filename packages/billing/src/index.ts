@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg'
+import { firstRowOrThrow } from '@fnc-erp/db'
 
 // ── ERRORS ─────────────────────────────────────────────────────
 
@@ -91,12 +92,12 @@ export async function buildMilestoneLines(
 
   return result.rows.map((m) => ({
     source_type: 'milestone',
-    source_id: m['id'],
-    description: m['name'],
+    source_id: m.id,
+    description: m.name,
     qty: 1,
-    unit_cost: parseFloat(m['billable_amount']),
+    unit_cost: parseFloat(m.billable_amount),
     margin_pct: 0,
-    currency_code: m['currency_code'],
+    currency_code: m.currency_code,
   }))
 }
 
@@ -124,9 +125,9 @@ export async function buildProgressLines(
   }>(`SELECT contract_value, contract_name, currency_code FROM project_contracts WHERE id = $1`, [
     ctx.contractId,
   ])
-  const c = result.rows[0]!
+  const c = firstRowOrThrow(result)
   const billablePct = (progressPct - previousProgressPct) / 100
-  const billableAmount = parseFloat(c['contract_value']) * billablePct
+  const billableAmount = parseFloat(c.contract_value) * billablePct
 
   return [
     {
@@ -135,7 +136,7 @@ export async function buildProgressLines(
       qty: 1,
       unit_cost: billableAmount,
       margin_pct: 0,
-      currency_code: c['currency_code'],
+      currency_code: c.currency_code,
     },
   ]
 }
@@ -181,25 +182,25 @@ export async function buildCostPlusLines(
           `SELECT p.name AS product_name, mc.qty_consumed, mc.unit_cost, mc.total_cost
            FROM mo_consumptions mc JOIN products p ON p.id = mc.component_product_id
            WHERE mc.mo_id = $1`,
-          [mo['id']],
+          [mo.id],
         )
         components = cons.rows.map((c) => ({
-          product_name: c['product_name'],
-          qty: parseFloat(c['qty_consumed']),
-          unit_cost: parseFloat(c['unit_cost']),
-          total_cost: parseFloat(c['total_cost']),
+          product_name: c.product_name,
+          qty: parseFloat(c.qty_consumed),
+          unit_cost: parseFloat(c.unit_cost),
+          total_cost: parseFloat(c.total_cost),
         }))
       }
 
       const moLine: InvoiceLineInput = {
         source_type: 'manufacturing_order',
-        source_id: mo['id'],
+        source_id: mo.id,
         description:
           options.displayMode === 'summarised'
-            ? `${mo['product_name']} (MO: ${mo['mo_number']})`
-            : `${mo['product_name']} — component breakdown (MO: ${mo['mo_number']})`,
-        qty: parseFloat(mo['qty_produced']),
-        unit_cost: parseFloat(mo['unit_cost']),
+            ? `${mo.product_name} (MO: ${mo.mo_number})`
+            : `${mo.product_name} — component breakdown (MO: ${mo.mo_number})`,
+        qty: parseFloat(mo.qty_produced),
+        unit_cost: parseFloat(mo.unit_cost),
         margin_pct: options.defaultMarginPct,
         currency_code: 'IQD',
         mo_display_mode: options.displayMode,
@@ -237,12 +238,12 @@ export async function buildCostPlusLines(
     for (const r of receipts.rows) {
       lines.push({
         source_type: 'purchase_order',
-        source_id: r['receipt_id'],
-        description: `${r['description']} — PO ${r['po_number']} (${r['vendor_name']})`,
-        qty: parseFloat(r['qty_received']),
-        unit_cost: parseFloat(r['unit_price']),
+        source_id: r.receipt_id,
+        description: `${r.description} — PO ${r.po_number} (${r.vendor_name})`,
+        qty: parseFloat(r.qty_received),
+        unit_cost: parseFloat(r.unit_price),
         margin_pct: options.defaultMarginPct,
-        currency_code: r['currency_code'],
+        currency_code: r.currency_code,
       })
     }
   }
@@ -268,10 +269,10 @@ export async function buildCostPlusLines(
     for (const i of issues.rows) {
       lines.push({
         source_type: 'stock_issue',
-        source_id: i['id'],
-        description: `${i['product_name']} (Issue: ${i['issue_number']})`,
-        qty: parseFloat(i['qty_issued']),
-        unit_cost: parseFloat(i['unit_cost']),
+        source_id: i.id,
+        description: `${i.product_name} (Issue: ${i.issue_number})`,
+        qty: parseFloat(i.qty_issued),
+        unit_cost: parseFloat(i.unit_cost),
         margin_pct: options.defaultMarginPct,
         currency_code: 'IQD',
       })
@@ -301,16 +302,16 @@ export async function buildCostPlusLines(
     )
 
     for (const r of rental.rows) {
-      const days = parseInt(r['days_billed'])
-      const totalAmount = parseFloat(r['amount'])
+      const days = parseInt(r.days_billed)
+      const totalAmount = parseFloat(r.amount)
       lines.push({
         source_type: 'rental',
-        source_id: r['id'],
-        description: `Equipment rental: ${r['asset_name']} — ${days} days (Contract: ${r['contract_number']})`,
+        source_id: r.id,
+        description: `Equipment rental: ${r.asset_name} — ${days} days (Contract: ${r.contract_number})`,
         qty: days,
         unit_cost: days > 0 ? totalAmount / days : totalAmount,
         margin_pct: options.defaultMarginPct,
-        currency_code: r['currency_code'],
+        currency_code: r.currency_code,
       })
     }
   }
@@ -328,13 +329,13 @@ export async function buildLumpSumLines(ctx: BillingContext): Promise<InvoiceLin
   }>(`SELECT contract_value, contract_name, currency_code FROM project_contracts WHERE id = $1`, [
     ctx.contractId,
   ])
-  const c = contractResult.rows[0]!
+  const c = firstRowOrThrow(contractResult)
 
   const existing = await ctx.client.query<{ cnt: string }>(
     `SELECT COUNT(*) AS cnt FROM project_invoices WHERE contract_id = $1 AND status != 'cancelled'`,
     [ctx.contractId],
   )
-  if (parseInt(existing.rows[0]?.['cnt'] ?? '0') > 0) {
+  if (parseInt(existing.rows[0]?.cnt ?? '0') > 0) {
     throw new BillingError(
       'LUMP_SUM_ALREADY_INVOICED',
       'A lump sum contract can only have one invoice',
@@ -344,11 +345,11 @@ export async function buildLumpSumLines(ctx: BillingContext): Promise<InvoiceLin
   return [
     {
       source_type: 'manual',
-      description: `Contract completion — ${c['contract_name']}`,
+      description: `Contract completion — ${c.contract_name}`,
       qty: 1,
-      unit_cost: parseFloat(c['contract_value']),
+      unit_cost: parseFloat(c.contract_value),
       margin_pct: 0,
-      currency_code: c['currency_code'],
+      currency_code: c.currency_code,
     },
   ]
 }
@@ -375,7 +376,7 @@ export function calculateInvoiceTotals(lines: LineAmounts[], retentionPct: numbe
 
 export async function markSourcesInvoiced(
   client: PoolClient,
-  lines: Array<{ source_type: string; source_id?: string }>,
+  lines: { source_type: string; source_id?: string }[],
 ): Promise<void> {
   for (const line of lines) {
     if (!line.source_id) continue
