@@ -70,6 +70,8 @@ const sampleRequisitions = [
 ]
 
 beforeEach(() => {
+  // The page persists its filters in sessionStorage; don't leak between tests.
+  sessionStorage.clear()
   vi.clearAllMocks()
   mockUseQuery.mockReturnValue({
     data: { requisitions: sampleRequisitions },

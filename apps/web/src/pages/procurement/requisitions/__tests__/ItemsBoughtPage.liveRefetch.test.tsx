@@ -186,10 +186,10 @@ describe('ItemsBoughtPage — shared vendor/receipt survive a real refetch cycle
     expect(screen.queryByText('Search vendor…')).not.toBeInTheDocument()
     expect(screen.getAllByText('Al-Rasheed Hardware').length).toBeGreaterThanOrEqual(3)
 
-    // Record the purchase for line 1 only.
-    const recordButtons = screen.getAllByRole('button', { name: /^record purchase$/i })
-    expect(recordButtons).toHaveLength(2)
-    fireEvent.click(recordButtons[0])
+    // In shared-receipt mode the per-line buttons are replaced by one
+    // "Record all purchases" button.
+    expect(screen.queryByRole('button', { name: /^record purchase$/i })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^record all purchases$/i }))
 
     // Let the async handler (upload + mutation + onCompleted->refetch) settle.
     await waitFor(() => {
