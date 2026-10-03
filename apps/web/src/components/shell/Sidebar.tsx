@@ -825,12 +825,14 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Stock Moves',
         icon: <Icon name="activity" />,
         path: '/inventory/moves',
+        factoryOnly: true,
         permKeys: ['inventory.stock_moves.view'],
       },
       {
         label: 'Adjust Stock',
         icon: <Icon name="refresh-cw" />,
         path: '/inventory/adjust',
+        factoryOnly: true,
         permKeys: ['inventory.stock_moves.view'],
       },
       {
