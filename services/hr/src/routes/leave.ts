@@ -84,7 +84,7 @@ leaveRouter.post('/requests', requirePermission('hr.leave.edit', 'edit'), asyncH
     }
     const requiresApproval = (lt.rows[0] as { requires_approval: boolean }).requires_approval
     const initialStatus = requiresApproval ? 'pending' : 'approved'
-    const result = await query(
+    const result = await query<{ id: string }>(
       `INSERT INTO leave_requests (employee_id, company_id, leave_type_id, start_date, end_date, total_days, reason, status, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [
@@ -108,7 +108,7 @@ leaveRouter.post('/requests', requirePermission('hr.leave.edit', 'edit'), asyncH
         )
         const empName =
           `${empRes.rows[0]?.first_name ?? ''} ${empRes.rows[0]?.last_name ?? ''}`.trim()
-        const admins = await query(
+        const admins = await query<{ user_id: string }>(
           `SELECT DISTINCT u.id AS user_id FROM users u
            JOIN user_company_roles ucr ON ucr.user_id = u.id
            WHERE ucr.company_id = $1
@@ -122,12 +122,12 @@ leaveRouter.post('/requests', requirePermission('hr.leave.edit', 'edit'), asyncH
             `INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','LEAVE_REQUEST_SUBMITTED',$1)`,
             [
               JSON.stringify({
-                userId: u['user_id'],
+                userId: u.user_id,
                 companyId,
                 title: `Leave request: ${empName}`,
                 body: `${empName} has submitted a leave request from ${start_date} to ${end_date} (${total_days} days)${reason ? ': ' + reason : ''}`,
                 data: {
-                  leaveRequestId: firstRowOrThrow(result)['id'],
+                  leaveRequestId: firstRowOrThrow(result).id,
                   employeeName: empName,
                   startDate: start_date,
                   endDate: end_date,

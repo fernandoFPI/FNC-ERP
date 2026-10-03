@@ -315,7 +315,13 @@ payrollRouter.post(
             ],
           )
 
-          const updated = await client.query(`SELECT * FROM payroll_runs WHERE id = $1`, [run.id])
+          const updated = await client.query<{
+            id: string
+            status: string
+            start_date: string
+            end_date: string
+            period_name: string
+          }>(`SELECT * FROM payroll_runs WHERE id = $1`, [run.id])
           return firstRowOrThrow(updated)
         },
       )

@@ -99,7 +99,19 @@ salaryRouter.post('/', requirePermission('hr.salary.edit', 'edit'), asyncHandler
            WHERE employee_id = $2 AND effective_to IS NULL`,
           [d.effective_from, d.employee_id],
         )
-        const result = await client.query(
+        const result = await client.query<{
+          id: string
+          employee_id: string
+          company_id: string
+          base_salary: string
+          currency_code: string
+          housing_allowance: string
+          transport_allowance: string
+          other_allowances: string
+          income_tax_pct: string
+          social_security_pct: string
+          effective_from: string
+        }>(
           `INSERT INTO salary_configs (employee_id, company_id, base_salary, currency_code,
            housing_allowance, transport_allowance, other_allowances, income_tax_pct, social_security_pct,
            effective_from, created_by)

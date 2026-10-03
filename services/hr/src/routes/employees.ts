@@ -207,7 +207,7 @@ employeesRouter.post(
       const emp = result.rows[0] as Record<string, unknown>
       const empName = `${String(emp['first_name'] ?? '')} ${String(emp['last_name'] ?? '')}`.trim()
       ;(async () => {
-        const admins = await query(
+        const admins = await query<{ user_id: string }>(
           `SELECT DISTINCT u.id AS user_id FROM users u JOIN user_company_roles ucr ON ucr.user_id=u.id WHERE ucr.company_id=$1 AND (ucr.role IN ('company_admin','system_admin') OR (ucr.module='hr' AND ucr.role IN ('module_admin'))) AND u.is_active=true`,
           [getAuth(req).companyId],
         )
@@ -216,7 +216,7 @@ employeesRouter.post(
             `INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','EMPLOYEE_TERMINATED',$1)`,
             [
               JSON.stringify({
-                userId: u['user_id'],
+                userId: u.user_id,
                 companyId: getAuth(req).companyId,
                 title: `Employee terminated: ${empName}`,
                 body: `${empName} has been terminated effective ${termination_date}`,
