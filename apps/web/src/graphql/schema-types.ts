@@ -7194,6 +7194,7 @@ export type Query = {
   bidSupplierQuotations: Array<BidSupplierQuotation>;
   bom?: Maybe<Bom>;
   boms: Array<Bom>;
+  centralWarehouseLocations: Array<StockLocation>;
   clientDocuments: Array<ClientDocument>;
   companies: Array<CompanyDetail>;
   company?: Maybe<CompanyDetail>;
@@ -7505,6 +7506,12 @@ export type QueryBomsArgs = {
   allCompanies?: InputMaybe<Scalars['Boolean']['input']>;
   finishedProductId?: InputMaybe<Scalars['ID']['input']>;
   isActive?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type QueryCentralWarehouseLocationsArgs = {
+  isActive?: InputMaybe<Scalars['Boolean']['input']>;
+  type?: InputMaybe<Scalars['String']['input']>;
 };
 
 

@@ -8,7 +8,7 @@ import {
   PROJECTS_QUERY,
 } from '../../../graphql/projects'
 import { PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
-import { STOCK_LOCATIONS_QUERY, PRODUCTS_QUERY } from '../../../graphql/inventory'
+import { STOCK_LOCATIONS_QUERY, CENTRAL_WAREHOUSE_LOCATIONS_QUERY, PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
@@ -20,7 +20,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { useToastStore } from '../../../store/toastStore'
 import { useTheme } from '../../../theme/ThemeContext'
-import type { CreateMaterialReturnMutation, CreateMaterialReturnMutationVariables, MaterialReturnsQuery, MaterialReturnsQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, ReturnableDirectDeliveryLinesQuery, ReturnableDirectDeliveryLinesQueryVariables, ReturnableMaterialIssueLinesQuery, ReturnableMaterialIssueLinesQueryVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
+import type { CentralWarehouseLocationsQuery, CentralWarehouseLocationsQueryVariables, CreateMaterialReturnMutation, CreateMaterialReturnMutationVariables, MaterialReturnsQuery, MaterialReturnsQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, ReturnableDirectDeliveryLinesQuery, ReturnableDirectDeliveryLinesQueryVariables, ReturnableMaterialIssueLinesQuery, ReturnableMaterialIssueLinesQueryVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
 
 interface MRLine {
   id: string
@@ -179,6 +179,15 @@ export default function MaterialReturnsPage() {
     },
   )
   const { data: locationsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
+  // Lets "Return to" offer the group's central warehouse too, for a PO/
+  // Store Out whose material was originally sourced from there — see
+  // createMaterialReturn's own cross-company handling. Harmless/empty when
+  // the caller's own company already IS the central warehouse, or none is
+  // configured.
+  const { data: centralLocationsData } = useQuery<CentralWarehouseLocationsQuery, CentralWarehouseLocationsQueryVariables>(
+    CENTRAL_WAREHOUSE_LOCATIONS_QUERY,
+    { variables: { isActive: true } },
+  )
 
   const returns = (data?.materialReturns ?? []) as MR[]
   const purchaseOrders = (posData?.purchaseOrders ?? []) as PO[]
@@ -188,6 +197,9 @@ export default function MaterialReturnsPage() {
   const locations = ((locationsData?.stockLocations ?? []) as { id: string; name: string; type: string }[]).filter(
     (l) => !['virtual_in', 'virtual_out'].includes(l.type),
   )
+  const centralWarehouseLocations = (
+    (centralLocationsData?.centralWarehouseLocations ?? []) as { id: string; name: string; type: string }[]
+  ).filter((l) => !['virtual_in', 'virtual_out'].includes(l.type))
 
   const projects = (projectsData?.projects.data ?? []) as ProjectOption[]
   const products = (productsData?.products ?? []) as ProductOption[]
@@ -210,7 +222,12 @@ export default function MaterialReturnsPage() {
     sublabel: p.sku,
     keywords: p.name_ar ?? undefined,
   }))
-  const locationOptions = locations.map((l) => ({ value: l.id, label: l.name }))
+  const locationOptions = [
+    ...locations.map((l) => ({ value: l.id, label: l.name })),
+    // Plain <Select> (unlike SearchableSelect elsewhere in this file) has no
+    // sublabel slot, so the distinction is baked into the label text itself.
+    ...centralWarehouseLocations.map((l) => ({ value: l.id, label: `${l.name} (Central warehouse)` })),
+  ]
 
   const [createReturn, { loading: creating }] = useMutation<CreateMaterialReturnMutation, CreateMaterialReturnMutationVariables>(CREATE_MATERIAL_RETURN)
 

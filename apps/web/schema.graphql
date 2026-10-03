@@ -2869,6 +2869,12 @@
   extend type Query {
     product(id: ID!): Product
     stockLocations(type: String, isActive: Boolean, companyId: ID): [StockLocation!]!
+    # The group's central-warehouse company's own real locations (never the
+    # caller's own) — lets any company's Material Return picker offer it as
+    # a destination without needing a user_company_roles grant there, same
+    # is_central_warehouse carve-out poStockAvailability/
+    # requisitionStockAvailability already use for sourcing (migration 280).
+    centralWarehouseLocations(type: String, isActive: Boolean): [StockLocation!]!
     stockBalanceSnapshot: StockBalanceSnapshot!
     stockMoves(productId: ID, fromLocationId: ID, toLocationId: ID, sourceType: String, fromDate: String, toDate: String, page: Int, limit: Int): [StockMove!]!
     stockLots(productId: ID): [StockLot!]!

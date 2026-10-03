@@ -1107,6 +1107,14 @@ export type StockLocationsQueryVariables = Exact<{
 
 export type StockLocationsQuery = { stockLocations: Array<{ id: string, name: string, code: string | null, type: string, parent_id: string | null, parent_name: string | null, is_active: boolean, address: string | null }> };
 
+export type CentralWarehouseLocationsQueryVariables = Exact<{
+  type?: string | null | undefined;
+  isActive?: boolean | null | undefined;
+}>;
+
+
+export type CentralWarehouseLocationsQuery = { centralWarehouseLocations: Array<{ id: string, name: string, code: string | null, type: string, parent_id: string | null, parent_name: string | null, is_active: boolean, address: string | null }> };
+
 export type CreateStockLocationMutationVariables = Exact<{
   input: Types.LocationInput;
 }>;

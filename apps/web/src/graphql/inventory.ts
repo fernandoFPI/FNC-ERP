@@ -146,6 +146,21 @@ export const STOCK_LOCATIONS_QUERY = gql`
   }
 `
 
+export const CENTRAL_WAREHOUSE_LOCATIONS_QUERY = gql`
+  query CentralWarehouseLocations($type: String, $isActive: Boolean) {
+    centralWarehouseLocations(type: $type, isActive: $isActive) {
+      id
+      name
+      code
+      type
+      parent_id
+      parent_name
+      is_active
+      address
+    }
+  }
+`
+
 export const CREATE_STOCK_LOCATION = gql`
   mutation CreateStockLocation($input: LocationInput!) {
     createStockLocation(input: $input) {

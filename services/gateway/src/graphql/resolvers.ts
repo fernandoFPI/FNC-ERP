@@ -3719,6 +3719,137 @@ async function resolveInterCompanyFxRate(
   return inverseRate > 0 ? 1 / inverseRate : 1
 }
 
+// Bridges a material return whose destination is the group's central
+// warehouse — a different company than the one recording the return — using
+// the same two-sided virtual_out/virtual_in pattern issueMaterialIssue uses
+// for a cross-company Store Out, just in reverse: the caller's own company
+// loses the qty through its own virtual_out, the destination company gains
+// it through its own virtual_in into the real location. Priced at the
+// line's own already-computed original cost (unitCost/totalCost), not a
+// fresh resolveTransferPrice lookup — a return should credit back exactly
+// what the original consumption was charged, not today's price. Accumulates
+// into `group` (flushed into one interco_stock_transfer + one pending
+// interco_transactions bill per destination company after the caller's main
+// line loop, by createMaterialReturn itself) and returns the id of the move
+// that actually lands the stock in the real destination location — what
+// project_material_return_lines.stock_move_id should point at.
+async function postCrossCompanyMaterialReturnMove(
+  client: PoolClient,
+  params: {
+    returnNumber: string
+    returnId: string
+    callerCompanyId: string
+    destCompanyId: string
+    productId: string
+    fromLocationId: string
+    toLocationId: string
+    qty: number
+    unitCost: number
+    totalCost: number
+    userId: string
+    group: Map<
+      string,
+      {
+        lines: {
+          productId: string
+          fromLocationId: string
+          toLocationId: string
+          qty: number
+          unitCost: number
+          fromMoveId: string
+          toMoveId: string
+        }[]
+      }
+    >
+  },
+): Promise<string> {
+  const {
+    returnNumber,
+    returnId,
+    callerCompanyId,
+    destCompanyId,
+    productId,
+    fromLocationId,
+    toLocationId,
+    qty,
+    unitCost,
+    totalCost,
+    userId,
+    group,
+  } = params
+
+  const vOutRes = await client.query(
+    `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
+    [callerCompanyId],
+  )
+  const virtualOutId: string = (vOutRes.rows[0]?.id ??
+    (
+      await client.query(
+        `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,'Virtual Consumption','virtual_out',true) RETURNING id`,
+        [callerCompanyId],
+      )
+    ).rows[0].id) as string
+
+  const vInRes = await client.query(
+    `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,
+    [destCompanyId],
+  )
+  const virtualInId: string = (vInRes.rows[0]?.id ??
+    (
+      await client.query(
+        `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,'Virtual Receipts','virtual_in',true) RETURNING id`,
+        [destCompanyId],
+      )
+    ).rows[0].id) as string
+
+  const fromMove = await client.query<{ id: string }>(
+    `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_return',$8,$9,$10) RETURNING id`,
+    [
+      callerCompanyId,
+      productId,
+      fromLocationId,
+      virtualOutId,
+      qty,
+      unitCost,
+      totalCost,
+      returnId,
+      `Material return ${returnNumber} to central warehouse`,
+      userId,
+    ],
+  )
+  const toMove = await client.query<{ id: string }>(
+    `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_return',$8,$9,$10) RETURNING id`,
+    [
+      destCompanyId,
+      productId,
+      virtualInId,
+      toLocationId,
+      qty,
+      unitCost,
+      totalCost,
+      returnId,
+      `Material return ${returnNumber} from company ${callerCompanyId}`,
+      userId,
+    ],
+  )
+
+  const g = group.get(destCompanyId) ?? { lines: [] }
+  g.lines.push({
+    productId,
+    fromLocationId,
+    toLocationId,
+    qty,
+    unitCost,
+    fromMoveId: fromMove.rows[0].id,
+    toMoveId: toMove.rows[0].id,
+  })
+  group.set(destCompanyId, g)
+
+  return toMove.rows[0].id
+}
+
 // The single write path for products.standard_cost — the one per-product
 // "Cost" figure used everywhere (BOM planning, PO/requisition store-pricing
 // auto-fill), now that last_market_price is retired. Every call site that
@@ -10287,6 +10418,37 @@ export const resolvers = {
       const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
       let sql = `SELECT sl.*, p.name AS parent_name FROM stock_locations sl LEFT JOIN stock_locations p ON p.id=sl.parent_id WHERE sl.company_id=$1`
       const params: unknown[] = [cid]
+      let idx = 2
+      if (args.type !== undefined) {
+        sql += ` AND sl.type=$${idx++}`
+        params.push(args.type)
+      }
+      if (args.isActive !== undefined) {
+        sql += ` AND sl.is_active=$${idx++}`
+        params.push(args.isActive)
+      }
+      sql += ' ORDER BY sl.name'
+      return (await query(sql, params)).rows
+    },
+
+    // Same is_central_warehouse carve-out poStockAvailability/
+    // requisitionStockAvailability already use (migration 280) — visible to
+    // any authenticated user regardless of user_company_roles, since it's
+    // read-only location metadata for the group's one shared warehouse, not
+    // access to the central-warehouse company's other data. Excludes the
+    // caller's own company: if the caller IS the central warehouse, they
+    // already see these via the plain stockLocations query.
+    centralWarehouseLocations: async (
+      _: unknown,
+      args: { type?: string; isActive?: boolean },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return []
+      let sql = `SELECT sl.*, p.name AS parent_name FROM stock_locations sl
+                 LEFT JOIN stock_locations p ON p.id=sl.parent_id
+                 JOIN companies c ON c.id=sl.company_id
+                 WHERE c.is_central_warehouse=true AND sl.company_id<>$1`
+      const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
       if (args.type !== undefined) {
         sql += ` AND sl.type=$${idx++}`
@@ -22432,12 +22594,15 @@ export const resolvers = {
       const intercoGroups = new Map<
         string,
         {
+          method: string
           lines: {
             productId: string
             fromLocationId: string
             toLocationId: string
             qty: number
             avco: number
+            transferPrice: number
+            markupPctApplied: number | null
             fromMoveId: string
             toMoveId: string
           }[]
@@ -22598,11 +22763,20 @@ export const resolvers = {
             )
           } else {
             // Cross-company source — mirrors createIntercoStockTransfer's pattern.
-            const avcoRes = await client.query(
-              `SELECT average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 LIMIT 1`,
-              [productId, fromLocationId],
-            )
-            const avco = parseFloat(String(avcoRes.rows[0]?.average_cost ?? unitCost))
+            // Priced per the SOURCE company's own configured method (not a
+            // hardcoded avco lookup) — see resolveTransferPrice in packages/fx.
+            const pricing = await resolveTransferPrice({ client, productId, fromCompanyId, fromLocationId })
+            if (pricing.requires_manual_input) {
+              throw new Error(
+                `${productLabel} sources from a company whose transfer pricing method ('${pricing.method}') requires a manually entered price — use the Interco Stock Transfer screen for this line instead of Store Out.`,
+              )
+            }
+            // avco_at_transfer is always the source's own cost (for audit);
+            // transfer_price is what's actually charged and what the
+            // receiving company's own stock then carries as its cost — the
+            // two only diverge once a method with a markup is in play.
+            const avco = pricing.avco_at_transfer
+            const transferPrice = pricing.transfer_price
 
             const vOutRes = await client.query(
               `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
@@ -22654,8 +22828,8 @@ export const resolvers = {
                 virtualInId,
                 toLocationId,
                 qty,
-                avco,
-                qty * avco,
+                transferPrice,
+                qty * transferPrice,
                 args.id,
                 `Store Out ${String(issue.issue_number)} from company ${fromCompanyId}`,
                 ctx.auth.userId,
@@ -22666,13 +22840,15 @@ export const resolvers = {
             // Accumulated, not inserted here — see intercoGroups' own
             // comment. One transfer (+ one linked pending bill) per source
             // company for the whole issue, not one per line.
-            const group = intercoGroups.get(fromCompanyId) ?? { lines: [] }
+            const group = intercoGroups.get(fromCompanyId) ?? { lines: [], method: pricing.method }
             group.lines.push({
               productId,
               fromLocationId,
               toLocationId,
               qty,
               avco,
+              transferPrice,
+              markupPctApplied: pricing.markup_pct_applied,
               fromMoveId: fromMove.rows[0].id as string,
               toMoveId: toMove.rows[0].id as string,
             })
@@ -22688,14 +22864,15 @@ export const resolvers = {
         // selection still required there); it never posts a journal entry
         // itself.
         for (const [fromCompanyId, group] of intercoGroups) {
-          const totalValue = group.lines.reduce((s, l) => s + l.qty * l.avco, 0)
+          const totalValue = group.lines.reduce((s, l) => s + l.qty * l.transferPrice, 0)
           const transferNum = `IST-SO-${Date.now()}-${fromCompanyId.slice(0, 8)}`
 
-          // Priced at the source company's own AVCO, so the transfer/bill is
-          // denominated in ITS currency — not assumed IQD. Every company in
-          // this deployment is IQD today (fromCurrency === toCurrency, fxRate
-          // stays 1 with no lookup), but this stops being a coincidence the
-          // moment a company on a different currency joins the group.
+          // Priced at the source company's own configured method, so the
+          // transfer/bill is denominated in ITS currency — not assumed IQD.
+          // Every company in this deployment is IQD today (fromCurrency ===
+          // toCurrency, fxRate stays 1 with no lookup), but this stops being
+          // a coincidence the moment a company on a different currency joins
+          // the group.
           const fromCompanyRow = await client.query<{ name: string; currency_code: string }>(
             `SELECT name, currency_code FROM companies WHERE id=$1`,
             [fromCompanyId],
@@ -22712,12 +22889,13 @@ export const resolvers = {
           const transfer = await client.query(
             `INSERT INTO interco_stock_transfers
              (from_company_id,to_company_id,source_type,source_id,transfer_number,transfer_date,pricing_method,status,initiated_by,notes,posted_at)
-             VALUES ($1,$2,'project_issue',$3,$4,CURRENT_DATE,'avco','posted',$5,$6,NOW()) RETURNING id`,
+             VALUES ($1,$2,'project_issue',$3,$4,CURRENT_DATE,$5,'posted',$6,$7,NOW()) RETURNING id`,
             [
               fromCompanyId,
               companyId,
               args.id,
               transferNum,
+              group.method,
               ctx.auth.userId,
               `Auto-created from Store Out ${String(issue.issue_number)}`,
             ],
@@ -22726,8 +22904,8 @@ export const resolvers = {
           for (const l of group.lines) {
             await client.query(
               `INSERT INTO interco_stock_transfer_lines
-               (transfer_id,product_id,from_location_id,to_location_id,qty,avco_at_transfer,transfer_price,total_transfer_value,currency_code,from_stock_move_id,to_stock_move_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10)`,
+               (transfer_id,product_id,from_location_id,to_location_id,qty,avco_at_transfer,transfer_price,markup_pct_applied,total_transfer_value,currency_code,from_stock_move_id,to_stock_move_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
               [
                 transferId,
                 l.productId,
@@ -22735,7 +22913,9 @@ export const resolvers = {
                 l.toLocationId,
                 l.qty,
                 l.avco,
-                l.qty * l.avco,
+                l.transferPrice,
+                l.markupPctApplied,
+                l.qty * l.transferPrice,
                 fromCurrency,
                 l.fromMoveId,
                 l.toMoveId,
@@ -23047,6 +23227,12 @@ export const resolvers = {
 
       const client = await pool.connect()
       let returnId: string
+      // Populated only for a cross-company (central-warehouse) return — see
+      // intercoReturnGroups' flush below. Declared here (not inside the try
+      // block, where intercoReturnGroups itself lives) so the
+      // publishEntityChanged loop after the transaction commits can still
+      // reach it.
+      const intercoTransactionsCreated: { id: string; fromCompanyId: string; toCompanyId: string }[] = []
       try {
         await client.query('BEGIN')
         const returnNumber = await nextDocumentNumber(ctx.auth.companyId, 'material_return', 'MRET')
@@ -23070,6 +23256,28 @@ export const resolvers = {
         // "Virtual Receipts" bucket confirmReceipt itself uses as the source
         // of material entering real inventory for the first time.
         let virtualInId: string | undefined
+        // Accumulated per destination company, flushed into one
+        // interco_stock_transfer (+ lines) and one linked, pending
+        // interco_transactions bill after the main line loop — same
+        // one-per-company-not-per-line pattern as issueMaterialIssue's
+        // intercoGroups. Priced at each line's own already-computed original
+        // cost (unitCost below), not a fresh lookup, so this return exactly
+        // credits back whatever the original cross-company consumption was
+        // charged — resolveTransferPrice plays no part here.
+        const intercoReturnGroups = new Map<
+          string,
+          {
+            lines: {
+              productId: string
+              fromLocationId: string
+              toLocationId: string
+              qty: number
+              unitCost: number
+              fromMoveId: string
+              toMoveId: string
+            }[]
+          }
+        >()
 
         // Sorted by a shared key (whichever of the two ids is set) so two
         // concurrent returns touching the same line — of either kind —
@@ -23147,14 +23355,23 @@ export const resolvers = {
                 `Cannot return ${qty} of ${productLabel} — only ${returnable} still returnable (${qtyReceived} received, ${alreadyReturned} already returned, ${vendorReturned} returned to vendor)`,
               )
 
-            const destRes = await client.query<{ company_id: string; type: string }>(
-              `SELECT company_id, type FROM stock_locations WHERE id=$1 AND is_active=true`,
+            const destRes = await client.query<{
+              company_id: string
+              type: string
+              is_central_warehouse: boolean
+            }>(
+              `SELECT sl.company_id, sl.type, c.is_central_warehouse
+               FROM stock_locations sl JOIN companies c ON c.id = sl.company_id
+               WHERE sl.id=$1 AND sl.is_active=true`,
               [line.toLocationId],
             )
             const dest = destRes.rows[0]
             if (!dest) throw new Error('Destination stock location not found')
-            if (dest.company_id !== ctx.auth.companyId)
-              throw new Error("Returning to a different company's location is not supported yet")
+            const crossCompanyReturn = dest.company_id !== ctx.auth.companyId
+            if (crossCompanyReturn && !dest.is_central_warehouse)
+              throw new Error(
+                "Returning to a different company's location is only supported for the group's central warehouse",
+              )
             if (['virtual_in', 'virtual_out'].includes(dest.type))
               throw new Error('Choose a real warehouse or site location to return material to')
 
@@ -23189,22 +23406,41 @@ export const resolvers = {
                 ).rows[0].id as string)
             }
 
-            const moveRes = await client.query<{ id: string }>(
-              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
-               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_return',$8,$9,$10) RETURNING id`,
-              [
-                ctx.auth.companyId,
-                polLine.product_id,
-                virtualInId,
-                line.toLocationId,
+            let returnMoveId: string
+            if (!crossCompanyReturn) {
+              const moveRes = await client.query<{ id: string }>(
+                `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+                 VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_return',$8,$9,$10) RETURNING id`,
+                [
+                  ctx.auth.companyId,
+                  polLine.product_id,
+                  virtualInId,
+                  line.toLocationId,
+                  qty,
+                  unitCost,
+                  totalCost,
+                  returnId,
+                  `Material return ${returnNumber}`,
+                  ctx.auth.userId,
+                ],
+              )
+              returnMoveId = moveRes.rows[0].id as string
+            } else {
+              returnMoveId = await postCrossCompanyMaterialReturnMove(client, {
+                returnNumber,
+                returnId,
+                callerCompanyId: ctx.auth.companyId,
+                destCompanyId: dest.company_id,
+                productId: polLine.product_id as string,
+                fromLocationId: virtualInId,
+                toLocationId: line.toLocationId,
                 qty,
                 unitCost,
                 totalCost,
-                returnId,
-                `Material return ${returnNumber}`,
-                ctx.auth.userId,
-              ],
-            )
+                userId: ctx.auth.userId,
+                group: intercoReturnGroups,
+              })
+            }
 
             await client.query(
               `INSERT INTO project_material_return_lines
@@ -23218,7 +23454,7 @@ export const resolvers = {
                 qty,
                 unitCost,
                 totalCost,
-                moveRes.rows[0].id,
+                returnMoveId,
               ],
             )
             continue
@@ -23280,14 +23516,23 @@ export const resolvers = {
               `Cannot return ${qty} of ${productLabel} — only ${returnable} still returnable (${qtyIssued} issued, ${alreadyReturned} already returned)`,
             )
 
-          const destRes = await client.query<{ company_id: string; type: string }>(
-            `SELECT company_id, type FROM stock_locations WHERE id=$1 AND is_active=true`,
+          const destRes = await client.query<{
+            company_id: string
+            type: string
+            is_central_warehouse: boolean
+          }>(
+            `SELECT sl.company_id, sl.type, c.is_central_warehouse
+             FROM stock_locations sl JOIN companies c ON c.id = sl.company_id
+             WHERE sl.id=$1 AND sl.is_active=true`,
             [line.toLocationId],
           )
           const dest = destRes.rows[0]
           if (!dest) throw new Error('Destination stock location not found')
-          if (dest.company_id !== ctx.auth.companyId)
-            throw new Error("Returning to a different company's location is not supported yet")
+          const crossCompanyReturn = dest.company_id !== ctx.auth.companyId
+          if (crossCompanyReturn && !dest.is_central_warehouse)
+            throw new Error(
+              "Returning to a different company's location is only supported for the group's central warehouse",
+            )
           if (['virtual_in', 'virtual_out'].includes(dest.type))
             throw new Error('Choose a real warehouse or site location to return material to')
 
@@ -23295,22 +23540,41 @@ export const resolvers = {
           const totalCost = qty * unitCost
           totalReturnCost += totalCost
 
-          const moveRes = await client.query<{ id: string }>(
-            `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
-             VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_return',$8,$9,$10) RETURNING id`,
-            [
-              ctx.auth.companyId,
-              issueLine.product_id,
-              issueLine.to_location_id,
-              line.toLocationId,
+          let returnMoveId: string
+          if (!crossCompanyReturn) {
+            const moveRes = await client.query<{ id: string }>(
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_return',$8,$9,$10) RETURNING id`,
+              [
+                ctx.auth.companyId,
+                issueLine.product_id,
+                issueLine.to_location_id,
+                line.toLocationId,
+                qty,
+                unitCost,
+                totalCost,
+                returnId,
+                `Material return ${returnNumber}`,
+                ctx.auth.userId,
+              ],
+            )
+            returnMoveId = moveRes.rows[0].id as string
+          } else {
+            returnMoveId = await postCrossCompanyMaterialReturnMove(client, {
+              returnNumber,
+              returnId,
+              callerCompanyId: ctx.auth.companyId,
+              destCompanyId: dest.company_id,
+              productId: issueLine.product_id,
+              fromLocationId: issueLine.to_location_id,
+              toLocationId: line.toLocationId,
               qty,
               unitCost,
               totalCost,
-              returnId,
-              `Material return ${returnNumber}`,
-              ctx.auth.userId,
-            ],
-          )
+              userId: ctx.auth.userId,
+              group: intercoReturnGroups,
+            })
+          }
 
           await client.query(
             `INSERT INTO project_material_return_lines
@@ -23324,9 +23588,98 @@ export const resolvers = {
               qty,
               unitCost,
               totalCost,
-              moveRes.rows[0].id,
+              returnMoveId,
             ],
           )
+        }
+
+        // Flush the accumulated cross-company return groups: one
+        // interco_stock_transfer (+ one line per product) and one linked
+        // pending interco_transaction per destination company — mirrors
+        // issueMaterialIssue's own flush for a cross-company Store Out, with
+        // from/to reversed: the caller is now the one sending stock back (so
+        // the creditor/receivable side), the central warehouse is receiving
+        // it back (the debtor/payable side) — exactly the roles reversed
+        // from the original forward consumption, which nets the two bills
+        // out through each company's own Intercompany Receivable/Payable
+        // accounts once Finance reviews and posts both.
+        for (const [destCompanyId, group] of intercoReturnGroups) {
+          const totalValue = group.lines.reduce((s, l) => s + l.qty * l.unitCost, 0)
+          const transferNum = `IST-MR-${Date.now()}-${ctx.auth.companyId.slice(0, 8)}`
+
+          const callerCompanyRow = await client.query<{ name: string; currency_code: string }>(
+            `SELECT name, currency_code FROM companies WHERE id=$1`,
+            [ctx.auth.companyId],
+          )
+          const callerCompanyName = callerCompanyRow.rows[0]?.name ?? 'another company'
+          const callerCurrency = callerCompanyRow.rows[0]?.currency_code ?? 'IQD'
+          const destCompanyRow = await client.query<{ currency_code: string }>(
+            `SELECT currency_code FROM companies WHERE id=$1`,
+            [destCompanyId],
+          )
+          const destCurrency = destCompanyRow.rows[0]?.currency_code ?? 'IQD'
+          const fxRate = await resolveInterCompanyFxRate(client, callerCurrency, destCurrency)
+
+          const transfer = await client.query(
+            `INSERT INTO interco_stock_transfers
+             (from_company_id,to_company_id,source_type,source_id,transfer_number,transfer_date,pricing_method,status,initiated_by,notes,posted_at)
+             VALUES ($1,$2,'material_return',$3,$4,CURRENT_DATE,'last_cost','posted',$5,$6,NOW()) RETURNING id`,
+            [
+              ctx.auth.companyId,
+              destCompanyId,
+              returnId,
+              transferNum,
+              ctx.auth.userId,
+              `Auto-created from Material Return ${returnNumber}`,
+            ],
+          )
+          const transferId = transfer.rows[0].id as string
+          for (const l of group.lines) {
+            await client.query(
+              `INSERT INTO interco_stock_transfer_lines
+               (transfer_id,product_id,from_location_id,to_location_id,qty,avco_at_transfer,transfer_price,total_transfer_value,currency_code,from_stock_move_id,to_stock_move_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10)`,
+              [
+                transferId,
+                l.productId,
+                l.fromLocationId,
+                l.toLocationId,
+                l.qty,
+                l.unitCost,
+                l.qty * l.unitCost,
+                callerCurrency,
+                l.fromMoveId,
+                l.toMoveId,
+              ],
+            )
+          }
+
+          const txRef = `IT-MR-${Date.now()}-${ctx.auth.companyId.slice(0, 8)}`
+          const tx = await client.query(
+            `INSERT INTO interco_transactions
+             (from_company_id, to_company_id, transaction_type, amount, currency_code, fx_rate, description, reference, status, created_by)
+             VALUES ($1,$2,'goods_transfer',$3,$4,$5,$6,$7,'pending',$8) RETURNING id`,
+            [
+              ctx.auth.companyId,
+              destCompanyId,
+              totalValue,
+              callerCurrency,
+              fxRate,
+              `Material Return ${returnNumber} — ${group.lines.length} line${group.lines.length === 1 ? '' : 's'} returned from ${callerCompanyName} to the central warehouse`,
+              txRef,
+              ctx.auth.userId,
+            ],
+          )
+          const transactionId = tx.rows[0].id as string
+          await client.query(
+            `UPDATE interco_stock_transfers SET interco_transaction_id=$1 WHERE id=$2`,
+            [transactionId, transferId],
+          )
+          intercoTransactionsCreated.push({
+            id: transactionId,
+            fromCompanyId: ctx.auth.companyId,
+            toCompanyId: destCompanyId,
+          })
         }
 
         // Offsetting entries against the project's materials actuals — the
@@ -23393,6 +23746,13 @@ export const resolvers = {
       void publishEntityChanged(ctx.auth.companyId, 'purchase_order', input.poId, 'updated')
       for (const pid of new Set([projectId, linkedProjectId].filter((p): p is string => !!p))) {
         void publishEntityChanged(ctx.auth.companyId, 'project', pid, 'updated')
+      }
+      // Both companies in each auto-created cross-company-return bill need
+      // to see it live — mirrors issueMaterialIssue's own dual-company
+      // publish for its cross-company Store Out bills.
+      for (const t of intercoTransactionsCreated) {
+        void publishEntityChanged(t.fromCompanyId, 'interco_transaction', t.id, 'created')
+        void publishEntityChanged(t.toCompanyId, 'interco_transaction', t.id, 'created')
       }
       return {
         id: row.id,
@@ -34712,12 +35072,21 @@ const phase5MutationResolvers = {
             )
           ).rows[0].id
 
+        // Pricing method is a property of the source (auth.companyId) company
+        // — same for every line in this transfer, so resolved once up front
+        // rather than per-line.
+        const sourceMethodRes = await client.query<{ interco_transfer_pricing_method: string }>(
+          `SELECT interco_transfer_pricing_method FROM companies WHERE id=$1`,
+          [auth.companyId],
+        )
+        const sourceMethod = sourceMethodRes.rows[0]?.interco_transfer_pricing_method ?? 'last_cost'
+
         // Create transfer header
         const transfer = await client.query(
           `INSERT INTO interco_stock_transfers
            (from_company_id,to_company_id,source_type,transfer_number,transfer_date,pricing_method,status,initiated_by,notes)
-         VALUES ($1,$2,'manual',$3,$4,'avco','pending',$5,$6) RETURNING *`,
-          [auth.companyId, toCompanyId, transferNum, transferDate, auth.userId, i.notes ?? null],
+         VALUES ($1,$2,'manual',$3,$4,$5,'pending',$6,$7) RETURNING *`,
+          [auth.companyId, toCompanyId, transferNum, transferDate, sourceMethod, auth.userId, i.notes ?? null],
         )
         const transferId = transfer.rows[0].id as string
 
@@ -34732,7 +35101,7 @@ const phase5MutationResolvers = {
           // check at all, so a transfer could take a product's balance
           // negative outright.
           const balRes = await client.query(
-            `SELECT qty_on_hand, average_cost FROM stock_balances
+            `SELECT qty_on_hand FROM stock_balances
              WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL
              FOR UPDATE`,
             [productId, fromLocId],
@@ -34748,7 +35117,31 @@ const phase5MutationResolvers = {
               `Insufficient stock to transfer ${label} — ${onHand} on hand at the source location, ${qty} required`,
             )
           }
-          const avco = Number(balRes.rows[0]?.average_cost ?? l.unit_cost ?? 0)
+
+          // Priced per the source company's own configured method — see
+          // resolveTransferPrice in packages/fx. manualPrice carries the
+          // line's own unit_cost through for a 'market'-method company,
+          // which otherwise has nothing to compute from.
+          const manualPriceNum = l.unit_cost != null ? Number(l.unit_cost) : undefined
+          const pricing = await resolveTransferPrice({
+            client,
+            productId,
+            fromCompanyId: auth.companyId,
+            fromLocationId: fromLocId,
+            ...(manualPriceNum != null && manualPriceNum > 0 ? { manualPrice: manualPriceNum } : {}),
+          })
+          if (pricing.requires_manual_input) {
+            const prodRes = await client.query(`SELECT sku, name FROM products WHERE id=$1`, [
+              productId,
+            ])
+            const p = prodRes.rows[0] as { sku: string | null; name: string | null } | undefined
+            const label = p?.sku ? `${p.sku} (${p.name ?? productId})` : (p?.name ?? productId)
+            throw new Error(
+              `${label} — this company's transfer pricing method ('${pricing.method}') requires a manual price; none was given for this line`,
+            )
+          }
+          const avco = pricing.avco_at_transfer
+          const transferPrice = pricing.transfer_price
 
           // Stock move: deduct from source (from_company warehouse → virtual_out)
           const fromMove = await client.query(
@@ -34768,6 +35161,9 @@ const phase5MutationResolvers = {
           )
 
           // Stock move: add to destination (virtual_in → to_company warehouse)
+          // — valued at transferPrice (what's actually charged), not avco
+          // (the source's own cost); the two only diverge once a method
+          // with a markup is in play.
           const toMove = await client.query(
             `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,moved_by)
            VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'interco',$8,$9) RETURNING id`,
@@ -34777,8 +35173,8 @@ const phase5MutationResolvers = {
               virtualInId,
               toLocId,
               qty,
-              avco,
-              qty * avco,
+              transferPrice,
+              qty * transferPrice,
               `Interco transfer ${transferNum} from company ${auth.companyId}`,
               auth.userId,
             ],
@@ -34786,8 +35182,8 @@ const phase5MutationResolvers = {
 
           await client.query(
             `INSERT INTO interco_stock_transfer_lines
-             (transfer_id,product_id,from_location_id,to_location_id,qty,avco_at_transfer,transfer_price,total_transfer_value,currency_code,from_stock_move_id,to_stock_move_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10)`,
+             (transfer_id,product_id,from_location_id,to_location_id,qty,avco_at_transfer,transfer_price,markup_pct_applied,total_transfer_value,currency_code,from_stock_move_id,to_stock_move_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
             [
               transferId,
               productId,
@@ -34795,7 +35191,9 @@ const phase5MutationResolvers = {
               toLocId,
               qty,
               avco,
-              qty * avco,
+              transferPrice,
+              pricing.markup_pct_applied,
+              qty * transferPrice,
               fromCurrency,
               fromMove.rows[0].id,
               toMove.rows[0].id,
