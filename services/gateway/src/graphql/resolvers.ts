@@ -12343,7 +12343,7 @@ export const resolvers = {
             }
           }
 
-          const receiptNumber = `RCPT-${Date.now()}`
+          const receiptNumber = await nextDocumentNumber(requireAuth(ctx).companyId, 'store_in', 'RCPT')
           const receipt = await client.query(
             `INSERT INTO po_receipts (po_id,receipt_number,received_date,warehouse_location_id,notes,received_by,received_by_name,received_from_name,location_notes,status)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft') RETURNING *`,

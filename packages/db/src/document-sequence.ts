@@ -14,6 +14,7 @@ export const DOC_TYPES = [
   { key: 'advance_settlement', label: 'Advance Settlement', defaultPrefix: 'SET' },
   { key: 'advance_return', label: 'Advance Return', defaultPrefix: 'RET' },
   { key: 'material_issue', label: 'Store Out', defaultPrefix: 'SO' },
+  { key: 'store_in', label: 'Store In', defaultPrefix: 'RCPT' },
   { key: 'product', label: 'Product SKU', defaultPrefix: 'PRD' },
   { key: 'daily_report', label: 'Daily Progress Report', defaultPrefix: 'DPR' },
 ] as const
