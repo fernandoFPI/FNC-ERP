@@ -32164,7 +32164,9 @@ const phase5MutationResolvers = {
 
     if (receiptFileId) {
       const file = await query(
-        `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status='uploaded'`,
+        // 'attached' is allowed too: one shared receipt is reused across
+        // several purchases, and the first purchase flips it to 'attached'.
+        `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status IN ('uploaded','attached')`,
         [receiptFileId, auth.companyId],
       )
       if (!file.rows[0]) throw new Error('Receipt file not found or not yet uploaded')
