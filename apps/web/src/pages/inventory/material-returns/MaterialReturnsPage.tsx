@@ -151,7 +151,7 @@ export default function MaterialReturnsPage() {
     fetchPolicy: 'cache-and-network',
   })
   const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
-    variables: {},
+    variables: { includeCentralWarehouse: true },
     fetchPolicy: 'cache-and-network',
   })
   const { data: returnableIssueData, loading: loadingReturnableIssue } = useQuery<ReturnableMaterialIssueLinesQuery, ReturnableMaterialIssueLinesQueryVariables>(
