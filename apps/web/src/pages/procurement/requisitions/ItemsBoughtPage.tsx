@@ -25,7 +25,28 @@ import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Modal } from '../../../components/ui/Modal'
 import { useToastStore } from '../../../store/toastStore'
-import type { ApproveTolerancePurchaseMutation, ApproveTolerancePurchaseMutationVariables, CreateVendorMutation, CreateVendorMutationVariables, EnsureCashPurchaseVendorMutation, EnsureCashPurchaseVendorMutationVariables, FileDownloadUrlQuery, FileDownloadUrlQueryVariables, FinishBuyingRequisitionMutation, FinishBuyingRequisitionMutationVariables, MarkRequisitionLineShortMutation, MarkRequisitionLineShortMutationVariables, RecordLinePurchaseMutation, RecordLinePurchaseMutationVariables, RequestUploadUrlMutation, RequestUploadUrlMutationVariables, RequisitionItemsBoughtQuery, RequisitionItemsBoughtQueryVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
+import type {
+  ApproveTolerancePurchaseMutation,
+  ApproveTolerancePurchaseMutationVariables,
+  CreateVendorMutation,
+  CreateVendorMutationVariables,
+  EnsureCashPurchaseVendorMutation,
+  EnsureCashPurchaseVendorMutationVariables,
+  FileDownloadUrlQuery,
+  FileDownloadUrlQueryVariables,
+  FinishBuyingRequisitionMutation,
+  FinishBuyingRequisitionMutationVariables,
+  MarkRequisitionLineShortMutation,
+  MarkRequisitionLineShortMutationVariables,
+  RecordLinePurchaseMutation,
+  RecordLinePurchaseMutationVariables,
+  RequestUploadUrlMutation,
+  RequestUploadUrlMutationVariables,
+  RequisitionItemsBoughtQuery,
+  RequisitionItemsBoughtQueryVariables,
+  VendorsQuery,
+  VendorsQueryVariables,
+} from '../../../graphql/generated'
 
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 const CASH_VENDOR_VALUE = '__cash__'
@@ -35,7 +56,10 @@ const CASH_VENDOR_VALUE = '__cash__'
 const ALL_LINES_SENTINEL = '__all__'
 
 const fmtN = (n: string | number | null | undefined) =>
-  parseFloat(String(n ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  parseFloat(String(n ?? 0)).toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })
 
 interface Purchase {
   id: string
@@ -115,8 +139,14 @@ export default function ItemsBoughtPage() {
   const padding = usePagePadding()
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const globalFileInputRef = useRef<HTMLInputElement | null>(null)
+  // Mirrors globalReceiptFileId synchronously so a "record all" loop reuses the
+  // first upload instead of reading stale state and re-uploading per line.
+  const globalReceiptFileIdRef = useRef<string | null>(null)
 
-  const { data, loading, refetch } = useQuery<RequisitionItemsBoughtQuery, RequisitionItemsBoughtQueryVariables>(REQUISITION_ITEMS_BOUGHT_QUERY, {
+  const { data, loading, refetch } = useQuery<
+    RequisitionItemsBoughtQuery,
+    RequisitionItemsBoughtQueryVariables
+  >(REQUISITION_ITEMS_BOUGHT_QUERY, {
     variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
@@ -130,9 +160,14 @@ export default function ItemsBoughtPage() {
     : undefined
 
   const { data: vendorsData } = useQuery<VendorsQuery, VendorsQueryVariables>(VENDORS_QUERY)
-  const vendors: Vendor[] = (vendorsData?.vendors ?? []).filter((v): v is NonNullable<typeof v> => v !== null).filter((v) => !v.is_cash_purchase)
+  const vendors: Vendor[] = (vendorsData?.vendors ?? [])
+    .filter((v): v is NonNullable<typeof v> => v !== null)
+    .filter((v) => !v.is_cash_purchase)
 
-  const [ensureCashVendor] = useMutation<EnsureCashPurchaseVendorMutation, EnsureCashPurchaseVendorMutationVariables>(ENSURE_CASH_PURCHASE_VENDOR)
+  const [ensureCashVendor] = useMutation<
+    EnsureCashPurchaseVendorMutation,
+    EnsureCashPurchaseVendorMutationVariables
+  >(ENSURE_CASH_PURCHASE_VENDOR)
   const [cashVendorId, setCashVendorId] = useState<string | null>(null)
   useEffect(() => {
     if (!id) return
@@ -143,17 +178,28 @@ export default function ItemsBoughtPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
-  const onErr = (e: Error) => { addToast({ type: 'error', message: e.message }); }
+  const onErr = (e: Error) => {
+    addToast({ type: 'error', message: e.message })
+  }
 
-  const [recordPurchase, { loading: lRecording }] = useMutation<RecordLinePurchaseMutation, RecordLinePurchaseMutationVariables>(RECORD_LINE_PURCHASE, {
+  const [recordPurchase, { loading: lRecording }] = useMutation<
+    RecordLinePurchaseMutation,
+    RecordLinePurchaseMutationVariables
+  >(RECORD_LINE_PURCHASE, {
     onCompleted: () => void refetch(),
     onError: onErr,
   })
-  const [approveTolerance, { loading: lApproving }] = useMutation<ApproveTolerancePurchaseMutation, ApproveTolerancePurchaseMutationVariables>(APPROVE_TOLERANCE_PURCHASE, {
+  const [approveTolerance, { loading: lApproving }] = useMutation<
+    ApproveTolerancePurchaseMutation,
+    ApproveTolerancePurchaseMutationVariables
+  >(APPROVE_TOLERANCE_PURCHASE, {
     onCompleted: () => void refetch(),
     onError: onErr,
   })
-  const [markShort, { loading: lMarkingShort }] = useMutation<MarkRequisitionLineShortMutation, MarkRequisitionLineShortMutationVariables>(MARK_REQUISITION_LINE_SHORT, {
+  const [markShort, { loading: lMarkingShort }] = useMutation<
+    MarkRequisitionLineShortMutation,
+    MarkRequisitionLineShortMutationVariables
+  >(MARK_REQUISITION_LINE_SHORT, {
     onCompleted: () => {
       setShortReasonFor(null)
       setShortReasonText('')
@@ -161,16 +207,26 @@ export default function ItemsBoughtPage() {
     },
     onError: onErr,
   })
-  const [finishBuying, { loading: lFinishing }] = useMutation<FinishBuyingRequisitionMutation, FinishBuyingRequisitionMutationVariables>(FINISH_BUYING_REQUISITION, {
+  const [finishBuying, { loading: lFinishing }] = useMutation<
+    FinishBuyingRequisitionMutation,
+    FinishBuyingRequisitionMutationVariables
+  >(FINISH_BUYING_REQUISITION, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Buying finished' })
       navigate(`/procurement/requisitions/${id}`)
     },
     onError: onErr,
   })
-  const [createVendor] = useMutation<CreateVendorMutation, CreateVendorMutationVariables>(CREATE_VENDOR)
-  const [requestUploadUrl] = useMutation<RequestUploadUrlMutation, RequestUploadUrlMutationVariables>(REQUEST_UPLOAD_URL)
-  const [getDownloadUrl] = useLazyQuery<FileDownloadUrlQuery, FileDownloadUrlQueryVariables>(FILE_DOWNLOAD_URL_QUERY)
+  const [createVendor] = useMutation<CreateVendorMutation, CreateVendorMutationVariables>(
+    CREATE_VENDOR,
+  )
+  const [requestUploadUrl] = useMutation<
+    RequestUploadUrlMutation,
+    RequestUploadUrlMutationVariables
+  >(REQUEST_UPLOAD_URL)
+  const [getDownloadUrl] = useLazyQuery<FileDownloadUrlQuery, FileDownloadUrlQueryVariables>(
+    FILE_DOWNLOAD_URL_QUERY,
+  )
 
   // ── Per-line "record a purchase" form state ─────────────────────────────
   const [selectedVendor, setSelectedVendor] = useState<Record<string, string>>({})
@@ -187,6 +243,7 @@ export default function ItemsBoughtPage() {
   // per line it's attached to.
   const [globalReceiptFileId, setGlobalReceiptFileId] = useState<string | null>(null)
   const [uploadingLine, setUploadingLine] = useState<string | null>(null)
+  const [recordingAll, setRecordingAll] = useState(false)
   const [shortReasonFor, setShortReasonFor] = useState<string | null>(null)
   const [shortReasonText, setShortReasonText] = useState('')
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
@@ -222,7 +279,9 @@ export default function ItemsBoughtPage() {
   const unresolvedLines = req.lines.filter((l) => !lineIsResolved(l))
   const allPurchases = req.lines.flatMap((l) => l.purchases)
   const missingReceipt = allPurchases.filter((p) => !p.receipt_file_id)
-  const unapprovedTolerance = allPurchases.filter((p) => p.over_tolerance && !p.tolerance_approved_by)
+  const unapprovedTolerance = allPurchases.filter(
+    (p) => p.over_tolerance && !p.tolerance_approved_by,
+  )
   const canFinishBuying =
     unresolvedLines.length === 0 && missingReceipt.length === 0 && unapprovedTolerance.length === 0
 
@@ -273,7 +332,7 @@ export default function ItemsBoughtPage() {
     return fileId
   }
 
-  async function handleUploadAndRecord(lineId: string) {
+  async function handleUploadAndRecord(lineId: string): Promise<boolean> {
     const line = req?.lines.find((l) => l.id === lineId)
     const vendorSel = selectedVendor[lineId]
     // Qty/price default to what the buyer would very likely enter anyway
@@ -285,24 +344,27 @@ export default function ItemsBoughtPage() {
     const file = sameReceiptForAll ? globalReceiptFile : pendingFile[lineId]
     if (!vendorSel) {
       addToast({ type: 'error', message: 'Select a vendor' })
-      return
+      return false
     }
     if (!(qty > 0)) {
       addToast({ type: 'error', message: 'Qty must be greater than 0' })
-      return
+      return false
     }
     if (!(price > 0)) {
       addToast({ type: 'error', message: 'Actual price must be greater than 0' })
-      return
+      return false
     }
     if (!file) {
       addToast({ type: 'error', message: 'Attach a receipt photo' })
-      return
+      return false
     }
     const vendorId = vendorSel === CASH_VENDOR_VALUE ? cashVendorId : vendorSel
     if (!vendorId) {
-      addToast({ type: 'error', message: 'Cash Purchase vendor is not ready yet — try again in a moment' })
-      return
+      addToast({
+        type: 'error',
+        message: 'Cash Purchase vendor is not ready yet — try again in a moment',
+      })
+      return false
     }
     const currencyCode = purchaseCurrency[lineId] ?? line?.currency_code ?? 'IQD'
 
@@ -311,13 +373,24 @@ export default function ItemsBoughtPage() {
       // In "same receipt for all" mode, the file is uploaded once (on the
       // first line it's used for) and every later line reuses that same
       // fileId instead of re-uploading identical bytes.
+      const sharedFileId = globalReceiptFileIdRef.current ?? globalReceiptFileId
       const fileId =
-        sameReceiptForAll && globalReceiptFileId ? globalReceiptFileId : await uploadReceiptFile(file)
-      if (sameReceiptForAll && !globalReceiptFileId) setGlobalReceiptFileId(fileId)
+        sameReceiptForAll && sharedFileId ? sharedFileId : await uploadReceiptFile(file)
+      if (sameReceiptForAll && !sharedFileId) {
+        globalReceiptFileIdRef.current = fileId
+        setGlobalReceiptFileId(fileId)
+      }
 
       await recordPurchase({
         variables: {
-          input: { lineId, vendorId, qty, actualUnitPrice: price, currencyCode, receiptFileId: fileId },
+          input: {
+            lineId,
+            vendorId,
+            qty,
+            actualUnitPrice: price,
+            currencyCode,
+            receiptFileId: fileId,
+          },
         },
       })
       addToast({ type: 'success', message: 'Purchase recorded' })
@@ -330,10 +403,29 @@ export default function ItemsBoughtPage() {
       // In "same receipt for all" mode, keep the shared file selected so the
       // next line can reuse it too — only clear the per-line one otherwise.
       if (!sameReceiptForAll) setPendingFile((prev) => ({ ...prev, [lineId]: null }))
+      return true
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
+      return false
     } finally {
       setUploadingLine(null)
+    }
+  }
+
+  // Records every line that still needs buying with the one shared receipt.
+  // Sequential (each call locks its own line) and stops at the first failure
+  // so the buyer fixes that line and clicks again — already-recorded lines
+  // drop out of the list, so a retry never double-records them.
+  async function handleRecordAll() {
+    if (!req) return
+    const pending = req.lines.filter((l) => !l.short_marked_at && remainingToBuy(l) > 0)
+    setRecordingAll(true)
+    try {
+      for (const l of pending) {
+        if (!(await handleUploadAndRecord(l.id))) break
+      }
+    } finally {
+      setRecordingAll(false)
     }
   }
 
@@ -375,20 +467,30 @@ export default function ItemsBoughtPage() {
         subtitle="Record each purchase, per vendor, with its receipt"
         backPath={`/procurement/requisitions/${id}`}
         backLabel="Requisition"
-        status={<Badge variant={req.status === 'items_bought' ? 'accent' : 'neutral'}>{req.status}</Badge>}
+        status={
+          <Badge variant={req.status === 'items_bought' ? 'accent' : 'neutral'}>{req.status}</Badge>
+        }
       />
 
       {!canBuy && (
-        <Card style={{ padding: '14px 20px', marginTop: '16px', borderLeft: `3px solid ${theme.warning}` }}>
+        <Card
+          style={{
+            padding: '14px 20px',
+            marginTop: '16px',
+            borderLeft: `3px solid ${theme.warning}`,
+          }}
+        >
           <div style={{ fontSize: '13px', color: theme.textMuted }}>
-            Only a buyer position holder for this requisition (or an admin) can record purchases here.
-            You can still review what's been recorded so far.
+            Only a buyer position holder for this requisition (or an admin) can record purchases
+            here. You can still review what's been recorded so far.
           </div>
         </Card>
       )}
 
       {req.status !== 'items_bought' && (
-        <Card style={{ padding: '14px 20px', marginTop: '16px', borderLeft: `3px solid ${theme.info}` }}>
+        <Card
+          style={{ padding: '14px 20px', marginTop: '16px', borderLeft: `3px solid ${theme.info}` }}
+        >
           <div style={{ fontSize: '13px', color: theme.textMuted }}>
             This requisition is no longer at the items_bought stage — shown read-only.
           </div>
@@ -396,7 +498,15 @@ export default function ItemsBoughtPage() {
       )}
 
       {canBuy && req.status === 'items_bought' && req.lines.length > 1 && (
-        <Card style={{ padding: '14px 20px', marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <Card
+          style={{
+            padding: '14px 20px',
+            marginTop: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+          }}
+        >
           <div>
             <label
               style={{
@@ -411,17 +521,29 @@ export default function ItemsBoughtPage() {
               <input
                 type="checkbox"
                 checked={sameVendorForAll}
-                onChange={(e) => { toggleSameVendorForAll(e.target.checked); }}
+                onChange={(e) => {
+                  toggleSameVendorForAll(e.target.checked)
+                }}
               />
               All items are from the same vendor
             </label>
             {sameVendorForAll && (
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', marginTop: '10px', maxWidth: '420px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  alignItems: 'flex-end',
+                  marginTop: '10px',
+                  maxWidth: '420px',
+                }}
+              >
                 <div style={{ flex: 1 }}>
                   <SearchableSelect
                     label="Vendor for all items"
                     value={globalVendorId}
-                    onChange={(v) => { applyVendorToAllLines(v); }}
+                    onChange={(v) => {
+                      applyVendorToAllLines(v)
+                    }}
                     options={vendorOptions}
                     placeholder="Search vendor…"
                     minDropdownWidth={320}
@@ -454,12 +576,16 @@ export default function ItemsBoughtPage() {
               <input
                 type="checkbox"
                 checked={sameReceiptForAll}
-                onChange={(e) => { setSameReceiptForAll(e.target.checked); }}
+                onChange={(e) => {
+                  setSameReceiptForAll(e.target.checked)
+                }}
               />
               Attach one receipt for all items
             </label>
             {sameReceiptForAll && (
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px' }}>
+              <div
+                style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px' }}
+              >
                 <input
                   ref={globalFileInputRef}
                   type="file"
@@ -469,11 +595,24 @@ export default function ItemsBoughtPage() {
                     const file = e.target.files?.[0] ?? null
                     setGlobalReceiptFile(file)
                     setGlobalReceiptFileId(null)
+                    globalReceiptFileIdRef.current = null
                     e.target.value = ''
                   }}
                 />
-                <Button variant="secondary" size="sm" onClick={() => globalFileInputRef.current?.click()}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => globalFileInputRef.current?.click()}
+                >
                   {globalReceiptFile ? `📎 ${globalReceiptFile.name}` : 'Attach receipt photo *'}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={recordingAll}
+                  onClick={() => void handleRecordAll()}
+                >
+                  Record all purchases
                 </Button>
               </div>
             )}
@@ -486,21 +625,43 @@ export default function ItemsBoughtPage() {
         const remaining = remainingToBuy(line)
         return (
           <Card key={line.id} style={{ padding: '20px', marginTop: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: '10px',
+                flexWrap: 'wrap',
+              }}
+            >
               <div>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
                   {line.description || line.product_name || '—'}
                 </div>
                 {line.product_name_ar && (
-                  <div dir="rtl" style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'left', marginTop: '2px' }}>
+                  <div
+                    dir="rtl"
+                    style={{
+                      fontSize: '12px',
+                      color: theme.textMuted,
+                      textAlign: 'left',
+                      marginTop: '2px',
+                    }}
+                  >
                     {line.product_name_ar}
                   </div>
                 )}
                 <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                  Ordered {fmtN(line.qty)} {line.uom} — from stock {fmtN(line.qty_from_stock ?? 0)} — remaining to buy{' '}
-                  <strong style={{ color: remaining > 0 ? theme.warning : theme.success }}>{fmtN(remaining)}</strong>
+                  Ordered {fmtN(line.qty)} {line.uom} — from stock {fmtN(line.qty_from_stock ?? 0)}{' '}
+                  — remaining to buy{' '}
+                  <strong style={{ color: remaining > 0 ? theme.warning : theme.success }}>
+                    {fmtN(remaining)}
+                  </strong>
                   {line.approved_unit_price && (
-                    <> — approved price {fmtN(line.approved_unit_price)} {line.currency_code}</>
+                    <>
+                      {' '}
+                      — approved price {fmtN(line.approved_unit_price)} {line.currency_code}
+                    </>
                   )}
                 </div>
                 {(line.account_name || line.cost_center_name) && (
@@ -519,7 +680,9 @@ export default function ItemsBoughtPage() {
 
             {/* ── Existing purchases for this line ── */}
             {line.purchases.length > 0 && (
-              <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div
+                style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}
+              >
                 {line.purchases.map((p) => (
                   <div
                     key={p.id}
@@ -531,11 +694,16 @@ export default function ItemsBoughtPage() {
                       padding: '10px 12px',
                       borderRadius: '8px',
                       border: `1px solid ${p.over_tolerance && !p.tolerance_approved_by ? theme.warning : theme.border}`,
-                      background: p.over_tolerance && !p.tolerance_approved_by ? theme.warningBg : theme.bgSurface,
+                      background:
+                        p.over_tolerance && !p.tolerance_approved_by
+                          ? theme.warningBg
+                          : theme.bgSurface,
                       fontSize: '12px',
                     }}
                   >
-                    <span style={{ fontWeight: 600, color: theme.textPrimary }}>{p.vendor_name ?? 'Vendor'}</span>
+                    <span style={{ fontWeight: 600, color: theme.textPrimary }}>
+                      {p.vendor_name ?? 'Vendor'}
+                    </span>
                     <span style={{ color: theme.textSecondary }}>
                       {fmtN(p.qty)} @ {fmtN(p.actual_unit_price)} {p.currency_code}
                     </span>
@@ -561,7 +729,9 @@ export default function ItemsBoughtPage() {
                     )}
                     {p.over_tolerance && (
                       <Badge variant={p.tolerance_approved_by ? 'success' : 'warning'}>
-                        {p.tolerance_approved_by ? `Approved by ${p.tolerance_approved_by_name ?? ''}` : 'Over tolerance'}
+                        {p.tolerance_approved_by
+                          ? `Approved by ${p.tolerance_approved_by_name ?? ''}`
+                          : 'Over tolerance'}
                       </Badge>
                     )}
                     {p.over_tolerance && !p.tolerance_approved_by && (
@@ -572,7 +742,9 @@ export default function ItemsBoughtPage() {
                         disabled={!canApproveTolerance || p.bought_by === currentUserId}
                         onClick={() => void approveTolerance({ variables: { purchaseId: p.id } })}
                       >
-                        {p.bought_by === currentUserId ? 'Needs a different approver' : 'Approve override'}
+                        {p.bought_by === currentUserId
+                          ? 'Needs a different approver'
+                          : 'Approve override'}
                       </Button>
                     )}
                   </div>
@@ -582,14 +754,30 @@ export default function ItemsBoughtPage() {
 
             {/* ── Record a purchase / mark short ── */}
             {canBuy && req.status === 'items_bought' && !line.short_marked_at && remaining > 0 && (
-              <div style={{ marginTop: '14px', padding: '14px', borderRadius: '8px', border: `1px solid ${theme.border}` }}>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div
+                style={{
+                  marginTop: '14px',
+                  padding: '14px',
+                  borderRadius: '8px',
+                  border: `1px solid ${theme.border}`,
+                }}
+              >
+                <div
+                  style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}
+                >
                   <div style={{ flex: 1, minWidth: '200px' }}>
                     {sameVendorForAll ? (
                       <div>
-                        <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Vendor</div>
-                        <div style={{ fontSize: '13px', color: theme.textPrimary, padding: '8px 0' }}>
-                          {vendorOptions.find((v) => v.value === globalVendorId)?.label ?? '— select above —'}
+                        <div
+                          style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}
+                        >
+                          Vendor
+                        </div>
+                        <div
+                          style={{ fontSize: '13px', color: theme.textPrimary, padding: '8px 0' }}
+                        >
+                          {vendorOptions.find((v) => v.value === globalVendorId)?.label ??
+                            '— select above —'}
                         </div>
                       </div>
                     ) : (
@@ -598,7 +786,9 @@ export default function ItemsBoughtPage() {
                           <SearchableSelect
                             label="Vendor"
                             value={selectedVendor[line.id] ?? ''}
-                            onChange={(v) => { setSelectedVendor((prev) => ({ ...prev, [line.id]: v })); }}
+                            onChange={(v) => {
+                              setSelectedVendor((prev) => ({ ...prev, [line.id]: v }))
+                            }}
                             options={vendorOptions}
                             placeholder="Search vendor…"
                             minDropdownWidth={320}
@@ -626,7 +816,9 @@ export default function ItemsBoughtPage() {
                       // Defaults to the full remaining qty — the buyer only
                       // needs to type when this purchase is a partial one.
                       value={purchaseQty[line.id] || (remaining > 0 ? String(remaining) : '')}
-                      onChange={(e) => { setPurchaseQty((prev) => ({ ...prev, [line.id]: e.target.value })); }}
+                      onChange={(e) => {
+                        setPurchaseQty((prev) => ({ ...prev, [line.id]: e.target.value }))
+                      }}
                     />
                   </div>
                   <div style={{ width: '130px' }}>
@@ -636,20 +828,34 @@ export default function ItemsBoughtPage() {
                       min="0"
                       // Defaults to the already-approved price — the buyer
                       // only needs to type when the real price differs.
-                      value={purchasePrice[line.id] || (line.approved_unit_price ?? line.unit_price)}
-                      onChange={(e) => { setPurchasePrice((prev) => ({ ...prev, [line.id]: e.target.value })); }}
+                      value={
+                        purchasePrice[line.id] || (line.approved_unit_price ?? line.unit_price)
+                      }
+                      onChange={(e) => {
+                        setPurchasePrice((prev) => ({ ...prev, [line.id]: e.target.value }))
+                      }}
                     />
                   </div>
                   <div style={{ width: '100px' }}>
                     <Select
                       label="Currency"
                       value={purchaseCurrency[line.id] ?? line.currency_code}
-                      onChange={(e) => { setPurchaseCurrency((prev) => ({ ...prev, [line.id]: e.target.value })); }}
+                      onChange={(e) => {
+                        setPurchaseCurrency((prev) => ({ ...prev, [line.id]: e.target.value }))
+                      }}
                       options={CURRENCIES.map((c) => ({ value: c, label: c }))}
                     />
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '10px',
+                    alignItems: 'center',
+                    marginTop: '10px',
+                    flexWrap: 'wrap',
+                  }}
+                >
                   {sameReceiptForAll ? (
                     <span style={{ fontSize: '12px', color: theme.textMuted }}>
                       {globalReceiptFile
@@ -671,7 +877,11 @@ export default function ItemsBoughtPage() {
                           e.target.value = ''
                         }}
                       />
-                      <Button variant="secondary" size="sm" onClick={() => fileInputRefs.current[line.id]?.click()}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => fileInputRefs.current[line.id]?.click()}
+                      >
                         {(() => {
                           const receipt = pendingFile[line.id]
                           return receipt ? `📎 ${receipt.name}` : 'Attach receipt photo *'
@@ -679,18 +889,22 @@ export default function ItemsBoughtPage() {
                       </Button>
                     </>
                   )}
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    loading={lRecording || uploadingLine === line.id}
-                    onClick={() => void handleUploadAndRecord(line.id)}
-                  >
-                    Record purchase
-                  </Button>
+                  {!sameReceiptForAll && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      loading={lRecording || uploadingLine === line.id}
+                      onClick={() => void handleUploadAndRecord(line.id)}
+                    >
+                      Record purchase
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => { setShortReasonFor(line.id); }}
+                    onClick={() => {
+                      setShortReasonFor(line.id)
+                    }}
                   >
                     Mark short
                   </Button>
@@ -699,12 +913,22 @@ export default function ItemsBoughtPage() {
             )}
 
             {shortReasonFor === line.id && (
-              <div style={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div
+                style={{
+                  marginTop: '10px',
+                  display: 'flex',
+                  gap: '8px',
+                  alignItems: 'flex-end',
+                  flexWrap: 'wrap',
+                }}
+              >
                 <div style={{ flex: 1, minWidth: '200px' }}>
                   <Input
                     label="Reason the vendor can't supply the rest"
                     value={shortReasonText}
-                    onChange={(e) => { setShortReasonText(e.target.value); }}
+                    onChange={(e) => {
+                      setShortReasonText(e.target.value)
+                    }}
                   />
                 </div>
                 <Button
@@ -712,11 +936,19 @@ export default function ItemsBoughtPage() {
                   size="sm"
                   loading={lMarkingShort}
                   disabled={!shortReasonText.trim()}
-                  onClick={() => void markShort({ variables: { lineId: line.id, reason: shortReasonText } })}
+                  onClick={() =>
+                    void markShort({ variables: { lineId: line.id, reason: shortReasonText } })
+                  }
                 >
                   Confirm mark short
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => { setShortReasonFor(null); }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShortReasonFor(null)
+                  }}
+                >
                   Cancel
                 </Button>
               </div>
@@ -727,17 +959,38 @@ export default function ItemsBoughtPage() {
 
       {req.status === 'items_bought' && canBuy && (
         <Card style={{ padding: '20px', marginTop: '16px' }}>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}>
+          <div
+            style={{
+              fontSize: '14px',
+              fontWeight: 600,
+              color: theme.textPrimary,
+              marginBottom: '8px',
+            }}
+          >
             Finish buying
           </div>
           {!canFinishBuying && (
-            <ul style={{ fontSize: '12px', color: theme.warning, margin: '0 0 12px', paddingLeft: '18px' }}>
+            <ul
+              style={{
+                fontSize: '12px',
+                color: theme.warning,
+                margin: '0 0 12px',
+                paddingLeft: '18px',
+              }}
+            >
               {unresolvedLines.length > 0 && (
-                <li>{unresolvedLines.length} line(s) still have qty remaining to buy or mark short</li>
+                <li>
+                  {unresolvedLines.length} line(s) still have qty remaining to buy or mark short
+                </li>
               )}
-              {missingReceipt.length > 0 && <li>{missingReceipt.length} purchase(s) are missing a receipt photo</li>}
+              {missingReceipt.length > 0 && (
+                <li>{missingReceipt.length} purchase(s) are missing a receipt photo</li>
+              )}
               {unapprovedTolerance.length > 0 && (
-                <li>{unapprovedTolerance.length} over-tolerance purchase(s) still need supervisor approval</li>
+                <li>
+                  {unapprovedTolerance.length} over-tolerance purchase(s) still need supervisor
+                  approval
+                </li>
               )}
             </ul>
           )}
@@ -762,7 +1015,13 @@ export default function ItemsBoughtPage() {
         size="sm"
         footer={
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <Button variant="ghost" size="sm" onClick={() => { setQuickCreateOpen(false); }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setQuickCreateOpen(false)
+              }}
+            >
               Cancel
             </Button>
             <Button
@@ -780,7 +1039,9 @@ export default function ItemsBoughtPage() {
         <Input
           label="Vendor name"
           value={quickCreateName}
-          onChange={(e) => { setQuickCreateName(e.target.value); }}
+          onChange={(e) => {
+            setQuickCreateName(e.target.value)
+          }}
           placeholder="e.g. Al-Rasheed Hardware"
         />
       </Modal>
