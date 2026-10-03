@@ -23,7 +23,22 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useCompany } from '../../../hooks/useCompany'
 import { useToastStore } from '../../../store/toastStore'
-import type { AttachReceiptPhotoMutation, AttachReceiptPhotoMutationVariables, CancelReceiptMutation, CancelReceiptMutationVariables, ConfirmReceiptMutation, ConfirmReceiptMutationVariables, DetachFileMutation, DetachFileMutationVariables, EntityAttachmentsQuery, EntityAttachmentsQueryVariables, FileDownloadUrlQuery, FileDownloadUrlQueryVariables, PoReceiptQuery, PoReceiptQueryVariables } from '../../../graphql/generated'
+import type {
+  AttachReceiptPhotoMutation,
+  AttachReceiptPhotoMutationVariables,
+  CancelReceiptMutation,
+  CancelReceiptMutationVariables,
+  ConfirmReceiptMutation,
+  ConfirmReceiptMutationVariables,
+  DetachFileMutation,
+  DetachFileMutationVariables,
+  EntityAttachmentsQuery,
+  EntityAttachmentsQueryVariables,
+  FileDownloadUrlQuery,
+  FileDownloadUrlQueryVariables,
+  PoReceiptQuery,
+  PoReceiptQueryVariables,
+} from '../../../graphql/generated'
 
 type PhotoKind = 'vendor_receipt' | 'materials'
 const PHOTO_CATEGORY: Record<PhotoKind, string> = {
@@ -42,6 +57,22 @@ interface ReceiptLine {
   currency_code: string | null
   fx_rate_to_base: string | null
   qty_received: string
+}
+
+// The PO line's own description is what the buyer typed and what the PO page
+// shows; an approved edit request can change it without changing the linked
+// catalog product (product_id is deliberately not editable that way). Showing
+// the catalog name first made Store In disagree with the PO.
+const normName = (v: string | null | undefined) => (v ?? '').trim().toLowerCase()
+function lineDisplayName(l: { description: string | null; product_name: string | null }) {
+  return l.description?.trim() ? l.description : l.product_name
+}
+function catalogNameDiffers(l: { description: string | null; product_name: string | null }) {
+  return (
+    !!l.product_name &&
+    !!l.description?.trim() &&
+    normName(l.description) !== normName(l.product_name)
+  )
 }
 
 interface ReceiptPhoto {
@@ -101,18 +132,24 @@ export default function StoreInDetail() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
 
-  const { data, loading, error, refetch } = useQuery<PoReceiptQuery, PoReceiptQueryVariables>(PO_RECEIPT_QUERY, {
-    variables: { id: id ?? '' },
-    skip: !id,
-    fetchPolicy: 'cache-and-network',
-  })
+  const { data, loading, error, refetch } = useQuery<PoReceiptQuery, PoReceiptQueryVariables>(
+    PO_RECEIPT_QUERY,
+    {
+      variables: { id: id ?? '' },
+      skip: !id,
+      fetchPolicy: 'cache-and-network',
+    },
+  )
   const receipt: Receipt | undefined = data?.poReceipt ?? undefined
 
   // The vendor receipt is normally uploaded earlier by the buyer, straight
   // onto the PO — this just checks whether one's there so Confirm doesn't
   // also demand a redundant copy attached to this specific receipt.
-  const { data: buyerReceiptData } = useQuery<EntityAttachmentsQuery, EntityAttachmentsQueryVariables>(ENTITY_ATTACHMENTS_QUERY, {
-    variables: { entityType: 'purchase_order', entityId: (receipt?.po_id) ?? '' },
+  const { data: buyerReceiptData } = useQuery<
+    EntityAttachmentsQuery,
+    EntityAttachmentsQueryVariables
+  >(ENTITY_ATTACHMENTS_QUERY, {
+    variables: { entityType: 'purchase_order', entityId: receipt?.po_id ?? '' },
     skip: !receipt?.po_id,
     fetchPolicy: 'cache-and-network',
   })
@@ -136,10 +173,21 @@ export default function StoreInDetail() {
     (a) => a.sourceEntityType === 'po_line_purchase' || a.file?.category === 'po_receipt_document',
   )
 
-  const [attachReceiptPhoto] = useMutation<AttachReceiptPhotoMutation, AttachReceiptPhotoMutationVariables>(ATTACH_RECEIPT_PHOTO)
-  const [detachFile, { loading: detaching }] = useMutation<DetachFileMutation, DetachFileMutationVariables>(DETACH_FILE)
-  const [getDownloadUrl] = useLazyQuery<FileDownloadUrlQuery, FileDownloadUrlQueryVariables>(FILE_DOWNLOAD_URL_QUERY)
-  const [confirmReceipt, { loading: confirming }] = useMutation<ConfirmReceiptMutation, ConfirmReceiptMutationVariables>(CONFIRM_RECEIPT, {
+  const [attachReceiptPhoto] = useMutation<
+    AttachReceiptPhotoMutation,
+    AttachReceiptPhotoMutationVariables
+  >(ATTACH_RECEIPT_PHOTO)
+  const [detachFile, { loading: detaching }] = useMutation<
+    DetachFileMutation,
+    DetachFileMutationVariables
+  >(DETACH_FILE)
+  const [getDownloadUrl] = useLazyQuery<FileDownloadUrlQuery, FileDownloadUrlQueryVariables>(
+    FILE_DOWNLOAD_URL_QUERY,
+  )
+  const [confirmReceipt, { loading: confirming }] = useMutation<
+    ConfirmReceiptMutation,
+    ConfirmReceiptMutationVariables
+  >(CONFIRM_RECEIPT, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Receipt confirmed — inventory updated' })
       setConfirmOpen(false)
@@ -150,7 +198,10 @@ export default function StoreInDetail() {
       setConfirmOpen(false)
     },
   })
-  const [cancelReceipt, { loading: cancelling }] = useMutation<CancelReceiptMutation, CancelReceiptMutationVariables>(CANCEL_RECEIPT, {
+  const [cancelReceipt, { loading: cancelling }] = useMutation<
+    CancelReceiptMutation,
+    CancelReceiptMutationVariables
+  >(CANCEL_RECEIPT, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Draft receipt cancelled' })
       setCancelOpen(false)
@@ -290,7 +341,9 @@ export default function StoreInDetail() {
           if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
           setDragOverKind((prev) => (prev === kind ? null : prev))
         }}
-        onDrop={(e) => { handleDrop(e, kind); }}
+        onDrop={(e) => {
+          handleDrop(e, kind)
+        }}
         style={{
           marginBottom: '16px',
           padding: isDragOver ? '10px' : 0,
@@ -361,7 +414,9 @@ export default function StoreInDetail() {
             variant="secondary"
             size="sm"
             loading={uploadingKind === kind}
-            onClick={() => { openCamera(kind); }}
+            onClick={() => {
+              openCamera(kind)
+            }}
           >
             📷 Take Photo
           </Button>
@@ -370,7 +425,9 @@ export default function StoreInDetail() {
             variant="ghost"
             size="sm"
             loading={uploadingKind === kind}
-            onClick={() => { openGallery(kind); }}
+            onClick={() => {
+              openGallery(kind)
+            }}
           >
             + Add Photo / PDF
           </Button>
@@ -388,7 +445,9 @@ export default function StoreInDetail() {
   // for the overall Total Cost, but NOT for the per-line Total column (see
   // lineTotalNative below).
   const lineTotal = (l: ReceiptLine) =>
-    parseFloat(l.qty_received) * parseFloat(l.unit_price ?? '0') * (parseFloat(l.fx_rate_to_base ?? '1') || 1)
+    parseFloat(l.qty_received) *
+    parseFloat(l.unit_price ?? '0') *
+    (parseFloat(l.fx_rate_to_base ?? '1') || 1)
   // Same, but without the fx_rate_to_base conversion — for the per-line
   // Total column, which sits right next to this same line's own Unit Price
   // and should read in that same native currency (a line genuinely priced
@@ -406,8 +465,13 @@ export default function StoreInDetail() {
       render: (l) => (
         <div>
           <div style={{ color: theme.textPrimary, fontWeight: 500 }}>
-            {l.product_name ?? l.description ?? '—'}
+            {lineDisplayName(l) ?? '—'}
           </div>
+          {catalogNameDiffers(l) && (
+            <div style={{ fontSize: '11px', color: theme.warning }}>
+              Catalog item: {l.product_name}
+            </div>
+          )}
           {l.sku && <div style={{ fontSize: '11px', color: theme.textMuted }}>{l.sku}</div>}
         </div>
       ),
@@ -731,13 +795,14 @@ export default function StoreInDetail() {
                   poNumber: receipt.po_number,
                   receivedFromName: receipt.received_from_name,
                   locationName: receipt.location_name,
-                  notes: [receipt.location_notes, receipt.notes].filter(Boolean).join(' — ') || null,
+                  notes:
+                    [receipt.location_notes, receipt.notes].filter(Boolean).join(' — ') || null,
                   receivedByName: receipt.received_by_name ?? receipt.received_by_email,
                   companyName: activeCompany?.name,
                   baseCurrencyCode: baseCcy,
                   lines: receipt.lines.map((l) => ({
-                    productName: l.product_name ?? l.description,
-                    productNameAr: l.product_name_ar,
+                    productName: lineDisplayName(l),
+                    productNameAr: catalogNameDiffers(l) ? null : l.product_name_ar,
                     sku: l.sku,
                     qtyReceived: parseFloat(l.qty_received),
                     uom: l.uom,
