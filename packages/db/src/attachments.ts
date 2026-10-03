@@ -1,5 +1,5 @@
 import type { PoolClient } from './client.js'
-import { pool, query } from './client.js'
+import { query } from './client.js'
 import { withTransaction } from './transaction.js'
 import { asyncHandler } from './async-handler.js'
 import type { Router, Request, Response } from 'express'
@@ -244,23 +244,25 @@ export function registerAttachmentRoutes(
       const attachmentId = requireParam(req, 'attachmentId')
 
       try {
-        let removed: { fileId: string; filename: string } | null = null
-
-        await withTransaction({ companyId, userId, role: getAuth(req).role }, async (client) => {
-          removed = await removeAttachment(client, attachmentId, entityType, entityId)
-          if (!removed) {
-            return // will 404 below
-          }
-          await logAuditFn({
-            userId,
-            companyId,
-            action: 'DELETE',
-            tableName: 'document_attachments',
-            recordId: entityId,
-            oldValues: { fileId: removed.fileId, filename: removed.filename },
-            client,
-          })
-        })
+        const removed = await withTransaction(
+          { companyId, userId, role: getAuth(req).role },
+          async (client) => {
+            const r = await removeAttachment(client, attachmentId, entityType, entityId)
+            if (!r) {
+              return null // will 404 below
+            }
+            await logAuditFn({
+              userId,
+              companyId,
+              action: 'DELETE',
+              tableName: 'document_attachments',
+              recordId: entityId,
+              oldValues: { fileId: r.fileId, filename: r.filename },
+              client,
+            })
+            return r
+          },
+        )
 
         if (!removed) {
           res.status(404).json({

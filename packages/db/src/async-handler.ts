@@ -14,6 +14,8 @@ export function asyncHandler<Req extends Request = Request>(
   fn: (req: Req, res: Response, next: NextFunction) => Promise<unknown>,
 ): RequestHandler {
   return (req, res, next) => {
-    fn(req as Req, res, next).catch(next)
+    fn(req as Req, res, next).catch((err: unknown) => {
+      next(err)
+    })
   }
 }
