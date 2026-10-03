@@ -35028,6 +35028,27 @@ const phase5MutationResolvers = {
     const lines = (i.lines as Record<string, unknown>[]) ?? []
     if (lines.length === 0) throw new Error('At least one line is required')
 
+    // Defaults to the caller's own company (the only option before this
+    // field existed). A different fromCompanyId is only ever allowed for
+    // system_admin (who already bypasses company scoping everywhere else —
+    // resolveReportCompanyIdGW) or the group's central-warehouse company
+    // (companies.is_central_warehouse — migration 280), same carve-out
+    // centralWarehouseLocations/createMaterialReturn's cross-company return
+    // already use. Anything else would let a user initiate a transfer
+    // OUT of a company's stock they have no relationship with at all.
+    const fromCompanyId = i.from_company_id ? String(i.from_company_id) : auth.companyId
+    if (fromCompanyId !== auth.companyId && auth.role !== 'system_admin') {
+      const fromCompanyCheck = await query<{ is_central_warehouse: boolean }>(
+        `SELECT is_central_warehouse FROM companies WHERE id=$1`,
+        [fromCompanyId],
+      )
+      if (!fromCompanyCheck.rows[0]?.is_central_warehouse) {
+        throw new Error(
+          "Transferring from a different company's stock is only supported for the group's central warehouse",
+        )
+      }
+    }
+
     return withTransaction(
       { companyId: auth.companyId, userId: auth.userId, role: auth.role },
       async (client) => {
@@ -35040,21 +35061,21 @@ const phase5MutationResolvers = {
         // reasoning as issueMaterialIssue's auto-created transfers.
         const fromCompanyCurrencyRes = await client.query<{ currency_code: string }>(
           `SELECT currency_code FROM companies WHERE id=$1`,
-          [auth.companyId],
+          [fromCompanyId],
         )
         const fromCurrency = fromCompanyCurrencyRes.rows[0]?.currency_code ?? 'IQD'
 
         // Find or create virtual_out for from_company (for deduction)
         const vOutRes = await client.query(
           `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
-          [auth.companyId],
+          [fromCompanyId],
         )
         const virtualOutId: string =
           vOutRes.rows[0]?.id ??
           (
             await client.query(
               `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,'Virtual Consumption','virtual_out',true) RETURNING id`,
-              [auth.companyId],
+              [fromCompanyId],
             )
           ).rows[0].id
 
@@ -35072,12 +35093,12 @@ const phase5MutationResolvers = {
             )
           ).rows[0].id
 
-        // Pricing method is a property of the source (auth.companyId) company
+        // Pricing method is a property of the source (fromCompanyId) company
         // — same for every line in this transfer, so resolved once up front
         // rather than per-line.
         const sourceMethodRes = await client.query<{ interco_transfer_pricing_method: string }>(
           `SELECT interco_transfer_pricing_method FROM companies WHERE id=$1`,
-          [auth.companyId],
+          [fromCompanyId],
         )
         const sourceMethod = sourceMethodRes.rows[0]?.interco_transfer_pricing_method ?? 'last_cost'
 
@@ -35086,7 +35107,7 @@ const phase5MutationResolvers = {
           `INSERT INTO interco_stock_transfers
            (from_company_id,to_company_id,source_type,transfer_number,transfer_date,pricing_method,status,initiated_by,notes)
          VALUES ($1,$2,'manual',$3,$4,$5,'pending',$6,$7) RETURNING *`,
-          [auth.companyId, toCompanyId, transferNum, transferDate, sourceMethod, auth.userId, i.notes ?? null],
+          [fromCompanyId, toCompanyId, transferNum, transferDate, sourceMethod, auth.userId, i.notes ?? null],
         )
         const transferId = transfer.rows[0].id as string
 
@@ -35095,6 +35116,18 @@ const phase5MutationResolvers = {
           const fromLocId = String(l.from_location_id)
           const toLocId = String(l.to_location_id)
           const qty = Number(l.qty)
+
+          // A line's from_location_id must actually belong to fromCompanyId
+          // — otherwise a mismatched pair (e.g. claiming from_company_id is
+          // the central warehouse while pointing at a location that's
+          // really the caller's own) would attribute the deducting stock
+          // move to the wrong company entirely.
+          const fromLocCheck = await client.query<{ company_id: string }>(
+            `SELECT company_id FROM stock_locations WHERE id=$1 AND is_active=true`,
+            [fromLocId],
+          )
+          if (fromLocCheck.rows[0]?.company_id !== fromCompanyId)
+            throw new Error('Source location does not belong to the selected from-company')
 
           // Lock the balance row and verify there's enough before deducting
           // — this used to just read average_cost with no availability
@@ -35126,7 +35159,7 @@ const phase5MutationResolvers = {
           const pricing = await resolveTransferPrice({
             client,
             productId,
-            fromCompanyId: auth.companyId,
+            fromCompanyId,
             fromLocationId: fromLocId,
             ...(manualPriceNum != null && manualPriceNum > 0 ? { manualPrice: manualPriceNum } : {}),
           })
@@ -35148,7 +35181,7 @@ const phase5MutationResolvers = {
             `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,moved_by)
            VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'interco',$8,$9) RETURNING id`,
             [
-              auth.companyId,
+              fromCompanyId,
               productId,
               fromLocId,
               virtualOutId,

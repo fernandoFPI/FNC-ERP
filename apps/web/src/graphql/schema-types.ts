@@ -1540,6 +1540,7 @@ export type IntercoStockTransferDetail = {
 };
 
 export type IntercoStockTransferInput = {
+  from_company_id?: InputMaybe<Scalars['ID']['input']>;
   lines: Array<IntercoStockTransferLineInput>;
   notes?: InputMaybe<Scalars['String']['input']>;
   to_company_id: Scalars['ID']['input'];

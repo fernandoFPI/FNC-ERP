@@ -4222,6 +4222,10 @@
   }
 
   input IntercoStockTransferInput {
+    # Defaults to the caller's own company when omitted. A different value
+    # is only accepted for system_admin or the group's central-warehouse
+    # company — see createIntercoStockTransfer's own comment.
+    from_company_id: ID
     to_company_id: ID!
     transfer_date: String!
     notes: String

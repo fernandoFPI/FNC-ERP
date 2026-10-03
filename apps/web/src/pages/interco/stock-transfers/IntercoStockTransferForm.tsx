@@ -18,6 +18,14 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import type { CompaniesQuery, CompaniesQueryVariables, CreateIntercoStockTransferMutation, CreateIntercoStockTransferMutationVariables, ProductsQuery, ProductsQueryVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
 
+// companies (COMPANIES_QUERY) is system_admin-only server-side — this page
+// is therefore only ever functional for a system_admin caller (the
+// Destination Company picker below is already empty for anyone else, even
+// before this From Company addition). createIntercoStockTransfer's own
+// is_central_warehouse fallback (see resolvers.ts) still covers a non-admin
+// calling the mutation directly, but the form itself doesn't need to model
+// that case.
+
 interface TransferLine {
   id: string
   product_id: string
@@ -32,6 +40,7 @@ export default function IntercoStockTransferForm() {
   const user = useAuthStore((s) => s.user)
   const addToast = useToastStore((s) => s.addToast)
 
+  const [fromCompanyId, setFromCompanyId] = useState(user?.companyId ?? '')
   const [toCompanyId, setToCompanyId] = useState('')
   const [transferDate, setTransferDate] = useState(new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
@@ -40,9 +49,13 @@ export default function IntercoStockTransferForm() {
   ])
 
   const { data: companiesData } = useQuery<CompaniesQuery, CompaniesQueryVariables>(COMPANIES_QUERY)
-  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY)
+  const { data: productsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
+    variables: { companyId: fromCompanyId || undefined },
+    skip: !fromCompanyId,
+  })
   const { data: fromLocsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, {
-    variables: { type: 'warehouse' },
+    variables: { companyId: fromCompanyId, type: 'warehouse' },
+    skip: !fromCompanyId,
   })
   const { data: toLocsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, {
     variables: { companyId: toCompanyId, type: 'warehouse' },
@@ -51,9 +64,11 @@ export default function IntercoStockTransferForm() {
 
   const [createTransfer, { loading }] = useMutation<CreateIntercoStockTransferMutation, CreateIntercoStockTransferMutationVariables>(CREATE_INTERCO_STOCK_TRANSFER)
 
-  const companies = (companiesData?.companies ?? []).filter(
-    (c: { id: string }) => c.id !== user?.companyId,
-  )
+  // Unfiltered — unlike the old to-company-only list, From Company needs the
+  // caller's own company selectable too (it's the default).
+  const allCompanies = companiesData?.companies ?? []
+  const fromCompanyOptions = allCompanies.filter((c: { id: string }) => c.id !== toCompanyId)
+  const toCompanyOptions = allCompanies.filter((c: { id: string }) => c.id !== fromCompanyId)
   const products = (productsData?.products ?? []).filter(
     (p): p is NonNullable<typeof p> => p !== null && p.is_active,
   )
@@ -116,7 +131,7 @@ export default function IntercoStockTransferForm() {
     },
     {
       key: 'from_location_id',
-      label: 'From Location (here)',
+      label: 'From Location (source)',
       width: '25%',
       render: (line) => (
         <SearchableSelect
@@ -124,11 +139,12 @@ export default function IntercoStockTransferForm() {
           onChange={(v) => {
             updateLine(line.id, 'from_location_id', v)
           }}
-          placeholder="Select location…"
+          placeholder={fromCompanyId ? 'Select location…' : 'Pick source company first'}
           options={fromLocs.map((l: { id: string; name: string }) => ({
             value: l.id,
             label: l.name,
           }))}
+          disabled={!fromCompanyId}
         />
       ),
     },
@@ -173,6 +189,10 @@ export default function IntercoStockTransferForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!fromCompanyId) {
+      addToast({ type: 'error', message: 'Select a source company' })
+      return
+    }
     if (!toCompanyId) {
       addToast({ type: 'error', message: 'Select a destination company' })
       return
@@ -189,6 +209,7 @@ export default function IntercoStockTransferForm() {
       const res = await createTransfer({
         variables: {
           input: {
+            from_company_id: fromCompanyId,
             to_company_id: toCompanyId,
             transfer_date: transferDate,
             notes: notes || undefined,
@@ -230,16 +251,32 @@ export default function IntercoStockTransferForm() {
         style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}
       >
         <Card style={{ padding: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
+            <div>
+              <SearchableSelect
+                label="Source Company *"
+                value={fromCompanyId}
+                onChange={(v) => {
+                  setFromCompanyId(v)
+                  setLines((ls) => ls.map((l) => ({ ...l, product_id: '', from_location_id: '' })))
+                }}
+                placeholder="Select company…"
+                options={fromCompanyOptions.map((c: { id: string; name: string }) => ({
+                  value: c.id,
+                  label: c.name,
+                }))}
+              />
+            </div>
             <div>
               <SearchableSelect
                 label="Destination Company *"
                 value={toCompanyId}
                 onChange={(v) => {
                   setToCompanyId(v)
+                  setLines((ls) => ls.map((l) => ({ ...l, to_location_id: '' })))
                 }}
                 placeholder="Select company…"
-                options={companies.map((c: { id: string; name: string }) => ({
+                options={toCompanyOptions.map((c: { id: string; name: string }) => ({
                   value: c.id,
                   label: c.name,
                 }))}
@@ -290,7 +327,7 @@ export default function IntercoStockTransferForm() {
             removeDisabled={() => lines.length <= 1}
           />
 
-          {!toCompanyId && (
+          {(!fromCompanyId || !toCompanyId) && (
             <div
               style={{
                 marginTop: '12px',
@@ -302,7 +339,9 @@ export default function IntercoStockTransferForm() {
                 border: `1px solid ${theme.border}`,
               }}
             >
-              Select a destination company above to choose where stock will be received.
+              {!fromCompanyId
+                ? 'Select a source company above to choose which items/locations to transfer from.'
+                : 'Select a destination company above to choose where stock will be received.'}
             </div>
           )}
         </Card>
