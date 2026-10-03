@@ -10005,7 +10005,7 @@ export const resolvers = {
         sql += ` AND req.branch_id = ANY($${idx++})`
         params.push(branchScope)
       }
-      sql += ' ORDER BY req.created_at DESC LIMIT 200'
+      sql += ' ORDER BY req.created_at DESC LIMIT 2000'
       const result = await query(sql, params)
       return result.rows
     },
