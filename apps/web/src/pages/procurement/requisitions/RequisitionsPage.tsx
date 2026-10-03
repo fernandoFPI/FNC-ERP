@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { REQUISITIONS_QUERY } from '../../../graphql/requisitions'
@@ -24,7 +24,25 @@ import type { RequisitionsQuery, RequisitionsQueryVariables } from '../../../gra
 
 // myRequisitionsOnly stored as 'true'/'false' — FilterPreset.filters is a
 // flat Record<string, string>, same as every other tracked field here.
-const FILTER_DEFAULTS = { search: '', status: '', fromDate: '', toDate: '', myRequisitionsOnly: 'false' }
+const FILTER_DEFAULTS = {
+  search: '',
+  status: '',
+  fromDate: '',
+  toDate: '',
+  myRequisitionsOnly: 'false',
+}
+
+const FILTERS_STORAGE_KEY = 'requisitions-page-filters'
+
+function loadSavedFilters(): typeof FILTER_DEFAULTS {
+  try {
+    const raw = sessionStorage.getItem(FILTERS_STORAGE_KEY)
+    if (raw) return { ...FILTER_DEFAULTS, ...(JSON.parse(raw) as Partial<typeof FILTER_DEFAULTS>) }
+  } catch {
+    // ignore corrupt/unavailable storage
+  }
+  return FILTER_DEFAULTS
+}
 
 const PRIORITY_STYLES: Record<string, { color: string; bg: string; border: string }> = {
   low: { color: '#6b7280', bg: 'transparent', border: 'transparent' },
@@ -73,24 +91,30 @@ function downloadCSV(rows: string[][], filename: string) {
 export default function RequisitionsPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
+  // Filters survive refresh and navigating into a requisition and back.
+  const [saved] = useState(loadSavedFilters)
+  const [search, setSearch] = useState(saved.search)
+  const [statusFilter, setStatusFilter] = useState(saved.status)
+  const [fromDate, setFromDate] = useState(saved.fromDate)
+  const [toDate, setToDate] = useState(saved.toDate)
   // Defaults to the full company list — a hardcoded "my own requisitions"
   // default left anyone who isn't personally the organizer of anything
   // looking at an empty page with no obvious explanation. A "My
   // Requisitions" preset (seeded below) gives back that convenience as an
   // explicit, visible choice instead.
-  const [myRequisitionsOnly, setMyRequisitionsOnly] = useState(false)
+  const [myRequisitionsOnly, setMyRequisitionsOnly] = useState(saved.myRequisitionsOnly === 'true')
 
-  const { data, loading, refetch } = useQuery<RequisitionsQuery, RequisitionsQueryVariables>(REQUISITIONS_QUERY, {
-    variables: {
-      status: statusFilter || undefined,
-      myQueueOnly: myRequisitionsOnly || undefined,
+  const { data, loading, refetch } = useQuery<RequisitionsQuery, RequisitionsQueryVariables>(
+    REQUISITIONS_QUERY,
+    {
+      variables: {
+        // Status is filtered client-side (see `filtered`) so the chip counts
+        // always reflect the full list, not just the selected status.
+        myQueueOnly: myRequisitionsOnly || undefined,
+      },
+      fetchPolicy: 'cache-and-network',
     },
-    fetchPolicy: 'cache-and-network',
-  })
+  )
   useEntityChanged('requisition', () => void refetch())
 
   const currentFilters = {
@@ -100,6 +124,13 @@ export default function RequisitionsPage() {
     toDate,
     myRequisitionsOnly: String(myRequisitionsOnly),
   }
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(currentFilters))
+    } catch {
+      // storage unavailable — filters just won't persist
+    }
+  }, [search, statusFilter, fromDate, toDate, myRequisitionsOnly])
   const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
     'requisitions',
     FILTER_DEFAULTS,
@@ -108,6 +139,7 @@ export default function RequisitionsPage() {
 
   const requisitions: Requisition[] = data?.requisitions ?? []
   const filtered = requisitions.filter((r) => {
+    if (statusFilter && r.status !== statusFilter) return false
     if (search) {
       const q = search.toLowerCase()
       if (
@@ -125,7 +157,16 @@ export default function RequisitionsPage() {
   })
 
   const handleExport = () => {
-    const header = ['Requisition #', 'Purpose', 'Project', 'Branch', 'Status', 'Priority', 'Organizer', 'Created']
+    const header = [
+      'Requisition #',
+      'Purpose',
+      'Project',
+      'Branch',
+      'Status',
+      'Priority',
+      'Organizer',
+      'Created',
+    ]
     const rows = filtered.map((r) => [
       r.requisition_number,
       r.purpose ?? '',
@@ -187,7 +228,9 @@ export default function RequisitionsPage() {
       header: 'Project',
       render: (r) =>
         r.project_id ? (
-          <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{r.projectName ?? '—'}</span>
+          <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
+            {r.projectName ?? '—'}
+          </span>
         ) : (
           <span style={{ color: theme.textMuted, fontSize: '13px' }}>—</span>
         ),
@@ -203,7 +246,9 @@ export default function RequisitionsPage() {
       key: 'status',
       header: 'Status',
       render: (r) => (
-        <Badge variant={getRequisitionStatusVariant(r.status)}>{getRequisitionStatusLabel(r.status)}</Badge>
+        <Badge variant={getRequisitionStatusVariant(r.status)}>
+          {getRequisitionStatusLabel(r.status)}
+        </Badge>
       ),
     },
     {
@@ -217,7 +262,9 @@ export default function RequisitionsPage() {
       key: 'created_at',
       header: 'Created',
       render: (r) => (
-        <span style={{ color: theme.textMuted, fontSize: '13px' }}>{r.created_at.slice(0, 10)}</span>
+        <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+          {r.created_at.slice(0, 10)}
+        </span>
       ),
     },
   ]
