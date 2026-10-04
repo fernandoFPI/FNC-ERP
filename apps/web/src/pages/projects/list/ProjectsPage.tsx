@@ -86,6 +86,7 @@ interface Project {
   status: string
   isRfq?: boolean
   rfqNumber?: string | null
+  contractName?: string | null
   clientName?: string | null
   projectValue?: number | null
   budgetAmount?: number | null
@@ -185,12 +186,15 @@ export default function ProjectsPage() {
       ),
     },
     {
-      key: 'rfqNumber',
+      // Column header stays "RFQ #" per request, but shows Contract Name /
+      // Number (contractName) instead of the actual rfqNumber field — that's
+      // the identifier people are actually filling in and looking for here.
+      key: 'contractName',
       header: 'RFQ #',
       mobileHide: true,
       render: (p) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textMuted }}>
-          {p.rfqNumber ?? '—'}
+          {p.contractName ?? '—'}
         </span>
       ),
     },

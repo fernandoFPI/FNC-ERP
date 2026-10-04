@@ -2073,7 +2073,7 @@ export type ProjectsQueryVariables = Exact<{
 }>;
 
 
-export type ProjectsQuery = { projects: { data: Array<{ id: string, code: string, name: string, projectType: string, status: string, isRfq: boolean, rfqNumber: string | null, clientName: string | null, projectValue: number | null, budgetAmount: number | null, budgetCurrency: string | null, plannedStartDate: string | null, plannedEndDate: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, allowedActions: Array<string> | null, analyticAccountId: string | null, analyticAccountName: string | null, costSummary: unknown, createdAt: string }>, pagination: { page: number, limit: number, total: number, totalPages: number } } };
+export type ProjectsQuery = { projects: { data: Array<{ id: string, code: string, name: string, projectType: string, status: string, isRfq: boolean, rfqNumber: string | null, contractName: string | null, clientName: string | null, projectValue: number | null, budgetAmount: number | null, budgetCurrency: string | null, plannedStartDate: string | null, plannedEndDate: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, allowedActions: Array<string> | null, analyticAccountId: string | null, analyticAccountName: string | null, costSummary: unknown, createdAt: string }>, pagination: { page: number, limit: number, total: number, totalPages: number } } };
 
 export type ProjectQueryVariables = Exact<{
   id: string | number;

@@ -93,6 +93,7 @@ export const PROJECTS_QUERY = gql`
         status
         isRfq
         rfqNumber
+        contractName
         clientName
         projectValue
         budgetAmount
