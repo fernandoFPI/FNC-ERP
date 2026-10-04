@@ -21,6 +21,7 @@ interface Employee {
 const PROJECT_TYPES = [
   { value: 'construction', label: 'Construction' },
   { value: 'supply', label: 'Supply' },
+  { value: 'direct_supply', label: 'Direct Supply' },
   { value: 'services', label: 'Services' },
   { value: 'rental', label: 'Rental' },
   { value: 'fabrication', label: 'Fabrication' },
@@ -39,12 +40,22 @@ const LIFECYCLE_STAGES = [
   'Closeout',
 ]
 
+// Direct Supply skips the whole tender flow (no enquiry/scope review/
+// bidding/client approval) — createRFQ creates it straight into execution,
+// same as a normal project would land there only after approveRFQ. Just
+// the two phases that are actually reachable.
+const DIRECT_SUPPLY_STAGES = ['Execution', 'Closeout']
+
 function stageFromStatus(status: string): number {
   if (status === 'completed') return 5
   if (status === 'approved') return 4
   if (status === 'submitted') return 3
   if (status === 'ongoing') return 1
   return 0
+}
+
+function directSupplyStageFromStatus(status: string): number {
+  return status === 'completed' ? 1 : 0
 }
 
 interface FormState {
@@ -146,7 +157,13 @@ export default function ProjectForm() {
   const saving = creating || updating
 
   const project = data?.project
-  const stageIdx = isEdit ? stageFromStatus(project?.status ?? 'pending') : 0
+  const isDirectSupply = form.projectType === 'direct_supply'
+  const lifecycleStages = isDirectSupply ? DIRECT_SUPPLY_STAGES : LIFECYCLE_STAGES
+  const stageIdx = isEdit
+    ? isDirectSupply
+      ? directSupplyStageFromStatus(project?.status ?? 'approved')
+      : stageFromStatus(project?.status ?? 'pending')
+    : 0
   const projectCode = isEdit ? project?.code : null
 
   useEffect(() => {
@@ -358,10 +375,10 @@ export default function ProjectForm() {
         {/* ── Lifecycle bar ─────────────────────────────────── */}
         <div style={{ ...card, padding: '16px 22px' }}>
           <div style={{ ...cardTitle, marginBottom: '14px' }}>
-            {isEdit ? 'Project Stage' : 'Starting at: Client Enquiry'}
+            {isEdit ? 'Project Stage' : isDirectSupply ? 'Starting at: Execution' : 'Starting at: Client Enquiry'}
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-            {LIFECYCLE_STAGES.map((s, i) => (
+            {lifecycleStages.map((s, i) => (
               <React.Fragment key={s}>
                 <div
                   style={{
@@ -407,7 +424,7 @@ export default function ProjectForm() {
                     {s}
                   </div>
                 </div>
-                {i < LIFECYCLE_STAGES.length - 1 && (
+                {i < lifecycleStages.length - 1 && (
                   <div
                     style={{
                       flex: 1,

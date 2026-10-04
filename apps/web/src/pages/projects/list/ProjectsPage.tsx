@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react'
+﻿import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
@@ -30,6 +30,7 @@ const STATUS_OPTIONS_USER = STATUS_OPTIONS_ADMIN.filter((o) => o.value !== 'pend
 const TYPE_OPTIONS = [
   { value: 'construction', label: 'Construction' },
   { value: 'supply', label: 'Supply' },
+  { value: 'direct_supply', label: 'Direct Supply' },
   { value: 'services', label: 'Services' },
   { value: 'rental', label: 'Rental' },
   { value: 'fabrication', label: 'Fabrication' },
@@ -37,6 +38,34 @@ const TYPE_OPTIONS = [
   { value: 'operation_maintenance', label: 'Operation & Maintenance' },
   { value: 'epc', label: 'EPC' },
 ]
+
+// Survives refresh and navigating into a project and back — same pattern as
+// requisitions-page-filters (RequisitionsPage.tsx).
+const FILTERS_STORAGE_KEY = 'projects-page-filters'
+
+interface SavedFilters {
+  search: string
+  statuses: string[]
+  projectType: string
+  myProjectsOnly: boolean
+}
+
+const FILTER_DEFAULTS: SavedFilters = {
+  search: '',
+  statuses: [],
+  projectType: '',
+  myProjectsOnly: false,
+}
+
+function loadSavedFilters(): SavedFilters {
+  try {
+    const raw = sessionStorage.getItem(FILTERS_STORAGE_KEY)
+    if (raw) return { ...FILTER_DEFAULTS, ...(JSON.parse(raw) as Partial<SavedFilters>) }
+  } catch {
+    // ignore corrupt/unavailable storage
+  }
+  return FILTER_DEFAULTS
+}
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'neutral' | 'danger' | 'info'> = {
   pending: 'neutral',
@@ -78,15 +107,30 @@ export default function ProjectsPage() {
   const isAdmin = can('projects.edit')
   const STATUS_OPTIONS = isAdmin ? STATUS_OPTIONS_ADMIN : STATUS_OPTIONS_USER
   const [params] = useSearchParams()
+  // An explicit deep link (e.g. a dashboard widget linking to ?status=pending)
+  // wins over whatever was left over in session storage from last visit;
+  // otherwise filters survive refresh and navigating into a project and back.
+  const [saved] = useState(loadSavedFilters)
 
   const [view, setView] = useState<'table' | 'card'>('table')
-  const [search, setSearch] = useState(params.get('search') ?? '')
+  const [search, setSearch] = useState(params.get('search') ?? saved.search)
   const initialStatus = params.get('status')
-  const [statuses, setStatuses] = useState<string[]>(initialStatus ? [initialStatus] : [])
-  const [projectType, setProjectType] = useState(params.get('projectType') ?? '')
-  const [myProjectsOnly, setMyProjectsOnly] = useState(false)
+  const [statuses, setStatuses] = useState<string[]>(initialStatus ? [initialStatus] : saved.statuses)
+  const [projectType, setProjectType] = useState(params.get('projectType') ?? saved.projectType)
+  const [myProjectsOnly, setMyProjectsOnly] = useState(saved.myProjectsOnly)
   const [page, setPage] = useState(1)
   const limit = 20
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        FILTERS_STORAGE_KEY,
+        JSON.stringify({ search, statuses, projectType, myProjectsOnly }),
+      )
+    } catch {
+      // storage unavailable — filters just won't persist
+    }
+  }, [search, statuses, projectType, myProjectsOnly])
 
   const { data, loading, refetch } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
     variables: {
@@ -137,6 +181,16 @@ export default function ProjectsPage() {
       render: (p) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textMuted }}>
           {p.code}
+        </span>
+      ),
+    },
+    {
+      key: 'rfqNumber',
+      header: 'RFQ #',
+      mobileHide: true,
+      render: (p) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textMuted }}>
+          {p.rfqNumber ?? '—'}
         </span>
       ),
     },
@@ -422,6 +476,25 @@ export default function ProjectsPage() {
               Clear ×
             </button>
           )}
+          <div style={{ width: '1px', background: theme.border, margin: '2px 4px' }} />
+          <button
+            onClick={() => {
+              setProjectType((v) => (v === 'direct_supply' ? '' : 'direct_supply'))
+              setPage(1)
+            }}
+            style={{
+              padding: '4px 12px',
+              borderRadius: '999px',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              border: `1px solid ${projectType === 'direct_supply' ? theme.accent : theme.border}`,
+              background: projectType === 'direct_supply' ? theme.accent : theme.bgCanvas,
+              color: projectType === 'direct_supply' ? '#fff' : theme.textMuted,
+            }}
+          >
+            Direct Supply
+          </button>
         </div>
       </div>
 
