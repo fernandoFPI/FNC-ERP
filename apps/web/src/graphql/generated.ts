@@ -5523,6 +5523,15 @@ export type MarkRequisitionLineShortMutationVariables = Exact<{
 
 export type MarkRequisitionLineShortMutation = { markRequisitionLineShort: { id: string, short_reason: string | null, short_marked_at: string | null } };
 
+export type ResolveRequisitionLineFromStockMutationVariables = Exact<{
+  lineId: string | number;
+  qty: number;
+  sourceLocationId: string | number;
+}>;
+
+
+export type ResolveRequisitionLineFromStockMutation = { resolveRequisitionLineFromStock: { id: string, qty_from_stock: string | null, in_stock: boolean | null, source_location_id: string | null, source_location_name: string | null, source_company_name: string | null } };
+
 export type FinishBuyingRequisitionMutationVariables = Exact<{
   id: string | number;
 }>;

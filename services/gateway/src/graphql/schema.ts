@@ -204,6 +204,20 @@
     recordLinePurchase(input: RecordLinePurchaseInput!): POLinePurchase!
     approveTolerancePurchase(purchaseId: ID!): POLinePurchase!
     markRequisitionLineShort(lineId: ID!, reason: String!): POLine!
+    # Stock arrived (anywhere in the group, including the central warehouse)
+    # after this line's own Inventory Check already locked in "not
+    # available" and sent it down the buy pipeline, but before it was
+    # actually bought — lets a buyer close it out from that now-available
+    # stock instead of going through with an unnecessary purchase. Same
+    # accounting as Inventory Check's own from-stock lines (a reservation,
+    # not an immediate stock move): the real deduction happens when the
+    # requisition's items are later issued. Only usable on a line that
+    # hasn't been marked short and still has something remaining to buy.
+    resolveRequisitionLineFromStock(
+      lineId: ID!
+      qty: Float!
+      sourceLocationId: ID!
+    ): POLine!
 
     # G1 PR 4: Finish Buying — forks one child purchase_orders row per
     # distinct vendor among this requisition's recorded purchases, moving

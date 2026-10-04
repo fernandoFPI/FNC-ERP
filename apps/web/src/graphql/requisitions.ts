@@ -498,6 +498,19 @@ export const MARK_REQUISITION_LINE_SHORT = gql`
   }
 `
 
+export const RESOLVE_REQUISITION_LINE_FROM_STOCK = gql`
+  mutation ResolveRequisitionLineFromStock($lineId: ID!, $qty: Float!, $sourceLocationId: ID!) {
+    resolveRequisitionLineFromStock(lineId: $lineId, qty: $qty, sourceLocationId: $sourceLocationId) {
+      id
+      qty_from_stock
+      in_stock
+      source_location_id
+      source_location_name
+      source_company_name
+    }
+  }
+`
+
 export const FINISH_BUYING_REQUISITION = gql`
   mutation FinishBuyingRequisition($id: ID!) {
     finishBuyingRequisition(id: $id) {

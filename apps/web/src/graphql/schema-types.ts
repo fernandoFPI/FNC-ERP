@@ -2525,6 +2525,7 @@ export type Mutation = {
   resetUserMFA: Scalars['Boolean']['output'];
   resolveLineFlag: Scalars['Boolean']['output'];
   resolvePOLineComment: PoLineComment;
+  resolveRequisitionLineFromStock: PoLine;
   respondToComment: DocComment;
   respondToRFI: ProjectRfi;
   respondToTQ: ProjectTq;
@@ -4571,6 +4572,13 @@ export type MutationResolveLineFlagArgs = {
 export type MutationResolvePoLineCommentArgs = {
   commentId: Scalars['ID']['input'];
   poId: Scalars['ID']['input'];
+};
+
+
+export type MutationResolveRequisitionLineFromStockArgs = {
+  lineId: Scalars['ID']['input'];
+  qty: Scalars['Float']['input'];
+  sourceLocationId: Scalars['ID']['input'];
 };
 
 

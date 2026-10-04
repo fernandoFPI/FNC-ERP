@@ -6,10 +6,12 @@ import {
   RECORD_LINE_PURCHASE,
   APPROVE_TOLERANCE_PURCHASE,
   MARK_REQUISITION_LINE_SHORT,
+  RESOLVE_REQUISITION_LINE_FROM_STOCK,
   FINISH_BUYING_REQUISITION,
   ENSURE_CASH_PURCHASE_VENDOR,
 } from '../../../graphql/requisitions'
 import { VENDORS_QUERY, CREATE_VENDOR, REQUEST_UPLOAD_URL } from '../../../graphql/procurement'
+import { STOCK_LOCATIONS_QUERY, CENTRAL_WAREHOUSE_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { FILE_DOWNLOAD_URL_QUERY } from '../../../graphql/hr'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -28,6 +30,8 @@ import { useToastStore } from '../../../store/toastStore'
 import type {
   ApproveTolerancePurchaseMutation,
   ApproveTolerancePurchaseMutationVariables,
+  CentralWarehouseLocationsQuery,
+  CentralWarehouseLocationsQueryVariables,
   CreateVendorMutation,
   CreateVendorMutationVariables,
   EnsureCashPurchaseVendorMutation,
@@ -40,10 +44,14 @@ import type {
   MarkRequisitionLineShortMutationVariables,
   RecordLinePurchaseMutation,
   RecordLinePurchaseMutationVariables,
+  ResolveRequisitionLineFromStockMutation,
+  ResolveRequisitionLineFromStockMutationVariables,
   RequestUploadUrlMutation,
   RequestUploadUrlMutationVariables,
   RequisitionItemsBoughtQuery,
   RequisitionItemsBoughtQueryVariables,
+  StockLocationsQuery,
+  StockLocationsQueryVariables,
   VendorsQuery,
   VendorsQueryVariables,
 } from '../../../graphql/generated'
@@ -164,6 +172,27 @@ export default function ItemsBoughtPage() {
     .filter((v): v is NonNullable<typeof v> => v !== null)
     .filter((v) => !v.is_cash_purchase)
 
+  // "Resolve from stock" location picker — own company's locations plus the
+  // group's central warehouse (same includeCentralWarehouse reasoning used
+  // throughout procurement: stock a buyer needs to resolve a line against
+  // may live at the central warehouse, not necessarily this company).
+  const { data: locationsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(
+    STOCK_LOCATIONS_QUERY,
+    { variables: { isActive: true } },
+  )
+  const { data: centralLocationsData } = useQuery<
+    CentralWarehouseLocationsQuery,
+    CentralWarehouseLocationsQueryVariables
+  >(CENTRAL_WAREHOUSE_LOCATIONS_QUERY, { variables: { isActive: true } })
+  const stockLocationOptions = [
+    ...(locationsData?.stockLocations ?? [])
+      .filter((l) => !['virtual_in', 'virtual_out'].includes(l.type))
+      .map((l) => ({ value: l.id, label: l.name })),
+    ...(centralLocationsData?.centralWarehouseLocations ?? [])
+      .filter((l) => !['virtual_in', 'virtual_out'].includes(l.type))
+      .map((l) => ({ value: l.id, label: `${l.name} (Central warehouse)` })),
+  ]
+
   const [ensureCashVendor] = useMutation<
     EnsureCashPurchaseVendorMutation,
     EnsureCashPurchaseVendorMutationVariables
@@ -207,6 +236,19 @@ export default function ItemsBoughtPage() {
     },
     onError: onErr,
   })
+  const [resolveFromStock, { loading: lResolvingStock }] = useMutation<
+    ResolveRequisitionLineFromStockMutation,
+    ResolveRequisitionLineFromStockMutationVariables
+  >(RESOLVE_REQUISITION_LINE_FROM_STOCK, {
+    onCompleted: () => {
+      addToast({ type: 'success', message: 'Resolved from stock — no purchase needed' })
+      setResolveStockFor(null)
+      setResolveStockQty('')
+      setResolveStockLocation('')
+      void refetch()
+    },
+    onError: onErr,
+  })
   const [finishBuying, { loading: lFinishing }] = useMutation<
     FinishBuyingRequisitionMutation,
     FinishBuyingRequisitionMutationVariables
@@ -246,6 +288,9 @@ export default function ItemsBoughtPage() {
   const [recordingAll, setRecordingAll] = useState(false)
   const [shortReasonFor, setShortReasonFor] = useState<string | null>(null)
   const [shortReasonText, setShortReasonText] = useState('')
+  const [resolveStockFor, setResolveStockFor] = useState<string | null>(null)
+  const [resolveStockQty, setResolveStockQty] = useState('')
+  const [resolveStockLocation, setResolveStockLocation] = useState('')
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
   const [quickCreateLineId, setQuickCreateLineId] = useState<string | null>(null)
   const [quickCreateName, setQuickCreateName] = useState('')
@@ -899,6 +944,18 @@ export default function ItemsBoughtPage() {
                       Record purchase
                     </Button>
                   )}
+                  {line.product_id && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setResolveStockFor(line.id)
+                        setResolveStockQty(String(remaining))
+                      }}
+                    >
+                      Resolve from stock
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -907,6 +964,75 @@ export default function ItemsBoughtPage() {
                     }}
                   >
                     Mark short
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {resolveStockFor === line.id && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: `1px solid ${theme.border}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                  Stock arrived after Inventory Check marked this line as needing to be bought —
+                  resolve it from real stock instead of recording a purchase.
+                </div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div style={{ width: '120px' }}>
+                    <Input
+                      label="Qty from stock"
+                      type="number"
+                      min="0"
+                      max={remaining}
+                      value={resolveStockQty}
+                      onChange={(e) => {
+                        setResolveStockQty(e.target.value)
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, minWidth: '220px' }}>
+                    <SearchableSelect
+                      label="Source location"
+                      value={resolveStockLocation}
+                      onChange={setResolveStockLocation}
+                      options={stockLocationOptions}
+                      placeholder="Search location…"
+                      minDropdownWidth={320}
+                    />
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={lResolvingStock}
+                    disabled={!resolveStockLocation || !(parseFloat(resolveStockQty) > 0)}
+                    onClick={() =>
+                      void resolveFromStock({
+                        variables: {
+                          lineId: line.id,
+                          qty: parseFloat(resolveStockQty) || 0,
+                          sourceLocationId: resolveStockLocation,
+                        },
+                      })
+                    }
+                  >
+                    Confirm resolve from stock
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setResolveStockFor(null)
+                    }}
+                  >
+                    Cancel
                   </Button>
                 </div>
               </div>

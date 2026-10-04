@@ -32870,6 +32870,140 @@ const phase5MutationResolvers = {
     return r.rows[0]
   },
 
+  // Stock arrived (possibly at the group's central warehouse, not
+  // necessarily the requisition's own company) after this line's Inventory
+  // Check already locked in "not available" and routed it to the buy
+  // pipeline, but before a buyer actually bought it — lets that now-real
+  // stock close the line out instead of forcing an unnecessary purchase.
+  // Same authorization and "remaining to resolve" formula as
+  // markRequisitionLineShort just above; same reservation-not-immediate-move
+  // accounting as confirmRequisitionInventoryCheck's own from-stock lines
+  // (the actual deduction happens later, when the requisition's items are
+  // issued) — this is that same mechanism, just usable later, from the
+  // Items Bought stage instead of only at Inventory Check time.
+  resolveRequisitionLineFromStock: async (
+    _: unknown,
+    args: { lineId: string; qty: number; sourceLocationId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const qty = Number(args.qty) || 0
+    if (qty <= 0) throw new Error('qty must be greater than 0')
+
+    const lineRow = await query<{
+      requisition_id: string
+      company_id: string
+      requisition_status: string
+      product_id: string | null
+      qty_ordered: string
+      qty_from_stock: string | null
+      short_marked_at: string | null
+    }>(
+      `SELECT pl.requisition_id, req.company_id, req.status AS requisition_status,
+              pl.product_id, pl.qty_ordered, pl.qty_from_stock, pl.short_marked_at
+       FROM po_lines pl JOIN requisitions req ON req.id=pl.requisition_id
+       WHERE pl.id=$1`,
+      [args.lineId],
+    )
+    const line = lineRow.rows[0]
+    if (!line || line.company_id !== auth.companyId) throw new Error('Requisition line not found')
+    if (line.requisition_status !== 'items_bought')
+      throw new Error('Requisition must be in items_bought status to resolve a line from stock')
+    if (line.short_marked_at)
+      throw new Error('This line was already marked short — cannot also resolve it from stock')
+    if (!line.product_id)
+      throw new Error('A custom (non-catalog) line has no stock to resolve from')
+
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    const hasBuyerPosition = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      line.requisition_id,
+      'buyer',
+    )
+    if (!isAdmin && !hasBuyerPosition)
+      throw new Error('Only a buyer position holder for this requisition can resolve a line from stock')
+
+    const boughtRes = await query<{ total: string }>(
+      `SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1`,
+      [args.lineId],
+    )
+    const qtyFromStockSoFar = parseFloat(line.qty_from_stock ?? '0')
+    const remaining =
+      parseFloat(line.qty_ordered) - qtyFromStockSoFar - parseFloat(boughtRes.rows[0]?.total ?? '0')
+    if (remaining <= 0)
+      throw new Error('This line has nothing remaining to resolve — it is already fully covered')
+    if (qty > remaining + 0.0001)
+      throw new Error(`Only ${remaining} is still remaining on this line — cannot resolve ${qty}`)
+
+    // Same cross-company location-ownership check as confirmRequisitionInventoryCheck
+    // — the source location must belong to the requisition's own company,
+    // the group's central warehouse, or a company the caller actually has a
+    // role in.
+    const isSysAdmin = auth.role === 'system_admin'
+    const locCheck = await query(
+      `SELECT sl.company_id FROM stock_locations sl
+       JOIN companies c ON c.id = sl.company_id
+       WHERE sl.id=$1 AND sl.is_active=true
+         AND (sl.company_id=$2 OR $3 OR c.is_central_warehouse OR EXISTS (
+           SELECT 1 FROM user_company_roles ucr
+           WHERE ucr.user_id=$4 AND ucr.company_id=sl.company_id AND ucr.is_active=true
+         ))`,
+      [args.sourceLocationId, auth.companyId, isSysAdmin, auth.userId],
+    )
+    if (!locCheck.rows[0]) throw new Error('Source stock location not found or not accessible to you')
+
+    const client = await pool.connect()
+    let updated: Record<string, unknown>
+    try {
+      await client.query('BEGIN')
+      const balRes = await client.query<{ qty_on_hand: string; qty_reserved: string }>(
+        `SELECT qty_on_hand, qty_reserved FROM stock_balances
+         WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL
+         FOR UPDATE`,
+        [line.product_id, args.sourceLocationId],
+      )
+      const onHand = parseFloat(balRes.rows[0]?.qty_on_hand ?? '0')
+      const reserved = parseFloat(balRes.rows[0]?.qty_reserved ?? '0')
+      const available = onHand - reserved
+      if (available < qty)
+        throw new Error(
+          `Insufficient available stock at the chosen location — ${available} available (${onHand} on hand, ${reserved} already reserved), ${qty} required`,
+        )
+      await client.query(
+        `UPDATE stock_balances SET qty_reserved = qty_reserved + $1, updated_at = NOW()
+         WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+        [qty, line.product_id, args.sourceLocationId],
+      )
+      const newQtyFromStock = qtyFromStockSoFar + qty
+      const r = await client.query(
+        `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered), source_location_id=$2,
+           total_price = CASE WHEN $1>=qty_ordered THEN 0 ELSE total_price END
+         WHERE id=$3 RETURNING *`,
+        [newQtyFromStock, args.sourceLocationId, args.lineId],
+      )
+      updated = r.rows[0] as Record<string, unknown>
+      await client.query(
+        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+         VALUES ($1,'items_bought','items_bought','resolved_from_stock',$2,$3)`,
+        [
+          line.requisition_id,
+          auth.userId,
+          `Resolved ${qty} from stock instead of buying (line ${args.lineId})`,
+        ],
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', line.requisition_id, 'updated')
+    return updated
+  },
+
   // G1 PR 4 — Finish Buying: groups every po_line_purchases entry by
   // vendor and forks one child purchase_orders row per vendor, starting
   // at 'bought'. Same authorization as recordLinePurchase/
