@@ -105,7 +105,12 @@ export default function RequisitionForm() {
     variables: { includeCentralWarehouse: true },
   })
   const { data: projectsData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
-    variables: { includeAll: true },
+    // Server default is 20 (newest-created first) — this picker needs the
+    // whole company list, not just recent ones, so an older/already-approved
+    // project isn't invisible. 100 is the resolver's actual hard cap
+    // (Math.min(100, ...)), same value already used the same way by
+    // MaterialReturnsPage/StoreOutPage/POPositionsPage.
+    variables: { includeAll: true, limit: 100 },
     skip: purpose !== 'project',
   })
   const { data: mosData } = useQuery<ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables>(MANUFACTURING_ORDERS_QUERY, {

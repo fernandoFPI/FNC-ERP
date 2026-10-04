@@ -249,7 +249,11 @@ export default function PurchaseOrderForm() {
     variables: { includeCentralWarehouse: true },
   })
   const { data: projectsData } = useQuery<ProjectsQuery, ProjectsQueryVariables>(PROJECTS_QUERY, {
-    variables: { includeAll: true },
+    // See RequisitionForm's identical fix — server defaults to the 20 most
+    // recently created projects, so an older one is invisible to this
+    // picker's client-side-only search without a higher limit. 100 is the
+    // resolver's hard cap.
+    variables: { includeAll: true, limit: 100 },
     skip: purpose !== 'project',
   })
   const { data: mosData } = useQuery<ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables>(MANUFACTURING_ORDERS_QUERY, {
