@@ -238,7 +238,7 @@ const EXPENSE_CLAIMS: HelpTopic = {
   steps: [
     {
       title: 'Submit a claim',
-      body: 'Click New Claim. Add expense lines with date, category, amount, and attach receipts. Click Submit to send for approval.',
+      body: 'Go to Procurement → Requisitions → New Requisition, set Purpose to Expense, and add lines with date, category, and amount. Click Create Requisition to send for approval.',
     },
     {
       title: 'Approval workflow',

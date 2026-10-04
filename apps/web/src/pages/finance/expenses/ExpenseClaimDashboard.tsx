@@ -16,6 +16,7 @@ interface DashboardClaim {
   total_amount: number
   currency_code: string
   status: string
+  created_at: string
   approved_at: string | null
 }
 
@@ -23,12 +24,20 @@ interface EmployeeRollup {
   employee_id: string
   employee_name: string
   claim_count: number
-  total_outstanding: number
+  total_amount: number
 }
 
 interface Dashboard {
   claims: DashboardClaim[]
   by_employee: EmployeeRollup[]
+}
+
+const STATUS_BADGE: Record<string, { variant: 'neutral' | 'info' | 'success' | 'danger' | 'warning'; label: string }> = {
+  draft: { variant: 'neutral', label: 'Draft' },
+  submitted: { variant: 'info', label: 'Pending approval' },
+  posted: { variant: 'warning', label: 'Awaiting payment' },
+  paid: { variant: 'success', label: 'Paid' },
+  rejected: { variant: 'danger', label: 'Rejected' },
 }
 
 export default function ExpenseClaimDashboard() {
@@ -53,7 +62,7 @@ export default function ExpenseClaimDashboard() {
     void load()
   }, [load])
 
-  const totalOutstanding = data?.claims.reduce((s, c) => s + Number(c.total_amount), 0) ?? 0
+  const totalAmount = data?.claims.reduce((s, c) => s + Number(c.total_amount), 0) ?? 0
   const employeeCount = data?.by_employee.length ?? 0
   const claimCount = data?.claims.length ?? 0
 
@@ -61,17 +70,17 @@ export default function ExpenseClaimDashboard() {
     <div style={{ padding: '24px' }}>
       <PageHeader
         title="Expense Claims Dashboard"
-        subtitle="Company-wide claims approved and awaiting payment, by employee"
+        subtitle="Every expense claim, by employee"
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
-                navigate('/finance/expense-claims')
+                navigate('/procurement/requisitions')
               }}
             >
-              ← Back to Expense Claims
+              ← Back to Requisitions
             </Button>
             <Button variant="ghost" size="sm" onClick={() => void load()}>
               Refresh
@@ -90,13 +99,13 @@ export default function ExpenseClaimDashboard() {
       >
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Awaiting Payment
+            Total Claimed
           </p>
-          <AmountDisplay amount={totalOutstanding} currency="IQD" size="md" colored />
+          <AmountDisplay amount={totalAmount} currency="IQD" size="md" colored />
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Employees Owed
+            Employees
           </p>
           <p style={{ fontSize: '22px', fontWeight: 700, color: theme.textSecondary }}>
             {employeeCount}
@@ -104,7 +113,7 @@ export default function ExpenseClaimDashboard() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Open Claims
+            Total Claims
           </p>
           <p style={{ fontSize: '22px', fontWeight: 700, color: theme.textSecondary }}>
             {claimCount}
@@ -131,7 +140,7 @@ export default function ExpenseClaimDashboard() {
               <tr
                 style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
               >
-                {['Employee', 'Claims', 'Outstanding'].map((h, i) => (
+                {['Employee', 'Claims', 'Total Amount'].map((h, i) => (
                   <th
                     key={h}
                     style={{
@@ -163,7 +172,7 @@ export default function ExpenseClaimDashboard() {
                     colSpan={3}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    No claims awaiting payment.
+                    No claims yet.
                   </td>
                 </tr>
               )}
@@ -179,7 +188,7 @@ export default function ExpenseClaimDashboard() {
                   </td>
                   <td style={{ padding: '9px 12px', textAlign: 'right' }}>
                     <AmountDisplay
-                      amount={Number(e.total_outstanding)}
+                      amount={Number(e.total_amount)}
                       currency="IQD"
                       size="sm"
                       colored
@@ -203,7 +212,7 @@ export default function ExpenseClaimDashboard() {
             marginBottom: '8px',
           }}
         >
-          Open Claims
+          All Claims
         </p>
         <Card padding="none">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -243,7 +252,7 @@ export default function ExpenseClaimDashboard() {
                     colSpan={4}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    No open claims.
+                    No claims yet.
                   </td>
                 </tr>
               )}
@@ -277,7 +286,9 @@ export default function ExpenseClaimDashboard() {
                     />
                   </td>
                   <td style={{ padding: '9px 12px' }}>
-                    <Badge variant="warning">Awaiting payment</Badge>
+                    <Badge variant={STATUS_BADGE[c.status]?.variant ?? 'neutral'}>
+                      {STATUS_BADGE[c.status]?.label ?? c.status}
+                    </Badge>
                   </td>
                 </tr>
               ))}

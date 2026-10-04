@@ -1,3 +1,4 @@
+import { useEffect, useState, useCallback } from 'react'
 import { useQuery } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
 import { MY_REQUISITION_QUEUE_QUERY } from '../../../graphql/requisitions'
@@ -16,6 +17,8 @@ import {
   REQUISITION_STATUS_ACTIONS,
 } from '../../../lib/requisition-constants'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 import type { MyRequisitionApprovalQueueQuery, MyRequisitionApprovalQueueQueryVariables } from '../../../graphql/generated'
 
 interface QueueItem {
@@ -32,6 +35,52 @@ interface QueueItem {
   organizerName?: string | null
   created_at: string
   updated_at: string
+  __kind?: 'expense' | 'settlement'
+  settlementAdvanceId?: string
+}
+
+interface ExpenseClaimQueueApiRow {
+  id: string
+  claim_number: string
+  employee_name: string
+  status: string
+  created_at: string
+}
+
+function expenseClaimToQueueItem(c: ExpenseClaimQueueApiRow): QueueItem {
+  return {
+    id: c.id,
+    requisition_number: c.claim_number,
+    status: c.status,
+    purpose: 'expense',
+    organizerName: c.employee_name,
+    created_at: c.created_at,
+    updated_at: c.created_at,
+    __kind: 'expense',
+  }
+}
+
+interface SettlementQueueApiRow {
+  id: string
+  settlement_number: string
+  employee_name: string
+  advance_id: string
+  status: string
+  created_at: string
+}
+
+function settlementToQueueItem(s: SettlementQueueApiRow): QueueItem {
+  return {
+    id: s.id,
+    requisition_number: s.settlement_number,
+    status: s.status,
+    purpose: 'expense',
+    organizerName: s.employee_name,
+    created_at: s.created_at,
+    updated_at: s.created_at,
+    __kind: 'settlement',
+    settlementAdvanceId: s.advance_id,
+  }
 }
 
 function daysWaiting(dateStr: string): number {
@@ -44,6 +93,9 @@ export default function MyRequisitionQueue() {
   const pagePadding = usePagePadding()
   const navigate = useNavigate()
   const currentUserId = useAuthStore((s) => s.user?.id)
+  const { can } = usePermission()
+  const canApproveExpenses = can('finance.expenses.approve', 'approve')
+  const canApproveAdvances = can('finance.advances.approve', 'approve')
 
   const { data, loading, refetch } = useQuery<MyRequisitionApprovalQueueQuery, MyRequisitionApprovalQueueQueryVariables>(MY_REQUISITION_QUEUE_QUERY, {
     fetchPolicy: 'cache-and-network',
@@ -51,11 +103,47 @@ export default function MyRequisitionQueue() {
   })
   useEntityChanged('requisition', () => void refetch())
 
-  const items: QueueItem[] = data?.myRequisitionApprovalQueue ?? []
+  const [pendingExpenseClaims, setPendingExpenseClaims] = useState<QueueItem[]>([])
+  const loadPendingExpenseClaims = useCallback(() => {
+    if (!canApproveExpenses) return
+    api
+      .get<ExpenseClaimQueueApiRow[]>('/finance/expense-claims', { params: { status: 'submitted' } })
+      .then((r) => { setPendingExpenseClaims(r.data.map(expenseClaimToQueueItem)); })
+      .catch(() => { /* handled — queue just won't include expense claims this refresh */ })
+  }, [canApproveExpenses])
+
+  const [pendingSettlements, setPendingSettlements] = useState<QueueItem[]>([])
+  const loadPendingSettlements = useCallback(() => {
+    if (!canApproveAdvances) return
+    api
+      .get<SettlementQueueApiRow[]>('/finance/advances/settlements', { params: { status: 'submitted' } })
+      .then((r) => { setPendingSettlements(r.data.map(settlementToQueueItem)); })
+      .catch(() => { /* handled — queue just won't include settlements this refresh */ })
+  }, [canApproveAdvances])
+
+  useEffect(() => {
+    loadPendingExpenseClaims()
+    loadPendingSettlements()
+    const interval = setInterval(() => {
+      loadPendingExpenseClaims()
+      loadPendingSettlements()
+    }, 60_000)
+    return () => { clearInterval(interval); }
+  }, [loadPendingExpenseClaims, loadPendingSettlements])
+
+  const items: QueueItem[] = [
+    ...(data?.myRequisitionApprovalQueue ?? []),
+    ...pendingExpenseClaims,
+    ...pendingSettlements,
+  ].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
 
   const grouped = items.reduce<Record<string, QueueItem[]>>((acc, item) => {
-    const action = REQUISITION_STATUS_ACTIONS[item.status]
-    const key = action ? action.label : 'Action needed'
+    const key =
+      item.__kind === 'expense'
+        ? 'Approve expense claim'
+        : item.__kind === 'settlement'
+          ? 'Approve advance settlement'
+          : (REQUISITION_STATUS_ACTIONS[item.status]?.label ?? 'Action needed')
     if (!acc[key]) acc[key] = []
     acc[key].push(item)
     return acc
@@ -82,9 +170,12 @@ export default function MyRequisitionQueue() {
       key: 'status',
       header: 'Status',
       mobilePriority: 1,
-      render: (item) => (
-        <Badge variant={getRequisitionStatusVariant(item.status)}>{getRequisitionStatusLabel(item.status)}</Badge>
-      ),
+      render: (item) =>
+        item.__kind ? (
+          <Badge variant="warning">Pending Approval</Badge>
+        ) : (
+          <Badge variant={getRequisitionStatusVariant(item.status)}>{getRequisitionStatusLabel(item.status)}</Badge>
+        ),
     },
     {
       key: 'branch_name',
@@ -104,6 +195,9 @@ export default function MyRequisitionQueue() {
       mobileLabel: 'Role',
       mobilePriority: 4,
       render: (item) => {
+        if (item.__kind) {
+          return <span style={{ color: theme.textMuted }}>Approver</span>
+        }
         const action = REQUISITION_STATUS_ACTIONS[item.status]
         let label = '—'
         if (action?.isOrganizer && item.organizer_id === currentUserId) {
@@ -168,6 +262,14 @@ export default function MyRequisitionQueue() {
               data={group}
               rowKey="id"
               onRowClick={(item) => {
+                if (item.__kind === 'expense') {
+                  navigate(`/finance/expense-claims/${item.id}`)
+                  return
+                }
+                if (item.__kind === 'settlement') {
+                  navigate(`/finance/advances/${item.settlementAdvanceId}`)
+                  return
+                }
                 navigate(
                   item.status === 'items_bought'
                     ? `/procurement/requisitions/${item.id}/items-bought`

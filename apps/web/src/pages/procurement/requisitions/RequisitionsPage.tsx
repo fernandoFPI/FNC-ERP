@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { REQUISITIONS_QUERY } from '../../../graphql/requisitions'
@@ -8,7 +8,9 @@ import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
-import { Badge } from '../../../components/ui/Badge'
+import { Badge, type BadgeVariant } from '../../../components/ui/Badge'
+import { Modal } from '../../../components/ui/Modal'
+import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { FilterChipStrip } from '../../../components/ui/FilterChipStrip'
 import { Button } from '../../../components/ui/Button'
 import {
@@ -20,13 +22,149 @@ import {
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 import type { RequisitionsQuery, RequisitionsQueryVariables } from '../../../graphql/generated'
+
+// Expense claims (filed from this same page via Purpose: Expense — see
+// RequisitionForm.tsx) live in their own expense_claims table, reached via
+// the finance REST service rather than this page's GraphQL query. They're
+// merged into the list client-side here purely for display — approving one
+// still goes through ExpenseClaimDetail.tsx (POST /:id/approve), not
+// anything on this page.
+interface ExpenseClaimApiRow {
+  id: string
+  claim_number: string
+  employee_name: string
+  employee_id: string
+  total_amount: number | string
+  currency_code: string
+  status: string
+  project_code: string | null
+  project_name: string | null
+  project_id: string | null
+  description: string | null
+  created_at: string
+  updated_at: string | null
+  lines?: {
+    id: string
+    expense_date: string
+    category_name: string | null
+    description: string | null
+    amount: number
+    currency_code: string
+  }[]
+}
+
+const EXPENSE_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  submitted: 'Pending Approval',
+  posted: 'Completed',
+  paid: 'Completed',
+  rejected: 'Rejected',
+}
+const EXPENSE_STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  draft: 'neutral',
+  submitted: 'warning',
+  posted: 'success',
+  paid: 'success',
+  rejected: 'danger',
+}
+
+function expenseClaimToRow(c: ExpenseClaimApiRow): Requisition {
+  return {
+    id: c.id,
+    requisition_number: c.claim_number,
+    status: c.status,
+    priority: null,
+    purpose: 'expense',
+    project_id: c.project_id,
+    projectName: c.project_name ? `${c.project_code ?? ''} ${c.project_name}`.trim() : null,
+    branch_id: null,
+    branch_name: null,
+    organizer_id: c.employee_id,
+    organizerName: c.employee_name,
+    notes: c.description,
+    created_at: c.created_at,
+    updated_at: c.updated_at ?? c.created_at,
+    itemSearchText: null,
+    __kind: 'expense',
+    amount: Number(c.total_amount),
+    currencyCode: c.currency_code,
+  }
+}
+
+// Advance settlements (the "paid from my advance" branch of the same
+// Expense purpose) live in advance_settlements, a separate REST service
+// from expense_claims — merged in the exact same way, with its own status
+// vocabulary (draft/submitted/approved/rejected, not
+// draft/submitted/posted/paid/rejected) and no standalone detail page of
+// its own: a settlement is reviewed from its parent advance's detail page
+// (EmployeeAdvanceDetail.tsx), not a page keyed by the settlement's own id.
+interface SettlementApiRow {
+  id: string
+  settlement_number: string
+  advance_id: string
+  advance_number: string
+  employee_name: string
+  employee_id: string
+  total_amount: number | string
+  currency_code: string
+  status: string
+  description: string | null
+  created_at: string
+  updated_at: string | null
+  lines?: {
+    id: string
+    line_date: string
+    category_name: string | null
+    description: string | null
+    amount: number
+    currency_code: string
+  }[]
+}
+
+const SETTLEMENT_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  submitted: 'Pending Approval',
+  approved: 'Completed',
+  rejected: 'Rejected',
+}
+const SETTLEMENT_STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  draft: 'neutral',
+  submitted: 'warning',
+  approved: 'success',
+  rejected: 'danger',
+}
+
+function settlementToRow(s: SettlementApiRow): Requisition {
+  return {
+    id: s.id,
+    requisition_number: s.settlement_number,
+    status: s.status,
+    priority: null,
+    purpose: 'expense',
+    branch_id: null,
+    branch_name: null,
+    organizer_id: s.employee_id,
+    organizerName: s.employee_name,
+    notes: s.description,
+    created_at: s.created_at,
+    updated_at: s.updated_at ?? s.created_at,
+    itemSearchText: null,
+    __kind: 'settlement',
+    amount: Number(s.total_amount),
+    currencyCode: s.currency_code,
+    settlementAdvanceId: s.advance_id,
+  }
+}
 
 // myRequisitionsOnly stored as 'true'/'false' — FilterPreset.filters is a
 // flat Record<string, string>, same as every other tracked field here.
 const FILTER_DEFAULTS = {
   search: '',
   status: '',
+  purpose: '',
   fromDate: '',
   toDate: '',
   myRequisitionsOnly: 'false',
@@ -67,6 +205,10 @@ interface Requisition {
   created_at: string
   updated_at: string
   itemSearchText?: string | null
+  __kind?: 'expense' | 'settlement'
+  amount?: number
+  currencyCode?: string
+  settlementAdvanceId?: string
 }
 
 const STATUS_OPTIONS = [
@@ -74,6 +216,24 @@ const STATUS_OPTIONS = [
   { value: 'rejected', label: 'Rejected' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
+
+const PURPOSE_OPTIONS = [
+  { value: 'stock', label: 'General Stock' },
+  { value: 'project', label: 'Project Supply' },
+  { value: 'manufacturing', label: 'Manufacturing / BOM' },
+  { value: 'expense', label: 'Expense' },
+]
+
+function rowStatusLabel(r: Requisition): string {
+  if (r.__kind === 'expense') return EXPENSE_STATUS_LABELS[r.status] ?? r.status
+  if (r.__kind === 'settlement') return SETTLEMENT_STATUS_LABELS[r.status] ?? r.status
+  return getRequisitionStatusLabel(r.status)
+}
+function rowStatusVariant(r: Requisition): BadgeVariant {
+  if (r.__kind === 'expense') return EXPENSE_STATUS_VARIANTS[r.status] ?? 'neutral'
+  if (r.__kind === 'settlement') return SETTLEMENT_STATUS_VARIANTS[r.status] ?? 'neutral'
+  return getRequisitionStatusVariant(r.status)
+}
 
 function downloadCSV(rows: string[][], filename: string) {
   const content = rows
@@ -91,10 +251,57 @@ function downloadCSV(rows: string[][], filename: string) {
 export default function RequisitionsPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canViewAllExpenses = can('finance.expenses.view', 'view')
+  const canViewAllAdvances = can('finance.advances.view', 'view')
+  // 'mine' has no permission gate and includes each line's detail — used
+  // both to merge the current user's own expense claims into the list for
+  // everyone, and as the data source for the read-only modal shown to
+  // anyone who can't open the full (finance.expenses.view-gated) detail page.
+  const [myExpenseClaims, setMyExpenseClaims] = useState<ExpenseClaimApiRow[]>([])
+  const [allExpenseClaims, setAllExpenseClaims] = useState<ExpenseClaimApiRow[]>([])
+  const [viewClaim, setViewClaim] = useState<ExpenseClaimApiRow | null>(null)
+  const [mySettlements, setMySettlements] = useState<SettlementApiRow[]>([])
+  const [allSettlements, setAllSettlements] = useState<SettlementApiRow[]>([])
+  const [viewSettlement, setViewSettlement] = useState<SettlementApiRow | null>(null)
+
+  const loadExpenseClaims = useCallback(() => {
+    api
+      .get<ExpenseClaimApiRow[]>('/finance/expense-claims/mine')
+      .then((r) => { setMyExpenseClaims(r.data); })
+      .catch(() => { /* self-service fetch — silent, list just won't include them */ })
+    if (canViewAllExpenses) {
+      api
+        .get<ExpenseClaimApiRow[]>('/finance/expense-claims', { params: { limit: 200 } })
+        .then((r) => { setAllExpenseClaims(r.data); })
+        .catch(() => { /* handled — merged list just falls back to "mine" */ })
+    }
+  }, [canViewAllExpenses])
+
+  const loadSettlements = useCallback(() => {
+    api
+      .get<SettlementApiRow[]>('/finance/advances/settlements/mine')
+      .then((r) => { setMySettlements(r.data); })
+      .catch(() => { /* self-service fetch — silent, list just won't include them */ })
+    if (canViewAllAdvances) {
+      api
+        .get<SettlementApiRow[]>('/finance/advances/settlements', { params: { limit: 200 } })
+        .then((r) => { setAllSettlements(r.data); })
+        .catch(() => { /* handled — merged list just falls back to "mine" */ })
+    }
+  }, [canViewAllAdvances])
+
+  useEffect(() => {
+    loadExpenseClaims()
+    loadSettlements()
+  }, [loadExpenseClaims, loadSettlements])
+  useEntityChanged('expense_claim', loadExpenseClaims)
+  useEntityChanged('advance_settlement', loadSettlements)
   // Filters survive refresh and navigating into a requisition and back.
   const [saved] = useState(loadSavedFilters)
   const [search, setSearch] = useState(saved.search)
   const [statusFilter, setStatusFilter] = useState(saved.status)
+  const [purposeFilter, setPurposeFilter] = useState(saved.purpose)
   const [fromDate, setFromDate] = useState(saved.fromDate)
   const [toDate, setToDate] = useState(saved.toDate)
   // Defaults to the full company list — a hardcoded "my own requisitions"
@@ -120,6 +327,7 @@ export default function RequisitionsPage() {
   const currentFilters = {
     search,
     status: statusFilter,
+    purpose: purposeFilter,
     fromDate,
     toDate,
     myRequisitionsOnly: String(myRequisitionsOnly),
@@ -130,16 +338,32 @@ export default function RequisitionsPage() {
     } catch {
       // storage unavailable — filters just won't persist
     }
-  }, [search, statusFilter, fromDate, toDate, myRequisitionsOnly])
+  }, [search, statusFilter, purposeFilter, fromDate, toDate, myRequisitionsOnly])
   const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
     'requisitions',
     FILTER_DEFAULTS,
     { name: 'My Requisitions', filters: { ...FILTER_DEFAULTS, myRequisitionsOnly: 'true' } },
   )
 
-  const requisitions: Requisition[] = data?.requisitions ?? []
+  // De-dupe: a privileged viewer's own claims/settlements appear in both fetches.
+  const expenseRows: Requisition[] = myRequisitionsOnly
+    ? myExpenseClaims.map(expenseClaimToRow)
+    : (canViewAllExpenses ? allExpenseClaims : myExpenseClaims).map(expenseClaimToRow)
+  const settlementRows: Requisition[] = myRequisitionsOnly
+    ? mySettlements.map(settlementToRow)
+    : (canViewAllAdvances ? allSettlements : mySettlements).map(settlementToRow)
+  // Expense/settlement rows come from separate REST fetches, not the
+  // GraphQL query's own (already newest-first) ordering — merge and
+  // re-sort by date so a fresh one lands at the top instead of trailing
+  // after every real requisition regardless of how recent it is.
+  const requisitions: Requisition[] = [
+    ...(data?.requisitions ?? []),
+    ...expenseRows,
+    ...settlementRows,
+  ].sort((a, b) => b.created_at.localeCompare(a.created_at))
   const filtered = requisitions.filter((r) => {
     if (statusFilter && r.status !== statusFilter) return false
+    if (purposeFilter && r.purpose !== purposeFilter) return false
     if (search) {
       const q = search.toLowerCase()
       if (
@@ -172,8 +396,8 @@ export default function RequisitionsPage() {
       r.purpose ?? '',
       r.projectName ?? '',
       r.branch_name ?? '',
-      getRequisitionStatusLabel(r.status),
-      REQUISITION_PRIORITY_LABELS[r.priority ?? 'low'] ?? r.priority ?? '',
+      rowStatusLabel(r),
+      r.__kind ? '' : REQUISITION_PRIORITY_LABELS[r.priority ?? 'low'] ?? r.priority ?? '',
       r.organizerName ?? '',
       r.created_at.slice(0, 10),
     ])
@@ -245,11 +469,7 @@ export default function RequisitionsPage() {
     {
       key: 'status',
       header: 'Status',
-      render: (r) => (
-        <Badge variant={getRequisitionStatusVariant(r.status)}>
-          {getRequisitionStatusLabel(r.status)}
-        </Badge>
-      ),
+      render: (r) => <Badge variant={rowStatusVariant(r)}>{rowStatusLabel(r)}</Badge>,
     },
     {
       key: 'organizerName',
@@ -341,13 +561,24 @@ export default function RequisitionsPage() {
               options: STATUS_OPTIONS,
               onChange: setStatusFilter,
             },
+            {
+              key: 'purpose',
+              label: 'Purpose',
+              value: purposeFilter,
+              options: PURPOSE_OPTIONS,
+              onChange: setPurposeFilter,
+            },
           ]}
           fromDate={fromDate}
           toDate={toDate}
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           resultCount={filtered.length}
-          onRefresh={() => void refetch()}
+          onRefresh={() => {
+            void refetch()
+            loadExpenseClaims()
+            loadSettlements()
+          }}
         >
           <FilterPresets
             presets={presets}
@@ -355,6 +586,7 @@ export default function RequisitionsPage() {
               const r = resolvePreset(preset)
               setSearch(r.search)
               setStatusFilter(r.status)
+              setPurposeFilter(r.purpose)
               setFromDate(r.fromDate)
               setToDate(r.toDate)
               setMyRequisitionsOnly(r.myRequisitionsOnly === 'true')
@@ -372,6 +604,26 @@ export default function RequisitionsPage() {
           loading={loading}
           rowKey="id"
           onRowClick={(r) => {
+            if (r.__kind === 'expense') {
+              if (canViewAllExpenses) {
+                navigate(`/finance/expense-claims/${r.id}`)
+                return
+              }
+              const raw = myExpenseClaims.find((c) => c.id === r.id)
+              if (raw) setViewClaim(raw)
+              return
+            }
+            if (r.__kind === 'settlement') {
+              // A settlement has no detail page of its own — it's reviewed
+              // from its parent advance's detail page.
+              if (canViewAllAdvances && r.settlementAdvanceId) {
+                navigate(`/finance/advances/${r.settlementAdvanceId}`)
+                return
+              }
+              const raw = mySettlements.find((s) => s.id === r.id)
+              if (raw) setViewSettlement(raw)
+              return
+            }
             navigate(`/procurement/requisitions/${r.id}`)
           }}
           getRowStyle={(r) =>
@@ -381,6 +633,132 @@ export default function RequisitionsPage() {
           }
         />
       </Card>
+
+      <Modal
+        open={!!viewClaim}
+        onClose={() => { setViewClaim(null); }}
+        title={viewClaim?.claim_number ?? ''}
+        description={viewClaim?.description ?? undefined}
+      >
+        {viewClaim && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Badge variant={EXPENSE_STATUS_VARIANTS[viewClaim.status] ?? 'neutral'}>
+                {EXPENSE_STATUS_LABELS[viewClaim.status] ?? viewClaim.status}
+              </Badge>
+              <AmountDisplay
+                amount={Number(viewClaim.total_amount)}
+                currency={viewClaim.currency_code}
+                size="sm"
+              />
+              {viewClaim.project_code && (
+                <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                  {viewClaim.project_code} — {viewClaim.project_name}
+                </span>
+              )}
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  {['Date', 'Category', 'Description', 'Amount'].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: '6px 8px',
+                        textAlign: h === 'Amount' ? 'right' : 'left',
+                        color: theme.textMuted,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(viewClaim.lines ?? []).map((l) => (
+                  <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                    <td style={{ padding: '6px 8px', color: theme.textSecondary, fontSize: '11px' }}>
+                      {new Date(l.expense_date).toLocaleDateString()}
+                    </td>
+                    <td style={{ padding: '6px 8px', color: theme.textSecondary }}>
+                      {l.category_name ?? '—'}
+                    </td>
+                    <td style={{ padding: '6px 8px', color: theme.textSecondary }}>
+                      {l.description ?? '—'}
+                    </td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                      <AmountDisplay amount={Number(l.amount)} currency={l.currency_code} size="sm" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!viewSettlement}
+        onClose={() => { setViewSettlement(null); }}
+        title={viewSettlement?.settlement_number ?? ''}
+        description={viewSettlement?.description ?? undefined}
+      >
+        {viewSettlement && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Badge variant={SETTLEMENT_STATUS_VARIANTS[viewSettlement.status] ?? 'neutral'}>
+                {SETTLEMENT_STATUS_LABELS[viewSettlement.status] ?? viewSettlement.status}
+              </Badge>
+              <AmountDisplay
+                amount={Number(viewSettlement.total_amount)}
+                currency={viewSettlement.currency_code}
+                size="sm"
+              />
+              <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                From advance {viewSettlement.advance_number}
+              </span>
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  {['Date', 'Category', 'Description', 'Amount'].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: '6px 8px',
+                        textAlign: h === 'Amount' ? 'right' : 'left',
+                        color: theme.textMuted,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(viewSettlement.lines ?? []).map((l) => (
+                  <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                    <td style={{ padding: '6px 8px', color: theme.textSecondary, fontSize: '11px' }}>
+                      {new Date(l.line_date).toLocaleDateString()}
+                    </td>
+                    <td style={{ padding: '6px 8px', color: theme.textSecondary }}>
+                      {l.category_name ?? '—'}
+                    </td>
+                    <td style={{ padding: '6px 8px', color: theme.textSecondary }}>
+                      {l.description ?? '—'}
+                    </td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                      <AmountDisplay amount={Number(l.amount)} currency={l.currency_code} size="sm" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

@@ -382,6 +382,41 @@ employeeAdvancesRouter.post('/request-self', asyncHandler(async (req, res) => {
   }
 }))
 
+// ─── Self-service: my advances ──────────────────────────────────────────────
+//
+// No permission gate — same identity pattern as /request-self above, and
+// the same reasoning as expense-claims.ts's own /mine: resolves the
+// caller's own employee record so there's no way to request someone
+// else's advances by passing a different employee_id. Used both to list
+// "my advances" and, filtered to approved/partially_settled client-side,
+// as the picker for "settle from my advance" on the Requisition form's
+// Expense purpose.
+
+employeeAdvancesRouter.get('/mine', asyncHandler(async (req, res) => {
+  try {
+    const empRes = await query(
+      `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2`,
+      [getAuth(req).userId, getAuth(req).companyId],
+    )
+    const emp = empRes.rows[0] as { id: string } | undefined
+    if (!emp) {
+      sendOk(res, [])
+      return
+    }
+    const r = await query(
+      `SELECT id, advance_number, purpose, project_id, amount, settled_amount, outstanding_amount,
+              currency_code, status, created_at
+       FROM employee_advances
+       WHERE company_id=$1 AND employee_id=$2
+       ORDER BY created_at DESC`,
+      [getAuth(req).companyId, emp.id],
+    )
+    sendOk(res, r.rows)
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load your advances', err)
+  }
+}))
+
 // ─── Update advance (draft only) ────────────────────────────────────────────
 
 employeeAdvancesRouter.put(
@@ -933,6 +968,48 @@ employeeAdvancesRouter.get(
   }),
 )
 
+// ─── Self-service: my settlements ───────────────────────────────────────────
+//
+// No permission gate, same pattern as /mine above and expense-claims.ts's
+// own /mine — resolves the caller's own employee record so there's no way
+// to list someone else's settlements. Registered before the unconstrained
+// GET /settlements/:id below (not UUID-regex-constrained like the advances
+// one) so 'mine' doesn't get swallowed as an :id.
+
+employeeAdvancesRouter.get('/settlements/mine', asyncHandler(async (req, res) => {
+  try {
+    const empRes = await query(
+      `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2`,
+      [getAuth(req).userId, getAuth(req).companyId],
+    )
+    const emp = empRes.rows[0] as { id: string } | undefined
+    if (!emp) {
+      sendOk(res, [])
+      return
+    }
+    const r = await query(
+      `SELECT s.*, a.advance_number, COALESCE(
+          json_agg(
+            json_build_object(
+              'id', sl.id, 'line_date', sl.line_date, 'category_name', sl.category_name,
+              'description', sl.description, 'amount', sl.amount, 'currency_code', sl.currency_code
+            ) ORDER BY sl.line_date
+          ) FILTER (WHERE sl.id IS NOT NULL), '[]'
+        ) AS lines
+       FROM advance_settlements s
+       JOIN employee_advances a ON a.id = s.advance_id
+       LEFT JOIN advance_settlement_lines sl ON sl.settlement_id = s.id
+       WHERE s.company_id=$1 AND s.employee_id=$2
+       GROUP BY s.id, a.advance_number
+       ORDER BY s.created_at DESC`,
+      [getAuth(req).companyId, emp.id],
+    )
+    sendOk(res, r.rows)
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load your settlements', err)
+  }
+}))
+
 // ─── Get settlement with lines ──────────────────────────────────────────────
 
 employeeAdvancesRouter.get(
@@ -1287,6 +1364,219 @@ employeeAdvancesRouter.post(
       sendOk(res, result, 201)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create settlement', err)
+    }
+  }),
+)
+
+// ─── Self-service settlement ────────────────────────────────────────────────
+//
+// Mirrors expense-claims.ts's own /request-self: the caller's own employee
+// record is resolved from the auth token, no finance.advances.* permission
+// required, and the advance being settled must belong to that same
+// employee — never a client-suppliable "settle whoever's advance". Unlike
+// the admin-facing POST /settlements above (a raw gl_account_id +
+// cost_center_id per line, meant for someone who already knows the chart of
+// accounts), each line here only takes a category — resolved to a GL
+// account the same way expense_claims resolves one, reusing the same
+// expense_categories table so "Fuel & Gas" means the same account whether
+// it was paid from an advance or out of pocket. project_id/cost_center_id
+// aren't client input at all — both are inherited from the advance itself
+// (set once, when it was requested), not re-picked per line. An advance
+// issued with no cost_center_id can't be self-settled (cost_center_id is
+// NOT NULL on advance_settlement_lines) — those still go through the admin
+// form, which lets Finance supply one. Each line's project_id defaults to
+// the advance's own (falls back silently, not client-required) but can be
+// overridden per line — the same advance commonly covers spend across more
+// than one project over its life (e.g. fuel for several job sites), and
+// POST /settlements/:id/approve (unchanged) already resolves each LINE's
+// own project_id to its own analytic account, not just the settlement as a
+// whole, so this needs no other change to post correctly per project.
+
+const selfSettlementLineSchema = z.object({
+  line_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  category_id: z.string().uuid(),
+  description: z.string().min(1),
+  amount: z.coerce.number().positive(),
+  project_id: z.string().uuid().optional(),
+})
+
+const selfSettlementSchema = z.object({
+  advance_id: z.string().uuid(),
+  settlement_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  description: z.string().optional(),
+  notes: z.string().optional(),
+  lines: z.array(selfSettlementLineSchema).min(1),
+})
+
+async function resolveSettlementLineGlAccount(
+  client: PoolClient,
+  companyId: string,
+  categoryId: string,
+): Promise<{ accountId: string; categoryName: string }> {
+  const res = await client.query(
+    `SELECT gl_account_id, name FROM expense_categories WHERE id=$1 AND company_id=$2`,
+    [categoryId, companyId],
+  )
+  const cat = res.rows[0] as { gl_account_id: string | null; name: string } | undefined
+  if (!cat) throw new AdvanceConfigError('Selected expense category not found')
+  if (!cat.gl_account_id) {
+    throw new AdvanceConfigError(
+      `Category "${cat.name}" has no GL account configured — set one in Finance → Expense Categories`,
+    )
+  }
+  return { accountId: cat.gl_account_id, categoryName: cat.name }
+}
+
+employeeAdvancesRouter.post(
+  '/settlements/request-self',
+  asyncHandler(async (req, res) => {
+    try {
+      const d = selfSettlementSchema.parse(req.body)
+      const settlementNumber = await nextDocumentNumber(
+        getAuth(req).companyId,
+        'advance_settlement',
+        'SET',
+      )
+      const result = await withTransaction(
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
+        async (client) => {
+          const empRes = await client.query(
+            `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2`,
+            [getAuth(req).userId, getAuth(req).companyId],
+          )
+          const emp = empRes.rows[0] as { id: string } | undefined
+          if (!emp) return { error: 'NO_EMPLOYEE_LINK' as const }
+
+          const advRes = await client.query(
+            `SELECT id, employee_id, employee_name, project_id, cost_center_id, currency_code, fx_rate,
+                    status, outstanding_amount
+             FROM employee_advances WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+            [d.advance_id, getAuth(req).companyId],
+          )
+          const advance = advRes.rows[0] as Record<string, unknown> | undefined
+          if (!advance || advance['employee_id'] !== emp.id) {
+            return { error: 'ADVANCE_NOT_FOUND' as const }
+          }
+          if (!['approved', 'partially_settled'].includes(advance['status'] as string)) {
+            return { error: 'INVALID_STATUS' as const }
+          }
+          if (!advance['cost_center_id']) {
+            return { error: 'NO_COST_CENTER' as const }
+          }
+          const totalAmount = d.lines.reduce((sum, l) => sum + l.amount, 0)
+          if (totalAmount > parseFloat(String(advance['outstanding_amount'])) + 0.0001) {
+            return { error: 'EXCEEDS_OUTSTANDING' as const }
+          }
+
+          const sRes = await client.query(
+            `INSERT INTO advance_settlements
+               (company_id, settlement_number, advance_id, employee_id, employee_name, settlement_date,
+                description, currency_code, total_amount, notes, status, submitted_at, created_by)
+             VALUES ($1,$2,$3,$4,$5,COALESCE($6,CURRENT_DATE),$7,$8,$9,$10,'submitted',NOW(),$11) RETURNING *`,
+            [
+              getAuth(req).companyId,
+              settlementNumber,
+              d.advance_id,
+              advance['employee_id'],
+              advance['employee_name'],
+              d.settlement_date ?? null,
+              d.description ?? null,
+              advance['currency_code'],
+              totalAmount,
+              d.notes ?? null,
+              getAuth(req).userId,
+            ],
+          )
+          const settlement = firstRowOrThrow(sRes)
+          const lines = []
+          for (const line of d.lines) {
+            const { accountId, categoryName } = await resolveSettlementLineGlAccount(
+              client,
+              getAuth(req).companyId,
+              line.category_id,
+            )
+            let lineProjectId = advance['project_id'] as string | null
+            if (line.project_id) {
+              const projRes = await client.query(
+                `SELECT 1 FROM projects WHERE id=$1 AND company_id=$2`,
+                [line.project_id, getAuth(req).companyId],
+              )
+              if (!projRes.rows[0]) throw new AdvanceConfigError('Selected project not found')
+              lineProjectId = line.project_id
+            }
+            const lr = await client.query(
+              `INSERT INTO advance_settlement_lines
+                 (settlement_id, company_id, line_date, gl_account_id, category_id, category_name,
+                  project_id, cost_center_id, description, amount, currency_code, fx_rate)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+              [
+                settlement.id,
+                getAuth(req).companyId,
+                line.line_date,
+                accountId,
+                line.category_id,
+                categoryName,
+                lineProjectId,
+                advance['cost_center_id'],
+                line.description,
+                line.amount,
+                advance['currency_code'],
+                advance['fx_rate'],
+              ],
+            )
+            lines.push(lr.rows[0])
+          }
+          return { settlement: { ...settlement, lines } }
+        },
+      )
+      if ('error' in result) {
+        if (result.error === 'NO_EMPLOYEE_LINK') {
+          sendError(res, 403, 'NO_EMPLOYEE_LINK', 'No employee record linked to your account')
+          return
+        }
+        if (result.error === 'ADVANCE_NOT_FOUND') {
+          sendError(res, 404, 'NOT_FOUND', 'Advance not found')
+          return
+        }
+        if (result.error === 'INVALID_STATUS') {
+          sendError(res, 409, 'INVALID_STATUS', 'Advance must be approved before it can be settled')
+          return
+        }
+        if (result.error === 'NO_COST_CENTER') {
+          sendError(
+            res,
+            422,
+            'NO_COST_CENTER',
+            'This advance has no cost center set — ask Finance to settle it from the Employee Advances screen',
+          )
+          return
+        }
+        sendError(res, 422, 'EXCEEDS_OUTSTANDING', "Total exceeds the advance's outstanding amount")
+        return
+      }
+      const settlement = result.settlement as Record<string, unknown>
+      await logAudit({
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
+        action: 'INSERT',
+        tableName: 'advance_settlements',
+        recordId: settlement['id'] as string,
+        newValues: {
+          settlement_number: settlement['settlement_number'],
+          total_amount: settlement['total_amount'],
+          self_service: true,
+        },
+      })
+      sendOk(res, settlement, 201)
+    } catch (err) {
+      if (err instanceof AdvanceConfigError) {
+        sendError(res, 422, 'ADVANCE_CONFIG_MISSING', err.message)
+        return
+      }
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to submit settlement', err)
     }
   }),
 )

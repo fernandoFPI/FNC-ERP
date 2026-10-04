@@ -688,8 +688,12 @@ export const NAV_SECTIONS: NavSection[] = [
             permKeys: ['finance.petty_cash.view'],
           },
           {
-            label: 'Expense Claims',
-            path: '/finance/expense-claims',
+            // Claims themselves are filed/browsed via Procurement →
+            // Requisitions (Purpose: Expense) now — this links straight to
+            // the company-wide outstanding-by-employee rollup, which has no
+            // equivalent there.
+            label: 'Expense Claims Dashboard',
+            path: '/finance/expense-claims/dashboard',
             permKeys: ['finance.expenses.view'],
           },
           {
@@ -953,12 +957,6 @@ export const NAV_SECTIONS: NavSection[] = [
         // gated /finance route (see router/index.tsx). Requesting an
         // advance only requires a linked employee record, checked
         // server-side and surfaced in-page, not gated by a permission.
-      },
-      {
-        label: 'My Expense Claims',
-        icon: <Icon name="file-text" />,
-        path: '/my-expense-claims',
-        // No permKeys — same reasoning as My Advances above.
       },
       {
         label: 'Payroll',

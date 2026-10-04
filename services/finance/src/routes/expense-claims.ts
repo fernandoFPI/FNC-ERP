@@ -285,10 +285,13 @@ expenseClaimsRouter.get('/mine', asyncHandler(async (req, res) => {
   }
 }))
 
-// ─── Company-wide outstanding dashboard ─────────────────────────────────────
+// ─── Company-wide claims dashboard ──────────────────────────────────────────
 //
-// "Outstanding" = posted (journal booked, reimbursement owed) but not yet
-// paid. Mirrors employee-advances.ts's /dashboard shape.
+// Every claim, every status — a full overview rather than just the
+// posted-but-unpaid "outstanding" slice it used to be scoped to. Each
+// claim's own status badge (below) still shows what's actually owed vs.
+// paid vs. rejected vs. still pending; this view's job is just to roll
+// all of it up by employee.
 
 expenseClaimsRouter.get(
   '/dashboard',
@@ -297,20 +300,20 @@ expenseClaimsRouter.get(
     try {
       const [claims, byEmployee] = await Promise.all([
         query(
-          `SELECT id, claim_number, employee_id, employee_name, total_amount, currency_code, status, approved_at
+          `SELECT id, claim_number, employee_id, employee_name, total_amount, currency_code, status, created_at, approved_at
            FROM expense_claims
-           WHERE company_id=$1 AND status='posted'
-           ORDER BY approved_at DESC`,
+           WHERE company_id=$1
+           ORDER BY created_at DESC`,
           [getAuth(req).companyId],
         ),
         query(
           `SELECT employee_id, employee_name,
                   COUNT(*)::INT AS claim_count,
-                  COALESCE(SUM(total_amount),0) AS total_outstanding
+                  COALESCE(SUM(total_amount),0) AS total_amount
            FROM expense_claims
-           WHERE company_id=$1 AND status='posted'
+           WHERE company_id=$1
            GROUP BY employee_id, employee_name
-           ORDER BY total_outstanding DESC`,
+           ORDER BY total_amount DESC`,
           [getAuth(req).companyId],
         ),
       ])

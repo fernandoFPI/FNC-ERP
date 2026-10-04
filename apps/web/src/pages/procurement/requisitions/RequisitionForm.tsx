@@ -19,7 +19,62 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 import { useTourStore } from '../../../store/tourStore'
+import { api } from '../../../lib/axios'
 import type { CompanyBranchesQuery, CompanyBranchesQueryVariables, CreateRequisitionMutation, CreateRequisitionMutationVariables, EmployeesQuery, EmployeesQueryVariables, ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables } from '../../../graphql/generated'
+
+// Expense-purpose lines don't carry a product — they carry an expense
+// category, which resolves to a GL account server-side exactly the way
+// MyExpenseClaimsPage's self-service "New Claim" form already worked
+// (POST /finance/expense-claims/request-self). Reusing that endpoint
+// directly — rather than teaching createRequisition's po_lines-shaped
+// schema about categories/GL accounts — means expense requisitions post
+// through the exact same, already-hardened accounting path (including the
+// fn_enforce_postable_account trigger) instead of a second, parallel one.
+interface ExpenseLineDraft {
+  expense_date: string
+  category_id: string
+  description: string
+  amount: string
+  // Only used/shown when expenseSource === 'advance' — a settlement line
+  // defaults to the advance's own project but can override it per line
+  // (one advance commonly covers spend across more than one project over
+  // its life, e.g. fuel for several job sites). Left blank on the
+  // 'reimburse' branch, which instead has one project for the whole claim.
+  project_id?: string
+}
+
+const emptyExpenseLine = (): ExpenseLineDraft => ({
+  expense_date: new Date().toISOString().slice(0, 10),
+  category_id: '',
+  description: '',
+  amount: '',
+  project_id: '',
+})
+
+interface ExpenseCategory {
+  id: string
+  name: string
+}
+
+// An expense is either paid out of an existing cash advance (settle it —
+// no reimbursement owed, the company already gave the cash up front) or
+// paid out of pocket (reimburse it). Both already exist as fully built,
+// independent accounting paths — Employee Advances → Settlement and
+// Expense Claims, respectively — this just gives both a single front door.
+// Project/cost-center attribution is already wired into both: a
+// reimbursement claim via its own (optional) project_id, a settlement via
+// its advance's own project_id/cost_center_id as the per-line default
+// (overridable per line — see ExpenseLineDraft.project_id above).
+type ExpenseSource = 'reimburse' | 'advance'
+
+interface MyAdvance {
+  id: string
+  advance_number: string
+  purpose: string | null
+  outstanding_amount: number
+  currency_code: string
+  status: string
+}
 
 // No GL account / cost center fields here — a requisition's requester has
 // no reason to know either, and both already default automatically
@@ -54,7 +109,7 @@ export default function RequisitionForm() {
   const isTourMode = useTourStore((s) => s.isActive)
   const [searchParams] = useSearchParams()
 
-  const [purpose, setPurpose] = useState<'stock' | 'project' | 'manufacturing'>('stock')
+  const [purpose, setPurpose] = useState<'stock' | 'project' | 'manufacturing' | 'expense'>('stock')
   const [projectId, setProjectId] = useState('')
   const [deliveryDestination, setDeliveryDestination] = useState<'' | 'inventory' | 'jobsite'>('')
   const [linkedMoId, setLinkedMoId] = useState('')
@@ -64,7 +119,35 @@ export default function RequisitionForm() {
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<ReqLineDraft[]>([emptyLine()])
+  const [expenseCurrency, setExpenseCurrency] = useState('IQD')
+  const [expenseLines, setExpenseLines] = useState<ExpenseLineDraft[]>([emptyExpenseLine()])
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([])
+  const [submittingExpense, setSubmittingExpense] = useState(false)
+  const [expenseSource, setExpenseSource] = useState<ExpenseSource>('reimburse')
+  const [myAdvances, setMyAdvances] = useState<MyAdvance[]>([])
+  const [selectedAdvanceId, setSelectedAdvanceId] = useState('')
   const formRef = useRef<HTMLFormElement>(null)
+
+  useEffect(() => {
+    if (purpose !== 'expense' || expenseCategories.length > 0) return
+    api
+      .get<ExpenseCategory[]>('/finance/expense-claims/categories/mine')
+      .then((r) => { setExpenseCategories(r.data); })
+      .catch(() => { /* handled inline — line's category select just stays empty */ })
+  }, [purpose, expenseCategories.length])
+
+  useEffect(() => {
+    if (purpose !== 'expense' || expenseSource !== 'advance' || myAdvances.length > 0) return
+    api
+      .get<MyAdvance[]>('/finance/advances/mine')
+      .then((r) => { setMyAdvances(r.data); })
+      .catch(() => { /* handled inline — advance picker just stays empty */ })
+  }, [purpose, expenseSource, myAdvances.length])
+
+  const eligibleAdvances = myAdvances.filter(
+    (a) => ['approved', 'partially_settled'].includes(a.status) && Number(a.outstanding_amount) > 0,
+  )
+  const selectedAdvance = eligibleAdvances.find((a) => a.id === selectedAdvanceId)
 
   // Pre-fill from URL — mirrors PurchaseOrderForm's own ?projectId=/?moId=
   // handling, for entry points that already know which project or
@@ -111,7 +194,7 @@ export default function RequisitionForm() {
     // (Math.min(100, ...)), same value already used the same way by
     // MaterialReturnsPage/StoreOutPage/POPositionsPage.
     variables: { includeAll: true, limit: 100 },
-    skip: purpose !== 'project',
+    skip: purpose !== 'project' && purpose !== 'expense',
   })
   const { data: mosData } = useQuery<ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables>(MANUFACTURING_ORDERS_QUERY, {
     variables: {},
@@ -237,8 +320,159 @@ export default function RequisitionForm() {
     },
   ]
 
+  function updateExpenseLine(idx: number, field: keyof ExpenseLineDraft, value: string) {
+    setExpenseLines((prev) => {
+      const next = [...prev]
+      next[idx] = { ...next[idx], [field]: value }
+      return next
+    })
+  }
+
+  const expenseLineFields: LineItemField<ExpenseLineDraft>[] = [
+    {
+      key: 'expense_date',
+      label: 'Date',
+      width: '140px',
+      render: (line, i) => (
+        <Input
+          type="date"
+          value={line.expense_date}
+          onChange={(e) => { updateExpenseLine(i, 'expense_date', e.target.value); }}
+        />
+      ),
+    },
+    {
+      key: 'category_id',
+      label: 'Category',
+      width: '200px',
+      render: (line, i) => (
+        <Select
+          value={line.category_id}
+          onChange={(e) => { updateExpenseLine(i, 'category_id', e.target.value); }}
+          options={[
+            { value: '', label: '— Category —' },
+            ...expenseCategories.map((c) => ({ value: c.id, label: c.name })),
+          ]}
+        />
+      ),
+    },
+    ...(expenseSource === 'advance'
+      ? [
+          {
+            key: 'project_id',
+            label: 'Project (optional)',
+            width: '180px',
+            render: (line: ExpenseLineDraft, i: number) => (
+              <Select
+                value={line.project_id ?? ''}
+                onChange={(e) => { updateExpenseLine(i, 'project_id', e.target.value); }}
+                options={[
+                  {
+                    value: '',
+                    label: selectedAdvance?.purpose ? `Default (${selectedAdvance.purpose})` : 'Default (advance’s own)',
+                  },
+                  ...projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` })),
+                ]}
+              />
+            ),
+          } satisfies LineItemField<ExpenseLineDraft>,
+        ]
+      : []),
+    {
+      key: 'description',
+      label: 'Description',
+      render: (line, i) => (
+        <Input
+          value={line.description}
+          onChange={(e) => { updateExpenseLine(i, 'description', e.target.value); }}
+          placeholder="What was this for?"
+        />
+      ),
+    },
+    {
+      key: 'amount',
+      label: 'Amount',
+      width: '120px',
+      render: (line, i) => (
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          value={line.amount}
+          onChange={(e) => { updateExpenseLine(i, 'amount', e.target.value); }}
+        />
+      ),
+    },
+  ]
+
+  async function handleExpenseSubmit() {
+    const realExpenseLines = expenseLines.filter((l) => l.amount && l.category_id)
+    if (realExpenseLines.length === 0) {
+      addToast({ type: 'error', message: 'Add at least one line with a category and amount' })
+      return
+    }
+    if (expenseSource === 'advance' && !selectedAdvanceId) {
+      addToast({ type: 'error', message: 'Select which advance this was paid from' })
+      return
+    }
+    if (expenseSource === 'advance' && selectedAdvance) {
+      const total = realExpenseLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0)
+      if (total > Number(selectedAdvance.outstanding_amount) + 0.0001) {
+        addToast({
+          type: 'error',
+          message: `Total exceeds this advance's outstanding amount (${selectedAdvance.outstanding_amount.toLocaleString()} ${selectedAdvance.currency_code})`,
+        })
+        return
+      }
+    }
+    setSubmittingExpense(true)
+    try {
+      if (expenseSource === 'advance') {
+        await api.post('/finance/advances/settlements/request-self', {
+          advance_id: selectedAdvanceId,
+          description: notes || undefined,
+          lines: realExpenseLines.map((l) => ({
+            line_date: l.expense_date,
+            category_id: l.category_id,
+            description:
+              l.description || expenseCategories.find((c) => c.id === l.category_id)?.name || 'Expense',
+            amount: parseFloat(l.amount) || 0,
+            project_id: l.project_id || undefined,
+          })),
+        })
+        addToast({ type: 'success', message: 'Settlement submitted for approval' })
+      } else {
+        await api.post('/finance/expense-claims/request-self', {
+          description: notes || undefined,
+          currency_code: expenseCurrency,
+          project_id: projectId || undefined,
+          lines: realExpenseLines.map((l) => ({
+            expense_date: l.expense_date,
+            category_id: l.category_id,
+            description: l.description || undefined,
+            amount: parseFloat(l.amount) || 0,
+          })),
+        })
+        addToast({ type: 'success', message: 'Expense requisition submitted for approval' })
+      }
+      navigate('/procurement/requisitions')
+    } catch (err: unknown) {
+      const apiError = err as { response?: { data?: { error?: { message?: string } } } }
+      addToast({
+        type: 'error',
+        message: apiError.response?.data?.error?.message ?? (err as Error).message,
+      })
+    } finally {
+      setSubmittingExpense(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (purpose === 'expense') {
+      await handleExpenseSubmit()
+      return
+    }
     if (!isTourMode) {
       if (purpose === 'project' && !projectId) {
         addToast({ type: 'error', message: 'Please select a project' })
@@ -301,6 +535,8 @@ export default function RequisitionForm() {
     0,
   )
   const selectedProject = projects.find((p) => p.id === projectId)
+  const realExpenseLines = expenseLines.filter((l) => l.amount && l.category_id)
+  const expenseTotal = realExpenseLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0)
 
   return (
     <div style={{ padding: '24px' }}>
@@ -313,7 +549,7 @@ export default function RequisitionForm() {
             data-tour="submit-req-btn"
             type="button"
             variant="primary"
-            loading={loading}
+            loading={purpose === 'expense' ? submittingExpense : loading}
             onClick={() => formRef.current?.requestSubmit()}
           >
             Create Requisition
@@ -338,54 +574,127 @@ export default function RequisitionForm() {
               <Select
                 label="Purpose"
                 value={purpose}
-                onChange={(e) => { setPurpose(e.target.value as 'stock' | 'project' | 'manufacturing'); }}
+                onChange={(e) => {
+                  setPurpose(e.target.value as 'stock' | 'project' | 'manufacturing' | 'expense')
+                }}
               >
                 <option value="stock">General Stock</option>
                 <option value="project">Project Supply</option>
                 <option value="manufacturing">Manufacturing / BOM</option>
+                <option value="expense">Expense</option>
               </Select>
             </div>
-            <div style={{ flex: '1 1 200px' }}>
-              <Select
-                label={branches.length > 0 ? 'Branch *' : 'Branch'}
-                value={branchId}
-                onChange={(e) => { setBranchId(e.target.value); }}
-                options={[{ value: '', label: 'Select branch…' }, ...branches.map((b) => ({ value: b.id, label: b.name }))]}
-              />
-            </div>
-            <div style={{ flex: '1 1 160px' }}>
-              <Select
-                label="Priority"
-                value={priority}
-                onChange={(e) => { setPriority(e.target.value as 'low' | 'high' | 'emergency'); }}
-              >
-                <option value="low">Low</option>
-                <option value="high">High</option>
-                <option value="emergency">Emergency</option>
-              </Select>
-            </div>
+            {purpose === 'expense' ? (
+              <div style={{ flex: '1 1 220px' }}>
+                <Select
+                  label="Paid"
+                  value={expenseSource}
+                  onChange={(e) => {
+                    setExpenseSource(e.target.value as ExpenseSource)
+                    setSelectedAdvanceId('')
+                  }}
+                >
+                  <option value="reimburse">Out of pocket — reimburse me</option>
+                  <option value="advance">From my cash advance</option>
+                </Select>
+              </div>
+            ) : (
+              <div style={{ flex: '1 1 200px' }}>
+                <Select
+                  label={branches.length > 0 ? 'Branch *' : 'Branch'}
+                  value={branchId}
+                  onChange={(e) => { setBranchId(e.target.value); }}
+                  options={[{ value: '', label: 'Select branch…' }, ...branches.map((b) => ({ value: b.id, label: b.name }))]}
+                />
+              </div>
+            )}
+            {purpose !== 'expense' && (
+              <div style={{ flex: '1 1 160px' }}>
+                <Select
+                  label="Priority"
+                  value={priority}
+                  onChange={(e) => { setPriority(e.target.value as 'low' | 'high' | 'emergency'); }}
+                >
+                  <option value="low">Low</option>
+                  <option value="high">High</option>
+                  <option value="emergency">Emergency</option>
+                </Select>
+              </div>
+            )}
           </div>
 
-          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <div style={{ flex: '1 1 200px' }}>
-              <SearchableSelect
-                label="Received By"
-                value={assignedReceiverId}
-                onChange={setAssignedReceiverId}
-                options={employeeOptions}
-                placeholder="Search employee…"
-                minDropdownWidth={320}
-              />
+          {purpose !== 'expense' && (
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div style={{ flex: '1 1 200px' }}>
+                <SearchableSelect
+                  label="Received By"
+                  value={assignedReceiverId}
+                  onChange={setAssignedReceiverId}
+                  options={employeeOptions}
+                  placeholder="Search employee…"
+                  minDropdownWidth={320}
+                />
+              </div>
+              <div style={{ flex: '1 1 180px' }}>
+                <Input
+                  label="Expected Delivery (optional)"
+                  type="date"
+                  value={expectedDeliveryDate}
+                  onChange={(e) => { setExpectedDeliveryDate(e.target.value); }}
+                />
+              </div>
             </div>
-            <div style={{ flex: '1 1 180px' }}>
-              <Input
-                label="Expected Delivery (optional)"
-                type="date"
-                value={expectedDeliveryDate}
-                onChange={(e) => { setExpectedDeliveryDate(e.target.value); }}
-              />
+          )}
+
+          {purpose === 'expense' && expenseSource === 'reimburse' && (
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 160px' }}>
+                <Select
+                  label="Currency"
+                  value={expenseCurrency}
+                  onChange={(e) => { setExpenseCurrency(e.target.value); }}
+                >
+                  <option value="IQD">IQD</option>
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                </Select>
+              </div>
+              <div style={{ flex: '1 1 240px' }}>
+                <SearchableSelect
+                  label="Project (optional)"
+                  value={projectId}
+                  onChange={setProjectId}
+                  options={projectOptions}
+                  placeholder="Search project…"
+                  minDropdownWidth={360}
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          {purpose === 'expense' && expenseSource === 'advance' && (
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div style={{ flex: '1 1 300px' }}>
+                <Select
+                  label="Which advance *"
+                  value={selectedAdvanceId}
+                  onChange={(e) => { setSelectedAdvanceId(e.target.value); }}
+                  options={[
+                    { value: '', label: 'Select advance…' },
+                    ...eligibleAdvances.map((a) => ({
+                      value: a.id,
+                      label: `${a.advance_number} — ${Number(a.outstanding_amount).toLocaleString()} ${a.currency_code} outstanding${a.purpose ? ` (${a.purpose})` : ''}`,
+                    })),
+                  ]}
+                />
+                {eligibleAdvances.length === 0 && (
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
+                    No approved advance with an outstanding balance found on your account.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {purpose === 'project' && (
             <div data-tour="req-project-row" style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
@@ -450,15 +759,21 @@ export default function RequisitionForm() {
                 Summary
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
-                {[
-                  { label: 'Line Items', value: String(realLines.length) },
-                  { label: 'Total Qty', value: totalQty.toLocaleString() },
-                  { label: 'Est. Total', value: estTotal.toLocaleString() },
-                  {
-                    label: 'Priority',
-                    value: priority.charAt(0).toUpperCase() + priority.slice(1),
-                  },
-                ].map((kpi) => (
+                {(purpose === 'expense'
+                  ? [
+                      { label: 'Line Items', value: String(realExpenseLines.length) },
+                      { label: 'Total', value: `${expenseTotal.toLocaleString()} ${expenseCurrency}` },
+                    ]
+                  : [
+                      { label: 'Line Items', value: String(realLines.length) },
+                      { label: 'Total Qty', value: totalQty.toLocaleString() },
+                      { label: 'Est. Total', value: estTotal.toLocaleString() },
+                      {
+                        label: 'Priority',
+                        value: priority.charAt(0).toUpperCase() + priority.slice(1),
+                      },
+                    ]
+                ).map((kpi) => (
                   <div
                     key={kpi.label}
                     style={{
@@ -496,6 +811,10 @@ export default function RequisitionForm() {
                       {selectedProject?.code ?? '— not selected —'}
                     </strong>
                   </>
+                ) : purpose === 'expense' ? (
+                  expenseSource === 'advance'
+                    ? "Submits for approval immediately — settles against the selected advance once approved, no reimbursement owed since you've already got the cash."
+                    : 'Submits for approval immediately — Finance posts the reimbursement journal once approved.'
                 ) : (
                   'General stock requisition — not linked to a project'
                 )}
@@ -508,19 +827,33 @@ export default function RequisitionForm() {
           <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
             <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Lines</div>
             <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-              Add each item you need — GL account and cost center are worked out automatically later
-              and aren't something you need to set here.
+              {purpose === 'expense'
+                ? expenseSource === 'advance'
+                  ? "Add each expense — category decides the GL account; project and cost center come from the advance itself."
+                  : 'Add each expense — category decides the GL account automatically.'
+                : "Add each item you need — GL account and cost center are worked out automatically later and aren't something you need to set here."}
             </div>
           </div>
           <div style={{ padding: '16px 20px' }}>
-            <LineItemEditor
-              fields={lineFields}
-              rows={lines}
-              onRemoveRow={(idx) => { setLines((p) => p.filter((_, i) => i !== idx)); }}
-              removeDisabled={() => lines.length <= 1}
-              onAddRow={() => { setLines((p) => [...p, emptyLine()]); }}
-              addButtonDataTour="req-add-line-btn"
-            />
+            {purpose === 'expense' ? (
+              <LineItemEditor
+                fields={expenseLineFields}
+                rows={expenseLines}
+                onRemoveRow={(idx) => { setExpenseLines((p) => p.filter((_, i) => i !== idx)); }}
+                removeDisabled={() => expenseLines.length <= 1}
+                onAddRow={() => { setExpenseLines((p) => [...p, emptyExpenseLine()]); }}
+                addButtonDataTour="req-add-line-btn"
+              />
+            ) : (
+              <LineItemEditor
+                fields={lineFields}
+                rows={lines}
+                onRemoveRow={(idx) => { setLines((p) => p.filter((_, i) => i !== idx)); }}
+                removeDisabled={() => lines.length <= 1}
+                onAddRow={() => { setLines((p) => [...p, emptyLine()]); }}
+                addButtonDataTour="req-add-line-btn"
+              />
+            )}
           </div>
         </Card>
       </form>

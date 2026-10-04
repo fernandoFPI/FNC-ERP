@@ -790,7 +790,7 @@ const informationalTours: Record<string, { title: string; steps: DriveStep[] }> 
         popover: {
           title: 'Step 1 — Submit a claim',
           description:
-            'Go to <strong>Finance → Expense Claims → New Claim</strong>.<br/><br/>Add each expense as a line:<br/>• <strong>Date</strong> of the expense<br/>• <strong>Category</strong> (Travel, Meals, Office Supplies, etc.) — determines the GL account<br/>• <strong>Amount</strong> and <strong>currency</strong><br/>• <strong>Receipt attachment</strong> — required above the policy threshold<br/><br/>Click <strong>Submit</strong> when complete.',
+            'Go to <strong>Procurement → Requisitions → New Requisition</strong> and set Purpose to <strong>Expense</strong>.<br/><br/>Add each expense as a line:<br/>• <strong>Date</strong> of the expense<br/>• <strong>Category</strong> (Travel, Meals, Office Supplies, etc.) — determines the GL account<br/>• <strong>Amount</strong><br/><br/>Click <strong>Create Requisition</strong> when complete.',
         },
       },
       {
