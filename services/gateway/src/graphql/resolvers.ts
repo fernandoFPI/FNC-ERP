@@ -34580,6 +34580,33 @@ const phase5MutationResolvers = {
     const flagged = parseInt(String(flaggedRes.rows[0]?.c ?? '0'))
     if (flagged > 0)
       throw new Error(`Cannot pass audit: ${flagged} line${flagged > 1 ? 's are' : ' is'} flagged`)
+    // sendPOToAudit deliberately allows *starting* an audit on a partially
+    // received PO (see its own comment — some receipt is enough, not every
+    // line in full, so a partial audit an organizer already relies on isn't
+    // blocked). Passing is different: finance should never be able to close
+    // an audit out while real quantity is still outstanding, since that's
+    // exactly what lets a short delivery slip through uncaught. Only
+    // enforced here, at the final step — not at send, not mid-audit.
+    const underReceivedRes = await query<{
+      label: string
+      qty_ordered: string
+      qty_received: string
+    }>(
+      `SELECT COALESCE(prod.sku || ' (' || prod.name || ')', pl.description) AS label,
+              pl.qty_ordered, pl.qty_received
+       FROM po_lines pl
+       LEFT JOIN products prod ON prod.id = pl.product_id
+       WHERE pl.po_id=$1 AND pl.qty_received < pl.qty_ordered - 0.0001`,
+      [args.id],
+    )
+    if (underReceivedRes.rows.length > 0) {
+      const detail = underReceivedRes.rows
+        .map((l) => `${l.label}: ${l.qty_received}/${l.qty_ordered}`)
+        .join('; ')
+      throw new Error(
+        `Cannot pass audit — ${underReceivedRes.rows.length} line${underReceivedRes.rows.length > 1 ? 's are' : ' is'} not fully received yet (${detail}). Record the remaining quantity in Store In, or fail this audit to send it back to Goods Received.`,
+      )
+    }
     const client = await pool.connect()
     try {
       await client.query('BEGIN')

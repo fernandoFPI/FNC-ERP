@@ -439,6 +439,11 @@ describe('G1 child dual-vocabulary lifecycle', () => {
     )
     const receiptId = (receipt as { id: string }).id
     await pool.query(`UPDATE po_receipts SET status='confirmed', confirmed_at=NOW() WHERE id=$1`, [receiptId])
+    // recordReceipt only drafts the receipt — qty_received is a confirmReceipt
+    // side effect this test's SQL-shortcut confirm (above) doesn't replay, so
+    // set it directly to what a real confirm would have produced. Needed for
+    // passPOAudit's full-receipt check below, not just cosmetic.
+    await pool.query(`UPDATE po_lines SET qty_received=2 WHERE id=$1`, [childLineId])
 
     await resolvers.Mutation.sendPOToAudit(null, { id: childId }, ctx as never)
     const afterAudit = await pool.query<{ status: string }>(`SELECT status FROM purchase_orders WHERE id=$1`, [childId])
@@ -466,6 +471,11 @@ describe('G1 child dual-vocabulary lifecycle', () => {
     const { childId } = await makeReqWithOneChildAtBought(3, 30)
     await pool.query(`DELETE FROM po_line_purchases WHERE po_line_id IN (SELECT id FROM po_lines WHERE po_id=$1)`, [childId])
     await pool.query(`UPDATE purchase_orders SET status='finance_audit' WHERE id=$1`, [childId])
+    // This test's whole point is skipping straight to finance_audit with no
+    // receipt/audit re-drive — but passPOAudit now requires full receipt
+    // regardless of how the PO got here, so still needs qty_received set to
+    // match what "already received" means for this fast-forwarded PO.
+    await pool.query(`UPDATE po_lines SET qty_received=3 WHERE po_id=$1`, [childId])
 
     await resolvers.Mutation.passPOAudit(null, { id: childId }, ctx as never)
     const afterPass = await pool.query<{ status: string }>(`SELECT status FROM purchase_orders WHERE id=$1`, [childId])
