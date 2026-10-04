@@ -12,7 +12,7 @@
   firstRowOrThrow,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
-import { notifyProjectFileUploadGW } from '../lib/projectNotify.js'
+import { notifyProjectFileUploadGW, notifyProjectEventGW } from '../lib/projectNotify.js'
 import {
   sendEmail,
   renderMeetingInvitationEmail,
@@ -5819,6 +5819,25 @@ async function assertProjectCancellable(projectId: string): Promise<void> {
     throw new Error(`Cannot cancel project — resolve the following first: ${blockers.join('; ')}`)
 }
 
+// Human-readable past-tense label per projectTransition action — drives the
+// title/body of the one notifyProjectEventGW call every transition shares
+// (start/hold/resume/submit/approve/reject/complete/cancel and their RFQ
+// counterparts all funnel through projectTransition, so this one hook
+// covers all of them instead of needing one at each of the 10 call sites).
+const PROJECT_TRANSITION_LABELS: Record<string, string> = {
+  start: 'started — moving to scope review',
+  submit_to_team: 'moved to scope review',
+  hold: 'put on hold',
+  resume: 'resumed',
+  submit: 'submitted for client approval',
+  approve: 'approved — moving to execution',
+  reject_back: 'sent back for revision',
+  reject_rfq: 'rejected',
+  complete: 'completed',
+  cancel: 'cancelled',
+  cancel_after_approval: 'cancelled',
+}
+
 async function projectTransition(
   projectId: string,
   companyId: string,
@@ -5857,7 +5876,19 @@ async function projectTransition(
       (reason ? ` ("${reason}")` : ''),
   )
   void publishEntityChanged(companyId, 'project', projectId, 'updated')
-  return projectRowToGQL(updated.rows[0] as Record<string, unknown>)
+  const updatedRow = updated.rows[0] as Record<string, unknown>
+  const actionLabel = PROJECT_TRANSITION_LABELS[action] ?? action.replace(/_/g, ' ')
+  void notifyProjectEventGW(
+    projectId,
+    companyId,
+    userId,
+    `PROJECT_${toStatus.toUpperCase()}`,
+    `Project ${actionLabel}`,
+    `${String(updatedRow.name)} (${String(updatedRow.code)}) was ${actionLabel}` +
+      (reason ? ` ("${reason}")` : ''),
+    'email.project_lifecycle',
+  )
+  return projectRowToGQL(updatedRow)
 }
 
 interface GQLContext {
@@ -7812,7 +7843,7 @@ export const resolvers = {
       }
       if (args.search) {
         conditions.push(
-          `(p.name ILIKE $${idx++} OR p.code ILIKE $${idx - 1} OR p.rfq_number ILIKE $${idx - 1} OR p.project_location ILIKE $${idx - 1})`,
+          `(p.name ILIKE $${idx++} OR p.code ILIKE $${idx - 1} OR p.rfq_number ILIKE $${idx - 1} OR p.project_location ILIKE $${idx - 1} OR p.client_name ILIKE $${idx - 1})`,
         )
         params.push(`%${args.search}%`)
       }
@@ -13897,6 +13928,23 @@ export const resolvers = {
       const i = args.input
       const code = await nextDocumentNumber(ctx.auth.companyId, 'project', 'PRJ')
       const rfqNum = await deriveRfqNumber(ctx.auth.companyId, code)
+
+      // Direct Supply skips the whole tender flow (enquiry/scope review/
+      // bidding/client approval) — created straight into the same end
+      // state approveRFQ normally produces once an RFQ is won: status
+      // 'approved', lifecycle_phase 'execution', plus the analytic account
+      // every executing project needs for cost tracking (see approveRFQ's
+      // own comment on why one gets created there).
+      const isDirectSupply = i.projectType === 'direct_supply'
+      let analyticAccountId: string | null = null
+      if (isDirectSupply) {
+        const aa = await query(
+          `INSERT INTO analytic_accounts (company_id, name, code, is_active) VALUES ($1,$2,$3,true) RETURNING id`,
+          [ctx.auth.companyId, `Project: ${String(i.name)}`, code.slice(0, 20)],
+        )
+        analyticAccountId = aa.rows[0].id as string
+      }
+
       const r = await query(
         `INSERT INTO projects (
           company_id, name, code, description, project_type,
@@ -13905,8 +13953,9 @@ export const resolvers = {
           planned_start_date, planned_end_date, budget_amount, budget_currency,
           project_manager_id, cost_center_id, remarks,
           submission_time, site_visit_date, site_visit_time, question_date, question_time,
-          rfq_estimated_cost, is_rfq, status, created_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,true,'pending',$28)
+          rfq_estimated_cost, is_rfq, status, lifecycle_phase, rfq_outcome, approved_at,
+          analytic_account_id, created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,true,$28,$29,$30,$31,$32,$33)
         RETURNING *`,
         [
           ctx.auth.companyId,
@@ -13936,13 +13985,18 @@ export const resolvers = {
           i.questionDate ?? null,
           i.questionTime ?? null,
           i.rfqEstimatedCost ?? null,
+          isDirectSupply ? 'approved' : 'pending',
+          isDirectSupply ? 'execution' : 'enquiry',
+          isDirectSupply ? 'won' : null,
+          isDirectSupply ? new Date() : null,
+          analyticAccountId,
           ctx.auth.userId,
         ],
       )
       const projectId = r.rows[0].id as string
       await query(
-        `INSERT INTO project_status_history (project_id, from_status, to_status, changed_by) VALUES ($1, NULL, 'pending', $2)`,
-        [projectId, ctx.auth.userId],
+        `INSERT INTO project_status_history (project_id, from_status, to_status, changed_by) VALUES ($1, NULL, $2, $3)`,
+        [projectId, isDirectSupply ? 'approved' : 'pending', ctx.auth.userId],
       )
       const lines = i.rfqLines as Record<string, unknown>[] | undefined
       if (lines && lines.length > 0) {
@@ -13963,7 +14017,36 @@ export const resolvers = {
           )
         }
       }
-      return projectRowToGQL(r.rows[0] as Record<string, unknown>)
+      // Mirrors approveRFQ's own auto-stage-creation (one project_stage per
+      // distinct rfq_lines.phase_label) — a Direct Supply project is
+      // created already past the point that normally triggers it.
+      if (isDirectSupply) {
+        const phases = await query(
+          `SELECT phase_label, MIN(sequence) AS min_seq
+           FROM rfq_lines
+           WHERE project_id=$1 AND phase_label IS NOT NULL AND phase_label <> ''
+           GROUP BY phase_label
+           ORDER BY min_seq`,
+          [projectId],
+        )
+        for (const [idx, phase] of phases.rows.entries()) {
+          await query(
+            `INSERT INTO project_stages (project_id, name, sequence, status) VALUES ($1,$2,$3,'pending')`,
+            [projectId, phase.phase_label, idx],
+          )
+        }
+      }
+      const createdRow = r.rows[0] as Record<string, unknown>
+      void notifyProjectEventGW(
+        projectId,
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'PROJECT_CREATED',
+        'New project created',
+        `${String(createdRow.name)} (${String(createdRow.code)}) was created`,
+        'email.project_lifecycle',
+      )
+      return projectRowToGQL(createdRow)
     },
 
     approveRFQ: async (_: unknown, args: { id: string; notes?: string }, ctx: GQLContext) => {
@@ -14024,7 +14107,17 @@ export const resolvers = {
           )
         }
       }
-      return projectRowToGQL(r.rows[0] as Record<string, unknown>)
+      const approvedRow = r.rows[0] as Record<string, unknown>
+      void notifyProjectEventGW(
+        args.id,
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'PROJECT_APPROVED',
+        'Project approved — moving to execution',
+        `${String(approvedRow.name)} (${String(approvedRow.code)}) was awarded and is now in execution`,
+        'email.project_lifecycle',
+      )
+      return projectRowToGQL(approvedRow)
     },
 
     rejectRFQ: async (_: unknown, args: { id: string; reason: string }, ctx: GQLContext) => {
@@ -24151,6 +24244,15 @@ export const resolvers = {
         ctx.auth.userId,
         'team_add',
         `Team member added: ${empName}`,
+      )
+      void notifyProjectEventGW(
+        args.projectId,
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'PROJECT_MEMBER_ADDED',
+        `${String(empName)} assigned to the project`,
+        `${String(empName)} was added to the project team${i.role ? ` as ${String(i.role)}` : ''}`,
+        'email.project_member_added',
       )
       return {
         id: row.id,
