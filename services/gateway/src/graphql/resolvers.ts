@@ -3086,6 +3086,20 @@ async function verifyAttachmentEntityOwnershipGW(
       ])
       return r.rows.length > 0
     }
+    case 'po_line_purchase': {
+      // Mirrors recordLinePurchase's own ownership query — po_line_purchases
+      // join to requisitions (not purchase_orders) since Items Bought
+      // operates on the original requisition line, before Finish Buying
+      // forks it into per-vendor PO lines.
+      const r = await query(
+        `SELECT plp.id FROM po_line_purchases plp
+         JOIN po_lines pl ON pl.id = plp.po_line_id
+         JOIN requisitions req ON req.id = pl.requisition_id
+         WHERE plp.id=$1 AND req.company_id=$2`,
+        [entityId, companyId],
+      )
+      return r.rows.length > 0
+    }
     default:
       return true
   }

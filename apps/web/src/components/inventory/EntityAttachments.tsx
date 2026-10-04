@@ -70,6 +70,9 @@ export function EntityAttachments({
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Attachment | null>(null)
+  const [previewTarget, setPreviewTarget] = useState<Attachment | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   const { data, loading, refetch } = useQuery<EntityAttachmentsQuery, EntityAttachmentsQueryVariables>(ENTITY_ATTACHMENTS_QUERY, {
     variables: { entityType, entityId },
@@ -88,6 +91,29 @@ export function EntityAttachments({
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
   const [thumbFailed, setThumbFailed] = useState<Record<string, boolean>>({})
 
+  // A transient failure here (one slow/flaky signed-URL request among a
+  // batch fetched in parallel) used to leave that file's thumbnail stuck
+  // blank for the rest of the session — the catch block returned null
+  // without ever setting thumbFailed, so the file matched neither
+  // "has a thumbnail" nor "failed", and nothing ever retried it since this
+  // effect only reruns when `data` itself changes. Retrying a few times
+  // before giving up on it is what's actually shown as "receipt sometimes
+  // not showing" — this fixes the flaky case and still falls back to the
+  // file icon for a genuinely missing/broken file.
+  async function fetchDownloadUrlWithRetry(fileId: string, attempts = 3): Promise<string | null> {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const { data: dlData } = await getDownloadUrl({ variables: { fileId } })
+        const url = dlData?.fileDownloadUrl.downloadUrl
+        if (url) return url
+      } catch {
+        // fall through to retry
+      }
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1)))
+    }
+    return null
+  }
+
   useEffect(() => {
     const toFetch = attachments.filter(
       (a) => a.file.mimeType.startsWith('image/') && !thumbnails[a.file.id] && !thumbFailed[a.file.id],
@@ -96,19 +122,19 @@ export function EntityAttachments({
     let cancelled = false
     void Promise.all(
       toFetch.map(async (att) => {
-        try {
-          const { data: dlData } = await getDownloadUrl({ variables: { fileId: att.file.id } })
-          const url = dlData?.fileDownloadUrl.downloadUrl
-          return url ? ([att.file.id, url] as const) : null
-        } catch {
-          return null
-        }
+        const url = await fetchDownloadUrlWithRetry(att.file.id)
+        return [att.file.id, url] as const
       }),
     ).then((results) => {
       if (cancelled) return
       const next: Record<string, string> = {}
-      for (const r of results) if (r) next[r[0]] = r[1]
+      const failed: Record<string, boolean> = {}
+      for (const [fileId, url] of results) {
+        if (url) next[fileId] = url
+        else failed[fileId] = true
+      }
       if (Object.keys(next).length) setThumbnails((prev) => ({ ...prev, ...next }))
+      if (Object.keys(failed).length) setThumbFailed((prev) => ({ ...prev, ...failed }))
     })
     return () => {
       cancelled = true
@@ -177,6 +203,30 @@ export function EntityAttachments({
       addToast({ type: 'error', message: (err as Error).message })
     } finally {
       setUploading(false)
+    }
+  }
+
+  // Previewable inline (image shown directly, PDF via an embedded viewer)
+  // vs. falling back to Download in the modal for anything else (zip,
+  // spreadsheets, ...) that a browser can't render in place.
+  function isPreviewable(mimeType: string): boolean {
+    return mimeType.startsWith('image/') || mimeType === 'application/pdf'
+  }
+
+  async function handlePreview(att: Attachment) {
+    setPreviewTarget(att)
+    setPreviewUrl(thumbnails[att.file.id] ?? null)
+    if (thumbnails[att.file.id]) return
+    setPreviewLoading(true)
+    try {
+      const url = await fetchDownloadUrlWithRetry(att.file.id)
+      if (!url) throw new Error('Could not load this file')
+      setPreviewUrl(url)
+    } catch (err) {
+      addToast({ type: 'error', message: (err as Error).message })
+      setPreviewTarget(null)
+    } finally {
+      setPreviewLoading(false)
     }
   }
 
@@ -365,6 +415,11 @@ export function EntityAttachments({
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                  {isPreviewable(att.file.mimeType) && (
+                    <Button variant="ghost" size="sm" onClick={() => void handlePreview(att)}>
+                      Preview
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -472,6 +527,38 @@ export function EntityAttachments({
           Remove <strong>{deleteTarget?.label ?? deleteTarget?.file.originalFilename}</strong> from{' '}
           {recordLabel}? The file will be detached but not permanently deleted.
         </p>
+      </Modal>
+
+      {/* Preview */}
+      <Modal
+        open={!!previewTarget}
+        onClose={() => {
+          setPreviewTarget(null)
+          setPreviewUrl(null)
+        }}
+        title={previewTarget?.label ?? previewTarget?.file.originalFilename ?? ''}
+        size="lg"
+      >
+        {previewLoading && (
+          <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+            Loading…
+          </div>
+        )}
+        {!previewLoading && previewUrl && previewTarget && (
+          previewTarget.file.mimeType.startsWith('image/') ? (
+            <img
+              src={previewUrl}
+              alt={previewTarget.file.originalFilename}
+              style={{ width: '100%', maxHeight: '75vh', objectFit: 'contain', borderRadius: '8px' }}
+            />
+          ) : (
+            <iframe
+              src={previewUrl}
+              title={previewTarget.file.originalFilename}
+              style={{ width: '100%', height: '75vh', border: 'none', borderRadius: '8px' }}
+            />
+          )
+        )}
       </Modal>
     </div>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useLazyQuery } from '@apollo/client'
+import { useQuery, useMutation } from '@apollo/client'
 import {
   REQUISITION_ITEMS_BOUGHT_QUERY,
   RECORD_LINE_PURCHASE,
@@ -12,7 +12,6 @@ import {
 } from '../../../graphql/requisitions'
 import { VENDORS_QUERY, CREATE_VENDOR, REQUEST_UPLOAD_URL } from '../../../graphql/procurement'
 import { STOCK_LOCATIONS_QUERY, CENTRAL_WAREHOUSE_LOCATIONS_QUERY } from '../../../graphql/inventory'
-import { FILE_DOWNLOAD_URL_QUERY } from '../../../graphql/hr'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
@@ -26,6 +25,7 @@ import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Modal } from '../../../components/ui/Modal'
+import { EntityAttachments } from '../../../components/inventory/EntityAttachments'
 import { useToastStore } from '../../../store/toastStore'
 import type {
   ApproveTolerancePurchaseMutation,
@@ -36,8 +36,6 @@ import type {
   CreateVendorMutationVariables,
   EnsureCashPurchaseVendorMutation,
   EnsureCashPurchaseVendorMutationVariables,
-  FileDownloadUrlQuery,
-  FileDownloadUrlQueryVariables,
   FinishBuyingRequisitionMutation,
   FinishBuyingRequisitionMutationVariables,
   MarkRequisitionLineShortMutation,
@@ -266,9 +264,6 @@ export default function ItemsBoughtPage() {
     RequestUploadUrlMutation,
     RequestUploadUrlMutationVariables
   >(REQUEST_UPLOAD_URL)
-  const [getDownloadUrl] = useLazyQuery<FileDownloadUrlQuery, FileDownloadUrlQueryVariables>(
-    FILE_DOWNLOAD_URL_QUERY,
-  )
 
   // ── Per-line "record a purchase" form state ─────────────────────────────
   const [selectedVendor, setSelectedVendor] = useState<Record<string, string>>({})
@@ -291,6 +286,12 @@ export default function ItemsBoughtPage() {
   const [resolveStockFor, setResolveStockFor] = useState<string | null>(null)
   const [resolveStockQty, setResolveStockQty] = useState('')
   const [resolveStockLocation, setResolveStockLocation] = useState('')
+  // Purchase id whose receipts modal is open — lets a buyer attach more
+  // than one receipt photo per purchase (e.g. several pages of one
+  // receipt) via the same generic document_attachments mechanism already
+  // used for signed documents elsewhere, instead of the single receiptFileId
+  // recordLinePurchase sets as the primary one at record time.
+  const [receiptsModalFor, setReceiptsModalFor] = useState<string | null>(null)
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
   const [quickCreateLineId, setQuickCreateLineId] = useState<string | null>(null)
   const [quickCreateName, setQuickCreateName] = useState('')
@@ -496,13 +497,6 @@ export default function ItemsBoughtPage() {
     } finally {
       setCreatingVendor(false)
     }
-  }
-
-  async function handleViewReceipt(fileId: string) {
-    const { data: dlData } = await getDownloadUrl({ variables: { fileId } })
-    const url = dlData?.fileDownloadUrl.downloadUrl
-    if (url) window.open(url, '_blank', 'noopener,noreferrer')
-    else addToast({ type: 'error', message: 'Could not load the receipt' })
   }
 
   return (
@@ -753,25 +747,21 @@ export default function ItemsBoughtPage() {
                       {fmtN(p.qty)} @ {fmtN(p.actual_unit_price)} {p.currency_code}
                     </span>
                     <span style={{ color: theme.textMuted }}>{p.bought_by_name ?? ''}</span>
-                    {p.receipt_file_id ? (
-                      <button
-                        onClick={() => {
-                          if (p.receipt_file_id) void handleViewReceipt(p.receipt_file_id)
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: theme.accent,
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          padding: 0,
-                        }}
-                      >
-                        📎 Receipt
-                      </button>
-                    ) : (
-                      <span style={{ color: theme.danger }}>⚠ No receipt</span>
-                    )}
+                    <button
+                      onClick={() => {
+                        setReceiptsModalFor(p.id)
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: p.receipt_file_id ? theme.accent : theme.danger,
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        padding: 0,
+                      }}
+                    >
+                      {p.receipt_file_id ? '📎 Receipts' : '⚠ No receipt — add one'}
+                    </button>
                     {p.over_tolerance && (
                       <Badge variant={p.tolerance_approved_by ? 'success' : 'warning'}>
                         {p.tolerance_approved_by
@@ -1170,6 +1160,26 @@ export default function ItemsBoughtPage() {
           }}
           placeholder="e.g. Al-Rasheed Hardware"
         />
+      </Modal>
+
+      <Modal
+        open={!!receiptsModalFor}
+        onClose={() => {
+          setReceiptsModalFor(null)
+        }}
+        title="Receipts"
+        size="md"
+      >
+        {receiptsModalFor && (
+          <EntityAttachments
+            entityType="po_line_purchase"
+            entityId={receiptsModalFor}
+            title="Receipt photos"
+            description="Attach one or more receipt photos for this purchase — a multi-page receipt can be uploaded as several photos."
+            uploadButtonLabel="Add receipt"
+            category="attachment"
+          />
+        )}
       </Modal>
     </div>
   )
