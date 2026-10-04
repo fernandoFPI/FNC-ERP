@@ -38,6 +38,24 @@ export const NOTIFICATION_ROUTES = [
     description:
       'Email store pricing / market pricing / price verification / approval position holders when a requisition reaches their stage',
   },
+  {
+    key: 'email.project_lifecycle',
+    label: 'Project created/status change',
+    description:
+      'Email the project manager, team, and project module admins when a project is created or changes status (started, approved, completed, cancelled, etc.)',
+  },
+  {
+    key: 'email.project_member_added',
+    label: 'Project team assignment',
+    description:
+      'Email the project manager, team, and project module admins when someone is added to a project team',
+  },
+  {
+    key: 'email.project_file_upload',
+    label: 'Project file upload',
+    description:
+      'Email the project manager, team, and project module admins when a file is uploaded anywhere on a project',
+  },
 ] as const
 
 export type NotificationRouteKey = (typeof NOTIFICATION_ROUTES)[number]['key']

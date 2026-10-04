@@ -23,6 +23,7 @@ import {
   renderClientDocumentEmail,
   renderEngineeringRevisionEmail,
   renderProjectFileUploadEmail,
+  renderProjectLifecycleEmail,
 } from '@fnc-erp/email'
 import { uploadBuffer } from '@fnc-erp/storage'
 import {
@@ -2270,6 +2271,7 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       break
     }
     case 'PROJECT_FILE_UPLOAD_EMAIL': {
+      if (!(await isEmailEnabled('email.project_file_upload'))) break
       const html = renderProjectFileUploadEmail({
         recipientName: String(p['recipientName']),
         projectName: String(p['projectName']),
@@ -2282,6 +2284,27 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       await sendEmail({
         to: String(p['to']),
         subject: `New file uploaded: ${String(p['fileLabel'])}`,
+        html,
+      })
+      break
+    }
+    // routingKey distinguishes two independently toggleable Settings ->
+    // Notification Routing switches sharing one template — see
+    // notifyProjectEventGW in services/gateway/src/lib/projectNotify.ts.
+    case 'PROJECT_LIFECYCLE_EMAIL': {
+      const routingKey = String(p['routingKey'] ?? 'email.project_lifecycle')
+      if (!(await isEmailEnabled(routingKey))) break
+      const html = renderProjectLifecycleEmail({
+        recipientName: String(p['recipientName']),
+        projectName: String(p['projectName']),
+        projectCode: String(p['projectCode']),
+        title: String(p['title']),
+        body: String(p['body']),
+        projectUrl: String(p['projectUrl']),
+      })
+      await sendEmail({
+        to: String(p['to']),
+        subject: String(p['title']),
         html,
       })
       break
