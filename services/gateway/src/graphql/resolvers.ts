@@ -2748,6 +2748,23 @@ async function callerIsAssignedReceiverForReceiptGW(
   return r.rows.length > 0
 }
 
+// confirmReceipt's own store_keeper check — mirrors
+// callerIsAssignedReceiverForReceiptGW just above (resolve the receipt's
+// po_id, then the usual per-PO position check) since userHasPositionGW
+// itself takes a poId, not a receiptId.
+async function callerHasStoreKeeperPositionForReceiptGW(
+  auth: GWAuth,
+  receiptId: string,
+): Promise<boolean> {
+  const r = await query<{ po_id: string }>(
+    `SELECT po_id FROM po_receipts WHERE id=$1`,
+    [receiptId],
+  )
+  const poId = r.rows[0]?.po_id
+  if (!poId) return false
+  return userHasPositionGW(auth.userId, auth.companyId, poId, 'store_keeper')
+}
+
 async function userHasPositionGW(
   userId: string,
   companyId: string,
@@ -2837,6 +2854,13 @@ async function callerHasCurrentStagePositionGW(
       return userHasPositionGW(auth.userId, auth.companyId, poId, 'store_keeper')
     case 'items_bought':
       return userHasPositionGW(auth.userId, auth.companyId, poId, 'buyer')
+    // 'bought' is the G1 child PO's own "awaiting receipt" status (see
+    // recordReceipt's comment on why it's the main path, not 'approved') —
+    // had no case here at all, so a store_keeper-position holder got the
+    // viewerRestricted stub browsing to one via the normal PO list, same as
+    // anyone else without organizer/admin.
+    case 'bought':
+      return userHasPositionGW(auth.userId, auth.companyId, poId, 'store_keeper')
     case 'goods_received':
       // Not a position grant — whoever is explicitly named as this PO's
       // receiver ("Received By") can view and record the receipt for it,
@@ -6833,7 +6857,7 @@ export const resolvers = {
          FROM purchase_orders po
          LEFT JOIN vendors v ON v.id=po.vendor_id
          LEFT JOIN projects proj ON proj.id=po.project_id
-         WHERE po.company_id=$1 AND po.status IN ('approved','items_bought','goods_received')
+         WHERE po.company_id=$1 AND po.status IN ('approved','bought','goods_received')
            AND EXISTS (
              SELECT 1 FROM po_lines pol
              WHERE pol.po_id=po.id AND pol.qty_ordered - pol.qty_received - pol.qty_from_stock > 0
@@ -12504,7 +12528,13 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
         const isReceiver = await callerIsAssignedReceiverGW(ctx.auth as GWAuth, args.poId)
-        if (!isReceiver) {
+        // A store_keeper-position holder can record a receipt on their own —
+        // doesn't need the broader procurement.po.edit permission too, same
+        // as the named receiver above never has either.
+        const isStoreKeeper =
+          !isReceiver &&
+          (await userHasPositionGW(ctx.auth.userId, ctx.auth.companyId, args.poId, 'store_keeper'))
+        if (!isReceiver && !isStoreKeeper) {
           const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
           if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
             throw new Error("Requires 'edit' access to 'procurement.po.edit'")
@@ -12636,7 +12666,10 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
         const isReceiver = await callerIsAssignedReceiverForReceiptGW(ctx.auth as GWAuth, args.id)
-        if (!isReceiver) {
+        const isStoreKeeper =
+          !isReceiver &&
+          (await callerHasStoreKeeperPositionForReceiptGW(ctx.auth as GWAuth, args.id))
+        if (!isReceiver && !isStoreKeeper) {
           const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
           if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
             throw new Error("Requires 'edit' access to 'procurement.po.edit'")
