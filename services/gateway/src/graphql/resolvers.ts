@@ -140,12 +140,25 @@ interface GWAuth {
   role: string
 }
 
+// removed entries carry a snapshot (description/qty/unit_price/uom)
+// alongside the id, captured client-side at request time — by the time
+// anyone reads an approved edit request back, the line itself is gone
+// from po_lines (approval deletes it), so that's the only place the
+// snapshot can still come from. A bare string id is also accepted: any
+// edit request already pending when this shape shipped was submitted by
+// older frontend code that never captured one.
+type RemovedLineEntry = string | { id: string; description?: string; qty?: number; unit_price?: number; uom?: string }
+
+function removedLineId(r: RemovedLineEntry): string {
+  return typeof r === 'string' ? r : r.id
+}
+
 interface EditChanges {
   header?: Record<string, { from: unknown; to: unknown }>
   lines?: {
-    edited?: { id: string; field: string; from?: unknown; to: unknown }[]
+    edited?: { id: string; field: string; from?: unknown; to: unknown; description?: string }[]
     added?: Record<string, unknown>[]
-    removed?: string[]
+    removed?: RemovedLineEntry[]
   }
 }
 
@@ -183,12 +196,27 @@ function buildEditChangeSummary(changes: AdminPOCorrectionChanges): string {
   const removed = changes.lines?.removed ?? []
   if (edited.length > 0) {
     const editDetails = edited.map(
-      (e) => `${e.field}: "${displayEditValue(e.from)}" → "${displayEditValue(e.to)}"`,
+      (e) =>
+        `${e.description ? `${e.description} — ` : ''}${e.field}: "${displayEditValue(e.from)}" → "${displayEditValue(e.to)}"`,
     )
     parts.push(`Lines edited (${edited.length}): ${editDetails.join(', ')}`)
   }
-  if (added.length > 0) parts.push(`Lines added: ${added.length}`)
-  if (removed.length > 0) parts.push(`Lines removed: ${removed.length}`)
+  if (added.length > 0) {
+    const addedDetails = added.map((l) => {
+      const desc = displayEditValue(l['description']) !== '—' ? displayEditValue(l['description']) : 'line'
+      const qty = l['qty'] != null ? ` (qty ${displayEditValue(l['qty'])})` : ''
+      return `${desc}${qty}`
+    })
+    parts.push(`Lines added (${added.length}): ${addedDetails.join(', ')}`)
+  }
+  if (removed.length > 0) {
+    const removedDetails = removed.map((r) => {
+      if (typeof r === 'string') return r
+      const qty = r.qty != null ? ` (qty ${r.qty})` : ''
+      return `${r.description ?? r.id}${qty}`
+    })
+    parts.push(`Lines removed (${removed.length}): ${removedDetails.join(', ')}`)
+  }
   const receiptsEdited = changes.receipts?.edited ?? []
   if (receiptsEdited.length > 0) {
     const details = receiptsEdited.map(
@@ -676,7 +704,7 @@ async function applyPOEditChanges(
       )
     }
   }
-  const removedLineIds = changes.lines?.removed ?? []
+  const removedLineIds = (changes.lines?.removed ?? []).map(removedLineId)
   await releaseLineStockReservations(client, removedLineIds)
   for (const lineId of removedLineIds) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND po_id=$2`, [lineId, poId])
@@ -766,7 +794,7 @@ async function applyRequisitionEditChanges(
   const touchedLineIds = [
     ...new Set([
       ...(changes.lines?.edited ?? []).map((e) => e.id),
-      ...(changes.lines?.removed ?? []),
+      ...(changes.lines?.removed ?? []).map(removedLineId),
     ]),
   ]
   if (touchedLineIds.length > 0) {
@@ -829,7 +857,7 @@ async function applyRequisitionEditChanges(
       )
     }
   }
-  const removedLineIds = changes.lines?.removed ?? []
+  const removedLineIds = (changes.lines?.removed ?? []).map(removedLineId)
   await releaseLineStockReservations(client, removedLineIds)
   for (const lineId of removedLineIds) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND requisition_id=$2`, [lineId, reqId])
