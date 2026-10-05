@@ -537,6 +537,7 @@ export const ENTITY_ATTACHMENTS_QUERY = gql`
       createdAt
       uploadedByEmail
       sourceEntityType
+      sourceEntityId
     }
   }
 `

@@ -8427,7 +8427,7 @@ export const resolvers = {
       const isPurchaseOrderUnion = args.entityType === 'purchase_order'
       const result = isPurchaseOrderUnion
         ? await query(
-            `SELECT da.id, da.label, da.is_primary, da.created_at, da.entity_type,
+            `SELECT da.id, da.label, da.is_primary, da.created_at, da.entity_type, da.entity_id,
                     f.id AS file_id, f.original_filename, f.mime_type,
                     f.size_bytes, f.category, f.uploaded_at,
                     u.email AS uploaded_by_email
@@ -8464,11 +8464,18 @@ export const resolvers = {
         isPrimary: r.is_primary,
         createdAt: r.created_at,
         uploadedByEmail: r.uploaded_by_email,
-        // getAttachments' own query filters strictly on entity_type=$1, so
-        // every row it returns necessarily has that same entity_type —
-        // safe to use args.entityType directly without selecting the
-        // column there too.
+        // getAttachments' own query filters strictly on entity_type=$1 (and
+        // implicitly entity_id=$2), so every row it returns necessarily
+        // matches both already — safe to use args.entityType/entityId
+        // directly without selecting those columns there too.
         sourceEntityType: isPurchaseOrderUnion ? r.entity_type : args.entityType,
+        // Needed to actually detach a po_line_purchase-sourced row (unioned
+        // in here for display) — it lives under a different entity_id than
+        // the PO's own (args.entityId), and detachFile's removeAttachment
+        // requires an exact (id, entity_type, entity_id) match. Without
+        // this, every attempt to remove one of those silently 404s as "not
+        // found" since the frontend had no way to send its real entity_id.
+        sourceEntityId: isPurchaseOrderUnion ? r.entity_id : args.entityId,
       }))
     },
 

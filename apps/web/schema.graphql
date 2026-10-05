@@ -1648,6 +1648,10 @@
     # this field to tell the two apart — file.category alone can't, since
     # both branches can carry the same category value.
     sourceEntityType: String
+    # Goes with sourceEntityType — the real entity_id this attachment is
+    # stored under, needed to detach a po_line_purchase-sourced row (it
+    # lives under a different id than the PO you queried with).
+    sourceEntityId: ID
   }
 
   type UploadUrlPayload {

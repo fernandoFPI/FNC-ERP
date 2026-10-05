@@ -45,6 +45,8 @@ export function EntityAttachments({
   uploadButtonLabel = 'Upload signed copy',
   category = 'attachment',
   readOnly = false,
+  groupBy,
+  emptyMessage = 'No signed documents uploaded yet',
 }: {
   entityType: string
   entityId: string
@@ -59,6 +61,16 @@ export function EntityAttachments({
   // someone else's attachments (e.g. a buyer's receipt, to a store keeper)
   // without letting the viewer manage files that aren't theirs to manage.
   readOnly?: boolean
+  // Splits one merged list into labeled sub-sections by each row's
+  // sourceEntityType — for a union list (today, only
+  // entityAttachments('purchase_order', ...), which quietly folds in each
+  // po_line_purchase's own buyer receipt) so it reads as what it actually
+  // is instead of one undifferentiated pile. Upload still always creates a
+  // "direct" attachment (this component's own entityType/entityId) — there's
+  // no way to upload straight into a po_line_purchase from here. Omit for
+  // the normal single-source case (every other caller).
+  groupBy?: { match: string; title: string; description?: string }[]
+  emptyMessage?: string
 }) {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
@@ -250,11 +262,17 @@ export function EntityAttachments({
   async function handleDetach() {
     if (!deleteTarget) return
     try {
+      // A row listed here isn't necessarily stored under this component's
+      // own entityType/entityId — entityAttachments('purchase_order', ...)
+      // also unions in each po_line_purchase's own receipt for display.
+      // detachFile requires an exact (id, entity_type, entity_id) match, so
+      // sending the component's props for one of those always missed —
+      // every such row 404'd as "not found" no matter which one you picked.
       const res = await detachFile({
         variables: {
           attachmentId: deleteTarget.id,
-          entityType,
-          entityId,
+          entityType: deleteTarget.sourceEntityType ?? entityType,
+          entityId: deleteTarget.sourceEntityId ?? entityId,
         },
       })
       if (res.data?.detachFile) {
@@ -267,6 +285,115 @@ export function EntityAttachments({
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
+  }
+
+  function renderRow(att: Attachment, isLast: boolean) {
+    return (
+      <div
+        key={att.id}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '12px 16px',
+          borderBottom: isLast ? undefined : `1px solid ${theme.border}`,
+        }}
+      >
+        {thumbnails[att.file.id] ? (
+          <img
+            src={thumbnails[att.file.id]}
+            alt=""
+            onError={() => {
+              setThumbFailed((prev) => ({ ...prev, [att.file.id]: true }))
+              setThumbnails((prev) => {
+                const next = { ...prev }
+                Reflect.deleteProperty(next, att.file.id)
+                return next
+              })
+            }}
+            style={{
+              width: '40px',
+              height: '40px',
+              objectFit: 'cover',
+              borderRadius: '6px',
+              border: `1px solid ${theme.border}`,
+              flexShrink: 0,
+            }}
+          />
+        ) : (
+          <span
+            style={{
+              fontSize: '22px',
+              width: '40px',
+              textAlign: 'center',
+              flexShrink: 0,
+            }}
+          >
+            {fileIcon(att.file.mimeType)}
+          </span>
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: '13px',
+              fontWeight: 500,
+              color: theme.textPrimary,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {att.label ?? att.file.originalFilename}
+          </div>
+          <div
+            style={{
+              fontSize: '11px',
+              color: theme.textMuted,
+              marginTop: '2px',
+              display: 'flex',
+              gap: '8px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span>{att.file.originalFilename}</span>
+            <span>·</span>
+            <span>{formatBytes(att.file.sizeBytes)}</span>
+            {att.createdAt && (
+              <>
+                <span>·</span>
+                <span>{att.createdAt.slice(0, 10)}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          {isPreviewable(att.file.mimeType) && (
+            <Button variant="ghost" size="sm" onClick={() => void handlePreview(att)}>
+              Preview
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void handleDownload(att.file.id, att.file.originalFilename)}
+          >
+            Download
+          </Button>
+          {!readOnly && (
+            <Button
+              variant="ghost"
+              size="sm"
+              style={{ color: theme.danger }}
+              onClick={() => {
+                setDeleteTarget(att)
+              }}
+            >
+              Remove
+            </Button>
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -329,119 +456,39 @@ export function EntityAttachments({
               fontSize: '13px',
             }}
           >
-            No signed documents uploaded yet
+            {emptyMessage}
           </div>
         )}
 
-        {!loading && attachments.length > 0 && (
+        {!loading && attachments.length > 0 && groupBy && (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {attachments.map((att, i) => (
-              <div
-                key={att.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px 16px',
-                  borderBottom:
-                    i < attachments.length - 1 ? `1px solid ${theme.border}` : undefined,
-                }}
-              >
-                {thumbnails[att.file.id] ? (
-                  <img
-                    src={thumbnails[att.file.id]}
-                    alt=""
-                    onError={() => {
-                      setThumbFailed((prev) => ({ ...prev, [att.file.id]: true }))
-                      setThumbnails((prev) => {
-                        const next = { ...prev }
-                        Reflect.deleteProperty(next, att.file.id)
-                        return next
-                      })
-                    }}
-                    style={{
-                      width: '40px',
-                      height: '40px',
-                      objectFit: 'cover',
-                      borderRadius: '6px',
-                      border: `1px solid ${theme.border}`,
-                      flexShrink: 0,
-                    }}
-                  />
-                ) : (
-                  <span
-                    style={{
-                      fontSize: '22px',
-                      width: '40px',
-                      textAlign: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {fileIcon(att.file.mimeType)}
-                  </span>
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: '13px',
-                      fontWeight: 500,
-                      color: theme.textPrimary,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {att.label ?? att.file.originalFilename}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '11px',
-                      color: theme.textMuted,
-                      marginTop: '2px',
-                      display: 'flex',
-                      gap: '8px',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <span>{att.file.originalFilename}</span>
-                    <span>·</span>
-                    <span>{formatBytes(att.file.sizeBytes)}</span>
-                    {att.createdAt && (
-                      <>
-                        <span>·</span>
-                        <span>{att.createdAt.slice(0, 10)}</span>
-                      </>
+            {groupBy.map((g) => {
+              const rows = attachments.filter((att) => att.sourceEntityType === g.match)
+              if (rows.length === 0) return null
+              return (
+                <div key={g.match} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <div style={{ padding: '10px 16px 0' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
+                      {g.title} ({rows.length})
+                    </div>
+                    {g.description && (
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
+                        {g.description}
+                      </div>
                     )}
                   </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {rows.map((att, i) => renderRow(att, i === rows.length - 1))}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                  {isPreviewable(att.file.mimeType) && (
-                    <Button variant="ghost" size="sm" onClick={() => void handlePreview(att)}>
-                      Preview
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void handleDownload(att.file.id, att.file.originalFilename)}
-                  >
-                    Download
-                  </Button>
-                  {!readOnly && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      style={{ color: theme.danger }}
-                      onClick={() => {
-                        setDeleteTarget(att)
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
+              )
+            })}
+          </div>
+        )}
+
+        {!loading && attachments.length > 0 && !groupBy && (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {attachments.map((att, i) => renderRow(att, i === attachments.length - 1))}
           </div>
         )}
       </Card>

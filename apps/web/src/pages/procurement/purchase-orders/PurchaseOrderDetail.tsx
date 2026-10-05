@@ -5483,32 +5483,42 @@ export default function PurchaseOrderDetail() {
                         const materialPhotos = r.photos.filter(
                           (ph) => ph.category !== 'po_receipt_document',
                         )
-                        const groups: { title: string; photos: typeof r.photos }[] = [
+                        const groups: { title: string; description: string; photos: typeof r.photos }[] = [
                           ...(vendorDocs.length
-                            ? [{ title: 'Vendor Receipt', photos: vendorDocs }]
+                            ? [
+                                {
+                                  title: 'Vendor Receipt',
+                                  description: "The vendor's own receipt or invoice document for this delivery.",
+                                  photos: vendorDocs,
+                                },
+                              ]
                             : []),
                           ...(materialPhotos.length
-                            ? [{ title: 'Materials Received', photos: materialPhotos }]
+                            ? [
+                                {
+                                  title: 'Materials Received',
+                                  description: 'Photos of the physical goods as received at this delivery.',
+                                  photos: materialPhotos,
+                                },
+                              ]
                             : []),
                         ]
                         return groups.map((g) => (
                           <div key={g.title} style={{ marginBottom: '16px' }}>
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'baseline',
-                                gap: '6px',
-                                marginBottom: '8px',
-                              }}
-                            >
-                              <span
-                                style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}
-                              >
-                                {g.title}
-                              </span>
-                              <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                ({g.photos.length})
-                              </span>
+                            <div style={{ marginBottom: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                                <span
+                                  style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}
+                                >
+                                  {g.title}
+                                </span>
+                                <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                                  ({g.photos.length})
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
+                                {g.description}
+                              </div>
                             </div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                               {g.photos.map((ph) => renderPhotoThumb(ph))}
@@ -5527,13 +5537,35 @@ export default function PurchaseOrderDetail() {
             )
           })}
           <div style={{ marginTop: '16px' }}>
+            {/* This list is two different things merged for convenience,
+                hence the split: genuine photos uploaded here against the PO
+                itself, plus — for a G1 PO — every buyer's proof-of-purchase
+                receipt captured per vendor purchase back at Items Bought
+                (entityAttachments('purchase_order', ...) unions those in so
+                they're visible without re-uploading). Unsplit, both looked
+                like one undifferentiated "Delivery Photos" pile. */}
             <EntityAttachments
               entityType="purchase_order"
               entityId={po.id}
               recordLabel="this PO"
-              title="Delivery Photos"
-              description="Photos attached when a receipt or a direct-to-jobsite delivery was recorded against this PO."
+              title="Photos"
+              description="Buyer receipts from Items Bought, plus any photo uploaded directly against this PO."
               uploadButtonLabel="Upload photo"
+              emptyMessage="No photos yet"
+              groupBy={[
+                {
+                  match: 'po_line_purchase',
+                  title: 'Buyer Receipts',
+                  description:
+                    "Proof of purchase the buyer attached per vendor item while buying, back at Items Bought — not re-uploadable here.",
+                },
+                {
+                  match: 'purchase_order',
+                  title: 'Delivery Photos',
+                  description:
+                    'Uploaded directly against this PO — e.g. a jobsite delivery photo not tied to a specific vendor receipt.',
+                },
+              ]}
             />
           </div>
         </div>

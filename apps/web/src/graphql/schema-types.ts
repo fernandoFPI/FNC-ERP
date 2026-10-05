@@ -1032,6 +1032,7 @@ export type DocumentAttachment = {
   id: Scalars['ID']['output'];
   isPrimary: Scalars['Boolean']['output'];
   label?: Maybe<Scalars['String']['output']>;
+  sourceEntityId?: Maybe<Scalars['ID']['output']>;
   sourceEntityType?: Maybe<Scalars['String']['output']>;
   uploadedByEmail?: Maybe<Scalars['String']['output']>;
 };

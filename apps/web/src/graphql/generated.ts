@@ -905,7 +905,7 @@ export type EntityAttachmentsQueryVariables = Exact<{
 }>;
 
 
-export type EntityAttachmentsQuery = { entityAttachments: Array<{ id: string, label: string | null, isPrimary: boolean, createdAt: string, uploadedByEmail: string | null, sourceEntityType: string | null, file: { id: string, originalFilename: string, mimeType: string, sizeBytes: number, category: string, uploadedAt: string | null } }> };
+export type EntityAttachmentsQuery = { entityAttachments: Array<{ id: string, label: string | null, isPrimary: boolean, createdAt: string, uploadedByEmail: string | null, sourceEntityType: string | null, sourceEntityId: string | null, file: { id: string, originalFilename: string, mimeType: string, sizeBytes: number, category: string, uploadedAt: string | null } }> };
 
 export type AttachFileMutationVariables = Exact<{
   fileId: string | number;
