@@ -1176,17 +1176,24 @@ export default function RequisitionDetail() {
               key: 'description',
               label: 'Description',
               render: (line, i) => (
-                <input
-                  value={line.description}
-                  style={inputStyle}
-                  disabled={line._removed}
-                  onChange={(e) => {
-                    if (!editDraft) return
-                    const lines = [...editDraft.lines]
-                    lines[i] = { ...lines[i], description: e.target.value }
-                    setEditDraft({ ...editDraft, lines })
-                  }}
-                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <input
+                    value={line.description}
+                    style={inputStyle}
+                    disabled={line._removed}
+                    onChange={(e) => {
+                      if (!editDraft) return
+                      const lines = [...editDraft.lines]
+                      lines[i] = { ...lines[i], description: e.target.value }
+                      setEditDraft({ ...editDraft, lines })
+                    }}
+                  />
+                  {line._removed && (
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: theme.danger }}>
+                      Marked for removal — click × again to undo
+                    </span>
+                  )}
+                </div>
               ),
             },
             {
@@ -1323,6 +1330,17 @@ export default function RequisitionDetail() {
                     <LineItemEditor
                       fields={lineFields}
                       rows={editDraft.lines}
+                      // Toggling a row to _removed only disables its inputs
+                      // (see lineFields above) — with no row-level style and
+                      // the inputs already looking static, that alone reads
+                      // as "the X button didn't do anything". The tinted
+                      // background + "Removed" tag below is the actual
+                      // feedback that the click registered.
+                      getRowStyle={(row) =>
+                        row._removed
+                          ? { background: theme.dangerBg, opacity: 0.6 }
+                          : {}
+                      }
                       onRemoveRow={(i) => {
                         const lines = [...editDraft.lines]
                         lines[i] = { ...lines[i], _removed: !lines[i]._removed }
