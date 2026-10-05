@@ -211,9 +211,9 @@ function buildEditChangeSummary(changes: AdminPOCorrectionChanges): string {
   }
   if (removed.length > 0) {
     const removedDetails = removed.map((r) => {
-      if (typeof r === 'string') return r
+      if (typeof r === 'string') return 'a line (no detail recorded)'
       const qty = r.qty != null ? ` (qty ${r.qty})` : ''
-      return `${r.description ?? r.id}${qty}`
+      return `${r.description || 'a line'}${qty}`
     })
     parts.push(`Lines removed (${removed.length}): ${removedDetails.join(', ')}`)
   }

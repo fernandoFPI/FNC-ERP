@@ -1925,13 +1925,19 @@ export default function RequisitionDetail() {
                                 </div>
                               ))}
                               {removedLines.map((r, i) => {
-                                const snapshot = typeof r === 'string' ? { id: r } : r
+                                const snapshot = typeof r === 'string' ? null : r
                                 return (
                                   <div key={i} style={{ color: theme.danger }}>
-                                    − {snapshot.description ?? snapshot.id}
-                                    {snapshot.qty != null && ` — qty ${snapshot.qty}`}
-                                    {snapshot.unit_price != null && ` @ ${snapshot.unit_price}`}
-                                    {snapshot.uom && ` ${snapshot.uom}`}
+                                    {snapshot ? (
+                                      <>
+                                        − {snapshot.description || 'a line'}
+                                        {snapshot.qty != null && ` — qty ${snapshot.qty}`}
+                                        {snapshot.unit_price != null && ` @ ${snapshot.unit_price}`}
+                                        {snapshot.uom && ` ${snapshot.uom}`}
+                                      </>
+                                    ) : (
+                                      '− 1 line removed (no detail recorded for this older request)'
+                                    )}
                                   </div>
                                 )
                               })}
