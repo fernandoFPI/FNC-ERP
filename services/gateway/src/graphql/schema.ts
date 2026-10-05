@@ -203,6 +203,10 @@
     # line's unfulfillable remainder as short.
     recordLinePurchase(input: RecordLinePurchaseInput!): POLinePurchase!
     approveTolerancePurchase(purchaseId: ID!): POLinePurchase!
+    # The reviewer's other option alongside approveTolerancePurchase — undoes
+    # the recorded purchase entirely (and its receipts) instead of signing
+    # off on the price, so the buyer records it again with a corrected one.
+    rejectTolerancePurchase(purchaseId: ID!, reason: String!): Boolean!
     markRequisitionLineShort(lineId: ID!, reason: String!): POLine!
     # Stock arrived (anywhere in the group, including the central warehouse)
     # after this line's own Inventory Check already locked in "not

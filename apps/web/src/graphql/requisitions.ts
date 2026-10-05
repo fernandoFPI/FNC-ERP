@@ -488,6 +488,12 @@ export const APPROVE_TOLERANCE_PURCHASE = gql`
   }
 `
 
+export const REJECT_TOLERANCE_PURCHASE = gql`
+  mutation RejectTolerancePurchase($purchaseId: ID!, $reason: String!) {
+    rejectTolerancePurchase(purchaseId: $purchaseId, reason: $reason)
+  }
+`
+
 export const MARK_REQUISITION_LINE_SHORT = gql`
   mutation MarkRequisitionLineShort($lineId: ID!, $reason: String!) {
     markRequisitionLineShort(lineId: $lineId, reason: $reason) {

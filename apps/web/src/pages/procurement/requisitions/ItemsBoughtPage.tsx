@@ -5,13 +5,18 @@ import {
   REQUISITION_ITEMS_BOUGHT_QUERY,
   RECORD_LINE_PURCHASE,
   APPROVE_TOLERANCE_PURCHASE,
+  REJECT_TOLERANCE_PURCHASE,
   MARK_REQUISITION_LINE_SHORT,
   RESOLVE_REQUISITION_LINE_FROM_STOCK,
   FINISH_BUYING_REQUISITION,
   ENSURE_CASH_PURCHASE_VENDOR,
 } from '../../../graphql/requisitions'
 import { VENDORS_QUERY, CREATE_VENDOR, REQUEST_UPLOAD_URL } from '../../../graphql/procurement'
-import { STOCK_LOCATIONS_QUERY, CENTRAL_WAREHOUSE_LOCATIONS_QUERY } from '../../../graphql/inventory'
+import {
+  STOCK_LOCATIONS_QUERY,
+  CENTRAL_WAREHOUSE_LOCATIONS_QUERY,
+} from '../../../graphql/inventory'
+import { ATTACH_FILE } from '../../../graphql/hr'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
@@ -30,6 +35,8 @@ import { useToastStore } from '../../../store/toastStore'
 import type {
   ApproveTolerancePurchaseMutation,
   ApproveTolerancePurchaseMutationVariables,
+  AttachFileMutation,
+  AttachFileMutationVariables,
   CentralWarehouseLocationsQuery,
   CentralWarehouseLocationsQueryVariables,
   CreateVendorMutation,
@@ -42,6 +49,8 @@ import type {
   MarkRequisitionLineShortMutationVariables,
   RecordLinePurchaseMutation,
   RecordLinePurchaseMutationVariables,
+  RejectTolerancePurchaseMutation,
+  RejectTolerancePurchaseMutationVariables,
   ResolveRequisitionLineFromStockMutation,
   ResolveRequisitionLineFromStockMutationVariables,
   RequestUploadUrlMutation,
@@ -145,9 +154,9 @@ export default function ItemsBoughtPage() {
   const padding = usePagePadding()
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const globalFileInputRef = useRef<HTMLInputElement | null>(null)
-  // Mirrors globalReceiptFileId synchronously so a "record all" loop reuses the
-  // first upload instead of reading stale state and re-uploading per line.
-  const globalReceiptFileIdRef = useRef<string | null>(null)
+  // Mirrors globalReceiptFileIds synchronously so a "record all" loop reuses
+  // the first upload instead of reading stale state and re-uploading per line.
+  const globalReceiptFileIdsRef = useRef<string[] | null>(null)
 
   const { data, loading, refetch } = useQuery<
     RequisitionItemsBoughtQuery,
@@ -223,6 +232,21 @@ export default function ItemsBoughtPage() {
     onCompleted: () => void refetch(),
     onError: onErr,
   })
+  const [rejectTolerance, { loading: lRejecting }] = useMutation<
+    RejectTolerancePurchaseMutation,
+    RejectTolerancePurchaseMutationVariables
+  >(REJECT_TOLERANCE_PURCHASE, {
+    onCompleted: () => {
+      addToast({
+        type: 'success',
+        message: 'Purchase rejected — record it again with the right price',
+      })
+      setRejectPurchaseFor(null)
+      setRejectPurchaseReason('')
+      void refetch()
+    },
+    onError: onErr,
+  })
   const [markShort, { loading: lMarkingShort }] = useMutation<
     MarkRequisitionLineShortMutation,
     MarkRequisitionLineShortMutationVariables
@@ -264,6 +288,12 @@ export default function ItemsBoughtPage() {
     RequestUploadUrlMutation,
     RequestUploadUrlMutationVariables
   >(REQUEST_UPLOAD_URL)
+  // Attaches every receipt photo past the first one — recordLinePurchase
+  // only ever takes one receiptFileId (the primary), so extras are
+  // attached right after via the same generic document_attachments
+  // mechanism the post-record "Receipts" modal uses, pointed at the newly
+  // created purchase's own id.
+  const [attachFile] = useMutation<AttachFileMutation, AttachFileMutationVariables>(ATTACH_FILE)
 
   // ── Per-line "record a purchase" form state ─────────────────────────────
   const [selectedVendor, setSelectedVendor] = useState<Record<string, string>>({})
@@ -272,17 +302,19 @@ export default function ItemsBoughtPage() {
   const [purchaseQty, setPurchaseQty] = useState<Record<string, string>>({})
   const [purchasePrice, setPurchasePrice] = useState<Record<string, string>>({})
   const [purchaseCurrency, setPurchaseCurrency] = useState<Record<string, string>>({})
-  const [pendingFile, setPendingFile] = useState<Record<string, File | null>>({})
+  const [pendingFiles, setPendingFiles] = useState<Record<string, File[]>>({})
   const [sameReceiptForAll, setSameReceiptForAll] = useState(false)
-  const [globalReceiptFile, setGlobalReceiptFile] = useState<File | null>(null)
-  // Cached fileId from the first line this receipt was uploaded for — reused
-  // for every subsequent line so the same receipt is uploaded once, not once
-  // per line it's attached to.
-  const [globalReceiptFileId, setGlobalReceiptFileId] = useState<string | null>(null)
+  const [globalReceiptFiles, setGlobalReceiptFiles] = useState<File[]>([])
+  // Cached fileIds from the first line these receipts were uploaded for —
+  // reused for every subsequent line so the same files are uploaded once,
+  // not once per line they're attached to.
+  const [globalReceiptFileIds, setGlobalReceiptFileIds] = useState<string[] | null>(null)
   const [uploadingLine, setUploadingLine] = useState<string | null>(null)
   const [recordingAll, setRecordingAll] = useState(false)
   const [shortReasonFor, setShortReasonFor] = useState<string | null>(null)
   const [shortReasonText, setShortReasonText] = useState('')
+  const [rejectPurchaseFor, setRejectPurchaseFor] = useState<string | null>(null)
+  const [rejectPurchaseReason, setRejectPurchaseReason] = useState('')
   const [resolveStockFor, setResolveStockFor] = useState<string | null>(null)
   const [resolveStockQty, setResolveStockQty] = useState('')
   const [resolveStockLocation, setResolveStockLocation] = useState('')
@@ -387,7 +419,7 @@ export default function ItemsBoughtPage() {
     const qty = parseFloat(purchaseQty[lineId] || String(line ? remainingToBuy(line) : 0))
     const defaultPrice = line?.approved_unit_price ?? line?.unit_price ?? '0'
     const price = parseFloat(purchasePrice[lineId] || defaultPrice)
-    const file = sameReceiptForAll ? globalReceiptFile : pendingFile[lineId]
+    const files = sameReceiptForAll ? globalReceiptFiles : (pendingFiles[lineId] ?? [])
     if (!vendorSel) {
       addToast({ type: 'error', message: 'Select a vendor' })
       return false
@@ -400,7 +432,7 @@ export default function ItemsBoughtPage() {
       addToast({ type: 'error', message: 'Actual price must be greater than 0' })
       return false
     }
-    if (!file) {
+    if (files.length === 0) {
       addToast({ type: 'error', message: 'Attach a receipt photo' })
       return false
     }
@@ -416,18 +448,24 @@ export default function ItemsBoughtPage() {
 
     setUploadingLine(lineId)
     try {
-      // In "same receipt for all" mode, the file is uploaded once (on the
-      // first line it's used for) and every later line reuses that same
-      // fileId instead of re-uploading identical bytes.
-      const sharedFileId = globalReceiptFileIdRef.current ?? globalReceiptFileId
-      const fileId =
-        sameReceiptForAll && sharedFileId ? sharedFileId : await uploadReceiptFile(file)
-      if (sameReceiptForAll && !sharedFileId) {
-        globalReceiptFileIdRef.current = fileId
-        setGlobalReceiptFileId(fileId)
+      // In "same receipt for all" mode, every file is uploaded once (on the
+      // first line it's used for) and every later line reuses those same
+      // fileIds instead of re-uploading identical bytes.
+      const sharedFileIds = globalReceiptFileIdsRef.current ?? globalReceiptFileIds
+      const fileIds =
+        sameReceiptForAll && sharedFileIds
+          ? sharedFileIds
+          : await (async () => {
+              const ids: string[] = []
+              for (const f of files) ids.push(await uploadReceiptFile(f))
+              return ids
+            })()
+      if (sameReceiptForAll && !sharedFileIds) {
+        globalReceiptFileIdsRef.current = fileIds
+        setGlobalReceiptFileIds(fileIds)
       }
 
-      await recordPurchase({
+      const result = await recordPurchase({
         variables: {
           input: {
             lineId,
@@ -435,10 +473,26 @@ export default function ItemsBoughtPage() {
             qty,
             actualUnitPrice: price,
             currencyCode,
-            receiptFileId: fileId,
+            receiptFileId: fileIds[0],
           },
         },
       })
+      // recordLinePurchase only takes one receiptFileId (the primary) —
+      // every other attached file goes onto the new purchase's own
+      // document_attachments the same way the post-record "Receipts"
+      // modal would, instead of being dropped.
+      const purchaseId = result.data?.recordLinePurchase.id
+      if (purchaseId) {
+        for (const extraFileId of fileIds.slice(1)) {
+          await attachFile({
+            variables: {
+              fileId: extraFileId,
+              entityType: 'po_line_purchase',
+              entityId: purchaseId,
+            },
+          })
+        }
+      }
       addToast({ type: 'success', message: 'Purchase recorded' })
       // In "same vendor for all" mode, keep every line pinned to the shared
       // vendor even across this reset — otherwise a second partial purchase
@@ -446,9 +500,10 @@ export default function ItemsBoughtPage() {
       setSelectedVendor((prev) => ({ ...prev, [lineId]: sameVendorForAll ? globalVendorId : '' }))
       setPurchaseQty((prev) => ({ ...prev, [lineId]: '' }))
       setPurchasePrice((prev) => ({ ...prev, [lineId]: '' }))
-      // In "same receipt for all" mode, keep the shared file selected so the
-      // next line can reuse it too — only clear the per-line one otherwise.
-      if (!sameReceiptForAll) setPendingFile((prev) => ({ ...prev, [lineId]: null }))
+      // In "same receipt for all" mode, keep the shared files selected so
+      // the next line can reuse them too — only clear the per-line ones
+      // otherwise.
+      if (!sameReceiptForAll) setPendingFiles((prev) => ({ ...prev, [lineId]: [] }))
       return true
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -629,12 +684,13 @@ export default function ItemsBoughtPage() {
                   ref={globalFileInputRef}
                   type="file"
                   accept="image/*,application/pdf"
+                  multiple
                   style={{ display: 'none' }}
                   onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null
-                    setGlobalReceiptFile(file)
-                    setGlobalReceiptFileId(null)
-                    globalReceiptFileIdRef.current = null
+                    const files = Array.from(e.target.files ?? [])
+                    setGlobalReceiptFiles((prev) => [...prev, ...files])
+                    setGlobalReceiptFileIds(null)
+                    globalReceiptFileIdsRef.current = null
                     e.target.value = ''
                   }}
                 />
@@ -643,8 +699,23 @@ export default function ItemsBoughtPage() {
                   size="sm"
                   onClick={() => globalFileInputRef.current?.click()}
                 >
-                  {globalReceiptFile ? `📎 ${globalReceiptFile.name}` : 'Attach receipt photo *'}
+                  {globalReceiptFiles.length > 0
+                    ? `📎 ${globalReceiptFiles.length} file${globalReceiptFiles.length > 1 ? 's' : ''} attached — add more`
+                    : 'Attach receipt photo(s) *'}
                 </Button>
+                {globalReceiptFiles.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setGlobalReceiptFiles([])
+                      setGlobalReceiptFileIds(null)
+                      globalReceiptFileIdsRef.current = null
+                    }}
+                  >
+                    Clear
+                  </Button>
+                )}
                 <Button
                   variant="primary"
                   size="sm"
@@ -723,64 +794,125 @@ export default function ItemsBoughtPage() {
                 style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}
               >
                 {line.purchases.map((p) => (
-                  <div
-                    key={p.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      flexWrap: 'wrap',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: `1px solid ${p.over_tolerance && !p.tolerance_approved_by ? theme.warning : theme.border}`,
-                      background:
-                        p.over_tolerance && !p.tolerance_approved_by
-                          ? theme.warningBg
-                          : theme.bgSurface,
-                      fontSize: '12px',
-                    }}
-                  >
-                    <span style={{ fontWeight: 600, color: theme.textPrimary }}>
-                      {p.vendor_name ?? 'Vendor'}
-                    </span>
-                    <span style={{ color: theme.textSecondary }}>
-                      {fmtN(p.qty)} @ {fmtN(p.actual_unit_price)} {p.currency_code}
-                    </span>
-                    <span style={{ color: theme.textMuted }}>{p.bought_by_name ?? ''}</span>
-                    <button
-                      onClick={() => {
-                        setReceiptsModalFor(p.id)
-                      }}
+                  <div key={p.id}>
+                    <div
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        color: p.receipt_file_id ? theme.accent : theme.danger,
-                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        flexWrap: 'wrap',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        border: `1px solid ${p.over_tolerance && !p.tolerance_approved_by ? theme.warning : theme.border}`,
+                        background:
+                          p.over_tolerance && !p.tolerance_approved_by
+                            ? theme.warningBg
+                            : theme.bgSurface,
                         fontSize: '12px',
-                        padding: 0,
                       }}
                     >
-                      {p.receipt_file_id ? '📎 Receipts' : '⚠ No receipt — add one'}
-                    </button>
-                    {p.over_tolerance && (
-                      <Badge variant={p.tolerance_approved_by ? 'success' : 'warning'}>
-                        {p.tolerance_approved_by
-                          ? `Approved by ${p.tolerance_approved_by_name ?? ''}`
-                          : 'Over tolerance'}
-                      </Badge>
-                    )}
-                    {p.over_tolerance && !p.tolerance_approved_by && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        loading={lApproving}
-                        disabled={!canApproveTolerance || p.bought_by === currentUserId}
-                        onClick={() => void approveTolerance({ variables: { purchaseId: p.id } })}
+                      <span style={{ fontWeight: 600, color: theme.textPrimary }}>
+                        {p.vendor_name ?? 'Vendor'}
+                      </span>
+                      <span style={{ color: theme.textSecondary }}>
+                        {fmtN(p.qty)} @ {fmtN(p.actual_unit_price)} {p.currency_code}
+                      </span>
+                      <span style={{ color: theme.textMuted }}>{p.bought_by_name ?? ''}</span>
+                      <button
+                        onClick={() => {
+                          setReceiptsModalFor(p.id)
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: p.receipt_file_id ? theme.accent : theme.danger,
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          padding: 0,
+                        }}
                       >
-                        {p.bought_by === currentUserId
-                          ? 'Needs a different approver'
-                          : 'Approve override'}
-                      </Button>
+                        {p.receipt_file_id ? '📎 Receipts' : '⚠ No receipt — add one'}
+                      </button>
+                      {p.over_tolerance && (
+                        <Badge variant={p.tolerance_approved_by ? 'success' : 'warning'}>
+                          {p.tolerance_approved_by
+                            ? `Approved by ${p.tolerance_approved_by_name ?? ''}`
+                            : 'Over tolerance'}
+                        </Badge>
+                      )}
+                      {p.over_tolerance && !p.tolerance_approved_by && (
+                        <>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            loading={lApproving}
+                            disabled={!canApproveTolerance || p.bought_by === currentUserId}
+                            onClick={() =>
+                              void approveTolerance({ variables: { purchaseId: p.id } })
+                            }
+                          >
+                            {p.bought_by === currentUserId
+                              ? 'Needs a different approver'
+                              : 'Approve override'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            style={{ color: theme.danger }}
+                            disabled={!canApproveTolerance || p.bought_by === currentUserId}
+                            onClick={() => {
+                              setRejectPurchaseFor(p.id)
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    {rejectPurchaseFor === p.id && (
+                      <div
+                        style={{
+                          marginTop: '10px',
+                          width: '100%',
+                          display: 'flex',
+                          gap: '8px',
+                          alignItems: 'flex-end',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                          <Input
+                            label="Why is this rejected? (the buyer will need to re-enter the purchase)"
+                            value={rejectPurchaseReason}
+                            onChange={(e) => {
+                              setRejectPurchaseReason(e.target.value)
+                            }}
+                          />
+                        </div>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          loading={lRejecting}
+                          disabled={!rejectPurchaseReason.trim()}
+                          onClick={() =>
+                            void rejectTolerance({
+                              variables: { purchaseId: p.id, reason: rejectPurchaseReason },
+                            })
+                          }
+                        >
+                          Confirm reject
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setRejectPurchaseFor(null)
+                            setRejectPurchaseReason('')
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -893,9 +1025,9 @@ export default function ItemsBoughtPage() {
                 >
                   {sameReceiptForAll ? (
                     <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                      {globalReceiptFile
-                        ? `📎 ${globalReceiptFile.name} (same receipt for all items)`
-                        : 'Attach the shared receipt above'}
+                      {globalReceiptFiles.length > 0
+                        ? `📎 ${globalReceiptFiles.length} file${globalReceiptFiles.length > 1 ? 's' : ''} (same for all items)`
+                        : 'Attach the shared receipt(s) above'}
                     </span>
                   ) : (
                     <>
@@ -905,10 +1037,14 @@ export default function ItemsBoughtPage() {
                         }}
                         type="file"
                         accept="image/*,application/pdf"
+                        multiple
                         style={{ display: 'none' }}
                         onChange={(e) => {
-                          const file = e.target.files?.[0] ?? null
-                          setPendingFile((prev) => ({ ...prev, [line.id]: file }))
+                          const files = Array.from(e.target.files ?? [])
+                          setPendingFiles((prev) => ({
+                            ...prev,
+                            [line.id]: [...(prev[line.id] ?? []), ...files],
+                          }))
                           e.target.value = ''
                         }}
                       />
@@ -918,10 +1054,23 @@ export default function ItemsBoughtPage() {
                         onClick={() => fileInputRefs.current[line.id]?.click()}
                       >
                         {(() => {
-                          const receipt = pendingFile[line.id]
-                          return receipt ? `📎 ${receipt.name}` : 'Attach receipt photo *'
+                          const receipts = pendingFiles[line.id] ?? []
+                          return receipts.length > 0
+                            ? `📎 ${receipts.length} file${receipts.length > 1 ? 's' : ''} — add more`
+                            : 'Attach receipt photo(s) *'
                         })()}
                       </Button>
+                      {(pendingFiles[line.id] ?? []).length > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setPendingFiles((prev) => ({ ...prev, [line.id]: [] }))
+                          }}
+                        >
+                          Clear
+                        </Button>
+                      )}
                     </>
                   )}
                   {!sameReceiptForAll && (
@@ -975,7 +1124,9 @@ export default function ItemsBoughtPage() {
                   Stock arrived after Inventory Check marked this line as needing to be bought —
                   resolve it from real stock instead of recording a purchase.
                 </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div
+                  style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}
+                >
                   <div style={{ width: '120px' }}>
                     <Input
                       label="Qty from stock"

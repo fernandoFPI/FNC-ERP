@@ -5515,6 +5515,14 @@ export type ApproveTolerancePurchaseMutationVariables = Exact<{
 
 export type ApproveTolerancePurchaseMutation = { approveTolerancePurchase: { id: string, tolerance_approved_by: string | null, tolerance_approved_by_name: string | null } };
 
+export type RejectTolerancePurchaseMutationVariables = Exact<{
+  purchaseId: string | number;
+  reason: string;
+}>;
+
+
+export type RejectTolerancePurchaseMutation = { rejectTolerancePurchase: boolean };
+
 export type MarkRequisitionLineShortMutationVariables = Exact<{
   lineId: string | number;
   reason: string;

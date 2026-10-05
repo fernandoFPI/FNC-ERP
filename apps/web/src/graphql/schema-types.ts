@@ -2507,6 +2507,7 @@ export type Mutation = {
   rejectRequisitionVerificationToInventoryCheck: Requisition;
   rejectRequisitionVerificationToMarketPricing: Requisition;
   rejectRequisitionVerificationToStorePricing: Requisition;
+  rejectTolerancePurchase: Scalars['Boolean']['output'];
   rejectVariationOrder: VariationOrder;
   /** Explicitly release a lock you hold (navigating away, closing the editor, saving). */
   releaseLock: Scalars['Boolean']['output'];
@@ -4481,6 +4482,12 @@ export type MutationRejectRequisitionVerificationToMarketPricingArgs = {
 export type MutationRejectRequisitionVerificationToStorePricingArgs = {
   id: Scalars['ID']['input'];
   lineFlags: Array<LineFlagInput>;
+  reason: Scalars['String']['input'];
+};
+
+
+export type MutationRejectTolerancePurchaseArgs = {
+  purchaseId: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
 };
 

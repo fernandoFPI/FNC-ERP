@@ -32823,6 +32823,86 @@ const phase5MutationResolvers = {
     return getPOLinePurchaseForReturn(args.purchaseId)
   },
 
+  // The reviewer's other option on an over-tolerance entry, alongside
+  // approveTolerancePurchase above — instead of signing off on the price,
+  // undoes the recording entirely (deletes the po_line_purchases row and
+  // whatever receipts were attached to it) so its qty reverts to
+  // "remaining to buy" and the buyer records it again with a corrected
+  // price. Same authorization as approve, including the no-self-review
+  // rule — rejecting your own entry would let a buyer dodge independent
+  // review just by re-entering a lower number until it passes tolerance.
+  rejectTolerancePurchase: async (
+    _: unknown,
+    args: { purchaseId: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const row = await query<{
+      id: string
+      requisition_id: string
+      company_id: string
+      bought_by: string | null
+      over_tolerance: boolean
+      tolerance_approved_by: string | null
+    }>(
+      `SELECT plp.id, pl.requisition_id, req.company_id, plp.bought_by, plp.over_tolerance, plp.tolerance_approved_by
+       FROM po_line_purchases plp
+       JOIN po_lines pl ON pl.id=plp.po_line_id
+       JOIN requisitions req ON req.id=pl.requisition_id
+       WHERE plp.id=$1`,
+      [args.purchaseId],
+    )
+    const purchase = row.rows[0]
+    if (!purchase || purchase.company_id !== auth.companyId)
+      throw new Error('Purchase entry not found')
+    if (!purchase.over_tolerance)
+      throw new Error('This purchase is not over tolerance — nothing to reject')
+    if (purchase.tolerance_approved_by)
+      throw new Error('This purchase has already been approved — it can no longer be rejected')
+
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, purchase.requisition_id)
+    const isApprover = await userIsAssignedApproverForRequisitionGW(
+      auth.userId,
+      purchase.requisition_id,
+    )
+    const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (!isAdmin && !isDeptHead && !isApprover && !isReqAdmin)
+      throw new Error('Not authorized to reject an over-tolerance purchase for this requisition')
+    if (purchase.bought_by === auth.userId)
+      throw new Error(
+        'The buyer who recorded this purchase cannot also reject its tolerance override — a different supervisor must review it',
+      )
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      // po_line_purchases.receipt_attachment_id references document_attachments
+      // (not the other way around) — the purchase row must go first, or
+      // deleting its still-referenced receipt trips the FK constraint.
+      await client.query(`DELETE FROM po_line_purchases WHERE id=$1`, [args.purchaseId])
+      await client.query(
+        `DELETE FROM document_attachments WHERE entity_type='po_line_purchase' AND entity_id=$1`,
+        [args.purchaseId],
+      )
+      await client.query(
+        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+         VALUES ($1,'items_bought','items_bought','tolerance_purchase_rejected',$2,$3)`,
+        [purchase.requisition_id, auth.userId, args.reason.trim()],
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', purchase.requisition_id, 'updated')
+    return true
+  },
+
   // Closes out a line's remaining not-yet-purchased qty as unfulfillable.
   // Same authorization as recordLinePurchase (admin or buyer position
   // holder) — this is a buying-stage call, not a supervisor one.

@@ -306,9 +306,9 @@ describe('ItemsBoughtPage', () => {
     if (!globalFileInput) throw new Error('Expected a file input in the container')
     fireEvent.change(globalFileInput, { target: { files: [file] } })
 
-    // Both lines show the shared receipt read-only instead of their own attach button.
-    expect(screen.getAllByText(/invoice\.jpg \(same receipt for all items\)/)).toHaveLength(2)
-    expect(screen.queryByText('Attach receipt photo *')).not.toBeInTheDocument()
+    // Both lines show the shared receipt(s) read-only instead of their own attach button.
+    expect(screen.getAllByText(/1 file \(same for all items\)/)).toHaveLength(2)
+    expect(screen.queryByText('Attach receipt photo(s) *')).not.toBeInTheDocument()
   })
 
   it('disables the Approve override button for the same user who recorded the purchase', async () => {
