@@ -263,6 +263,18 @@ export const CANCEL_RECEIPT = gql`
   }
 `
 
+export const REVERSE_RECEIPT = gql`
+  mutation ReverseReceipt($id: ID!, $reason: String!) {
+    reverseReceipt(id: $id, reason: $reason) {
+      id
+      status
+      reversed_at
+      reversal_reason
+      reversed_by_email
+    }
+  }
+`
+
 export const RECORD_DIRECT_DELIVERY = gql`
   mutation RecordDirectDelivery($poId: ID!, $input: DirectDeliveryInput!) {
     recordDirectDelivery(poId: $poId, input: $input) {
@@ -293,6 +305,9 @@ const PO_RECEIPT_FIELDS = gql`
     is_invoiced
     status
     confirmed_at
+    reversed_at
+    reversal_reason
+    reversed_by_email
     lines {
       po_line_id
       description

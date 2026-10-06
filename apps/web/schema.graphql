@@ -2333,6 +2333,9 @@
     is_invoiced: Boolean
     status: String!
     confirmed_at: String
+    reversed_at: String
+    reversal_reason: String
+    reversed_by_email: String
     lines: [POReceiptLine!]!
     photos: [ReceiptPhoto!]!
   }
@@ -2697,6 +2700,7 @@
     recordReceipt(poId: ID!, input: ReceiptInput!): POReceipt!
     confirmReceipt(id: ID!): POReceipt!
     cancelReceipt(id: ID!): POReceipt!
+    reverseReceipt(id: ID!, reason: String!): POReceipt!
     recordDirectDelivery(poId: ID!, input: DirectDeliveryInput!): DirectDeliveryResult!
     attachReceiptPhoto(receiptId: ID!, fileId: ID!, label: String): ReceiptPhoto!
   }

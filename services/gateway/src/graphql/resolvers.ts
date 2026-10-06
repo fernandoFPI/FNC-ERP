@@ -2941,20 +2941,23 @@ async function fetchFullPurchaseOrderGW(
     query(
       `SELECT por.id, por.po_id, por.receipt_number, por.received_date AS receipt_date,
               por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
+              por.reversed_at, por.reversal_reason,
               por.warehouse_location_id AS location_id,
               sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
+              COALESCE(ru.first_name || ' ' || ru.last_name, ru.email) AS reversed_by_email,
               COALESCE(json_agg(DISTINCT jsonb_build_object('id',porl.id,'po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'actual_unit_price',porl.actual_unit_price,'description',COALESCE(pol.description, ''),'product_name',p.name,'product_name_ar',p.name_ar,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
               COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
        FROM po_receipts por
        LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
        LEFT JOIN users u ON u.id=por.received_by
+       LEFT JOIN users ru ON ru.id=por.reversed_by
        LEFT JOIN po_receipt_lines porl ON porl.receipt_id=por.id
        LEFT JOIN po_lines pol ON pol.id=porl.po_line_id
        LEFT JOIN products p ON p.id=pol.product_id
        LEFT JOIN document_attachments da ON da.entity_type='po_receipt' AND da.entity_id=por.id
        LEFT JOIN files f ON f.id=da.file_id AND f.status != 'deleted'
        WHERE por.po_id=$1
-       GROUP BY por.id, sl.name, u.email, u.first_name, u.last_name ORDER BY por.received_date`,
+       GROUP BY por.id, sl.name, u.email, u.first_name, u.last_name, ru.email, ru.first_name, ru.last_name ORDER BY por.received_date`,
       [id],
     ),
     query(
@@ -6789,7 +6792,9 @@ export const resolvers = {
         `SELECT por.id, por.po_id, po.po_number, v.name AS vendor_name, po.base_currency_code,
                 por.receipt_number, por.received_date AS receipt_date,
                 por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
+                por.reversed_at, por.reversal_reason,
                 sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
+                COALESCE(ru.first_name || ' ' || ru.last_name, ru.email) AS reversed_by_email,
                 COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'product_name_ar',p.name_ar,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
                 COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
          FROM po_receipts por
@@ -6797,13 +6802,14 @@ export const resolvers = {
          LEFT JOIN vendors v ON v.id=po.vendor_id
          LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
          LEFT JOIN users u ON u.id=por.received_by
+         LEFT JOIN users ru ON ru.id=por.reversed_by
          LEFT JOIN po_receipt_lines porl ON porl.receipt_id=por.id
          LEFT JOIN po_lines pol ON pol.id=porl.po_line_id
          LEFT JOIN products p ON p.id=pol.product_id
          LEFT JOIN document_attachments da ON da.entity_type='po_receipt' AND da.entity_id=por.id
          LEFT JOIN files f ON f.id=da.file_id AND f.status != 'deleted'
          WHERE po.company_id=$1 ${branchClause}
-         GROUP BY por.id, po.po_number, v.name, po.base_currency_code, sl.name, u.email, u.first_name, u.last_name
+         GROUP BY por.id, po.po_number, v.name, po.base_currency_code, sl.name, u.email, u.first_name, u.last_name, ru.email, ru.first_name, ru.last_name
          ORDER BY por.received_date DESC, por.created_at DESC`,
         params,
       )
@@ -6817,7 +6823,9 @@ export const resolvers = {
         `SELECT por.id, por.po_id, po.po_number, v.name AS vendor_name, po.base_currency_code,
                 por.receipt_number, por.received_date AS receipt_date,
                 por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
+                por.reversed_at, por.reversal_reason,
                 sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
+                COALESCE(ru.first_name || ' ' || ru.last_name, ru.email) AS reversed_by_email,
                 COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'product_name_ar',p.name_ar,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
                 COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
          FROM po_receipts por
@@ -6825,13 +6833,14 @@ export const resolvers = {
          LEFT JOIN vendors v ON v.id=po.vendor_id
          LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
          LEFT JOIN users u ON u.id=por.received_by
+         LEFT JOIN users ru ON ru.id=por.reversed_by
          LEFT JOIN po_receipt_lines porl ON porl.receipt_id=por.id
          LEFT JOIN po_lines pol ON pol.id=porl.po_line_id
          LEFT JOIN products p ON p.id=pol.product_id
          LEFT JOIN document_attachments da ON da.entity_type='po_receipt' AND da.entity_id=por.id
          LEFT JOIN files f ON f.id=da.file_id AND f.status != 'deleted'
          WHERE por.id=$1 AND po.company_id=$2
-         GROUP BY por.id, po.po_number, v.name, po.base_currency_code, sl.name, u.email, u.first_name, u.last_name`,
+         GROUP BY por.id, po.po_number, v.name, po.base_currency_code, sl.name, u.email, u.first_name, u.last_name, ru.email, ru.first_name, ru.last_name`,
         [args.id, auth.companyId],
       )
       if (!r.rows[0]) return null
@@ -12998,6 +13007,315 @@ export const resolvers = {
       )
       if (!r.rows[0]) throw new Error('Only a draft receipt can be cancelled')
       return { ...(r.rows[0] as Record<string, unknown>), lines: [], photos: [] }
+    },
+
+    // Undoes a CONFIRMED receipt — real stock already moved, product cost
+    // already updated, possibly MO consumption already bumped. Deliberately
+    // separate from cancelReceipt (draft-only, nothing posted yet). Reuses
+    // the exact machinery adminCorrectPO already relies on for the same
+    // class of risk (reverseAndRepostStockMove/findStockMovesForCorrection/
+    // assertStockCorrectable/assertNoVendorInvoiceLineConflict,
+    // ADMIN_CORRECTION_PO_STATUSES for how far this is allowed to reach) —
+    // see those for the reasoning. Three things that tool doesn't handle,
+    // because full reversal raises them in a way a partial field-edit
+    // doesn't, so they're handled here instead:
+    //   1. Vendor returns — any po_return_items row already covering a line
+    //      in this receipt blocks reversal outright (po_return_status has no
+    //      cancelled/void state, so existence alone is the signal).
+    //   2. Linked MO consumption — mo_consumptions.qty_consumed is capped
+    //      (LEAST(qty_planned, ...)), which is lossy once the cap has ever
+    //      triggered; only reverted when reconstructible (see
+    //      totalConfirmedForComponent below), and only while the MO hasn't
+    //      progressed past 'confirmed' into real production.
+    //   3. Product cost (product_cost_history/products.standard_cost) —
+    //      reverted only when unambiguous: this receipt's line is the ONLY
+    //      confirmed receipt line on this PO touching that product, AND the
+    //      most recent cost-history row for it is attributable to this PO.
+    //      Otherwise left untouched rather than guessed.
+    // po_lines.qty_received is recomputed the same way applyAdminPOCorrection
+    // does (full SUM across po_receipt_lines, not a delta) — just with
+    // reversed receipts excluded from that sum. The PO's own status is never
+    // touched, matching adminCorrectPO's behavior: that's a separate,
+    // judgment-call action (e.g. Fail Audit) if it's still needed afterward.
+    reverseReceipt: async (_: unknown, args: { id: string; reason: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (!args.reason?.trim()) throw new Error('A reason is required to reverse a receipt')
+      if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
+        const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+        if (!meetsLevel(perms['procurement.po.reverse_receipt'], 'edit'))
+          throw new Error("Requires 'edit' access to 'procurement.po.reverse_receipt'")
+      }
+      const auth = ctx.auth as GWAuth
+
+      return withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client) => {
+          const receiptRes = await client.query(
+            `SELECT por.*, po.id AS po_id, po.status AS po_status, po.linked_mo_id, po.po_number
+             FROM po_receipts por
+             JOIN purchase_orders po ON po.id = por.po_id
+             WHERE por.id=$1 AND po.company_id=$2
+             FOR UPDATE OF por, po`,
+            [args.id, auth.companyId],
+          )
+          const receipt = receiptRes.rows[0] as Record<string, unknown> | undefined
+          if (!receipt) throw new Error('Receipt not found')
+          if (receipt.status !== 'confirmed')
+            throw new Error(
+              `Only a confirmed receipt can be reversed (this one is '${receipt.status as string}')`,
+            )
+          const poStatus = receipt.po_status as string
+          if (!ADMIN_CORRECTION_PO_STATUSES.includes(poStatus)) {
+            if (poStatus === 'invoiced' || poStatus === 'completed') {
+              throw new Error(
+                `This PO is already '${poStatus}' — once invoiced, a receipt can no longer be reversed this way. Use PO Returns to send goods back to the vendor instead.`,
+              )
+            }
+            throw new Error(`Cannot reverse a receipt on a PO with status '${poStatus}'`)
+          }
+
+          const linesRes = await client.query<{
+            id: string
+            po_line_id: string
+            qty_received: string
+            product_id: string | null
+          }>(
+            `SELECT prl.id, prl.po_line_id, prl.qty_received, pl.product_id
+             FROM po_receipt_lines prl
+             JOIN po_lines pl ON pl.id = prl.po_line_id
+             WHERE prl.receipt_id=$1`,
+            [args.id],
+          )
+          const lines = linesRes.rows
+          const poLineIds = lines.map((l) => l.po_line_id)
+
+          await assertNoVendorInvoiceLineConflict(client, poLineIds)
+
+          const returnConflict = await client.query<{ return_number: string }>(
+            `SELECT pr.return_number FROM po_return_items pri
+             JOIN po_returns pr ON pr.id = pri.return_id
+             WHERE pri.po_line_id = ANY($1) LIMIT 1`,
+            [poLineIds],
+          )
+          if (returnConflict.rows[0])
+            throw new Error(
+              `Already covered by vendor return ${returnConflict.rows[0].return_number} — ` +
+                `reconcile that first, a receipt already returned to the vendor can't also be reversed.`,
+            )
+
+          // ── Linked MO guard + reconstructability check (read-only, before
+          // any writes — if this throws, nothing below has touched anything) ──
+          let mo: { id: string; status: string; mo_number: string } | null = null
+          const moConsumptionPlan: { componentProductId: string; newQtyConsumed: number }[] = []
+          if (receipt.linked_mo_id) {
+            const moRes = await client.query<{ id: string; status: string; mo_number: string }>(
+              `SELECT id, status, mo_number FROM manufacturing_orders WHERE id=$1 FOR UPDATE`,
+              [receipt.linked_mo_id],
+            )
+            mo = moRes.rows[0] ?? null
+            if (mo && !['draft', 'confirmed'].includes(mo.status)) {
+              throw new Error(
+                `Linked Manufacturing Order ${mo.mo_number} has already moved past confirmation (status '${mo.status}') — reversing this receipt isn't safe. Reconcile its consumption manually first.`,
+              )
+            }
+            if (mo) {
+              const componentProductIds = [
+                ...new Set(lines.map((l) => l.product_id).filter((p): p is string => p != null)),
+              ]
+              for (const productId of componentProductIds) {
+                const consumptionRes = await client.query<{
+                  qty_planned: string
+                  qty_consumed: string
+                }>(
+                  `SELECT qty_planned, qty_consumed FROM mo_consumptions
+                   WHERE mo_id=$1 AND component_product_id=$2 FOR UPDATE`,
+                  [mo.id, productId],
+                )
+                const consumption = consumptionRes.rows[0]
+                if (!consumption) continue
+                const thisLineQty = lines
+                  .filter((l) => l.product_id === productId)
+                  .reduce((s, l) => s + parseFloat(l.qty_received), 0)
+                // Reconstructed from scratch: total that every still-confirmed
+                // receipt line for this MO/component has ever contributed.
+                // Only safe to decrement when this exactly matches current
+                // qty_consumed — if it doesn't, the LEAST(qty_planned,...) cap
+                // already absorbed/hid some contribution at some point, and a
+                // plain subtraction here could under- or over-correct it.
+                const totalRes = await client.query<{ total: string }>(
+                  `SELECT COALESCE(SUM(prl.qty_received),0) AS total
+                   FROM po_receipt_lines prl
+                   JOIN po_receipts pr2 ON pr2.id = prl.receipt_id
+                   JOIN po_lines pl2 ON pl2.id = prl.po_line_id
+                   JOIN purchase_orders po2 ON po2.id = pl2.po_id
+                   WHERE po2.linked_mo_id=$1 AND pl2.product_id=$2 AND pr2.status='confirmed'`,
+                  [mo.id, productId],
+                )
+                const totalConfirmed = parseFloat(totalRes.rows[0]?.total ?? '0')
+                const qtyConsumed = parseFloat(consumption.qty_consumed)
+                if (Math.abs(totalConfirmed - qtyConsumed) > 0.0001) {
+                  throw new Error(
+                    `Component consumption for Manufacturing Order ${mo.mo_number} already hit its planned cap from an earlier receipt — reversing automatically could misrepresent consumption. Adjust the Manufacturing Order's consumption manually first.`,
+                  )
+                }
+                moConsumptionPlan.push({
+                  componentProductId: productId,
+                  newQtyConsumed: Math.max(0, qtyConsumed - thisLineQty),
+                })
+              }
+            }
+          }
+
+          // ── Product cost reversion plan (read-only, before any writes) ──
+          const costRevertPlan: { productId: string; oldCost: number; currencyCode: string }[] = []
+          const productIds = [
+            ...new Set(lines.map((l) => l.product_id).filter((p): p is string => p != null)),
+          ]
+          for (const productId of productIds) {
+            const contributorCount = await client.query<{ count: string }>(
+              `SELECT COUNT(*) FROM po_receipt_lines prl
+               JOIN po_receipts pr2 ON pr2.id = prl.receipt_id
+               JOIN po_lines pl2 ON pl2.id = prl.po_line_id
+               WHERE pl2.po_id=$1 AND pl2.product_id=$2 AND pr2.status='confirmed'`,
+              [receipt.po_id, productId],
+            )
+            if (parseInt(contributorCount.rows[0]?.count ?? '0') !== 1) continue
+            const latestHistory = await client.query<{
+              old_cost: string | null
+              currency_code: string
+              source_type: string
+              source_id: string | null
+            }>(
+              `SELECT old_cost, currency_code, source_type, source_id FROM product_cost_history
+               WHERE product_id=$1 ORDER BY changed_at DESC, id DESC LIMIT 1`,
+              [productId],
+            )
+            const latest = latestHistory.rows[0]
+            if (
+              latest &&
+              latest.source_type === 'po_receipt' &&
+              latest.source_id === receipt.po_id &&
+              latest.old_cost != null
+            ) {
+              costRevertPlan.push({
+                productId,
+                oldCost: parseFloat(latest.old_cost),
+                currencyCode: latest.currency_code,
+              })
+            }
+          }
+
+          // ── Writes ──────────────────────────────────────────────────────
+          for (const line of lines) {
+            if (!line.product_id) continue
+            const moves = await findStockMovesForCorrection(client, {
+              kind: 'receipt',
+              poReceiptLineId: line.id,
+              receiptId: args.id,
+              productId: line.product_id,
+            })
+            for (const move of moves) {
+              await assertStockCorrectable(
+                client,
+                move.product_id,
+                move.to_location_id,
+                parseFloat(move.qty),
+                `reversal of receipt ${receipt.receipt_number as string}`,
+              )
+            }
+            for (const move of moves) {
+              await reverseAndRepostStockMove(
+                client,
+                move,
+                { qty: 0 },
+                { poLineId: line.po_line_id, poReceiptLineId: line.id },
+                auth.userId,
+                `receipt ${receipt.receipt_number as string} reversed — ${args.reason}`,
+              )
+            }
+          }
+
+          const updated = await client.query(
+            `UPDATE po_receipts SET status='reversed', reversed_by=$1, reversed_at=NOW(), reversal_reason=$2
+             WHERE id=$3 RETURNING *`,
+            [auth.userId, args.reason, args.id],
+          )
+
+          // Recomputed as a full sum across every still-confirmed receipt
+          // line for this po_line — matches applyAdminPOCorrection's own
+          // qty_received recompute exactly, just with this now-reversed
+          // receipt naturally excluded by the status filter.
+          for (const poLineId of new Set(poLineIds)) {
+            await client.query(
+              `UPDATE po_lines SET qty_received = (
+                 SELECT COALESCE(SUM(prl.qty_received),0) FROM po_receipt_lines prl
+                 JOIN po_receipts pr2 ON pr2.id = prl.receipt_id
+                 WHERE prl.po_line_id=$1 AND pr2.status != 'reversed'
+               ) WHERE id=$1`,
+              [poLineId],
+            )
+          }
+
+          for (const plan of costRevertPlan) {
+            await client.query(
+              `UPDATE products SET standard_cost=$1, cost_currency=$2 WHERE id=$3`,
+              [plan.oldCost, plan.currencyCode, plan.productId],
+            )
+            await client.query(
+              `INSERT INTO product_cost_history (product_id, old_cost, new_cost, currency_code, source_type, source_id, source_label, changed_by)
+               VALUES ($1,$2,$3,$4,'po_receipt',$5,$6,$7)`,
+              [
+                plan.productId,
+                null,
+                plan.oldCost,
+                plan.currencyCode,
+                receipt.po_id,
+                `Reversal of receipt ${receipt.receipt_number as string}`,
+                auth.userId,
+              ],
+            )
+          }
+
+          if (mo && moConsumptionPlan.length > 0) {
+            for (const plan of moConsumptionPlan) {
+              await client.query(
+                `UPDATE mo_consumptions SET qty_consumed=$1 WHERE mo_id=$2 AND component_product_id=$3`,
+                [plan.newQtyConsumed, mo.id, plan.componentProductId],
+              )
+            }
+            if (mo.status === 'confirmed') {
+              const unsatisfied = await client.query<{ unsatisfied: string }>(
+                `SELECT COUNT(*) FILTER (WHERE qty_consumed < qty_planned) AS unsatisfied FROM mo_consumptions WHERE mo_id=$1`,
+                [mo.id],
+              )
+              if (parseInt(unsatisfied.rows[0]?.unsatisfied ?? '0') > 0) {
+                await client.query(
+                  `UPDATE manufacturing_orders SET status='draft', updated_at=NOW() WHERE id=$1 AND status='confirmed'`,
+                  [mo.id],
+                )
+              }
+            }
+          }
+
+          await client.query(
+            `INSERT INTO po_approval_log (po_id, from_status, to_status, actor_id, action, notes) VALUES ($1,$2,$2,$3,'reverse_receipt',$4)`,
+            [receipt.po_id, poStatus, auth.userId, `Reversed receipt ${receipt.receipt_number as string} — ${args.reason}`],
+          )
+          await logAudit({
+            userId: auth.userId,
+            companyId: auth.companyId,
+            action: 'reverse_receipt',
+            tableName: 'po_receipts',
+            recordId: args.id,
+            oldValues: { status: 'confirmed' },
+            newValues: { status: 'reversed', reason: args.reason },
+            client,
+          })
+
+          void publishEntityChanged(auth.companyId, 'purchase_order', receipt.po_id as string, 'updated')
+          return { ...(updated.rows[0] as Record<string, unknown>), lines: [], photos: [] }
+        },
+      )
     },
 
     // For PO lines delivered straight to a project's jobsite instead of

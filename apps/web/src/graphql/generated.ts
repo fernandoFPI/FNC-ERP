@@ -1654,6 +1654,14 @@ export type CancelReceiptMutationVariables = Exact<{
 
 export type CancelReceiptMutation = { cancelReceipt: { id: string, status: string } };
 
+export type ReverseReceiptMutationVariables = Exact<{
+  id: string | number;
+  reason: string;
+}>;
+
+
+export type ReverseReceiptMutation = { reverseReceipt: { id: string, status: string, reversed_at: string | null, reversal_reason: string | null, reversed_by_email: string | null } };
+
 export type RecordDirectDeliveryMutationVariables = Exact<{
   poId: string | number;
   input: Types.DirectDeliveryInput;
@@ -1662,7 +1670,7 @@ export type RecordDirectDeliveryMutationVariables = Exact<{
 
 export type RecordDirectDeliveryMutation = { recordDirectDelivery: { poId: string, status: string } };
 
-export type PoReceiptFieldsFragment = { id: string, po_id: string | null, po_number: string | null, vendor_name: string | null, received_from_name: string | null, base_currency_code: string | null, receipt_number: string | null, receipt_date: string | null, location_name: string | null, notes: string | null, received_by_email: string | null, received_by_name: string | null, location_notes: string | null, created_at: string | null, is_invoiced: boolean | null, status: string, confirmed_at: string | null, lines: Array<{ po_line_id: string, description: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, uom: string | null, unit_price: string | null, currency_code: string | null, fx_rate_to_base: string | null, qty_received: string }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> };
+export type PoReceiptFieldsFragment = { id: string, po_id: string | null, po_number: string | null, vendor_name: string | null, received_from_name: string | null, base_currency_code: string | null, receipt_number: string | null, receipt_date: string | null, location_name: string | null, notes: string | null, received_by_email: string | null, received_by_name: string | null, location_notes: string | null, created_at: string | null, is_invoiced: boolean | null, status: string, confirmed_at: string | null, reversed_at: string | null, reversal_reason: string | null, reversed_by_email: string | null, lines: Array<{ po_line_id: string, description: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, uom: string | null, unit_price: string | null, currency_code: string | null, fx_rate_to_base: string | null, qty_received: string }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> };
 
 export type ReceivablePurchaseOrdersQueryVariables = Exact<{
   projectId?: string | number | null | undefined;
@@ -1674,14 +1682,14 @@ export type ReceivablePurchaseOrdersQuery = { receivablePurchaseOrders: Array<{ 
 export type PoReceiptsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type PoReceiptsQuery = { poReceipts: Array<{ id: string, po_id: string | null, po_number: string | null, vendor_name: string | null, received_from_name: string | null, base_currency_code: string | null, receipt_number: string | null, receipt_date: string | null, location_name: string | null, notes: string | null, received_by_email: string | null, received_by_name: string | null, location_notes: string | null, created_at: string | null, is_invoiced: boolean | null, status: string, confirmed_at: string | null, lines: Array<{ po_line_id: string, description: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, uom: string | null, unit_price: string | null, currency_code: string | null, fx_rate_to_base: string | null, qty_received: string }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> }> };
+export type PoReceiptsQuery = { poReceipts: Array<{ id: string, po_id: string | null, po_number: string | null, vendor_name: string | null, received_from_name: string | null, base_currency_code: string | null, receipt_number: string | null, receipt_date: string | null, location_name: string | null, notes: string | null, received_by_email: string | null, received_by_name: string | null, location_notes: string | null, created_at: string | null, is_invoiced: boolean | null, status: string, confirmed_at: string | null, reversed_at: string | null, reversal_reason: string | null, reversed_by_email: string | null, lines: Array<{ po_line_id: string, description: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, uom: string | null, unit_price: string | null, currency_code: string | null, fx_rate_to_base: string | null, qty_received: string }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> }> };
 
 export type PoReceiptQueryVariables = Exact<{
   id: string | number;
 }>;
 
 
-export type PoReceiptQuery = { poReceipt: { id: string, po_id: string | null, po_number: string | null, vendor_name: string | null, received_from_name: string | null, base_currency_code: string | null, receipt_number: string | null, receipt_date: string | null, location_name: string | null, notes: string | null, received_by_email: string | null, received_by_name: string | null, location_notes: string | null, created_at: string | null, is_invoiced: boolean | null, status: string, confirmed_at: string | null, lines: Array<{ po_line_id: string, description: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, uom: string | null, unit_price: string | null, currency_code: string | null, fx_rate_to_base: string | null, qty_received: string }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> } | null };
+export type PoReceiptQuery = { poReceipt: { id: string, po_id: string | null, po_number: string | null, vendor_name: string | null, received_from_name: string | null, base_currency_code: string | null, receipt_number: string | null, receipt_date: string | null, location_name: string | null, notes: string | null, received_by_email: string | null, received_by_name: string | null, location_notes: string | null, created_at: string | null, is_invoiced: boolean | null, status: string, confirmed_at: string | null, reversed_at: string | null, reversal_reason: string | null, reversed_by_email: string | null, lines: Array<{ po_line_id: string, description: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, uom: string | null, unit_price: string | null, currency_code: string | null, fx_rate_to_base: string | null, qty_received: string }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> } | null };
 
 export type RequestUploadUrlMutationVariables = Exact<{
   filename: string;

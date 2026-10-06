@@ -217,6 +217,15 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
           { key: 'procurement.po.view', label: 'View Purchase Orders', sortOrder: 200 },
           { key: 'procurement.po.edit', label: 'Edit Purchase Orders', sortOrder: 201 },
           { key: 'procurement.po.approve', label: 'Approve Purchase Orders', sortOrder: 202 },
+          // Deliberately separate from procurement.po.edit — undoes real,
+          // already-posted stock movements and product cost, so an ordinary
+          // PO editor doesn't get it for free. Nobody has this until it's
+          // explicitly granted via Role Templates.
+          {
+            key: 'procurement.po.reverse_receipt',
+            label: 'Reverse Confirmed Receipts',
+            sortOrder: 203,
+          },
         ],
       },
       {

@@ -2535,6 +2535,7 @@ export type Mutation = {
   retryDLQEntry: Scalars['Boolean']['output'];
   retryOutboxEvent: Scalars['Boolean']['output'];
   revealBankDetails?: Maybe<BankDetailsResult>;
+  reverseReceipt: PoReceipt;
   reviewTQ: ProjectTq;
   reviseBid: BidCommercialSummary;
   reviseContract: ProjectContract;
@@ -4632,6 +4633,12 @@ export type MutationRevealBankDetailsArgs = {
 };
 
 
+export type MutationReverseReceiptArgs = {
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
 export type MutationReviewTqArgs = {
   id: Scalars['ID']['input'];
 };
@@ -6152,6 +6159,9 @@ export type PoReceipt = {
   received_by_email?: Maybe<Scalars['String']['output']>;
   received_by_name?: Maybe<Scalars['String']['output']>;
   received_from_name?: Maybe<Scalars['String']['output']>;
+  reversal_reason?: Maybe<Scalars['String']['output']>;
+  reversed_at?: Maybe<Scalars['String']['output']>;
+  reversed_by_email?: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
   vendor_name?: Maybe<Scalars['String']['output']>;
 };

@@ -222,6 +222,11 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
           { key: 'procurement.po.view', label: 'View Purchase Orders', sortOrder: 200 },
           { key: 'procurement.po.edit', label: 'Edit Purchase Orders', sortOrder: 201 },
           { key: 'procurement.po.approve', label: 'Approve Purchase Orders', sortOrder: 202 },
+          {
+            key: 'procurement.po.reverse_receipt',
+            label: 'Reverse Confirmed Receipts',
+            sortOrder: 203,
+          },
         ],
       },
       {

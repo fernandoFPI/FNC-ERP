@@ -5,6 +5,7 @@ import {
   PO_RECEIPT_QUERY,
   CONFIRM_RECEIPT,
   CANCEL_RECEIPT,
+  REVERSE_RECEIPT,
   ATTACH_RECEIPT_PHOTO,
 } from '../../../graphql/procurement'
 import { DETACH_FILE, FILE_DOWNLOAD_URL_QUERY, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
@@ -22,6 +23,7 @@ import { buildStoreInHTML } from '../../../lib/storeInHtml'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useCompany } from '../../../hooks/useCompany'
+import { usePermission } from '../../../hooks/usePermission'
 import { useToastStore } from '../../../store/toastStore'
 import type {
   AttachReceiptPhotoMutation,
@@ -30,6 +32,8 @@ import type {
   CancelReceiptMutationVariables,
   ConfirmReceiptMutation,
   ConfirmReceiptMutationVariables,
+  ReverseReceiptMutation,
+  ReverseReceiptMutationVariables,
   DetachFileMutation,
   DetachFileMutationVariables,
   EntityAttachmentsQuery,
@@ -102,6 +106,9 @@ interface Receipt {
   created_at: string | null
   status: string
   confirmed_at: string | null
+  reversed_at: string | null
+  reversal_reason: string | null
+  reversed_by_email: string | null
   lines: ReceiptLine[]
   photos: ReceiptPhoto[]
 }
@@ -110,6 +117,7 @@ const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger
   draft: 'warning',
   confirmed: 'success',
   cancelled: 'danger',
+  reversed: 'danger',
 }
 
 const fmtAmt = (n: number) =>
@@ -121,6 +129,8 @@ export default function StoreInDetail() {
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const { activeCompany } = useCompany()
+  const { can } = usePermission()
+  const canReverse = can('procurement.po.reverse_receipt', 'edit')
   const addToast = useToastStore((s) => s.addToast)
   const [showPrintModal, setShowPrintModal] = useState(false)
   const printIframeRef = useRef<HTMLIFrameElement>(null)
@@ -128,6 +138,8 @@ export default function StoreInDetail() {
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const captureKindRef = useRef<PhotoKind>('materials')
   const [uploadingKind, setUploadingKind] = useState<PhotoKind | null>(null)
+  const [reverseOpen, setReverseOpen] = useState(false)
+  const [reverseReason, setReverseReason] = useState('')
   const [dragOverKind, setDragOverKind] = useState<PhotoKind | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
@@ -210,6 +222,20 @@ export default function StoreInDetail() {
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
       setCancelOpen(false)
+    },
+  })
+  const [reverseReceipt, { loading: reversing }] = useMutation<
+    ReverseReceiptMutation,
+    ReverseReceiptMutationVariables
+  >(REVERSE_RECEIPT, {
+    onCompleted: () => {
+      addToast({ type: 'success', message: 'Receipt reversed — stock and PO quantities rolled back' })
+      setReverseOpen(false)
+      setReverseReason('')
+      void refetch()
+    },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
     },
   })
 
@@ -522,6 +548,16 @@ export default function StoreInDetail() {
             >
               Print
             </Button>
+            {receipt.status === 'confirmed' && canReverse && (
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setReverseOpen(true)
+                }}
+              >
+                Reverse Receipt
+              </Button>
+            )}
           </div>
         }
       />
@@ -581,6 +617,24 @@ export default function StoreInDetail() {
             }}
           >
             {[receipt.location_notes, receipt.notes].filter(Boolean).join(' — ')}
+          </div>
+        )}
+        {receipt.status === 'reversed' && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: '7px',
+              background: '#ef444410',
+              border: '1px solid #ef4444',
+              fontSize: '12px',
+              color: '#ef4444',
+              marginBottom: '20px',
+            }}
+          >
+            <strong>Reversed</strong>
+            {receipt.reversed_at && ` on ${receipt.reversed_at.slice(0, 10)}`}
+            {receipt.reversed_by_email && ` by ${receipt.reversed_by_email}`}
+            {receipt.reversal_reason && ` — ${receipt.reversal_reason}`}
           </div>
         )}
 
@@ -720,6 +774,75 @@ export default function StoreInDetail() {
         confirmVariant="danger"
         loading={cancelling}
       />
+
+      {/* Reverse Receipt modal — requires a reason, unlike the draft-only dialogs above */}
+      {reverseOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <Card style={{ padding: '24px', width: '440px' }}>
+            <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
+              Reverse Receipt
+            </h3>
+            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
+              This undoes the stock this receipt already added, the quantities on the linked PO, and
+              (where unambiguous) the product cost it set. It's blocked automatically if any of that
+              stock has already moved on, if the PO's been invoiced, or if it's already covered by a
+              vendor return. This cannot be undone — a fresh receipt would need to be recorded instead.
+            </p>
+            <textarea
+              value={reverseReason}
+              onChange={(e) => {
+                setReverseReason(e.target.value)
+              }}
+              placeholder="Why is this receipt being reversed?"
+              style={{
+                width: '100%',
+                height: '80px',
+                resize: 'vertical',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                border: `1px solid ${theme.border}`,
+                background: theme.bgSurface,
+                color: theme.textPrimary,
+                fontSize: '12px',
+                fontFamily: 'inherit',
+                boxSizing: 'border-box',
+              }}
+            />
+            <div
+              style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}
+            >
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setReverseOpen(false)
+                  setReverseReason('')
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                disabled={reversing || !reverseReason.trim()}
+                onClick={() => {
+                  void reverseReceipt({ variables: { id: receipt.id, reason: reverseReason } })
+                }}
+              >
+                Reverse Receipt
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Print dialog */}
       {showPrintModal && (
