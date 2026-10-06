@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
-import { query, withTransaction, type PoolClient, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
+import { query, withTransaction, nextDocumentNumber, type PoolClient, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
@@ -336,13 +336,18 @@ expenseClaimsRouter.get(
                 COALESCE(cu.first_name || ' ' || cu.last_name, cu.email) AS created_by_name,
                 COALESCE(au.first_name || ' ' || au.last_name, au.email) AS approved_by_name,
                 COALESCE(ru.first_name || ' ' || ru.last_name, ru.email) AS rejected_by_name,
-                COALESCE(pu.first_name || ' ' || pu.last_name, pu.email) AS paid_by_name
+                COALESCE(pu.first_name || ' ' || pu.last_name, pu.email) AS paid_by_name,
+                pcf.name AS petty_cash_float_name,
+                aset.settlement_number, adv.advance_number
          FROM expense_claims ec
          LEFT JOIN projects proj ON proj.id = ec.project_id
          LEFT JOIN users cu ON cu.id = ec.created_by
          LEFT JOIN users au ON au.id = ec.approved_by
          LEFT JOIN users ru ON ru.id = ec.rejected_by
          LEFT JOIN users pu ON pu.id = ec.paid_by
+         LEFT JOIN petty_cash_floats pcf ON pcf.id = ec.petty_cash_float_id
+         LEFT JOIN advance_settlements aset ON aset.id = ec.settled_via_settlement_id
+         LEFT JOIN employee_advances adv ON adv.id = aset.advance_id
          WHERE ec.id=$1 AND ec.company_id=$2`,
         [req.params['id'], getAuth(req).companyId],
       )
@@ -512,18 +517,17 @@ expenseClaimsRouter.post('/request-self', asyncHandler(async (req, res) => {
         const emp = empRes.rows[0] as Record<string, unknown> | undefined
         if (!emp) return { error: 'NO_EMPLOYEE_LINK' as const }
 
-        const reimbursementAccountId = await resolveReimbursementAccount(
-          client,
-          getAuth(req).companyId,
-          d.currency_code,
-        )
+        // No reimbursement_account_id resolved here any more — Finance picks
+        // how this gets funded (reimburse / advance / petty cash) later, at
+        // the Post Payment step, after approving the claim's legitimacy. See
+        // POST /:id/post-payment.
         const totalAmount = d.lines.reduce((s, l) => s + l.amount, 0)
         const employeeName = `${emp['first_name'] as string} ${emp['last_name'] as string}`
         const ecRes = await client.query(
           `INSERT INTO expense_claims
              (company_id, claim_number, employee_id, employee_name, description, currency_code,
-              total_amount, reimbursement_account_id, project_id, notes, status, submitted_at, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'submitted',NOW(),$11) RETURNING *`,
+              total_amount, project_id, notes, status, submitted_at, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'submitted',NOW(),$10) RETURNING *`,
           [
             getAuth(req).companyId,
             claimNumber,
@@ -532,7 +536,6 @@ expenseClaimsRouter.post('/request-self', asyncHandler(async (req, res) => {
             d.description ?? null,
             d.currency_code,
             totalAmount,
-            reimbursementAccountId,
             d.project_id ?? null,
             d.notes ?? null,
             getAuth(req).userId,
@@ -708,27 +711,121 @@ expenseClaimsRouter.post(
   }),
 )
 
-// ─── Approve claim (posts journal immediately) ──────────────────────────────
+// ─── Approve claim (legitimacy only — no funding decision, no posting) ─────
 //
-// Single-step, matching how employee-advances.ts's approve immediately
-// disburses and posts: approving a submitted claim posts the reimbursement
-// journal right away instead of resting in a separate 'approved' state
-// awaiting a manual "post" click. Every line's gl_account_id is guaranteed
-// resolved by creation/update time (resolveLineGlAccount), and the
-// reimbursement account is resolved the same way — so nothing here can be
-// missing config at approval time; that's caught earlier, when the claim
-// is created or edited.
-//
-// Deliberately NOT collapsed further into mark-paid: unlike an advance
-// (where approval literally IS the cash movement), an expense claim's
-// approval recognizes the expense/liability, while actual disbursement is a
-// separate accounting event — mark-paid stays its own step.
+// Used to post the reimbursement journal in the same step as this approval.
+// Split in two: this just confirms the claim is legitimate (submitted ->
+// approved). Which account actually pays it — reimburse, an employee's
+// advance, or a petty cash float — is Finance's call, made afterward via
+// POST /:id/post-payment. That's also why reimbursement_account_id is no
+// longer resolved at submission (/request-self) — it may never be needed if
+// Finance routes the claim to an advance or a petty cash float instead.
 
 expenseClaimsRouter.post(
   '/:id/approve',
   requirePermission('finance.expenses.approve', 'approve'),
   asyncHandler(async (req, res) => {
     try {
+      const r = await query(
+        `UPDATE expense_claims SET status='approved', approved_by=$1, approved_at=NOW(), updated_at=NOW()
+         WHERE id=$2 AND company_id=$3 AND status='submitted' RETURNING *`,
+        [getAuth(req).userId, req.params['id'], getAuth(req).companyId],
+      )
+      if (!r.rows[0]) {
+        sendError(res, 409, 'INVALID_STATUS', 'Claim is not in submitted status')
+        return
+      }
+      await logAudit({
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
+        action: 'UPDATE',
+        tableName: 'expense_claims',
+        recordId: req.params['id'],
+        newValues: { status: 'approved' },
+      })
+      sendOk(res, r.rows[0])
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve claim', err)
+    }
+  }),
+)
+
+// ─── Funding options (for the Post Payment picker) ─────────────────────────
+//
+// Gated by the same finance.expenses.approve permission as the claim itself
+// — not finance.advances.view/finance.petty_cash.view — so acting on a claim
+// never silently requires a second, unrelated permission grant.
+
+expenseClaimsRouter.get(
+  '/:id/funding-options',
+  requirePermission('finance.expenses.approve', 'approve'),
+  asyncHandler(async (req, res) => {
+    try {
+      const claimRes = await query(
+        `SELECT employee_id FROM expense_claims WHERE id=$1 AND company_id=$2`,
+        [req.params['id'], getAuth(req).companyId],
+      )
+      if (!claimRes.rows[0]) {
+        sendError(res, 404, 'NOT_FOUND', 'Claim not found')
+        return
+      }
+      const [floats, advances] = await Promise.all([
+        query(
+          `SELECT id, name, currency_code, current_balance FROM petty_cash_floats
+           WHERE company_id=$1 AND is_active=true ORDER BY name`,
+          [getAuth(req).companyId],
+        ),
+        query(
+          `SELECT id, advance_number, purpose, outstanding_amount, currency_code
+           FROM employee_advances
+           WHERE company_id=$1 AND employee_id=$2 AND status IN ('approved','partially_settled')
+           ORDER BY created_at DESC`,
+          [getAuth(req).companyId, claimRes.rows[0]['employee_id']],
+        ),
+      ])
+      sendOk(res, { petty_cash_floats: floats.rows, advances: advances.rows })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load funding options', err)
+    }
+  }),
+)
+
+// ─── Post payment (Finance decides the funding source) ──────────────────────
+//
+// Only reachable from 'approved' — the legitimacy check above. Branches on
+// funding_source:
+//  - reimburse: exactly the old /:id/approve posting logic (DR each line's
+//    GL, CR the default cash/bank account for the claim's currency).
+//  - petty_cash: mirrors petty-cash.ts's POST /floats/:id/spend — locks the
+//    float, checks current_balance, credits the float's own GL account,
+//    decrements its balance, and logs a petty_cash_transactions row so it
+//    reconciles identically to a spend Finance records directly there.
+//  - advance: creates a real advance_settlements + advance_settlement_lines
+//    record (so Employee Advance Detail needs no changes), posts its usual
+//    DR category / CR Employee Advances JE, and links back via
+//    settled_via_settlement_id — the claim itself carries no second JE.
+
+const postPaymentSchema = z.object({
+  funding_source: z.enum(['reimburse', 'advance', 'petty_cash']),
+  petty_cash_float_id: z.string().uuid().optional(),
+  advance_id: z.string().uuid().optional(),
+})
+
+expenseClaimsRouter.post(
+  '/:id/post-payment',
+  requirePermission('finance.expenses.approve', 'approve'),
+  asyncHandler(async (req, res) => {
+    try {
+      const d = postPaymentSchema.parse(req.body)
+      if (d.funding_source === 'petty_cash' && !d.petty_cash_float_id) {
+        sendError(res, 422, 'VALIDATION', 'Select a petty cash float')
+        return
+      }
+      if (d.funding_source === 'advance' && !d.advance_id) {
+        sendError(res, 422, 'VALIDATION', 'Select an advance to settle against')
+        return
+      }
+
       const result = await withTransaction(
         { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
@@ -743,7 +840,7 @@ expenseClaimsRouter.post(
              FROM expense_claims ec
              LEFT JOIN projects p ON p.id = ec.project_id
              LEFT JOIN analytic_accounts aa ON aa.id = p.analytic_account_id
-             WHERE ec.id=$1 AND ec.company_id=$2 AND ec.status='submitted' FOR UPDATE OF ec`,
+             WHERE ec.id=$1 AND ec.company_id=$2 AND ec.status='approved' FOR UPDATE OF ec`,
             [req.params['id'], getAuth(req).companyId],
           )
           if (!claimRes.rows[0]) return null
@@ -761,38 +858,242 @@ expenseClaimsRouter.post(
             [req.params['id']],
           )
           const lines = linesRes.rows as {
+            expense_date: string
             gl_account_id: string
+            category_id: string | null
+            category_name: string | null
             amount: number
             description: string | null
           }[]
+          const totalAmount = parseFloat(String(claim['total_amount']))
+
+          if (d.funding_source === 'reimburse') {
+            // Only resolve+store a fresh default when the claim doesn't
+            // already carry one — an admin-created claim (POST /) still
+            // picks its reimbursement account at creation time; that choice
+            // must not be silently overridden here.
+            const reimbursementAccountId =
+              (claim['reimbursement_account_id'] as string | null) ??
+              (await resolveReimbursementAccount(
+                client,
+                getAuth(req).companyId,
+                claim['currency_code'] as string,
+              ))
+
+            const jeRes = await client.query(
+              `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
+               VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'expense_claim', $4, $5, NOW(), $5)
+               RETURNING id`,
+              [
+                getAuth(req).companyId,
+                claim['claim_number'],
+                `Expense claim: ${claim['employee_name'] as string}`,
+                claim['id'],
+                getAuth(req).userId,
+              ],
+            )
+            const jeId = firstRowOrThrow(jeRes).id as string
+
+            for (const line of lines) {
+              await client.query(
+                `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, currency_code, debit, credit, description, amount_company_currency)
+                 VALUES ($1,$2,$3,$4,$5,0,$6,$5)`,
+                [
+                  jeId,
+                  line.gl_account_id,
+                  claim['project_analytic_account_id'] ?? null,
+                  claim['currency_code'],
+                  line.amount,
+                  line.description ?? (claim['claim_number'] as string),
+                ],
+              )
+            }
+            await client.query(
+              `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
+               VALUES ($1,$2,$3,0,$4,$5,$4)`,
+              [
+                jeId,
+                reimbursementAccountId,
+                claim['currency_code'],
+                totalAmount,
+                `Reimbursable: ${claim['employee_name'] as string}`,
+              ],
+            )
+            const updated = await client.query(
+              `UPDATE expense_claims SET status='posted', funding_source='reimburse', reimbursement_account_id=$1, journal_entry_id=$2, updated_at=NOW()
+               WHERE id=$3 RETURNING *`,
+              [reimbursementAccountId, jeId, req.params['id']],
+            )
+            return { claim: updated.rows[0] }
+          }
+
+          if (d.funding_source === 'petty_cash') {
+            const floatRes = await client.query(
+              `SELECT * FROM petty_cash_floats WHERE id=$1 AND company_id=$2 AND is_active=true FOR UPDATE`,
+              [d.petty_cash_float_id, getAuth(req).companyId],
+            )
+            if (!floatRes.rows[0]) return { error: 'FLOAT_NOT_FOUND' as const }
+            const float_ = floatRes.rows[0] as Record<string, unknown>
+            if (Number(float_['current_balance']) < totalAmount) {
+              return { error: 'INSUFFICIENT_BALANCE' as const }
+            }
+            const newBalance = Math.round((Number(float_['current_balance']) - totalAmount) * 100) / 100
+
+            const jeRes = await client.query(
+              `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
+               VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'expense_claim', $4, $5, NOW(), $5)
+               RETURNING id`,
+              [
+                getAuth(req).companyId,
+                claim['claim_number'],
+                `Expense claim (petty cash): ${claim['employee_name'] as string}`,
+                claim['id'],
+                getAuth(req).userId,
+              ],
+            )
+            const jeId = firstRowOrThrow(jeRes).id as string
+
+            for (const line of lines) {
+              await client.query(
+                `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, currency_code, debit, credit, description, amount_company_currency)
+                 VALUES ($1,$2,$3,$4,$5,0,$6,$5)`,
+                [
+                  jeId,
+                  line.gl_account_id,
+                  claim['project_analytic_account_id'] ?? null,
+                  claim['currency_code'],
+                  line.amount,
+                  line.description ?? (claim['claim_number'] as string),
+                ],
+              )
+            }
+            await client.query(
+              `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
+               VALUES ($1,$2,$3,0,$4,$5,$4)`,
+              [
+                jeId,
+                float_['gl_account_id'],
+                claim['currency_code'],
+                totalAmount,
+                `Petty cash spend: ${claim['employee_name'] as string}`,
+              ],
+            )
+            await client.query(
+              `UPDATE petty_cash_floats SET current_balance=$1, updated_at=NOW() WHERE id=$2`,
+              [newBalance, d.petty_cash_float_id],
+            )
+            await client.query(
+              `INSERT INTO petty_cash_transactions (float_id, company_id, transaction_date, description, amount, transaction_type, balance_after, journal_entry_id, created_by)
+               VALUES ($1,$2,CURRENT_DATE,$3,$4,'spend',$5,$6,$7)`,
+              [
+                d.petty_cash_float_id,
+                getAuth(req).companyId,
+                `Expense claim ${claim['claim_number'] as string} — ${claim['employee_name'] as string}`,
+                totalAmount,
+                newBalance,
+                jeId,
+                getAuth(req).userId,
+              ],
+            )
+            const updated = await client.query(
+              `UPDATE expense_claims SET status='posted', funding_source='petty_cash', petty_cash_float_id=$1, journal_entry_id=$2, updated_at=NOW()
+               WHERE id=$3 RETURNING *`,
+              [d.petty_cash_float_id, jeId, req.params['id']],
+            )
+            return { claim: updated.rows[0] }
+          }
+
+          // funding_source === 'advance'
+          const advRes = await client.query(
+            `SELECT * FROM employee_advances
+             WHERE id=$1 AND company_id=$2 AND employee_id=$3 AND status IN ('approved','partially_settled') FOR UPDATE`,
+            [d.advance_id, getAuth(req).companyId, claim['employee_id']],
+          )
+          if (!advRes.rows[0]) return { error: 'ADVANCE_NOT_FOUND' as const }
+          const advance = advRes.rows[0] as Record<string, unknown>
+          if (totalAmount > parseFloat(String(advance['outstanding_amount'])) + 0.0001) {
+            return { error: 'EXCEEDS_OUTSTANDING' as const }
+          }
+          if (!advance['cost_center_id']) {
+            return { error: 'NO_COST_CENTER' as const }
+          }
+          let advanceProjectAnalyticAccountId: string | null = null
+          if (advance['project_id']) {
+            const paa = await client.query(
+              `SELECT aa.id FROM projects p JOIN analytic_accounts aa ON aa.id = p.analytic_account_id WHERE p.id=$1`,
+              [advance['project_id']],
+            )
+            advanceProjectAnalyticAccountId = (paa.rows[0]?.['id'] as string) ?? null
+            if (!advanceProjectAnalyticAccountId) {
+              return { error: 'PROJECT_MISSING_ANALYTIC_ACCOUNT' as const }
+            }
+          }
+
+          const settlementNumber = await nextDocumentNumber(
+            getAuth(req).companyId,
+            'advance_settlement',
+            'SET',
+          )
+          const sRes = await client.query(
+            `INSERT INTO advance_settlements
+               (company_id, settlement_number, advance_id, employee_id, employee_name, settlement_date,
+                description, currency_code, total_amount, status, submitted_at, approved_by, approved_at, created_by)
+             VALUES ($1,$2,$3,$4,$5,CURRENT_DATE,$6,$7,$8,'approved',NOW(),$9,NOW(),$9) RETURNING *`,
+            [
+              getAuth(req).companyId,
+              settlementNumber,
+              d.advance_id,
+              claim['employee_id'],
+              claim['employee_name'],
+              `Settled from expense claim ${claim['claim_number'] as string}`,
+              claim['currency_code'],
+              totalAmount,
+              getAuth(req).userId,
+            ],
+          )
+          const settlement = firstRowOrThrow(sRes)
 
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
-             VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'expense_claim', $4, $5, NOW(), $5)
+             VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'advance_settlement', $4, $5, NOW(), $5)
              RETURNING id`,
             [
               getAuth(req).companyId,
-              claim['claim_number'],
-              `Expense claim: ${claim['employee_name'] as string}`,
-              claim['id'],
+              settlementNumber,
+              `Advance settlement: ${claim['employee_name'] as string}`,
+              settlement['id'],
               getAuth(req).userId,
             ],
           )
           const jeId = firstRowOrThrow(jeRes).id as string
 
-          // DR each expense account, CR Accrued Reimbursement. Only the debit
-          // (expense-recognizing) lines carry analytic_account_id — the
-          // credit line below books a balance-sheet liability, not a cost,
-          // so it must NOT roll into project_cost_actuals via
-          // trg_sync_project_costs.
           for (const line of lines) {
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, currency_code, debit, credit, description, amount_company_currency)
-             VALUES ($1,$2,$3,$4,$5,0,$6,$5)`,
+              `INSERT INTO advance_settlement_lines
+                 (settlement_id, company_id, line_date, gl_account_id, category_id, category_name, project_id, cost_center_id, description, amount, currency_code)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+              [
+                settlement['id'],
+                getAuth(req).companyId,
+                line.expense_date,
+                line.gl_account_id,
+                line.category_id,
+                line.category_name,
+                advance['project_id'] ?? null,
+                advance['cost_center_id'],
+                line.description ?? (claim['claim_number'] as string),
+                line.amount,
+                claim['currency_code'],
+              ],
+            )
+            await client.query(
+              `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, cost_center_id, currency_code, debit, credit, description, amount_company_currency)
+               VALUES ($1,$2,$3,$4,$5,$6,0,$7,$6)`,
               [
                 jeId,
                 line.gl_account_id,
-                claim['project_analytic_account_id'] ?? null,
+                advanceProjectAnalyticAccountId,
+                advance['cost_center_id'],
                 claim['currency_code'],
                 line.amount,
                 line.description ?? (claim['claim_number'] as string),
@@ -801,35 +1102,47 @@ expenseClaimsRouter.post(
           }
           await client.query(
             `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
-           VALUES ($1,$2,$3,0,$4,$5,$4)`,
-            [
-              jeId,
-              claim['reimbursement_account_id'],
-              claim['currency_code'],
-              claim['total_amount'],
-              `Reimbursable: ${claim['employee_name'] as string}`,
-            ],
+             VALUES ($1,$2,$3,0,$4,$5,$4)`,
+            [jeId, advance['advance_account_id'], claim['currency_code'], totalAmount, `Settlement ${settlementNumber}`],
+          )
+          await client.query(`UPDATE advance_settlements SET journal_entry_id=$1 WHERE id=$2`, [
+            jeId,
+            settlement['id'],
+          ])
+
+          const newSettled = parseFloat(String(advance['settled_amount'])) + totalAmount
+          const newReturned = parseFloat(String(advance['returned_amount']))
+          const advanceAmount = parseFloat(String(advance['amount']))
+          const newAdvStatus =
+            newSettled + newReturned >= advanceAmount ? 'settled' : 'partially_settled'
+          await client.query(
+            `UPDATE employee_advances SET settled_amount=$1, status=$2, updated_at=NOW() WHERE id=$3`,
+            [newSettled, newAdvStatus, d.advance_id],
           )
 
           const updated = await client.query(
-            `UPDATE expense_claims SET status='posted', approved_by=$1, approved_at=NOW(), journal_entry_id=$2, updated_at=NOW()
+            `UPDATE expense_claims SET status='posted', funding_source='advance', settled_via_settlement_id=$1, journal_entry_id=$2, updated_at=NOW()
              WHERE id=$3 RETURNING *`,
-            [getAuth(req).userId, jeId, req.params['id']],
+            [settlement['id'], jeId, req.params['id']],
           )
-          return updated.rows[0]
+          return { claim: updated.rows[0] }
         },
       )
       if (!result) {
-        sendError(res, 409, 'INVALID_STATUS', 'Claim is not in submitted status')
+        sendError(res, 409, 'INVALID_STATUS', 'Claim is not in approved status')
         return
       }
       if ('error' in result) {
-        sendError(
-          res,
-          422,
-          result.error,
-          'This claim’s linked project has no analytic account configured — set one before it can be approved',
-        )
+        const messages: Record<string, string> = {
+          PROJECT_MISSING_ANALYTIC_ACCOUNT:
+            'This claim’s linked project has no analytic account configured — set one before it can be posted',
+          FLOAT_NOT_FOUND: 'Petty cash float not found or inactive',
+          INSUFFICIENT_BALANCE: 'That petty cash float doesn’t have enough balance for this amount',
+          ADVANCE_NOT_FOUND: 'Advance not found, not this employee’s, or not in a settleable status',
+          EXCEEDS_OUTSTANDING: 'This claim’s total exceeds the advance’s outstanding balance',
+          NO_COST_CENTER: 'That advance has no cost center set — it can’t be self-settled this way',
+        }
+        sendError(res, 422, result.error, messages[result.error] ?? 'Could not post payment')
         return
       }
       await logAudit({
@@ -838,11 +1151,11 @@ expenseClaimsRouter.post(
         action: 'UPDATE',
         tableName: 'expense_claims',
         recordId: req.params['id'],
-        newValues: { status: 'posted' },
+        newValues: { status: 'posted', funding_source: d.funding_source },
       })
-      sendOk(res, result)
+      sendOk(res, result.claim)
     } catch (err) {
-      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve claim', err)
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to post payment', err)
     }
   }),
 )
@@ -858,11 +1171,11 @@ expenseClaimsRouter.post(
       const { reason } = schema.parse(req.body)
       const r = await query(
         `UPDATE expense_claims SET status='rejected', rejected_by=$1, rejected_at=NOW(), rejection_reason=$2, updated_at=NOW()
-       WHERE id=$3 AND company_id=$4 AND status='submitted' RETURNING *`,
+       WHERE id=$3 AND company_id=$4 AND status IN ('submitted','approved') RETURNING *`,
         [getAuth(req).userId, reason, req.params['id'], getAuth(req).companyId],
       )
       if (!r.rows[0]) {
-        sendError(res, 409, 'INVALID_STATUS', 'Claim is not in submitted status')
+        sendError(res, 409, 'INVALID_STATUS', 'Claim is not in submitted or approved status')
         return
       }
       sendOk(res, r.rows[0])

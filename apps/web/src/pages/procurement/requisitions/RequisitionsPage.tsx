@@ -59,6 +59,7 @@ interface ExpenseClaimApiRow {
 const EXPENSE_STATUS_LABELS: Record<string, string> = {
   draft: 'Draft',
   submitted: 'Pending Approval',
+  approved: 'Awaiting Funding Decision',
   posted: 'Completed',
   paid: 'Completed',
   rejected: 'Rejected',
@@ -66,6 +67,7 @@ const EXPENSE_STATUS_LABELS: Record<string, string> = {
 const EXPENSE_STATUS_VARIANTS: Record<string, BadgeVariant> = {
   draft: 'neutral',
   submitted: 'warning',
+  approved: 'warning',
   posted: 'success',
   paid: 'success',
   rejected: 'danger',
@@ -94,11 +96,15 @@ function expenseClaimToRow(c: ExpenseClaimApiRow): Requisition {
   }
 }
 
-// Advance settlements (the "paid from my advance" branch of the same
-// Expense purpose) live in advance_settlements, a separate REST service
+// Advance settlements live in advance_settlements, a separate REST service
 // from expense_claims — merged in the exact same way, with its own status
 // vocabulary (draft/submitted/approved/rejected, not
-// draft/submitted/posted/paid/rejected) and no standalone detail page of
+// draft/submitted/approved/posted/paid/rejected). The employee no longer
+// creates these directly (Expense purpose always submits to expense_claims
+// — see RequisitionForm.tsx); Finance creates one, already 'approved', as a
+// side effect of routing an expense_claims row to "settle against an
+// advance" (expense-claims.ts's POST /:id/post-payment). Kept merged into
+// this list for any pre-existing ones and no standalone detail page of
 // its own: a settlement is reviewed from its parent advance's detail page
 // (EmployeeAdvanceDetail.tsx), not a page keyed by the settlement's own id.
 interface SettlementApiRow {
@@ -362,7 +368,16 @@ export default function RequisitionsPage() {
     ...settlementRows,
   ].sort((a, b) => b.created_at.localeCompare(a.created_at))
   const filtered = requisitions.filter((r) => {
-    if (statusFilter && r.status !== statusFilter) return false
+    // Status chips use the procurement vocabulary (REQUISITION_STATUSES) —
+    // expense/settlement rows have their own, separate status vocabulary
+    // (draft/submitted/approved/posted/paid vs. draft/inventory_check/.../
+    // approved/...), which happens to share some key names (e.g. 'approved'
+    // means something entirely different for each). Never string-match a
+    // __kind row against a procurement status chip.
+    if (statusFilter) {
+      if (r.__kind) return false
+      if (r.status !== statusFilter) return false
+    }
     if (purposeFilter && r.purpose !== purposeFilter) return false
     if (search) {
       const q = search.toLowerCase()
@@ -542,7 +557,11 @@ export default function RequisitionsPage() {
           chips={REQUISITION_STATUSES.map((s) => ({
             key: s.key,
             label: s.label,
-            count: requisitions.filter((r) => r.status === s.key).length,
+            // Excludes expense/settlement rows — their status vocabulary is
+            // separate from REQUISITION_STATUSES and incidentally shares a
+            // couple of key names ('draft', 'approved') that mean something
+            // different there; see the `filtered` check above.
+            count: requisitions.filter((r) => !r.__kind && r.status === s.key).length,
             variant: getRequisitionStatusVariant(s.key),
           }))}
         />

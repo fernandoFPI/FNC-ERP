@@ -5,7 +5,9 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
+import { Select } from '../../../components/ui/Select'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { EntityAttachments } from '../../../components/inventory/EntityAttachments'
 import { api } from '../../../lib/axios'
 import { useCompany } from '../../../hooks/useCompany'
 import { usePermission } from '../../../hooks/usePermission'
@@ -45,21 +47,32 @@ interface Claim {
   reimbursement_account_id: string | null
   project_code: string | null
   project_name: string | null
+  funding_source: 'reimburse' | 'advance' | 'petty_cash' | null
+  petty_cash_float_name: string | null
+  settlement_number: string | null
+  advance_number: string | null
   lines: ClaimLine[]
+}
+
+interface FundingOptions {
+  petty_cash_floats: { id: string; name: string; currency_code: string; current_balance: number }[]
+  advances: { id: string; advance_number: string; purpose: string | null; outstanding_amount: number; currency_code: string }[]
 }
 
 const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | 'warning'> = {
   draft: 'neutral',
   submitted: 'info',
+  approved: 'warning',
   rejected: 'danger',
   posted: 'warning',
   paid: 'success',
 }
 
-// Approving now posts the reimbursement journal in the same step (see
-// expense-claims.ts's merged /:id/approve) — there's no separate resting
-// 'approved' state to show as its own stepper node any more.
-const FLOW = ['draft', 'submitted', 'posted', 'paid']
+// 'approved' (legitimacy confirmed, no funding decided/posted yet) is a real
+// resting state again — Finance's funding-source decision is a distinct
+// step (POST /:id/post-payment) from the plain approve above it. See
+// expense-claims.ts for why these were split.
+const FLOW = ['draft', 'submitted', 'approved', 'posted', 'paid']
 
 export default function ExpenseClaimDetail() {
   const { id } = useParams<{ id: string }>()
@@ -76,6 +89,18 @@ export default function ExpenseClaimDetail() {
   const [rejectReason, setRejectReason] = useState('')
   const [showPrintModal, setShowPrintModal] = useState(false)
   const printIframeRef = useRef<HTMLIFrameElement>(null)
+
+  // Post Payment — Finance's funding-source decision, made on an already-
+  // 'approved' claim. fundingOptions is fetched lazily when the modal opens
+  // (GET /:id/funding-options), not on page load, since most claims never
+  // reach 'approved' from most viewers' perspective.
+  const [showPostPayment, setShowPostPayment] = useState(false)
+  const [postPaymentSource, setPostPaymentSource] = useState<'reimburse' | 'advance' | 'petty_cash'>('reimburse')
+  const [fundingOptions, setFundingOptions] = useState<FundingOptions | null>(null)
+  const [loadingFundingOptions, setLoadingFundingOptions] = useState(false)
+  const [selectedFloatId, setSelectedFloatId] = useState('')
+  const [selectedAdvanceId, setSelectedAdvanceId] = useState('')
+  const [postPaymentError, setPostPaymentError] = useState('')
 
   const load = useCallback(async () => {
     if (!id) return
@@ -102,6 +127,52 @@ export default function ExpenseClaimDetail() {
       void load()
     } catch {
       /* handled */
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function openPostPayment() {
+    if (!id) return
+    setShowPostPayment(true)
+    setPostPaymentSource('reimburse')
+    setSelectedFloatId('')
+    setSelectedAdvanceId('')
+    setPostPaymentError('')
+    setLoadingFundingOptions(true)
+    try {
+      const r = await api.get<FundingOptions>(`/finance/expense-claims/${id}/funding-options`)
+      setFundingOptions(r.data)
+    } catch {
+      setFundingOptions({ petty_cash_floats: [], advances: [] })
+    } finally {
+      setLoadingFundingOptions(false)
+    }
+  }
+
+  async function submitPostPayment() {
+    if (!id) return
+    if (postPaymentSource === 'petty_cash' && !selectedFloatId) {
+      setPostPaymentError('Select a petty cash float')
+      return
+    }
+    if (postPaymentSource === 'advance' && !selectedAdvanceId) {
+      setPostPaymentError('Select which advance to settle against')
+      return
+    }
+    setActing(true)
+    setPostPaymentError('')
+    try {
+      await api.post(`/finance/expense-claims/${id}/post-payment`, {
+        funding_source: postPaymentSource,
+        petty_cash_float_id: postPaymentSource === 'petty_cash' ? selectedFloatId : undefined,
+        advance_id: postPaymentSource === 'advance' ? selectedAdvanceId : undefined,
+      })
+      setShowPostPayment(false)
+      void load()
+    } catch (err: unknown) {
+      const apiError = err as { response?: { data?: { error?: { message?: string } } } }
+      setPostPaymentError(apiError.response?.data?.error?.message ?? 'Could not post payment')
     } finally {
       setActing(false)
     }
@@ -160,30 +231,36 @@ export default function ExpenseClaimDetail() {
                 Submit for Approval
               </Button>
             )}
-            {claim.status === 'submitted' && (
-              <>
-                {canApprove && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setShowReject(true)
-                    }}
-                  >
-                    Reject
-                  </Button>
-                )}
-                {canApprove && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => void act('approve')}
-                    disabled={acting}
-                  >
-                    Approve
-                  </Button>
-                )}
-              </>
+            {(claim.status === 'submitted' || claim.status === 'approved') && canApprove && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowReject(true)
+                }}
+              >
+                Reject
+              </Button>
+            )}
+            {claim.status === 'submitted' && canApprove && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void act('approve')}
+                disabled={acting}
+              >
+                Approve
+              </Button>
+            )}
+            {claim.status === 'approved' && canApprove && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void openPostPayment()}
+                disabled={acting}
+              >
+                Decide Funding & Post
+              </Button>
             )}
             {canApprove && claim.status === 'posted' && (
               <Button
@@ -303,6 +380,18 @@ export default function ExpenseClaimDetail() {
                   ],
                   ['Currency', claim.currency_code],
                   ['Total Amount', null],
+                  ...(claim.funding_source
+                    ? [
+                        [
+                          'Paid Via',
+                          claim.funding_source === 'reimburse'
+                            ? 'Reimbursement'
+                            : claim.funding_source === 'petty_cash'
+                              ? `Petty cash — ${claim.petty_cash_float_name ?? '—'}`
+                              : `Advance settlement ${claim.settlement_number ?? ''} (${claim.advance_number ?? '—'})`,
+                        ] as [string, string],
+                      ]
+                    : []),
                   ['Created', new Date(claim.created_at).toLocaleDateString()],
                   [
                     'Submitted',
@@ -392,6 +481,21 @@ export default function ExpenseClaimDetail() {
               </div>
             )}
           </Card>
+
+          <div style={{ marginTop: '16px' }}>
+            <EntityAttachments
+              entityType="expense_claim"
+              entityId={claim.id}
+              title="Receipts"
+              description="One shared receipt for the whole claim, or one per line — whatever the employee attached when submitting."
+              uploadButtonLabel="Upload receipt"
+              emptyMessage="No receipts attached"
+              groupBy={[
+                { match: 'expense_claim', title: 'Shared receipt (whole claim)' },
+                { match: 'expense_claim_line', title: 'Per-line receipts' },
+              ]}
+            />
+          </div>
         </div>
 
         {/* Lines table */}
@@ -554,6 +658,124 @@ export default function ExpenseClaimDetail() {
                 disabled={acting || !rejectReason}
               >
                 Reject Claim
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Post Payment modal — Finance's funding-source decision */}
+      {showPostPayment && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <Card padding="lg" style={{ width: '440px' }}>
+            <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
+              Decide Funding & Post
+            </h3>
+            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
+              How is this {claim.total_amount.toLocaleString()} {claim.currency_code} actually being paid?
+            </p>
+            <Select
+              label="Funding source"
+              value={postPaymentSource}
+              onChange={(e) => {
+                setPostPaymentSource(e.target.value as 'reimburse' | 'advance' | 'petty_cash')
+                setPostPaymentError('')
+              }}
+            >
+              <option value="reimburse">Reimburse — pay from the default cash/bank account</option>
+              <option value="petty_cash">Pay from a petty cash float</option>
+              <option value="advance">Settle against the employee's advance</option>
+            </Select>
+
+            {loadingFundingOptions && (
+              <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '12px' }}>
+                Loading options…
+              </p>
+            )}
+
+            {!loadingFundingOptions && postPaymentSource === 'petty_cash' && (
+              <div style={{ marginTop: '12px' }}>
+                <Select
+                  label="Petty cash float"
+                  value={selectedFloatId}
+                  onChange={(e) => {
+                    setSelectedFloatId(e.target.value)
+                  }}
+                  options={[
+                    { value: '', label: 'Select float…' },
+                    ...(fundingOptions?.petty_cash_floats ?? []).map((f) => ({
+                      value: f.id,
+                      label: `${f.name} — ${Number(f.current_balance).toLocaleString()} ${f.currency_code} available`,
+                    })),
+                  ]}
+                />
+                {fundingOptions?.petty_cash_floats.length === 0 && (
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
+                    No active petty cash floats found.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!loadingFundingOptions && postPaymentSource === 'advance' && (
+              <div style={{ marginTop: '12px' }}>
+                <Select
+                  label="Advance"
+                  value={selectedAdvanceId}
+                  onChange={(e) => {
+                    setSelectedAdvanceId(e.target.value)
+                  }}
+                  options={[
+                    { value: '', label: 'Select advance…' },
+                    ...(fundingOptions?.advances ?? []).map((a) => ({
+                      value: a.id,
+                      label: `${a.advance_number} — ${Number(a.outstanding_amount).toLocaleString()} ${a.currency_code} outstanding${a.purpose ? ` (${a.purpose})` : ''}`,
+                    })),
+                  ]}
+                />
+                {fundingOptions?.advances.length === 0 && (
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
+                    This employee has no approved advance with an outstanding balance.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {postPaymentError && (
+              <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '12px' }}>
+                {postPaymentError}
+              </div>
+            )}
+
+            <div
+              style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowPostPayment(false)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void submitPostPayment()}
+                disabled={acting || loadingFundingOptions}
+              >
+                Post Payment
               </Button>
             </div>
           </Card>

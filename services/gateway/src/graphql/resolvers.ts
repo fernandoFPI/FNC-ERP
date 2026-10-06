@@ -3152,6 +3152,22 @@ async function verifyAttachmentEntityOwnershipGW(
       )
       return r.rows.length > 0
     }
+    case 'expense_claim': {
+      const r = await query(`SELECT id FROM expense_claims WHERE id=$1 AND company_id=$2`, [
+        entityId,
+        companyId,
+      ])
+      return r.rows.length > 0
+    }
+    case 'expense_claim_line': {
+      const r = await query(
+        `SELECT ecl.id FROM expense_claim_lines ecl
+         JOIN expense_claims ec ON ec.id = ecl.claim_id
+         WHERE ecl.id=$1 AND ec.company_id=$2`,
+        [entityId, companyId],
+      )
+      return r.rows.length > 0
+    }
     default:
       return true
   }
@@ -8448,7 +8464,13 @@ export const resolvers = {
       // purchase. Union in po_line_purchases-sourced attachments for this
       // PO's own lines; a no-op for a legacy PO, which never has any
       // po_line_purchases rows at all.
+      //
+      // expense_claim gets the same treatment: an employee's expense form
+      // lets a receipt be attached once for the whole claim OR per line, and
+      // approvers need to see both together on the claim, not hunt through
+      // each line separately.
       const isPurchaseOrderUnion = args.entityType === 'purchase_order'
+      const isExpenseClaimUnion = args.entityType === 'expense_claim'
       const result = isPurchaseOrderUnion
         ? await query(
             `SELECT da.id, da.label, da.is_primary, da.created_at, da.entity_type, da.entity_id,
@@ -8469,10 +8491,29 @@ export const resolvers = {
              ORDER BY da.is_primary DESC, da.created_at ASC`,
             [args.entityId],
           )
-        : await getAttachments(
-            args.entityType as Parameters<typeof getAttachments>[0],
-            args.entityId,
-          )
+        : isExpenseClaimUnion
+          ? await query(
+              `SELECT da.id, da.label, da.is_primary, da.created_at, da.entity_type, da.entity_id,
+                      f.id AS file_id, f.original_filename, f.mime_type,
+                      f.size_bytes, f.category, f.uploaded_at,
+                      u.email AS uploaded_by_email
+               FROM document_attachments da
+               JOIN files f ON f.id = da.file_id
+               JOIN users u ON u.id = da.uploaded_by
+               WHERE f.status != 'deleted' AND (
+                 (da.entity_type = 'expense_claim' AND da.entity_id = $1)
+                 OR (da.entity_type = 'expense_claim_line' AND da.entity_id IN (
+                       SELECT id FROM expense_claim_lines WHERE claim_id = $1
+                     ))
+               )
+               ORDER BY da.is_primary DESC, da.created_at ASC`,
+              [args.entityId],
+            )
+          : await getAttachments(
+              args.entityType as Parameters<typeof getAttachments>[0],
+              args.entityId,
+            )
+      const isUnion = isPurchaseOrderUnion || isExpenseClaimUnion
       return result.rows.map((r: Record<string, unknown>) => ({
         id: r.id,
         file: {
@@ -8492,14 +8533,14 @@ export const resolvers = {
         // implicitly entity_id=$2), so every row it returns necessarily
         // matches both already — safe to use args.entityType/entityId
         // directly without selecting those columns there too.
-        sourceEntityType: isPurchaseOrderUnion ? r.entity_type : args.entityType,
-        // Needed to actually detach a po_line_purchase-sourced row (unioned
-        // in here for display) — it lives under a different entity_id than
-        // the PO's own (args.entityId), and detachFile's removeAttachment
-        // requires an exact (id, entity_type, entity_id) match. Without
-        // this, every attempt to remove one of those silently 404s as "not
-        // found" since the frontend had no way to send its real entity_id.
-        sourceEntityId: isPurchaseOrderUnion ? r.entity_id : args.entityId,
+        sourceEntityType: isUnion ? r.entity_type : args.entityType,
+        // Needed to actually detach a child-sourced row (unioned in here for
+        // display) — it lives under a different entity_id than the parent's
+        // own (args.entityId), and detachFile's removeAttachment requires an
+        // exact (id, entity_type, entity_id) match. Without this, every
+        // attempt to remove one of those silently 404s as "not found" since
+        // the frontend had no way to send its real entity_id.
+        sourceEntityId: isUnion ? r.entity_id : args.entityId,
       }))
     },
 

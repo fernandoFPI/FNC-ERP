@@ -106,9 +106,17 @@ export default function MyRequisitionQueue() {
   const [pendingExpenseClaims, setPendingExpenseClaims] = useState<QueueItem[]>([])
   const loadPendingExpenseClaims = useCallback(() => {
     if (!canApproveExpenses) return
-    api
-      .get<ExpenseClaimQueueApiRow[]>('/finance/expense-claims', { params: { status: 'submitted' } })
-      .then((r) => { setPendingExpenseClaims(r.data.map(expenseClaimToQueueItem)); })
+    // Two separate waits on this approver now: 'submitted' (legitimacy
+    // approval) and 'approved' (Finance's funding-source decision, POST
+    // /:id/post-payment) — the list endpoint only takes one exact status,
+    // so both are fetched and merged rather than one being silently missed.
+    Promise.all([
+      api.get<ExpenseClaimQueueApiRow[]>('/finance/expense-claims', { params: { status: 'submitted' } }),
+      api.get<ExpenseClaimQueueApiRow[]>('/finance/expense-claims', { params: { status: 'approved' } }),
+    ])
+      .then(([submitted, approved]) => {
+        setPendingExpenseClaims([...submitted.data, ...approved.data].map(expenseClaimToQueueItem))
+      })
       .catch(() => { /* handled — queue just won't include expense claims this refresh */ })
   }, [canApproveExpenses])
 
@@ -140,7 +148,9 @@ export default function MyRequisitionQueue() {
   const grouped = items.reduce<Record<string, QueueItem[]>>((acc, item) => {
     const key =
       item.__kind === 'expense'
-        ? 'Approve expense claim'
+        ? item.status === 'approved'
+          ? 'Decide expense funding source'
+          : 'Approve expense claim'
         : item.__kind === 'settlement'
           ? 'Approve advance settlement'
           : (REQUISITION_STATUS_ACTIONS[item.status]?.label ?? 'Action needed')
@@ -172,7 +182,11 @@ export default function MyRequisitionQueue() {
       mobilePriority: 1,
       render: (item) =>
         item.__kind ? (
-          <Badge variant="warning">Pending Approval</Badge>
+          <Badge variant="warning">
+            {item.__kind === 'expense' && item.status === 'approved'
+              ? 'Awaiting Funding Decision'
+              : 'Pending Approval'}
+          </Badge>
         ) : (
           <Badge variant={getRequisitionStatusVariant(item.status)}>{getRequisitionStatusLabel(item.status)}</Badge>
         ),

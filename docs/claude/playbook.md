@@ -54,3 +54,13 @@ Don't re-derive, check these first.
     missing column. Browser/cPanel JS errors: consider document.ready scope and caching first.
 19. **Permissions not taking effect.** Needs gateway + auth restart and re-login; identity/permission
     state is dormant until re-login.
+20. **New document_attachments entity_type → also widen its CHECK constraint.** Wiring a new
+    entity_type into `verifyAttachmentEntityOwnershipGW` and `entityAttachments`'s union query
+    (resolvers.ts) is not enough — `document_attachments.entity_type` has a separate allow-list CHECK
+    constraint (`document_attachments_entity_type_check`), rewritten additively by a long chain of
+    migrations (117, 135, 171, 188, 201, 233, 264, 284, 293...). Missing it throws at insert time:
+    `new row for relation "document_attachments" violates check constraint
+    "document_attachments_entity_type_check"` (hit live when wiring expense_claim/expense_claim_line
+    receipt attachments — fixed in migration 293). Before trusting a new entityType end-to-end, grep
+    `document_attachments_entity_type_check` across migrations and add a new migration with the full
+    current list plus the new value(s), same pattern as migration 284.

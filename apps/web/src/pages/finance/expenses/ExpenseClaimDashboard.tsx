@@ -35,6 +35,7 @@ interface Dashboard {
 const STATUS_BADGE: Record<string, { variant: 'neutral' | 'info' | 'success' | 'danger' | 'warning'; label: string }> = {
   draft: { variant: 'neutral', label: 'Draft' },
   submitted: { variant: 'info', label: 'Pending approval' },
+  approved: { variant: 'warning', label: 'Awaiting funding decision' },
   posted: { variant: 'warning', label: 'Awaiting payment' },
   paid: { variant: 'success', label: 'Paid' },
   rejected: { variant: 'danger', label: 'Rejected' },

@@ -6,7 +6,8 @@ import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
 import { MANUFACTURING_ORDERS_QUERY } from '../../../graphql/manufacturing'
 import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
-import { EMPLOYEES_QUERY } from '../../../graphql/hr'
+import { EMPLOYEES_QUERY, ATTACH_FILE } from '../../../graphql/hr'
+import { REQUEST_UPLOAD_URL } from '../../../graphql/procurement'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -20,7 +21,7 @@ import { LineItemEditor, type LineItemField } from '../../../components/ui/LineI
 import { useToastStore } from '../../../store/toastStore'
 import { useTourStore } from '../../../store/tourStore'
 import { api } from '../../../lib/axios'
-import type { CompanyBranchesQuery, CompanyBranchesQueryVariables, CreateRequisitionMutation, CreateRequisitionMutationVariables, EmployeesQuery, EmployeesQueryVariables, ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables } from '../../../graphql/generated'
+import type { AttachFileMutation, AttachFileMutationVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CreateRequisitionMutation, CreateRequisitionMutationVariables, EmployeesQuery, EmployeesQueryVariables, ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, RequestUploadUrlMutation, RequestUploadUrlMutationVariables } from '../../../graphql/generated'
 
 // Expense-purpose lines don't carry a product — they carry an expense
 // category, which resolves to a GL account server-side exactly the way
@@ -35,12 +36,6 @@ interface ExpenseLineDraft {
   category_id: string
   description: string
   amount: string
-  // Only used/shown when expenseSource === 'advance' — a settlement line
-  // defaults to the advance's own project but can override it per line
-  // (one advance commonly covers spend across more than one project over
-  // its life, e.g. fuel for several job sites). Left blank on the
-  // 'reimburse' branch, which instead has one project for the whole claim.
-  project_id?: string
 }
 
 const emptyExpenseLine = (): ExpenseLineDraft => ({
@@ -48,7 +43,6 @@ const emptyExpenseLine = (): ExpenseLineDraft => ({
   category_id: '',
   description: '',
   amount: '',
-  project_id: '',
 })
 
 interface ExpenseCategory {
@@ -56,25 +50,12 @@ interface ExpenseCategory {
   name: string
 }
 
-// An expense is either paid out of an existing cash advance (settle it —
-// no reimbursement owed, the company already gave the cash up front) or
-// paid out of pocket (reimburse it). Both already exist as fully built,
-// independent accounting paths — Employee Advances → Settlement and
-// Expense Claims, respectively — this just gives both a single front door.
-// Project/cost-center attribution is already wired into both: a
-// reimbursement claim via its own (optional) project_id, a settlement via
-// its advance's own project_id/cost_center_id as the per-line default
-// (overridable per line — see ExpenseLineDraft.project_id above).
-type ExpenseSource = 'reimburse' | 'advance'
-
-interface MyAdvance {
-  id: string
-  advance_number: string
-  purpose: string | null
-  outstanding_amount: number
-  currency_code: string
-  status: string
-}
+// How the expense actually gets paid — reimburse the employee, settle it
+// against one of their advances, or pay it out of a petty cash float — is no
+// longer this form's call. The employee just submits lines + receipts
+// (always via /expense-claims/request-self); Finance decides funding on the
+// claim's own detail page, after approving its legitimacy (POST
+// /:id/post-payment). See that route for why.
 
 // No GL account / cost center fields here — a requisition's requester has
 // no reason to know either, and both already default automatically
@@ -123,9 +104,13 @@ export default function RequisitionForm() {
   const [expenseLines, setExpenseLines] = useState<ExpenseLineDraft[]>([emptyExpenseLine()])
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([])
   const [submittingExpense, setSubmittingExpense] = useState(false)
-  const [expenseSource, setExpenseSource] = useState<ExpenseSource>('reimburse')
-  const [myAdvances, setMyAdvances] = useState<MyAdvance[]>([])
-  const [selectedAdvanceId, setSelectedAdvanceId] = useState('')
+  // Receipt photos — either one shared set for the whole expense or one set
+  // per line, mirroring ItemsBoughtPage's sameReceiptForAll pattern. Kept as
+  // in-memory Files until the claim is actually created (request-self),
+  // then uploaded and attached to the resulting claim/line ids.
+  const [sameReceiptForAll, setSameReceiptForAll] = useState(false)
+  const [globalReceiptFiles, setGlobalReceiptFiles] = useState<File[]>([])
+  const [pendingReceiptFiles, setPendingReceiptFiles] = useState<Record<number, File[]>>({})
   const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
@@ -135,19 +120,6 @@ export default function RequisitionForm() {
       .then((r) => { setExpenseCategories(r.data); })
       .catch(() => { /* handled inline — line's category select just stays empty */ })
   }, [purpose, expenseCategories.length])
-
-  useEffect(() => {
-    if (purpose !== 'expense' || expenseSource !== 'advance' || myAdvances.length > 0) return
-    api
-      .get<MyAdvance[]>('/finance/advances/mine')
-      .then((r) => { setMyAdvances(r.data); })
-      .catch(() => { /* handled inline — advance picker just stays empty */ })
-  }, [purpose, expenseSource, myAdvances.length])
-
-  const eligibleAdvances = myAdvances.filter(
-    (a) => ['approved', 'partially_settled'].includes(a.status) && Number(a.outstanding_amount) > 0,
-  )
-  const selectedAdvance = eligibleAdvances.find((a) => a.id === selectedAdvanceId)
 
   // Pre-fill from URL — mirrors PurchaseOrderForm's own ?projectId=/?moId=
   // handling, for entry points that already know which project or
@@ -206,6 +178,9 @@ export default function RequisitionForm() {
   })
   const { data: employeesData } = useQuery<EmployeesQuery, EmployeesQueryVariables>(EMPLOYEES_QUERY, { variables: { is_active: true } })
   const [createRequisition, { loading }] = useMutation<CreateRequisitionMutation, CreateRequisitionMutationVariables>(CREATE_REQUISITION)
+  const [requestUploadUrl] = useMutation<RequestUploadUrlMutation, RequestUploadUrlMutationVariables>(REQUEST_UPLOAD_URL)
+  const [attachFile] = useMutation<AttachFileMutation, AttachFileMutationVariables>(ATTACH_FILE)
+  const accessToken = useAuthStore((s) => s.accessToken)
 
   const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
     (productsData?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
@@ -356,28 +331,6 @@ export default function RequisitionForm() {
         />
       ),
     },
-    ...(expenseSource === 'advance'
-      ? [
-          {
-            key: 'project_id',
-            label: 'Project (optional)',
-            width: '180px',
-            render: (line: ExpenseLineDraft, i: number) => (
-              <Select
-                value={line.project_id ?? ''}
-                onChange={(e) => { updateExpenseLine(i, 'project_id', e.target.value); }}
-                options={[
-                  {
-                    value: '',
-                    label: selectedAdvance?.purpose ? `Default (${selectedAdvance.purpose})` : 'Default (advance’s own)',
-                  },
-                  ...projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` })),
-                ]}
-              />
-            ),
-          } satisfies LineItemField<ExpenseLineDraft>,
-        ]
-      : []),
     {
       key: 'description',
       label: 'Description',
@@ -403,58 +356,117 @@ export default function RequisitionForm() {
         />
       ),
     },
+    {
+      key: 'receipt',
+      label: 'Receipt',
+      width: '170px',
+      render: (_line, i) =>
+        sameReceiptForAll ? (
+          <span style={{ fontSize: '11px', color: theme.textMuted }}>Shared receipt below ↓</span>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? [])
+                setPendingReceiptFiles((prev) => ({ ...prev, [i]: files }))
+              }}
+              style={{ fontSize: '11px', maxWidth: '160px' }}
+            />
+            {(pendingReceiptFiles[i] ?? []).length > 0 && (
+              <span style={{ fontSize: '10px', color: theme.textMuted }}>
+                📎 {(pendingReceiptFiles[i] ?? []).length} file
+                {(pendingReceiptFiles[i] ?? []).length > 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+        ),
+    },
   ]
 
+  // Mirrors ItemsBoughtPage's own uploadReceiptFile: requestUploadUrl gets a
+  // fileId, then the actual bytes go straight to the files proxy endpoint.
+  async function uploadReceiptFile(file: File): Promise<string> {
+    const { data: urlData } = await requestUploadUrl({
+      variables: {
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+        category: 'attachment',
+      },
+    })
+    const fileId = urlData?.requestUploadUrl.fileId
+    if (!fileId) throw new Error('Could not prepare the upload')
+
+    const apiBase = import.meta.env.VITE_API_URL
+    const proxyRes = await fetch(`${apiBase}/api/v1/files/${fileId}/content`, {
+      method: 'POST',
+      body: file,
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+    })
+    if (!proxyRes.ok) {
+      const errJson = (await proxyRes.json().catch(() => ({}))) as { error?: { message?: string } }
+      throw new Error(errJson.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
+    }
+    return fileId
+  }
+
   async function handleExpenseSubmit() {
-    const realExpenseLines = expenseLines.filter((l) => l.amount && l.category_id)
+    // Keep each surviving line paired with its own pending receipt files —
+    // pendingReceiptFiles is keyed by index into the full expenseLines
+    // array (same index updateExpenseLine/the Receipt column use), so this
+    // filter has to walk both in lockstep rather than filtering lines alone.
+    const realExpenseLines = expenseLines
+      .map((line, idx) => ({ line, files: pendingReceiptFiles[idx] ?? [] }))
+      .filter((x) => x.line.amount && x.line.category_id)
     if (realExpenseLines.length === 0) {
       addToast({ type: 'error', message: 'Add at least one line with a category and amount' })
       return
     }
-    if (expenseSource === 'advance' && !selectedAdvanceId) {
-      addToast({ type: 'error', message: 'Select which advance this was paid from' })
-      return
-    }
-    if (expenseSource === 'advance' && selectedAdvance) {
-      const total = realExpenseLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0)
-      if (total > Number(selectedAdvance.outstanding_amount) + 0.0001) {
-        addToast({
-          type: 'error',
-          message: `Total exceeds this advance's outstanding amount (${selectedAdvance.outstanding_amount.toLocaleString()} ${selectedAdvance.currency_code})`,
-        })
-        return
-      }
-    }
     setSubmittingExpense(true)
     try {
-      if (expenseSource === 'advance') {
-        await api.post('/finance/advances/settlements/request-self', {
-          advance_id: selectedAdvanceId,
-          description: notes || undefined,
-          lines: realExpenseLines.map((l) => ({
-            line_date: l.expense_date,
-            category_id: l.category_id,
-            description:
-              l.description || expenseCategories.find((c) => c.id === l.category_id)?.name || 'Expense',
-            amount: parseFloat(l.amount) || 0,
-            project_id: l.project_id || undefined,
-          })),
-        })
-        addToast({ type: 'success', message: 'Settlement submitted for approval' })
-      } else {
-        await api.post('/finance/expense-claims/request-self', {
+      const { data: claim } = await api.post<{ id: string; lines: { id: string }[] }>(
+        '/finance/expense-claims/request-self',
+        {
           description: notes || undefined,
           currency_code: expenseCurrency,
           project_id: projectId || undefined,
-          lines: realExpenseLines.map((l) => ({
-            expense_date: l.expense_date,
-            category_id: l.category_id,
-            description: l.description || undefined,
-            amount: parseFloat(l.amount) || 0,
+          lines: realExpenseLines.map(({ line }) => ({
+            expense_date: line.expense_date,
+            category_id: line.category_id,
+            description: line.description || undefined,
+            amount: parseFloat(line.amount) || 0,
           })),
-        })
-        addToast({ type: 'success', message: 'Expense requisition submitted for approval' })
+        },
+      )
+
+      // Attach receipts after the claim exists — shared receipts go on the
+      // claim itself (entity_type='expense_claim'), per-line ones on each
+      // resulting line (entity_type='expense_claim_line'), matched by
+      // position since request-self returns lines in the same order they
+      // were submitted.
+      if (sameReceiptForAll && globalReceiptFiles.length > 0) {
+        for (const file of globalReceiptFiles) {
+          const fileId = await uploadReceiptFile(file)
+          await attachFile({ variables: { fileId, entityType: 'expense_claim', entityId: claim.id } })
+        }
+      } else if (!sameReceiptForAll) {
+        for (let i = 0; i < realExpenseLines.length; i++) {
+          const lineId = claim.lines[i]?.id
+          if (!lineId) continue
+          for (const file of realExpenseLines[i].files) {
+            const fileId = await uploadReceiptFile(file)
+            await attachFile({ variables: { fileId, entityType: 'expense_claim_line', entityId: lineId } })
+          }
+        }
       }
+
+      addToast({ type: 'success', message: 'Expense requisition submitted for approval' })
       navigate('/procurement/requisitions')
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: { error?: { message?: string } } } }
@@ -584,21 +596,7 @@ export default function RequisitionForm() {
                 <option value="expense">Expense</option>
               </Select>
             </div>
-            {purpose === 'expense' ? (
-              <div style={{ flex: '1 1 220px' }}>
-                <Select
-                  label="Paid"
-                  value={expenseSource}
-                  onChange={(e) => {
-                    setExpenseSource(e.target.value as ExpenseSource)
-                    setSelectedAdvanceId('')
-                  }}
-                >
-                  <option value="reimburse">Out of pocket — reimburse me</option>
-                  <option value="advance">From my cash advance</option>
-                </Select>
-              </div>
-            ) : (
+            {purpose !== 'expense' && (
               <div style={{ flex: '1 1 200px' }}>
                 <Select
                   label={branches.length > 0 ? 'Branch *' : 'Branch'}
@@ -646,7 +644,7 @@ export default function RequisitionForm() {
             </div>
           )}
 
-          {purpose === 'expense' && expenseSource === 'reimburse' && (
+          {purpose === 'expense' && (
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 160px' }}>
                 <Select
@@ -672,27 +670,34 @@ export default function RequisitionForm() {
             </div>
           )}
 
-          {purpose === 'expense' && expenseSource === 'advance' && (
-            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-              <div style={{ flex: '1 1 300px' }}>
-                <Select
-                  label="Which advance *"
-                  value={selectedAdvanceId}
-                  onChange={(e) => { setSelectedAdvanceId(e.target.value); }}
-                  options={[
-                    { value: '', label: 'Select advance…' },
-                    ...eligibleAdvances.map((a) => ({
-                      value: a.id,
-                      label: `${a.advance_number} — ${Number(a.outstanding_amount).toLocaleString()} ${a.currency_code} outstanding${a.purpose ? ` (${a.purpose})` : ''}`,
-                    })),
-                  ]}
+          {purpose === 'expense' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: theme.textSecondary, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={sameReceiptForAll}
+                  onChange={(e) => { setSameReceiptForAll(e.target.checked); }}
                 />
-                {eligibleAdvances.length === 0 && (
-                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
-                    No approved advance with an outstanding balance found on your account.
-                  </div>
-                )}
-              </div>
+                Attach one receipt for the whole expense (instead of one per line)
+              </label>
+              {sameReceiptForAll && (
+                <div>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    multiple
+                    onChange={(e) => {
+                      setGlobalReceiptFiles(Array.from(e.target.files ?? []))
+                    }}
+                    style={{ fontSize: '12px' }}
+                  />
+                  {globalReceiptFiles.length > 0 && (
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                      📎 {globalReceiptFiles.length} file{globalReceiptFiles.length > 1 ? 's' : ''} attached
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -812,9 +817,7 @@ export default function RequisitionForm() {
                     </strong>
                   </>
                 ) : purpose === 'expense' ? (
-                  expenseSource === 'advance'
-                    ? "Submits for approval immediately — settles against the selected advance once approved, no reimbursement owed since you've already got the cash."
-                    : 'Submits for approval immediately — Finance posts the reimbursement journal once approved.'
+                  'Submits for approval — Finance decides how it gets paid (reimbursed, from petty cash, or against an advance) and posts it once approved.'
                 ) : (
                   'General stock requisition — not linked to a project'
                 )}
@@ -828,9 +831,7 @@ export default function RequisitionForm() {
             <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Lines</div>
             <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
               {purpose === 'expense'
-                ? expenseSource === 'advance'
-                  ? "Add each expense — category decides the GL account; project and cost center come from the advance itself."
-                  : 'Add each expense — category decides the GL account automatically.'
+                ? 'Add each expense — category decides the GL account automatically.'
                 : "Add each item you need — GL account and cost center are worked out automatically later and aren't something you need to set here."}
             </div>
           </div>
