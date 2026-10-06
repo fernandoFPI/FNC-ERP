@@ -627,7 +627,9 @@ export default function RequisitionDetail() {
 
   const isOrganizer = req.organizer_id === currentUserId
   const canSubmitDraft = isSystemLevel || isOrganizer
-  const canConfirmInventory = isSystemLevel || isOrganizer || !!req.callerHasStoreKeeperPosition
+  // Deliberately NOT isOrganizer — only a Store Keeper (or admin) can
+  // confirm inventory check, even for your own requisition.
+  const canConfirmInventory = isSystemLevel || !!req.callerHasStoreKeeperPosition
   const canStorePrice = isSystemLevel || !!req.callerHasStorePricingPosition
   const canMarketPrice = isSystemLevel || !!req.callerHasMarketPricingPosition
   const canVerifyPrice = isSystemLevel || !!req.callerHasPriceVerificationPosition

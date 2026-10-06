@@ -2326,10 +2326,11 @@ export default function PurchaseOrderDetail() {
 
               {po.status === 'inventory_check' &&
                 (() => {
+                  // Deliberately NOT po.organizer_id === currentUserId —
+                  // only a Store Keeper (or admin) can confirm inventory
+                  // check, even for your own PO.
                   const canConfirmInventory =
-                    isSystemLevel ||
-                    po.organizer_id === currentUserId ||
-                    !!po.callerHasStoreKeeperPosition
+                    isSystemLevel || !!po.callerHasStoreKeeperPosition
                   if (!canConfirmInventory)
                     return (
                       <div

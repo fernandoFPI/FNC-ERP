@@ -90,8 +90,7 @@ export const REQUISITION_STATUS_ACTIONS: Record<
   },
   inventory_check: {
     label: 'Confirm inventory check',
-    description: 'The organizer or a Store Keeper confirms which items are available in stock',
-    isOrganizer: true,
+    description: 'A Store Keeper confirms which items are available in stock',
     requiredPosition: 'store_keeper',
   },
   store_pricing: {

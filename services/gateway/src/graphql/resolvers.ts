@@ -31574,17 +31574,16 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    // Deliberately NOT including the organizer — only a Store Keeper (or
+    // admin) can confirm inventory check, even for their own requisition.
     const isStoreKeeper = await userHasPositionForRequisitionGW(
       auth.userId,
       auth.companyId,
       args.id,
       'store_keeper',
     )
-    if (!isAdmin && !isOrganizer && !isStoreKeeper)
-      throw new Error(
-        'Only the requisition owner or a Store Keeper can confirm the inventory check',
-      )
+    if (!isAdmin && !isStoreKeeper)
+      throw new Error('Only a Store Keeper can confirm the inventory check')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const isSysAdmin = auth.role === 'system_admin'
 
@@ -33686,15 +33685,16 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+    // Deliberately NOT including the organizer — only a Store Keeper (or
+    // admin) can confirm inventory check, even for their own PO.
     const isStoreKeeper = await userHasPositionGW(
       auth.userId,
       auth.companyId,
       args.id,
       'store_keeper',
     )
-    if (!isAdmin && !isOrganizer && !isStoreKeeper)
-      throw new Error('Only the PO owner or a Store Keeper can confirm the inventory check')
+    if (!isAdmin && !isStoreKeeper)
+      throw new Error('Only a Store Keeper can confirm the inventory check')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const isSysAdmin = auth.role === 'system_admin'
 
