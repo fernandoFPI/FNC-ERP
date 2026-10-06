@@ -1712,7 +1712,7 @@ export type AttachReceiptPhotoMutation = { attachReceiptPhoto: { id: string, fil
 export type MyPoQueueQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type MyPoQueueQuery = { myPOQueue: Array<{ id: string, po_number: string, status: string, currency_code: string, total_amount: string, created_at: string, updated_at: string, organizer_id: string | null, project_id: string | null, vendor_id: string | null, vendor_name: string | null }> | null };
+export type MyPoQueueQuery = { myPOQueue: Array<{ id: string, po_number: string, status: string, currency_code: string, total_amount: string, created_at: string, updated_at: string, organizer_id: string | null, project_id: string | null, vendor_id: string | null, vendor_name: string | null, delivery_destination: string | null }> | null };
 
 export type PurchaseOrderLifecycleQueryVariables = Exact<{
   id: string | number;

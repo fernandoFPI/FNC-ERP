@@ -409,6 +409,7 @@ export const MY_PO_QUEUE_QUERY = gql`
       project_id
       vendor_id
       vendor_name
+      delivery_destination
     }
   }
 `

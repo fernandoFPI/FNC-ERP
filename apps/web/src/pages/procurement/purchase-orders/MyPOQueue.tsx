@@ -27,6 +27,7 @@ interface QueueItem {
   project_id?: string | null
   vendor_id?: string | null
   vendor_name?: string | null
+  delivery_destination?: string | null
 }
 
 function daysWaiting(dateStr: string): number {
@@ -49,8 +50,16 @@ export default function MyPOQueue() {
   const items: QueueItem[] = data?.myPOQueue ?? []
 
   const grouped = items.reduce<Record<string, QueueItem[]>>((acc, item) => {
+    // A 'bought' PO marked delivery_destination='jobsite' goes straight to
+    // the project as a direct delivery (recordDirectDelivery) — no stock
+    // location, no warehouse — a materially different action from the
+    // generic "Record receipt" (into stock) every other 'bought' PO shares.
+    // Both still open the same PO detail page, which already branches
+    // correctly (ReceiptForm.tsx's isJobsite) — this only fixes the queue
+    // grouping that previously lumped both under one misleading heading.
+    const isJobsiteDelivery = item.status === 'bought' && item.delivery_destination === 'jobsite'
     const action = PO_STATUS_ACTIONS[item.status]
-    const key = action ? action.label : 'Action needed'
+    const key = isJobsiteDelivery ? 'Confirm jobsite delivery' : action ? action.label : 'Action needed'
     if (!acc[key]) acc[key] = []
     acc[key].push(item)
     return acc
