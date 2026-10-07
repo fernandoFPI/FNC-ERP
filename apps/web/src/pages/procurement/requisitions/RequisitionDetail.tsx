@@ -2560,8 +2560,14 @@ export default function RequisitionDetail() {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {purchaseLines.map((l) => {
-                        const raw = marketPrices[l.id]
-                        const missing = raw === undefined || raw === ''
+                        // Falls back to the line's own previously-saved market_price —
+                        // sent back here from price_verification (or later), a figure
+                        // Procurement already typed in should still be here, editable,
+                        // not wiped back to blank (mirrors verifiedPrices' own fallback
+                        // to market_price in the price_verification panel below).
+                        const raw =
+                          marketPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
+                        const missing = raw === ''
                         const invalid = !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
                         return (
                           <div
@@ -2588,7 +2594,7 @@ export default function RequisitionDetail() {
                                   label="Market price"
                                   type="number"
                                   min="0"
-                                  value={raw ?? ''}
+                                  value={raw}
                                   onChange={(e) => {
                                     setMarketPrices((prev) => ({ ...prev, [l.id]: e.target.value }))
                                   }}
@@ -2630,13 +2636,9 @@ export default function RequisitionDetail() {
                       })}
                       {(() => {
                         const allPriced = purchaseLines.every((l) => {
-                          const raw = marketPrices[l.id]
-                          return (
-                            raw !== undefined &&
-                            raw !== '' &&
-                            !isNaN(parseFloat(raw)) &&
-                            parseFloat(raw) >= 0
-                          )
+                          const raw =
+                            marketPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
+                          return raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
                         })
                         return (
                           <>
@@ -2657,7 +2659,10 @@ export default function RequisitionDetail() {
                                     id: req.id,
                                     linePrices: purchaseLines.map((l) => ({
                                       lineId: l.id,
-                                      marketPrice: parseFloat(marketPrices[l.id]),
+                                      marketPrice: parseFloat(
+                                        marketPrices[l.id] ??
+                                          (l.market_price != null ? String(l.market_price) : ''),
+                                      ),
                                       currencyCode: marketCurrency[l.id] ?? l.currency_code,
                                       vendorQuoteRef: quoteRefs[l.id] || undefined,
                                     })),
