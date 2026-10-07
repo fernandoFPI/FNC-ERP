@@ -342,7 +342,7 @@ interface EditDraft {
     uom: string
     _removed?: boolean
   }[]
-  linesAdded: { description: string; qty: number; unit_price: number; uom: string }[]
+  linesAdded: { product_id: string; description: string; qty: number; unit_price: number; uom: string }[]
 }
 
 type Tab = 'lines' | 'receipts' | 'returns' | 'approval_log' | 'changes' | 'admin_correction'
@@ -707,6 +707,26 @@ export default function PurchaseOrderDetail() {
   const [adminCorrectionReason, setAdminCorrectionReason] = useState('')
   const [adminCorrectionConfirming, setAdminCorrectionConfirming] = useState(false)
   const [editRequestNotes, setEditRequestNotes] = useState('')
+
+  // Separate from the admin-correction-only products query elsewhere on this
+  // page — a line can be added to an edit request from any status, not just
+  // while the admin correction tab is open, so this one is skipped on
+  // whether an edit is actually in progress instead.
+  const { data: editProductsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
+    variables: { includeCentralWarehouse: true },
+    skip: !editDraft,
+  })
+  const editProducts: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
+    (editProductsData?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
+  const editProductOptions = [
+    { value: '', label: 'Custom item (no catalog link)' },
+    ...editProducts.map((p) => ({
+      value: p.id,
+      label: p.name,
+      sublabel: p.sku,
+      keywords: p.name_ar ?? undefined,
+    })),
+  ]
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [adminPoStatus, setAdminPoStatus] = useState('')
   const [showActionsPanel, setShowActionsPanel] = useState(false)
@@ -6090,18 +6110,36 @@ export default function PurchaseOrderDetail() {
                       const addedLineFields: LineItemField<EditDraft['linesAdded'][number]>[] = [
                         {
                           key: 'description',
-                          label: 'Description',
+                          label: 'Product / Description',
                           render: (line, i) => (
-                            <input
-                              placeholder="Description"
-                              value={line.description}
-                              style={inputStyle}
-                              onChange={(e) => {
-                                const a = [...editDraft.linesAdded]
-                                a[i] = { ...a[i], description: e.target.value }
-                                setEditDraft({ ...editDraft, linesAdded: a })
-                              }}
-                            />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <SearchableSelect
+                                value={line.product_id}
+                                onChange={(v) => {
+                                  const a = [...editDraft.linesAdded]
+                                  const p = editProducts.find((pp) => pp.id === v)
+                                  a[i] = {
+                                    ...a[i],
+                                    product_id: v,
+                                    ...(p ? { description: p.name, uom: p.uom } : {}),
+                                  }
+                                  setEditDraft({ ...editDraft, linesAdded: a })
+                                }}
+                                options={editProductOptions}
+                                placeholder="Search by name or SKU…"
+                                minDropdownWidth={360}
+                              />
+                              <input
+                                placeholder="Description"
+                                value={line.description}
+                                style={inputStyle}
+                                onChange={(e) => {
+                                  const a = [...editDraft.linesAdded]
+                                  a[i] = { ...a[i], description: e.target.value }
+                                  setEditDraft({ ...editDraft, linesAdded: a })
+                                }}
+                              />
+                            </div>
                           ),
                         },
                         {
@@ -6228,7 +6266,7 @@ export default function PurchaseOrderDetail() {
                                     ...editDraft,
                                     linesAdded: [
                                       ...editDraft.linesAdded,
-                                      { description: '', qty: 1, unit_price: 0, uom: 'unit' },
+                                      { product_id: '', description: '', qty: 1, unit_price: 0, uom: 'unit' },
                                     ],
                                   })
                                 }}

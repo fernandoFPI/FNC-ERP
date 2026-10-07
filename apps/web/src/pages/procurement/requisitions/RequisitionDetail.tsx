@@ -202,7 +202,7 @@ interface EditDraft {
   delivery_destination: string
   priority: string
   lines: EditLineDraft[]
-  linesAdded: { description: string; qty: number; unit_price: number; uom: string }[]
+  linesAdded: { product_id: string; description: string; qty: number; unit_price: number; uom: string }[]
 }
 type Tab = 'lines' | 'log' | 'changes'
 
@@ -606,6 +606,26 @@ export default function RequisitionDetail() {
   const [activeTab, setActiveTab] = useState<Tab>('lines')
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
+
+  // Separate from the inventory_check-only products query elsewhere on this
+  // page — a line can be added to an edit request from any status, not just
+  // inventory_check, so this one is skipped on whether an edit is actually
+  // in progress instead.
+  const { data: editProductsData } = useQuery<ProductsQuery, ProductsQueryVariables>(PRODUCTS_QUERY, {
+    variables: { includeCentralWarehouse: true },
+    skip: !editDraft,
+  })
+  const editProducts: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
+    (editProductsData?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
+  const editProductOptions = [
+    { value: '', label: 'Custom item (no catalog link)' },
+    ...editProducts.map((p) => ({
+      value: p.id,
+      label: p.name,
+      sublabel: p.sku,
+      keywords: p.name_ar ?? undefined,
+    })),
+  ]
 
   if (!id) return null
 
@@ -1666,61 +1686,90 @@ export default function RequisitionDetail() {
                               ...editDraft,
                               linesAdded: [
                                 ...editDraft.linesAdded,
-                                { description: '', qty: 1, unit_price: 0, uom: 'unit' },
+                                { product_id: '', description: '', qty: 1, unit_price: 0, uom: 'unit' },
                               ],
                             })
                           }}
                         />
 
-                        {editDraft.linesAdded.length > 0 && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div
-                              style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted }}
-                            >
-                              New lines
-                            </div>
-                            {editDraft.linesAdded.map((al, i) => (
-                              <div
-                                key={i}
-                                style={{
-                                  display: 'flex',
-                                  gap: '8px',
-                                  flexWrap: 'wrap',
-                                  alignItems: 'center',
-                                }}
-                              >
-                                <input
-                                  value={al.description}
-                                  placeholder="Description"
-                                  style={{ ...inputStyle, flex: '1 1 200px' }}
-                                  onChange={(e) => {
-                                    const linesAdded = [...editDraft.linesAdded]
-                                    linesAdded[i] = {
-                                      ...linesAdded[i],
-                                      description: e.target.value,
-                                    }
-                                    setEditDraft({ ...editDraft, linesAdded })
-                                  }}
-                                />
+                        {(() => {
+                          const addedLineFields: LineItemField<EditDraft['linesAdded'][number]>[] = [
+                            {
+                              key: 'product',
+                              label: 'Product / Description',
+                              render: (al, i) => (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <SearchableSelect
+                                    value={al.product_id}
+                                    onChange={(v) => {
+                                      const linesAdded = [...editDraft.linesAdded]
+                                      const p = editProducts.find((pp) => pp.id === v)
+                                      linesAdded[i] = {
+                                        ...linesAdded[i],
+                                        product_id: v,
+                                        ...(p ? { description: p.name, uom: p.uom } : {}),
+                                      }
+                                      setEditDraft({ ...editDraft, linesAdded })
+                                    }}
+                                    options={editProductOptions}
+                                    placeholder="Search by name or SKU…"
+                                    minDropdownWidth={360}
+                                  />
+                                  <input
+                                    value={al.description}
+                                    placeholder="Description"
+                                    style={inputStyle}
+                                    onChange={(e) => {
+                                      const linesAdded = [...editDraft.linesAdded]
+                                      linesAdded[i] = { ...linesAdded[i], description: e.target.value }
+                                      setEditDraft({ ...editDraft, linesAdded })
+                                    }}
+                                  />
+                                </div>
+                              ),
+                            },
+                            {
+                              key: 'qty',
+                              label: 'Qty',
+                              width: '90px',
+                              render: (al, i) => (
                                 <input
                                   type="number"
                                   value={al.qty}
-                                  placeholder="Qty"
-                                  style={{ ...inputStyle, width: '80px' }}
+                                  style={inputStyle}
                                   onChange={(e) => {
                                     const linesAdded = [...editDraft.linesAdded]
-                                    linesAdded[i] = {
-                                      ...linesAdded[i],
-                                      qty: parseFloat(e.target.value) || 0,
-                                    }
+                                    linesAdded[i] = { ...linesAdded[i], qty: parseFloat(e.target.value) || 0 }
                                     setEditDraft({ ...editDraft, linesAdded })
                                   }}
                                 />
+                              ),
+                            },
+                            {
+                              key: 'uom',
+                              label: 'UOM',
+                              width: '80px',
+                              render: (al, i) => (
+                                <input
+                                  value={al.uom}
+                                  style={inputStyle}
+                                  onChange={(e) => {
+                                    const linesAdded = [...editDraft.linesAdded]
+                                    linesAdded[i] = { ...linesAdded[i], uom: e.target.value }
+                                    setEditDraft({ ...editDraft, linesAdded })
+                                  }}
+                                />
+                              ),
+                            },
+                            {
+                              key: 'unit_price',
+                              label: 'Unit Price',
+                              width: '110px',
+                              render: (al, i) => (
                                 <input
                                   type="number"
                                   value={al.unit_price}
-                                  placeholder="Unit price"
-                                  style={{ ...inputStyle, width: '100px' }}
+                                  style={inputStyle}
                                   onChange={(e) => {
                                     const linesAdded = [...editDraft.linesAdded]
                                     linesAdded[i] = {
@@ -1730,24 +1779,33 @@ export default function RequisitionDetail() {
                                     setEditDraft({ ...editDraft, linesAdded })
                                   }}
                                 />
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setEditDraft({
-                                      ...editDraft,
-                                      linesAdded: editDraft.linesAdded.filter(
-                                        (_, idx) => idx !== i,
-                                      ),
-                                    })
-                                  }}
-                                >
-                                  Remove
-                                </Button>
+                              ),
+                            },
+                          ]
+                          return (
+                            <div style={{ marginTop: '4px' }}>
+                              <div
+                                style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted, marginBottom: '8px' }}
+                              >
+                                New lines
                               </div>
-                            ))}
-                          </div>
-                        )}
+                              <LineItemEditor
+                                fields={addedLineFields}
+                                rows={editDraft.linesAdded}
+                                rowKey={(_, i) => `new-${i}`}
+                                getRowStyle={() => ({ background: theme.accentBg + '44' })}
+                                onRemoveRow={(i) => {
+                                  setEditDraft({
+                                    ...editDraft,
+                                    linesAdded: editDraft.linesAdded.filter((_, idx) => idx !== i),
+                                  })
+                                }}
+                                addLabel="+ Add line"
+                                emptyMessage="No new lines added"
+                              />
+                            </div>
+                          )
+                        })()}
 
                         <Button
                           variant="primary"
