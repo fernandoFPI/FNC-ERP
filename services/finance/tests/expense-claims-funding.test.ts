@@ -1,10 +1,11 @@
 // Covers the new "Finance decides funding" flow: an expense claim no longer
 // picks reimburse/advance/petty_cash at submission (RequisitionForm.tsx no
 // longer has a "Paid" dropdown) — it submits plain, gets a legitimacy
-// approve (submitted -> approved, no posting), then Finance picks the
-// funding source via POST /:id/post-payment, which is the step that
-// actually posts money. Same real-Postgres + supertest pattern as
-// petty-cash.test.ts.
+// approve (submitted -> approved, no posting), then a Finance audit pass/
+// fail (approved -> audited, or back to draft on fail), then Finance picks
+// the funding source via POST /:id/post-payment (only reachable from
+// 'audited'), which is the step that actually posts money. Same
+// real-Postgres + supertest pattern as petty-cash.test.ts.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import request from 'supertest'
 import { createApp } from '../src/app.js'
@@ -119,8 +120,23 @@ async function submitClaim(amount: number): Promise<{ id: string; lineId: string
   return { id: res.body.data.id as string, lineId: res.body.data.lines[0].id as string }
 }
 
+// approve -> pass-audit, the two steps every post-payment test needs to get
+// a claim to 'audited' first.
+async function approveAndAudit(id: string): Promise<void> {
+  const approveRes = await request(app)
+    .post(`/finance/expense-claims/${id}/approve`)
+    .set('Authorization', `Bearer ${token}`)
+  expect(approveRes.status).toBe(200)
+  expect(approveRes.body.data.status).toBe('approved')
+  const auditRes = await request(app)
+    .post(`/finance/expense-claims/${id}/pass-audit`)
+    .set('Authorization', `Bearer ${token}`)
+  expect(auditRes.status).toBe(200)
+  expect(auditRes.body.data.status).toBe('audited')
+}
+
 describe('Expense claim funding flow', () => {
-  it('submits without a reimbursement account, approves with no posting, then posts via reimburse', async () => {
+  it('submits without a reimbursement account, approves with no posting, audits, then posts via reimburse', async () => {
     const { id } = await submitClaim(10000)
 
     const approveRes = await request(app)
@@ -129,6 +145,13 @@ describe('Expense claim funding flow', () => {
     expect(approveRes.status).toBe(200)
     expect(approveRes.body.data.status).toBe('approved')
     expect(approveRes.body.data.journal_entry_id).toBeNull()
+
+    const auditRes = await request(app)
+      .post(`/finance/expense-claims/${id}/pass-audit`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(auditRes.status).toBe(200)
+    expect(auditRes.body.data.status).toBe('audited')
+    expect(auditRes.body.data.audited_by).toBe(testUserId)
 
     const postRes = await request(app)
       .post(`/finance/expense-claims/${id}/post-payment`)
@@ -158,7 +181,7 @@ describe('Expense claim funding flow', () => {
     const balanceBefore = Number(before.rows[0]!.current_balance)
 
     const { id } = await submitClaim(15000)
-    await request(app).post(`/finance/expense-claims/${id}/approve`).set('Authorization', `Bearer ${token}`)
+    await approveAndAudit(id)
 
     const optionsRes = await request(app)
       .get(`/finance/expense-claims/${id}/funding-options`)
@@ -192,7 +215,7 @@ describe('Expense claim funding flow', () => {
 
   it('rejects petty cash posting when the float balance is insufficient', async () => {
     const { id } = await submitClaim(999999999)
-    await request(app).post(`/finance/expense-claims/${id}/approve`).set('Authorization', `Bearer ${token}`)
+    await approveAndAudit(id)
 
     const postRes = await request(app)
       .post(`/finance/expense-claims/${id}/post-payment`)
@@ -201,12 +224,12 @@ describe('Expense claim funding flow', () => {
     expect(postRes.status).toBe(422)
     expect(postRes.body.error.code).toBe('INSUFFICIENT_BALANCE')
 
-    // The claim must stay 'approved' — a rejected posting attempt is not a
+    // The claim must stay 'audited' — a rejected posting attempt is not a
     // partial state change.
     const claimRes = await request(app)
       .get(`/finance/expense-claims/${id}`)
       .set('Authorization', `Bearer ${token}`)
-    expect(claimRes.body.data.status).toBe('approved')
+    expect(claimRes.body.data.status).toBe('audited')
   })
 
   it('posts via advance settlement — creates a real advance_settlements record and clears outstanding', async () => {
@@ -217,7 +240,7 @@ describe('Expense claim funding flow', () => {
     const outstandingBefore = Number(advBefore.rows[0]!.outstanding_amount)
 
     const { id } = await submitClaim(20000)
-    await request(app).post(`/finance/expense-claims/${id}/approve`).set('Authorization', `Bearer ${token}`)
+    await approveAndAudit(id)
 
     const postRes = await request(app)
       .post(`/finance/expense-claims/${id}/post-payment`)
@@ -267,5 +290,56 @@ describe('Expense claim funding flow', () => {
       .send({ reason: 'Wrong cost center, resubmit' })
     expect(rejectAtApproved.status).toBe(200)
     expect(rejectAtApproved.body.data.status).toBe('rejected')
+  })
+
+  it('post-payment is unreachable from approved — audited is required first', async () => {
+    const { id } = await submitClaim(5000)
+    await request(app).post(`/finance/expense-claims/${id}/approve`).set('Authorization', `Bearer ${token}`)
+
+    const postRes = await request(app)
+      .post(`/finance/expense-claims/${id}/post-payment`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ funding_source: 'reimburse' })
+    expect(postRes.status).toBe(409)
+    expect(postRes.body.error.code).toBe('INVALID_STATUS')
+  })
+
+  it('fail-audit sends an approved claim back to draft, editable, then resubmits through the normal path', async () => {
+    const { id, lineId } = await submitClaim(8000)
+    await request(app).post(`/finance/expense-claims/${id}/approve`).set('Authorization', `Bearer ${token}`)
+
+    const failRes = await request(app)
+      .post(`/finance/expense-claims/${id}/fail-audit`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'Wrong category — resubmit under Fuel' })
+    expect(failRes.status).toBe(200)
+    expect(failRes.body.data.status).toBe('draft')
+    expect(failRes.body.data.audit_fail_reason).toBe('Wrong category — resubmit under Fuel')
+
+    // Draft and editable — PUT /:id only allows this from 'draft'.
+    const getRes = await request(app)
+      .get(`/finance/expense-claims/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(getRes.body.data.status).toBe('draft')
+
+    const editRes = await request(app)
+      .put(`/finance/expense-claims/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        employee_id: employeeId,
+        employee_name: 'Expense Tester',
+        currency_code: 'IQD',
+        lines: [{ id: lineId, expense_date: '2026-01-10', category_id: categoryId, description: 'Corrected', amount: 9000 }],
+      })
+    expect(editRes.status).toBe(200)
+    expect(editRes.body.data.total_amount).toBe('9000.00')
+
+    // Normal path again, no special-casing: submit -> approve -> pass-audit.
+    const resubmitRes = await request(app)
+      .post(`/finance/expense-claims/${id}/submit`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(resubmitRes.status).toBe(200)
+    expect(resubmitRes.body.data.status).toBe('submitted')
+    await approveAndAudit(id)
   })
 })

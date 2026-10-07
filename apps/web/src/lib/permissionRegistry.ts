@@ -125,6 +125,7 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
           { key: 'finance.expenses.view', label: 'View Expense Claims', sortOrder: 92 },
           { key: 'finance.expenses.edit', label: 'Edit Expense Claims', sortOrder: 93 },
           { key: 'finance.expenses.approve', label: 'Approve Expense Claims', sortOrder: 94 },
+          { key: 'finance.expenses.audit', label: 'Pass/Fail Expense Audit', sortOrder: 1232 },
         ],
       },
       {

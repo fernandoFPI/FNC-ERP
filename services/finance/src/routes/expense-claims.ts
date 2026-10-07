@@ -336,6 +336,7 @@ expenseClaimsRouter.get(
                 COALESCE(cu.first_name || ' ' || cu.last_name, cu.email) AS created_by_name,
                 COALESCE(au.first_name || ' ' || au.last_name, au.email) AS approved_by_name,
                 COALESCE(ru.first_name || ' ' || ru.last_name, ru.email) AS rejected_by_name,
+                COALESCE(du.first_name || ' ' || du.last_name, du.email) AS audited_by_name,
                 COALESCE(pu.first_name || ' ' || pu.last_name, pu.email) AS paid_by_name,
                 pcf.name AS petty_cash_float_name,
                 aset.settlement_number, adv.advance_number
@@ -344,6 +345,7 @@ expenseClaimsRouter.get(
          LEFT JOIN users cu ON cu.id = ec.created_by
          LEFT JOIN users au ON au.id = ec.approved_by
          LEFT JOIN users ru ON ru.id = ec.rejected_by
+         LEFT JOIN users du ON du.id = ec.audited_by
          LEFT JOIN users pu ON pu.id = ec.paid_by
          LEFT JOIN petty_cash_floats pcf ON pcf.id = ec.petty_cash_float_id
          LEFT JOIN advance_settlements aset ON aset.id = ec.settled_via_settlement_id
@@ -750,6 +752,77 @@ expenseClaimsRouter.post(
   }),
 )
 
+// ─── Audit (Finance reviews an already-approved claim) ──────────────────────
+//
+// Sits between the legitimacy approval above and Post Payment below — a
+// separate finance.expenses.audit permission, not .approve, so audit rights
+// can be granted independently even though today the same people likely
+// hold both. Pass moves the claim on to 'audited' (what Post Payment now
+// requires, see below); Fail sends it back to 'draft' instead of the
+// terminal 'rejected' used by /reject — a draft claim is editable via the
+// existing PUT /:id and goes through the normal draft -> submitted ->
+// approved -> audited path again once resubmitted, no special-casing needed.
+
+expenseClaimsRouter.post(
+  '/:id/pass-audit',
+  requirePermission('finance.expenses.audit', 'approve'),
+  asyncHandler(async (req, res) => {
+    try {
+      const r = await query(
+        `UPDATE expense_claims SET status='audited', audited_by=$1, audited_at=NOW(), updated_at=NOW()
+         WHERE id=$2 AND company_id=$3 AND status='approved' RETURNING *`,
+        [getAuth(req).userId, req.params['id'], getAuth(req).companyId],
+      )
+      if (!r.rows[0]) {
+        sendError(res, 409, 'INVALID_STATUS', 'Claim is not in approved status')
+        return
+      }
+      await logAudit({
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
+        action: 'UPDATE',
+        tableName: 'expense_claims',
+        recordId: req.params['id'],
+        newValues: { status: 'audited' },
+      })
+      sendOk(res, r.rows[0])
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to pass audit', err)
+    }
+  }),
+)
+
+expenseClaimsRouter.post(
+  '/:id/fail-audit',
+  requirePermission('finance.expenses.audit', 'approve'),
+  asyncHandler(async (req, res) => {
+    const schema = z.object({ reason: z.string().min(1) })
+    try {
+      const { reason } = schema.parse(req.body)
+      const r = await query(
+        `UPDATE expense_claims SET status='draft', audited_by=$1, audited_at=NOW(), audit_fail_reason=$2, updated_at=NOW()
+         WHERE id=$3 AND company_id=$4 AND status='approved' RETURNING *`,
+        [getAuth(req).userId, reason, req.params['id'], getAuth(req).companyId],
+      )
+      if (!r.rows[0]) {
+        sendError(res, 409, 'INVALID_STATUS', 'Claim is not in approved status')
+        return
+      }
+      await logAudit({
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
+        action: 'UPDATE',
+        tableName: 'expense_claims',
+        recordId: req.params['id'],
+        newValues: { status: 'draft', audit_fail_reason: reason },
+      })
+      sendOk(res, r.rows[0])
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fail audit', err)
+    }
+  }),
+)
+
 // ─── Funding options (for the Post Payment picker) ─────────────────────────
 //
 // Gated by the same finance.expenses.approve permission as the claim itself
@@ -792,7 +865,8 @@ expenseClaimsRouter.get(
 
 // ─── Post payment (Finance decides the funding source) ──────────────────────
 //
-// Only reachable from 'approved' — the legitimacy check above. Branches on
+// Only reachable from 'audited' — the legitimacy approval plus the audit
+// pass/fail above it both have to have happened first. Branches on
 // funding_source:
 //  - reimburse: exactly the old /:id/approve posting logic (DR each line's
 //    GL, CR the default cash/bank account for the claim's currency).
@@ -840,7 +914,7 @@ expenseClaimsRouter.post(
              FROM expense_claims ec
              LEFT JOIN projects p ON p.id = ec.project_id
              LEFT JOIN analytic_accounts aa ON aa.id = p.analytic_account_id
-             WHERE ec.id=$1 AND ec.company_id=$2 AND ec.status='approved' FOR UPDATE OF ec`,
+             WHERE ec.id=$1 AND ec.company_id=$2 AND ec.status='audited' FOR UPDATE OF ec`,
             [req.params['id'], getAuth(req).companyId],
           )
           if (!claimRes.rows[0]) return null
@@ -1129,7 +1203,7 @@ expenseClaimsRouter.post(
         },
       )
       if (!result) {
-        sendError(res, 409, 'INVALID_STATUS', 'Claim is not in approved status')
+        sendError(res, 409, 'INVALID_STATUS', 'Claim is not in audited status')
         return
       }
       if ('error' in result) {

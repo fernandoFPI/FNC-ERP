@@ -27,6 +27,7 @@ interface ClaimLine {
 interface Claim {
   id: string
   claim_number: string
+  employee_id: string
   employee_name: string
   description: string | null
   total_amount: number
@@ -39,12 +40,16 @@ interface Claim {
   rejected_at: string | null
   rejected_by_name: string | null
   rejection_reason: string | null
+  audited_at: string | null
+  audited_by_name: string | null
+  audit_fail_reason: string | null
   paid_at: string | null
   paid_by_name: string | null
   created_by_name: string | null
   journal_entry_id: string | null
   created_at: string
   reimbursement_account_id: string | null
+  project_id: string | null
   project_code: string | null
   project_name: string | null
   funding_source: 'reimburse' | 'advance' | 'petty_cash' | null
@@ -52,6 +57,23 @@ interface Claim {
   settlement_number: string | null
   advance_number: string | null
   lines: ClaimLine[]
+}
+
+interface ExpenseCategoryOption {
+  id: string
+  name: string
+}
+
+interface EditLine {
+  // Present for a pre-existing line (helps nothing server-side — PUT /:id
+  // replaces every line regardless — but keeps React's key stable across
+  // edits instead of reusing array index, which would misattach state to
+  // the wrong row after a reorder/removal).
+  key: string
+  expense_date: string
+  category_id: string
+  description: string
+  amount: string
 }
 
 interface FundingOptions {
@@ -63,6 +85,7 @@ const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | '
   draft: 'neutral',
   submitted: 'info',
   approved: 'warning',
+  audited: 'warning',
   rejected: 'danger',
   posted: 'warning',
   paid: 'success',
@@ -71,8 +94,10 @@ const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | '
 // 'approved' (legitimacy confirmed, no funding decided/posted yet) is a real
 // resting state again — Finance's funding-source decision is a distinct
 // step (POST /:id/post-payment) from the plain approve above it. See
-// expense-claims.ts for why these were split.
-const FLOW = ['draft', 'submitted', 'approved', 'posted', 'paid']
+// expense-claims.ts for why these were split. 'audited' sits between the
+// two — Finance's own Pass/Fail Audit decision on an approved claim; Fail
+// sends it back to 'draft' instead of appearing in this forward flow at all.
+const FLOW = ['draft', 'submitted', 'approved', 'audited', 'posted', 'paid']
 
 export default function ExpenseClaimDetail() {
   const { id } = useParams<{ id: string }>()
@@ -82,6 +107,7 @@ export default function ExpenseClaimDetail() {
   const { can } = usePermission()
   const canEdit = can('finance.expenses.edit', 'edit')
   const canApprove = can('finance.expenses.approve', 'approve')
+  const canAudit = can('finance.expenses.audit', 'approve')
   const [claim, setClaim] = useState<Claim | null>(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
@@ -89,6 +115,25 @@ export default function ExpenseClaimDetail() {
   const [rejectReason, setRejectReason] = useState('')
   const [showPrintModal, setShowPrintModal] = useState(false)
   const printIframeRef = useRef<HTMLIFrameElement>(null)
+
+  // Fail Audit — mirrors the Reject modal above exactly, just posting to a
+  // different endpoint and landing on 'draft' instead of the terminal
+  // 'rejected'.
+  const [showFailAudit, setShowFailAudit] = useState(false)
+  const [failAuditReason, setFailAuditReason] = useState('')
+
+  // Edit mode (draft only — PUT /:id itself enforces this server-side too).
+  // Categories fetched lazily on first entry into edit mode, same pattern as
+  // fundingOptions below — most claims are never viewed while in 'draft'.
+  const [isEditing, setIsEditing] = useState(false)
+  const [editDescription, setEditDescription] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+  const [editCurrency, setEditCurrency] = useState('IQD')
+  const [editLines, setEditLines] = useState<EditLine[]>([])
+  const [categories, setCategories] = useState<ExpenseCategoryOption[] | null>(null)
+  const [loadingCategories, setLoadingCategories] = useState(false)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editError, setEditError] = useState('')
 
   // Post Payment — Finance's funding-source decision, made on an already-
   // 'approved' claim. fundingOptions is fetched lazily when the modal opens
@@ -129,6 +174,104 @@ export default function ExpenseClaimDetail() {
       /* handled */
     } finally {
       setActing(false)
+    }
+  }
+
+  function startEdit() {
+    if (!claim) return
+    setEditDescription(claim.description ?? '')
+    setEditNotes(claim.notes ?? '')
+    setEditCurrency(claim.currency_code)
+    setEditLines(
+      claim.lines.map((l) => ({
+        key: l.id,
+        expense_date: l.expense_date.slice(0, 10),
+        category_id: '',
+        description: l.description ?? '',
+        amount: String(l.amount),
+      })),
+    )
+    setEditError('')
+    setIsEditing(true)
+    if (!categories && !loadingCategories) {
+      setLoadingCategories(true)
+      api
+        .get<ExpenseCategoryOption[]>('/finance/expense-claims/categories')
+        .then((r) => {
+          setCategories(r.data)
+        })
+        .catch(() => {
+          setCategories([])
+        })
+        .finally(() => {
+          setLoadingCategories(false)
+        })
+    }
+  }
+
+  function cancelEdit() {
+    setIsEditing(false)
+    setEditError('')
+  }
+
+  function updateEditLine(key: string, patch: Partial<EditLine>) {
+    setEditLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+  }
+
+  function addEditLine() {
+    setEditLines((prev) => [
+      ...prev,
+      {
+        key: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        expense_date: new Date().toISOString().slice(0, 10),
+        category_id: '',
+        description: '',
+        amount: '',
+      },
+    ])
+  }
+
+  function removeEditLine(key: string) {
+    setEditLines((prev) => prev.filter((l) => l.key !== key))
+  }
+
+  async function saveEdit() {
+    if (!id || !claim) return
+    if (editLines.length === 0) {
+      setEditError('At least one line is required')
+      return
+    }
+    for (const l of editLines) {
+      if (!l.expense_date || !l.amount || isNaN(parseFloat(l.amount)) || parseFloat(l.amount) <= 0) {
+        setEditError('Every line needs a date and a positive amount')
+        return
+      }
+    }
+    setSavingEdit(true)
+    setEditError('')
+    try {
+      await api.put(`/finance/expense-claims/${id}`, {
+        employee_id: claim.employee_id,
+        employee_name: claim.employee_name,
+        description: editDescription || undefined,
+        currency_code: editCurrency,
+        project_id: claim.project_id ?? undefined,
+        notes: editNotes || undefined,
+        lines: editLines.map((l) => ({
+          expense_date: l.expense_date,
+          category_id: l.category_id || undefined,
+          description: l.description || undefined,
+          amount: parseFloat(l.amount),
+          currency_code: editCurrency,
+        })),
+      })
+      setIsEditing(false)
+      void load()
+    } catch (err: unknown) {
+      const apiError = err as { response?: { data?: { error?: { message?: string } } } }
+      setEditError(apiError.response?.data?.error?.message ?? 'Could not save changes')
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -221,15 +364,35 @@ export default function ExpenseClaimDetail() {
             >
               ← Back
             </Button>
-            {canEdit && claim.status === 'draft' && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => void act('submit')}
-                disabled={acting}
-              >
-                Submit for Approval
-              </Button>
+            {canEdit && claim.status === 'draft' && !isEditing && (
+              <>
+                <Button variant="ghost" size="sm" onClick={startEdit}>
+                  Edit
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => void act('submit')}
+                  disabled={acting}
+                >
+                  Submit for Approval
+                </Button>
+              </>
+            )}
+            {isEditing && (
+              <>
+                <Button variant="ghost" size="sm" onClick={cancelEdit} disabled={savingEdit}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => void saveEdit()}
+                  disabled={savingEdit}
+                >
+                  Save Changes
+                </Button>
+              </>
             )}
             {(claim.status === 'submitted' || claim.status === 'approved') && canApprove && (
               <Button
@@ -252,7 +415,29 @@ export default function ExpenseClaimDetail() {
                 Approve
               </Button>
             )}
-            {claim.status === 'approved' && canApprove && (
+            {claim.status === 'approved' && canAudit && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowFailAudit(true)
+                  }}
+                  disabled={acting}
+                >
+                  Fail Audit
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => void act('pass-audit')}
+                  disabled={acting}
+                >
+                  Pass Audit
+                </Button>
+              </>
+            )}
+            {claim.status === 'audited' && canApprove && (
               <Button
                 variant="primary"
                 size="sm"
@@ -410,6 +595,12 @@ export default function ExpenseClaimDetail() {
                       : '—',
                   ],
                   [
+                    'Audited',
+                    claim.audited_at
+                      ? `${new Date(claim.audited_at).toLocaleDateString()}${claim.audited_by_name ? ` — ${claim.audited_by_name}` : ''}`
+                      : '—',
+                  ],
+                  [
                     'Paid',
                     claim.paid_at
                       ? `${new Date(claim.paid_at).toLocaleDateString()}${claim.paid_by_name ? ` — ${claim.paid_by_name}` : ''}`
@@ -462,6 +653,21 @@ export default function ExpenseClaimDetail() {
                 <strong>Rejected:</strong> {claim.rejection_reason}
               </div>
             )}
+            {claim.status === 'draft' && claim.audit_fail_reason && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  background: theme.warningBg,
+                  border: `1px solid ${theme.warningBorder}`,
+                  borderRadius: '6px',
+                  padding: '8px 10px',
+                  fontSize: '12px',
+                  color: theme.warning,
+                }}
+              >
+                <strong>Sent back from audit:</strong> {claim.audit_fail_reason}
+              </div>
+            )}
             {claim.journal_entry_id && (
               <div
                 style={{
@@ -500,11 +706,11 @@ export default function ExpenseClaimDetail() {
 
         {/* Lines table */}
         <div>
-          <Card padding="none">
-            <div style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}` }}>
+          {isEditing ? (
+            <Card padding="md">
               <p
                 style={{
-                  margin: 0,
+                  margin: '0 0 12px',
                   fontSize: '11px',
                   fontWeight: 600,
                   color: theme.textMuted,
@@ -512,98 +718,226 @@ export default function ExpenseClaimDetail() {
                   letterSpacing: '0.05em',
                 }}
               >
-                Expense Lines ({claim.lines.length})
+                Editing Expense Lines
               </p>
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-              <thead>
-                <tr
-                  style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+                <div style={{ flex: '1 1 220px' }}>
+                  <label style={{ fontSize: '11px', color: theme.textMuted }}>Description</label>
+                  <input
+                    style={inputStyle}
+                    value={editDescription}
+                    onChange={(e) => {
+                      setEditDescription(e.target.value)
+                    }}
+                  />
+                </div>
+                <div style={{ width: '110px' }}>
+                  <label style={{ fontSize: '11px', color: theme.textMuted }}>Currency</label>
+                  <input
+                    style={inputStyle}
+                    value={editCurrency}
+                    maxLength={3}
+                    onChange={(e) => {
+                      setEditCurrency(e.target.value.toUpperCase())
+                    }}
+                  />
+                </div>
+                <div style={{ flex: '1 1 220px' }}>
+                  <label style={{ fontSize: '11px', color: theme.textMuted }}>Notes</label>
+                  <input
+                    style={inputStyle}
+                    value={editNotes}
+                    onChange={(e) => {
+                      setEditNotes(e.target.value)
+                    }}
+                  />
+                </div>
+              </div>
+              {editLines.map((l) => (
+                <div
+                  key={l.key}
+                  style={{
+                    display: 'flex',
+                    gap: '8px',
+                    alignItems: 'flex-end',
+                    marginBottom: '10px',
+                    paddingBottom: '10px',
+                    borderBottom: `1px solid ${theme.border}`,
+                  }}
                 >
-                  {['Date', 'Category', 'Account', 'Description', 'Amount'].map((h) => (
-                    <th
-                      key={h}
+                  <div style={{ width: '130px' }}>
+                    <label style={{ fontSize: '11px', color: theme.textMuted }}>Date</label>
+                    <input
+                      type="date"
+                      style={inputStyle}
+                      value={l.expense_date}
+                      onChange={(e) => {
+                        updateEditLine(l.key, { expense_date: e.target.value })
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: '1 1 150px' }}>
+                    <label style={{ fontSize: '11px', color: theme.textMuted }}>Category</label>
+                    <Select
+                      value={l.category_id}
+                      onChange={(e) => {
+                        updateEditLine(l.key, { category_id: e.target.value })
+                      }}
+                      options={[
+                        { value: '', label: loadingCategories ? 'Loading…' : 'Select category…' },
+                        ...(categories ?? []).map((c) => ({ value: c.id, label: c.name })),
+                      ]}
+                    />
+                  </div>
+                  <div style={{ flex: '1 1 180px' }}>
+                    <label style={{ fontSize: '11px', color: theme.textMuted }}>Description</label>
+                    <input
+                      style={inputStyle}
+                      value={l.description}
+                      onChange={(e) => {
+                        updateEditLine(l.key, { description: e.target.value })
+                      }}
+                    />
+                  </div>
+                  <div style={{ width: '110px' }}>
+                    <label style={{ fontSize: '11px', color: theme.textMuted }}>Amount</label>
+                    <input
+                      type="number"
+                      min="0"
+                      style={inputStyle}
+                      value={l.amount}
+                      onChange={(e) => {
+                        updateEditLine(l.key, { amount: e.target.value })
+                      }}
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      removeEditLine(l.key)
+                    }}
+                    disabled={editLines.length <= 1}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              <Button variant="ghost" size="sm" onClick={addEditLine}>
+                + Add Line
+              </Button>
+              {editError && (
+                <div style={{ marginTop: '12px', fontSize: '12px', color: theme.danger }}>
+                  {editError}
+                </div>
+              )}
+            </Card>
+          ) : (
+            <Card padding="none">
+              <div style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}` }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: theme.textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  Expense Lines ({claim.lines.length})
+                </p>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead>
+                  <tr
+                    style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
+                  >
+                    {['Date', 'Category', 'Account', 'Description', 'Amount'].map((h) => (
+                      <th
+                        key={h}
+                        style={{
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          color: theme.textMuted,
+                          fontWeight: 500,
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {claim.lines.map((l, i) => (
+                    <tr
+                      key={l.id}
                       style={{
-                        padding: '8px 12px',
-                        textAlign: 'left',
-                        color: theme.textMuted,
-                        fontWeight: 500,
+                        borderBottom: `1px solid ${theme.border}`,
+                        background: i % 2 ? theme.bgCanvas : undefined,
                       }}
                     >
-                      {h}
-                    </th>
+                      <td
+                        style={{ padding: '8px 12px', color: theme.textSecondary, fontSize: '11px' }}
+                      >
+                        {new Date(l.expense_date).toLocaleDateString()}
+                      </td>
+                      <td style={{ padding: '8px 12px', color: theme.textSecondary }}>
+                        {l.category_name ?? '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        {l.account_code ? (
+                          <span>
+                            <span
+                              style={{
+                                fontFamily: 'monospace',
+                                color: theme.textMuted,
+                                fontSize: '10px',
+                              }}
+                            >
+                              {l.account_code}
+                            </span>
+                            <span style={{ marginLeft: '4px', color: theme.textPrimary }}>
+                              {l.account_name}
+                            </span>
+                          </span>
+                        ) : (
+                          <span style={{ color: theme.textMuted }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px 12px', color: theme.textSecondary }}>
+                        {l.description ?? '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                        <AmountDisplay
+                          amount={Number(l.amount)}
+                          currency={l.currency_code}
+                          size="sm"
+                        />
+                      </td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {claim.lines.map((l, i) => (
-                  <tr
-                    key={l.id}
-                    style={{
-                      borderBottom: `1px solid ${theme.border}`,
-                      background: i % 2 ? theme.bgCanvas : undefined,
-                    }}
-                  >
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: `2px solid ${theme.border}`, background: theme.bgSurface }}>
                     <td
-                      style={{ padding: '8px 12px', color: theme.textSecondary, fontSize: '11px' }}
+                      colSpan={4}
+                      style={{ padding: '8px 12px', fontWeight: 700, color: theme.textPrimary }}
                     >
-                      {new Date(l.expense_date).toLocaleDateString()}
+                      Total
                     </td>
-                    <td style={{ padding: '8px 12px', color: theme.textSecondary }}>
-                      {l.category_name ?? '—'}
-                    </td>
-                    <td style={{ padding: '8px 12px' }}>
-                      {l.account_code ? (
-                        <span>
-                          <span
-                            style={{
-                              fontFamily: 'monospace',
-                              color: theme.textMuted,
-                              fontSize: '10px',
-                            }}
-                          >
-                            {l.account_code}
-                          </span>
-                          <span style={{ marginLeft: '4px', color: theme.textPrimary }}>
-                            {l.account_name}
-                          </span>
-                        </span>
-                      ) : (
-                        <span style={{ color: theme.textMuted }}>—</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '8px 12px', color: theme.textSecondary }}>
-                      {l.description ?? '—'}
-                    </td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
                       <AmountDisplay
-                        amount={Number(l.amount)}
-                        currency={l.currency_code}
+                        amount={Number(claim.total_amount)}
+                        currency={claim.currency_code}
                         size="sm"
                       />
                     </td>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr style={{ borderTop: `2px solid ${theme.border}`, background: theme.bgSurface }}>
-                  <td
-                    colSpan={4}
-                    style={{ padding: '8px 12px', fontWeight: 700, color: theme.textPrimary }}
-                  >
-                    Total
-                  </td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
-                    <AmountDisplay
-                      amount={Number(claim.total_amount)}
-                      currency={claim.currency_code}
-                      size="sm"
-                    />
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </Card>
+                </tfoot>
+              </table>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -658,6 +992,64 @@ export default function ExpenseClaimDetail() {
                 disabled={acting || !rejectReason}
               >
                 Reject Claim
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Fail Audit modal */}
+      {showFailAudit && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <Card padding="lg" style={{ width: '400px' }}>
+            <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
+              Fail Audit
+            </h3>
+            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
+              Sends this claim back to Draft so it can be corrected and resubmitted — provide a
+              reason.
+            </p>
+            <textarea
+              style={{ ...inputStyle, height: '80px', resize: 'vertical' as const }}
+              value={failAuditReason}
+              onChange={(e) => {
+                setFailAuditReason(e.target.value)
+              }}
+              placeholder="What needs to be corrected..."
+            />
+            <div
+              style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowFailAudit(false)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void (async () => {
+                  await act('fail-audit', { reason: failAuditReason })
+                  setShowFailAudit(false)
+                  setFailAuditReason('')
+                })()}
+                disabled={acting || !failAuditReason}
+              >
+                Fail Audit
               </Button>
             </div>
           </Card>
