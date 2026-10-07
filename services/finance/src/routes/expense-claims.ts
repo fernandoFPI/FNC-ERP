@@ -306,13 +306,18 @@ expenseClaimsRouter.get(
            ORDER BY created_at DESC`,
           [getAuth(req).companyId],
         ),
+        // Grouped by currency_code too, not just employee — summing
+        // total_amount across an employee's claims regardless of currency
+        // would silently blend e.g. USD and IQD into one meaningless number.
+        // One row per employee per currency; the frontend re-groups these
+        // into one visual row per employee with a per-currency breakdown.
         query(
-          `SELECT employee_id, employee_name,
+          `SELECT employee_id, employee_name, currency_code,
                   COUNT(*)::INT AS claim_count,
                   COALESCE(SUM(total_amount),0) AS total_amount
            FROM expense_claims
            WHERE company_id=$1
-           GROUP BY employee_id, employee_name
+           GROUP BY employee_id, employee_name, currency_code
            ORDER BY total_amount DESC`,
           [getAuth(req).companyId],
         ),

@@ -23,6 +23,7 @@ interface DashboardClaim {
 interface EmployeeRollup {
   employee_id: string
   employee_name: string
+  currency_code: string
   claim_count: number
   total_amount: number
 }
@@ -30,6 +31,32 @@ interface EmployeeRollup {
 interface Dashboard {
   claims: DashboardClaim[]
   by_employee: EmployeeRollup[]
+}
+
+// Groups rows that may be split per-currency (either every claim for the
+// overall KPI, or one employee's per-currency rollup rows) into one
+// subtotal per currency actually present — no conversion, so adding a USD
+// figure onto an IQD one would be meaningless. IQD first, rest alphabetical,
+// matching the same convention already used on the Journal Entries page.
+function sumByCurrency<T extends { currency_code: string; total_amount: number }>(
+  rows: T[],
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const r of rows) {
+    out[r.currency_code] = (out[r.currency_code] ?? 0) + Number(r.total_amount)
+  }
+  return out
+}
+
+function sortedCurrencies(amounts: Record<string, number>): string[] {
+  return Object.keys(amounts).sort((a, b) => (a === 'IQD' ? -1 : b === 'IQD' ? 1 : a.localeCompare(b)))
+}
+
+interface EmployeeRow {
+  employee_id: string
+  employee_name: string
+  claim_count: number
+  amounts: Record<string, number>
 }
 
 const STATUS_BADGE: Record<string, { variant: 'neutral' | 'info' | 'success' | 'danger' | 'warning'; label: string }> = {
@@ -63,9 +90,30 @@ export default function ExpenseClaimDashboard() {
     void load()
   }, [load])
 
-  const totalAmount = data?.claims.reduce((s, c) => s + Number(c.total_amount), 0) ?? 0
-  const employeeCount = data?.by_employee.length ?? 0
+  const totalByCurrency = sumByCurrency(data?.claims ?? [])
+  const totalCurrencies = sortedCurrencies(totalByCurrency)
+  const employeeCount = new Set((data?.by_employee ?? []).map((e) => e.employee_id)).size
   const claimCount = data?.claims.length ?? 0
+
+  // Re-groups the (possibly per-currency-split) by_employee rows from the
+  // backend into one visual row per employee, each with its own per-currency
+  // amount breakdown — the claim count is a real total across currencies,
+  // the amount deliberately isn't collapsed into one.
+  const employeeRows: EmployeeRow[] = []
+  for (const e of data?.by_employee ?? []) {
+    let row = employeeRows.find((r) => r.employee_id === e.employee_id)
+    if (!row) {
+      row = { employee_id: e.employee_id, employee_name: e.employee_name, claim_count: 0, amounts: {} }
+      employeeRows.push(row)
+    }
+    row.claim_count += e.claim_count
+    row.amounts[e.currency_code] = (row.amounts[e.currency_code] ?? 0) + Number(e.total_amount)
+  }
+  employeeRows.sort((a, b) => {
+    const totalA = Object.values(a.amounts).reduce((s, v) => s + v, 0)
+    const totalB = Object.values(b.amounts).reduce((s, v) => s + v, 0)
+    return totalB - totalA
+  })
 
   return (
     <div style={{ padding: '24px' }}>
@@ -102,7 +150,21 @@ export default function ExpenseClaimDashboard() {
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
             Total Claimed
           </p>
-          <AmountDisplay amount={totalAmount} currency="IQD" size="md" colored />
+          {totalCurrencies.length === 0 ? (
+            <AmountDisplay amount={0} currency="IQD" size="md" colored />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {totalCurrencies.map((currency) => (
+                <AmountDisplay
+                  key={currency}
+                  amount={totalByCurrency[currency] ?? 0}
+                  currency={currency}
+                  size="md"
+                  colored
+                />
+              ))}
+            </div>
+          )}
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -167,7 +229,7 @@ export default function ExpenseClaimDashboard() {
                   </td>
                 </tr>
               )}
-              {!loading && !data?.by_employee.length && (
+              {!loading && !employeeRows.length && (
                 <tr>
                   <td
                     colSpan={3}
@@ -177,7 +239,7 @@ export default function ExpenseClaimDashboard() {
                   </td>
                 </tr>
               )}
-              {data?.by_employee.map((e) => (
+              {employeeRows.map((e) => (
                 <tr key={e.employee_id} style={{ borderBottom: `1px solid ${theme.border}` }}>
                   <td style={{ padding: '9px 12px', fontWeight: 500, color: theme.textPrimary }}>
                     {e.employee_name}
@@ -188,12 +250,17 @@ export default function ExpenseClaimDashboard() {
                     {e.claim_count}
                   </td>
                   <td style={{ padding: '9px 12px', textAlign: 'right' }}>
-                    <AmountDisplay
-                      amount={Number(e.total_amount)}
-                      currency="IQD"
-                      size="sm"
-                      colored
-                    />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end' }}>
+                      {sortedCurrencies(e.amounts).map((currency) => (
+                        <AmountDisplay
+                          key={currency}
+                          amount={e.amounts[currency] ?? 0}
+                          currency={currency}
+                          size="sm"
+                          colored
+                        />
+                      ))}
+                    </div>
                   </td>
                 </tr>
               ))}
