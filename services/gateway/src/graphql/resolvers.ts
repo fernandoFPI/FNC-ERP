@@ -22824,7 +22824,15 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (!isPermissionBypassGW(ctx.auth.role)) throw new Error('Forbidden: admin only')
+      // Mirrors isProjectsModuleAdminGW's other call sites (e.g. project
+      // visibility) and adminSetPOStatus's own hasProcurementAuthorityGW —
+      // a projects module_admin gets this company-wide, same deliberate
+      // choice as everywhere else that authority is checked. Was missing
+      // here: the frontend's own Admin Override button is gated on
+      // can('projects.edit'), which a projects module_admin already
+      // satisfies, so they could see the button but not use it.
+      if (!isPermissionBypassGW(ctx.auth.role) && !(await isProjectsModuleAdminGW(ctx.auth)))
+        throw new Error('Forbidden: admin only')
       const phaseForStatus: Record<string, string> = {
         pending: 'enquiry',
         ongoing: 'scope_review',
@@ -22843,7 +22851,9 @@ export const resolvers = {
 
     adminSetPhase: async (_: unknown, args: { id: string; phase: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (!isPermissionBypassGW(ctx.auth.role)) throw new Error('Forbidden: admin only')
+      // See adminSetProjectStatus's comment just above — same gap, same fix.
+      if (!isPermissionBypassGW(ctx.auth.role) && !(await isProjectsModuleAdminGW(ctx.auth)))
+        throw new Error('Forbidden: admin only')
       const VALID = [
         'enquiry',
         'scope_review',
