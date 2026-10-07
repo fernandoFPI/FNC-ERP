@@ -28,6 +28,7 @@ function requireParam(req: Request, name: string): string {
 export type EntityType =
   | 'purchase_order'
   | 'po_receipt'
+  | 'po_line_purchase'
   | 'project_contract'
   | 'project_invoice'
   | 'project'
@@ -108,6 +109,30 @@ export async function removeAttachment(
     [attachmentId, entityType, entityId],
   )
   if (!result.rows[0]) return null
+
+  // po_line_purchases.receipt_attachment_id is the one place in the schema
+  // that references a document_attachments row directly (every other
+  // consumer just matches on entity_type/entity_id) — deleting the row
+  // below trips a FK violation if some purchase still points at it as its
+  // pinned "primary" receipt (mirrors the gotcha already documented on
+  // rejectTolerancePurchase, resolvers.ts — same FK, different caller).
+  // Clear that pin first, promoting another still-attached photo on the
+  // same purchase if one exists, so the Finish Buying "has a receipt" gate
+  // (po_line_purchases.receipt_attachment_id IS NULL) doesn't wrongly treat
+  // a purchase that still has photos as receipt-less just because this
+  // particular one was removed.
+  if (entityType === 'po_line_purchase') {
+    const nextAttachment = await client.query<{ id: string }>(
+      `SELECT id FROM document_attachments
+       WHERE entity_type='po_line_purchase' AND entity_id=$1 AND id != $2
+       ORDER BY is_primary DESC, created_at ASC LIMIT 1`,
+      [entityId, attachmentId],
+    )
+    await client.query(
+      `UPDATE po_line_purchases SET receipt_attachment_id=$1 WHERE id=$2 AND receipt_attachment_id=$3`,
+      [nextAttachment.rows[0]?.id ?? null, entityId, attachmentId],
+    )
+  }
 
   await client.query(`DELETE FROM document_attachments WHERE id=$1`, [attachmentId])
 

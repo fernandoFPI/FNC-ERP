@@ -64,3 +64,14 @@ Don't re-derive, check these first.
     receipt attachments — fixed in migration 293). Before trusting a new entityType end-to-end, grep
     `document_attachments_entity_type_check` across migrations and add a new migration with the full
     current list plus the new value(s), same pattern as migration 284.
+21. **`po_line_purchases.receipt_attachment_id` points AT `document_attachments.id`.** Every other
+    attachment consumer just tags a row by `entity_type`/`entity_id`; this is the one FK that goes the
+    other way, no `ON DELETE` action. Deleting the referenced `document_attachments` row without
+    clearing/reassigning this column first throws `violates foreign key constraint
+    "po_line_purchases_receipt_attachment_id_fkey"`. Already fixed once in `rejectTolerancePurchase`
+    (delete `po_line_purchases` before `document_attachments` — that path deletes the whole purchase,
+    so order alone works) but the SHARED `removeAttachment` helper (`packages/db/src/attachments.ts`,
+    used by every `detachFile` call) still hit it for the "remove just one photo, keep the purchase"
+    case — fixed there by nulling/promoting `receipt_attachment_id` before the delete. Any new code
+    that deletes a `document_attachments` row needs to check this FK, not just assume entity_type/
+    entity_id tagging is the only relationship.
