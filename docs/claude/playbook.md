@@ -90,3 +90,14 @@ Don't re-derive, check these first.
     case — fixed there by nulling/promoting `receipt_attachment_id` before the delete. Any new code
     that deletes a `document_attachments` row needs to check this FK, not just assume entity_type/
     entity_id tagging is the only relationship.
+23. **Two code paths for the same source_type can drift (one fixed, one not).** The worker's
+    monthly `runMonthlyDepreciation` job already created 'depreciation' journal entries as
+    'draft' (with `asset_depreciation_schedule.status='draft'` as an intermediate state, flipped
+    to 'posted' later by `postJournalEntry`'s own source_type branch) — but
+    `services/finance/src/routes/assets.ts`'s user-triggered `run-depreciation` REST endpoint,
+    creating the exact same kind of entry, still inserted straight to 'posted' and skipped the
+    'draft' intermediate schedule status entirely. Found while auto-posting ~20 journal_entries
+    INSERT sites company-wide (now draft-first, Finance posts via the existing `postJournalEntry`
+    + `finance.journals.approve` flow). Grep every `INSERT INTO journal_entries` for a given
+    source_type, not just the first hit — a feature with both a scheduled job and a manual
+    REST/GraphQL trigger is a classic place for the two to only get updated once.

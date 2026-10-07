@@ -179,7 +179,7 @@ revaluationRouter.post(
           // Create journal entry
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
-           VALUES ($1,$2,$3,$4,'posted',$5) RETURNING id`,
+           VALUES ($1,$2,$3,$4,'draft',$5) RETURNING id`,
             [
               getAuth(req).companyId,
               d.run_date,
@@ -317,7 +317,7 @@ revaluationRouter.post(
           // Create reversal JE (opposite of original)
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
-           VALUES ($1,$2,$3,$4,'posted',$5) RETURNING id`,
+           VALUES ($1,$2,$3,$4,'draft',$5) RETURNING id`,
             [
               getAuth(req).companyId,
               reversal_date,

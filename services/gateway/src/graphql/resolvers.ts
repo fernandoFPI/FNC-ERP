@@ -2221,8 +2221,8 @@ async function postPOCompletionJournal(
   if (!expAccountId || !apAccountId) return // no GL accounts configured, skip silently
 
   const je = await client.query(
-    `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by,posted_at,posted_by)
-     VALUES ($1,$2,$3,CURRENT_DATE,'posted','po_completion',$4,$5,NOW(),$5) RETURNING id`,
+    `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by)
+     VALUES ($1,$2,$3,CURRENT_DATE,'draft','po_completion',$4,$5) RETURNING id`,
     [companyId, `PO-${poNumber}-COST`, `Project cost from PO ${poNumber}`, poId, actorId],
   )
   const jeId = je.rows[0].id as string
@@ -26119,8 +26119,8 @@ export const resolvers = {
                 if (costAccountId && invAccountId) {
                   const moNumber = String(mo.mo_number ?? args.id)
                   const je = await client.query(
-                    `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by,posted_at,posted_by)
-                   VALUES ($1,$2,$3,CURRENT_DATE,'posted','mo_completion',$4,$5,NOW(),$5) RETURNING id`,
+                    `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by)
+                   VALUES ($1,$2,$3,CURRENT_DATE,'draft','mo_completion',$4,$5) RETURNING id`,
                     [
                       auth.companyId,
                       `MO-${moNumber}-COST`,
@@ -27210,8 +27210,8 @@ export const resolvers = {
           }
           const amountBase = amount * fxRate
           const je = await query<{ id: string }>(
-            `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by, posted_at, posted_by)
-             VALUES ($1,'RECHARGE',$2,CURRENT_DATE,'posted','recharge_fulfillment',$3,$4,NOW(),$4) RETURNING id`,
+            `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
+             VALUES ($1,'RECHARGE',$2,CURRENT_DATE,'draft','recharge_fulfillment',$3,$4) RETURNING id`,
             [
               ctx.auth.companyId,
               `Phone recharge fulfilled — request ${args.id}`,
@@ -36259,8 +36259,8 @@ const phase5MutationResolvers = {
           throw new Error('To-company has no Intercompany Payable account configured')
 
         const fromJe = await client.query(
-          `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by,posted_at,posted_by)
-         VALUES ($1,$2,$3,CURRENT_DATE,'posted','interco_transaction',$4,$5,NOW(),$5) RETURNING id`,
+          `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by)
+         VALUES ($1,$2,$3,CURRENT_DATE,'draft','interco_transaction',$4,$5) RETURNING id`,
           [
             fromCompanyId,
             `${reference}-FROM`,
@@ -36298,8 +36298,8 @@ const phase5MutationResolvers = {
         )
 
         const toJe = await client.query(
-          `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by,posted_at,posted_by)
-         VALUES ($1,$2,$3,CURRENT_DATE,'posted','interco_transaction',$4,$5,NOW(),$5) RETURNING id`,
+          `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by)
+         VALUES ($1,$2,$3,CURRENT_DATE,'draft','interco_transaction',$4,$5) RETURNING id`,
           [
             toCompanyId,
             `${reference}-TO`,

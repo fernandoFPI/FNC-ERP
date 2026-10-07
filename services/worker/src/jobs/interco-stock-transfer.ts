@@ -373,8 +373,8 @@ export async function executeIntercoStockTransfer(
     const fromEntryResult = await client.query<{ id: string }>(
       `INSERT INTO journal_entries
          (company_id, reference, description, entry_date, status,
-          source_type, source_id, created_by, posted_at, posted_by)
-       VALUES ($1,$2,$3,$4,'posted','interco_stock',$5,$6,NOW(),$6)
+          source_type, source_id, created_by)
+       VALUES ($1,$2,$3,$4,'draft','interco_stock',$5,$6)
        RETURNING id`,
       [
         from_company_id,
@@ -400,8 +400,8 @@ export async function executeIntercoStockTransfer(
     const toEntryResult = await client.query<{ id: string }>(
       `INSERT INTO journal_entries
          (company_id, reference, description, entry_date, status,
-          source_type, source_id, created_by, posted_at, posted_by)
-       VALUES ($1,$2,$3,$4,'posted','interco_stock',$5,$6,NOW(),$6)
+          source_type, source_id, created_by)
+       VALUES ($1,$2,$3,$4,'draft','interco_stock',$5,$6)
        RETURNING id`,
       [
         to_company_id,

@@ -546,8 +546,8 @@ employeeAdvancesRouter.post(
           const adv = advRes.rows[0] as Record<string, unknown>
 
           const jeRes = await client.query(
-            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
-             VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'employee_advance_issuance', $4, $5, NOW(), $5)
+            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
+             VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'employee_advance_issuance', $4, $5)
              RETURNING id`,
             [
               getAuth(req).companyId,
@@ -680,8 +680,8 @@ employeeAdvancesRouter.post(
           )
 
           const revRes = await client.query(
-            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
-             VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'cancellation', $4, $5, NOW(), $5)
+            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
+             VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'cancellation', $4, $5)
              RETURNING id`,
             [
               getAuth(req).companyId,
@@ -1142,8 +1142,8 @@ async function createSettlementFromPOLines(req: Request, res: Response): Promise
         const settlement = sRes.rows[0] as Record<string, unknown>
 
         const jeRes = await client.query(
-          `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
-           VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'advance_settlement', $4, $5, NOW(), $5)
+          `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
+           VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'advance_settlement', $4, $5)
            RETURNING id`,
           [
             getAuth(req).companyId,
@@ -1758,8 +1758,8 @@ employeeAdvancesRouter.post(
           }
 
           const jeRes = await client.query(
-            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
-             VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'advance_settlement', $4, $5, NOW(), $5)
+            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
+             VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'advance_settlement', $4, $5)
              RETURNING id`,
             [
               getAuth(req).companyId,
@@ -2111,8 +2111,8 @@ employeeAdvancesRouter.post(
           }
 
           const jeRes = await client.query(
-            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
-             VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'advance_return', $4, $5, NOW(), $5)
+            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
+             VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'advance_return', $4, $5)
              RETURNING id`,
             [
               getAuth(req).companyId,

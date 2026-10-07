@@ -696,7 +696,7 @@ bankRouter.post(
         async (client) => {
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id,reference,description,entry_date,source_type,status,created_by)
-           VALUES ($1,$2,$3,$4,'bank_entry','posted',$5) RETURNING id`,
+           VALUES ($1,$2,$3,$4,'bank_entry','draft',$5) RETURNING id`,
             [
               getAuth(req).companyId,
               `BANK-${(line['transaction_date'] as string).slice(0, 7)}`.slice(0, 50),

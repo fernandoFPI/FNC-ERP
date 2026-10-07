@@ -275,7 +275,7 @@ pettyCashRouter.post(
           if (d.gl_account_id && float_['gl_account_id']) {
             const jeRes = await client.query(
               `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
-             VALUES ($1,$2,'PETTY','Petty cash spend: '||$3,'posted',$4) RETURNING id`,
+             VALUES ($1,$2,'PETTY','Petty cash spend: '||$3,'draft',$4) RETURNING id`,
               [getAuth(req).companyId, d.transaction_date, d.description, getAuth(req).userId],
             )
             const jeId = firstRowOrThrow(jeRes).id as string
@@ -390,7 +390,7 @@ pettyCashRouter.post(
           if (rep['float_gl_account_id'] && offset_account_id) {
             const jeRes = await client.query(
               `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
-             VALUES ($1,NOW(),$2,'Petty cash replenishment','posted',$3) RETURNING id`,
+             VALUES ($1,NOW(),$2,'Petty cash replenishment','draft',$3) RETURNING id`,
               [getAuth(req).companyId, rep['replenishment_number'], getAuth(req).userId],
             )
             jeId = firstRowOrThrow(jeRes).id as string

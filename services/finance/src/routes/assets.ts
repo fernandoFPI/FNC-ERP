@@ -513,7 +513,7 @@ assetsRouter.post(
             if (depExpAccount && accumDepAccount) {
               const jeRes = await client.query(
                 `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status, created_by)
-               VALUES ($1,$2,$3,$4,'depreciation','posted',$5) RETURNING id`,
+               VALUES ($1,$2,$3,$4,'depreciation','draft',$5) RETURNING id`,
                 [
                   getAuth(req).companyId,
                   `DEP-${line.asset_number as string}-${period}`,
@@ -543,8 +543,15 @@ assetsRouter.post(
               )
             }
 
+            // Mirrors the monthly worker job's own runMonthlyDepreciation: the
+            // schedule line and journal both sit in 'draft' until someone
+            // explicitly posts the journal (postJournalEntry's
+            // source_type='depreciation' branch then flips this row to
+            // 'posted') — fixed_assets below is updated now regardless, since
+            // the asset's depreciation for the period is a real fact, not
+            // something that waits on Finance's GL review.
             await client.query(
-              `UPDATE asset_depreciation_schedule SET status='posted', journal_entry_id=$1, posted_at=NOW() WHERE id=$2`,
+              `UPDATE asset_depreciation_schedule SET status='draft', journal_entry_id=$1 WHERE id=$2`,
               [journalEntryId, line.id],
             )
 
@@ -616,7 +623,7 @@ assetsRouter.post(
           if (asset['asset_account_id'] && asset['accum_dep_account_id']) {
             const jeRes = await client.query(
               `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status, created_by)
-             VALUES ($1,$2,$3,$4,'asset_disposal','posted',$5) RETURNING id`,
+             VALUES ($1,$2,$3,$4,'asset_disposal','draft',$5) RETURNING id`,
               [
                 getAuth(req).companyId,
                 `DISP-${asset['asset_number'] as string}`,

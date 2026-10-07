@@ -217,7 +217,7 @@ retentionRouter.post('/', requirePermission('finance.retention.edit', 'edit'), a
           const desc = `Retention ${d.retention_type.toUpperCase()} — ${d.counterparty_name}${d.source_ref ? ` (${d.source_ref})` : ''}`
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status, created_by)
-             VALUES ($1,$2,$3,$4,'retention','posted',$5) RETURNING id`,
+             VALUES ($1,$2,$3,$4,'retention','draft',$5) RETURNING id`,
             [getAuth(req).companyId, recordNumber, desc, d.invoice_date, getAuth(req).userId],
           )
           const jeId = firstRowOrThrow(jeRes).id as string
@@ -317,7 +317,7 @@ retentionRouter.post(
             const desc = `Retention release — ${rec['counterparty_name'] as string}${rec['source_ref'] ? ` (${rec['source_ref'] as string})` : ''}`
             const jeRes = await client.query(
               `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status, created_by)
-             VALUES ($1,$2,$3,$4,'retention_release','posted',$5) RETURNING id`,
+             VALUES ($1,$2,$3,$4,'retention_release','draft',$5) RETURNING id`,
               [
                 getAuth(req).companyId,
                 `${rec['record_number'] as string}-REL`,

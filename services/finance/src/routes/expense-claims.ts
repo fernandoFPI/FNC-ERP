@@ -881,8 +881,8 @@ expenseClaimsRouter.post(
               ))
 
             const jeRes = await client.query(
-              `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
-               VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'expense_claim', $4, $5, NOW(), $5)
+              `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
+               VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'expense_claim', $4, $5)
                RETURNING id`,
               [
                 getAuth(req).companyId,
@@ -940,8 +940,8 @@ expenseClaimsRouter.post(
             const newBalance = Math.round((Number(float_['current_balance']) - totalAmount) * 100) / 100
 
             const jeRes = await client.query(
-              `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
-               VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'expense_claim', $4, $5, NOW(), $5)
+              `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
+               VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'expense_claim', $4, $5)
                RETURNING id`,
               [
                 getAuth(req).companyId,
@@ -1054,8 +1054,8 @@ expenseClaimsRouter.post(
           const settlement = firstRowOrThrow(sRes)
 
           const jeRes = await client.query(
-            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
-             VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'advance_settlement', $4, $5, NOW(), $5)
+            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
+             VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'advance_settlement', $4, $5)
              RETURNING id`,
             [
               getAuth(req).companyId,
