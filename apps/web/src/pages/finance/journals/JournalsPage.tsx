@@ -133,6 +133,7 @@ interface JournalEntryRow {
   source_id?: string | null
   total_debit?: string | null
   total_credit?: string | null
+  payment_currency?: string | null
   created_by_email?: string | null
 }
 
@@ -246,8 +247,22 @@ function formatDateShort(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function sumDebit(entries: JournalEntryRow[], predicate: (e: JournalEntryRow) => boolean): number {
-  return entries.filter(predicate).reduce((s, e) => s + (parseFloat(e.total_debit ?? '0') || 0), 0)
+// Grouped by payment_currency rather than summed into one number — entries
+// can be posted in different currencies (journal_lines.currency_code isn't
+// always the company's base IQD) and there's no conversion rate applied
+// here, so adding e.g. a USD entry's total straight onto an IQD total would
+// silently produce a meaningless number. One subtotal per currency actually
+// present keeps every figure honest.
+function sumByCurrency(
+  entries: JournalEntryRow[],
+  predicate: (e: JournalEntryRow) => boolean,
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const e of entries.filter(predicate)) {
+    const currency = e.payment_currency ?? 'IQD'
+    out[currency] = (out[currency] ?? 0) + (parseFloat(e.total_debit ?? '0') || 0)
+  }
+  return out
 }
 
 function trendPct(current: number, previous: number): { pct: number | null; up: boolean } {
@@ -384,14 +399,14 @@ export default function JournalsPage() {
   // under Posted too. A voided original entry (status='cancelled') still
   // counts toward Total (real volume that moved this month) but isn't its
   // own card — Reversed already covers that side of the story.
-  const statTotal = sumDebit(curMonthEntries, () => true)
-  const statPosted = sumDebit(curMonthEntries, (e) => e.status === 'posted' && e.source_type !== 'cancellation')
-  const statDraft = sumDebit(curMonthEntries, (e) => e.status === 'draft')
-  const statReversed = sumDebit(curMonthEntries, (e) => e.source_type === 'cancellation')
-  const prevTotal = sumDebit(prevMonthEntries, () => true)
-  const prevPosted = sumDebit(prevMonthEntries, (e) => e.status === 'posted' && e.source_type !== 'cancellation')
-  const prevDraft = sumDebit(prevMonthEntries, (e) => e.status === 'draft')
-  const prevReversed = sumDebit(prevMonthEntries, (e) => e.source_type === 'cancellation')
+  const statTotal = sumByCurrency(curMonthEntries, () => true)
+  const statPosted = sumByCurrency(curMonthEntries, (e) => e.status === 'posted' && e.source_type !== 'cancellation')
+  const statDraft = sumByCurrency(curMonthEntries, (e) => e.status === 'draft')
+  const statReversed = sumByCurrency(curMonthEntries, (e) => e.source_type === 'cancellation')
+  const prevTotal = sumByCurrency(prevMonthEntries, () => true)
+  const prevPosted = sumByCurrency(prevMonthEntries, (e) => e.status === 'posted' && e.source_type !== 'cancellation')
+  const prevDraft = sumByCurrency(prevMonthEntries, (e) => e.status === 'draft')
+  const prevReversed = sumByCurrency(prevMonthEntries, (e) => e.source_type === 'cancellation')
 
   function toggleSelect(id: string, isDraft: boolean) {
     if (!isDraft) return
@@ -489,7 +504,18 @@ export default function JournalsPage() {
               { label: 'Reversed', value: statReversed, prev: prevReversed, color: theme.warning, bg: theme.warningBg, icon: 'rotate-ccw' },
             ] as const
           ).map((card) => {
-            const trend = trendPct(card.value, card.prev)
+            // One subtotal row per currency actually present this month or
+            // last (so a currency that only showed up last month still gets
+            // its "no longer present" story told instead of silently
+            // vanishing) — IQD first since it's the company's base currency,
+            // the rest alphabetically for a stable order. Falls back to a
+            // single zeroed IQD row when the card has no data at all, same
+            // empty state as before currency-splitting existed.
+            const currencies = Array.from(new Set([...Object.keys(card.value), ...Object.keys(card.prev)]))
+            const sortedCurrencies =
+              currencies.length > 0
+                ? [...currencies].sort((a, b) => (a === 'IQD' ? -1 : b === 'IQD' ? 1 : a.localeCompare(b)))
+                : ['IQD']
             return (
               <Card key={card.label} style={{ padding: '18px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
@@ -511,11 +537,23 @@ export default function JournalsPage() {
                   </div>
                   <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: 500 }}>{card.label}</span>
                 </div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: theme.textPrimary }}>
-                  {Math.round(card.value).toLocaleString()} <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textMuted }}>IQD</span>
-                </div>
-                <div style={{ fontSize: '11px', marginTop: '4px', color: trend.pct === null ? theme.textMuted : trend.up ? theme.success : theme.danger }}>
-                  {trend.pct === null ? 'No prior data' : `${trend.up ? '↑' : '↓'} ${Math.abs(trend.pct)}% vs last month`}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {sortedCurrencies.map((currency) => {
+                    const value = card.value[currency] ?? 0
+                    const prev = card.prev[currency] ?? 0
+                    const trend = trendPct(value, prev)
+                    return (
+                      <div key={currency}>
+                        <div style={{ fontSize: '20px', fontWeight: 700, color: theme.textPrimary }}>
+                          {Math.round(value).toLocaleString()}{' '}
+                          <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textMuted }}>{currency}</span>
+                        </div>
+                        <div style={{ fontSize: '11px', marginTop: '2px', color: trend.pct === null ? theme.textMuted : trend.up ? theme.success : theme.danger }}>
+                          {trend.pct === null ? 'No prior data' : `${trend.up ? '↑' : '↓'} ${Math.abs(trend.pct)}% vs last month`}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </Card>
             )
@@ -714,7 +752,7 @@ export default function JournalsPage() {
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '10px' }}>{rowSubtitle(e)}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Badge variant={meta.variant}>{meta.label}</Badge>
-                      <AmountDisplay amount={parseFloat(e.total_debit ?? '0')} currency="IQD" size="sm" />
+                      <AmountDisplay amount={parseFloat(e.total_debit ?? '0')} currency={e.payment_currency ?? 'IQD'} size="sm" />
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px' }}>{formatDateShort(e.entry_date)}</div>
                   </Card>
@@ -792,13 +830,13 @@ export default function JournalsPage() {
                           </td>
                           <td style={{ padding: '10px' }}><Badge variant={meta.variant}>{meta.label}</Badge></td>
                           <td style={{ padding: '10px', textAlign: 'right' }}>
-                            {e.total_debit ? <AmountDisplay amount={parseFloat(e.total_debit)} currency="IQD" size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
+                            {e.total_debit ? <AmountDisplay amount={parseFloat(e.total_debit)} currency={e.payment_currency ?? 'IQD'} size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
                           </td>
                           <td style={{ padding: '10px', textAlign: 'right' }}>
-                            {e.total_credit ? <AmountDisplay amount={parseFloat(e.total_credit)} currency="IQD" size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
+                            {e.total_credit ? <AmountDisplay amount={parseFloat(e.total_credit)} currency={e.payment_currency ?? 'IQD'} size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
                           </td>
                           <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600 }}>
-                            {e.total_debit ? <AmountDisplay amount={parseFloat(e.total_debit)} currency="IQD" size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
+                            {e.total_debit ? <AmountDisplay amount={parseFloat(e.total_debit)} currency={e.payment_currency ?? 'IQD'} size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
                           </td>
                           <td style={{ padding: '10px' }}><Badge variant={sd.variant} dot>{sd.label}</Badge></td>
                           <td style={{ padding: '10px', position: 'relative' }} onClick={(ev) => { ev.stopPropagation() }}>
