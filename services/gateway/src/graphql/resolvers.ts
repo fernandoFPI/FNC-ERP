@@ -8439,7 +8439,11 @@ export const resolvers = {
     },
 
     // File management
-    fileDownloadUrl: async (_: unknown, args: { fileId: string }, ctx: GQLContext) => {
+    fileDownloadUrl: async (
+      _: unknown,
+      args: { fileId: string; disposition?: string | null },
+      ctx: GQLContext,
+    ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const file = await query<{ file_key: string; original_filename: string; mime_type: string }>(
         `SELECT file_key, original_filename, mime_type FROM files WHERE id=$1 AND company_id=$2 AND status != 'deleted'`,
@@ -8447,9 +8451,13 @@ export const resolvers = {
       )
       if (!file.rows[0]) throw new Error('File not found')
       const r = file.rows[0]
+      // Never pass args.disposition through raw — it ends up in the signed
+      // URL's Content-Disposition header, so it's collapsed to exactly one
+      // of the two values generateDownloadUrl accepts.
       const { downloadUrl, expiresInSeconds } = await generateDownloadUrl(
         r.file_key,
         r.original_filename,
+        args.disposition === 'inline' ? 'inline' : 'attachment',
       )
       return { downloadUrl, filename: r.original_filename, mimeType: r.mime_type, expiresInSeconds }
     },

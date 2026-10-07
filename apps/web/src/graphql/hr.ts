@@ -565,8 +565,8 @@ export const DETACH_FILE = gql`
 `
 
 export const FILE_DOWNLOAD_URL_QUERY = gql`
-  query FileDownloadUrl($fileId: ID!) {
-    fileDownloadUrl(fileId: $fileId) {
+  query FileDownloadUrl($fileId: ID!, $disposition: String) {
+    fileDownloadUrl(fileId: $fileId, disposition: $disposition) {
       downloadUrl
       filename
       mimeType

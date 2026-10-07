@@ -83,8 +83,16 @@ export async function createApp(): Promise<express.Application> {
     const uploadsDir = devUploadsDir()
     app.use(
       '/api/v1/files/dev-uploads',
-      (_req, res, next) => {
+      (req, res, next) => {
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+        // Mirrors the real B2/S3 path's ResponseContentDisposition (see
+        // packages/storage/src/download.ts) — without this, express.static's
+        // default (no Content-Disposition header at all) happened to make
+        // local dev testing of inline preview misleadingly pass/fail
+        // differently than the real signed-URL path it's standing in for.
+        if (req.query.disposition === 'inline') {
+          res.setHeader('Content-Disposition', 'inline')
+        }
         next()
       },
       express.static(uploadsDir),

@@ -7678,6 +7678,7 @@ export type QueryEquipmentAssetsArgs = {
 
 
 export type QueryFileDownloadUrlArgs = {
+  disposition?: InputMaybe<Scalars['String']['input']>;
   fileId: Scalars['ID']['input'];
 };
 

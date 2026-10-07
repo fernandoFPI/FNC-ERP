@@ -936,6 +936,7 @@ export type DetachFileMutation = { detachFile: boolean };
 
 export type FileDownloadUrlQueryVariables = Exact<{
   fileId: string | number;
+  disposition?: string | null | undefined;
 }>;
 
 

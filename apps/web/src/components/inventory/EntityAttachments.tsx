@@ -112,10 +112,14 @@ export function EntityAttachments({
   // before giving up on it is what's actually shown as "receipt sometimes
   // not showing" — this fixes the flaky case and still falls back to the
   // file icon for a genuinely missing/broken file.
-  async function fetchDownloadUrlWithRetry(fileId: string, attempts = 3): Promise<string | null> {
+  async function fetchDownloadUrlWithRetry(
+    fileId: string,
+    disposition: 'inline' | 'attachment' = 'attachment',
+    attempts = 3,
+  ): Promise<string | null> {
     for (let i = 0; i < attempts; i++) {
       try {
-        const { data: dlData } = await getDownloadUrl({ variables: { fileId } })
+        const { data: dlData } = await getDownloadUrl({ variables: { fileId, disposition } })
         const url = dlData?.fileDownloadUrl.downloadUrl
         if (url) return url
       } catch {
@@ -134,7 +138,7 @@ export function EntityAttachments({
     let cancelled = false
     void Promise.all(
       toFetch.map(async (att) => {
-        const url = await fetchDownloadUrlWithRetry(att.file.id)
+        const url = await fetchDownloadUrlWithRetry(att.file.id, 'inline')
         return [att.file.id, url] as const
       }),
     ).then((results) => {
@@ -231,7 +235,7 @@ export function EntityAttachments({
     if (thumbnails[att.file.id]) return
     setPreviewLoading(true)
     try {
-      const url = await fetchDownloadUrlWithRetry(att.file.id)
+      const url = await fetchDownloadUrlWithRetry(att.file.id, 'inline')
       if (!url) throw new Error('Could not load this file')
       setPreviewUrl(url)
     } catch (err) {

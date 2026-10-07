@@ -143,7 +143,10 @@
     companyIntercoPricingSettings(companyId: ID!): CompanyIntercoPricingSettings
 
     # File & document management
-    fileDownloadUrl(fileId: ID!): DownloadUrlPayload!
+    # disposition: 'inline' for in-page preview (image/PDF viewer), omitted or
+    # anything else for a real download — validated server-side, never passed
+    # through raw into the signed URL's Content-Disposition header.
+    fileDownloadUrl(fileId: ID!, disposition: String): DownloadUrlPayload!
     entityAttachments(entityType: String!, entityId: ID!): [DocumentAttachment!]!
 
     # Variation Orders
