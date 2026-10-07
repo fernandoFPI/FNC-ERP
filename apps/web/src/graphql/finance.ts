@@ -125,6 +125,8 @@ export const JOURNAL_ENTRY_QUERY = gql`
       accountant_email
       auditor_email
       audited_at
+      cancel_reason
+      company_name
       journal_template_image
       lines {
         id
@@ -147,6 +149,21 @@ export const JOURNAL_ENTRY_QUERY = gql`
         total_amount
         currency_code
       }
+    }
+  }
+`
+
+export const AUDIT_TRAIL_QUERY = gql`
+  query AuditTrail($tableName: String!, $recordId: ID!) {
+    auditTrail(tableName: $tableName, recordId: $recordId) {
+      id
+      action
+      tableName
+      recordId
+      oldValues
+      newValues
+      userEmail
+      createdAt
     }
   }
 `

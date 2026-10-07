@@ -1848,9 +1848,22 @@
     audited_by: ID
     auditor_email: String
     audited_at: String
+    cancel_reason: String
+    company_name: String
     lines: [JournalLine!]
     linked_pos: [JournalLinkedPO!]
     journal_template_image: String
+  }
+
+  type AuditLogEntry {
+    id: ID!
+    action: String!
+    tableName: String
+    recordId: ID
+    oldValues: String
+    newValues: String
+    userEmail: String
+    createdAt: String!
   }
 
   type JournalLinkedPO {
@@ -2090,6 +2103,10 @@
     account(id: ID!): Account
     accountLedger(accountId: ID!, fromDate: String, toDate: String, page: Int, limit: Int): AccountLedgerPage
     journalEntry(id: ID!): JournalEntry
+    # tableName is restricted server-side to an explicit allow-list — never
+    # trust it as a free-form lookup key into audit_log, which spans every
+    # table in the system (some far more sensitive than a journal entry).
+    auditTrail(tableName: String!, recordId: ID!): [AuditLogEntry!]!
     fxRates(fromCurrency: String, toCurrency: String, fromDate: String, toDate: String): [FXRate!]!
     accountingPeriods: [AccountingPeriod!]!
     profitLoss(fromDate: String!, toDate: String!, costCenterId: ID): ProfitLossReport

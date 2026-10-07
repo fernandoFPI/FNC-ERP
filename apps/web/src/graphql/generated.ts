@@ -406,7 +406,15 @@ export type JournalEntryQueryVariables = Exact<{
 }>;
 
 
-export type JournalEntryQuery = { journalEntry: { id: string, reference: string, entry_date: string, status: string, description: string | null, source_type: string | null, total_debit: string | null, total_credit: string | null, created_by_email: string | null, created_at: string | null, accountant_email: string | null, auditor_email: string | null, audited_at: string | null, journal_template_image: string | null, lines: Array<{ id: string, account_id: string, account_code: string | null, account_name: string | null, analytic_account_id: string | null, cost_center_id: string | null, description: string | null, currency_code: string | null, debit: string, credit: string, fx_rate: string | null }> | null, linked_pos: Array<{ po_id: string, po_number: string, vendor_name: string | null, status: string | null, total_amount: string | null, currency_code: string | null }> | null } | null };
+export type JournalEntryQuery = { journalEntry: { id: string, reference: string, entry_date: string, status: string, description: string | null, source_type: string | null, total_debit: string | null, total_credit: string | null, created_by_email: string | null, created_at: string | null, accountant_email: string | null, auditor_email: string | null, audited_at: string | null, cancel_reason: string | null, company_name: string | null, journal_template_image: string | null, lines: Array<{ id: string, account_id: string, account_code: string | null, account_name: string | null, analytic_account_id: string | null, cost_center_id: string | null, description: string | null, currency_code: string | null, debit: string, credit: string, fx_rate: string | null }> | null, linked_pos: Array<{ po_id: string, po_number: string, vendor_name: string | null, status: string | null, total_amount: string | null, currency_code: string | null }> | null } | null };
+
+export type AuditTrailQueryVariables = Exact<{
+  tableName: string;
+  recordId: string | number;
+}>;
+
+
+export type AuditTrailQuery = { auditTrail: Array<{ id: string, action: string, tableName: string | null, recordId: string | null, oldValues: string | null, newValues: string | null, userEmail: string | null, createdAt: string }> };
 
 export type CreateJournalEntryMutationVariables = Exact<{
   input: Types.JournalEntryInput;

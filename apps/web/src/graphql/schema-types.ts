@@ -185,6 +185,17 @@ export type AuditEntry = {
   userEmail: Scalars['String']['output'];
 };
 
+export type AuditLogEntry = {
+  action: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  newValues?: Maybe<Scalars['String']['output']>;
+  oldValues?: Maybe<Scalars['String']['output']>;
+  recordId?: Maybe<Scalars['ID']['output']>;
+  tableName?: Maybe<Scalars['String']['output']>;
+  userEmail?: Maybe<Scalars['String']['output']>;
+};
+
 export type AuditLogPage = {
   items: Array<AuditEntry>;
   limit: Scalars['Int']['output'];
@@ -1735,6 +1746,8 @@ export type JournalEntry = {
   audited_at?: Maybe<Scalars['String']['output']>;
   audited_by?: Maybe<Scalars['ID']['output']>;
   auditor_email?: Maybe<Scalars['String']['output']>;
+  cancel_reason?: Maybe<Scalars['String']['output']>;
+  company_name?: Maybe<Scalars['String']['output']>;
   created_at?: Maybe<Scalars['String']['output']>;
   created_by_email?: Maybe<Scalars['String']['output']>;
   description?: Maybe<Scalars['String']['output']>;
@@ -7210,6 +7223,7 @@ export type Query = {
   attendanceSummary?: Maybe<EmployeeMonthSummary>;
   attendanceSummaryReport: AttendanceSummary;
   auditLog: AuditLogPage;
+  auditTrail: Array<AuditLogEntry>;
   availableInvoiceCosts: AvailableCosts;
   balanceSheet?: Maybe<BalanceSheetReport>;
   bankAccounts: Array<BankAccount>;
@@ -7480,6 +7494,12 @@ export type QueryAuditLogArgs = {
   tableName?: InputMaybe<Scalars['String']['input']>;
   toDate?: InputMaybe<Scalars['String']['input']>;
   userId?: InputMaybe<Scalars['ID']['input']>;
+};
+
+
+export type QueryAuditTrailArgs = {
+  recordId: Scalars['ID']['input'];
+  tableName: Scalars['String']['input'];
 };
 
 

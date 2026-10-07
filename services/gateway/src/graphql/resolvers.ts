@@ -3141,6 +3141,13 @@ async function verifyAttachmentEntityOwnershipGW(
       ])
       return r.rows.length > 0
     }
+    case 'journal_entry': {
+      const r = await query(`SELECT id FROM journal_entries WHERE id=$1 AND company_id=$2`, [
+        entityId,
+        companyId,
+      ])
+      return r.rows.length > 0
+    }
     case 'po_line_purchase': {
       // Mirrors recordLinePurchase's own ownership query — po_line_purchases
       // join to requisitions (not purchase_orders) since Items Bought
@@ -9761,7 +9768,7 @@ export const resolvers = {
       await requirePermGW(ctx.auth, 'finance.journals.view', 'view')
       const [je, lines, linkedPos] = await Promise.all([
         query(
-          `SELECT je.*, co.journal_template_image,
+          `SELECT je.*, co.journal_template_image, co.name AS company_name,
                   COALESCE(u.first_name  || ' ' || u.last_name,  u.email)  AS created_by_email,
                   COALESCE(ac.first_name || ' ' || ac.last_name, ac.email) AS accountant_email,
                   COALESCE(au.first_name || ' ' || au.last_name, au.email) AS auditor_email,
@@ -9774,7 +9781,7 @@ export const resolvers = {
            LEFT JOIN users au ON au.id=je.audited_by
            LEFT JOIN journal_lines jl ON jl.journal_entry_id=je.id
            WHERE je.id=$1 AND je.company_id=$2
-           GROUP BY je.id, co.journal_template_image, u.email, u.first_name, u.last_name, ac.email, ac.first_name, ac.last_name, au.email, au.first_name, au.last_name`,
+           GROUP BY je.id, co.journal_template_image, co.name, u.email, u.first_name, u.last_name, ac.email, ac.first_name, ac.last_name, au.email, au.first_name, au.last_name`,
           [args.id, ctx.auth.companyId],
         ),
         query(
@@ -9802,6 +9809,44 @@ export const resolvers = {
       ])
       if (!je.rows[0]) return null
       return { ...je.rows[0], lines: lines.rows, linked_pos: linkedPos.rows }
+    },
+
+    // Generic by shape (table_name/record_id, matching audit_log's own
+    // columns), but deliberately NOT generic in practice — tableName is
+    // checked against an explicit allow-list before it ever reaches the
+    // query, so this can't become a free-form "read any table's audit
+    // history" hole once a second caller shows up wanting a different
+    // table. Add to the allow-list (and consider whether the gating
+    // permission below is still the right one) before reusing this for
+    // anything beyond journal entries.
+    auditTrail: async (
+      _: unknown,
+      args: { tableName: string; recordId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return []
+      const ALLOWED_TABLES = ['journal_entries']
+      if (!ALLOWED_TABLES.includes(args.tableName)) return []
+      await requirePermGW(ctx.auth, 'finance.journals.view', 'view')
+      const r = await query(
+        `SELECT al.id, al.action, al.table_name, al.record_id, al.old_values, al.new_values, al.created_at,
+                COALESCE(u.first_name || ' ' || u.last_name, u.email) AS user_email
+         FROM audit_log al
+         LEFT JOIN users u ON u.id = al.user_id
+         WHERE al.table_name=$1 AND al.record_id=$2 AND al.company_id=$3
+         ORDER BY al.created_at DESC`,
+        [args.tableName, args.recordId, ctx.auth.companyId],
+      )
+      return r.rows.map((row: Record<string, unknown>) => ({
+        id: row.id,
+        action: row.action,
+        tableName: row.table_name,
+        recordId: row.record_id,
+        oldValues: row.old_values != null ? JSON.stringify(row.old_values) : null,
+        newValues: row.new_values != null ? JSON.stringify(row.new_values) : null,
+        userEmail: row.user_email,
+        createdAt: row.created_at,
+      }))
     },
 
     paymentVouchers: async (
