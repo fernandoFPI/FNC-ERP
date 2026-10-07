@@ -79,8 +79,12 @@ export const PO_POSITIONS = [
     label: 'Procurement Officer',
     description: 'Adds vendor quotes during the Market pricing stage.',
   },
-  // Price verification has no dedicated position — the organizer
-  // cross-checks their own market prices and submits for approval.
+  {
+    key: 'procurement_2nd',
+    label: 'Procurement 2nd',
+    description:
+      'Cross-checks market prices and submits for approval during Requisitions’ Price verification stage. PO price verification stays organizer-or-admin only — this position does not apply there.',
+  },
   {
     key: 'po_admin',
     label: 'PO Admin',

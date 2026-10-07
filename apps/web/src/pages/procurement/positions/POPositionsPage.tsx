@@ -42,6 +42,7 @@ const POSITION_VARIANT: Record<string, 'info' | 'warning' | 'accent' | 'neutral'
   store_keeper: 'info',
   store_pricing: 'info',
   procurement_officer: 'accent',
+  procurement_2nd: 'warning',
   po_admin: 'accent',
 }
 

@@ -206,7 +206,7 @@ describe('resolveLineFlag', () => {
     )
   })
 
-  it('the organizer (or admin) can resolve a price_verification-origin flag; a stranger cannot', async () => {
+  it('a procurement_2nd position holder (or admin) can resolve a price_verification-origin flag; a stranger cannot', async () => {
     const { reqId, lineId } = await makeReqAtPriceVerification()
     await resolvers.Mutation.rejectRequisitionVerificationToMarketPricing(
       null,

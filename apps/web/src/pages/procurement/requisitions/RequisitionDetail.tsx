@@ -1251,8 +1251,9 @@ export default function RequisitionDetail() {
                   const color = open ? theme.danger : theme.warning
                   // Whoever could have created a flag from that same stage may
                   // resolve it — mirrors resolveLineFlag's own backend gate
-                  // exactly (organizer for price_verification-origin,
-                  // dept-head/approver/admin for pending_approval-origin).
+                  // exactly (procurement_2nd position holder for
+                  // price_verification-origin, dept-head/approver/admin for
+                  // pending_approval-origin).
                   const canResolve =
                     (l.flagged_from_status === 'price_verification' &&
                       (isSystemLevel || canVerifyPrice)) ||
@@ -2686,7 +2687,7 @@ export default function RequisitionDetail() {
               </div>
               {!canVerifyPrice ? (
                 <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  Only the organizer (or an admin) can act here.
+                  Only a Procurement 2nd position holder (or an admin) can act here.
                 </div>
               ) : (
                 (() => {

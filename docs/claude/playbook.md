@@ -64,6 +64,21 @@ Don't re-derive, check these first.
     receipt attachments — fixed in migration 293). Before trusting a new entityType end-to-end, grep
     `document_attachments_entity_type_check` across migrations and add a new migration with the full
     current list plus the new value(s), same pattern as migration 284.
+22. **A removed position check can silently orphan real `po_position_assignments` rows.**
+    `procurement_2nd` was a real, dedicated position gating PO/Requisition price_verification
+    (migration 030). A later refactor (commit 081bae3, accidentally entangled via a pathspec
+    `git commit` quirk, then redone properly in f82efe5) replaced the check with organizer-or-
+    admin on both PO and Requisition, and dropped `procurement_2nd` from the assignable
+    `PO_POSITIONS` list (po-constants.ts) — but never touched existing `po_position_assignments`
+    rows. Found live: 6 active rows, all one real employee (Nadia Saleh, scoped per-department),
+    silently unchecked and unmanageable (not in the Settings UI list) ever since. The DB
+    `position` CHECK constraint (migration 204) still allowed the value the whole time — nothing
+    errored, it just quietly stopped mattering. Fixed by reverting Requisition's gate back to
+    `userHasPositionForRequisitionGW(...,'procurement_2nd')` and re-adding it to `PO_POSITIONS`;
+    left PO's gate on organizer (narrower scope, user's explicit choice). Before removing or
+    replacing ANY position-based (or role-based) authorization check, query
+    `po_position_assignments` (or the equivalent table) grouped by that value for real rows, not
+    just grep the app code — the app layer can go quiet while the data stays live.
 21. **`po_line_purchases.receipt_attachment_id` points AT `document_attachments.id`.** Every other
     attachment consumer just tags a row by `entity_type`/`entity_id`; this is the one FK that goes the
     other way, no `ON DELETE` action. Deleting the referenced `document_attachments` row without

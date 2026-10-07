@@ -10252,10 +10252,20 @@ export const resolvers = {
             args.id,
             'procurement_officer',
           ),
-        // price_verification has no dedicated position — organizer/admin
-        // only (see verifyRequisitionPrices). Field name kept as-is even
-        // though it's no longer position-based, to avoid a wider rename.
-        isAdmin || userIsOrganizerForRequisitionGW(ctx.auth.userId, args.id, ctx.auth.companyId),
+        // price_verification is gated to the procurement_2nd position (or
+        // admin) — see verifyRequisitionPrices. Restored after being
+        // discovered still live in real data: 6 po_position_assignments
+        // rows for this exact position (one real employee, Nadia Saleh,
+        // scoped per-department) were sitting orphaned and unchecked since
+        // an earlier redesign folded this duty into organizer-or-admin —
+        // the organizer no longer qualifies on their own.
+        isAdmin ||
+          userHasPositionForRequisitionGW(
+            ctx.auth.userId,
+            ctx.auth.companyId,
+            args.id,
+            'procurement_2nd',
+          ),
         // G1 Phase 3 Milestone A screen 3 — gates the Items Bought screen,
         // mirroring recordLinePurchase/markRequisitionLineShort/
         // finishBuyingRequisition's own shared authorization exactly.
@@ -32512,9 +32522,14 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
-    if (!isAdmin && !isOrganizer)
-      throw new Error('Only the organizer or an admin can submit price verification')
+    const hasProcurement2ndPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_2nd',
+    )
+    if (!isAdmin && !hasProcurement2ndPos)
+      throw new Error('Only a procurement_2nd position holder or an admin can submit price verification')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
@@ -32560,9 +32575,9 @@ const phase5MutationResolvers = {
   },
 
   // The following four actions are only available from 'price_verification'
-  // — same organizer/admin gate as verifyRequisitionPrices itself, since
-  // whoever can submit for approval at this stage should also be able
-  // to send it back instead. Mirrors rejectPOVerificationToMarketPricing/
+  // — same procurement_2nd-position/admin gate as verifyRequisitionPrices
+  // itself, since whoever can submit for approval at this stage should
+  // also be able to send it back instead. Mirrors rejectPOVerificationToMarketPricing/
   // rejectPOVerificationToStorePricing exactly; resetRequisitionToDraft and
   // rejectRequisitionVerificationToInventoryCheck have no PO equivalent —
   // both release the requisition's existing stock reservations first since
@@ -32577,9 +32592,14 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
-    if (!isAdmin && !isOrganizer)
-      throw new Error('Only the organizer or an admin can reject this requisition')
+    const hasProcurement2ndPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_2nd',
+    )
+    if (!isAdmin && !hasProcurement2ndPos)
+      throw new Error('Only a procurement_2nd position holder or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -32625,9 +32645,14 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
-    if (!isAdmin && !isOrganizer)
-      throw new Error('Only the organizer or an admin can reject this requisition')
+    const hasProcurement2ndPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_2nd',
+    )
+    if (!isAdmin && !hasProcurement2ndPos)
+      throw new Error('Only a procurement_2nd position holder or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -32673,9 +32698,14 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
-    if (!isAdmin && !isOrganizer)
-      throw new Error('Only the organizer or an admin can reject this requisition')
+    const hasProcurement2ndPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_2nd',
+    )
+    if (!isAdmin && !hasProcurement2ndPos)
+      throw new Error('Only a procurement_2nd position holder or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -32717,9 +32747,14 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
-    if (!isAdmin && !isOrganizer)
-      throw new Error('Only the organizer or an admin can reject this requisition')
+    const hasProcurement2ndPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_2nd',
+    )
+    if (!isAdmin && !hasProcurement2ndPos)
+      throw new Error('Only a procurement_2nd position holder or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -35061,10 +35096,11 @@ const phase5MutationResolvers = {
     if (!authorized && line.flagged_from_status === 'price_verification') {
       authorized = line.po_id
         ? await userIsOrganizerGW(auth.userId, line.po_id, auth.companyId)
-        : await userIsOrganizerForRequisitionGW(
+        : await userHasPositionForRequisitionGW(
             auth.userId,
-            requireId(line.requisition_id, 'Line not found'),
             auth.companyId,
+            requireId(line.requisition_id, 'Line not found'),
+            'procurement_2nd',
           )
     } else if (!authorized && line.flagged_from_status === 'pending_approval') {
       authorized = line.po_id

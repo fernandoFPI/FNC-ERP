@@ -1,11 +1,20 @@
-// Integration tests for the price_verification authorization change: the
-// dedicated 'procurement_2nd' position was removed and the duty folded
-// into the organizer (see po-constants.ts/requisition-constants.ts and the
-// isOrganizer checks in submitPOPriceVerification/verifyRequisitionPrices
-// and their reject-family mutations). Deliberately uses a genuinely
-// non-admin organizer context (role 'user', no permissions granted) rather
+// Integration tests for the price_verification authorization.
+// PO side: the dedicated 'procurement_2nd' position was removed and the
+// duty folded into the organizer (see po-constants.ts and the isOrganizer
+// checks in submitPOPriceVerification and its reject-family mutations).
+// Requisition side: that same organizer-based gate was briefly adopted too,
+// then reverted — a real po_position_assignments row set (one employee,
+// 'procurement_2nd', assigned across several departments) was found still
+// live and unused in production data, orphaned by the PO-side redesign
+// bleeding into requisitions. The organizer check was swapped back out for
+// userHasPositionForRequisitionGW(...,'procurement_2nd') in
+// verifyRequisitionPrices/its reject-family mutations/resolveLineFlag, and
+// 'procurement_2nd' was re-added to PO_POSITIONS (po-constants.ts) so it's
+// assignable again from Settings.
+// Deliberately uses a genuinely non-admin context (role 'user', no
+// permissions granted) for the organizer/procurement_2nd-holder users rather
 // than the usual system_admin ctx every other G1 test file uses — that
-// would mask whether the organizer check alone is sufficient, since
+// would mask whether the specific check alone is sufficient, since
 // system_admin bypasses it regardless.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
@@ -13,14 +22,19 @@ import { resolvers } from '../src/graphql/resolvers.js'
 
 const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
 const ORGANIZER_EMAIL = 'g1-pv-organizer-test@fnc-erp.local'
+const PROCUREMENT_2ND_EMAIL = 'g1-pv-procurement-2nd-test@fnc-erp.local'
+const PROCUREMENT_2ND_EMPLOYEE_NUMBER = 'G1PVPROCUREMENT2ND-TEST'
 const STRANGER_EMAIL = 'g1-pv-stranger-test@fnc-erp.local'
 const SKU_PREFIX = 'G1PVORGTEST-'
 
 let adminUserId: string
 let organizerUserId: string
+let procurement2ndUserId: string
+let procurement2ndEmployeeId: string
 let strangerUserId: string
 let adminCtx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
 let organizerCtx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
+let procurement2ndCtx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
 let strangerCtx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
 // Tracked explicitly rather than matched by organizer/created_by at cleanup
 // time — the tests deliberately reassign organizer_id away from whoever
@@ -133,6 +147,30 @@ beforeAll(async () => {
   // not some other bypass.
   organizerCtx = { auth: { companyId: TEST_COMPANY_ID, userId: organizerUserId, role: 'user', module: 'all', sessionId: 'g1-pv-organizer' } }
 
+  const procurement2ndR = await pool.query<{ id: string }>(
+    `INSERT INTO users (email, password_hash) VALUES ($1,'test-hash-not-used')
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash RETURNING id`,
+    [PROCUREMENT_2ND_EMAIL],
+  )
+  procurement2ndUserId = procurement2ndR.rows[0]!.id
+  const procurement2ndEmployeeR = await pool.query<{ id: string }>(
+    `INSERT INTO employees (company_id, user_id, first_name, last_name, hire_date, employee_number)
+     VALUES ($1,$2,'Test','Procurement2nd',CURRENT_DATE,$3)
+     ON CONFLICT (company_id, employee_number) DO UPDATE SET user_id = EXCLUDED.user_id RETURNING id`,
+    [TEST_COMPANY_ID, procurement2ndUserId, PROCUREMENT_2ND_EMPLOYEE_NUMBER],
+  )
+  procurement2ndEmployeeId = procurement2ndEmployeeR.rows[0]!.id
+  await pool.query(`DELETE FROM po_position_assignments WHERE employee_id=$1 AND position='procurement_2nd'`, [procurement2ndEmployeeId])
+  await pool.query(
+    `INSERT INTO po_position_assignments (company_id, employee_id, position, is_active, assigned_by)
+     VALUES ($1,$2,'procurement_2nd',true,$3)`,
+    [TEST_COMPANY_ID, procurement2ndEmployeeId, adminUserId],
+  )
+  // Deliberately plain 'user' role with no user_permissions rows granted —
+  // proves the procurement_2nd position alone is what authorizes these
+  // mutations for a requisition, not some other bypass.
+  procurement2ndCtx = { auth: { companyId: TEST_COMPANY_ID, userId: procurement2ndUserId, role: 'user', module: 'all', sessionId: 'g1-pv-procurement-2nd' } }
+
   const strR = await pool.query<{ id: string }>(
     `INSERT INTO users (email, password_hash) VALUES ($1,'test-hash-not-used')
      ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash RETURNING id`,
@@ -146,8 +184,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanup()
-  await pool.query(`DELETE FROM users WHERE email IN ($1,$2,'g1-pv-admin-test@fnc-erp.local')`, [
+  await pool.query(`DELETE FROM po_position_assignments WHERE employee_id=$1`, [procurement2ndEmployeeId])
+  await pool.query(`DELETE FROM employees WHERE id=$1`, [procurement2ndEmployeeId])
+  await pool.query(`DELETE FROM users WHERE email IN ($1,$2,$3,'g1-pv-admin-test@fnc-erp.local')`, [
     ORGANIZER_EMAIL,
+    PROCUREMENT_2ND_EMAIL,
     STRANGER_EMAIL,
   ])
   await pool.end()
@@ -205,8 +246,8 @@ describe('PO price_verification — organizer replaces the old procurement_2nd p
   })
 })
 
-describe('Requisition price_verification — organizer replaces the old procurement_2nd position', () => {
-  it('the organizer (non-admin, no permissions) can submit price verification; a stranger cannot', async () => {
+describe('Requisition price_verification — restored to the procurement_2nd position (or admin); the organizer no longer qualifies on their own', () => {
+  it('a procurement_2nd position holder (non-admin, no permissions) can submit price verification; the organizer and a stranger cannot', async () => {
     const { reqId, lineId } = await makeReqAtPriceVerification()
     await expect(
       resolvers.Mutation.verifyRequisitionPrices(
@@ -214,17 +255,24 @@ describe('Requisition price_verification — organizer replaces the old procurem
         { id: reqId, lineAdjustments: [{ lineId, verifiedPrice: 5 }] },
         strangerCtx as never,
       ),
-    ).rejects.toThrow(/organizer or an admin/i)
+    ).rejects.toThrow(/procurement_2nd position holder or an admin/i)
+    await expect(
+      resolvers.Mutation.verifyRequisitionPrices(
+        null,
+        { id: reqId, lineAdjustments: [{ lineId, verifiedPrice: 5 }] },
+        organizerCtx as never,
+      ),
+    ).rejects.toThrow(/procurement_2nd position holder or an admin/i)
 
     const result = await resolvers.Mutation.verifyRequisitionPrices(
       null,
       { id: reqId, lineAdjustments: [{ lineId, verifiedPrice: 5 }] },
-      organizerCtx as never,
+      procurement2ndCtx as never,
     )
     expect((result as { status: string }).status).toBe('pending_approval')
   })
 
-  it('the organizer can reject back to market pricing; a stranger cannot', async () => {
+  it('a procurement_2nd position holder can reject back to market pricing; the organizer and a stranger cannot', async () => {
     const { reqId, lineId } = await makeReqAtPriceVerification()
     await expect(
       resolvers.Mutation.rejectRequisitionVerificationToMarketPricing(
@@ -232,27 +280,37 @@ describe('Requisition price_verification — organizer replaces the old procurem
         { id: reqId, reason: 'x', lineFlags: [{ lineId, reason: 'x' }] },
         strangerCtx as never,
       ),
-    ).rejects.toThrow(/organizer or an admin/i)
+    ).rejects.toThrow(/procurement_2nd position holder or an admin/i)
+    await expect(
+      resolvers.Mutation.rejectRequisitionVerificationToMarketPricing(
+        null,
+        { id: reqId, reason: 'x', lineFlags: [{ lineId, reason: 'x' }] },
+        organizerCtx as never,
+      ),
+    ).rejects.toThrow(/procurement_2nd position holder or an admin/i)
 
     const result = await resolvers.Mutation.rejectRequisitionVerificationToMarketPricing(
       null,
       { id: reqId, reason: 'price looks off', lineFlags: [{ lineId, reason: 'price looks off' }] },
-      organizerCtx as never,
+      procurement2ndCtx as never,
     )
     expect((result as { status: string }).status).toBe('market_pricing')
   })
 
-  it('the organizer can resolve a price_verification-origin flag; a stranger cannot', async () => {
+  it('a procurement_2nd position holder can resolve a price_verification-origin flag; the organizer and a stranger cannot', async () => {
     const { reqId, lineId } = await makeReqAtPriceVerification()
     await resolvers.Mutation.rejectRequisitionVerificationToMarketPricing(
       null,
       { id: reqId, reason: 'x', lineFlags: [{ lineId, reason: 'bad price' }] },
-      organizerCtx as never,
+      procurement2ndCtx as never,
     )
     await expect(resolvers.Mutation.resolveLineFlag(null, { lineId }, strangerCtx as never)).rejects.toThrow(
       /not authorized to resolve this flag/i,
     )
-    const result = await resolvers.Mutation.resolveLineFlag(null, { lineId }, organizerCtx as never)
+    await expect(resolvers.Mutation.resolveLineFlag(null, { lineId }, organizerCtx as never)).rejects.toThrow(
+      /not authorized to resolve this flag/i,
+    )
+    const result = await resolvers.Mutation.resolveLineFlag(null, { lineId }, procurement2ndCtx as never)
     expect(result).toBe(true)
   })
 })
