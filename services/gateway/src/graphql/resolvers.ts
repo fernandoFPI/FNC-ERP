@@ -693,7 +693,7 @@ async function applyPOEditChanges(
         [
           poId,
           line.description,
-          line.product_id ?? null,
+          line.product_id || null,
           qty,
           price,
           currencyCode,
@@ -847,7 +847,7 @@ async function applyRequisitionEditChanges(
         [
           reqId,
           line.description,
-          line.product_id ?? null,
+          line.product_id || null,
           qty,
           price,
           currencyCode,
