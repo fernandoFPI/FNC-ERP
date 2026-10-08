@@ -4921,49 +4921,48 @@ export default function PurchaseOrderDetail() {
               key: 'item',
               header: 'Item',
               mobilePrimary: true,
-              render: (line) => (
-                <>
-                  {line.product_name && (
-                    <div
-                      style={{
-                        fontSize: '13px',
-                        color: theme.textPrimary,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {line.product_name}
-                    </div>
-                  )}
-                  {line.product_name_ar ? (
-                    <div
-                      dir="rtl"
-                      style={{
-                        fontSize: '12px',
-                        color: theme.textMuted,
-                        textAlign: 'left',
-                        marginTop: line.product_name ? '2px' : 0,
-                      }}
-                    >
-                      {line.product_name_ar}
-                    </div>
-                  ) : (
-                    line.description && (
+              render: (line) => {
+                // An edit request can override this line's own description
+                // independently of the catalog product it's linked to (the
+                // product_id itself is never editable post-creation). That
+                // override must win here like it does everywhere else this
+                // file renders a line's item text — otherwise an approved
+                // description edit never shows up on a catalog-linked line.
+                const primary = line.description || line.product_name
+                const secondary = line.description ? line.product_name : line.product_name_ar
+                const secondaryIsArabic = !line.description && !!line.product_name_ar
+                return (
+                  <>
+                    {primary && (
                       <div
+                        style={{
+                          fontSize: '13px',
+                          color: theme.textPrimary,
+                          fontWeight: 500,
+                        }}
+                      >
+                        {primary}
+                      </div>
+                    )}
+                    {secondary && (
+                      <div
+                        dir={secondaryIsArabic ? 'rtl' : undefined}
                         style={{
                           fontSize: '12px',
                           color: theme.textMuted,
-                          marginTop: line.product_name ? '2px' : 0,
+                          textAlign: secondaryIsArabic ? 'left' : undefined,
+                          marginTop: primary ? '2px' : 0,
                         }}
                       >
-                        {line.description}
+                        {secondary}
                       </div>
-                    )
-                  )}
-                  {!line.product_name && !line.product_name_ar && !line.description && (
-                    <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
-                  )}
-                </>
-              ),
+                    )}
+                    {!primary && !secondary && (
+                      <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
+                    )}
+                  </>
+                )
+              },
             },
             {
               key: 'qty',
