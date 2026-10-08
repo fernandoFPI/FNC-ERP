@@ -31,6 +31,7 @@ type IconName =
   | 'refresh'
   | 'arrowRight'
   | 'external'
+  | 'eye'
 
 export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
   const common = {
@@ -177,6 +178,13 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
       return (
         <svg {...common}>
           <path d="M5 12h14m-6-6 6 6-6 6" />
+        </svg>
+      )
+    case 'eye':
+      return (
+        <svg {...common}>
+          <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+          <circle cx="12" cy="12" r="3" />
         </svg>
       )
     case 'external':
@@ -1214,11 +1222,14 @@ export function PanelHeader({
   title,
   badge,
   sub,
+  action,
   onClose,
 }: {
   title: string
   badge: React.ReactNode
   sub: React.ReactNode
+  // Icon-only button beside the close button; the label is its tooltip / accessible name.
+  action?: { label: string; icon: IconName; onClick: () => void }
   onClose: () => void
 }) {
   const { theme } = useTheme()
@@ -1232,6 +1243,7 @@ export function PanelHeader({
             color: theme.textPrimary,
             margin: 0,
             fontFamily: 'inherit',
+            minWidth: 0,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
@@ -1239,23 +1251,57 @@ export function PanelHeader({
         >
           {title}
         </h2>
-        {badge}
-        <button
-          type="button"
-          aria-label="Close preview"
-          onClick={onClose}
+        <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{badge}</span>
+        <div
           style={{
             marginLeft: 'auto',
-            border: 'none',
-            background: 'none',
-            color: theme.textMuted,
-            cursor: 'pointer',
             display: 'flex',
-            padding: '4px',
+            alignItems: 'center',
+            gap: '6px',
+            flexShrink: 0,
           }}
         >
-          <Icon name="x" size={18} />
-        </button>
+          {action && (
+            <button
+              type="button"
+              title={action.label}
+              aria-label={action.label}
+              onClick={action.onClick}
+              style={{
+                width: '48px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '8px',
+                border: 'none',
+                background: theme.accent,
+                color: '#fff',
+                cursor: 'pointer',
+              }}
+            >
+              <Icon name={action.icon} size={15} />
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label="Close preview"
+            onClick={onClose}
+            style={{
+              width: '32px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: 'none',
+              background: 'none',
+              color: theme.textMuted,
+              cursor: 'pointer',
+            }}
+          >
+            <Icon name="x" size={18} />
+          </button>
+        </div>
       </div>
       <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '4px' }}>{sub}</div>
     </div>
@@ -1480,7 +1526,12 @@ export function PanelTabs({
         padding: '0 22px',
         borderBottom: `1px solid ${theme.border}`,
         flexShrink: 0,
+        // Sideways scroll only if the tabs ever overflow. overflow-x:auto alone
+        // makes browsers add a vertical scrollbar too (the active tab's -1px
+        // underline overhang), so pin y to hidden and drop the bar itself.
         overflowX: 'auto',
+        overflowY: 'hidden',
+        scrollbarWidth: 'none',
       }}
     >
       {tabs.map((t) => (
@@ -1528,63 +1579,6 @@ export function KeyValue({ label, children }: { label: string; children: React.R
         {children}
       </span>
     </div>
-  )
-}
-
-export function PanelFooter({ children }: { children: React.ReactNode }) {
-  const { theme } = useTheme()
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap: '12px',
-        padding: '14px 22px',
-        borderTop: `1px solid ${theme.border}`,
-        flexShrink: 0,
-        background: theme.bgSurface,
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-export function FooterButton({
-  primary = false,
-  icon,
-  onClick,
-  children,
-}: {
-  primary?: boolean
-  icon?: IconName
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  const { theme } = useTheme()
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        flex: 1,
-        height: '40px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px',
-        borderRadius: '10px',
-        border: primary ? 'none' : `1px solid ${theme.borderInput}`,
-        background: primary ? theme.accent : theme.bgSurface,
-        color: primary ? '#fff' : theme.textPrimary,
-        fontSize: '14px',
-        fontWeight: 600,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-      }}
-    >
-      {icon && <Icon name={icon} size={15} />}
-      {children}
-    </button>
   )
 }
 

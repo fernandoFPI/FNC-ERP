@@ -8,11 +8,9 @@ import { REQUISITION_QUERY } from '../../graphql/requisitions'
 import { ENTITY_ATTACHMENTS_QUERY } from '../../graphql/hr'
 import { usePermission } from '../../hooks/usePermission'
 import {
-  FooterButton,
   Icon,
   InfoCard,
   KeyValue,
-  PanelFooter,
   PanelHeader,
   PanelMessage,
   PanelTabs,
@@ -285,9 +283,10 @@ export function POPreviewPanel({
             {formatLongDate(row.created_at)}
           </>
         }
+        action={{ label: 'Open PO', icon: 'eye', onClick: openFull }}
         onClose={onClose}
       />
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarWidth: 'thin' }}>
         {error && !po && <PanelMessage>Couldn’t load this PO. Try again.</PanelMessage>}
         <InfoCard>
           <Party
@@ -429,14 +428,6 @@ export function POPreviewPanel({
             ))}
         </div>
       </div>
-      <PanelFooter>
-        <FooterButton icon="x" onClick={onClose}>
-          Close
-        </FooterButton>
-        <FooterButton primary icon={canEdit ? 'pencil' : 'external'} onClick={openFull}>
-          {canEdit ? 'Edit PO' : 'Open PO'}
-        </FooterButton>
-      </PanelFooter>
     </>
   )
 }
@@ -487,9 +478,10 @@ export function RequisitionPreviewPanel({
         title={row.requisition_number}
         badge={<Badge variant={row.statusVariant}>{row.statusLabel}</Badge>}
         sub={<>Created {formatLongDate(row.created_at)}</>}
+        action={{ label: 'Open Requisition', icon: 'eye', onClick: openFull }}
         onClose={onClose}
       />
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarWidth: 'thin' }}>
         {error && !req && <PanelMessage>Couldn’t load this requisition. Try again.</PanelMessage>}
         <InfoCard>
           <Party
@@ -578,14 +570,6 @@ export function RequisitionPreviewPanel({
           )}
         </div>
       </div>
-      <PanelFooter>
-        <FooterButton icon="x" onClick={onClose}>
-          Close
-        </FooterButton>
-        <FooterButton primary icon={canEdit ? 'pencil' : 'external'} onClick={openFull}>
-          {canEdit ? 'Edit Requisition' : 'Open Requisition'}
-        </FooterButton>
-      </PanelFooter>
     </>
   )
 }
