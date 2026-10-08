@@ -1,21 +1,20 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { REQUISITIONS_QUERY } from '../../../graphql/requisitions'
+import { useMyQueueCount } from '../../../hooks/useMyQueueCount'
 import { useTheme } from '../../../theme/ThemeContext'
-import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
-import { FilterBar } from '../../../components/ui/FilterBar'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Badge, type BadgeVariant } from '../../../components/ui/Badge'
 import { Modal } from '../../../components/ui/Modal'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
-import { FilterChipStrip } from '../../../components/ui/FilterChipStrip'
 import { Button } from '../../../components/ui/Button'
 import {
   REQUISITION_STATUSES,
   REQUISITION_PRIORITY_LABELS,
+  REQUISITION_TERMINAL_STATUSES,
   getRequisitionStatusVariant,
   getRequisitionStatusLabel,
 } from '../../../lib/requisition-constants'
@@ -24,6 +23,35 @@ import { useFilterPresets } from '../../../hooks/useFilterPresets'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { api } from '../../../lib/axios'
 import { usePermission } from '../../../hooks/usePermission'
+import {
+  miniReached,
+  requisitionStage,
+  REQUISITION_STAGES,
+  stageLabel,
+} from '../../../lib/procurementStages'
+import {
+  BarButton,
+  DockLayout,
+  FilterField,
+  Icon,
+  IconButton,
+  KpiRow,
+  KpiTile,
+  MoreFilters,
+  PageTitle,
+  Pagination,
+  PersonCell,
+  PillSelect,
+  RowMenu,
+  SearchBox,
+  SelectionBar,
+  StageMini,
+  dateInputStyle,
+  formatAge,
+  isPastDate,
+} from '../../../components/procurement/ListKit'
+import { RequisitionPreviewPanel } from '../../../components/procurement/PreviewPanels'
+import { useToastStore } from '../../../store/toastStore'
 import type { RequisitionsQuery, RequisitionsQueryVariables } from '../../../graphql/generated'
 
 // Expense claims (filed from this same page via Purpose: Expense — see
@@ -171,10 +199,40 @@ const FILTER_DEFAULTS = {
   search: '',
   status: '',
   purpose: '',
+  organizer: '',
+  project: '',
+  priority: '',
+  quick: '',
   fromDate: '',
   toDate: '',
   myRequisitionsOnly: 'false',
 }
+
+const PAGE_SIZE = 12
+
+const PRIORITY_OPTIONS = [
+  { value: 'emergency', label: 'Emergency' },
+  { value: 'high', label: 'High' },
+  { value: 'low', label: 'Low' },
+]
+
+const EXPENSE_OPEN = new Set(['draft', 'submitted', 'approved'])
+const REQ_CLOSED = new Set<string>([...REQUISITION_TERMINAL_STATUSES])
+
+const isRowOpen = (r: Requisition): boolean => {
+  if (r.__kind === 'expense') return EXPENSE_OPEN.has(r.status)
+  if (r.__kind) return false
+  return !REQ_CLOSED.has(r.status)
+}
+// Awaiting someone's approval: a requisition at pending_approval, or an expense claim submitted.
+const isPendingApproval = (r: Requisition): boolean =>
+  r.__kind === 'expense' ? r.status === 'submitted' : !r.__kind && r.status === 'pending_approval'
+// Needs a person to act: an open emergency requisition, or an approved expense claim waiting for Finance's funding decision.
+const isNeedAction = (r: Requisition): boolean =>
+  (!r.__kind && isRowOpen(r) && r.priority === 'emergency') ||
+  (r.__kind === 'expense' && r.status === 'approved')
+const isDelayedReq = (r: Requisition): boolean =>
+  !r.__kind && isRowOpen(r) && isPastDate(r.expected_delivery_date)
 
 const FILTERS_STORAGE_KEY = 'requisitions-page-filters'
 
@@ -188,7 +246,7 @@ function loadSavedFilters(): typeof FILTER_DEFAULTS {
   return FILTER_DEFAULTS
 }
 
-const PRIORITY_STYLES: Record<string, { color: string; bg: string; border: string }> = {
+const PRIORITY_STYLES: Partial<Record<string, { color: string; bg: string; border: string }>> = {
   low: { color: '#6b7280', bg: 'transparent', border: 'transparent' },
   high: { color: '#d97706', bg: 'rgba(217,119,6,0.08)', border: 'rgba(217,119,6,0.3)' },
   emergency: { color: '#dc2626', bg: 'rgba(220,38,38,0.08)', border: 'rgba(220,38,38,0.3)' },
@@ -208,6 +266,7 @@ interface Requisition {
   organizer_id?: string | null
   organizerName?: string | null
   notes?: string | null
+  expected_delivery_date?: string | null
   created_at: string
   updated_at: string
   itemSearchText?: string | null
@@ -274,26 +333,42 @@ export default function RequisitionsPage() {
   const loadExpenseClaims = useCallback(() => {
     api
       .get<ExpenseClaimApiRow[]>('/finance/expense-claims/mine')
-      .then((r) => { setMyExpenseClaims(r.data); })
-      .catch(() => { /* self-service fetch — silent, list just won't include them */ })
+      .then((r) => {
+        setMyExpenseClaims(r.data)
+      })
+      .catch(() => {
+        /* self-service fetch — silent, list just won't include them */
+      })
     if (canViewAllExpenses) {
       api
         .get<ExpenseClaimApiRow[]>('/finance/expense-claims', { params: { limit: 200 } })
-        .then((r) => { setAllExpenseClaims(r.data); })
-        .catch(() => { /* handled — merged list just falls back to "mine" */ })
+        .then((r) => {
+          setAllExpenseClaims(r.data)
+        })
+        .catch(() => {
+          /* handled — merged list just falls back to "mine" */
+        })
     }
   }, [canViewAllExpenses])
 
   const loadSettlements = useCallback(() => {
     api
       .get<SettlementApiRow[]>('/finance/advances/settlements/mine')
-      .then((r) => { setMySettlements(r.data); })
-      .catch(() => { /* self-service fetch — silent, list just won't include them */ })
+      .then((r) => {
+        setMySettlements(r.data)
+      })
+      .catch(() => {
+        /* self-service fetch — silent, list just won't include them */
+      })
     if (canViewAllAdvances) {
       api
         .get<SettlementApiRow[]>('/finance/advances/settlements', { params: { limit: 200 } })
-        .then((r) => { setAllSettlements(r.data); })
-        .catch(() => { /* handled — merged list just falls back to "mine" */ })
+        .then((r) => {
+          setAllSettlements(r.data)
+        })
+        .catch(() => {
+          /* handled — merged list just falls back to "mine" */
+        })
     }
   }, [canViewAllAdvances])
 
@@ -310,6 +385,14 @@ export default function RequisitionsPage() {
   const [purposeFilter, setPurposeFilter] = useState(saved.purpose)
   const [fromDate, setFromDate] = useState(saved.fromDate)
   const [toDate, setToDate] = useState(saved.toDate)
+  const [organizerFilter, setOrganizerFilter] = useState(saved.organizer)
+  const [projectFilter, setProjectFilter] = useState(saved.project)
+  const [priorityFilter, setPriorityFilter] = useState(saved.priority)
+  const [quickFilter, setQuickFilter] = useState(saved.quick)
+  const [page, setPage] = useState(1)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const addToast = useToastStore((s) => s.addToast)
   // Defaults to the full company list — a hardcoded "my own requisitions"
   // default left anyone who isn't personally the organizer of anything
   // looking at an empty page with no obvious explanation. A "My
@@ -329,11 +412,16 @@ export default function RequisitionsPage() {
     },
   )
   useEntityChanged('requisition', () => void refetch())
+  const queueCount = useMyQueueCount()
 
   const currentFilters = {
     search,
     status: statusFilter,
     purpose: purposeFilter,
+    organizer: organizerFilter,
+    project: projectFilter,
+    priority: priorityFilter,
+    quick: quickFilter,
     fromDate,
     toDate,
     myRequisitionsOnly: String(myRequisitionsOnly),
@@ -344,7 +432,18 @@ export default function RequisitionsPage() {
     } catch {
       // storage unavailable — filters just won't persist
     }
-  }, [search, statusFilter, purposeFilter, fromDate, toDate, myRequisitionsOnly])
+  }, [
+    search,
+    statusFilter,
+    purposeFilter,
+    organizerFilter,
+    projectFilter,
+    priorityFilter,
+    quickFilter,
+    fromDate,
+    toDate,
+    myRequisitionsOnly,
+  ])
   const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
     'requisitions',
     FILTER_DEFAULTS,
@@ -379,12 +478,19 @@ export default function RequisitionsPage() {
       if (r.status !== statusFilter) return false
     }
     if (purposeFilter && r.purpose !== purposeFilter) return false
+    if (organizerFilter && (r.organizerName ?? '') !== organizerFilter) return false
+    if (projectFilter && (r.project_id ?? '') !== projectFilter) return false
+    if (priorityFilter && (r.priority ?? 'low') !== priorityFilter) return false
+    if (quickFilter === 'pendingApproval' && !isPendingApproval(r)) return false
+    if (quickFilter === 'needAction' && !isNeedAction(r)) return false
+    if (quickFilter === 'delayed' && !isDelayedReq(r)) return false
     if (search) {
       const q = search.toLowerCase()
       if (
         !r.requisition_number.toLowerCase().includes(q) &&
         !(r.purpose ?? '').toLowerCase().includes(q) &&
         !(r.projectName ?? '').toLowerCase().includes(q) &&
+        !(r.organizerName ?? '').toLowerCase().includes(q) &&
         !(r.notes ?? '').toLowerCase().includes(q) &&
         !(r.itemSearchText ?? '').toLowerCase().includes(q)
       )
@@ -396,6 +502,95 @@ export default function RequisitionsPage() {
   })
 
   const handleExport = () => {
+    exportRows(filtered, `requisitions-${new Date().toISOString().slice(0, 10)}.csv`)
+  }
+
+  // Back to page 1 whenever the filtered set changes shape.
+  useEffect(() => {
+    setPage(1)
+  }, [
+    statusFilter,
+    purposeFilter,
+    organizerFilter,
+    projectFilter,
+    priorityFilter,
+    quickFilter,
+    search,
+    fromDate,
+    toDate,
+    myRequisitionsOnly,
+  ])
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount)
+  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  // KPIs always read the full (unfiltered) list so they don't shift with the filters.
+  const pendingApprovalCount = requisitions.filter(isPendingApproval).length
+  const needActionCount = requisitions.filter(isNeedAction).length
+  const delayedCount = requisitions.filter(isDelayedReq).length
+  const openCount = requisitions.filter(isRowOpen).length
+
+  const organizerOptions = useMemo(
+    () =>
+      [...new Set(requisitions.map((r) => r.organizerName).filter((n): n is string => !!n))]
+        .sort()
+        .map((n) => ({ value: n, label: n })),
+    [requisitions],
+  )
+  const projectOptions = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const r of requisitions)
+      if (r.project_id && r.projectName) m.set(r.project_id, r.projectName)
+    return [...m.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([value, label]) => ({ value, label }))
+  }, [requisitions])
+
+  const moreFilterCount =
+    (priorityFilter ? 1 : 0) +
+    (fromDate ? 1 : 0) +
+    (toDate ? 1 : 0) +
+    (myRequisitionsOnly ? 1 : 0) +
+    (quickFilter ? 1 : 0)
+  const anyFilter =
+    !!(search || statusFilter || purposeFilter || organizerFilter || projectFilter) ||
+    moreFilterCount > 0
+  const clearAllFilters = () => {
+    setSearch('')
+    setStatusFilter('')
+    setPurposeFilter('')
+    setOrganizerFilter('')
+    setProjectFilter('')
+    setPriorityFilter('')
+    setQuickFilter('')
+    setFromDate('')
+    setToDate('')
+    setMyRequisitionsOnly(false)
+  }
+  const toggleQuick = (k: string) => {
+    setQuickFilter((q) => (q === k ? '' : k))
+  }
+
+  // ── Selection ──
+  const filteredIds = filtered.map((r) => r.id)
+  const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id))
+  const someSelected = filteredIds.some((id) => selectedIds.has(id))
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+  }
+  const selectedRows = filtered.filter((r) => selectedIds.has(r.id))
+  const today = new Date().toISOString().slice(0, 10)
+
+  const exportRows = (rows: Requisition[], filename: string) => {
     const header = [
       'Requisition #',
       'Purpose',
@@ -406,70 +601,125 @@ export default function RequisitionsPage() {
       'Organizer',
       'Created',
     ]
-    const rows = filtered.map((r) => [
+    const body = rows.map((r) => [
       r.requisition_number,
       r.purpose ?? '',
       r.projectName ?? '',
       r.branch_name ?? '',
       rowStatusLabel(r),
-      r.__kind ? '' : REQUISITION_PRIORITY_LABELS[r.priority ?? 'low'] ?? r.priority ?? '',
+      r.__kind ? '' : REQUISITION_PRIORITY_LABELS[r.priority ?? 'low'],
       r.organizerName ?? '',
       r.created_at.slice(0, 10),
     ])
-    downloadCSV([header, ...rows], `requisitions-${new Date().toISOString().slice(0, 10)}.csv`)
+    downloadCSV([header, ...body], filename)
+  }
+
+  // Full-page behaviour for a row — what a row click did before the preview panel existed.
+  const openFull = (r: Requisition) => {
+    if (r.__kind === 'expense') {
+      if (canViewAllExpenses) {
+        navigate(`/finance/expense-claims/${r.id}`)
+        return
+      }
+      const raw = myExpenseClaims.find((c) => c.id === r.id)
+      if (raw) setViewClaim(raw)
+      return
+    }
+    if (r.__kind === 'settlement') {
+      // A settlement has no detail page of its own — it's reviewed
+      // from its parent advance's detail page.
+      if (canViewAllAdvances && r.settlementAdvanceId) {
+        navigate(`/finance/advances/${r.settlementAdvanceId}`)
+        return
+      }
+      const raw = mySettlements.find((s) => s.id === r.id)
+      if (raw) setViewSettlement(raw)
+      return
+    }
+    navigate(`/procurement/requisitions/${r.id}`)
   }
 
   const columns: Column<Requisition>[] = [
     {
-      key: 'priority',
-      header: 'Priority',
-      render: (r) => {
-        const p = r.priority ?? 'low'
-        const s = PRIORITY_STYLES[p] ?? PRIORITY_STYLES.low
-        if (p === 'low') return <span style={{ fontSize: '12px', color: s.color }}>—</span>
-        return (
-          <span
-            style={{
-              fontSize: '11px',
-              fontWeight: 700,
-              color: s.color,
-              background: s.bg,
-              border: `1px solid ${s.border}`,
-              borderRadius: '5px',
-              padding: '2px 8px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
+      key: '__select',
+      header: '',
+      width: '40px',
+      mobileHide: true,
+      renderHeader: () => (
+        <input
+          type="checkbox"
+          aria-label="Select all"
+          checked={allSelected}
+          ref={(el) => {
+            if (el) el.indeterminate = someSelected && !allSelected
+          }}
+          onChange={() => {
+            setSelectedIds(allSelected ? new Set() : new Set(filteredIds))
+          }}
+          style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: theme.accent }}
+        />
+      ),
+      render: (r) => (
+        <div
+          onClick={(e) => {
+            e.stopPropagation()
+          }}
+          style={{ display: 'flex', alignItems: 'center' }}
+        >
+          <input
+            type="checkbox"
+            aria-label={`Select ${r.requisition_number}`}
+            checked={selectedIds.has(r.id)}
+            onChange={() => {
+              toggleSelect(r.id)
             }}
-          >
-            {REQUISITION_PRIORITY_LABELS[p] ?? p}
-          </span>
-        )
-      },
+            style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: theme.accent }}
+          />
+        </div>
+      ),
     },
     {
       key: 'requisition_number',
       header: 'Requisition #',
-      render: (r) => (
-        <span style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}>
-          {r.requisition_number}
-        </span>
-      ),
-    },
-    {
-      key: 'purpose',
-      header: 'Purpose',
-      render: (r) => (
-        <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{r.purpose ?? '—'}</span>
-      ),
+      mobilePrimary: true,
+      render: (r) => {
+        const p = r.priority ?? 'low'
+        const s = PRIORITY_STYLES[p]
+        return (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontWeight: 600, color: theme.accent, fontSize: '13px' }}>
+                {r.requisition_number}
+              </span>
+              {p !== 'low' && s && (
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: s.color,
+                    background: s.bg,
+                    border: `1px solid ${s.border}`,
+                    borderRadius: '4px',
+                    padding: '0 5px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  {REQUISITION_PRIORITY_LABELS[p] ?? p}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '11px', color: theme.textMuted }}>{r.purpose ?? '—'}</div>
+          </div>
+        )
+      },
     },
     {
       key: 'project',
       header: 'Project',
       render: (r) =>
         r.project_id ? (
-          <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
-            {r.projectName ?? '—'}
-          </span>
+          <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{r.projectName ?? '—'}</span>
         ) : (
           <span style={{ color: theme.textMuted, fontSize: '13px' }}>—</span>
         ),
@@ -482,35 +732,94 @@ export default function RequisitionsPage() {
       ),
     },
     {
+      key: 'organizerName',
+      header: 'Organizer',
+      render: (r) => <PersonCell name={r.organizerName} />,
+    },
+    {
+      key: 'stage',
+      header: 'Stage',
+      render: (r) => {
+        if (r.__kind) return <span style={{ color: theme.textMuted, fontSize: '13px' }}>—</span>
+        const st = requisitionStage(r.status)
+        return (
+          <StageMini
+            total={4}
+            reached={miniReached(st, REQUISITION_STAGES.length)}
+            label={stageLabel(st, REQUISITION_STAGES)}
+          />
+        )
+      },
+    },
+    {
+      key: 'age',
+      header: 'Age',
+      render: (r) => (
+        <span style={{ fontSize: '13px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
+          {formatAge(r.created_at)}
+        </span>
+      ),
+    },
+    {
       key: 'status',
       header: 'Status',
       render: (r) => <Badge variant={rowStatusVariant(r)}>{rowStatusLabel(r)}</Badge>,
     },
     {
-      key: 'organizerName',
-      header: 'Organizer',
+      key: '__actions',
+      header: 'Actions',
+      width: '70px',
+      mobileHide: true,
       render: (r) => (
-        <span style={{ color: theme.textMuted, fontSize: '13px' }}>{r.organizerName ?? '—'}</span>
-      ),
-    },
-    {
-      key: 'created_at',
-      header: 'Created',
-      render: (r) => (
-        <span style={{ color: theme.textMuted, fontSize: '13px' }}>
-          {r.created_at.slice(0, 10)}
-        </span>
+        <RowMenu
+          items={[
+            ...(!r.__kind
+              ? [
+                  {
+                    label: 'View details',
+                    onClick: () => {
+                      setPreviewId(r.id)
+                    },
+                  },
+                ]
+              : []),
+            {
+              label: 'Open full page',
+              onClick: () => {
+                openFull(r)
+              },
+            },
+            {
+              label: 'Copy number',
+              onClick: () => {
+                void navigator.clipboard
+                  .writeText(r.requisition_number)
+                  .then(() => {
+                    addToast({ type: 'success', message: `${r.requisition_number} copied` })
+                  })
+                  .catch(() => {
+                    addToast({ type: 'error', message: 'Could not copy' })
+                  })
+              },
+            },
+          ]}
+        />
       ),
     },
   ]
 
+  const previewRow = previewId
+    ? requisitions.find((r) => r.id === previewId && !r.__kind)
+    : undefined
+
   return (
-    <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
-      <PageHeader
+    <div style={{ padding: '24px', margin: '0 auto', maxWidth: '2400px' }}>
+      <PageTitle
+        icon="doc"
         title="Requisitions"
-        subtitle={`${filtered.length} requisitions`}
+        subtitle="Create, track and manage purchase requisitions and expense claims."
         actions={
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <>
             <Button variant="ghost" size="sm" onClick={handleExport}>
               Export CSV
             </Button>
@@ -524,138 +833,280 @@ export default function RequisitionsPage() {
             >
               New Requisition
             </Button>
-          </div>
+          </>
         }
       />
 
-      <div style={{ marginTop: '16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-        <button
+      <KpiRow>
+        <KpiTile
+          tone="accent"
+          icon="doc"
+          label="My Queue"
+          value={queueCount}
+          sub="Actions required"
+          trailing={<Icon name="arrowRight" size={16} />}
           onClick={() => {
-            setMyRequisitionsOnly((v) => !v)
+            navigate('/procurement/queue')
           }}
-          style={{
-            flexShrink: 0,
-            padding: '6px 12px',
-            borderRadius: '7px',
-            fontSize: '12px',
-            fontWeight: 500,
-            cursor: 'pointer',
-            border: `1px solid ${myRequisitionsOnly ? theme.success : theme.border}`,
-            background: myRequisitionsOnly ? theme.success : theme.bgSurface,
-            color: myRequisitionsOnly ? '#fff' : theme.textMuted,
-          }}
-        >
-          👤 My Requisitions
-        </button>
-      </div>
-
-      <div style={{ marginTop: '10px' }}>
-        <FilterChipStrip
-          allCount={requisitions.length}
-          activeKey={statusFilter}
-          onChange={setStatusFilter}
-          chips={REQUISITION_STATUSES.map((s) => ({
-            key: s.key,
-            label: s.label,
-            // Excludes expense/settlement rows — their status vocabulary is
-            // separate from REQUISITION_STATUSES and incidentally shares a
-            // couple of key names ('draft', 'approved') that mean something
-            // different there; see the `filtered` check above.
-            count: requisitions.filter((r) => !r.__kind && r.status === s.key).length,
-            variant: getRequisitionStatusVariant(s.key),
-          }))}
         />
-      </div>
-
-      <Card style={{ marginTop: '12px' }}>
-        <FilterBar
-          search={search}
-          onSearchChange={setSearch}
-          searchPlaceholder="Search requisition #, purpose, project, or item…"
-          filters={[
-            {
-              key: 'status',
-              label: 'Status',
-              value: statusFilter,
-              options: STATUS_OPTIONS,
-              onChange: setStatusFilter,
-            },
-            {
-              key: 'purpose',
-              label: 'Purpose',
-              value: purposeFilter,
-              options: PURPOSE_OPTIONS,
-              onChange: setPurposeFilter,
-            },
-          ]}
-          fromDate={fromDate}
-          toDate={toDate}
-          onFromDateChange={setFromDate}
-          onToDateChange={setToDate}
-          resultCount={filtered.length}
-          onRefresh={() => {
-            void refetch()
-            loadExpenseClaims()
-            loadSettlements()
+        <KpiTile
+          tone="warning"
+          icon="clock"
+          label="Pending Approval"
+          value={pendingApprovalCount}
+          sub="Awaiting approval"
+          active={quickFilter === 'pendingApproval'}
+          onClick={() => {
+            toggleQuick('pendingApproval')
           }}
+        />
+        <KpiTile
+          tone="danger"
+          icon="alert"
+          label="Need Action"
+          value={needActionCount}
+          sub="Requires attention"
+          active={quickFilter === 'needAction'}
+          onClick={() => {
+            toggleQuick('needAction')
+          }}
+        />
+        <KpiTile
+          tone="info"
+          icon="truck"
+          label="Delayed"
+          value={delayedCount}
+          sub="Overdue / delayed"
+          active={quickFilter === 'delayed'}
+          onClick={() => {
+            toggleQuick('delayed')
+          }}
+        />
+        <KpiTile
+          tone="success"
+          icon="cart"
+          label="Open Requisitions"
+          loading={loading && requisitions.length === 0}
+          value={openCount}
+          sub="Not yet completed"
+        />
+      </KpiRow>
+
+      <DockLayout
+        panel={
+          previewRow ? (
+            <RequisitionPreviewPanel
+              row={{
+                id: previewRow.id,
+                requisition_number: previewRow.requisition_number,
+                status: previewRow.status,
+                statusLabel: rowStatusLabel(previewRow),
+                statusVariant: rowStatusVariant(previewRow),
+                organizerName: previewRow.organizerName,
+                created_at: previewRow.created_at,
+              }}
+              onClose={() => {
+                setPreviewId(null)
+              }}
+            />
+          ) : null
+        }
+        onClosePanel={() => {
+          setPreviewId(null)
+        }}
+      >
+        <Card
+          padding="md"
+          style={{ borderRadius: '14px', flex: 1, display: 'flex', flexDirection: 'column' }}
         >
-          <FilterPresets
-            presets={presets}
-            onApply={(preset) => {
-              const r = resolvePreset(preset)
-              setSearch(r.search)
-              setStatusFilter(r.status)
-              setPurposeFilter(r.purpose)
-              setFromDate(r.fromDate)
-              setToDate(r.toDate)
-              setMyRequisitionsOnly(r.myRequisitionsOnly === 'true')
-            }}
-            onSave={(name) => {
-              savePreset(name, currentFilters)
-            }}
-            onDelete={deletePreset}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+            <SearchBox
+              value={search}
+              onChange={setSearch}
+              placeholder="Search requisition #, purpose, project, item, organizer…"
+            />
+            <PillSelect
+              label="Status"
+              value={statusFilter}
+              options={STATUS_OPTIONS}
+              onChange={setStatusFilter}
+            />
+            <PillSelect
+              label="Purpose"
+              value={purposeFilter}
+              options={PURPOSE_OPTIONS}
+              onChange={setPurposeFilter}
+            />
+            <PillSelect
+              label="Organizer"
+              value={organizerFilter}
+              options={organizerOptions}
+              onChange={setOrganizerFilter}
+            />
+            <PillSelect
+              label="Project"
+              value={projectFilter}
+              options={projectOptions}
+              onChange={setProjectFilter}
+            />
+            <MoreFilters activeCount={moreFilterCount}>
+              <FilterField label="Priority">
+                <select
+                  value={priorityFilter}
+                  onChange={(e) => {
+                    setPriorityFilter(e.target.value)
+                  }}
+                  style={dateInputStyle(theme)}
+                >
+                  <option value="">All</option>
+                  {PRIORITY_OPTIONS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+              <FilterField label="Created from">
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => {
+                    setFromDate(e.target.value)
+                  }}
+                  style={dateInputStyle(theme)}
+                />
+              </FilterField>
+              <FilterField label="Created to">
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => {
+                    setToDate(e.target.value)
+                  }}
+                  style={dateInputStyle(theme)}
+                />
+              </FilterField>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '13px',
+                  color: theme.textPrimary,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={myRequisitionsOnly}
+                  onChange={(e) => {
+                    setMyRequisitionsOnly(e.target.checked)
+                  }}
+                  style={{ accentColor: theme.accent }}
+                />
+                Only requisitions I organized
+              </label>
+              <FilterPresets
+                presets={presets}
+                onApply={(preset) => {
+                  const r = resolvePreset(preset)
+                  setSearch(r.search)
+                  setStatusFilter(r.status)
+                  setPurposeFilter(r.purpose)
+                  setOrganizerFilter(r.organizer)
+                  setProjectFilter(r.project)
+                  setPriorityFilter(r.priority)
+                  setQuickFilter(r.quick)
+                  setFromDate(r.fromDate)
+                  setToDate(r.toDate)
+                  setMyRequisitionsOnly(r.myRequisitionsOnly === 'true')
+                }}
+                onSave={(name) => {
+                  savePreset(name, currentFilters)
+                }}
+                onDelete={deletePreset}
+              />
+              {anyFilter && (
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  style={{
+                    border: 'none',
+                    background: 'none',
+                    color: theme.accent,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    padding: 0,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Clear all filters
+                </button>
+              )}
+            </MoreFilters>
+            <IconButton
+              title="Refresh"
+              onClick={() => {
+                void refetch()
+                loadExpenseClaims()
+                loadSettlements()
+              }}
+            >
+              <Icon name="refresh" size={16} />
+            </IconButton>
+          </div>
+
+          {selectedIds.size > 0 && (
+            <SelectionBar label={`${selectedIds.size} selected`} onClear={clearSelection}>
+              <BarButton
+                icon="download"
+                onClick={() => {
+                  exportRows(selectedRows, `requisitions-selected-${today}.csv`)
+                }}
+              >
+                Export
+              </BarButton>
+            </SelectionBar>
+          )}
+
+          <div style={{ marginTop: '14px', flex: 1 }}>
+            <Table
+              columns={columns}
+              data={pageRows}
+              loading={loading}
+              rowKey="id"
+              emptyMessage={
+                anyFilter ? 'No requisitions match these filters.' : 'No requisitions yet.'
+              }
+              onRowClick={(r) => {
+                if (r.__kind) {
+                  openFull(r)
+                  return
+                }
+                setPreviewId(r.id)
+              }}
+              getRowStyle={(r) => {
+                const base = r.priority === 'emergency' ? { borderLeft: '3px solid #dc2626' } : {}
+                return r.id === previewId || selectedIds.has(r.id)
+                  ? { ...base, background: theme.accentBg }
+                  : base
+              }}
+            />
+          </div>
+          <Pagination
+            page={safePage}
+            pageSize={PAGE_SIZE}
+            total={filtered.length}
+            onChange={setPage}
           />
-        </FilterBar>
-
-        <Table
-          columns={columns}
-          data={filtered}
-          loading={loading}
-          rowKey="id"
-          onRowClick={(r) => {
-            if (r.__kind === 'expense') {
-              if (canViewAllExpenses) {
-                navigate(`/finance/expense-claims/${r.id}`)
-                return
-              }
-              const raw = myExpenseClaims.find((c) => c.id === r.id)
-              if (raw) setViewClaim(raw)
-              return
-            }
-            if (r.__kind === 'settlement') {
-              // A settlement has no detail page of its own — it's reviewed
-              // from its parent advance's detail page.
-              if (canViewAllAdvances && r.settlementAdvanceId) {
-                navigate(`/finance/advances/${r.settlementAdvanceId}`)
-                return
-              }
-              const raw = mySettlements.find((s) => s.id === r.id)
-              if (raw) setViewSettlement(raw)
-              return
-            }
-            navigate(`/procurement/requisitions/${r.id}`)
-          }}
-          getRowStyle={(r) =>
-            r.priority === 'emergency'
-              ? { background: 'rgba(220,38,38,0.06)', borderLeft: '3px solid #dc2626' }
-              : {}
-          }
-        />
-      </Card>
+        </Card>
+      </DockLayout>
 
       <Modal
         open={!!viewClaim}
-        onClose={() => { setViewClaim(null); }}
+        onClose={() => {
+          setViewClaim(null)
+        }}
         title={viewClaim?.claim_number ?? ''}
         description={viewClaim?.description ?? undefined}
       >
@@ -697,7 +1148,9 @@ export default function RequisitionsPage() {
               <tbody>
                 {(viewClaim.lines ?? []).map((l) => (
                   <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td style={{ padding: '6px 8px', color: theme.textSecondary, fontSize: '11px' }}>
+                    <td
+                      style={{ padding: '6px 8px', color: theme.textSecondary, fontSize: '11px' }}
+                    >
                       {new Date(l.expense_date).toLocaleDateString()}
                     </td>
                     <td style={{ padding: '6px 8px', color: theme.textSecondary }}>
@@ -707,7 +1160,11 @@ export default function RequisitionsPage() {
                       {l.description ?? '—'}
                     </td>
                     <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                      <AmountDisplay amount={Number(l.amount)} currency={l.currency_code} size="sm" />
+                      <AmountDisplay
+                        amount={Number(l.amount)}
+                        currency={l.currency_code}
+                        size="sm"
+                      />
                     </td>
                   </tr>
                 ))}
@@ -719,7 +1176,9 @@ export default function RequisitionsPage() {
 
       <Modal
         open={!!viewSettlement}
-        onClose={() => { setViewSettlement(null); }}
+        onClose={() => {
+          setViewSettlement(null)
+        }}
         title={viewSettlement?.settlement_number ?? ''}
         description={viewSettlement?.description ?? undefined}
       >
@@ -759,7 +1218,9 @@ export default function RequisitionsPage() {
               <tbody>
                 {(viewSettlement.lines ?? []).map((l) => (
                   <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td style={{ padding: '6px 8px', color: theme.textSecondary, fontSize: '11px' }}>
+                    <td
+                      style={{ padding: '6px 8px', color: theme.textSecondary, fontSize: '11px' }}
+                    >
                       {new Date(l.line_date).toLocaleDateString()}
                     </td>
                     <td style={{ padding: '6px 8px', color: theme.textSecondary }}>
@@ -769,7 +1230,11 @@ export default function RequisitionsPage() {
                       {l.description ?? '—'}
                     </td>
                     <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                      <AmountDisplay amount={Number(l.amount)} currency={l.currency_code} size="sm" />
+                      <AmountDisplay
+                        amount={Number(l.amount)}
+                        currency={l.currency_code}
+                        size="sm"
+                      />
                     </td>
                   </tr>
                 ))}

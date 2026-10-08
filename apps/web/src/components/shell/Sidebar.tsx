@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
 import { useApprovalStore } from '../../store/approvalStore'
-import { useMyPOQueueCount } from '../../hooks/useMyPOQueueCount'
+import { useMyQueueCount } from '../../hooks/useMyQueueCount'
 import { useAPPendingCount } from '../../hooks/useAPPendingCount'
 import { usePermission } from '../../hooks/usePermission'
 import { useCompanyStore } from '../../store/companyStore'
@@ -20,7 +20,7 @@ export interface NavItem {
   label: string
   icon: React.ReactNode
   path: string
-  badge?: number | 'approval' | 'overdue' | 'queue' | 'ap_pending'
+  badge?: number | 'overdue' | 'queue' | 'ap_pending'
   children?: NavChild[]
   permKeys?: string[]
   factoryOnly?: boolean
@@ -777,24 +777,11 @@ export const NAV_SECTIONS: NavSection[] = [
         permKeys: ['projects.invoices.view'],
       },
       {
-        label: 'My PO Queue',
+        label: 'My Queue',
         icon: <Icon name="inbox" />,
         path: '/procurement/queue',
         badge: 'queue',
         permKeys: ['procurement.po.view'],
-      },
-      {
-        label: 'My Requisition Queue',
-        icon: <Icon name="inbox" />,
-        path: '/procurement/requisitions/queue',
-        permKeys: ['procurement.po.view'],
-      },
-      {
-        label: 'Approval Queue',
-        icon: <Icon name="check-circle" />,
-        path: '/procurement/purchase-orders/approval-queue',
-        badge: 'approval',
-        permKeys: ['procurement.po.approve'],
       },
     ],
   },
@@ -1075,9 +1062,8 @@ export function Sidebar({
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const clearAuth = useAuthStore((s) => s.clearAuth)
-  const approvalCount = useApprovalStore((s) => s.pendingCount)
   const overdueMaintenanceCount = useApprovalStore((s) => s.overdueMaintenanceCount)
-  const myPOQueueCount = useMyPOQueueCount()
+  const myQueueCount = useMyQueueCount()
   const apPendingCount = useAPPendingCount()
   const { canAny, isSystemLevel } = usePermission()
   const activeCompany = useCompanyStore((s) => s.activeCompany)
@@ -1127,12 +1113,11 @@ export function Sidebar({
   }
 
   function resolveBadge(
-    badge: number | 'approval' | 'overdue' | 'queue' | 'ap_pending' | undefined,
+    badge: number | 'overdue' | 'queue' | 'ap_pending' | undefined,
   ): number | undefined {
-    if (badge === 'approval') return approvalCount > 0 ? approvalCount : undefined
     if (badge === 'overdue')
       return overdueMaintenanceCount > 0 ? overdueMaintenanceCount : undefined
-    if (badge === 'queue') return myPOQueueCount > 0 ? myPOQueueCount : undefined
+    if (badge === 'queue') return myQueueCount > 0 ? myQueueCount : undefined
     if (badge === 'ap_pending') return apPendingCount > 0 ? apPendingCount : undefined
     if (typeof badge === 'number') return badge
     return undefined

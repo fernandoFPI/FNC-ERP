@@ -90,9 +90,11 @@ describe('Sidebar', () => {
     expect(screen.queryByText('Dashboard')).not.toBeInTheDocument()
   })
 
-  it('shows approval queue badge when there are pending approvals', () => {
-    // approvalStore starts at 0, so no badge rendered by default
+  it('has a single My Queue entry in place of the old My PO / My Requisition / Approval queues', () => {
     wrap()
-    expect(screen.getByText('Approval Queue')).toBeInTheDocument()
+    expect(screen.getByText('My Queue')).toBeInTheDocument()
+    expect(screen.queryByText('My PO Queue')).not.toBeInTheDocument()
+    expect(screen.queryByText('My Requisition Queue')).not.toBeInTheDocument()
+    expect(screen.queryByText('Approval Queue')).not.toBeInTheDocument()
   })
 })

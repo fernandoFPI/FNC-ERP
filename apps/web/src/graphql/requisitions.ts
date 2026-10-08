@@ -552,6 +552,7 @@ export const MY_REQUISITION_QUEUE_QUERY = gql`
       priority
       purpose
       project_id
+      projectCode
       projectName
       branch_id
       branch_name

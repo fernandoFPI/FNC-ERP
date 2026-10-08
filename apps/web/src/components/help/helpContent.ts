@@ -437,26 +437,27 @@ const VENDORS: HelpTopic = {
 
 const APPROVAL_QUEUE: HelpTopic = {
   key: 'approval-queue',
-  title: 'Approval Queue',
+  title: 'My Queue',
   emoji: '✅',
-  summary: 'Review and approve or reject purchase orders awaiting your sign-off.',
+  summary:
+    'Everything waiting on you in one list — requisitions, purchase orders, and approvals you can sign off.',
   steps: [
     {
-      title: 'Review a PO',
-      body: 'Click any PO in the queue to open the full detail — check the line items, vendor, pricing, and any attached documents.',
+      title: 'Find what needs you',
+      body: 'Each row shows the action you can take and the role it is for you (for example Store keeper, Buyer, Dept head). Use the tiles to jump to Requisitions, Purchase Orders, items that need your approval, or items overdue.',
     },
     {
-      title: 'Approve',
-      body: 'Click Approve. The PO moves to the next approval level or is marked Approved if you are the final approver.',
+      title: 'Open and act',
+      body: 'Click a row to open it. Review the line items, vendor, pricing and any attached documents, then take the action shown — for example Approve, Reject, Record purchases or Record receipt.',
     },
     {
-      title: 'Reject',
-      body: 'Click Reject and enter a reason. The requester is notified and can revise and resubmit.',
+      title: 'Reject with a reason',
+      body: 'When rejecting, enter a reason. The requester is notified and can revise and resubmit.',
     },
   ],
   tips: [
-    'You receive a notification for each new PO added to your queue.',
-    'Use the count badge in the sidebar to see how many POs await action.',
+    'The oldest items are listed first; anything waiting 3 or more days is marked in red.',
+    'The count badge next to My Queue in the sidebar shows how many requisitions and POs await you.',
   ],
   tourKey: 'approval-queue',
 }
@@ -885,7 +886,7 @@ const routeMap: { pattern: string; topic: HelpTopic }[] = [
   { pattern: '/procurement/requisitions', topic: REQUISITIONS },
   { pattern: '/procurement/purchase-orders', topic: PURCHASE_ORDERS },
   { pattern: '/procurement/vendors', topic: VENDORS },
-  { pattern: '/procurement/approval-queue', topic: APPROVAL_QUEUE },
+  { pattern: '/procurement/queue', topic: APPROVAL_QUEUE },
   { pattern: '/procurement', topic: REQUISITIONS },
   { pattern: '/inventory', topic: INVENTORY },
   { pattern: '/projects/contracts', topic: CONTRACTS },

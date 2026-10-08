@@ -49,7 +49,7 @@
     purchaseOrder(id: ID!): PurchaseOrder
     requisition(id: ID!): Requisition
     # G1 Phase 3 Milestone A — list view (RequisitionsPage) and worklist
-    # (myRequisitionApprovalQueue), mirroring purchaseOrders/myApprovalQueue.
+    # (myRequisitionApprovalQueue), mirroring purchaseOrders/myPOQueue.
     requisitions(status: String, projectId: ID, branchId: ID, myQueueOnly: Boolean): [Requisition!]!
     myRequisitionApprovalQueue: [Requisition!]!
     # G1 PR 4 — child POs Finish Buying forked for this requisition (or,
@@ -2392,6 +2392,9 @@
     # meaningful on purchaseOrder(id)/purchaseOrderForAction(id), which have
     # their own, different total-visibility rules.
     viewerCanSeeTotals: Boolean
+    # Organizer's display name — populated by purchaseOrders (the list query)
+    # for the Buyer column; null elsewhere.
+    organizerName: String
     # No-conversion policy, same as Requisition.currencyTotals: one entry per
     # currency actually used by this PO's lines, computed fresh from lines
     # (never summed across currencies). total_amount/subtotal remain the
@@ -2704,7 +2707,6 @@
 
   extend type Query {
     vendor(id: ID!): Vendor
-    myApprovalQueue: [PurchaseOrder!]!
     poLineComments(poId: ID!): [POLineComment!]!
   }
 

@@ -987,13 +987,13 @@ const informationalTours: Record<string, { title: string; steps: DriveStep[] }> 
 
   // ── Approval Queue ───────────────────────────────────────────────────────────
   'approval-queue': {
-    title: 'Approval Queue',
+    title: 'My Queue',
     steps: [
       {
         popover: {
-          title: '✅ Approval Queue — Walkthrough',
+          title: '✅ My Queue — Walkthrough',
           description:
-            "The Approval Queue shows all Purchase Orders awaiting your sign-off. POs route here automatically after submission based on your company's approval thresholds. Press <strong>Next →</strong> to continue.",
+            "My Queue shows every requisition and Purchase Order waiting on you, including the ones awaiting your sign-off. Items route here automatically based on your position and approval rights. Press <strong>Next →</strong> to continue.",
         },
       },
       {

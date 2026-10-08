@@ -1612,7 +1612,7 @@ export type PurchaseOrdersQueryVariables = Exact<{
 }>;
 
 
-export type PurchaseOrdersQuery = { purchaseOrders: Array<{ id: string, po_number: string, vendor_name: string | null, vendor_id: string | null, status: string, priority: string, total_amount: string, viewerCanSeeTotals: boolean | null, currency_code: string, created_at: string, analytic_account_id: string | null, expected_delivery_date: string | null, assigned_to_email: string | null, invoice_count: number, project_id: string | null, projectCode: string | null, projectName: string | null, requisitionNumber: string | null, branch_id: string | null, branch_name: string | null, itemSearchText: string | null } | null> | null };
+export type PurchaseOrdersQuery = { purchaseOrders: Array<{ id: string, po_number: string, vendor_name: string | null, vendor_id: string | null, status: string, priority: string, total_amount: string, viewerCanSeeTotals: boolean | null, currency_code: string, created_at: string, analytic_account_id: string | null, expected_delivery_date: string | null, assigned_to_email: string | null, organizerName: string | null, invoice_count: number, project_id: string | null, projectCode: string | null, projectName: string | null, requisitionNumber: string | null, branch_id: string | null, branch_name: string | null, itemSearchText: string | null } | null> | null };
 
 export type PurchaseOrderQueryVariables = Exact<{
   id: string | number;
@@ -1620,11 +1620,6 @@ export type PurchaseOrderQueryVariables = Exact<{
 
 
 export type PurchaseOrderQuery = { purchaseOrder: { id: string, po_number: string, status: string, requisition_id: string | null, currency_code: string, total_amount: string, subtotal: string | null, tax_amount: string | null, vendor_id: string | null, vendor_name: string | null, analytic_account_id: string | null, analytic_account_name: string | null, expected_delivery_date: string | null, notes: string | null, created_by_email: string | null, created_at: string, fx_rate: string | null, pdf_path: string | null, assigned_to_email: string | null, assigned_receiver_name: string | null, branch_id: string | null, branch_name: string | null, purpose: string | null, delivery_destination: string | null, linkedProjectId: string | null, funding_source: string | null, funding_advance_id: string | null, funding_advance_number: string | null, funding_employee_name: string | null, lines: Array<{ id: string, product_id: string | null, product_name: string | null, sku: string | null, description: string | null, qty: string, unit_price: string, total: string, uom: string | null, qty_received: string | null, qty_from_stock: string | null, account_id: string | null, account_code: string | null, account_name: string | null, cost_center_id: string | null, cost_center_name: string | null, advance_settlement_id: string | null }> | null, receipts: Array<{ id: string, status: string, receipt_date: string | null, location_id: string | null, location_name: string | null, notes: string | null, received_by_email: string | null, received_by_name: string | null, received_from_name: string | null, location_notes: string | null, created_at: string | null, lines: Array<{ id: string | null, po_line_id: string, description: string | null, qty_received: string, actual_unit_price: string | null }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> }> | null, approval_log: Array<{ id: string, action: string, user_email: string | null, notes: string | null, created_at: string }> | null } | null };
-
-export type MyApprovalQueueQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type MyApprovalQueueQuery = { myApprovalQueue: Array<{ id: string, po_number: string, vendor_name: string | null, status: string, total_amount: string, currency_code: string, created_at: string, submitted_at: string | null, assigned_to_email: string | null }> };
 
 export type CreatePurchaseOrderMutationVariables = Exact<{
   input: Types.PoInput;
@@ -1729,7 +1724,7 @@ export type AttachReceiptPhotoMutation = { attachReceiptPhoto: { id: string, fil
 export type MyPoQueueQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type MyPoQueueQuery = { myPOQueue: Array<{ id: string, po_number: string, status: string, currency_code: string, total_amount: string, created_at: string, updated_at: string, organizer_id: string | null, project_id: string | null, vendor_id: string | null, vendor_name: string | null, delivery_destination: string | null }> | null };
+export type MyPoQueueQuery = { myPOQueue: Array<{ id: string, po_number: string, requisitionNumber: string | null, priority: string, projectCode: string | null, projectName: string | null, organizerName: string | null, status: string, currency_code: string, total_amount: string, created_at: string, updated_at: string, organizer_id: string | null, project_id: string | null, vendor_id: string | null, vendor_name: string | null, delivery_destination: string | null }> | null };
 
 export type PurchaseOrderLifecycleQueryVariables = Exact<{
   id: string | number;
@@ -5572,7 +5567,7 @@ export type EnsureCashPurchaseVendorMutation = { ensureCashPurchaseVendor: { id:
 export type MyRequisitionApprovalQueueQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type MyRequisitionApprovalQueueQuery = { myRequisitionApprovalQueue: Array<{ id: string, requisition_number: string, status: string, priority: string | null, purpose: string | null, project_id: string | null, projectName: string | null, branch_id: string | null, branch_name: string | null, organizer_id: string | null, organizerName: string | null, created_at: string, updated_at: string }> };
+export type MyRequisitionApprovalQueueQuery = { myRequisitionApprovalQueue: Array<{ id: string, requisition_number: string, status: string, priority: string | null, purpose: string | null, project_id: string | null, projectCode: string | null, projectName: string | null, branch_id: string | null, branch_name: string | null, organizer_id: string | null, organizerName: string | null, created_at: string, updated_at: string }> };
 
 export type MyProfileQueryVariables = Exact<{ [key: string]: never; }>;
 

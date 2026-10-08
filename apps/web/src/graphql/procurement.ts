@@ -87,6 +87,7 @@ export const PURCHASE_ORDERS_QUERY = gql`
       analytic_account_id
       expected_delivery_date
       assigned_to_email
+      organizerName
       invoice_count
       project_id
       projectCode
@@ -191,22 +192,6 @@ export const PURCHASE_ORDER_QUERY = gql`
         notes
         created_at
       }
-    }
-  }
-`
-
-export const MY_APPROVAL_QUEUE_QUERY = gql`
-  query MyApprovalQueue {
-    myApprovalQueue {
-      id
-      po_number
-      vendor_name
-      status
-      total_amount
-      currency_code
-      created_at
-      submitted_at
-      assigned_to_email
     }
   }
 `
@@ -415,6 +400,11 @@ export const MY_PO_QUEUE_QUERY = gql`
     myPOQueue {
       id
       po_number
+      requisitionNumber
+      priority
+      projectCode
+      projectName
+      organizerName
       status
       currency_code
       total_amount

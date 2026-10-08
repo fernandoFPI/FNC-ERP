@@ -71,7 +71,7 @@ function notificationPath(n: AppNotification): string {
     case 'PO_READY_FOR_PROCUREMENT':
       return poId
         ? `/procurement/purchase-orders/${poId}`
-        : '/procurement/purchase-orders/approval-queue'
+        : '/procurement/queue?filter=approval'
     case 'OT_APPROVAL_REQUIRED':
       return '/hr/overtime'
     case 'LEAVE_APPROVAL_REQUIRED':

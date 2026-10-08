@@ -99,7 +99,7 @@ interface QuickLink {
 }
 
 const QUICK_LINKS: QuickLink[] = [
-  { label: 'My PO Queue', path: '/procurement/queue', permKey: 'procurement.po.view' },
+  { label: 'My Queue', path: '/procurement/queue', permKey: 'procurement.po.view' },
   { label: 'Attendance', path: '/attendance', permKey: 'attendance.view' },
   { label: 'Payslips', path: '/payroll/payslips', permKey: 'payroll.payslips.view' },
   { label: 'My Profile', path: '/settings/profile' },

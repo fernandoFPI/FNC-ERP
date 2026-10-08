@@ -79,7 +79,6 @@ const RequisitionsPage = lazy(() => import('../pages/procurement/requisitions/Re
 const RequisitionDetail = lazy(() => import('../pages/procurement/requisitions/RequisitionDetail'))
 const RequisitionForm = lazy(() => import('../pages/procurement/requisitions/RequisitionForm'))
 const ItemsBoughtPage = lazy(() => import('../pages/procurement/requisitions/ItemsBoughtPage'))
-const MyRequisitionQueue = lazy(() => import('../pages/procurement/requisitions/MyRequisitionQueue'))
 const VendorsPage = lazy(() => import('../pages/procurement/vendors/VendorsPage'))
 const VendorForm = lazy(() => import('../pages/procurement/vendors/VendorForm'))
 const VendorDetail = lazy(() => import('../pages/procurement/vendors/VendorDetail'))
@@ -92,8 +91,7 @@ const PurchaseOrderForm = lazy(
 const PurchaseOrderDetail = lazy(
   () => import('../pages/procurement/purchase-orders/PurchaseOrderDetail'),
 )
-const ApprovalQueue = lazy(() => import('../pages/procurement/purchase-orders/ApprovalQueue'))
-const MyPOQueue = lazy(() => import('../pages/procurement/purchase-orders/MyPOQueue'))
+const MyQueuePage = lazy(() => import('../pages/procurement/queue/MyQueuePage'))
 const ReceiptForm = lazy(() => import('../pages/procurement/receipts/ReceiptForm'))
 const POReturnForm = lazy(() => import('../pages/procurement/purchase-orders/POReturnForm'))
 const POReturnDetail = lazy(() => import('../pages/procurement/purchase-orders/POReturnDetail'))
@@ -520,10 +518,10 @@ export const router = createBrowserRouter([
             path: 'requisitions/:id/items-bought',
             element: withPerm('procurement.po.view', <ItemsBoughtPage />),
           },
-          {
-            path: 'requisitions/queue',
-            element: withPerm('procurement.po.view', <MyRequisitionQueue />),
-          },
+          // The three old queue pages (My PO Queue, My Requisition Queue, Approval
+          // Queue) were merged into one — keep their URLs working for bookmarks
+          // and notification links.
+          { path: 'requisitions/queue', element: <Navigate to="/procurement/queue" replace /> },
           {
             path: 'purchase-orders',
             element: withPerm('procurement.po.view', <PurchaseOrdersPage />),
@@ -560,9 +558,9 @@ export const router = createBrowserRouter([
           },
           {
             path: 'purchase-orders/approval-queue',
-            element: withPerm('procurement.po.approve', <ApprovalQueue />, 'approve'),
+            element: <Navigate to="/procurement/queue?filter=approval" replace />,
           },
-          { path: 'queue', element: withPerm('procurement.po.view', <MyPOQueue />) },
+          { path: 'queue', element: withPerm('procurement.po.view', <MyQueuePage />) },
           // Legacy redirect — PO Positions moved to Settings
           { path: 'positions', element: <Navigate to="/settings/users/po-positions" replace /> },
         ],

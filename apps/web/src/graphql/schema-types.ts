@@ -7184,6 +7184,7 @@ export type PurchaseOrder = {
   linkedProjectId?: Maybe<Scalars['ID']['output']>;
   machineryPhotoAlert: Scalars['Boolean']['output'];
   notes?: Maybe<Scalars['String']['output']>;
+  organizerName?: Maybe<Scalars['String']['output']>;
   organizer_id?: Maybe<Scalars['ID']['output']>;
   pdf_path?: Maybe<Scalars['String']['output']>;
   po_number: Scalars['String']['output'];
@@ -7295,7 +7296,6 @@ export type Query = {
   moCostAnalysis: MoCostAnalysis;
   moMissingComponents: Array<MoComponentStatus>;
   myActivityFeed: Array<ActivityEvent>;
-  myApprovalQueue: Array<PurchaseOrder>;
   myCompanies: Array<CompanyRef>;
   myPOQueue?: Maybe<Array<PurchaseOrder>>;
   myPayslips?: Maybe<Array<Maybe<Payslip>>>;

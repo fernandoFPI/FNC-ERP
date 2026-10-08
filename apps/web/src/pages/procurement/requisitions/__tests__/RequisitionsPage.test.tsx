@@ -74,7 +74,8 @@ beforeEach(() => {
   sessionStorage.clear()
   vi.clearAllMocks()
   mockUseQuery.mockReturnValue({
-    data: { requisitions: sampleRequisitions },
+    // useQuery is mocked for every query on the page, so the queue count's field is supplied too.
+    data: { requisitions: sampleRequisitions, myRequisitionApprovalQueue: [] },
     loading: false,
     refetch: vi.fn(),
   })
@@ -113,11 +114,23 @@ describe('RequisitionsPage', () => {
     expect(screen.getByText('REQ-2026-002')).toBeInTheDocument()
   })
 
-  it('navigates to the requisition detail route on row click', async () => {
+  it('opens the preview panel on row click, then navigates to the detail route from it', async () => {
     const RequisitionsPage = (await import('../RequisitionsPage')).default
     wrap(<RequisitionsPage />)
     fireEvent.click(screen.getByText('REQ-2026-001'))
+    expect(mockNavigate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /(open|edit) requisition/i }))
     expect(mockNavigate).toHaveBeenCalledWith('/procurement/requisitions/req-1')
+  })
+
+  it('navigates to the detail route from the row menu', async () => {
+    const RequisitionsPage = (await import('../RequisitionsPage')).default
+    wrap(<RequisitionsPage />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Row actions' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Open full page' }))
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/procurement\/requisitions\/req-/),
+    )
   })
 
   it('navigates to the new-requisition route on button click', async () => {
@@ -127,7 +140,7 @@ describe('RequisitionsPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/procurement/requisitions/new')
   })
 
-  it('shows a status filter chip strip with per-status counts', async () => {
+  it('offers the requisition statuses in the Status filter', async () => {
     const RequisitionsPage = (await import('../RequisitionsPage')).default
     wrap(<RequisitionsPage />)
     expect(screen.getAllByText('Sourcing').length).toBeGreaterThan(0)
@@ -135,40 +148,55 @@ describe('RequisitionsPage', () => {
   })
 
   it('renders an empty state with zero requisitions without crashing', async () => {
-    mockUseQuery.mockReturnValue({ data: { requisitions: [] }, loading: false, refetch: vi.fn() })
+    mockUseQuery.mockReturnValue({
+      data: { requisitions: [], myRequisitionApprovalQueue: [] },
+      loading: false,
+      refetch: vi.fn(),
+    })
     const RequisitionsPage = (await import('../RequisitionsPage')).default
     wrap(<RequisitionsPage />)
-    expect(screen.getByText('0 requisitions')).toBeInTheDocument()
+    expect(screen.getByText('Showing 0-0 of 0 entries')).toBeInTheDocument()
   })
 
-  it('defaults to the full list, not just the signed-in user\'s own requisitions', async () => {
+  it("defaults to the full list, not just the signed-in user's own requisitions", async () => {
     const RequisitionsPage = (await import('../RequisitionsPage')).default
     wrap(<RequisitionsPage />)
-    const [, options] = mockUseQuery.mock.calls[0] as [unknown, { variables: { myQueueOnly?: boolean } }]
+    const [, options] = mockUseQuery.mock.calls[0] as [
+      unknown,
+      { variables: { myQueueOnly?: boolean } },
+    ]
     expect(options.variables.myQueueOnly).toBeUndefined()
-    expect(screen.getByRole('button', { name: /my requisitions/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /more filters/i }))
+    expect(screen.getByLabelText(/only requisitions i organized/i)).not.toBeChecked()
   })
 
   it('seeds a "My Requisitions" preset for a fresh browser, restoring the old default on demand', async () => {
     localStorage.clear()
     const RequisitionsPage = (await import('../RequisitionsPage')).default
     wrap(<RequisitionsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /more filters/i }))
     fireEvent.click(screen.getByTitle('Saved filter presets'))
     const presetButton = screen.getByRole('button', { name: 'My Requisitions' })
     fireEvent.click(presetButton)
-    const lastCall = mockUseQuery.mock.calls.at(-1) as [unknown, { variables: { myQueueOnly?: boolean } }]
-    expect(lastCall[1].variables.myQueueOnly).toBe(true)
+    // The page also runs the My Queue count query (no variables), so pick the
+    // last call that actually carries the list query's variables.
+    const listCalls = (
+      mockUseQuery.mock.calls as [unknown, { variables?: { myQueueOnly?: boolean } }?][]
+    ).filter((c) => c[1]?.variables !== undefined)
+    expect(listCalls.at(-1)?.[1]?.variables?.myQueueOnly).toBe(true)
   })
 
   it('does not re-seed the preset after the user deletes it', async () => {
     localStorage.clear()
     const RequisitionsPage = (await import('../RequisitionsPage')).default
     const { unmount } = wrap(<RequisitionsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /more filters/i }))
     fireEvent.click(screen.getByTitle('Saved filter presets'))
     fireEvent.click(screen.getByTitle('Delete preset'))
     unmount()
 
     wrap(<RequisitionsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /more filters/i }))
     fireEvent.click(screen.getByTitle('Saved filter presets'))
     expect(screen.getByText('No saved presets')).toBeInTheDocument()
   })
