@@ -101,3 +101,17 @@ Don't re-derive, check these first.
     + `finance.journals.approve` flow). Grep every `INSERT INTO journal_entries` for a given
     source_type, not just the first hit — a feature with both a scheduled job and a manual
     REST/GraphQL trigger is a classic place for the two to only get updated once.
+
+24. **A worklist query that re-implements its action gates drifts from them.** The queue pages
+    (`myRequisitionApprovalQueue`, legacy `myApprovalQueue`) each hand-wrote their own copy of
+    "who can act on this stage", and the copies went stale: price_verification still routed to
+    the organizer after the gate moved to `procurement_2nd` (so those holders saw nothing);
+    position scope compared the CALLER's department instead of the organizer's, ignored branch,
+    and treated a branch-only grant as company-wide (it matched every requisition); a department
+    head matched on their own department so they saw ALL pending_approval items; `po_admin` and
+    `company_admin` were missing. Symptoms: "my queue is empty though I hold the position", or a
+    queue item that errors "Not authorized" when opened. Fix pattern: each queue branch must
+    mirror, one for one, the mutation that leaves that stage (`userHasPositionForRequisitionGW`,
+    `userIsDeptHeadForRequisitionGW`, `approveRequisition`, `hasProcurementAuthorityGW`), and
+    whenever a gate changes, grep every queue/list that encodes the same rule. Regression test:
+    `services/gateway/tests/requisition-queue-positions.test.ts` (one non-admin user per position).

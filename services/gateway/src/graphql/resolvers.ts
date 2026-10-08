@@ -6694,6 +6694,7 @@ export const resolvers = {
       let sql = `SELECT po.*, v.name AS vendor_name, proj.code AS "projectCode", proj.name AS "projectName",
         rq.requisition_number AS "requisitionNumber",
         cb.name AS branch_name,
+        COALESCE(NULLIF(TRIM(ou.first_name || ' ' || ou.last_name), ''), ou.email) AS "organizerName",
         (SELECT COUNT(*) FROM vendor_invoices vi WHERE vi.po_id = po.id AND vi.company_id = po.company_id)::int AS invoice_count,
         (SELECT COALESCE(string_agg(DISTINCT
            COALESCE(p.name,'') || ' ' || COALESCE(p.name_ar,'') || ' ' || COALESCE(p.sku,'') || ' ' || COALESCE(pl.description,''),
@@ -6705,6 +6706,7 @@ export const resolvers = {
         LEFT JOIN projects proj ON proj.id = po.project_id
         LEFT JOIN requisitions rq ON rq.id = po.requisition_id
         LEFT JOIN company_branches cb ON cb.id = po.branch_id
+        LEFT JOIN users ou ON ou.id = po.organizer_id
         WHERE po.company_id = $1`
       const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
@@ -6936,9 +6938,14 @@ export const resolvers = {
                )`
 
         const result = await query(
-          `SELECT DISTINCT po.*, v.name AS vendor_name
+          `SELECT DISTINCT po.*, v.name AS vendor_name,
+                  proj.code AS "projectCode", proj.name AS "projectName",
+                  rq.requisition_number AS "requisitionNumber",
+                  COALESCE(NULLIF(TRIM(ou.first_name || ' ' || ou.last_name), ''), ou.email) AS "organizerName"
            FROM purchase_orders po
            LEFT JOIN vendors v ON v.id = po.vendor_id
+           LEFT JOIN projects proj ON proj.id = po.project_id
+           LEFT JOIN requisitions rq ON rq.id = po.requisition_id
            LEFT JOIN users ou ON ou.id = po.organizer_id
            LEFT JOIN employees org_emp ON org_emp.user_id = ou.id AND org_emp.company_id = po.company_id
            WHERE po.company_id = $1
@@ -10358,64 +10365,83 @@ export const resolvers = {
       return result.rows
     },
 
-    // G1 Phase 3 Milestone A — requisition-scoped worklist, mirrors
-    // myApprovalQueue's per-stage position-holder mapping exactly (same
-    // position per stage: store_keeper/store_pricing/procurement_officer/
-    // dept_head-or-assigned_approver; price_verification is organizer/admin
-    // only, folded into the organizer clause above), scoped to the
-    // requisition's own stage vocabulary (draft through items_bought —
-    // 'sourcing'/'completed' have no further caller action to queue on).
-    // A separate query rather than widening myApprovalQueue's return type,
-    // since GraphQL can't mix PurchaseOrder/Requisition in one list
-    // without a union — additive, not a breaking schema change.
+    // G1 Phase 3 Milestone A — requisition-scoped worklist: every requisition
+    // the caller can act on right now. Each branch below mirrors, one for one,
+    // the authorization of the mutation that moves the requisition out of that
+    // stage, so the queue shows exactly what a person can actually act on:
+    //   draft/rejected        organizer (submitRequisitionToInventoryCheck)
+    //   inventory_check       store_keeper position (confirmRequisitionInventoryCheck)
+    //   store_pricing         store_pricing position (submitRequisitionStorePricing)
+    //   market_pricing        procurement_officer position (submitRequisitionMarketPricing)
+    //   price_verification    procurement_2nd position (verifyRequisitionPrices and its
+    //                         reject-family) — NOT the organizer, see
+    //                         price-verification-organizer.test.ts
+    //   pending_approval      dept head of the ORGANIZER's department, assigned approver,
+    //                         or po_admin (approveRequisition)
+    //   items_bought          buyer position (recordLinePurchase)
+    //   admin                 hasProcurementAuthorityGW, same as every gate above
+    // Position scope is userHasPositionForRequisitionGW's: the requisition's
+    // project, the ORGANIZER's department (not the caller's), its branch, or a
+    // fully company-wide grant (project, department and branch all null).
+    // A separate query rather than widening myPOQueue's return type, since
+    // GraphQL can't mix PurchaseOrder/Requisition in one list without a union
+    // — additive, not a breaking schema change. 'sourcing'/'completed' have no
+    // further caller action to queue on.
     myRequisitionApprovalQueue: async (_: unknown, __: unknown, ctx: GQLContext) => {
       if (!ctx.auth) return []
+      const auth = ctx.auth as GWAuth
       const empResult = await query(
-        `SELECT id, department_id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
-        [ctx.auth.userId, ctx.auth.companyId],
+        `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
+        [auth.userId, auth.companyId],
       )
       const employeeId: string | null = (empResult.rows[0]?.id as string | null) ?? null
-      const departmentId: string | null =
-        (empResult.rows[0]?.department_id as string | null) ?? null
+      const isAdmin = await hasProcurementAuthorityGW(auth)
+
+      const positionScope = (position: string) => `EXISTS (
+                 SELECT 1 FROM po_position_assignments ppa
+                 WHERE ppa.employee_id=$3 AND ppa.position='${position}' AND ppa.is_active=true
+                   AND ppa.company_id=$1
+                   AND (
+                     (req.project_id IS NOT NULL AND ppa.project_id=req.project_id)
+                     OR (org_emp.department_id IS NOT NULL AND ppa.department_id=org_emp.department_id)
+                     OR (req.branch_id IS NOT NULL AND ppa.branch_id=req.branch_id)
+                     OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL)
+                   )
+               )`
+
       return (
         await query(
           `SELECT DISTINCT req.*, cb.name AS branch_name,
+                  p.code AS "projectCode", p.name AS "projectName",
                   COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
            FROM requisitions req
            LEFT JOIN company_branches cb ON cb.id=req.branch_id
+           LEFT JOIN projects p ON p.id=req.project_id
            LEFT JOIN users u ON u.id=req.organizer_id
+           LEFT JOIN employees org_emp ON org_emp.user_id=req.organizer_id AND org_emp.company_id=req.company_id
            WHERE req.company_id=$1
              AND req.status NOT IN ('deleted','completed','cancelled','sourcing')
              AND (
-               -- price_verification has no dedicated position — organizer/
-               -- admin only (see verifyRequisitionPrices).
-               (req.organizer_id=$2 AND req.status IN ('draft','rejected','price_verification'))
-               OR (req.status='inventory_check' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true
-                       AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
-               OR (req.status='store_pricing' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='store_pricing' AND ppa.is_active=true
-                       AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
-               OR (req.status='market_pricing' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true
-                       AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
+               (req.organizer_id=$2 AND req.status IN ('draft','rejected'))
+               OR (req.status='inventory_check' AND ${positionScope('store_keeper')})
+               OR (req.status='store_pricing' AND ${positionScope('store_pricing')})
+               OR (req.status='market_pricing' AND ${positionScope('procurement_officer')})
+               OR (req.status='price_verification' AND ${positionScope('procurement_2nd')})
                OR (req.status='pending_approval' AND (
-                     EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4)
-                     OR req.assigned_approver_id=$3))
-               OR (req.status='items_bought' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='buyer' AND ppa.is_active=true
-                       AND (ppa.branch_id=req.branch_id
-                         OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL))))
-               OR ($5='system_admin' AND req.status IN (
+                     EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=org_emp.department_id)
+                     OR req.assigned_approver_id=$3
+                     -- po_admin is unscoped, matching callerHasPOAdmin (approveRequisition).
+                     OR EXISTS (
+                       SELECT 1 FROM po_position_assignments ppa
+                       WHERE ppa.employee_id=$3 AND ppa.position='po_admin'
+                         AND ppa.is_active=true AND ppa.company_id=$1)))
+               OR (req.status='items_bought' AND ${positionScope('buyer')})
+               OR ($4=true AND req.status IN (
                      'inventory_check','store_pricing','market_pricing',
                      'price_verification','pending_approval','items_bought'))
              )
            ORDER BY req.created_at DESC`,
-          [ctx.auth.companyId, ctx.auth.userId, employeeId, departmentId, ctx.auth.role],
+          [auth.companyId, auth.userId, employeeId, isAdmin],
         )
       ).rows
     },
@@ -10505,74 +10531,6 @@ export const resolvers = {
       } catch {
         return null
       }
-    },
-
-    myApprovalQueue: async (_: unknown, __: unknown, ctx: GQLContext) => {
-      if (!ctx.auth) return []
-      const empResult = await query(
-        `SELECT id, department_id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
-        [ctx.auth.userId, ctx.auth.companyId],
-      )
-      const employeeId: string | null = (empResult.rows[0]?.id as string | null) ?? null
-      const departmentId: string | null =
-        (empResult.rows[0]?.department_id as string | null) ?? null
-      const hasFinance = await hasFinanceApprovalGW(
-        ctx.auth.userId,
-        ctx.auth.companyId,
-        ctx.auth.role,
-      )
-      return (
-        await query(
-          `SELECT DISTINCT po.*, v.name AS vendor_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS assigned_to_email,
-                  (SELECT created_at FROM po_approval_log WHERE po_id=po.id AND action='submitted' LIMIT 1) AS submitted_at
-           FROM purchase_orders po
-           LEFT JOIN vendors v ON v.id=po.vendor_id
-           LEFT JOIN users u ON u.id=po.assigned_to
-           WHERE po.company_id=$1
-             AND po.status NOT IN ('deleted','completed','cancelled')
-             AND (
-               -- price_verification has no dedicated position — organizer/
-               -- admin only (see submitPOPriceVerification).
-               (po.organizer_id=$2 AND po.status IN ('draft','goods_received','rejected','price_verification'))
-               OR (po.status='items_bought' AND (
-                     po.assigned_buyer_user_id=$2
-                     OR EXISTS (
-                       SELECT 1 FROM po_position_assignments ppa
-                       WHERE ppa.employee_id=$3 AND ppa.position='buyer' AND ppa.is_active=true
-                         AND (ppa.branch_id=po.branch_id
-                           OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL)))))
-               OR (po.status='inventory_check' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true
-                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
-               OR (po.status='store_pricing' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='store_pricing' AND ppa.is_active=true
-                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
-               OR (po.status='market_pricing' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true
-                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
-               OR (po.status='pending_approval' AND (
-                     EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4)
-                     OR po.assigned_approver_id=$3))
-               OR (po.status IN ('finance_audit','invoiced') AND $6=true)
-               OR ($5='system_admin' AND po.status IN (
-                     'inventory_check','store_pricing','market_pricing',
-                     'price_verification','pending_approval','items_bought','goods_received',
-                     'finance_audit','invoiced'))
-             )
-           ORDER BY po.created_at DESC`,
-          [
-            ctx.auth.companyId,
-            ctx.auth.userId,
-            employeeId,
-            departmentId,
-            ctx.auth.role,
-            hasFinance,
-          ],
-        )
-      ).rows
     },
 
     // Ported from the deleted services/procurement REST route (GET
