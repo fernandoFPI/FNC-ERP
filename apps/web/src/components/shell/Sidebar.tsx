@@ -8,6 +8,7 @@ import { usePermission } from '../../hooks/usePermission'
 import { useCompanyStore } from '../../store/companyStore'
 import { useAuthStore } from '../../store/authStore'
 import { getInitials } from '../../lib/userDisplay'
+import { useIsRtl } from '../../i18n'
 
 export interface NavChild {
   label: string
@@ -1059,6 +1060,7 @@ export function Sidebar({
   onToggle,
 }: SidebarProps) {
   const { theme } = useTheme()
+  const rtl = useIsRtl()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const clearAuth = useAuthStore((s) => s.clearAuth)
@@ -1169,7 +1171,7 @@ export function Sidebar({
           minHeight: touchMinHeight,
           background:
             isDirectActive || (hasChildren && isParentActive) ? theme.accentBg : 'transparent',
-          borderLeft:
+          borderInlineStart:
             isDirectActive || (hasChildren && isParentActive)
               ? `2.5px solid ${theme.accent}`
               : '2.5px solid transparent',
@@ -1280,7 +1282,7 @@ export function Sidebar({
                       color: isChildActive ? theme.accent : theme.textMuted,
                       fontWeight: isChildActive ? 500 : 400,
                       background: isChildActive ? theme.accentBg : 'transparent',
-                      borderLeft: isChildActive
+                      borderInlineStart: isChildActive
                         ? `2.5px solid ${theme.accent}`
                         : '2.5px solid transparent',
                       cursor: 'pointer',
@@ -1310,7 +1312,7 @@ export function Sidebar({
                           background: theme.dangerBg,
                           color: theme.danger,
                           border: `1px solid ${theme.dangerBorder}`,
-                          marginRight: '8px',
+                          marginInlineEnd: '8px',
                         }}
                       >
                         {childBadge}
@@ -1473,15 +1475,21 @@ export function Sidebar({
         background: theme.bgSidebar,
         backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
         WebkitBackdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-        borderRight: `0.5px solid ${theme.border}`,
+        borderInlineEnd: `0.5px solid ${theme.border}`,
         transition: mobile
           ? 'transform 0.25s cubic-bezier(.4,0,.2,1)'
           : 'width 0.22s cubic-bezier(.4,0,.2,1), min-width 0.22s cubic-bezier(.4,0,.2,1)',
         overflow: 'hidden',
         position: mobile ? 'fixed' : 'relative',
         top: mobile ? 0 : undefined,
-        left: mobile ? 0 : undefined,
-        transform: mobile ? (expanded ? 'translateX(0)' : 'translateX(-100%)') : 'none',
+        insetInlineStart: mobile ? 0 : undefined,
+        transform: mobile
+          ? expanded
+            ? 'translateX(0)'
+            : rtl
+              ? 'translateX(100%)'
+              : 'translateX(-100%)'
+          : 'none',
         zIndex: mobile ? 200 : 10,
         flexShrink: 0,
       }}
@@ -1618,7 +1626,7 @@ export function Sidebar({
                   location.pathname === '/settings/profile' ? theme.accent : theme.textSecondary,
                 background:
                   location.pathname === '/settings/profile' ? theme.accentBg : 'transparent',
-                borderLeft:
+                borderInlineStart:
                   location.pathname === '/settings/profile'
                     ? `2.5px solid ${theme.accent}`
                     : '2.5px solid transparent',
@@ -1651,7 +1659,7 @@ export function Sidebar({
                 minHeight: touchMinHeight,
                 color: location.pathname.startsWith('/admin') ? theme.accent : theme.textSecondary,
                 background: location.pathname.startsWith('/admin') ? theme.accentBg : 'transparent',
-                borderLeft: location.pathname.startsWith('/admin')
+                borderInlineStart: location.pathname.startsWith('/admin')
                   ? `2.5px solid ${theme.accent}`
                   : '2.5px solid transparent',
                 cursor: 'pointer',
@@ -1694,7 +1702,7 @@ export function Sidebar({
               background: location.pathname.startsWith('/settings')
                 ? theme.accentBg
                 : 'transparent',
-              borderLeft: location.pathname.startsWith('/settings')
+              borderInlineStart: location.pathname.startsWith('/settings')
                 ? `2.5px solid ${theme.accent}`
                 : '2.5px solid transparent',
               cursor: 'pointer',

@@ -9,6 +9,7 @@ import { queryClient } from './lib/queryClient'
 import { router } from './router'
 import { VersionCheck } from './components/VersionCheck'
 import { SessionKeepAlive } from './components/SessionKeepAlive'
+import './i18n'
 import './theme/themes.css'
 
 const root = document.getElementById('root')

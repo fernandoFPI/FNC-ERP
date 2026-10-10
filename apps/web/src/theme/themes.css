@@ -20,6 +20,10 @@ html {
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
+html[dir='rtl'] {
+  font-family: 'Noto Sans Arabic', -apple-system, 'Segoe UI', Tahoma, sans-serif;
+}
+
 body {
   background: var(--bg-canvas);
   color: var(--text-primary);

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { EntitySwitcher } from './EntitySwitcher'
 import { ThemeSwitcher } from './ThemeSwitcher'
+import { LanguageSwitcher } from './LanguageSwitcher'
 import { NotificationsDrawer } from './NotificationsDrawer'
 import { useTheme } from '../../theme/ThemeContext'
 import { useAuthStore } from '../../store/authStore'
@@ -361,6 +362,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
             phone drawer (More → Sidebar footer) and BottomNav's Notifs tab —
             dropping them here keeps the phone topbar to hamburger + breadcrumb
             + company badge. */}
+        {!isPhone && <LanguageSwitcher />}
         {!isPhone && <ThemeSwitcher />}
 
         {/* Notifications */}
@@ -402,7 +404,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                   style={{
                     position: 'absolute',
                     top: '4px',
-                    right: '4px',
+                    insetInlineEnd: '4px',
                     width: '8px',
                     height: '8px',
                     borderRadius: '50%',
@@ -458,7 +460,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                 style={{
                   position: 'absolute',
                   top: 'calc(100% + 6px)',
-                  right: 0,
+                  insetInlineEnd: 0,
                   zIndex: 500,
                   minWidth: '180px',
                 }}
@@ -562,7 +564,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                           border: 'none',
                           borderRadius: '6px',
                           cursor: 'pointer',
-                          textAlign: 'left',
+                          textAlign: 'start',
                           fontFamily: 'inherit',
                         }}
                         onMouseEnter={(e) => {
@@ -587,7 +589,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
-                        textAlign: 'left',
+                        textAlign: 'start',
                         fontFamily: 'inherit',
                       }}
                       onMouseEnter={(e) => {

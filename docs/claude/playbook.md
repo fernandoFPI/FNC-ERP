@@ -115,3 +115,17 @@ Don't re-derive, check these first.
     `userIsDeptHeadForRequisitionGW`, `approveRequisition`, `hasProcurementAuthorityGW`), and
     whenever a gate changes, grep every queue/list that encodes the same rule. Regression test:
     `services/gateway/tests/requisition-queue-positions.test.ts` (one non-admin user per position).
+
+25. **RTL (Arabic) layout and i18n conventions (apps/web).** `src/i18n` (i18next) sets `<html dir/lang>`
+    on language change; the language is kept in `localStorage['fnc-language']`. In RTL work: never
+    write physical `marginLeft/Right`, `paddingLeft/Right`, `borderLeft/Right`, `left:`/`right:` or
+    `textAlign: 'left'|'right'` in new code. Use the logical forms (`marginInlineStart/End`,
+    `borderInlineStart/End`, `insetInlineStart/End`, `textAlign: 'start'|'end'`). Exceptions that stay
+    physical: viewport-coordinate popovers (`ListKit` RowMenu `left`) and `translateX` slides, which
+    must be flipped by hand with `useIsRtl()` (Sidebar mobile drawer). Directional glyphs (`‹ ›`,
+    arrows, chevrons) don't mirror by themselves: swap them with `useIsRtl()`. Non-component modules
+    (`lib/po-constants.ts`, `lib/procurementStages.ts`) translate with `i18n.t(key, { defaultValue })`
+    so an untranslated key falls back to the English label. Tab/stage *keys* stay English internally
+    and only the displayed label is translated (`PanelTabs` `labels` prop). Arabic plurals need all six
+    forms (`_zero _one _two _few _many _other`). Run `node` key-parity check (en vs ar) after adding
+    keys. Backend strings (approval_log `action`, error messages) are still English.
