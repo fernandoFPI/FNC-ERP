@@ -208,7 +208,7 @@ const FILTER_DEFAULTS = {
   myRequisitionsOnly: 'false',
 }
 
-const PAGE_SIZE = 12
+const PAGE_SIZE = 200
 
 const PRIORITY_OPTIONS = [
   { value: 'emergency', label: 'Emergency' },

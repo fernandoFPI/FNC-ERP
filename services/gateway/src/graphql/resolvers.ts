@@ -6743,7 +6743,7 @@ export const resolvers = {
         sql += ` AND po.branch_id = ANY($${idx++})`
         params.push(branchScope)
       }
-      sql += ' ORDER BY po.created_at DESC LIMIT 200'
+      sql += ' ORDER BY po.created_at DESC LIMIT 2000'
       const result = await query(sql, params)
       // Pricing is withheld from the list view for anyone who isn't an admin
       // or on the finance team — a store_keeper or any other non-finance

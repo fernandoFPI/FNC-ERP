@@ -79,7 +79,7 @@ interface SettlementQueueApiRow {
   created_at: string
 }
 
-const PAGE_SIZE = 12
+const PAGE_SIZE = 200
 const OVERDUE_DAYS = 3
 
 const KIND_LABELS: Record<Kind, string> = {

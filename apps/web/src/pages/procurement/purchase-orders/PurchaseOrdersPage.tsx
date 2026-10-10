@@ -69,7 +69,7 @@ const FILTER_DEFAULTS = {
   myPOsOnly: 'false',
 }
 
-const PAGE_SIZE = 12
+const PAGE_SIZE = 200
 
 const PRIORITY_LABELS: Record<string, string> = { low: 'Low', high: 'High', emergency: 'Emergency' }
 const PRIORITY_STYLES: Partial<Record<string, { color: string; bg: string; border: string }>> = {
