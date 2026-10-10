@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
+import i18n, { useIsRtl } from '../../i18n'
 import { useTheme } from '../../theme/ThemeContext'
 
 // Shared building blocks for the Procurement list pages (Purchase Orders,
@@ -296,7 +298,7 @@ export function KpiTile({
       type={onClick ? 'button' : undefined}
       onClick={onClick}
       style={{
-        textAlign: 'left',
+        textAlign: 'start',
         fontFamily: 'inherit',
         display: 'flex',
         alignItems: 'center',
@@ -384,6 +386,7 @@ export function SearchBox({
   placeholder: string
 }) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
   return (
     <label
       style={{
@@ -421,7 +424,7 @@ export function SearchBox({
       {value && (
         <button
           type="button"
-          aria-label="Clear search"
+          aria-label={t('common.clearSearch')}
           onClick={() => {
             onChange('')
           }}
@@ -455,7 +458,8 @@ export function PillSelect({
   onChange: (v: string) => void
 }) {
   const { theme } = useTheme()
-  const shown = options.find((o) => o.value === value)?.label ?? 'All'
+  const { t } = useTranslation()
+  const shown = options.find((o) => o.value === value)?.label ?? t('common.all')
   const active = value !== ''
   return (
     <div
@@ -496,7 +500,7 @@ export function PillSelect({
           cursor: 'pointer',
         }}
       >
-        <option value="">All</option>
+        <option value="">{t('common.all')}</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -515,6 +519,7 @@ export function MoreFilters({
   children: React.ReactNode
 }) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -551,7 +556,7 @@ export function MoreFilters({
         }}
       >
         <Icon name="filter" size={15} />
-        More Filters
+        {t('common.moreFilters')}
         {activeCount > 0 && (
           <span
             style={{
@@ -572,7 +577,7 @@ export function MoreFilters({
           style={{
             position: 'absolute',
             top: '46px',
-            right: 0,
+            insetInlineEnd: 0,
             zIndex: 40,
             width: '300px',
             padding: '16px',
@@ -676,6 +681,7 @@ export function SelectionBar({
   children: React.ReactNode
 }) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
   return (
     <div
       style={{
@@ -721,7 +727,7 @@ export function SelectionBar({
         type="button"
         onClick={onClear}
         style={{
-          marginLeft: 'auto',
+          marginInlineStart: 'auto',
           border: 'none',
           background: 'none',
           color: theme.accent,
@@ -731,7 +737,7 @@ export function SelectionBar({
           fontFamily: 'inherit',
         }}
       >
-        Clear selection
+        {t('common.clearSelection')}
       </button>
     </div>
   )
@@ -890,6 +896,7 @@ export interface MenuItem {
 
 // Row "⋮" menu — rendered in a portal so table overflow can't clip it.
 export function RowMenu({ items }: { items: MenuItem[] }) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -916,7 +923,7 @@ export function RowMenu({ items }: { items: MenuItem[] }) {
       <button
         ref={btnRef}
         type="button"
-        aria-label="Row actions"
+        aria-label={t('common.rowActions')}
         onClick={(e) => {
           e.stopPropagation()
           if (pos) {
@@ -971,7 +978,7 @@ export function RowMenu({ items }: { items: MenuItem[] }) {
                 style={{
                   display: 'block',
                   width: '100%',
-                  textAlign: 'left',
+                  textAlign: 'start',
                   padding: '8px 10px',
                   border: 'none',
                   borderRadius: '6px',
@@ -1010,6 +1017,8 @@ export function Pagination({
   onChange: (p: number) => void
 }) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
+  const rtl = useIsRtl()
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1
   const to = Math.min(total, page * pageSize)
@@ -1046,19 +1055,19 @@ export function Pagination({
       }}
     >
       <span style={{ fontSize: '13px', color: theme.textSecondary }}>
-        Showing {from}-{to} of {total} entries
+        {t('common.showingEntries', { from, to, total })}
       </span>
       <div style={{ display: 'flex', gap: '6px' }}>
         <button
           type="button"
-          aria-label="Previous page"
+          aria-label={t('common.previousPage')}
           disabled={page <= 1}
           onClick={() => {
             onChange(page - 1)
           }}
           style={btn(page <= 1)}
         >
-          ‹
+          {rtl ? '›' : '‹'}
         </button>
         {nums.map((n, i) =>
           n === '…' ? (
@@ -1089,14 +1098,14 @@ export function Pagination({
         )}
         <button
           type="button"
-          aria-label="Next page"
+          aria-label={t('common.nextPage')}
           disabled={page >= pages}
           onClick={() => {
             onChange(page + 1)
           }}
           style={btn(page >= pages)}
         >
-          ›
+          {rtl ? '‹' : '›'}
         </button>
       </div>
     </div>
@@ -1233,6 +1242,7 @@ export function PanelHeader({
   onClose: () => void
 }) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
   return (
     <div style={{ padding: '20px 22px 14px', flexShrink: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1254,7 +1264,7 @@ export function PanelHeader({
         <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{badge}</span>
         <div
           style={{
-            marginLeft: 'auto',
+            marginInlineStart: 'auto',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
@@ -1285,7 +1295,7 @@ export function PanelHeader({
           )}
           <button
             type="button"
-            aria-label="Close preview"
+            aria-label={t('common.closePreview')}
             onClick={onClose}
             style={{
               width: '32px',
@@ -1391,7 +1401,7 @@ export function StatPair({
         flex: 1,
         minWidth: 0,
         padding: '12px 16px',
-        borderLeft: first ? 'none' : `1px solid ${theme.border}`,
+        borderInlineStart: first ? 'none' : `1px solid ${theme.border}`,
       }}
     >
       <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>{c.label}</div>
@@ -1417,6 +1427,7 @@ export function WorkflowStepper({
   complete: boolean
 }) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
   return (
     <div style={{ padding: '0 22px 16px' }}>
       <div
@@ -1427,7 +1438,7 @@ export function WorkflowStepper({
           marginBottom: '14px',
         }}
       >
-        Workflow Progress
+        {t('common.workflowProgress')}
       </div>
       <div style={{ display: 'flex', alignItems: 'flex-start' }}>
         {steps.map((s, i) => {
@@ -1451,7 +1462,7 @@ export function WorkflowStepper({
                     position: 'absolute',
                     zIndex: 0,
                     top: '13px',
-                    right: '50%',
+                    insetInlineEnd: '50%',
                     width: '100%',
                     height: '3px',
                     background: done || isCurrent ? theme.accent : theme.border,
@@ -1498,7 +1509,7 @@ export function WorkflowStepper({
                   fontWeight: isCurrent ? 700 : 500,
                 }}
               >
-                {s}
+                {t(`stage.${s}`, { defaultValue: s })}
               </span>
             </div>
           )
@@ -1512,10 +1523,13 @@ export function PanelTabs({
   tabs,
   active,
   onChange,
+  labels,
 }: {
   tabs: string[]
   active: string
   onChange: (t: string) => void
+  /** Display text per tab key; the key itself is shown when absent. */
+  labels?: Record<string, string>
 }) {
   const { theme } = useTheme()
   return (
@@ -1534,28 +1548,28 @@ export function PanelTabs({
         scrollbarWidth: 'none',
       }}
     >
-      {tabs.map((t) => (
+      {tabs.map((tab) => (
         <button
-          key={t}
+          key={tab}
           type="button"
           onClick={() => {
-            onChange(t)
+            onChange(tab)
           }}
           style={{
             padding: '10px 0',
             border: 'none',
-            borderBottom: `2px solid ${t === active ? theme.accent : 'transparent'}`,
+            borderBottom: `2px solid ${tab === active ? theme.accent : 'transparent'}`,
             marginBottom: '-1px',
             background: 'none',
-            color: t === active ? theme.accent : theme.textSecondary,
-            fontWeight: t === active ? 600 : 500,
+            color: tab === active ? theme.accent : theme.textSecondary,
+            fontWeight: tab === active ? 600 : 500,
             fontSize: '13px',
             cursor: 'pointer',
             whiteSpace: 'nowrap',
             fontFamily: 'inherit',
           }}
         >
-          {t}
+          {labels?.[tab] ?? tab}
         </button>
       ))}
     </div>
@@ -1608,7 +1622,7 @@ export function daysSince(iso: string): number {
 
 export function formatAge(iso: string): string {
   const d = daysSince(iso)
-  return d === 1 ? '1 day' : `${d} days`
+  return i18n.t('common.days', { count: d })
 }
 
 export function formatLongDate(iso?: string | null): string {

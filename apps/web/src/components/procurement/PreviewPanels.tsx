@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
@@ -52,7 +53,8 @@ interface HistoryEntry {
 
 function HistoryList({ entries }: { entries: HistoryEntry[] }) {
   const { theme } = useTheme()
-  if (entries.length === 0) return <PanelMessage>No approval history yet.</PanelMessage>
+  const { t } = useTranslation()
+  if (entries.length === 0) return <PanelMessage>{t('preview.noHistory')}</PanelMessage>
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {entries.map((e, i) => (
@@ -100,6 +102,7 @@ function HistoryList({ entries }: { entries: HistoryEntry[] }) {
 
 function NotesBox({ notes, onEdit }: { notes?: string | null; onEdit?: () => void }) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
   return (
     <div
       style={{
@@ -120,12 +123,12 @@ function NotesBox({ notes, onEdit }: { notes?: string | null; onEdit?: () => voi
           color: theme.textPrimary,
         }}
       >
-        Notes
+        {t('preview.notes')}
         {onEdit && (
           <button
             type="button"
-            aria-label="Edit notes"
-            title="Edit on the full page"
+            aria-label={t('preview.editNotes')}
+            title={t('preview.editOnFullPage')}
             onClick={onEdit}
             style={{
               border: 'none',
@@ -150,7 +153,7 @@ function NotesBox({ notes, onEdit }: { notes?: string | null; onEdit?: () => voi
           minHeight: '52px',
         }}
       >
-        {notes ?? 'No notes.'}
+        {notes ?? t('preview.noNotes')}
       </div>
     </div>
   )
@@ -162,7 +165,8 @@ function ItemList({
   items: { id: string; name: string; qty: string; received?: string | null }[]
 }) {
   const { theme } = useTheme()
-  if (items.length === 0) return <PanelMessage>No items on this document.</PanelMessage>
+  const { t } = useTranslation()
+  if (items.length === 0) return <PanelMessage>{t('preview.noItems')}</PanelMessage>
   return (
     <div>
       {items.map((l) => (
@@ -178,11 +182,11 @@ function ItemList({
           }}
         >
           <span style={{ color: theme.textPrimary, overflowWrap: 'anywhere' }}>{l.name}</span>
-          <span style={{ color: theme.textSecondary, whiteSpace: 'nowrap', textAlign: 'right' }}>
+          <span style={{ color: theme.textSecondary, whiteSpace: 'nowrap', textAlign: 'end' }}>
             {l.qty}
             {l.received != null && (
               <span style={{ display: 'block', fontSize: '11px', color: theme.textMuted }}>
-                received {l.received}
+                {t('preview.received', { qty: l.received })}
               </span>
             )}
           </span>
@@ -228,6 +232,7 @@ export function POPreviewPanel({
   onClose: () => void
 }) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { can } = usePermission()
   const [tab, setTab] = useState('Details')
@@ -270,7 +275,13 @@ export function POPreviewPanel({
     return money(po.total_amount, po.currency_code)
   })()
 
-  const tabs = ['Details', 'Items', 'Approval History', `Attachments (${attachments.length})`]
+  const tabs = ['Details', 'Items', 'Approval History', 'Attachments']
+  const tabLabels = {
+    Details: t('preview.tab.details'),
+    Items: t('preview.tab.items'),
+    'Approval History': t('preview.tab.history'),
+    Attachments: t('preview.tab.attachments', { count: attachments.length }),
+  }
 
   return (
     <>
@@ -279,20 +290,20 @@ export function POPreviewPanel({
         badge={<Badge variant={row.statusVariant}>{row.statusLabel}</Badge>}
         sub={
           <>
-            {row.requisitionNumber ? `${row.requisitionNumber} • ` : ''}Created{' '}
-            {formatLongDate(row.created_at)}
+            {row.requisitionNumber ? `${row.requisitionNumber} • ` : ''}
+            {t('preview.created', { date: formatLongDate(row.created_at) })}
           </>
         }
-        action={{ label: 'Open PO', icon: 'eye', onClick: openFull }}
+        action={{ label: t('preview.openPo'), icon: 'eye', onClick: openFull }}
         onClose={onClose}
       />
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarWidth: 'thin' }}>
-        {error && !po && <PanelMessage>Couldn’t load this PO. Try again.</PanelMessage>}
+        {error && !po && <PanelMessage>{t('preview.loadPoFailed')}</PanelMessage>}
         <InfoCard>
           <Party
             icon="building"
-            name={po?.vendor_name ?? (loading ? 'Loading…' : 'No vendor yet')}
-            role="Vendor"
+            name={po?.vendor_name ?? (loading ? t('common.loading') : t('preview.noVendorYet'))}
+            role={t('preview.vendor')}
             lines={[
               ...(vendor?.contact_phone
                 ? [{ icon: 'phone' as const, text: vendor.contact_phone }]
@@ -304,11 +315,13 @@ export function POPreviewPanel({
           />
           <StatPair
             left={{
-              label: 'Total Amount',
-              value: totalText ?? <span style={{ color: theme.textMuted }}>Restricted</span>,
+              label: t('preview.totalAmount'),
+              value: totalText ?? (
+                <span style={{ color: theme.textMuted }}>{t('preview.restricted')}</span>
+              ),
             }}
             right={{
-              label: 'Project',
+              label: t('preview.project'),
               value: po?.projectCode ? (
                 <>
                   {po.projectCode}
@@ -334,50 +347,50 @@ export function POPreviewPanel({
 
         <WorkflowStepper steps={PO_STAGES} current={stage.index ?? 0} complete={stage.complete} />
 
-        <PanelTabs tabs={tabs} active={tab} onChange={setTab} />
+        <PanelTabs tabs={tabs} labels={tabLabels} active={tab} onChange={setTab} />
         <div style={{ padding: '10px 22px 20px' }}>
           {tab === 'Details' && (
             <>
-              <KeyValue label="PO Number">{row.po_number}</KeyValue>
-              <KeyValue label="Reference">
+              <KeyValue label={t('preview.poNumber')}>{row.po_number}</KeyValue>
+              <KeyValue label={t('preview.reference')}>
                 {row.requisitionNumber ? (
                   <span style={{ color: theme.accent }}>{row.requisitionNumber}</span>
                 ) : (
                   '—'
                 )}
               </KeyValue>
-              <KeyValue label="Vendor">{po?.vendor_name ?? '—'}</KeyValue>
-              <KeyValue label="Project">
+              <KeyValue label={t('preview.vendor')}>{po?.vendor_name ?? '—'}</KeyValue>
+              <KeyValue label={t('preview.project')}>
                 {po?.projectCode
                   ? [po.projectCode, po.projectName].filter(Boolean).join(' — ')
                   : '—'}
               </KeyValue>
-              <KeyValue label="Organizer">
+              <KeyValue label={t('preview.organizer')}>
                 <PersonCell name={row.organizerName} />
               </KeyValue>
-              <KeyValue label="Buyer">
+              <KeyValue label={t('preview.buyer')}>
                 {po?.buyerNames && po.buyerNames.length > 0
                   ? po.buyerNames.join(', ')
                   : (po?.assigned_buyer_name ?? '—')}
               </KeyValue>
-              <KeyValue label="Created At">{formatDateTime(row.created_at)}</KeyValue>
-              <KeyValue label="Expected Delivery">
+              <KeyValue label={t('preview.createdAt')}>{formatDateTime(row.created_at)}</KeyValue>
+              <KeyValue label={t('preview.expectedDelivery')}>
                 {formatLongDate(po?.expected_delivery_date)}
               </KeyValue>
-              <KeyValue label="Currency">{po?.currency_code ?? '—'}</KeyValue>
+              <KeyValue label={t('preview.currency')}>{po?.currency_code ?? '—'}</KeyValue>
               <NotesBox notes={po?.notes} onEdit={canEdit ? openFull : undefined} />
             </>
           )}
           {tab === 'Items' &&
             (restricted ? (
               <PanelMessage>
-                Item details are limited to people involved at this stage.
+                {t('preview.itemsRestricted')}
               </PanelMessage>
             ) : (
               <ItemList
                 items={(po?.lines ?? []).map((l) => ({
                   id: l.id,
-                  name: l.product_name ?? l.description ?? 'Item',
+                  name: l.product_name ?? l.description ?? t('preview.item'),
                   qty: `${num(l.qty)} ${l.uom ?? ''}`.trim(),
                   received: l.qty_received != null ? num(l.qty_received) : null,
                 }))}
@@ -396,7 +409,7 @@ export function POPreviewPanel({
           )}
           {tab.startsWith('Attachments') &&
             (attachments.length === 0 ? (
-              <PanelMessage>No attachments.</PanelMessage>
+              <PanelMessage>{t('preview.noAttachments')}</PanelMessage>
             ) : (
               <div>
                 {attachments.map((a) => (
@@ -423,7 +436,7 @@ export function POPreviewPanel({
                     </span>
                   </div>
                 ))}
-                <PanelMessage>Open the full page to view or download files.</PanelMessage>
+                <PanelMessage>{t('preview.openFullForFiles')}</PanelMessage>
               </div>
             ))}
         </div>
@@ -452,6 +465,7 @@ export function RequisitionPreviewPanel({
   onClose: () => void
 }) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { can } = usePermission()
   const [tab, setTab] = useState('Details')
@@ -477,23 +491,23 @@ export function RequisitionPreviewPanel({
       <PanelHeader
         title={row.requisition_number}
         badge={<Badge variant={row.statusVariant}>{row.statusLabel}</Badge>}
-        sub={<>Created {formatLongDate(row.created_at)}</>}
-        action={{ label: 'Open Requisition', icon: 'eye', onClick: openFull }}
+        sub={<>{t('preview.created', { date: formatLongDate(row.created_at) })}</>}
+        action={{ label: t('preview.openRequisition'), icon: 'eye', onClick: openFull }}
         onClose={onClose}
       />
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarWidth: 'thin' }}>
-        {error && !req && <PanelMessage>Couldn’t load this requisition. Try again.</PanelMessage>}
+        {error && !req && <PanelMessage>{t('preview.loadReqFailed')}</PanelMessage>}
         <InfoCard>
           <Party
             icon="user"
-            name={row.organizerName ?? (loading ? 'Loading…' : 'Unknown')}
-            role="Organizer"
+            name={row.organizerName ?? (loading ? t('common.loading') : t('preview.unknown'))}
+            role={t('preview.organizer')}
             lines={req?.branch_name ? [{ icon: 'building', text: req.branch_name }] : []}
           />
           <StatPair
-            left={{ label: 'Total Amount', value: totalText }}
+            left={{ label: t('preview.totalAmount'), value: totalText }}
             right={{
-              label: 'Project',
+              label: t('preview.project'),
               value: req?.projectCode ? (
                 <>
                   {req.projectCode}
@@ -523,27 +537,36 @@ export function RequisitionPreviewPanel({
           complete={stage.complete}
         />
 
-        <PanelTabs tabs={['Details', 'Items', 'Approval History']} active={tab} onChange={setTab} />
+        <PanelTabs
+          tabs={['Details', 'Items', 'Approval History']}
+          labels={{
+            Details: t('preview.tab.details'),
+            Items: t('preview.tab.items'),
+            'Approval History': t('preview.tab.history'),
+          }}
+          active={tab}
+          onChange={setTab}
+        />
         <div style={{ padding: '10px 22px 20px' }}>
           {tab === 'Details' && (
             <>
-              <KeyValue label="Requisition">{row.requisition_number}</KeyValue>
-              <KeyValue label="Purpose">{req?.purpose ?? '—'}</KeyValue>
-              <KeyValue label="Project">
+              <KeyValue label={t('preview.requisition')}>{row.requisition_number}</KeyValue>
+              <KeyValue label={t('preview.purpose')}>{req?.purpose ?? '—'}</KeyValue>
+              <KeyValue label={t('preview.project')}>
                 {req?.projectCode
                   ? [req.projectCode, req.projectName].filter(Boolean).join(' — ')
                   : '—'}
               </KeyValue>
-              <KeyValue label="Branch">{req?.branch_name ?? '—'}</KeyValue>
-              <KeyValue label="Organizer">
+              <KeyValue label={t('preview.branch')}>{req?.branch_name ?? '—'}</KeyValue>
+              <KeyValue label={t('preview.organizer')}>
                 <PersonCell name={row.organizerName} />
               </KeyValue>
-              <KeyValue label="Priority">{req?.priority ?? '—'}</KeyValue>
-              <KeyValue label="Created At">{formatDateTime(row.created_at)}</KeyValue>
-              <KeyValue label="Expected Delivery">
+              <KeyValue label={t('preview.priority')}>{req?.priority ?? '—'}</KeyValue>
+              <KeyValue label={t('preview.createdAt')}>{formatDateTime(row.created_at)}</KeyValue>
+              <KeyValue label={t('preview.expectedDelivery')}>
                 {formatLongDate(req?.expected_delivery_date)}
               </KeyValue>
-              <KeyValue label="Deliver To">{req?.delivery_destination ?? '—'}</KeyValue>
+              <KeyValue label={t('preview.deliverTo')}>{req?.delivery_destination ?? '—'}</KeyValue>
               <NotesBox notes={req?.notes} onEdit={canEdit ? openFull : undefined} />
             </>
           )}
@@ -551,7 +574,7 @@ export function RequisitionPreviewPanel({
             <ItemList
               items={(req?.lines ?? []).map((l) => ({
                 id: l.id,
-                name: l.product_name ?? l.description ?? 'Item',
+                name: l.product_name ?? l.description ?? t('preview.item'),
                 qty: `${num(l.qty)} ${l.uom ?? ''}`.trim(),
                 received: l.qty_received != null ? num(l.qty_received) : null,
               }))}

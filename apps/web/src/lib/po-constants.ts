@@ -1,4 +1,5 @@
 import type { BadgeVariant } from '../components/ui/Badge'
+import i18n from '../i18n'
 
 // Ordered active statuses shown in the StatusBar (terminal states excluded)
 export const PO_STATUSES = [
@@ -245,15 +246,18 @@ export function getPOStatusVariant(status: string): BadgeVariant {
 
 export function getPOStatusLabel(status: string): string {
   const found = PO_STATUSES.find((s) => s.key === status) ?? CHILD_PO_STATUSES.find((s) => s.key === status)
-  if (found) return found.label
-  switch (status) {
-    case 'rejected':
-      return 'Rejected'
-    case 'cancelled':
-      return 'Cancelled'
-    case 'deleted':
-      return 'Deleted'
-    default:
-      return status.replace(/_/g, ' ')
-  }
+  const fallback = (() => {
+    if (found) return found.label
+    switch (status) {
+      case 'rejected':
+        return 'Rejected'
+      case 'cancelled':
+        return 'Cancelled'
+      case 'deleted':
+        return 'Deleted'
+      default:
+        return status.replace(/_/g, ' ')
+    }
+  })()
+  return i18n.t(`po.status.${status}`, { defaultValue: fallback })
 }

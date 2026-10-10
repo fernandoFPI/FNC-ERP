@@ -3,6 +3,8 @@
 // requisition-constants.ts) into a handful of user-facing stages. Display only —
 // never used for permission or transition logic.
 
+import i18n from '../i18n'
+
 export interface StageInfo {
   /** Index of the stage the record is currently in; null for rejected/cancelled/unknown. */
   index: number | null
@@ -65,7 +67,8 @@ export function miniReached(stage: StageInfo, stageCount: number): number | null
 }
 
 export function stageLabel(stage: StageInfo, stages: string[]): string {
-  if (stage.complete) return 'Complete'
+  if (stage.complete) return i18n.t('stage.Complete', { defaultValue: 'Complete' })
   if (stage.index === null) return ''
-  return stages[stage.index] ?? ''
+  const name = stages[stage.index] ?? ''
+  return name ? i18n.t(`stage.${name}`, { defaultValue: name }) : ''
 }

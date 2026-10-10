@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
+import { useTranslation } from 'react-i18next'
 import { PURCHASE_ORDERS_QUERY, APPROVE_PO, REJECT_PO } from '../../../graphql/procurement'
 import { useTheme } from '../../../theme/ThemeContext'
 import { Card } from '../../../components/ui/Card'
@@ -71,7 +72,6 @@ const FILTER_DEFAULTS = {
 
 const PAGE_SIZE = 200
 
-const PRIORITY_LABELS: Record<string, string> = { low: 'Low', high: 'High', emergency: 'Emergency' }
 const PRIORITY_STYLES: Partial<Record<string, { color: string; bg: string; border: string }>> = {
   high: { color: '#d97706', bg: 'rgba(217,119,6,0.08)', border: 'rgba(217,119,6,0.3)' },
   emergency: { color: '#dc2626', bg: 'rgba(220,38,38,0.08)', border: 'rgba(220,38,38,0.3)' },
@@ -100,16 +100,7 @@ interface PurchaseOrder {
   itemSearchText?: string | null
 }
 
-const STATUS_OPTIONS = [
-  ...ALL_PO_STATUSES.map((s) => ({ value: s.key, label: s.label })),
-  { value: 'deleted', label: 'Deleted' },
-]
-
-const PRIORITY_OPTIONS = [
-  { value: 'emergency', label: 'Emergency' },
-  { value: 'high', label: 'High' },
-  { value: 'low', label: 'Low' },
-]
+const PRIORITY_KEYS = ['emergency', 'high', 'low'] as const
 
 function downloadCSV(rows: string[][], filename: string) {
   const content = rows
@@ -139,7 +130,14 @@ const isDelayed = (o: PurchaseOrder) => {
 }
 
 export default function PurchaseOrdersPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
+  const priorityLabel = (p: string) => t(`po.priority.${p}`, { defaultValue: p })
+  const STATUS_OPTIONS = [
+    ...ALL_PO_STATUSES.map((s) => ({ value: s.key, label: getPOStatusLabel(s.key) })),
+    { value: 'deleted', label: getPOStatusLabel('deleted') },
+  ]
+  const PRIORITY_OPTIONS = PRIORITY_KEYS.map((p) => ({ value: p, label: priorityLabel(p) }))
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
   const [urlParams] = useSearchParams()
@@ -373,10 +371,13 @@ export default function PurchaseOrdersPage() {
     if (failed === 0) {
       addToast({
         type: 'success',
-        message: `${succeeded} PO${succeeded !== 1 ? 's' : ''} approved`,
+        message: t('po.list.toast.approvedCount', { count: succeeded }),
       })
     } else {
-      addToast({ type: 'warning', message: `${succeeded} approved, ${failed} failed` })
+      addToast({
+        type: 'warning',
+        message: t('po.list.toast.approvedPartial', { succeeded, failed }),
+      })
     }
   }
 
@@ -399,31 +400,34 @@ export default function PurchaseOrdersPage() {
     if (failed === 0) {
       addToast({
         type: 'success',
-        message: `${succeeded} PO${succeeded !== 1 ? 's' : ''} rejected`,
+        message: t('po.list.toast.rejectedCount', { count: succeeded }),
       })
     } else {
-      addToast({ type: 'warning', message: `${succeeded} rejected, ${failed} failed` })
+      addToast({
+        type: 'warning',
+        message: t('po.list.toast.rejectedPartial', { succeeded, failed }),
+      })
     }
   }
 
   const csvFor = (rows: PurchaseOrder[], filename: string) => {
     const header = [
-      'PO Number',
-      'Vendor',
-      'Project',
-      'Status',
-      'Priority',
-      'Organizer',
-      ...(canSeeTotals ? ['Total Amount', 'Currency'] : []),
-      'Created',
-      'Expected Delivery',
+      t('po.list.csv.poNumber'),
+      t('po.list.csv.vendor'),
+      t('po.list.csv.project'),
+      t('po.list.csv.status'),
+      t('po.list.csv.priority'),
+      t('po.list.csv.organizer'),
+      ...(canSeeTotals ? [t('po.list.csv.totalAmount'), t('po.list.csv.currency')] : []),
+      t('po.list.csv.created'),
+      t('po.list.csv.expectedDelivery'),
     ]
     const body = rows.map((o) => [
       o.po_number,
       o.vendor_name ?? '',
       o.project_id ? [o.projectCode, o.projectName].filter(Boolean).join(' — ') : '',
       getPOStatusLabel(o.status),
-      PRIORITY_LABELS[o.priority] ?? o.priority,
+      priorityLabel(o.priority),
       o.organizerName ?? '',
       ...(canSeeTotals ? [o.total_amount, o.currency_code] : []),
       o.created_at.slice(0, 10),
@@ -436,10 +440,13 @@ export default function PurchaseOrdersPage() {
   const approveOne = async (o: PurchaseOrder) => {
     try {
       await approvePOMutation({ variables: { id: o.id } })
-      addToast({ type: 'success', message: `${o.po_number} approved` })
+      addToast({ type: 'success', message: t('po.list.toast.approvedOne', { po: o.po_number }) })
       void refetch()
     } catch (e) {
-      addToast({ type: 'error', message: e instanceof Error ? e.message : 'Could not approve' })
+      addToast({
+        type: 'error',
+        message: e instanceof Error ? e.message : t('po.list.toast.approveFailed'),
+      })
     }
   }
 
@@ -452,7 +459,7 @@ export default function PurchaseOrdersPage() {
     renderHeader: () => (
       <input
         type="checkbox"
-        aria-label="Select all"
+        aria-label={t('po.list.selectAll')}
         checked={allSelected}
         ref={(el) => {
           if (el) el.indeterminate = someSelected && !allSelected
@@ -470,7 +477,7 @@ export default function PurchaseOrdersPage() {
       >
         <input
           type="checkbox"
-          aria-label={`Select ${o.po_number}`}
+          aria-label={t('po.list.selectOne', { po: o.po_number })}
           checked={selectedIds.has(o.id)}
           onChange={() => {
             toggleSelect(o.id)
@@ -484,7 +491,7 @@ export default function PurchaseOrdersPage() {
   const dataColumns: Column<PurchaseOrder>[] = [
     {
       key: 'po_number',
-      header: 'PO #',
+      header: t('po.list.col.poNumber'),
       mobilePrimary: true,
       render: (o) => {
         const ps = PRIORITY_STYLES[o.priority]
@@ -508,7 +515,7 @@ export default function PurchaseOrdersPage() {
                     letterSpacing: '0.04em',
                   }}
                 >
-                  {PRIORITY_LABELS[o.priority]}
+                  {priorityLabel(o.priority)}
                 </span>
               )}
             </div>
@@ -521,7 +528,7 @@ export default function PurchaseOrdersPage() {
     },
     {
       key: 'vendor_name',
-      header: 'Vendor',
+      header: t('po.list.col.vendor'),
       render: (o) => (
         <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{o.vendor_name ?? '—'}</span>
       ),
@@ -530,7 +537,7 @@ export default function PurchaseOrdersPage() {
       ? [
           {
             key: 'total_amount',
-            header: 'Total Amount',
+            header: t('po.list.col.totalAmount'),
             render: (o: PurchaseOrder) => (
               <span style={{ fontSize: '13px', color: theme.textPrimary, whiteSpace: 'nowrap' }}>
                 {formatMoney(parseFloat(o.total_amount) || 0, o.currency_code)}
@@ -541,12 +548,12 @@ export default function PurchaseOrdersPage() {
       : []),
     {
       key: 'organizerName',
-      header: 'Organizer',
+      header: t('po.list.col.organizer'),
       render: (o) => <PersonCell name={o.organizerName} />,
     },
     {
       key: 'stage',
-      header: 'Stage',
+      header: t('po.list.col.stage'),
       render: (o) => {
         const st = poStage(o.status)
         return (
@@ -560,7 +567,7 @@ export default function PurchaseOrdersPage() {
     },
     {
       key: 'age',
-      header: 'Age',
+      header: t('po.list.col.age'),
       render: (o) => (
         <span style={{ fontSize: '13px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
           {formatAge(o.created_at)}
@@ -569,7 +576,7 @@ export default function PurchaseOrdersPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('po.list.col.status'),
       render: (o) => (
         <div
           style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3px' }}
@@ -577,7 +584,7 @@ export default function PurchaseOrdersPage() {
           <Badge variant={getPOStatusVariant(o.status)}>{getPOStatusLabel(o.status)}</Badge>
           {needsInvoice(o) && (
             <span style={{ fontSize: '11px', color: theme.warning, fontWeight: 600 }}>
-              ⚠ Needs invoice
+              ⚠ {t('po.list.needsInvoice')}
             </span>
           )}
         </div>
@@ -585,41 +592,41 @@ export default function PurchaseOrdersPage() {
     },
     {
       key: '__actions',
-      header: 'Actions',
+      header: t('po.list.col.actions'),
       width: '70px',
       mobileHide: true,
       render: (o) => (
         <RowMenu
           items={[
             {
-              label: 'View details',
+              label: t('po.list.menu.viewDetails'),
               onClick: () => {
                 setPreviewId(o.id)
               },
             },
             {
-              label: 'Open full page',
+              label: t('po.list.menu.openFullPage'),
               onClick: () => {
                 navigate(`/procurement/purchase-orders/${o.id}`)
               },
             },
             {
-              label: 'Copy PO number',
+              label: t('po.list.menu.copyPoNumber'),
               onClick: () => {
                 void navigator.clipboard
                   .writeText(o.po_number)
                   .then(() => {
-                    addToast({ type: 'success', message: `${o.po_number} copied` })
+                    addToast({ type: 'success', message: t('po.list.toast.copied', { po: o.po_number }) })
                   })
                   .catch(() => {
-                    addToast({ type: 'error', message: 'Could not copy' })
+                    addToast({ type: 'error', message: t('po.list.toast.copyFailed') })
                   })
               },
             },
             ...(o.status === 'pending_approval'
               ? [
                   {
-                    label: 'Approve',
+                    label: t('po.list.menu.approve'),
                     onClick: () => {
                       void approveOne(o)
                     },
@@ -643,8 +650,8 @@ export default function PurchaseOrdersPage() {
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '2400px' }}>
       <PageTitle
         icon="cart"
-        title="Purchase Orders"
-        subtitle="Manage and track all purchase orders across the system."
+        title={t('po.list.title')}
+        subtitle={t('po.list.subtitle')}
         actions={
           <>
             <Button
@@ -654,7 +661,7 @@ export default function PurchaseOrdersPage() {
                 csvFor(filtered, `purchase-orders-${today}.csv`)
               }}
             >
-              Export CSV
+              {t('po.list.exportCsv')}
             </Button>
             <Button
               data-tour="new-po-btn"
@@ -664,7 +671,7 @@ export default function PurchaseOrdersPage() {
                 navigate('/procurement/requisitions/new')
               }}
             >
-              New Requisition
+              {t('po.list.newRequisition')}
             </Button>
           </>
         }
@@ -686,11 +693,11 @@ export default function PurchaseOrdersPage() {
           }}
         >
           <span>
-            Filtered by project: <strong>{projectNameFilter}</strong>
+            {t('po.list.filteredByProject')} <strong>{projectNameFilter}</strong>
           </span>
           <button
             style={{
-              marginLeft: 'auto',
+              marginInlineStart: 'auto',
               color: theme.textMuted,
               cursor: 'pointer',
               background: 'none',
@@ -701,7 +708,7 @@ export default function PurchaseOrdersPage() {
               navigate('/procurement/purchase-orders')
             }}
           >
-            Clear ×
+            {t('po.list.clearX')}
           </button>
         </div>
       )}
@@ -710,9 +717,9 @@ export default function PurchaseOrdersPage() {
         <KpiTile
           tone="accent"
           icon="doc"
-          label="My Queue"
+          label={t('po.list.kpi.myQueue')}
           value={queueCount}
-          sub="Actions required"
+          sub={t('po.list.kpi.myQueueSub')}
           trailing={<Icon name="arrowRight" size={16} />}
           onClick={() => {
             navigate('/procurement/queue')
@@ -721,9 +728,9 @@ export default function PurchaseOrdersPage() {
         <KpiTile
           tone="warning"
           icon="clock"
-          label="Pending Approval"
+          label={t('po.list.kpi.pendingApproval')}
           value={pendingApprovalCount}
-          sub="Awaiting approval"
+          sub={t('po.list.kpi.pendingApprovalSub')}
           active={statusFilter === 'pending_approval'}
           onClick={() => {
             setStatusFilter((s) => (s === 'pending_approval' ? '' : 'pending_approval'))
@@ -732,9 +739,9 @@ export default function PurchaseOrdersPage() {
         <KpiTile
           tone="danger"
           icon="alert"
-          label="Need Action"
+          label={t('po.list.kpi.needAction')}
           value={needActionCount}
-          sub="Requires attention"
+          sub={t('po.list.kpi.needActionSub')}
           active={quickFilter === 'needAction'}
           onClick={() => {
             toggleQuick('needAction')
@@ -743,9 +750,9 @@ export default function PurchaseOrdersPage() {
         <KpiTile
           tone="info"
           icon="truck"
-          label="Delayed"
+          label={t('po.list.kpi.delayed')}
           value={delayedCount}
-          sub="Overdue / delayed"
+          sub={t('po.list.kpi.delayedSub')}
           active={quickFilter === 'delayed'}
           onClick={() => {
             toggleQuick('delayed')
@@ -754,7 +761,7 @@ export default function PurchaseOrdersPage() {
         <KpiTile
           tone="success"
           icon="cash"
-          label="Open Value"
+          label={t('po.list.kpi.openValue')}
           loading={loading && orders.length === 0}
           value={
             !canSeeTotals
@@ -765,13 +772,13 @@ export default function PurchaseOrdersPage() {
           }
           sub={
             !canSeeTotals
-              ? 'Totals are restricted'
+              ? t('po.list.kpi.totalsRestricted')
               : openValueByCurrency.length > 1
                 ? `+ ${openValueByCurrency
                     .slice(1)
                     .map(([c, v]) => formatMoney(v, c))
                     .join(' + ')}`
-                : 'Total open PO value'
+                : t('po.list.kpi.totalOpenValue')
           }
         />
       </KpiRow>
@@ -809,34 +816,34 @@ export default function PurchaseOrdersPage() {
             <SearchBox
               value={search}
               onChange={setSearch}
-              placeholder="Search PO #, vendor, project, item, organizer…"
+              placeholder={t('po.list.searchPlaceholder')}
             />
             <PillSelect
-              label="Status"
+              label={t('po.list.filter.status')}
               value={statusFilter}
               options={STATUS_OPTIONS}
               onChange={setStatusFilter}
             />
             <PillSelect
-              label="Organizer"
+              label={t('po.list.filter.organizer')}
               value={buyerFilter}
               options={buyerOptions}
               onChange={setBuyerFilter}
             />
             <PillSelect
-              label="Vendor"
+              label={t('po.list.filter.vendor')}
               value={vendorFilter}
               options={vendorOptions}
               onChange={setVendorFilter}
             />
             <PillSelect
-              label="Project"
+              label={t('po.list.filter.project')}
               value={projectFilter}
               options={projectOptions}
               onChange={setProjectFilter}
             />
             <MoreFilters activeCount={moreFilterCount}>
-              <FilterField label="Priority">
+              <FilterField label={t('po.list.filter.priority')}>
                 <select
                   value={priorityFilter}
                   onChange={(e) => {
@@ -844,7 +851,7 @@ export default function PurchaseOrdersPage() {
                   }}
                   style={dateInputStyle(theme)}
                 >
-                  <option value="">All</option>
+                  <option value="">{t('common.all')}</option>
                   {PRIORITY_OPTIONS.map((p) => (
                     <option key={p.value} value={p.value}>
                       {p.label}
@@ -852,7 +859,7 @@ export default function PurchaseOrdersPage() {
                   ))}
                 </select>
               </FilterField>
-              <FilterField label="Created from">
+              <FilterField label={t('po.list.filter.createdFrom')}>
                 <input
                   type="date"
                   value={fromDate}
@@ -862,7 +869,7 @@ export default function PurchaseOrdersPage() {
                   style={dateInputStyle(theme)}
                 />
               </FilterField>
-              <FilterField label="Created to">
+              <FilterField label={t('po.list.filter.createdTo')}>
                 <input
                   type="date"
                   value={toDate}
@@ -889,7 +896,7 @@ export default function PurchaseOrdersPage() {
                   }}
                   style={{ accentColor: theme.accent }}
                 />
-                Only POs I organized
+                {t('po.list.filter.onlyMine')}
               </label>
               <FilterPresets
                 presets={presets}
@@ -921,17 +928,17 @@ export default function PurchaseOrdersPage() {
                     color: theme.accent,
                     fontSize: '13px',
                     cursor: 'pointer',
-                    textAlign: 'left',
+                    textAlign: 'start',
                     padding: 0,
                     fontFamily: 'inherit',
                   }}
                 >
-                  Clear all filters
+                  {t('po.list.filter.clearAll')}
                 </button>
               )}
             </MoreFilters>
             <IconButton
-              title="Refresh"
+              title={t('common.refresh')}
               onClick={() => {
                 void refetch()
               }}
@@ -942,7 +949,7 @@ export default function PurchaseOrdersPage() {
 
           {selectedIds.size > 0 && (
             <SelectionBar
-              label={`${selectedIds.size} order${selectedIds.size !== 1 ? 's' : ''} selected`}
+              label={t('po.list.selected', { count: selectedIds.size })}
               onClear={clearSelection}
             >
               <BarButton
@@ -951,8 +958,8 @@ export default function PurchaseOrdersPage() {
                 onClick={() => void handleBulkApprove()}
               >
                 {bulkApproving
-                  ? 'Approving…'
-                  : `Approve${approvableRows.length > 0 ? ` (${approvableRows.length})` : ''}`}
+                  ? t('po.list.approving')
+                  : `${t('po.list.approve')}${approvableRows.length > 0 ? ` (${approvableRows.length})` : ''}`}
               </BarButton>
               <BarButton
                 icon="x"
@@ -962,7 +969,8 @@ export default function PurchaseOrdersPage() {
                   setRejectOpen(true)
                 }}
               >
-                Reject{approvableRows.length > 0 ? ` (${approvableRows.length})` : ''}
+                {t('po.list.reject')}
+                {approvableRows.length > 0 ? ` (${approvableRows.length})` : ''}
               </BarButton>
               <BarButton
                 icon="download"
@@ -970,7 +978,7 @@ export default function PurchaseOrdersPage() {
                   csvFor(selectedRows, `purchase-orders-selected-${today}.csv`)
                 }}
               >
-                Export
+                {t('po.list.export')}
               </BarButton>
             </SelectionBar>
           )}
@@ -982,13 +990,13 @@ export default function PurchaseOrdersPage() {
               loading={loading}
               rowKey="id"
               emptyMessage={
-                anyFilter ? 'No purchase orders match these filters.' : 'No purchase orders yet.'
+                anyFilter ? t('po.list.emptyFiltered') : t('po.list.empty')
               }
               onRowClick={(o) => {
                 setPreviewId(o.id)
               }}
               getRowStyle={(o) => {
-                const base = o.priority === 'emergency' ? { borderLeft: '3px solid #dc2626' } : {}
+                const base = o.priority === 'emergency' ? { borderInlineStart: '3px solid #dc2626' } : {}
                 if (o.id === previewId) return { ...base, background: theme.accentBg }
                 return selectedIds.has(o.id) ? { ...base, background: theme.accentBg } : base
               }}
@@ -1008,8 +1016,8 @@ export default function PurchaseOrdersPage() {
         onClose={() => {
           if (!rejecting) setRejectOpen(false)
         }}
-        title={`Reject ${approvableRows.length} purchase order${approvableRows.length !== 1 ? 's' : ''}`}
-        description="Only POs awaiting approval can be rejected. The reason is recorded on each PO."
+        title={t('po.list.rejectModal.title', { count: approvableRows.length })}
+        description={t('po.list.rejectModal.description')}
         footer={
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <Button
@@ -1020,7 +1028,7 @@ export default function PurchaseOrdersPage() {
                 setRejectOpen(false)
               }}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="danger"
@@ -1029,7 +1037,7 @@ export default function PurchaseOrdersPage() {
               disabled={!rejectReason.trim()}
               onClick={() => void handleBulkReject()}
             >
-              Reject
+              {t('po.list.reject')}
             </Button>
           </div>
         }
@@ -1039,7 +1047,7 @@ export default function PurchaseOrdersPage() {
           onChange={(e) => {
             setRejectReason(e.target.value)
           }}
-          placeholder="Reason for rejection (required)"
+          placeholder={t('po.list.rejectModal.placeholder')}
           rows={4}
           style={{
             width: '100%',
