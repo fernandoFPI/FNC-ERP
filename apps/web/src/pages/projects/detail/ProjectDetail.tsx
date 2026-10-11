@@ -1,4 +1,6 @@
-﻿import React, { useState, useEffect } from 'react'
+﻿import i18n, { enumLabel, tl, tlh } from '../../../i18n'
+import { Trans, useTranslation } from 'react-i18next'
+import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client'
 import {
@@ -257,42 +259,42 @@ import type { AcceptHandoverCertificateMutation, AcceptHandoverCertificateMutati
 import type { MilestoneInput, ProjectContractInput } from '../../../graphql/schema-types'
 
 const ALL_TABS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'client_documents', label: 'Client Documents' },
-  { key: 'rfq_lines', label: 'Preliminary Engineering' },
-  { key: 'bidding', label: 'Bidding Stage' },
-  { key: 'contracts', label: 'Contract Management' },
-  { key: 'engineering', label: 'Planning & Detailed Engineering' },
-  { key: 'execution', label: 'Execution' },
-  { key: 'handover', label: 'Handover' },
-  { key: 'procurement', label: 'Procurement' },
-  { key: 'cost_control', label: 'Cost Control' },
-  { key: 'variation_orders', label: 'Variation Orders' },
-  { key: 'risk_register', label: 'Risk Register' },
-  { key: 'meetings', label: 'Meetings (MOM)' },
-  { key: 'attachments', label: 'Attachments' },
-  { key: 'team', label: 'Team' },
-  { key: 'history', label: 'History' },
+  { key: 'overview', get label() { return i18n.t('proj.detail.overview', { defaultValue: "Overview" }) } },
+  { key: 'client_documents', get label() { return i18n.t('proj.detail.clientDocuments', { defaultValue: "Client Documents" }) } },
+  { key: 'rfq_lines', get label() { return i18n.t('proj.detail.preliminaryEngineering', { defaultValue: "Preliminary Engineering" }) } },
+  { key: 'bidding', get label() { return i18n.t('proj.detail.biddingStage', { defaultValue: "Bidding Stage" }) } },
+  { key: 'contracts', get label() { return i18n.t('proj.detail.contractManagement', { defaultValue: "Contract Management" }) } },
+  { key: 'engineering', get label() { return i18n.t('proj.detail.planningDetailedEngineering', { defaultValue: "Planning & Detailed Engineering" }) } },
+  { key: 'execution', get label() { return i18n.t('proj.detail.execution', { defaultValue: "Execution" }) } },
+  { key: 'handover', get label() { return i18n.t('proj.detail.handover', { defaultValue: "Handover" }) } },
+  { key: 'procurement', get label() { return i18n.t('proj.detail.procurement', { defaultValue: "Procurement" }) } },
+  { key: 'cost_control', get label() { return i18n.t('proj.detail.costControl', { defaultValue: "Cost Control" }) } },
+  { key: 'variation_orders', get label() { return i18n.t('proj.detail.variationOrders', { defaultValue: "Variation Orders" }) } },
+  { key: 'risk_register', get label() { return i18n.t('proj.detail.riskRegister', { defaultValue: "Risk Register" }) } },
+  { key: 'meetings', get label() { return i18n.t('proj.detail.meetingsMom', { defaultValue: "Meetings (MOM)" }) } },
+  { key: 'attachments', get label() { return i18n.t('proj.detail.attachments', { defaultValue: "Attachments" }) } },
+  { key: 'team', get label() { return i18n.t('proj.detail.team', { defaultValue: "Team" }) } },
+  { key: 'history', get label() { return i18n.t('proj.detail.history', { defaultValue: "History" }) } },
 ]
 
 // Phase-group labels for the tab bar (groups are contiguous in ALL_TABS order,
 // so hiding tabs never fragments a group). Overview is the ungrouped lead tab.
 const TAB_GROUP: Record<string, string> = {
-  client_documents: 'Pre-Award',
-  rfq_lines: 'Pre-Award',
-  bidding: 'Pre-Award',
-  contracts: 'Pre-Award',
-  engineering: 'Delivery',
-  execution: 'Delivery',
-  handover: 'Delivery',
-  procurement: 'Commercial',
-  cost_control: 'Commercial',
-  variation_orders: 'Commercial',
-  risk_register: 'Governance',
-  meetings: 'Governance',
-  attachments: 'Project',
-  team: 'Project',
-  history: 'Project',
+  get client_documents() { return i18n.t('proj.detail.preAward', { defaultValue: "Pre-Award" }) },
+  get rfq_lines() { return i18n.t('proj.detail.preAward', { defaultValue: "Pre-Award" }) },
+  get bidding() { return i18n.t('proj.detail.preAward', { defaultValue: "Pre-Award" }) },
+  get contracts() { return i18n.t('proj.detail.preAward', { defaultValue: "Pre-Award" }) },
+  get engineering() { return i18n.t('proj.detail.delivery', { defaultValue: "Delivery" }) },
+  get execution() { return i18n.t('proj.detail.delivery', { defaultValue: "Delivery" }) },
+  get handover() { return i18n.t('proj.detail.delivery', { defaultValue: "Delivery" }) },
+  get procurement() { return i18n.t('proj.detail.commercial', { defaultValue: "Commercial" }) },
+  get cost_control() { return i18n.t('proj.detail.commercial', { defaultValue: "Commercial" }) },
+  get variation_orders() { return i18n.t('proj.detail.commercial', { defaultValue: "Commercial" }) },
+  get risk_register() { return i18n.t('proj.detail.governance', { defaultValue: "Governance" }) },
+  get meetings() { return i18n.t('proj.detail.governance', { defaultValue: "Governance" }) },
+  get attachments() { return i18n.t('proj.detail.project', { defaultValue: "Project" }) },
+  get team() { return i18n.t('proj.detail.project', { defaultValue: "Project" }) },
+  get history() { return i18n.t('proj.detail.project', { defaultValue: "Project" }) },
 }
 
 // Statuses where an RFQ project has been decided (approved, won, or closed)
@@ -308,12 +310,12 @@ const RFQ_POST_DECISION = new Set([
 // Fallbacks used only until the company lifecycle config loads (or if it's empty).
 // The real values come from the lifecycleConfig query (migration 166).
 const DEFAULT_LIFECYCLE_STAGES = [
-  { key: 'enquiry', label: 'Client Enquiry' },
-  { key: 'scope_review', label: 'Scope Review' },
-  { key: 'bidding', label: 'Bidding' },
-  { key: 'client_approval', label: 'Client Approval' },
-  { key: 'execution', label: 'Execution' },
-  { key: 'closeout', label: 'Closeout' },
+  { key: 'enquiry', get label() { return i18n.t('proj.detail.clientEnquiry', { defaultValue: "Client Enquiry" }) } },
+  { key: 'scope_review', get label() { return i18n.t('proj.detail.scopeReview', { defaultValue: "Scope Review" }) } },
+  { key: 'bidding', get label() { return i18n.t('proj.detail.bidding', { defaultValue: "Bidding" }) } },
+  { key: 'client_approval', get label() { return i18n.t('proj.detail.clientApproval', { defaultValue: "Client Approval" }) } },
+  { key: 'execution', get label() { return i18n.t('proj.detail.execution', { defaultValue: "Execution" }) } },
+  { key: 'closeout', get label() { return i18n.t('proj.detail.closeout', { defaultValue: "Closeout" }) } },
 ]
 // Tab → minimum phase fallback (mirrors the migration-166 seed).
 const DEFAULT_MODULE_MIN_PHASE: Record<string, string> = {
@@ -362,6 +364,7 @@ interface Member {
 }
 
 export default function ProjectDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -379,7 +382,7 @@ export default function ProjectDetail() {
   const [adminSetProjectStatus, { loading: adminSetting }] = useMutation<AdminSetProjectStatusMutation, AdminSetProjectStatusMutationVariables>(ADMIN_SET_PROJECT_STATUS, {
     onCompleted: () => {
       setAdminStatus('')
-      addToast({ type: 'success', message: 'Status updated' })
+      addToast({ type: 'success', message: t('proj.detail.statusUpdated') })
       void refetch()
     },
     onError: (e) => {
@@ -389,7 +392,7 @@ export default function ProjectDetail() {
   const [adminSetPhase, { loading: adminPhaseSetting }] = useMutation<AdminSetPhaseMutation, AdminSetPhaseMutationVariables>(ADMIN_SET_PHASE, {
     onCompleted: () => {
       setAdminPhase('')
-      addToast({ type: 'success', message: 'Phase updated' })
+      addToast({ type: 'success', message: t('proj.detail.phaseUpdated') })
       void refetch()
     },
     onError: (e) => {
@@ -448,7 +451,7 @@ export default function ProjectDetail() {
       .get<LiveMember[]>(`/projects/${id}/members`)
       .then((r) => { setLiveTeam(Array.isArray(r.data) ? r.data : []); })
       .catch(() => {
-        addToast({ type: 'error', message: 'Failed to load team members' })
+        addToast({ type: 'error', message: t('proj.detail.failedToLoadTeamMembers') })
       })
       .finally(() => {
         setTeamLoading(false)
@@ -472,7 +475,7 @@ export default function ProjectDetail() {
 
   async function handleAddMember() {
     if (!addForm.employee_id) {
-      addToast({ type: 'error', message: 'Select an employee' })
+      addToast({ type: 'error', message: t('proj.detail.selectAnEmployee') })
       return
     }
     setAddLoading(true)
@@ -487,11 +490,11 @@ export default function ProjectDetail() {
       setLiveTeam(Array.isArray(refreshed.data) ? refreshed.data : [res.data])
       setAddForm({ employee_id: '', allocated_hours: '', member_type: 'technical' })
       setShowAddForm(false)
-      addToast({ type: 'success', message: 'Team member added' })
+      addToast({ type: 'success', message: t('proj.detail.teamMemberAdded') })
     } catch (e: unknown) {
       const msg =
         (e as { response?: { data?: { message?: string } } }).response?.data?.message ??
-        'Failed to add member'
+        t('proj.detail.failedToAddMember')
       addToast({ type: 'error', message: msg })
     } finally {
       setAddLoading(false)
@@ -509,9 +512,9 @@ export default function ProjectDetail() {
         ),
       )
       setPermEditMemberId(null)
-      addToast({ type: 'success', message: 'Permissions saved' })
+      addToast({ type: 'success', message: t('proj.detail.permissionsSaved') })
     } catch {
-      addToast({ type: 'error', message: 'Failed to save permissions' })
+      addToast({ type: 'error', message: t('proj.detail.failedToSavePermissions') })
     } finally {
       setPermSaving(false)
     }
@@ -522,9 +525,9 @@ export default function ProjectDetail() {
       await api.delete(`/projects/${id}/members/${memberId}`)
       setLiveTeam((prev) => prev.filter((m) => m.id !== memberId))
       setConfirmRemoveId(null)
-      addToast({ type: 'success', message: 'Member removed' })
+      addToast({ type: 'success', message: t('proj.detail.memberRemoved') })
     } catch {
-      addToast({ type: 'error', message: 'Failed to remove member' })
+      addToast({ type: 'error', message: t('proj.detail.failedToRemoveMember') })
     }
   }
 
@@ -588,7 +591,7 @@ export default function ProjectDetail() {
     CREATE_BID_DELIVERABLE,
     {
       onCompleted: () => {
-        addToast({ type: 'success', message: 'Deliverable added' })
+        addToast({ type: 'success', message: t('proj.detail.deliverableAdded') })
         void refetchBidDeliverables()
       },
       onError: (e) => { addToast({ type: 'error', message: e.message }); },
@@ -604,7 +607,7 @@ export default function ProjectDetail() {
   })
   const [deleteBidDeliverable] = useMutation<DeleteBidDeliverableMutation, DeleteBidDeliverableMutationVariables>(DELETE_BID_DELIVERABLE, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Deliverable removed' })
+      addToast({ type: 'success', message: t('proj.detail.deliverableRemoved') })
       void refetchBidDeliverables()
     },
     onError: (e) => {
@@ -653,7 +656,7 @@ export default function ProjectDetail() {
   })
   const [upsertBidCostItems, { loading: savingCosts }] = useMutation<UpsertBidCostItemsMutation, UpsertBidCostItemsMutationVariables>(UPSERT_BID_COST_ITEMS, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Cost items saved' })
+      addToast({ type: 'success', message: t('proj.detail.costItemsSaved') })
       void refetchBidCosts()
       void refetchBidSummary()
     },
@@ -663,7 +666,7 @@ export default function ProjectDetail() {
   })
   const [createBidSupplierQuotation] = useMutation<CreateBidSupplierQuotationMutation, CreateBidSupplierQuotationMutationVariables>(CREATE_BID_SUPPLIER_QUOTATION, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Quotation added' })
+      addToast({ type: 'success', message: t('proj.detail.quotationAdded') })
       void refetchBidQuotations()
     },
     onError: (e) => {
@@ -680,7 +683,7 @@ export default function ProjectDetail() {
   })
   const [deleteBidSupplierQuotation] = useMutation<DeleteBidSupplierQuotationMutation, DeleteBidSupplierQuotationMutationVariables>(DELETE_BID_SUPPLIER_QUOTATION, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Quotation removed' })
+      addToast({ type: 'success', message: t('proj.detail.quotationRemoved') })
       void refetchBidQuotations()
     },
     onError: (e) => {
@@ -698,7 +701,7 @@ export default function ProjectDetail() {
   )
   const [submitBidForApproval, { loading: submittingBid }] = useMutation<SubmitBidForApprovalMutation, SubmitBidForApprovalMutationVariables>(SUBMIT_BID_FOR_APPROVAL, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Bid submitted for approval' })
+      addToast({ type: 'success', message: t('proj.detail.bidSubmittedForApproval') })
       void refetchBidSummary()
     },
     onError: (e) => {
@@ -707,7 +710,7 @@ export default function ProjectDetail() {
   })
   const [approveBid, { loading: approvingBid }] = useMutation<ApproveBidMutation, ApproveBidMutationVariables>(APPROVE_BID, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Bid approved' })
+      addToast({ type: 'success', message: t('proj.detail.bidApproved') })
       void refetchBidSummary()
     },
     onError: (e) => {
@@ -716,7 +719,7 @@ export default function ProjectDetail() {
   })
   const [rejectBid, { loading: rejectingBid }] = useMutation<RejectBidMutation, RejectBidMutationVariables>(REJECT_BID, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Bid rejected' })
+      addToast({ type: 'success', message: t('proj.detail.bidRejected') })
       void refetchBidSummary()
     },
     onError: (e) => {
@@ -725,7 +728,7 @@ export default function ProjectDetail() {
   })
   const [reviseBidM, { loading: revisingBid }] = useMutation<ReviseBidMutation, ReviseBidMutationVariables>(REVISE_BID, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Bid revised' })
+      addToast({ type: 'success', message: t('proj.detail.bidRevised') })
       void refetchBidSummary()
     },
     onError: (e) => {
@@ -781,7 +784,7 @@ export default function ProjectDetail() {
   }
   const [createProjectRFI] = useMutation<CreateProjectRfiMutation, CreateProjectRfiMutationVariables>(CREATE_PROJECT_RFI, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'RFI created' })
+      addToast({ type: 'success', message: t('proj.detail.rfiCreated') })
       void refetchRFIs()
     },
     onError: execError,
@@ -792,7 +795,7 @@ export default function ProjectDetail() {
   })
   const [respondToRFI] = useMutation<RespondToRfiMutation, RespondToRfiMutationVariables>(RESPOND_TO_RFI, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Response recorded' })
+      addToast({ type: 'success', message: t('proj.detail.responseRecorded') })
       void refetchRFIs()
     },
     onError: execError,
@@ -831,7 +834,7 @@ export default function ProjectDetail() {
 
   const [createSiteInstruction] = useMutation<CreateSiteInstructionMutation, CreateSiteInstructionMutationVariables>(CREATE_SITE_INSTRUCTION, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Site Instruction created' })
+      addToast({ type: 'success', message: t('proj.detail.siteInstructionCreated') })
       void refetchSIs()
     },
     onError: execError,
@@ -855,7 +858,7 @@ export default function ProjectDetail() {
 
   const [createProjectITP] = useMutation<CreateProjectItpMutation, CreateProjectItpMutationVariables>(CREATE_PROJECT_ITP, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'ITP created' })
+      addToast({ type: 'success', message: t('proj.detail.itpCreated') })
       void refetchITPs()
     },
     onError: execError,
@@ -870,7 +873,7 @@ export default function ProjectDetail() {
   })
   const [upsertITPItems] = useMutation<UpsertItpItemsMutation, UpsertItpItemsMutationVariables>(UPSERT_ITP_ITEMS, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'ITP items saved' })
+      addToast({ type: 'success', message: t('proj.detail.itpItemsSaved') })
       void refetchITPs()
     },
     onError: execError,
@@ -882,7 +885,7 @@ export default function ProjectDetail() {
 
   const [createInspectionRequest] = useMutation<CreateInspectionRequestMutation, CreateInspectionRequestMutationVariables>(CREATE_INSPECTION_REQUEST, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Inspection Request created' })
+      addToast({ type: 'success', message: t('proj.detail.inspectionRequestCreated') })
       void refetchIRs()
     },
     onError: execError,
@@ -906,7 +909,7 @@ export default function ProjectDetail() {
 
   const [createProjectNCR] = useMutation<CreateProjectNcrMutation, CreateProjectNcrMutationVariables>(CREATE_PROJECT_NCR, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'NCR created' })
+      addToast({ type: 'success', message: t('proj.detail.ncrCreated') })
       void refetchNCRs()
     },
     onError: execError,
@@ -930,7 +933,7 @@ export default function ProjectDetail() {
 
   const [createHSERecord] = useMutation<CreateHseRecordMutation, CreateHseRecordMutationVariables>(CREATE_HSE_RECORD, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'HSE record created' })
+      addToast({ type: 'success', message: t('proj.detail.hseRecordCreated') })
       void refetchHSE()
     },
     onError: execError,
@@ -954,7 +957,7 @@ export default function ProjectDetail() {
 
   const [createDailyReport] = useMutation<CreateDailyReportMutation, CreateDailyReportMutationVariables>(CREATE_DAILY_REPORT, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Daily report created' })
+      addToast({ type: 'success', message: t('proj.detail.dailyReportCreated') })
       void refetchDailyReports()
     },
     onError: execError,
@@ -1074,7 +1077,7 @@ export default function ProjectDetail() {
   const [bulkImportActivities] = useMutation<BulkImportActivitiesMutation, BulkImportActivitiesMutationVariables>(BULK_IMPORT_ACTIVITIES, {
     onCompleted: () => {
       planRefresh()
-      addToast({ type: 'success', message: 'Schedule imported' })
+      addToast({ type: 'success', message: t('proj.detail.scheduleImported') })
     },
     onError: planError,
   })
@@ -1089,21 +1092,21 @@ export default function ProjectDetail() {
   const [recalculateCPM] = useMutation<RecalculateCpmMutation, RecalculateCpmMutationVariables>(RECALCULATE_CPM, {
     onCompleted: () => {
       void refetchActivities()
-      addToast({ type: 'success', message: 'CPM recalculated' })
+      addToast({ type: 'success', message: t('proj.detail.cpmRecalculated') })
     },
     onError: planError,
   })
   const [levelResources] = useMutation<LevelResourcesMutation, LevelResourcesMutationVariables>(LEVEL_RESOURCES, {
     onCompleted: () => {
       planRefresh()
-      addToast({ type: 'success', message: 'Resources leveled' })
+      addToast({ type: 'success', message: t('proj.detail.resourcesLeveled') })
     },
     onError: planError,
   })
   const [createBaseline] = useMutation<CreateBaselineMutation, CreateBaselineMutationVariables>(CREATE_BASELINE, {
     onCompleted: () => {
       void refetchBaselines()
-      addToast({ type: 'success', message: 'Baseline saved' })
+      addToast({ type: 'success', message: t('proj.detail.baselineSaved') })
     },
     onError: planError,
   })
@@ -1114,7 +1117,7 @@ export default function ProjectDetail() {
   const [applyBaseline] = useMutation<ApplyBaselineMutation, ApplyBaselineMutationVariables>(APPLY_BASELINE, {
     onCompleted: () => {
       void refetchActivities()
-      addToast({ type: 'success', message: 'Baseline applied to schedule' })
+      addToast({ type: 'success', message: t('proj.detail.baselineAppliedToSchedule') })
     },
     onError: planError,
   })
@@ -1461,21 +1464,21 @@ export default function ProjectDetail() {
   const [createProjectContract] = useMutation<CreateProjectContractMutation, CreateProjectContractMutationVariables>(CREATE_PROJECT_CONTRACT, {
     onCompleted: () => {
       contractRefresh()
-      addToast({ type: 'success', message: 'Contract created' })
+      addToast({ type: 'success', message: t('proj.detail.contractCreated') })
     },
     onError: contractError,
   })
   const [updateProjectContract] = useMutation<UpdateProjectContractMutation, UpdateProjectContractMutationVariables>(UPDATE_PROJECT_CONTRACT, {
     onCompleted: () => {
       contractRefresh()
-      addToast({ type: 'success', message: 'Contract updated' })
+      addToast({ type: 'success', message: t('proj.detail.contractUpdated') })
     },
     onError: contractError,
   })
   const [reviseContractM] = useMutation<ReviseContractMutation, ReviseContractMutationVariables>(REVISE_CONTRACT, {
     onCompleted: () => {
       contractRefresh()
-      addToast({ type: 'success', message: 'Contract revised' })
+      addToast({ type: 'success', message: t('proj.detail.contractRevised') })
     },
     onError: contractError,
   })
@@ -1493,7 +1496,7 @@ export default function ProjectDetail() {
           color: theme.textMuted,
         }}
       >
-        Loading project…
+        {t('proj.detail.loadingProject')}
       </div>
     )
   if (!p)
@@ -1535,13 +1538,13 @@ export default function ProjectDetail() {
           </svg>
         </div>
         <span style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>
-          Project not found
+          {t('proj.detail.projectNotFound')}
         </span>
         <span style={{ fontSize: '13px' }}>
-          This project may have been removed or you may not have access.
+          {t('proj.detail.thisProjectMayHaveBeenRemoved')}
         </span>
         <Button variant="secondary" size="sm" onClick={() => { navigate('/projects'); }}>
-          Back to Projects
+          {t('proj.detail.backToProjects')}
         </Button>
       </div>
     )
@@ -1655,23 +1658,23 @@ export default function ProjectDetail() {
     return mod ? cap.can(mod, 'view') : isAdmin || isMember
   }
 
-  const TABS = ALL_TABS.filter((t) => teamLoading || tabVisible(t.key))
-    .filter((t) => t.key !== 'rfq_lines' || (p.isRfq && moduleGate('rfq_lines')))
-    .filter((t) => t.key !== 'bidding' || p.isRfq)
-    .filter((t) => t.key !== 'contracts' || moduleGate('contracts'))
-    .filter((t) => t.key !== 'engineering' || moduleGate('engineering'))
-    .filter((t) => t.key !== 'execution' || moduleGate('execution'))
-    .filter((t) => t.key !== 'handover' || moduleGate('handover'))
-    .filter((t) => t.key !== 'procurement' || moduleGate('procurement'))
-    .filter((t) => t.key !== 'meetings' || moduleGate('meetings'))
-    .filter((t) => t.key !== 'cost_control' || moduleGate('cost_control'))
-    .filter((t) => t.key !== 'variation_orders' || moduleGate('variation_orders'))
-    .filter((t) => t.key !== 'risk_register' || !hideRiskRegister)
-    .map((t) => ({ ...t, label: moduleLabels[t.key] ?? t.label, group: TAB_GROUP[t.key] }))
+  const TABS = ALL_TABS.filter((tx) => teamLoading || tabVisible(tx.key))
+    .filter((tx) => tx.key !== 'rfq_lines' || (p.isRfq && moduleGate('rfq_lines')))
+    .filter((tx) => tx.key !== 'bidding' || p.isRfq)
+    .filter((tx) => tx.key !== 'contracts' || moduleGate('contracts'))
+    .filter((tx) => tx.key !== 'engineering' || moduleGate('engineering'))
+    .filter((tx) => tx.key !== 'execution' || moduleGate('execution'))
+    .filter((tx) => tx.key !== 'handover' || moduleGate('handover'))
+    .filter((tx) => tx.key !== 'procurement' || moduleGate('procurement'))
+    .filter((tx) => tx.key !== 'meetings' || moduleGate('meetings'))
+    .filter((tx) => tx.key !== 'cost_control' || moduleGate('cost_control'))
+    .filter((tx) => tx.key !== 'variation_orders' || moduleGate('variation_orders'))
+    .filter((tx) => tx.key !== 'risk_register' || !hideRiskRegister)
+    .map((tx) => ({ ...tx, label: moduleLabels[tx.key] ?? tx.label, group: TAB_GROUP[tx.key] }))
 
   // If the active tab isn't available to this user (capability/phase), fall back
   // to the first visible tab — prevents a hidden tab's content from rendering.
-  if (!teamLoading && TABS.length > 0 && !TABS.some((t) => t.key === tab)) {
+  if (!teamLoading && TABS.length > 0 && !TABS.some((tx) => tx.key === tab)) {
     setTab(TABS[0].key)
   }
 
@@ -1855,7 +1858,7 @@ export default function ProjectDetail() {
                 {lifecycleStages[lifecycleIdx(p.lifecyclePhase ?? 'enquiry')]?.label ??
                   p.status.replace(/_/g, ' ')}
               </Badge>
-              {p.isRfq && isRfqPhase && <Badge variant="info">RFQ</Badge>}
+              {p.isRfq && isRfqPhase && <Badge variant="info">{t('proj.detail.rfq')}</Badge>}
             </div>
           </div>
           <div
@@ -1874,7 +1877,7 @@ export default function ProjectDetail() {
                 navigate(`/projects/${id}/edit`)
               }}
             >
-              Edit
+              {t('proj.detail.edit')}
             </Button>
             {((p.allowedActions ?? []).length > 0 || isAdmin) && (
               <>
@@ -1907,7 +1910,7 @@ export default function ProjectDetail() {
                       }}
                     />
                   )}
-                  Actions
+                  {t('proj.detail.actions')}
                   <svg
                     width="12"
                     height="12"
@@ -1940,7 +1943,7 @@ export default function ProjectDetail() {
                       style={{
                         position: 'absolute',
                         top: 'calc(100% + 10px)',
-                        right: 0,
+                        insetInlineEnd: 0,
                         zIndex: 200,
                         width: 460,
                         background: theme.bgCanvas,
@@ -1970,7 +1973,7 @@ export default function ProjectDetail() {
                             letterSpacing: '0.06em',
                           }}
                         >
-                          Workflow Actions
+                          {t('proj.detail.workflowActions')}
                         </span>
                         <button
                           onClick={() => { setShowActionsPanel(false); }}
@@ -2063,17 +2066,17 @@ export default function ProjectDetail() {
                                 letterSpacing: '0.07em',
                               }}
                             >
-                              Admin Override
+                              {t('proj.detail.adminOverride')}
                             </span>
                             <span
                               style={{
                                 fontSize: 10,
                                 color: theme.danger,
                                 opacity: 0.6,
-                                marginLeft: 'auto',
+                                marginInlineStart: 'auto',
                               }}
                             >
-                              Bypasses workflow
+                              {t('proj.detail.bypassesWorkflow')}
                             </span>
                           </div>
                           <div
@@ -2088,18 +2091,18 @@ export default function ProjectDetail() {
                             <SearchableSelect
                               value={adminStatus}
                               onChange={setAdminStatus}
-                              placeholder="Select target status…"
+                              placeholder={t('proj.detail.selectTargetStatus')}
                               options={[
-                                { value: 'pending', label: 'Pending' },
-                                { value: 'ongoing', label: 'Ongoing' },
-                                { value: 'submitted', label: 'Submitted' },
-                                { value: 'approved', label: 'Approved' },
-                                { value: 'completed', label: 'Completed' },
-                                { value: 'on_hold', label: 'On Hold' },
-                                { value: 'cancelled', label: 'Cancelled' },
+                                { value: 'pending', label: t('proj.detail.pending') },
+                                { value: 'ongoing', label: t('proj.detail.ongoing') },
+                                { value: 'submitted', label: t('proj.detail.submitted') },
+                                { value: 'approved', label: t('proj.detail.approved') },
+                                { value: 'completed', label: t('proj.detail.completed') },
+                                { value: 'on_hold', label: t('proj.detail.onHold') },
+                                { value: 'cancelled', label: t('proj.detail.cancelled3') },
                                 {
                                   value: 'cancelled_after_approval',
-                                  label: 'Cancelled After Approval',
+                                  label: t('proj.detail.cancelledAfterApproval'),
                                 },
                               ]}
                             />
@@ -2114,7 +2117,7 @@ export default function ProjectDetail() {
                                 })
                               }
                             >
-                              Apply
+                              {t('proj.detail.apply')}
                             </Button>
                           </div>
                           <div
@@ -2129,14 +2132,14 @@ export default function ProjectDetail() {
                             <SearchableSelect
                               value={adminPhase}
                               onChange={setAdminPhase}
-                              placeholder="Select lifecycle phase…"
+                              placeholder={t('proj.detail.selectLifecyclePhase')}
                               options={[
-                                { value: 'enquiry', label: 'Client Enquiry' },
-                                { value: 'scope_review', label: 'Scope Review' },
-                                { value: 'bidding', label: 'Bidding' },
-                                { value: 'client_approval', label: 'Client Approval' },
-                                { value: 'execution', label: 'Execution' },
-                                { value: 'closeout', label: 'Closeout' },
+                                { value: 'enquiry', label: t('proj.detail.clientEnquiry') },
+                                { value: 'scope_review', label: t('proj.detail.scopeReview') },
+                                { value: 'bidding', label: t('proj.detail.bidding') },
+                                { value: 'client_approval', label: t('proj.detail.clientApproval') },
+                                { value: 'execution', label: t('proj.detail.execution') },
+                                { value: 'closeout', label: t('proj.detail.closeout') },
                               ]}
                             />
                             <Button
@@ -2150,7 +2153,7 @@ export default function ProjectDetail() {
                                 void adminSetPhase({ variables: { id: id ?? '', phase: adminPhase } })
                               }
                             >
-                              Apply
+                              {t('proj.detail.apply')}
                             </Button>
                           </div>
                         </div>
@@ -2175,11 +2178,11 @@ export default function ProjectDetail() {
         >
           {(
             [
-              ['Project No', p.code],
-              ['RFQ No', p.rfqNumber],
-              ['Client', p.clientName],
-              ['Contract No', p.contractName],
-              ['Project Manager', p.managerName],
+              [t('proj.detail.projectNo'), p.code],
+              [t('proj.detail.rfqNo'), p.rfqNumber],
+              [t('proj.detail.client'), p.clientName],
+              [t('proj.detail.contractNo2'), p.contractName],
+              [t('proj.detail.projectManager2'), p.managerName],
             ] as [string, string | null | undefined][]
           )
             .filter(([, v]) => v)
@@ -2292,7 +2295,7 @@ export default function ProjectDetail() {
           }}
         >
           {kpiTile(
-            'Contract Value',
+            t('proj.detail.contractValue2'),
             formatCurrency(p.projectValue ?? 0, hdrCcy),
             null,
             <svg
@@ -2311,7 +2314,7 @@ export default function ProjectDetail() {
             </svg>,
           )}
           {kpiTile(
-            'Approved Budget',
+            t('proj.detail.approvedBudget'),
             formatCurrency(hdrBudget, hdrCcy),
             null,
             <svg
@@ -2328,7 +2331,7 @@ export default function ProjectDetail() {
           )}
           {isAdmin &&
             kpiTile(
-              'Actual Cost',
+              t('proj.detail.actualCost'),
               formatCurrency(hdrActual, hdrCcy),
               `${hdrUtilPct}% of budget`,
               <svg
@@ -2347,7 +2350,7 @@ export default function ProjectDetail() {
             )}
           {isAdmin &&
             kpiTile(
-              'Remaining Budget',
+              t('proj.detail.remainingBudget'),
               formatCurrency(hdrRemain, hdrCcy),
               null,
               <svg
@@ -2364,7 +2367,7 @@ export default function ProjectDetail() {
               hdrRemain < 0 ? '#ef4444' : '#22c55e',
             )}
           {kpiTile(
-            'Approved POs',
+            t('proj.detail.approvedPos'),
             String(
               hdrApprPOs.length ||
                 (p.openPoCount != null ? recentPos.length - p.openPoCount : 0),
@@ -2384,7 +2387,7 @@ export default function ProjectDetail() {
             </svg>,
           )}
           {kpiTile(
-            'Pending POs',
+            t('proj.detail.pendingPos'),
             String(p.openPoCount ?? hdrPendPOs.length),
             hdrPendAmt > 0 ? formatCurrency(hdrPendAmt, hdrCcy) : null,
             <svg
@@ -2400,9 +2403,9 @@ export default function ProjectDetail() {
             </svg>,
             (p.openPoCount ?? 0) > 0 ? '#f59e0b' : theme.textPrimary,
           )}
-          {kpiTile('Project Progress', `${pct}%`, null, kpiCircle(pct, theme.accent))}
+          {kpiTile(t('proj.detail.projectProgress'), `${pct}%`, null, kpiCircle(pct, theme.accent))}
           {remainDays !== null &&
-            kpiTile('Remaining Days', String(remainDays), null, kpiCircle(daysPct, '#8b5cf6'))}
+            kpiTile(t('proj.detail.remainingDays'), String(remainDays), null, kpiCircle(daysPct, '#8b5cf6'))}
         </div>
       </div>
 
@@ -2465,11 +2468,10 @@ export default function ProjectDetail() {
               </svg>
             </div>
             <div style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>
-              Not a project member
+              {t('proj.detail.notAProjectMember')}
             </div>
             <div style={{ fontSize: '13px', maxWidth: '340px', lineHeight: 1.6 }}>
-              You are not assigned to this project. Contact the Project Manager or an Admin to
-              request access.
+              {t('proj.detail.youAreNotAssignedToThis')}
             </div>
           </div>
         )}
@@ -2614,21 +2616,25 @@ export default function ProjectDetail() {
                         ),
                       )
                     : 0
-                const execStatus = !projStartDate
-                  ? 'Not Started'
+                // execKey is the stable value used for logic/colour; execStatus is display-only text
+                const execKey = !projStartDate
+                  ? 'notStarted'
                   : p.status === 'completed'
-                    ? 'Completed'
+                    ? 'completed'
                     : projEndDate && today2 > projEndDate
-                      ? 'Delayed'
+                      ? 'delayed'
                       : ovCompletion < ovElapsedPct - 10
-                        ? 'Behind Schedule'
-                        : 'On Schedule'
-                const execColor =
-                  execStatus === 'On Schedule' || execStatus === 'Completed'
-                    ? '#22c55e'
-                    : execStatus === 'Behind Schedule'
-                      ? '#f59e0b'
-                      : '#ef4444'
+                        ? 'behind'
+                        : 'onSchedule'
+                const execStatus = {
+                  notStarted: t('proj.detail.notStarted'),
+                  completed: t('proj.detail.completed'),
+                  delayed: t('proj.detail.delayed'),
+                  behind: t('proj.detail.behindSchedule'),
+                  onSchedule: t('proj.detail.onSchedule'),
+                }[execKey]
+                const execOk = execKey === 'onSchedule' || execKey === 'completed'
+                const execColor = execOk ? '#22c55e' : execKey === 'behind' ? '#f59e0b' : '#ef4444'
 
                 // PO summary
                 const ovPoMap: Record<string, { count: number; amount: number }> = {}
@@ -2644,10 +2650,10 @@ export default function ProjectDetail() {
                 })
                 const PO_ORDER = ['draft', 'pending_approval', 'approved', 'closed']
                 const PO_LABELS: Record<string, string> = {
-                  draft: 'Draft',
-                  pending_approval: 'Pending Approval',
-                  approved: 'Approved',
-                  closed: 'Closed',
+                  draft: t('proj.detail.draft'),
+                  pending_approval: t('proj.detail.pendingApproval'),
+                  approved: t('proj.detail.approved'),
+                  closed: t('proj.detail.closed'),
                 }
                 const PO_DOT: Record<string, string> = {
                   draft: theme.textMuted,
@@ -2687,33 +2693,33 @@ export default function ProjectDetail() {
                 const hSafety = ovSafetyIssues === 0 ? 15 : ovSafetyIssues <= 2 ? 7 : 0
                 const healthScore = hBudget + hSched + hProcure + hEng + hSafety
                 const healthLabel =
-                  healthScore >= 80 ? 'Good' : healthScore >= 55 ? 'Fair' : 'At Risk'
+                  healthScore >= 80 ? t('proj.detail.good') : healthScore >= 55 ? t('proj.detail.fair') : t('proj.detail.atRisk')
                 const healthColor =
                   healthScore >= 80 ? '#22c55e' : healthScore >= 55 ? '#f59e0b' : '#ef4444'
                 const healthChecks = [
-                  { label: 'Budget', ok: ovUtilPct < 80 },
+                  { label: t('proj.detail.budget'), ok: ovUtilPct < 80 },
                   {
-                    label: 'Schedule',
-                    ok: execStatus === 'On Schedule' || execStatus === 'Completed',
+                    label: t('proj.detail.schedule'),
+                    ok: execOk,
                   },
-                  { label: 'Procurement', ok: (p.openPoCount ?? 0) < 10 },
-                  { label: 'Engineering', ok: ovOverdueRfis === 0 },
-                  { label: 'Safety', ok: ovSafetyIssues === 0 },
+                  { label: t('proj.detail.procurement'), ok: (p.openPoCount ?? 0) < 10 },
+                  { label: t('proj.detail.engineering'), ok: ovOverdueRfis === 0 },
+                  { label: t('proj.detail.safety'), ok: ovSafetyIssues === 0 },
                 ]
 
                 // Alerts
                 const ovAlerts: string[] = []
-                if (ovUtilPct > 80) ovAlerts.push(`Budget utilization reached ${ovUtilPct}%`)
+                if (ovUtilPct > 80) ovAlerts.push(t('proj.detail.alertBudgetUtil', { pct: ovUtilPct }))
                 if ((ovPoMap.pending_approval?.count ?? 0) > 0)
                   ovAlerts.push(
-                    `${ovPoMap.pending_approval.count} Purchase Order${ovPoMap.pending_approval.count > 1 ? 's' : ''} awaiting approval`,
+                    t('proj.detail.alertPoAwaiting', { count: ovPoMap.pending_approval.count }),
                   )
-                if (ovRemaining < 0) ovAlerts.push('Project is over budget')
+                if (ovRemaining < 0) ovAlerts.push(t('proj.detail.alertOverBudget'))
                 ;(
                   [
-                    [p.submissionDate, 'Bid submission'],
-                    [p.siteVisitDate, 'Site visit'],
-                    [p.plannedEndDate, 'Project end'],
+                    [p.submissionDate, t('proj.detail.bidSubmission')],
+                    [p.siteVisitDate, t('proj.detail.siteVisit')],
+                    [p.plannedEndDate, t('proj.detail.projectEnd')],
                   ] as [string | null | undefined, string][]
                 ).forEach(([d, label]) => {
                   if (!d) return
@@ -2725,10 +2731,10 @@ export default function ProjectDetail() {
                 const upcomingDates: { label: string; date: string }[] = []
                 ;(
                   [
-                    [p.siteVisitDate, 'Site Visit'],
-                    [p.questionDate, 'Questions Due'],
-                    [p.submissionDate, 'Bid Submission'],
-                    [p.plannedEndDate, 'Project Completion'],
+                    [p.siteVisitDate, t('proj.detail.siteVisit2')],
+                    [p.questionDate, t('proj.detail.questionsDue')],
+                    [p.submissionDate, t('proj.detail.bidSubmission2')],
+                    [p.plannedEndDate, t('proj.detail.projectCompletion')],
                   ] as [string | null | undefined, string][]
                 )
                   .filter(([d]) => !!d)
@@ -2871,19 +2877,19 @@ export default function ProjectDetail() {
                 }
                 const financialSummaryRows: FinancialSummaryRow[] = [
                   {
-                    label: 'Approved Budget',
+                    label: t('proj.detail.approvedBudget'),
                     val: ovBudget,
                     color: theme.textPrimary,
                     bold: false,
                   },
                   {
-                    label: 'Actual Cost',
+                    label: t('proj.detail.actualCost'),
                     val: ovActual,
                     color: theme.textPrimary,
                     bold: false,
                   },
                   {
-                    label: 'Committed Cost (incl. store)',
+                    label: t('proj.detail.committedCostInclStore'),
                     val: ovCommitted,
                     color: theme.textPrimary,
                     bold: false,
@@ -2891,7 +2897,7 @@ export default function ProjectDetail() {
                   ...(ovStoreCosts > 0
                     ? [
                         {
-                          label: '  · Store Price Component',
+                          label: t('proj.detail.storePriceComponent'),
                           val: ovStoreCosts,
                           color: theme.textMuted,
                           bold: false,
@@ -2899,25 +2905,25 @@ export default function ProjectDetail() {
                       ]
                     : []),
                   {
-                    label: 'Remaining Budget',
+                    label: t('proj.detail.remainingBudget'),
                     val: ovRemaining,
                     color: ovRemaining < 0 ? '#ef4444' : '#22c55e',
                     bold: true,
                   },
                   {
-                    label: 'Forecast Cost at Completion',
+                    label: t('proj.detail.forecastCostAtCompletion'),
                     val: ovEAC,
                     color: theme.textPrimary,
                     bold: false,
                   },
                   {
-                    label: 'Expected Profit',
+                    label: t('proj.detail.expectedProfit'),
                     val: ovProfit,
                     color: ovProfit >= 0 ? '#22c55e' : '#ef4444',
                     bold: false,
                   },
                   {
-                    label: 'Profit Margin',
+                    label: t('proj.detail.profitMargin'),
                     val: null,
                     color: ovProfit >= 0 ? '#22c55e' : '#ef4444',
                     bold: true,
@@ -2927,7 +2933,7 @@ export default function ProjectDetail() {
                 const financialSummaryColumns: Column<FinancialSummaryRow>[] = [
                   {
                     key: 'label',
-                    header: 'Description',
+                    header: t('proj.detail.description'),
                     mobilePrimary: true,
                     render: (row) => (
                       <span style={{ color: theme.textPrimary, fontSize: '12px' }}>
@@ -2937,7 +2943,7 @@ export default function ProjectDetail() {
                   },
                   {
                     key: 'value',
-                    header: `Amount (${ovCcy})`,
+                    header: t('proj.detail.amount2', { ovCcy }),
                     mobilePriority: 1,
                     render: (row) => (
                       <span
@@ -2968,7 +2974,7 @@ export default function ProjectDetail() {
                 const poSummaryColumns: Column<PoSummaryRow>[] = [
                   {
                     key: 'status',
-                    header: 'Status',
+                    header: t('proj.detail.status'),
                     mobilePrimary: true,
                     render: (row) => (
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -2990,16 +2996,16 @@ export default function ProjectDetail() {
                   },
                   {
                     key: 'count',
-                    header: 'Qty',
+                    header: t('proj.detail.qty'),
                     mobilePriority: 1,
                     renderHeader: () => (
-                      <span style={{ display: 'block', textAlign: 'right' }}>Qty</span>
+                      <span style={{ display: 'block', textAlign: 'end' }}>{t('proj.detail.qty')}</span>
                     ),
                     render: (row) => (
                       <span
                         style={{
                           display: 'block',
-                          textAlign: 'right',
+                          textAlign: 'end',
                           color: theme.textMuted,
                           fontVariantNumeric: 'tabular-nums',
                         }}
@@ -3010,18 +3016,16 @@ export default function ProjectDetail() {
                   },
                   {
                     key: 'amount',
-                    header: `Amount (${ovCcy})`,
+                    header: t('proj.detail.amount2', { ovCcy }),
                     mobilePriority: 2,
                     renderHeader: () => (
-                      <span style={{ display: 'block', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        Amount ({ovCcy})
-                      </span>
+                      <span style={{ display: 'block', textAlign: 'end', whiteSpace: 'nowrap' }}>{t('proj.detail.amount2', { ovCcy })}</span>
                     ),
                     render: (row) => (
                       <span
                         style={{
                           display: 'block',
-                          textAlign: 'right',
+                          textAlign: 'end',
                           color: theme.textMuted,
                           fontVariantNumeric: 'tabular-nums',
                         }}
@@ -3037,7 +3041,7 @@ export default function ProjectDetail() {
                     <span
                       style={{
                         display: 'block',
-                        textAlign: 'right',
+                        textAlign: 'end',
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
@@ -3048,7 +3052,7 @@ export default function ProjectDetail() {
                     <span
                       style={{
                         display: 'block',
-                        textAlign: 'right',
+                        textAlign: 'end',
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
@@ -3071,7 +3075,7 @@ export default function ProjectDetail() {
                           color: '#92400e',
                         }}
                       >
-                        <strong>On Hold:</strong> {p.holdReason}
+                        <strong>{t('proj.detail.onHold2')}</strong> {p.holdReason}
                       </div>
                     )}
                     {p.cancelReason && (
@@ -3085,7 +3089,7 @@ export default function ProjectDetail() {
                           color: '#991b1b',
                         }}
                       >
-                        <strong>Cancelled:</strong> {p.cancelReason}
+                        <strong>{t('proj.detail.cancelled')}</strong> {p.cancelReason}
                       </div>
                     )}
 
@@ -3101,17 +3105,17 @@ export default function ProjectDetail() {
                       {/* 1. Project Information */}
                       {card(
                         <>
-                          {ch('Project Information')}
-                          {infoRow('Client', p.clientName ?? '—')}
+                          {ch(t('proj.detail.projectInformation'))}
+                          {infoRow(t('proj.detail.client'), p.clientName ?? '—')}
                           {infoRow(
-                            'Contract Value',
+                            t('proj.detail.contractValue2'),
                             formatCurrency(p.projectValue ?? 0, ovCcy),
                             true,
                           )}
-                          {infoRow('Start Date', fmtDate(p.plannedStartDate))}
-                          {infoRow('Completion Date', fmtDate(p.plannedEndDate))}
-                          {infoRow('Project Manager', p.managerName ?? '—')}
-                          {p.contractName && infoRow('Contract No.', p.contractName)}
+                          {infoRow(t('proj.detail.startDate'), fmtDate(p.plannedStartDate))}
+                          {infoRow(t('proj.detail.completionDate'), fmtDate(p.plannedEndDate))}
+                          {infoRow(t('proj.detail.projectManager2'), p.managerName ?? '—')}
+                          {p.contractName && infoRow(t('proj.detail.contractNo'), p.contractName)}
                           <div
                             style={{
                               display: 'flex',
@@ -3128,7 +3132,7 @@ export default function ProjectDetail() {
                                 flexShrink: 0,
                               }}
                             >
-                              Execution Status
+                              {t('proj.detail.executionStatus')}
                             </span>
                             <span
                               style={{
@@ -3161,7 +3165,7 @@ export default function ProjectDetail() {
                       {/* 2. Financial Summary */}
                       {card(
                         <>
-                          {ch('Financial Summary')}
+                          {ch(t('proj.detail.financialSummary'))}
                           <Table
                             columns={financialSummaryColumns}
                             data={financialSummaryRows}
@@ -3174,7 +3178,7 @@ export default function ProjectDetail() {
                       {card(
                         <>
                           {ch(
-                            'Purchase Order Summary',
+                            t('proj.detail.purchaseOrderSummary'),
                             <button
                               onClick={() => { setTab('procurement'); }}
                               style={{
@@ -3185,7 +3189,7 @@ export default function ProjectDetail() {
                                 cursor: 'pointer',
                               }}
                             >
-                              View All
+                              {t('proj.detail.viewAll')}
                             </button>,
                           )}
                           <Table
@@ -3200,7 +3204,7 @@ export default function ProjectDetail() {
                       {/* 4. Project Health */}
                       {card(
                         <>
-                          {ch('Project Health')}
+                          {ch(t('proj.detail.projectHealth'))}
                           {/* Semi-circle gauge */}
                           <div
                             style={{
@@ -3271,7 +3275,7 @@ export default function ProjectDetail() {
                                   {healthScore}
                                 </span>
                                 <span style={{ fontSize: '10px', color: theme.textMuted }}>
-                                  of 100
+                                  {t('proj.detail.of100')}
                                 </span>
                               </div>
                             </div>
@@ -3346,7 +3350,7 @@ export default function ProjectDetail() {
                       {/* 5. Schedule Overview */}
                       {card(
                         <>
-                          {ch('Schedule Overview')}
+                          {ch(t('proj.detail.scheduleOverview'))}
                           {ganttRows.length > 0 ? (
                             <div>
                               {/* Month header */}
@@ -3354,7 +3358,7 @@ export default function ProjectDetail() {
                                 style={{
                                   display: 'flex',
                                   marginBottom: '4px',
-                                  paddingLeft: '70px',
+                                  paddingInlineStart: '70px',
                                 }}
                               >
                                 {ganttMonths.slice(0, 6).map((m, i) => (
@@ -3463,7 +3467,7 @@ export default function ProjectDetail() {
                                     }}
                                   />
                                   <span style={{ fontSize: '10px', color: theme.textMuted }}>
-                                    Baseline
+                                    {t('proj.detail.baseline')}
                                   </span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -3476,7 +3480,7 @@ export default function ProjectDetail() {
                                     }}
                                   />
                                   <span style={{ fontSize: '10px', color: theme.textMuted }}>
-                                    Actual
+                                    {t('proj.detail.actual')}
                                   </span>
                                 </div>
                               </div>
@@ -3484,9 +3488,9 @@ export default function ProjectDetail() {
                           ) : (
                             <div>
                               {[
-                                ['Start', fmtDate(p.plannedStartDate)],
-                                ['End', fmtDate(p.plannedEndDate)],
-                                ['Progress', `${ovCompletion}%`],
+                                [t('proj.detail.start2'), fmtDate(p.plannedStartDate)],
+                                [t('proj.detail.end'), fmtDate(p.plannedEndDate)],
+                                [t('proj.detail.progress'), `${ovCompletion}%`],
                               ]
                                 .filter(([, v]) => v !== '—')
                                 .map(([l, v]) => (
@@ -3532,11 +3536,11 @@ export default function ProjectDetail() {
                       {/* 6. Recent Activities */}
                       {card(
                         <>
-                          {ch('Recent Activities')}
+                          {ch(t('proj.detail.recentActivities'))}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {recent6.length === 0 && (
                               <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                No recent activity.
+                                {t('proj.detail.noRecentActivity')}
                               </span>
                             )}
                             {recent6.map((ev, i) => {
@@ -3554,10 +3558,10 @@ export default function ProjectDetail() {
                                       (Date.now() - new Date(ts).getTime()) / 86400000,
                                     )
                                     return diff === 0
-                                      ? 'Today'
+                                      ? t('proj.detail.today')
                                       : diff === 1
-                                        ? 'Yesterday'
-                                        : `${diff} days ago`
+                                        ? t('proj.detail.yesterday')
+                                        : t('proj.detail.daysAgo', { count: diff })
                                   })()
                                 : ''
                               const iconColor =
@@ -3650,9 +3654,7 @@ export default function ProjectDetail() {
                                 cursor: 'pointer',
                                 padding: 0,
                               }}
-                            >
-                              View all {ovEvents.length} events →
-                            </button>
+                            >{t('proj.detail.viewAllEvents', { length: ovEvents.length })}</button>
                           )}
                         </>,
                       )}
@@ -3660,11 +3662,11 @@ export default function ProjectDetail() {
                       {/* 7. Upcoming Activities */}
                       {card(
                         <>
-                          {ch('Upcoming Activities')}
+                          {ch(t('proj.detail.upcomingActivities'))}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
                             {upcomingDates.length === 0 && (
                               <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                No upcoming dates.
+                                {t('proj.detail.noUpcomingDates')}
                               </span>
                             )}
                             {upcomingDates.slice(0, 6).map((u, i) => (
@@ -3704,7 +3706,7 @@ export default function ProjectDetail() {
                       {/* 8. Alerts */}
                       {card(
                         <>
-                          {ch('Alerts')}
+                          {ch(t('proj.detail.alerts'))}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {ovAlerts.length === 0 && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -3719,7 +3721,7 @@ export default function ProjectDetail() {
                                   <polyline points="20 6 9 17 4 12" />
                                 </svg>
                                 <span style={{ fontSize: '12px', color: '#22c55e' }}>
-                                  No alerts
+                                  {t('proj.detail.noAlerts')}
                                 </span>
                               </div>
                             )}
@@ -3760,7 +3762,7 @@ export default function ProjectDetail() {
                       {card(
                         <>
                           {ch(
-                            'Team Members',
+                            t('proj.detail.teamMembers'),
                             <button
                               onClick={() => { setTab('team'); }}
                               style={{
@@ -3771,13 +3773,13 @@ export default function ProjectDetail() {
                                 cursor: 'pointer',
                               }}
                             >
-                              View All
+                              {t('proj.detail.viewAll')}
                             </button>,
                           )}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {team.length === 0 && liveTeam.length === 0 && (
                               <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                No team members.
+                                {t('proj.detail.noTeamMembers')}
                               </span>
                             )}
                             {(liveTeam.length > 0 ? liveTeam : team).slice(0, 5).map((m, i) => {
@@ -3864,7 +3866,7 @@ export default function ProjectDetail() {
                                 padding: 0,
                               }}
                             >
-                              View All Team Members →
+                              {t('proj.detail.viewAllTeamMembers')}
                             </button>
                           )}
                         </>,
@@ -3884,9 +3886,7 @@ export default function ProjectDetail() {
                     marginBottom: '16px',
                   }}
                 >
-                  <span style={{ fontSize: '13px', color: theme.textMuted }}>
-                    {stages.length} stage{stages.length !== 1 ? 's' : ''}
-                  </span>
+                  <span style={{ fontSize: '13px', color: theme.textMuted }}>{t('proj.detail.stage', { count: stages.length })}</span>
                   {isAdmin && (
                     <Button
                       variant="primary"
@@ -3896,7 +3896,7 @@ export default function ProjectDetail() {
                         setStageDrawer(true)
                       }}
                     >
-                      Add Stage
+                      {t('proj.detail.addStage')}
                     </Button>
                   )}
                 </div>
@@ -3909,7 +3909,7 @@ export default function ProjectDetail() {
                       padding: '24px 0',
                     }}
                   >
-                    No stages defined.
+                    {t('proj.detail.noStagesDefined')}
                   </div>
                 )}
                 {stages.length > 0 &&
@@ -3979,7 +3979,7 @@ export default function ProjectDetail() {
                                   </div>
                                 )}
                               </div>
-                              <div style={{ textAlign: 'right' }}>
+                              <div style={{ textAlign: 'end' }}>
                                 <div
                                   style={{
                                     fontSize: '13px',
@@ -4050,7 +4050,7 @@ export default function ProjectDetail() {
                                     cursor: 'pointer',
                                   }}
                                 >
-                                  {s.status === 'pending' ? '▶ Start' : '✓ Complete'}
+                                  {s.status === 'pending' ? t('proj.detail.start') : t('proj.detail.complete')}
                                 </button>
                               </div>
                             )}
@@ -4075,7 +4075,7 @@ export default function ProjectDetail() {
                           background: theme.bgCanvas,
                         }}
                       >
-                        {['#', 'Stage', 'Dates', 'Assigned To', 'Progress', 'Status', ''].map(
+                        {['#', t('proj.detail.stage2'), t('proj.detail.dates'), t('proj.detail.assignedTo'), t('proj.detail.progress'), t('proj.detail.status'), ''].map(
                           (h, i) => (
                             <div
                               key={i}
@@ -4237,14 +4237,14 @@ export default function ProjectDetail() {
                                     whiteSpace: 'nowrap',
                                   }}
                                 >
-                                  {s.status === 'pending' ? '▶ Start' : '✓ Complete'}
+                                  {s.status === 'pending' ? t('proj.detail.start') : t('proj.detail.complete')}
                                 </button>
                               )}
                               {s.status === 'completed' && (
                                 <span
                                   style={{ fontSize: '11px', color: '#22c55e', fontWeight: 600 }}
                                 >
-                                  ✓ Done
+                                  {t('proj.detail.done')}
                                 </span>
                               )}
                             </div>
@@ -4280,7 +4280,7 @@ export default function ProjectDetail() {
                       color: typeColor(type),
                     }}
                   >
-                    {type === 'commercial' ? 'Commercial' : type === 'both' ? 'Both' : 'Technical'}
+                    {type === 'commercial' ? t('proj.detail.commercial') : type === 'both' ? t('proj.detail.both') : t('proj.detail.technical')}
                   </span>
                 )
 
@@ -4295,13 +4295,10 @@ export default function ProjectDetail() {
                         marginBottom: '16px',
                       }}
                     >
-                      <span style={{ fontSize: '13px', color: theme.textMuted }}>
-                        {technical.length} technical · {commercial.length} commercial
-                        {both.length > 0 ? ` · ${both.length} both` : ''}
-                      </span>
+                      <span style={{ fontSize: '13px', color: theme.textMuted }}>{t('proj.detail.technicalCommercial', { length: technical.length, length2: commercial.length, value: both.length > 0 ? ` · ${both.length} both` : '' })}</span>
                       {canEdit.team && (
                         <Button variant="primary" size="sm" onClick={() => { setShowAddForm(true); }}>
-                          Add Member
+                          {t('proj.detail.addMember')}
                         </Button>
                       )}
                     </div>
@@ -4317,7 +4314,7 @@ export default function ProjectDetail() {
                           member_type: 'technical',
                         })
                       }}
-                      title="Add Team Member"
+                      title={t('proj.detail.addTeamMember')}
                       size="sm"
                     >
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -4334,7 +4331,7 @@ export default function ProjectDetail() {
                               letterSpacing: '0.05em',
                             }}
                           >
-                            Team Type
+                            {t('proj.detail.teamType')}
                           </label>
                           <div
                             style={{
@@ -4345,11 +4342,11 @@ export default function ProjectDetail() {
                               overflow: 'hidden',
                             }}
                           >
-                            {(['technical', 'commercial', 'both'] as const).map((t) => (
+                            {(['technical', 'commercial', 'both'] as const).map((tx) => (
                               <button
-                                key={t}
+                                key={tx}
                                 type="button"
-                                onClick={() => { setAddForm((f) => ({ ...f, member_type: t })); }}
+                                onClick={() => { setAddForm((f) => ({ ...f, member_type: tx })); }}
                                 style={{
                                   flex: 1,
                                   padding: '8px 0',
@@ -4358,26 +4355,26 @@ export default function ProjectDetail() {
                                   border: 'none',
                                   cursor: 'pointer',
                                   background:
-                                    addForm.member_type === t ? typeColor(t) : theme.bgCanvas,
-                                  color: addForm.member_type === t ? '#fff' : theme.textMuted,
+                                    addForm.member_type === tx ? typeColor(tx) : theme.bgCanvas,
+                                  color: addForm.member_type === tx ? '#fff' : theme.textMuted,
                                   transition: 'background 0.15s',
                                 }}
                               >
-                                {t === 'technical'
-                                  ? 'Technical'
-                                  : t === 'commercial'
-                                    ? 'Commercial'
-                                    : 'Both'}
+                                {tx === 'technical'
+                                  ? t('proj.detail.technical')
+                                  : tx === 'commercial'
+                                    ? t('proj.detail.commercial')
+                                    : t('proj.detail.both')}
                               </button>
                             ))}
                           </div>
                         </div>
 
                         <SearchableSelect
-                          label="Employee"
+                          label={t('proj.detail.employee')}
                           value={addForm.employee_id}
                           onChange={(v) => { setAddForm((f) => ({ ...f, employee_id: v })); }}
-                          placeholder="Select employee…"
+                          placeholder={t('proj.detail.selectEmployee')}
                           options={employees.map((e) => ({
                             value: e.id,
                             label: `${e.first_name} ${e.last_name}${e.job_title ? ` — ${e.job_title}` : ''}`,
@@ -4393,7 +4390,7 @@ export default function ProjectDetail() {
                               fontWeight: 500,
                             }}
                           >
-                            Allocated Hours (optional)
+                            {t('proj.detail.allocatedHoursOptional')}
                           </label>
                           <input
                             type="number"
@@ -4435,10 +4432,10 @@ export default function ProjectDetail() {
                               })
                             }}
                           >
-                            Cancel
+                            {t('proj.detail.cancel')}
                           </Button>
                           <Button variant="primary" loading={addLoading} onClick={(...args: Parameters<typeof handleAddMember>) => void handleAddMember(...args)}>
-                            Add Member
+                            {t('proj.detail.addMember')}
                           </Button>
                         </div>
                       </div>
@@ -4448,29 +4445,29 @@ export default function ProjectDetail() {
                     {(() => {
                       const editingMember = liveTeam.find((m) => m.id === permEditMemberId)
                       const PERM_TABS: { key: string; label: string }[] = [
-                        { key: 'overview', label: 'Overview' },
-                        { key: 'client_documents', label: 'Client Documents' },
-                        { key: 'rfq_lines', label: 'Scope of Work' },
-                        { key: 'bidding', label: 'Bidding' },
-                        { key: 'team', label: 'Team' },
-                        { key: 'planning', label: 'Planning' },
-                        { key: 'execution', label: 'Execution' },
-                        { key: 'procurement', label: 'Procurement' },
-                        { key: 'cost_control', label: 'Cost Control' },
-                        { key: 'variation_orders', label: 'Variation Orders' },
-                        { key: 'meetings', label: 'Meetings' },
-                        { key: 'attachments', label: 'Attachments' },
+                        { key: 'overview', label: t('proj.detail.overview') },
+                        { key: 'client_documents', label: t('proj.detail.clientDocuments') },
+                        { key: 'rfq_lines', label: t('proj.detail.scopeOfWork') },
+                        { key: 'bidding', label: t('proj.detail.bidding') },
+                        { key: 'team', label: t('proj.detail.team') },
+                        { key: 'planning', label: t('proj.detail.planning') },
+                        { key: 'execution', label: t('proj.detail.execution') },
+                        { key: 'procurement', label: t('proj.detail.procurement') },
+                        { key: 'cost_control', label: t('proj.detail.costControl') },
+                        { key: 'variation_orders', label: t('proj.detail.variationOrders') },
+                        { key: 'meetings', label: t('proj.detail.meetings') },
+                        { key: 'attachments', label: t('proj.detail.attachments') },
                       ]
                       const LEVELS: { value: string; label: string; color: string }[] = [
-                        { value: 'none', label: 'None', color: theme.textMuted },
-                        { value: 'view', label: 'View', color: '#f59e0b' },
-                        { value: 'edit', label: 'Edit', color: theme.accent },
+                        { value: 'none', label: t('proj.detail.none'), color: theme.textMuted },
+                        { value: 'view', label: t('proj.detail.view'), color: '#f59e0b' },
+                        { value: 'edit', label: t('proj.detail.edit'), color: theme.accent },
                       ]
                       return (
                         <Modal
                           open={!!permEditMemberId}
                           onClose={() => { setPermEditMemberId(null); }}
-                          title={`Permissions — ${editingMember?.employee_name ?? ''}`}
+                          title={t('proj.detail.permissions2', { value: editingMember?.employee_name ?? '' })}
                           size="sm"
                         >
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
@@ -4481,9 +4478,7 @@ export default function ProjectDetail() {
                                 margin: '0 0 12px',
                               }}
                             >
-                              Override role defaults per tab. "None" hides the tab; "View" allows
-                              read-only; "Edit" grants full access. Leave unset to use role
-                              defaults.
+                              {t('proj.detail.overrideRoleDefaultsPerTabNone')}
                             </p>
                             {PERM_TABS.map(({ key, label }) => {
                               const current = permEditDraft[key] ?? ''
@@ -4527,10 +4522,10 @@ export default function ProjectDetail() {
                                         cursor: 'pointer',
                                         background: current === '' ? theme.bgCanvas : 'transparent',
                                         color: current === '' ? theme.textPrimary : theme.textMuted,
-                                        borderRight: `1px solid ${theme.border}`,
+                                        borderInlineEnd: `1px solid ${theme.border}`,
                                       }}
                                     >
-                                      Default
+                                      {t('proj.detail.default')}
                                     </button>
                                     {LEVELS.map((lv) => (
                                       <button
@@ -4548,7 +4543,7 @@ export default function ProjectDetail() {
                                           background:
                                             current === lv.value ? `${lv.color}20` : 'transparent',
                                           color: current === lv.value ? lv.color : theme.textMuted,
-                                          borderRight:
+                                          borderInlineEnd:
                                             lv.value !== 'edit'
                                               ? `1px solid ${theme.border}`
                                               : 'none',
@@ -4570,14 +4565,14 @@ export default function ProjectDetail() {
                               }}
                             >
                               <Button variant="ghost" onClick={() => { setPermEditMemberId(null); }}>
-                                Cancel
+                                {t('proj.detail.cancel')}
                               </Button>
                               <Button
                                 variant="primary"
                                 loading={permSaving}
                                 onClick={(...args: Parameters<typeof handleSavePerms>) => void handleSavePerms(...args)}
                               >
-                                Save Permissions
+                                {t('proj.detail.savePermissions')}
                               </Button>
                             </div>
                           </div>
@@ -4595,7 +4590,7 @@ export default function ProjectDetail() {
                           textAlign: 'center',
                         }}
                       >
-                        Loading team…
+                        {t('proj.detail.loadingTeam')}
                       </div>
                     )}
                     {!teamLoading && liveTeam.length === 0 && (
@@ -4610,7 +4605,7 @@ export default function ProjectDetail() {
                           borderRadius: 10,
                         }}
                       >
-                        No team members yet.
+                        {t('proj.detail.noTeamMembersYet')}
                       </div>
                     )}
                     {!teamLoading &&
@@ -4622,13 +4617,13 @@ export default function ProjectDetail() {
                           rfq_lines: 'PE',
                           bidding: 'BD',
                           contracts: 'CT',
-                          engineering: 'ENG',
+                          engineering: t('proj.detail.eng'),
                           execution: 'EX',
                           procurement: 'PR',
                           cost_control: 'CC',
                           variation_orders: 'VO',
-                          meetings: 'MOM',
-                          attachments: 'ATT',
+                          meetings: t('proj.detail.mom'),
+                          attachments: t('proj.detail.att'),
                         }
                         const capChip = (label: string, level: string) => {
                           const isEdit = level === 'edit'
@@ -4734,7 +4729,7 @@ export default function ProjectDetail() {
                                       }}
                                     >
                                       {m.job_title ?? (
-                                        <span style={{ color: theme.textMuted }}>No title</span>
+                                        <span style={{ color: theme.textMuted }}>{t('proj.detail.noTitle')}</span>
                                       )}
                                     </div>
                                     <div
@@ -4798,7 +4793,7 @@ export default function ProjectDetail() {
                                       color: theme.textMuted,
                                     }}
                                   >
-                                    Role defaults apply
+                                    {t('proj.detail.roleDefaultsApply')}
                                   </div>
                                 )}
                               </div>
@@ -4820,7 +4815,7 @@ export default function ProjectDetail() {
                                       setPermEditMemberId(m.id)
                                       setPermEditDraft(m.permissions ?? {})
                                     }}
-                                    title="Edit permissions"
+                                    title={t('proj.detail.editPermissions')}
                                     style={{
                                       fontSize: 11,
                                       padding: '4px 10px',
@@ -4847,12 +4842,12 @@ export default function ProjectDetail() {
                                       <path d="M21 2l-9.6 9.6" />
                                       <path d="M15.5 7.5L17 6l2.5 2.5L18 10" />
                                     </svg>
-                                    Permissions
+                                    {t('proj.detail.permissions')}
                                   </button>
                                   {confirmRemoveId === m.id ? (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                       <span style={{ fontSize: 10, color: theme.textMuted }}>
-                                        Remove?
+                                        {t('proj.detail.remove')}
                                       </span>
                                       <button
                                         onClick={() => void handleRemoveMember(m.id)}
@@ -4867,7 +4862,7 @@ export default function ProjectDetail() {
                                           fontWeight: 600,
                                         }}
                                       >
-                                        Yes
+                                        {t('proj.detail.yes')}
                                       </button>
                                       <button
                                         onClick={() => { setConfirmRemoveId(null); }}
@@ -4881,13 +4876,13 @@ export default function ProjectDetail() {
                                           cursor: 'pointer',
                                         }}
                                       >
-                                        No
+                                        {t('proj.detail.no')}
                                       </button>
                                     </div>
                                   ) : (
                                     <button
                                       onClick={() => { setConfirmRemoveId(m.id); }}
-                                      title="Remove"
+                                      title={t('proj.detail.remove2')}
                                       style={{
                                         fontSize: 11,
                                         padding: '4px 10px',
@@ -4912,7 +4907,7 @@ export default function ProjectDetail() {
                                         <line x1="18" y1="6" x2="6" y2="18" />
                                         <line x1="6" y1="6" x2="18" y2="18" />
                                       </svg>
-                                      Remove
+                                      {t('proj.detail.remove2')}
                                     </button>
                                   )}
                                 </div>
@@ -4930,10 +4925,10 @@ export default function ProjectDetail() {
                               if (group.length === 0) return null
                               const typeLabel =
                                 type === 'commercial'
-                                  ? 'Commercial Team'
+                                  ? t('proj.detail.commercialTeam')
                                   : type === 'both'
-                                    ? 'Cross-Functional'
-                                    : 'Technical Team'
+                                    ? t('proj.detail.crossFunctional')
+                                    : t('proj.detail.technicalTeam')
                               const totalH = group.reduce((s, m) => s + (m.allocated_hours ?? 0), 0)
                               return (
                                 <div key={type}>
@@ -4966,13 +4961,9 @@ export default function ProjectDetail() {
                                     >
                                       {typeLabel}
                                     </span>
-                                    <span style={{ fontSize: 11, color: theme.textMuted }}>
-                                      {group.length} member{group.length !== 1 ? 's' : ''}
-                                    </span>
+                                    <span style={{ fontSize: 11, color: theme.textMuted }}>{t('proj.detail.member', { count: group.length })}</span>
                                     {totalH > 0 && (
-                                      <span style={{ fontSize: 11, color: theme.textMuted }}>
-                                        · {totalH}h allocated
-                                      </span>
+                                      <span style={{ fontSize: 11, color: theme.textMuted }}>{t('proj.detail.hAllocated', { totalH })}</span>
                                     )}
                                   </div>
                                   <div
@@ -5052,9 +5043,9 @@ export default function ProjectDetail() {
                 }
                 const storeOuts = (miData?.materialIssues ?? []) as Record<string, unknown>[]
                 const subNav: { key: typeof procSection; label: string; count: number }[] = [
-                  { key: 'purchase_orders', label: 'Purchase Orders', count: recentPos.length },
-                  { key: 'manufacturing', label: 'Manufacturing Requests', count: mrs.length },
-                  { key: 'store_out', label: 'Store Out', count: storeOuts.length },
+                  { key: 'purchase_orders', label: t('proj.detail.purchaseOrders'), count: recentPos.length },
+                  { key: 'manufacturing', label: t('proj.detail.manufacturingRequests'), count: mrs.length },
+                  { key: 'store_out', label: t('proj.detail.storeOut'), count: storeOuts.length },
                 ]
                 return (
                   <div>
@@ -5085,7 +5076,7 @@ export default function ProjectDetail() {
                         >
                           {s.label}
                           {s.count > 0 && (
-                            <span style={{ marginLeft: '5px', fontSize: '11px', opacity: 0.75 }}>
+                            <span style={{ marginInlineStart: '5px', fontSize: '11px', opacity: 0.75 }}>
                               ({s.count})
                             </span>
                           )}
@@ -5104,9 +5095,7 @@ export default function ProjectDetail() {
                             marginBottom: '16px',
                           }}
                         >
-                          <span style={{ fontSize: '13px', color: theme.textMuted }}>
-                            {recentPos.length} purchase order{recentPos.length !== 1 ? 's' : ''}
-                          </span>
+                          <span style={{ fontSize: '13px', color: theme.textMuted }}>{t('proj.detail.purchaseOrder2', { count: recentPos.length })}</span>
                           {canEdit.procurement && (
                             <Button
                               variant="primary"
@@ -5115,7 +5104,7 @@ export default function ProjectDetail() {
                                 { navigate(`/procurement/requisitions/new?projectId=${id}`); }
                               }
                             >
-                              + New Requisition
+                              {t('proj.detail.newRequisition')}
                             </Button>
                           )}
                         </div>
@@ -5128,7 +5117,7 @@ export default function ProjectDetail() {
                               padding: '24px 0',
                             }}
                           >
-                            No purchase orders for this project.
+                            {t('proj.detail.noPurchaseOrdersForThisProject')}
                           </div>
                         )}
                         {recentPos.length > 0 &&
@@ -5169,7 +5158,7 @@ export default function ProjectDetail() {
                                       {String(po.vendor_name ?? '')}
                                     </div>
                                   </div>
-                                  <div style={{ textAlign: 'right' }}>
+                                  <div style={{ textAlign: 'end' }}>
                                     <div style={{ fontWeight: 600, fontSize: '13px' }}>
                                       {String(po.total_amount ?? '—')}
                                     </div>
@@ -5196,7 +5185,7 @@ export default function ProjectDetail() {
                                   background: theme.bgCanvas,
                                 }}
                               >
-                                {['PO Number', 'Vendor', 'Amount', 'Status', ''].map((h, i) => (
+                                {[t('proj.detail.poNumber'), t('proj.detail.vendor'), t('proj.detail.amount'), t('proj.detail.status'), ''].map((h, i) => (
                                   <div
                                     key={i}
                                     style={{
@@ -5296,12 +5285,10 @@ export default function ProjectDetail() {
                             marginBottom: '16px',
                           }}
                         >
-                          <span style={{ fontSize: '13px', color: theme.textMuted }}>
-                            {mrs.length} request{mrs.length !== 1 ? 's' : ''}
-                          </span>
+                          <span style={{ fontSize: '13px', color: theme.textMuted }}>{t('proj.detail.request', { count: mrs.length })}</span>
                           {canEdit.procurement && (
                             <Button variant="primary" size="sm" onClick={() => { setShowMRForm(true); }}>
-                              New Request
+                              {t('proj.detail.newRequest')}
                             </Button>
                           )}
                         </div>
@@ -5314,7 +5301,7 @@ export default function ProjectDetail() {
                               padding: '24px 0',
                             }}
                           >
-                            No manufacturing requests yet.
+                            {t('proj.detail.noManufacturingRequestsYet')}
                           </div>
                         )}
                         {mrs.length > 0 &&
@@ -5352,10 +5339,7 @@ export default function ProjectDetail() {
                                     >
                                       {String(mr.requestNumber ?? '—')}
                                     </div>
-                                    <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                                      {String(mr.productName ?? '')} · Qty{' '}
-                                      {String(mr.qtyRequested ?? 0)}
-                                    </div>
+                                    <div style={{ fontSize: '11px', color: theme.textMuted }}>{t('proj.detail.qty2', { string: String(mr.productName ?? ''), string2: String(mr.qtyRequested ?? 0) })}</div>
                                   </div>
                                   <Badge
                                     variant={mrStatusVariant[String(mr.status)] ?? 'neutral'}
@@ -5383,7 +5367,7 @@ export default function ProjectDetail() {
                                   background: theme.bgCanvas,
                                 }}
                               >
-                                {['Request #', 'Product', 'Qty', 'Required Date', 'Status', ''].map(
+                                {[t('proj.detail.request2'), t('proj.detail.product'), t('proj.detail.qty'), t('proj.detail.requiredDate'), t('proj.detail.status'), ''].map(
                                   (h, i) => (
                                     <div
                                       key={i}
@@ -5485,24 +5469,21 @@ export default function ProjectDetail() {
                             marginBottom: '16px',
                           }}
                         >
-                          <span style={{ fontSize: '13px', color: theme.textMuted }}>
-                            {storeOuts.length} store-out{storeOuts.length !== 1 ? 's' : ''} linked
-                            to this project
-                          </span>
+                          <span style={{ fontSize: '13px', color: theme.textMuted }}>{t('proj.detail.storeOutLinkedToThisProject', { count: storeOuts.length })}</span>
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => { navigate('/inventory/material-returns'); }}
                             >
-                              Return unused material →
+                              {t('proj.detail.returnUnusedMaterial')}
                             </Button>
                             <Button
                               variant="secondary"
                               size="sm"
                               onClick={() => { navigate(`/inventory/store-out?projectId=${id}`); }}
                             >
-                              Manage in Store Out module →
+                              {t('proj.detail.manageInStoreOutModule')}
                             </Button>
                           </div>
                         </div>
@@ -5515,7 +5496,7 @@ export default function ProjectDetail() {
                               padding: '32px 0',
                             }}
                           >
-                            No store-outs for this project yet.{' '}
+                            {t('proj.detail.noStoreOutsForThisProject')}{' '}
                             <button
                               onClick={() => { navigate('/inventory/store-out'); }}
                               style={{
@@ -5527,9 +5508,9 @@ export default function ProjectDetail() {
                                 textDecoration: 'underline',
                               }}
                             >
-                              Go to Store Out
+                              {t('proj.detail.goToStoreOut')}
                             </button>{' '}
-                            to create one.
+                            {t('proj.detail.toCreateOne')}
                           </div>
                         )}
                         {storeOuts.length > 0 && (
@@ -5550,7 +5531,7 @@ export default function ProjectDetail() {
                                 borderBottom: `1px solid ${theme.border}`,
                               }}
                             >
-                              {['Issue #', 'Description', 'Date', 'Total Cost', 'Status'].map(
+                              {[t('proj.detail.issue2'), t('proj.detail.description'), t('proj.detail.date'), t('proj.detail.totalCost'), t('proj.detail.status')].map(
                                 (h, i) => (
                                   <div
                                     key={i}
@@ -5614,7 +5595,7 @@ export default function ProjectDetail() {
                                       ? `PO: ${String(si.poNumber)}`
                                       : si.notes
                                         ? String(si.notes).slice(0, 40)
-                                        : 'Manual issue'}
+                                        : t('proj.detail.manualIssue')}
                                   </div>
                                   <div style={{ fontSize: '12px', color: theme.textMuted }}>
                                     {String(si.issueDate ?? '').slice(0, 10)}
@@ -5839,16 +5820,16 @@ export default function ProjectDetail() {
             {tab === 'history' &&
               (() => {
                 const EVENT_LABEL: Record<string, string> = {
-                  status_change: 'Status',
-                  field_update: 'Edit',
-                  stage_create: 'Stage',
-                  stage_update: 'Stage',
-                  team_add: 'Team',
-                  team_remove: 'Team',
-                  rfq_phase_status: 'Phase',
-                  rfq_phase_notes: 'Notes',
-                  rfq_phase_file: 'File',
-                  rfq_phase_file_delete: 'File',
+                  status_change: t('proj.detail.status'),
+                  field_update: t('proj.detail.edit'),
+                  stage_create: t('proj.detail.stage2'),
+                  stage_update: t('proj.detail.stage2'),
+                  team_add: t('proj.detail.team'),
+                  team_remove: t('proj.detail.team'),
+                  rfq_phase_status: t('proj.detail.phase'),
+                  rfq_phase_notes: t('proj.detail.notes2'),
+                  rfq_phase_file: t('proj.detail.file3'),
+                  rfq_phase_file_delete: t('proj.detail.file3'),
                 }
                 const EVENT_COLOR: Record<string, string> = {
                   status_change: theme.accent,
@@ -5869,9 +5850,9 @@ export default function ProjectDetail() {
                         eventType: 'status_change',
                         actorName: h.changed_by_name ?? 'System',
                         summary: h.from_status
-                          ? `Status changed: ${String(h.from_status).replace(/_/g, ' ')} → ${String(h.to_status ?? '').replace(/_/g, ' ')}` +
-                            (h.reason ? ` ("${String(h.reason)}")` : '')
-                          : `Project created with status: ${String(h.to_status ?? '').replace(/_/g, ' ')}`,
+                          ? t('proj.detail.statusChangedFromTo', { from: statusWord(h.from_status), to: statusWord(h.to_status) }) +
+                            (h.reason ? t('proj.detail.reasonSuffix', { reason: String(h.reason) }) : '')
+                          : t('proj.detail.projectCreatedWithStatus', { status: statusWord(h.to_status) }),
                         createdAt: h.created_at,
                       }))
                 return (
@@ -5915,19 +5896,19 @@ export default function ProjectDetail() {
                         <div
                           style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}
                         >
-                          No activity yet
+                          {t('proj.detail.noActivityYet')}
                         </div>
                         <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                          Project events will appear here as work progresses.
+                          {t('proj.detail.projectEventsWillAppearHereAs')}
                         </div>
                       </div>
                     )}
                     {log.length > 0 && (
-                      <div style={{ position: 'relative', paddingLeft: '24px' }}>
+                      <div style={{ position: 'relative', paddingInlineStart: '24px' }}>
                         <div
                           style={{
                             position: 'absolute',
-                            left: '9px',
+                            insetInlineStart: '9px',
                             top: '12px',
                             bottom: '12px',
                             width: '2px',
@@ -5940,7 +5921,7 @@ export default function ProjectDetail() {
                             const e = entry as Record<string, unknown>
                             const et = String(e.eventType ?? 'status_change')
                             const dotColor = EVENT_COLOR[et] ?? theme.accent
-                            const evLabel = EVENT_LABEL[et] ?? 'Event'
+                            const evLabel = EVENT_LABEL[et] ?? t('proj.detail.event')
                             const ts = e.createdAt
                             return (
                               <div
@@ -5953,7 +5934,7 @@ export default function ProjectDetail() {
                                 <div
                                   style={{
                                     position: 'absolute',
-                                    left: '-20px',
+                                    insetInlineStart: '-20px',
                                     top: '14px',
                                     width: '10px',
                                     height: '10px',
@@ -6127,6 +6108,13 @@ function FileTypeIcon({ mime }: { mime: string }) {
 
 const DOC_CATEGORIES = ['General', 'Technical', 'Commercial', 'Financial', 'Legal', 'HSE'] as const
 type DocCategory = (typeof DOC_CATEGORIES)[number]
+// Display label only: the English value is what gets stored in the file label and compared in logic.
+const docCatLabel = (cat: string) => tl('proj.detail.docCatOpts', cat, cat)
+// Project status values arrive as snake_case DB values; show them translated, falling back to a spaced version.
+const statusWord = (s: unknown) => {
+  const v = String(s ?? '')
+  return tl('proj.detail.statusOpts', v, v.replace(/_/g, ' '))
+}
 
 const CAT_COLOR: Record<DocCategory, { bg: string; color: string }> = {
   General: { bg: '#6b728018', color: '#6b7280' },
@@ -6148,12 +6136,12 @@ function parseFileCategory(label: string): { category: DocCategory; name: string
 // ── Client Documents Tab ─────────────────────────────────────────────────
 
 const CD_CATEGORIES = [
-  { key: 'rfq_tender', label: 'RFQ / Tender' },
-  { key: 'drawings', label: 'Technical Drawings' },
-  { key: 'boq_specs', label: 'BOQ / Specifications' },
-  { key: 'correspondence', label: 'Correspondence' },
-  { key: 'contracts', label: 'Contracts' },
-  { key: 'other', label: 'General' },
+  { key: 'rfq_tender', get label() { return i18n.t('proj.detail.rfqTender', { defaultValue: "RFQ / Tender" }) } },
+  { key: 'drawings', get label() { return i18n.t('proj.detail.technicalDrawings', { defaultValue: "Technical Drawings" }) } },
+  { key: 'boq_specs', get label() { return i18n.t('proj.detail.boqSpecifications', { defaultValue: "BOQ / Specifications" }) } },
+  { key: 'correspondence', get label() { return i18n.t('proj.detail.correspondence', { defaultValue: "Correspondence" }) } },
+  { key: 'contracts', get label() { return i18n.t('proj.detail.contracts', { defaultValue: "Contracts" }) } },
+  { key: 'other', get label() { return i18n.t('proj.detail.general', { defaultValue: "General" }) } },
 ] as const
 
 type CDCategory = (typeof CD_CATEGORIES)[number]['key']
@@ -6220,6 +6208,7 @@ function ClientDocumentsTab({
   theme: ReturnType<typeof useTheme>['theme']
   isAdmin?: boolean
 }) {
+  const { t } = useTranslation()
   const addToast = useToastStore((s) => s.addToast)
   const [filterCat, setFilterCat] = useState<CDCategory | 'all'>('all')
   const [search, setSearch] = useState('')
@@ -6299,7 +6288,7 @@ function ClientDocumentsTab({
       })
       onPicked(fileId, file.name)
     } catch {
-      addToast({ type: 'error', message: 'File upload failed' })
+      addToast({ type: 'error', message: t('proj.detail.fileUploadFailed') })
     } finally {
       setUploading(false)
     }
@@ -6365,7 +6354,7 @@ function ClientDocumentsTab({
 
   const handleSubmit = async () => {
     if (!form.title || pendingFiles.length === 0) {
-      addToast({ type: 'error', message: 'Title and at least one file are required' })
+      addToast({ type: 'error', message: t('proj.detail.titleAndAtLeastOneFile') })
       return
     }
     // Multiple files become multiple document records (each with its own
@@ -6401,8 +6390,10 @@ function ClientDocumentsTab({
         type: failed > 0 ? 'warning' : 'success',
         message:
           succeeded === 1 && failed === 0
-            ? 'Document uploaded'
-            : `${succeeded} document${succeeded > 1 ? 's' : ''} uploaded${failed > 0 ? `, ${failed} failed` : ''}`,
+            ? t('proj.detail.documentUploaded')
+            : failed > 0
+              ? t('proj.detail.uploadedDocsFailed', { count: succeeded, failed })
+              : t('proj.detail.uploadedDocs', { count: succeeded }),
       })
     }
     if (failed === 0) {
@@ -6424,7 +6415,7 @@ function ClientDocumentsTab({
   const handleRevise = async () => {
     if (!reviseDoc) return
     if (!revForm.revision || !revForm.fileId) {
-      addToast({ type: 'error', message: 'Revision and file are required' })
+      addToast({ type: 'error', message: t('proj.detail.revisionAndFileAreRequired') })
       return
     }
     try {
@@ -6436,7 +6427,7 @@ function ClientDocumentsTab({
           description: revForm.description || null,
         },
       })
-      addToast({ type: 'success', message: 'Revision uploaded' })
+      addToast({ type: 'success', message: t('proj.detail.revisionUploaded') })
       setReviseDoc(null)
       setRevForm({ revision: '', description: '', fileId: '', filename: '' })
       void refetch()
@@ -6471,7 +6462,7 @@ function ClientDocumentsTab({
 
   const handleEditSave = async () => {
     if (!editDoc || !editForm.title) {
-      addToast({ type: 'error', message: 'Title is required' })
+      addToast({ type: 'error', message: t('proj.detail.titleIsRequired') })
       return
     }
     try {
@@ -6487,7 +6478,7 @@ function ClientDocumentsTab({
           transmissionDate: editForm.transmissionDate || null,
         },
       })
-      addToast({ type: 'success', message: 'Document updated' })
+      addToast({ type: 'success', message: t('proj.detail.documentUpdated') })
       setEditDoc(null)
       void refetch()
     } catch (e: unknown) {
@@ -6496,7 +6487,7 @@ function ClientDocumentsTab({
   }
 
   const handleDelete = async (doc: ClientDoc | ClientDocRevision) => {
-    if (!window.confirm(`Delete "${doc.title}"?`)) return
+    if (!window.confirm(t('proj.detail.delete3', { title: doc.title }))) return
     try {
       await deleteDoc({ variables: { id: doc.id } })
       void refetch()
@@ -6577,10 +6568,10 @@ function ClientDocumentsTab({
   const statusPill = (s: string) => {
     const cfg =
       s === 'active'
-        ? { dot: '#22c55e', text: '#15803d', bg: '#f0fdf4', label: 'Active' }
+        ? { dot: '#22c55e', text: '#15803d', bg: '#f0fdf4', label: t('proj.detail.active') }
         : s === 'superseded'
-          ? { dot: '#f59e0b', text: '#a16207', bg: '#fffbeb', label: 'Superseded' }
-          : { dot: '#9ca3af', text: '#6b7280', bg: '#f9fafb', label: 'Archived' }
+          ? { dot: '#f59e0b', text: '#a16207', bg: '#fffbeb', label: t('proj.detail.superseded') }
+          : { dot: '#9ca3af', text: '#6b7280', bg: '#f9fafb', label: t('proj.detail.archived') }
     return (
       <span
         style={{
@@ -6633,14 +6624,14 @@ function ClientDocumentsTab({
           transition: 'background 0.12s, border-color 0.12s',
         }}
         onMouseEnter={(e) => {
-          const t = e.currentTarget
-          t.style.background = styles.hoverBg
-          t.style.borderColor = variant === 'danger' ? '#fca5a5' : theme.border
+          const tx = e.currentTarget
+          tx.style.background = styles.hoverBg
+          tx.style.borderColor = variant === 'danger' ? '#fca5a5' : theme.border
         }}
         onMouseLeave={(e) => {
-          const t = e.currentTarget
-          t.style.background = 'transparent'
-          t.style.borderColor = 'transparent'
+          const tx = e.currentTarget
+          tx.style.background = 'transparent'
+          tx.style.borderColor = 'transparent'
         }}
       >
         {icon}
@@ -6672,7 +6663,7 @@ function ClientDocumentsTab({
       }}
     />
   )
-  const lbl = (t: string, required = false) => (
+  const lbl = (tx: string, required = false) => (
     <div
       style={{
         fontSize: 11,
@@ -6683,8 +6674,8 @@ function ClientDocumentsTab({
         letterSpacing: '0.05em',
       }}
     >
-      {t}
-      {required && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+      {tx}
+      {required && <span style={{ color: '#ef4444', marginInlineStart: 2 }}>*</span>}
     </div>
   )
 
@@ -6730,7 +6721,7 @@ function ClientDocumentsTab({
                   color: theme.textMuted,
                   fontSize: 10,
                   lineHeight: 1,
-                  marginRight: -8,
+                  marginInlineEnd: -8,
                   position: 'relative',
                   zIndex: 1,
                   padding: '4px 2px',
@@ -6856,9 +6847,7 @@ function ClientDocumentsTab({
                   fontSize: 11,
                   fontWeight: 700,
                 }}
-              >
-                Rev {doc.revision}
-              </span>
+              >{t('proj.detail.rev2', { revision: doc.revision })}</span>
             ) : (
               <span style={{ color: theme.textMuted, fontSize: 12 }}>—</span>
             )}
@@ -6875,7 +6864,7 @@ function ClientDocumentsTab({
                 gated by doc.status; only whether a file exists. */}
             {(doc.previewUrl ?? doc.downloadUrl) &&
               iconActionBtn(
-                'Preview',
+                t('proj.detail.preview'),
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <path
                     d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
@@ -6894,7 +6883,7 @@ function ClientDocumentsTab({
             {/* Download */}
             {doc.downloadUrl &&
               iconActionBtn(
-                'Download',
+                t('proj.detail.download'),
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <path
                     d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
@@ -6941,7 +6930,7 @@ function ClientDocumentsTab({
             {isAdmin &&
               !isRevision &&
               iconActionBtn(
-                'Edit document',
+                t('proj.detail.editDocument2'),
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <path
                     d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
@@ -6963,7 +6952,7 @@ function ClientDocumentsTab({
             {/* + Revision */}
             {!isRevision &&
               iconActionBtn(
-                'Upload new revision',
+                t('proj.detail.uploadNewRevision'),
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <path
                     d="M12 20h9"
@@ -6991,7 +6980,7 @@ function ClientDocumentsTab({
             {/* Archive / Restore */}
             {isAdmin &&
               iconActionBtn(
-                doc.status === 'archived' ? 'Restore document' : 'Archive document',
+                doc.status === 'archived' ? t('proj.detail.restoreDocument') : t('proj.detail.archiveDocument'),
                 doc.status === 'archived' ? (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                     <polyline
@@ -7036,7 +7025,7 @@ function ClientDocumentsTab({
             {/* Delete */}
             {isAdmin &&
               iconActionBtn(
-                'Delete document',
+                t('proj.detail.deleteDocument'),
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <polyline
                     points="3 6 5 6 21 6"
@@ -7100,7 +7089,7 @@ function ClientDocumentsTab({
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
           {(['all', ...CD_CATEGORIES.map((c) => c.key)] as (CDCategory | 'all')[]).map((k) => {
             const label =
-              k === 'all' ? 'All Documents' : (CD_CATEGORIES.find((c) => c.key === k)?.label ?? k)
+              k === 'all' ? t('proj.detail.allDocuments') : (CD_CATEGORIES.find((c) => c.key === k)?.label ?? k)
             const count = k === 'all' ? docs.length : docs.filter((d) => d.category === k).length
             const active = filterCat === k
             return (
@@ -7154,7 +7143,7 @@ function ClientDocumentsTab({
             fill="none"
             style={{
               position: 'absolute',
-              left: 10,
+              insetInlineStart: 10,
               top: '50%',
               transform: 'translateY(-50%)',
               color: theme.textMuted,
@@ -7175,7 +7164,7 @@ function ClientDocumentsTab({
           <input
             value={search}
             onChange={(e) => { setSearch(e.target.value); }}
-            placeholder="Search documents…"
+            placeholder={t('proj.detail.searchDocuments')}
             style={{
               padding: '7px 12px 7px 32px',
               border: `1px solid ${theme.border}`,
@@ -7227,7 +7216,7 @@ function ClientDocumentsTab({
               strokeLinecap="round"
             />
           </svg>
-          Upload Document
+          {t('proj.detail.uploadDocument')}
         </button>
       </div>
 
@@ -7259,7 +7248,7 @@ function ClientDocumentsTab({
               strokeLinecap="round"
             />
           </svg>
-          Loading documents…
+          {t('proj.detail.loadingDocuments')}
         </div>
       ) : filtered.length === 0 ? (
         <div
@@ -7300,7 +7289,7 @@ function ClientDocumentsTab({
             </svg>
           </div>
           <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>
-            {search || filterCat !== 'all' ? 'No matching documents' : 'No documents yet'}
+            {search || filterCat !== 'all' ? t('proj.detail.noMatchingDocuments') : t('proj.detail.noDocumentsYet')}
           </div>
           <div
             style={{
@@ -7312,8 +7301,8 @@ function ClientDocumentsTab({
             }}
           >
             {search || filterCat !== 'all'
-              ? 'Try adjusting your search or filter.'
-              : 'Upload RFQ packages, drawings, BOQ specs, and correspondence to keep the team aligned.'}
+              ? t('proj.detail.tryAdjustingYourSearchOrFilter')
+              : t('proj.detail.uploadRfqPackagesDrawingsBoqSpecs')}
           </div>
           {!search && filterCat === 'all' && (
             <button
@@ -7329,7 +7318,7 @@ function ClientDocumentsTab({
                 cursor: 'pointer',
               }}
             >
-              Upload First Document
+              {t('proj.detail.uploadFirstDocument')}
             </button>
           )}
         </div>
@@ -7346,7 +7335,7 @@ function ClientDocumentsTab({
               borderBottom: `1px solid ${theme.border}`,
             }}
           >
-            {['', 'Document', 'Category', 'Revision', 'Status', 'Actions'].map((h, i) => (
+            {['', t('proj.detail.document2'), t('proj.detail.category'), t('proj.detail.revision'), t('proj.detail.status'), t('proj.detail.actions')].map((h, i) => (
               <div
                 key={i}
                 style={{
@@ -7372,7 +7361,7 @@ function ClientDocumentsTab({
         <Modal
           open={true}
           size="lg"
-          title="Upload Client Document"
+          title={t('proj.detail.uploadClientDocument')}
           onClose={() => {
             setShowModal(false)
             setPendingFiles([])
@@ -7389,20 +7378,20 @@ function ClientDocumentsTab({
                 color: theme.textMuted,
               }}
             >
-              Document number is auto-generated on save.
+              {t('proj.detail.documentNumberIsAutoGeneratedOn')}
             </div>
             <div>
-              {lbl('Document Title', true)}
+              {lbl(t('proj.detail.documentTitle'), true)}
               {inp(
                 form.title,
                 (v) => { setForm((f) => ({ ...f, title: v })); },
-                'e.g. RFQ Package — Civil Works',
+                t('proj.detail.eGRfqPackageCivilWorks'),
               )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
-                {lbl('Category')}
+                {lbl(t('proj.detail.category'))}
                 <select
                   value={form.category}
                   onChange={(e) =>
@@ -7426,7 +7415,7 @@ function ClientDocumentsTab({
                 </select>
               </div>
               <div>
-                {lbl('Revision')}
+                {lbl(t('proj.detail.revision'))}
                 {inp(
                   form.revision,
                   (v) => { setForm((f) => ({ ...f, revision: v })); },
@@ -7437,7 +7426,7 @@ function ClientDocumentsTab({
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
-                {lbl('Transmission Date')}
+                {lbl(t('proj.detail.transmissionDate'))}
                 {inp(
                   form.transmissionDate,
                   (v) => { setForm((f) => ({ ...f, transmissionDate: v })); },
@@ -7446,21 +7435,21 @@ function ClientDocumentsTab({
                 )}
               </div>
               <div>
-                {lbl('Received From')}
+                {lbl(t('proj.detail.receivedFrom'))}
                 {inp(
                   form.receivedFrom,
                   (v) => { setForm((f) => ({ ...f, receivedFrom: v })); },
-                  'Client name or organisation',
+                  t('proj.detail.clientNameOrOrganisation'),
                 )}
               </div>
             </div>
 
             <div>
-              {lbl('Notes')}
+              {lbl(t('proj.detail.notes2'))}
               <textarea
                 value={form.description}
                 onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
-                placeholder="Optional context or notes about this document…"
+                placeholder={t('proj.detail.optionalContextOrNotesAboutThis')}
                 style={{
                   width: '100%',
                   padding: '9px 12px',
@@ -7480,7 +7469,7 @@ function ClientDocumentsTab({
             {/* File picker zone — multiple files allowed; each becomes its own
                 document record sharing this form's category/received-from/etc. */}
             <div>
-              {lbl('Files', true)}
+              {lbl(t('proj.detail.files'), true)}
               {pendingFiles.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
                   {pendingFiles.map((f) => (
@@ -7519,10 +7508,10 @@ function ClientDocumentsTab({
                           fontSize: 12,
                           fontWeight: 600,
                           flexShrink: 0,
-                          marginLeft: 8,
+                          marginInlineStart: 8,
                         }}
                       >
-                        Remove
+                        {t('proj.detail.remove2')}
                       </button>
                     </div>
                   ))}
@@ -7549,7 +7538,7 @@ function ClientDocumentsTab({
                 }}
               >
                 {uploading ? (
-                  <div style={{ color: theme.textMuted, fontSize: 13 }}>Uploading…</div>
+                  <div style={{ color: theme.textMuted, fontSize: 13 }}>{t('proj.detail.uploading')}</div>
                 ) : (
                   <div>
                     <svg
@@ -7584,10 +7573,10 @@ function ClientDocumentsTab({
                       />
                     </svg>
                     <div style={{ fontSize: 13, fontWeight: 500, color: theme.textSecondary }}>
-                      {pendingFiles.length > 0 ? 'Click to add more files' : 'Click to select files'}
+                      {pendingFiles.length > 0 ? t('proj.detail.clickToAddMoreFiles') : t('proj.detail.clickToSelectFiles')}
                     </div>
                     <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 3 }}>
-                      PDF, DWG, XLSX, DOCX, images — any format. Select or drop multiple at once.
+                      {t('proj.detail.pdfDwgXlsxDocxImagesAny')}
                     </div>
                   </div>
                 )}
@@ -7619,7 +7608,7 @@ function ClientDocumentsTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 disabled={!form.title || pendingFiles.length === 0 || uploading}
@@ -7639,7 +7628,7 @@ function ClientDocumentsTab({
                     form.title && pendingFiles.length > 0 && !uploading ? 'pointer' : 'not-allowed',
                 }}
               >
-                Upload Document
+                {t('proj.detail.uploadDocument')}
               </button>
             </div>
           </div>
@@ -7650,7 +7639,7 @@ function ClientDocumentsTab({
       {reviseDoc && (
         <Modal
           open={true}
-          title={`New Revision — ${reviseDoc.title}`}
+          title={t('proj.detail.newRevision', { title: reviseDoc.title })}
           onClose={() => { setReviseDoc(null); }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -7664,17 +7653,15 @@ function ClientDocumentsTab({
                 color: theme.textSecondary,
               }}
             >
-              Current version:{' '}
-              <strong style={{ color: theme.textPrimary }}>
-                Rev {reviseDoc.revision ?? 'Initial'}
-              </strong>
+              {t('proj.detail.currentVersion')}{' '}
+              <strong style={{ color: theme.textPrimary }}>{t('proj.detail.rev3', { value: reviseDoc.revision ?? 'Initial' })}</strong>
               {reviseDoc.status !== 'archived' && (
-                <span style={{ marginLeft: 8, color: '#a16207' }}>→ will be marked Superseded</span>
+                <span style={{ marginInlineStart: 8, color: '#a16207' }}>{t('proj.detail.willBeMarkedSuperseded')}</span>
               )}
             </div>
 
             <div>
-              {lbl('New Revision Number', true)}
+              {lbl(t('proj.detail.newRevisionNumber'), true)}
               {inp(
                 revForm.revision,
                 (v) => { setRevForm((f) => ({ ...f, revision: v })); },
@@ -7683,11 +7670,11 @@ function ClientDocumentsTab({
             </div>
 
             <div>
-              {lbl('Change Summary')}
+              {lbl(t('proj.detail.changeSummary2'))}
               <textarea
                 value={revForm.description}
                 onChange={(e) => { setRevForm((f) => ({ ...f, description: e.target.value })); }}
-                placeholder="What changed in this revision?"
+                placeholder={t('proj.detail.whatChangedInThisRevision')}
                 style={{
                   width: '100%',
                   padding: '9px 12px',
@@ -7705,7 +7692,7 @@ function ClientDocumentsTab({
             </div>
 
             <div>
-              {lbl('Revised File', true)}
+              {lbl(t('proj.detail.revisedFile'), true)}
               <div
                 onClick={() =>
                   void (
@@ -7736,7 +7723,7 @@ function ClientDocumentsTab({
                 }}
               >
                 {uploading ? (
-                  <div style={{ color: theme.textMuted, fontSize: 13 }}>Uploading…</div>
+                  <div style={{ color: theme.textMuted, fontSize: 13 }}>{t('proj.detail.uploading')}</div>
                 ) : revForm.fileId ? (
                   <div>
                     <div style={{ fontSize: 18, marginBottom: 4 }}>✓</div>
@@ -7744,12 +7731,12 @@ function ClientDocumentsTab({
                       {revForm.filename}
                     </div>
                     <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
-                      Click to replace
+                      {t('proj.detail.clickToReplace')}
                     </div>
                   </div>
                 ) : (
                   <div style={{ fontSize: 13, color: theme.textSecondary }}>
-                    Click to select revised file
+                    {t('proj.detail.clickToSelectRevisedFile')}
                   </div>
                 )}
               </div>
@@ -7777,7 +7764,7 @@ function ClientDocumentsTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 disabled={!revForm.revision || !revForm.fileId || uploading}
@@ -7795,7 +7782,7 @@ function ClientDocumentsTab({
                     revForm.revision && revForm.fileId && !uploading ? 'pointer' : 'not-allowed',
                 }}
               >
-                Upload Revision
+                {t('proj.detail.uploadRevision')}
               </button>
             </div>
           </div>
@@ -7806,21 +7793,21 @@ function ClientDocumentsTab({
       {editDoc && (
         <Modal
           open={true}
-          title={`Edit Document — ${editDoc.title}`}
+          title={t('proj.detail.editDocument', { title: editDoc.title })}
           onClose={() => { setEditDoc(null); }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Title', true)}
+                {lbl(t('proj.detail.title'), true)}
                 {inp(
                   editForm.title,
                   (v) => { setEditForm((f) => ({ ...f, title: v })); },
-                  'Document title',
+                  t('proj.detail.documentTitle2'),
                 )}
               </div>
               <div>
-                {lbl('Category', true)}
+                {lbl(t('proj.detail.category'), true)}
                 <select
                   value={editForm.category}
                   onChange={(e) =>
@@ -7846,7 +7833,7 @@ function ClientDocumentsTab({
                 </select>
               </div>
               <div>
-                {lbl('Revision')}
+                {lbl(t('proj.detail.revision'))}
                 {inp(
                   editForm.revision,
                   (v) => { setEditForm((f) => ({ ...f, revision: v })); },
@@ -7854,23 +7841,23 @@ function ClientDocumentsTab({
                 )}
               </div>
               <div>
-                {lbl('Document Number')}
+                {lbl(t('proj.detail.documentNumber'))}
                 {inp(
                   editForm.documentNumber,
                   (v) => { setEditForm((f) => ({ ...f, documentNumber: v })); },
-                  'e.g. DOC-001',
+                  t('proj.detail.eGDoc001'),
                 )}
               </div>
               <div>
-                {lbl('Received From')}
+                {lbl(t('proj.detail.receivedFrom'))}
                 {inp(
                   editForm.receivedFrom,
                   (v) => { setEditForm((f) => ({ ...f, receivedFrom: v })); },
-                  'Client / sender name',
+                  t('proj.detail.clientSenderName'),
                 )}
               </div>
               <div>
-                {lbl('Transmission Date')}
+                {lbl(t('proj.detail.transmissionDate'))}
                 {inp(
                   editForm.transmissionDate,
                   (v) => { setEditForm((f) => ({ ...f, transmissionDate: v })); },
@@ -7879,11 +7866,11 @@ function ClientDocumentsTab({
                 )}
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Description')}
+                {lbl(t('proj.detail.description'))}
                 <textarea
                   value={editForm.description}
                   onChange={(e) => { setEditForm((f) => ({ ...f, description: e.target.value })); }}
-                  placeholder="Brief description…"
+                  placeholder={t('proj.detail.briefDescription')}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -7922,7 +7909,7 @@ function ClientDocumentsTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 disabled={!editForm.title}
@@ -7938,7 +7925,7 @@ function ClientDocumentsTab({
                   cursor: editForm.title ? 'pointer' : 'not-allowed',
                 }}
               >
-                Save Changes
+                {t('proj.detail.saveChanges')}
               </button>
             </div>
           </div>
@@ -8127,39 +8114,39 @@ function buildZipTree(zip: JSZip): ZipTreeNode[] {
 
 const DELIVERABLE_TYPES: Record<string, { label: string; color: string }> = {
   mto: { label: 'MTO', color: '#3b82f6' },
-  calculations: { label: 'Calculations', color: '#8b5cf6' },
-  datasheets: { label: 'Datasheets', color: '#06b6d4' },
-  compliance_matrix: { label: 'Compliance Matrix', color: '#f59e0b' },
-  technical_proposal: { label: 'Technical Proposal', color: '#10b981' },
-  design_docs: { label: 'Design Docs', color: '#ef4444' },
-  custom: { label: 'Custom', color: '#6b7280' },
+  calculations: { get label() { return i18n.t('proj.detail.calculations', { defaultValue: "Calculations" }) }, color: '#8b5cf6' },
+  datasheets: { get label() { return i18n.t('proj.detail.datasheets', { defaultValue: "Datasheets" }) }, color: '#06b6d4' },
+  compliance_matrix: { get label() { return i18n.t('proj.detail.complianceMatrix', { defaultValue: "Compliance Matrix" }) }, color: '#f59e0b' },
+  technical_proposal: { get label() { return i18n.t('proj.detail.technicalProposal', { defaultValue: "Technical Proposal" }) }, color: '#10b981' },
+  design_docs: { get label() { return i18n.t('proj.detail.designDocs', { defaultValue: "Design Docs" }) }, color: '#ef4444' },
+  custom: { get label() { return i18n.t('proj.detail.custom', { defaultValue: "Custom" }) }, color: '#6b7280' },
 }
 const DELIVERABLE_STATUS: Record<string, { label: string; color: string }> = {
-  not_started: { label: 'Not Started', color: '#6b7280' },
-  in_progress: { label: 'In Progress', color: '#3b82f6' },
-  in_review: { label: 'In Review', color: '#f59e0b' },
-  approved: { label: 'Approved', color: '#22c55e' },
+  not_started: { get label() { return i18n.t('proj.detail.notStarted', { defaultValue: "Not Started" }) }, color: '#6b7280' },
+  in_progress: { get label() { return i18n.t('proj.detail.inProgress', { defaultValue: "In Progress" }) }, color: '#3b82f6' },
+  in_review: { get label() { return i18n.t('proj.detail.inReview', { defaultValue: "In Review" }) }, color: '#f59e0b' },
+  approved: { get label() { return i18n.t('proj.detail.approved', { defaultValue: "Approved" }) }, color: '#22c55e' },
   na: { label: 'N/A', color: '#94a3b8' },
 }
 const COST_TYPES = ['material', 'labour', 'subcontract', 'equipment'] as const
 const COST_TYPE_META: Record<string, { label: string; icon: string; color: string }> = {
-  material: { label: 'Material', icon: '🧱', color: '#3b82f6' },
-  labour: { label: 'Labour', icon: '👷', color: '#10b981' },
-  subcontract: { label: 'Subcontract', icon: '🤝', color: '#f59e0b' },
-  equipment: { label: 'Equipment', icon: '⚙', color: '#8b5cf6' },
+  material: { get label() { return i18n.t('proj.detail.material', { defaultValue: "Material" }) }, icon: '🧱', color: '#3b82f6' },
+  labour: { get label() { return i18n.t('proj.detail.labour', { defaultValue: "Labour" }) }, icon: '👷', color: '#10b981' },
+  subcontract: { get label() { return i18n.t('proj.detail.subcontract', { defaultValue: "Subcontract" }) }, icon: '🤝', color: '#f59e0b' },
+  equipment: { get label() { return i18n.t('proj.detail.equipment', { defaultValue: "Equipment" }) }, icon: '⚙', color: '#8b5cf6' },
 }
 const QUOTATION_STATUS: Record<string, { label: string; color: string }> = {
-  pending: { label: 'Pending', color: '#94a3b8' },
-  received: { label: 'Received', color: '#3b82f6' },
-  selected: { label: 'Selected', color: '#22c55e' },
-  rejected: { label: 'Rejected', color: '#ef4444' },
+  pending: { get label() { return i18n.t('proj.detail.pending', { defaultValue: "Pending" }) }, color: '#94a3b8' },
+  received: { get label() { return i18n.t('proj.detail.received', { defaultValue: "Received" }) }, color: '#3b82f6' },
+  selected: { get label() { return i18n.t('proj.detail.selected', { defaultValue: "Selected" }) }, color: '#22c55e' },
+  rejected: { get label() { return i18n.t('proj.detail.rejected', { defaultValue: "Rejected" }) }, color: '#ef4444' },
 }
 
 const APPROVAL_STATUS: Record<string, { label: string; color: string; bg: string }> = {
-  draft: { label: 'Draft', color: '#6b7280', bg: '#6b728020' },
-  submitted: { label: 'Pending Approval', color: '#f59e0b', bg: '#f59e0b20' },
-  approved: { label: 'Approved', color: '#22c55e', bg: '#22c55e20' },
-  rejected: { label: 'Rejected', color: '#ef4444', bg: '#ef444420' },
+  draft: { get label() { return i18n.t('proj.detail.draft', { defaultValue: "Draft" }) }, color: '#6b7280', bg: '#6b728020' },
+  submitted: { get label() { return i18n.t('proj.detail.pendingApproval', { defaultValue: "Pending Approval" }) }, color: '#f59e0b', bg: '#f59e0b20' },
+  approved: { get label() { return i18n.t('proj.detail.approved', { defaultValue: "Approved" }) }, color: '#22c55e', bg: '#22c55e20' },
+  rejected: { get label() { return i18n.t('proj.detail.rejected', { defaultValue: "Rejected" }) }, color: '#ef4444', bg: '#ef444420' },
 }
 
 function BiddingTab({
@@ -8291,6 +8278,7 @@ function BiddingTab({
   revisingBid: boolean
   onReviseBid: (changeSummary: string) => void
 }) {
+  const { t } = useTranslation()
   const addToast = useToastStore((s) => s.addToast)
   const [bidSub, setBidSub] = React.useState<'technical' | 'commercial' | 'clarifications'>(
     'technical',
@@ -8333,7 +8321,7 @@ function BiddingTab({
       onUploadDeliverableFile(deliverableId, fileId, file.name.replace(/\.[^.]+$/, ''))
       setDelUploadProgress(100)
     } catch {
-      addToast({ type: 'error', message: 'Upload failed' })
+      addToast({ type: 'error', message: t('proj.detail.uploadFailed') })
     } finally {
       setUploadingDelId(null)
       setDelUploadProgress(0)
@@ -8368,7 +8356,7 @@ function BiddingTab({
       onUploadPackageFile(bidType, fileId, file.name.replace(/\.[^.]+$/, ''))
       setPkgUploadProgress(100)
     } catch {
-      addToast({ type: 'error', message: 'Upload failed' })
+      addToast({ type: 'error', message: t('proj.detail.uploadFailed') })
     } finally {
       setUploadingPkgType(null)
       setPkgUploadProgress(0)
@@ -8416,7 +8404,7 @@ function BiddingTab({
       const blob = new Blob([bytes as BlobPart], { type: pkgMimeForExt(entryName) })
       setPreviewItem({ name: entryName, kind, url: URL.createObjectURL(blob) })
     } catch {
-      addToast({ type: 'error', message: 'Could not open this file' })
+      addToast({ type: 'error', message: t('proj.detail.couldNotOpenThisFile') })
     }
   }
 
@@ -8435,7 +8423,7 @@ function BiddingTab({
               alignItems: 'center',
               gap: 6,
               padding: '3px 0',
-              paddingLeft: depth * 16,
+              paddingInlineStart: depth * 16,
               fontSize: '12px',
               color: theme.textSecondary,
               fontWeight: 600,
@@ -8458,7 +8446,7 @@ function BiddingTab({
           alignItems: 'center',
           gap: 6,
           padding: '3px 0',
-          paddingLeft: depth * 16 + 18,
+          paddingInlineStart: depth * 16 + 18,
           fontSize: '12px',
           color: previewable ? theme.accent : theme.textSecondary,
           cursor: 'pointer',
@@ -8475,7 +8463,7 @@ function BiddingTab({
 
   function renderPackageUploadZone(bidType: 'technical' | 'commercial') {
     const files = bidType === 'technical' ? technicalPackageFiles : commercialPackageFiles
-    const label = bidType === 'technical' ? 'Technical Bid Package' : 'Commercial Bid Package'
+    const label = bidType === 'technical' ? t('proj.detail.technicalBidPackage') : t('proj.detail.commercialBidPackage')
     return (
       <div
         style={{
@@ -8496,9 +8484,7 @@ function BiddingTab({
             textTransform: 'uppercase',
             letterSpacing: '0.04em',
           }}
-        >
-          {label} (ZIP)
-        </div>
+        >{t('proj.detail.zip', { label })}</div>
         {files.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {files.map((f) => {
@@ -8525,7 +8511,7 @@ function BiddingTab({
                     {isArchive && (
                       <button
                         onClick={() => void toggleZipExpand(f)}
-                        title="View contents"
+                        title={t('proj.detail.viewContents')}
                         style={{
                           background: 'none',
                           border: 'none',
@@ -8582,13 +8568,13 @@ function BiddingTab({
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        Download
+                        {t('proj.detail.download')}
                       </a>
                     )}
                     {isEditable && (
                       <button
                         onClick={() => { onDeletePackageFile(f.id); }}
-                        title="Delete"
+                        title={t('proj.detail.delete')}
                         style={{
                           background: 'none',
                           border: 'none',
@@ -8618,12 +8604,12 @@ function BiddingTab({
                     >
                       {zipState === 'loading' && (
                         <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                          Reading archive…
+                          {t('proj.detail.readingArchive')}
                         </div>
                       )}
                       {zipState === 'error' && (
                         <div style={{ fontSize: '12px', color: '#ef4444' }}>
-                          Couldn't read this archive's contents.
+                          {t('proj.detail.couldnTReadThisArchiveS')}
                         </div>
                       )}
                       {zipState &&
@@ -8633,7 +8619,7 @@ function BiddingTab({
                           zipState.map((node) => renderZipNode(f.id, node, 0))
                         ) : (
                           <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                            Archive appears to be empty.
+                            {t('proj.detail.archiveAppearsToBeEmpty')}
                           </div>
                         ))}
                     </div>
@@ -8643,9 +8629,7 @@ function BiddingTab({
             })}
           </div>
         ) : (
-          <div style={{ fontSize: '12px', color: theme.textMuted }}>
-            No {bidType} bid package uploaded yet.
-          </div>
+          <div style={{ fontSize: '12px', color: theme.textMuted }}>{t('proj.detail.noBidPackageUploadedYet', { bidType })}</div>
         )}
         {isEditable && (
           <div
@@ -8690,9 +8674,7 @@ function BiddingTab({
                 />
               </div>
             ) : (
-              <>
-                Drop ZIP here or <span style={{ color: theme.accent }}>browse</span>
-              </>
+              <><Trans i18nKey="proj.detail.dropZipHereOr" values={{ t: t('proj.detail.browse') }} components={[<span style={{ color: theme.accent }} />]} /></>
             )}
           </div>
         )}
@@ -8851,7 +8833,7 @@ function BiddingTab({
     fontSize: '13px',
     boxSizing: 'border-box',
   }
-  const lbl = (t: string) => (
+  const lbl = (tx: string) => (
     <label
       style={{
         fontSize: '11px',
@@ -8861,7 +8843,7 @@ function BiddingTab({
         display: 'block',
       }}
     >
-      {t}
+      {tx}
     </label>
   )
 
@@ -8915,10 +8897,10 @@ function BiddingTab({
               }}
             >
               {s === 'technical'
-                ? 'Technical Bid'
+                ? t('proj.detail.technicalBid')
                 : s === 'commercial'
-                  ? 'Commercial Bid'
-                  : 'Clarifications Bid'}
+                  ? t('proj.detail.commercialBid')
+                  : t('proj.detail.clarificationsBid')}
             </button>
           ))}
       </div>
@@ -8967,9 +8949,7 @@ function BiddingTab({
                     }}
                   />
                 </div>
-                <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-                  {approvedCount}/{totalCount} approved
-                </span>
+                <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>{t('proj.detail.approved2', { approvedCount, totalCount })}</span>
                 {isEditable && (
                   <button
                     onClick={() => { setShowAddDeliverable(true); }}
@@ -8985,7 +8965,7 @@ function BiddingTab({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    + Add Deliverable
+                    {t('proj.detail.addDeliverable')}
                   </button>
                 )}
               </div>
@@ -9030,10 +9010,10 @@ function BiddingTab({
                       color: theme.textPrimary,
                     }}
                   >
-                    No deliverables yet
+                    {t('proj.detail.noDeliverablesYet')}
                   </div>
                   <div style={{ fontSize: '13px' }}>
-                    Add technical deliverables that need to be produced for this bid.
+                    {t('proj.detail.addTechnicalDeliverablesThatNeedTo')}
                   </div>
                 </div>
               ) : (
@@ -9060,12 +9040,12 @@ function BiddingTab({
                     }}
                   >
                     <span />
-                    <span>Deliverable</span>
-                    <span>Type</span>
-                    <span>Discipline</span>
-                    <span>Assigned To</span>
-                    <span>Due</span>
-                    <span>Status</span>
+                    <span>{t('proj.detail.deliverable')}</span>
+                    <span>{t('proj.detail.type')}</span>
+                    <span>{t('proj.detail.discipline')}</span>
+                    <span>{t('proj.detail.assignedTo')}</span>
+                    <span>{t('proj.detail.due')}</span>
+                    <span>{t('proj.detail.status')}</span>
                   </div>
                   {deliverables.map((del) => {
                     const typeInfo =
@@ -9082,7 +9062,7 @@ function BiddingTab({
                             borderBottom: `1px solid ${theme.border}`,
                             alignItems: 'center',
                             fontSize: '13px',
-                            borderLeft: `4px solid ${DELIVERABLE_STATUS[del.status]?.color ?? '#6b7280'}`,
+                            borderInlineStart: `4px solid ${DELIVERABLE_STATUS[del.status]?.color ?? '#6b7280'}`,
                             background: (DELIVERABLE_STATUS[del.status]?.color ?? '#6b7280') + '08',
                           }}
                         >
@@ -9104,9 +9084,7 @@ function BiddingTab({
                               {del.name}
                             </span>
                             {del.fileCount > 0 && (
-                              <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                                📎 {del.fileCount} file{del.fileCount !== 1 ? 's' : ''}
-                              </span>
+                              <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('proj.detail.file', { count: del.fileCount })}</span>
                             )}
                           </div>
                           <span
@@ -9138,7 +9116,7 @@ function BiddingTab({
                               }
                               style={{ ...inp, padding: '3px 7px', fontSize: '12px' }}
                             >
-                              <option value="">— Unassigned —</option>
+                              <option value="">{t('proj.detail.unassigned')}</option>
                               {teamMembers.map((m) => (
                                 <option key={m.id} value={m.name}>
                                   {m.name}
@@ -9306,9 +9284,7 @@ function BiddingTab({
                                     />
                                   </div>
                                 ) : (
-                                  <>
-                                    Drop file or <span style={{ color: theme.accent }}>browse</span>
-                                  </>
+                                  <><Trans i18nKey="proj.detail.dropFileOr" values={{ t: t('proj.detail.browse') }} components={[<span style={{ color: theme.accent }} />]} /></>
                                 )}
                               </div>
                             )}
@@ -9322,11 +9298,11 @@ function BiddingTab({
                               {isAdmin && (
                                 <button
                                   onClick={() => {
-                                    if (confirm('Delete this deliverable?'))
+                                    if (confirm(t('proj.detail.deleteThisDeliverable')))
                                       onDeleteDeliverable(del.id)
                                   }}
                                   style={{
-                                    marginLeft: 'auto',
+                                    marginInlineStart: 'auto',
                                     fontSize: '11px',
                                     color: '#ef4444',
                                     background: 'none',
@@ -9336,7 +9312,7 @@ function BiddingTab({
                                     cursor: 'pointer',
                                   }}
                                 >
-                                  Delete
+                                  {t('proj.detail.delete')}
                                 </button>
                               )}
                             </div>
@@ -9364,24 +9340,24 @@ function BiddingTab({
               <Modal
                 open={showAddDeliverable}
                 onClose={() => { setShowAddDeliverable(false); }}
-                title="Add Deliverable"
+                title={t('proj.detail.addDeliverable2')}
               >
                 <div
                   style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}
                 >
                   <div>
-                    {lbl('Name *')}
+                    {lbl(t('proj.detail.name2'))}
                     <input
                       onChange={(e) => {
                         newDelForm.current.name = e.target.value
                       }}
-                      placeholder="e.g. Structural MTO"
+                      placeholder={t('proj.detail.eGStructuralMto')}
                       style={inp}
                     />
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <div>
-                      {lbl('Type')}
+                      {lbl(t('proj.detail.type'))}
                       <select
                         onChange={(e) => {
                           newDelForm.current.deliverableType = e.target.value
@@ -9396,7 +9372,7 @@ function BiddingTab({
                       </select>
                     </div>
                     <div>
-                      {lbl('Discipline')}
+                      {lbl(t('proj.detail.discipline'))}
                       <select
                         onChange={(e) => {
                           newDelForm.current.discipline = e.target.value
@@ -9414,7 +9390,7 @@ function BiddingTab({
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <div>
-                      {lbl('Due Date')}
+                      {lbl(t('proj.detail.dueDate'))}
                       <input
                         type="date"
                         onChange={(e) => {
@@ -9424,12 +9400,12 @@ function BiddingTab({
                       />
                     </div>
                     <div>
-                      {lbl('Notes')}
+                      {lbl(t('proj.detail.notes2'))}
                       <input
                         onChange={(e) => {
                           newDelForm.current.notes = e.target.value
                         }}
-                        placeholder="Optional"
+                        placeholder={t('proj.detail.optional')}
                         style={inp}
                       />
                     </div>
@@ -9449,13 +9425,13 @@ function BiddingTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Cancel
+                      {t('proj.detail.cancel')}
                     </button>
                     <button
                       disabled={creatingDeliverable}
                       onClick={() => {
                         if (!newDelForm.current.name.trim()) {
-                          addToast({ type: 'error', message: 'Name required' })
+                          addToast({ type: 'error', message: t('proj.detail.nameRequired') })
                           return
                         }
                         onCreateDeliverable({
@@ -9479,7 +9455,7 @@ function BiddingTab({
                         cursor: 'pointer',
                       }}
                     >
-                      {creatingDeliverable ? 'Adding…' : 'Add'}
+                      {creatingDeliverable ? t('proj.detail.adding') : t('proj.detail.add')}
                     </button>
                   </div>
                 </div>
@@ -9508,9 +9484,7 @@ function BiddingTab({
                     background: theme.bgCanvas,
                     border: `1px solid ${theme.border}`,
                   }}
-                >
-                  Rev {summary?.revision ?? 1}
-                </span>
+                >{t('proj.detail.rev3', { value: summary?.revision ?? 1 })}</span>
                 {isEditable && summary && (
                   <button
                     onClick={() => {
@@ -9528,7 +9502,7 @@ function BiddingTab({
                       cursor: 'pointer',
                     }}
                   >
-                    Revise
+                    {t('proj.detail.revise')}
                   </button>
                 )}
               </div>
@@ -9551,7 +9525,7 @@ function BiddingTab({
                       color: theme.textPrimary,
                     }}
                   >
-                    Revision History
+                    {t('proj.detail.revisionHistory')}
                   </h3>
                   <RevisionHistory
                     th={theme as unknown as Record<string, string>}
@@ -9562,9 +9536,9 @@ function BiddingTab({
                       summary: rv.changeSummary,
                       current: rv.revision === summary.revision,
                       meta: [
-                        { label: 'Bid Price', value: fmt(rv.bidPrice, rv.currencyCode) },
-                        { label: 'Direct Cost', value: fmt(rv.directCostTotal, rv.currencyCode) },
-                        { label: 'Margin', value: `${rv.marginPct}%` },
+                        { label: t('proj.detail.bidPrice'), value: fmt(rv.bidPrice, rv.currencyCode) },
+                        { label: t('proj.detail.directCost'), value: fmt(rv.directCostTotal, rv.currencyCode) },
+                        { label: t('proj.detail.margin'), value: `${rv.marginPct}%` },
                       ],
                     }))}
                   />
@@ -9657,11 +9631,11 @@ function BiddingTab({
                           </div>
                           <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 2 }}>
                             {summary.approvalStatus === 'submitted' &&
-                              `Submitted by ${summary.submittedByName} · ${summary.submittedAt ? new Date(summary.submittedAt).toLocaleDateString() : ''}`}
+                              t('proj.detail.submittedByOn', { name: summary.submittedByName, date: summary.submittedAt ? new Date(summary.submittedAt).toLocaleDateString() : '' })}
                             {summary.approvalStatus === 'approved' &&
-                              `Approved by ${summary.approvedByName} · ${summary.approvedAt ? new Date(summary.approvedAt).toLocaleDateString() : ''}`}
+                              t('proj.detail.approvedByOn', { name: summary.approvedByName, date: summary.approvedAt ? new Date(summary.approvedAt).toLocaleDateString() : '' })}
                             {summary.approvalStatus === 'rejected' &&
-                              `Rejection reason: ${summary.rejectionReason}`}
+                              t('proj.detail.rejectionReason', { rejectionReason: summary.rejectionReason })}
                           </div>
                         </div>
                         {canApprove && summary.approvalStatus === 'submitted' && (
@@ -9681,7 +9655,7 @@ function BiddingTab({
                                 opacity: approvingBid ? 0.7 : 1,
                               }}
                             >
-                              {approvingBid ? 'Approving…' : 'Approve Bid'}
+                              {approvingBid ? t('proj.detail.approving') : t('proj.detail.approveBid')}
                             </button>
                             <button
                               onClick={() => { setShowRejectModal(true); }}
@@ -9696,7 +9670,7 @@ function BiddingTab({
                                 cursor: 'pointer',
                               }}
                             >
-                              Reject
+                              {t('proj.detail.reject')}
                             </button>
                           </div>
                         )}
@@ -9717,20 +9691,9 @@ function BiddingTab({
                 >
                   <div>
                     <div style={{ fontSize: '15px', fontWeight: 700, color: theme.textPrimary }}>
-                      Cost Breakdown
+                      {t('proj.detail.costBreakdown')}
                     </div>
-                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 3 }}>
-                      Direct cost total:{' '}
-                      <span
-                        style={{
-                          fontWeight: 600,
-                          color: theme.textPrimary,
-                          fontVariantNumeric: 'tabular-nums',
-                        }}
-                      >
-                        {fmt(directTotal, summary?.currencyCode ?? 'USD')}
-                      </span>
-                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 3 }}><Trans i18nKey="proj.detail.directCostTotal2" values={{ value: fmt(directTotal, summary?.currencyCode ?? 'USD') }} components={[<span style={{ fontWeight: 600, color: theme.textPrimary, fontVariantNumeric: 'tabular-nums', }}  />]} /></div>
                   </div>
                   {isEditable && costDirty && (
                     <button
@@ -9748,7 +9711,7 @@ function BiddingTab({
                         opacity: savingCosts ? 0.7 : 1,
                       }}
                     >
-                      {savingCosts ? 'Saving…' : 'Save Changes'}
+                      {savingCosts ? t('proj.detail.saving') : t('proj.detail.saveChanges')}
                     </button>
                   )}
                 </div>
@@ -9848,7 +9811,7 @@ function BiddingTab({
                             background: theme.bgSurface,
                             borderBottom:
                               typeRows.length > 0 ? `1px solid ${theme.border}` : 'none',
-                            borderLeft: `3px solid ${meta.color}`,
+                            borderInlineStart: `3px solid ${meta.color}`,
                           }}
                         >
                           <span
@@ -9861,12 +9824,10 @@ function BiddingTab({
                           >
                             {meta.label}
                           </span>
-                          <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                            {typeRows.length} item{typeRows.length !== 1 ? 's' : ''}
-                          </span>
+                          <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('proj.detail.item2', { count: typeRows.length })}</span>
                           <div
                             style={{
-                              marginLeft: 'auto',
+                              marginInlineStart: 'auto',
                               display: 'flex',
                               alignItems: 'center',
                               gap: 10,
@@ -9896,7 +9857,7 @@ function BiddingTab({
                                   cursor: 'pointer',
                                 }}
                               >
-                                + Add
+                                {t('proj.detail.add2')}
                               </button>
                             )}
                           </div>
@@ -9918,12 +9879,12 @@ function BiddingTab({
                                 letterSpacing: '0.05em',
                               }}
                             >
-                              <span>Description</span>
-                              <span>Qty</span>
-                              <span>Unit</span>
-                              <span style={{ textAlign: 'right' }}>Unit Cost</span>
-                              <span style={{ textAlign: 'right' }}>Total</span>
-                              <span>Supplier Ref</span>
+                              <span>{t('proj.detail.description')}</span>
+                              <span>{t('proj.detail.qty')}</span>
+                              <span>{t('proj.detail.unit')}</span>
+                              <span style={{ textAlign: 'end' }}>{t('proj.detail.unitCost')}</span>
+                              <span style={{ textAlign: 'end' }}>{t('proj.detail.total')}</span>
+                              <span>{t('proj.detail.supplierRef')}</span>
                               <span />
                             </div>
                             {typeRows.map((r, ri) => (
@@ -9945,7 +9906,7 @@ function BiddingTab({
                                     { updCostRow(r._idx, 'description', e.target.value); }
                                   }
                                   disabled={!isEditable}
-                                  placeholder="Description"
+                                  placeholder={t('proj.detail.description')}
                                   style={{ ...inp, padding: '5px 8px', fontSize: '13px' }}
                                 />
                                 <input
@@ -9973,7 +9934,7 @@ function BiddingTab({
                                     ...inp,
                                     padding: '5px 8px',
                                     fontSize: '13px',
-                                    textAlign: 'right',
+                                    textAlign: 'end',
                                   }}
                                 />
                                 <input
@@ -9986,12 +9947,12 @@ function BiddingTab({
                                   onChange={(e) => { updCostRow(r._idx, 'totalCost', e.target.value); }}
                                   disabled={!isEditable}
                                   type="number"
-                                  placeholder="Auto"
+                                  placeholder={t('proj.detail.auto')}
                                   style={{
                                     ...inp,
                                     padding: '5px 8px',
                                     fontSize: '13px',
-                                    textAlign: 'right',
+                                    textAlign: 'end',
                                   }}
                                 />
                                 <input
@@ -10000,7 +9961,7 @@ function BiddingTab({
                                     { updCostRow(r._idx, 'supplierRef', e.target.value); }
                                   }
                                   disabled={!isEditable}
-                                  placeholder="Vendor / PO ref"
+                                  placeholder={t('proj.detail.vendorPoRef')}
                                   style={{ ...inp, padding: '5px 8px', fontSize: '13px' }}
                                 />
                                 {isEditable ? (
@@ -10035,9 +9996,7 @@ function BiddingTab({
                               fontSize: '13px',
                               color: theme.textMuted,
                             }}
-                          >
-                            No {meta.label.toLowerCase()} items added yet.
-                          </div>
+                          >{t('proj.detail.noItemsAddedYet', { value: meta.label.toLowerCase() })}</div>
                         )}
                       </div>
                     )
@@ -10065,10 +10024,10 @@ function BiddingTab({
                 >
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary }}>
-                      Pricing Summary
+                      {t('proj.detail.pricingSummary')}
                     </div>
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 2 }}>
-                      Configure overhead, contingency, margin and discount
+                      {t('proj.detail.configureOverheadContingencyMarginAndDiscoun')}
                     </div>
                   </div>
                   {isEditable && pctDirty && (
@@ -10094,7 +10053,7 @@ function BiddingTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Save Percentages
+                      {t('proj.detail.savePercentages')}
                     </button>
                   )}
                 </div>
@@ -10104,25 +10063,25 @@ function BiddingTab({
                     {[
                       {
                         key: 'overheadPct' as const,
-                        label: 'Overhead',
+                        label: t('proj.detail.overhead'),
                         color: '#3b82f6',
                         amt: overheadAmt,
                       },
                       {
                         key: 'contingencyPct' as const,
-                        label: 'Contingency',
+                        label: t('proj.detail.contingency'),
                         color: '#f59e0b',
                         amt: contingencyAmt,
                       },
                       {
                         key: 'marginPct' as const,
-                        label: 'Margin',
+                        label: t('proj.detail.margin'),
                         color: '#22c55e',
                         amt: marginAmt,
                       },
                       {
                         key: 'discountPct' as const,
-                        label: 'Discount',
+                        label: t('proj.detail.discount'),
                         color: '#ef4444',
                         amt: discountAmt,
                       },
@@ -10197,42 +10156,42 @@ function BiddingTab({
                   >
                     {[
                       {
-                        label: 'Direct Cost Total',
+                        label: t('proj.detail.directCostTotal'),
                         value: directTotal,
                         prefix: '',
                         bold: false,
                         dividerBefore: false,
                       },
                       {
-                        label: `+ Overhead (${summaryPcts.overheadPct}%)`,
+                        label: t('proj.detail.overhead2', { overheadPct: summaryPcts.overheadPct }),
                         value: overheadAmt,
                         prefix: '',
                         bold: false,
                         dividerBefore: false,
                       },
                       {
-                        label: `+ Contingency (${summaryPcts.contingencyPct}%)`,
+                        label: t('proj.detail.contingency2', { contingencyPct: summaryPcts.contingencyPct }),
                         value: contingencyAmt,
                         prefix: '',
                         bold: false,
                         dividerBefore: false,
                       },
                       {
-                        label: 'Sub-total',
+                        label: t('proj.detail.subTotal'),
                         value: directTotal + overheadAmt + contingencyAmt,
                         prefix: '',
                         bold: true,
                         dividerBefore: true,
                       },
                       {
-                        label: `+ Margin (${summaryPcts.marginPct}%)`,
+                        label: t('proj.detail.margin2', { marginPct: summaryPcts.marginPct }),
                         value: marginAmt,
                         prefix: '',
                         bold: false,
                         dividerBefore: false,
                       },
                       {
-                        label: `− Discount (${summaryPcts.discountPct}%)`,
+                        label: t('proj.detail.discount2', { discountPct: summaryPcts.discountPct }),
                         value: -discountAmt,
                         prefix: '',
                         bold: false,
@@ -10304,10 +10263,10 @@ function BiddingTab({
                             marginBottom: 3,
                           }}
                         >
-                          Total Bid Price
+                          {t('proj.detail.totalBidPrice')}
                         </div>
                         <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                          Incl. overhead, contingency &amp; margin · excl. tax
+                          {t('proj.detail.inclOverheadContingencyMarginExclTax')}
                         </div>
                       </div>
                       <div
@@ -10346,11 +10305,9 @@ function BiddingTab({
                 >
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary }}>
-                      Supplier Quotations
+                      {t('proj.detail.supplierQuotations')}
                     </div>
-                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 2 }}>
-                      {quotations.length} quotation{quotations.length !== 1 ? 's' : ''} on record
-                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 2 }}>{t('proj.detail.quotationOnRecord', { count: quotations.length })}</div>
                   </div>
                   {isEditable && (
                     <button
@@ -10366,7 +10323,7 @@ function BiddingTab({
                         cursor: 'pointer',
                       }}
                     >
-                      + Add Quotation
+                      {t('proj.detail.addQuotation')}
                     </button>
                   )}
                 </div>
@@ -10380,10 +10337,10 @@ function BiddingTab({
                         marginBottom: 4,
                       }}
                     >
-                      No quotations recorded
+                      {t('proj.detail.noQuotationsRecorded')}
                     </div>
                     <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                      Add supplier quotations to track pricing for this bid
+                      {t('proj.detail.addSupplierQuotationsToTrackPricing')}
                     </div>
                   </div>
                 ) : (
@@ -10402,12 +10359,12 @@ function BiddingTab({
                         letterSpacing: '0.05em',
                       }}
                     >
-                      <span>Supplier</span>
-                      <span>Description</span>
-                      <span style={{ textAlign: 'right' }}>Amount</span>
-                      <span>Currency</span>
-                      <span>Valid Until</span>
-                      <span>Status</span>
+                      <span>{t('proj.detail.supplier')}</span>
+                      <span>{t('proj.detail.description')}</span>
+                      <span style={{ textAlign: 'end' }}>{t('proj.detail.amount')}</span>
+                      <span>{t('proj.detail.currency')}</span>
+                      <span>{t('proj.detail.validUntil')}</span>
+                      <span>{t('proj.detail.status')}</span>
                       <span />
                     </div>
                     {quotations.map((q) => {
@@ -10448,7 +10405,7 @@ function BiddingTab({
                               fontSize: '13px',
                               fontWeight: 500,
                               color: theme.textPrimary,
-                              textAlign: 'right',
+                              textAlign: 'end',
                               fontVariantNumeric: 'tabular-nums',
                             }}
                           >
@@ -10493,7 +10450,7 @@ function BiddingTab({
                           {isEditable && (
                             <button
                               onClick={() => {
-                                if (confirm('Remove quotation?')) onDeleteQuotation(q.id)
+                                if (confirm(t('proj.detail.removeQuotation'))) onDeleteQuotation(q.id)
                               }}
                               style={{
                                 background: 'none',
@@ -10544,11 +10501,11 @@ function BiddingTab({
                         }}
                       >
                         {summary?.approvalStatus === 'rejected'
-                          ? 'Resubmit for approval'
-                          : 'Ready to submit?'}
+                          ? t('proj.detail.resubmitForApproval')
+                          : t('proj.detail.readyToSubmit')}
                       </div>
                       <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                        Bid price:{' '}
+                        {t('proj.detail.bidPrice2')}{' '}
                         <span
                           style={{
                             fontWeight: 700,
@@ -10559,8 +10516,8 @@ function BiddingTab({
                           {fmt(livePrice, summary?.currencyCode ?? 'USD')}
                         </span>
                         {summary?.approvalStatus === 'rejected' && (
-                          <span style={{ color: '#ef4444', marginLeft: 6 }}>
-                            · Previously rejected
+                          <span style={{ color: '#ef4444', marginInlineStart: 6 }}>
+                            {t('proj.detail.previouslyRejected')}
                           </span>
                         )}
                       </div>
@@ -10581,7 +10538,7 @@ function BiddingTab({
                         flexShrink: 0,
                       }}
                     >
-                      {submittingBid ? 'Submitting…' : 'Submit Bid for Approval'}
+                      {submittingBid ? t('proj.detail.submitting') : t('proj.detail.submitBidForApproval')}
                     </button>
                   </div>
                 )}
@@ -10590,36 +10547,36 @@ function BiddingTab({
               <Modal
                 open={showAddQuotation}
                 onClose={() => { setShowAddQuotation(false); }}
-                title="Add Supplier Quotation"
+                title={t('proj.detail.addSupplierQuotation')}
               >
                 <div
                   style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}
                 >
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <div>
-                      {lbl('Supplier Name *')}
+                      {lbl(t('proj.detail.supplierName'))}
                       <input
                         onChange={(e) => {
                           quotForm.current.supplierName = e.target.value
                         }}
-                        placeholder="ACME Co."
+                        placeholder={t('proj.detail.acmeCo')}
                         style={inp}
                       />
                     </div>
                     <div>
-                      {lbl('Item / Description *')}
+                      {lbl(t('proj.detail.itemDescription'))}
                       <input
                         onChange={(e) => {
                           quotForm.current.itemDescription = e.target.value
                         }}
-                        placeholder="Structural steel supply"
+                        placeholder={t('proj.detail.structuralSteelSupply')}
                         style={inp}
                       />
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                     <div>
-                      {lbl('Amount')}
+                      {lbl(t('proj.detail.amount'))}
                       <input
                         type="number"
                         onChange={(e) => {
@@ -10630,7 +10587,7 @@ function BiddingTab({
                       />
                     </div>
                     <div>
-                      {lbl('Currency')}
+                      {lbl(t('proj.detail.currency'))}
                       <input
                         defaultValue="USD"
                         onChange={(e) => {
@@ -10640,7 +10597,7 @@ function BiddingTab({
                       />
                     </div>
                     <div>
-                      {lbl('Validity Date')}
+                      {lbl(t('proj.detail.validityDate'))}
                       <input
                         type="date"
                         onChange={(e) => {
@@ -10651,7 +10608,7 @@ function BiddingTab({
                     </div>
                   </div>
                   <div>
-                    {lbl('Notes')}
+                    {lbl(t('proj.detail.notes2'))}
                     <textarea
                       rows={2}
                       onChange={(e) => {
@@ -10673,7 +10630,7 @@ function BiddingTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Cancel
+                      {t('proj.detail.cancel')}
                     </button>
                     <button
                       onClick={() => {
@@ -10681,7 +10638,7 @@ function BiddingTab({
                           !quotForm.current.supplierName.trim() ||
                           !quotForm.current.itemDescription.trim()
                         ) {
-                          addToast({ type: 'error', message: 'Supplier and item required' })
+                          addToast({ type: 'error', message: t('proj.detail.supplierAndItemRequired') })
                           return
                         }
                         onCreateQuotation({
@@ -10708,7 +10665,7 @@ function BiddingTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Add Quotation
+                      {t('proj.detail.addQuotation2')}
                     </button>
                   </div>
                 </div>
@@ -10718,17 +10675,17 @@ function BiddingTab({
               <Modal
                 open={showRejectModal}
                 onClose={() => { setShowRejectModal(false); }}
-                title="Reject Bid"
+                title={t('proj.detail.rejectBid')}
               >
                 <div
                   style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}
                 >
-                  {lbl('Reason for rejection *')}
+                  {lbl(t('proj.detail.reasonForRejection3'))}
                   <textarea
                     rows={3}
                     value={rejectReason}
                     onChange={(e) => { setRejectReason(e.target.value); }}
-                    placeholder="Describe the reason…"
+                    placeholder={t('proj.detail.describeTheReason')}
                     style={{ ...inp, resize: 'vertical' }}
                   />
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -10744,12 +10701,12 @@ function BiddingTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Cancel
+                      {t('proj.detail.cancel')}
                     </button>
                     <button
                       onClick={() => {
                         if (!rejectReason.trim()) {
-                          addToast({ type: 'error', message: 'Reason required' })
+                          addToast({ type: 'error', message: t('proj.detail.reasonRequired') })
                           return
                         }
                         onRejectBid(rejectReason)
@@ -10769,7 +10726,7 @@ function BiddingTab({
                         opacity: rejectingBid ? 0.7 : 1,
                       }}
                     >
-                      {rejectingBid ? 'Rejecting…' : 'Reject Bid'}
+                      {rejectingBid ? t('proj.detail.rejecting') : t('proj.detail.rejectBid')}
                     </button>
                   </div>
                 </div>
@@ -10779,24 +10736,18 @@ function BiddingTab({
               <Modal
                 open={showReviseModal}
                 onClose={() => { setShowReviseModal(false); }}
-                title={`Revise Bid — Rev ${(summary?.revision ?? 1) + 1}`}
+                title={t('proj.detail.reviseBidRev', { value: (summary?.revision ?? 1) + 1 })}
               >
                 <div
                   style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}
                 >
-                  <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                    Snapshots the current computed price (
-                    {fmt(summary?.bidPrice ?? 0, summary?.currencyCode)}) and the
-                    overhead/margin/discount/contingency percentages into the revision history, then
-                    bumps the bid to Rev {(summary?.revision ?? 1) + 1}. Edit cost items or
-                    percentages first, then revise.
-                  </div>
-                  {lbl('Change Summary *')}
+                  <div style={{ fontSize: '12px', color: theme.textMuted }}>{t('proj.detail.snapshotsTheCurrentComputedPriceAnd', { value: fmt(summary?.bidPrice ?? 0, summary?.currencyCode), value2: (summary?.revision ?? 1) + 1 })}</div>
+                  {lbl(t('proj.detail.changeSummary'))}
                   <textarea
                     rows={3}
                     value={reviseChangeSummary}
                     onChange={(e) => { setReviseChangeSummary(e.target.value); }}
-                    placeholder="Why is the bid being revised? (e.g. client requested re-price, lost previous round, scope change)"
+                    placeholder={t('proj.detail.whyIsTheBidBeingRevised')}
                     style={{ ...inp, resize: 'vertical' }}
                   />
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -10812,12 +10763,12 @@ function BiddingTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Cancel
+                      {t('proj.detail.cancel')}
                     </button>
                     <button
                       onClick={() => {
                         if (!reviseChangeSummary.trim()) {
-                          addToast({ type: 'error', message: 'Change summary required' })
+                          addToast({ type: 'error', message: t('proj.detail.changeSummaryRequired') })
                           return
                         }
                         onReviseBid(reviseChangeSummary.trim())
@@ -10837,7 +10788,7 @@ function BiddingTab({
                         opacity: revisingBid ? 0.7 : 1,
                       }}
                     >
-                      {revisingBid ? 'Revising…' : 'Save Revision'}
+                      {revisingBid ? t('proj.detail.revising') : t('proj.detail.saveRevision')}
                     </button>
                   </div>
                 </div>
@@ -10902,15 +10853,13 @@ function BiddingTab({
               fontSize: '13px',
             }}
           >
-            Preview isn't available for this file type.
+            {t('proj.detail.previewIsnTAvailableForThis')}
             <div style={{ marginTop: '12px' }}>
               <a
                 href={previewItem.url}
                 download={previewItem.name}
                 style={{ color: theme.accent, fontWeight: 600, textDecoration: 'none' }}
-              >
-                Download {previewItem.name}
-              </a>
+              >{t('proj.detail.download2', { name: previewItem.name })}</a>
             </div>
           </div>
         )}
@@ -11068,43 +11017,43 @@ interface DocComment {
 
 // ── Engineering Documents constants ──────────────────────────────────────
 const ENG_DISCIPLINES = [
-  { key: 'overview', label: 'Overview', code: null },
-  { key: 'civil', label: 'Civil', code: 'CIV' },
-  { key: 'structural', label: 'Structural', code: 'STR' },
-  { key: 'architectural', label: 'Architectural', code: 'ARC' },
-  { key: 'mechanical', label: 'Mechanical', code: 'MEC' },
-  { key: 'hvac', label: 'HVAC', code: 'HVC' },
-  { key: 'plumbing', label: 'Plumbing', code: 'PLB' },
-  { key: 'sewerage', label: 'Sewerage', code: 'SEW' },
-  { key: 'water_supply', label: 'Water Supply', code: 'WTS' },
-  { key: 'storm_water', label: 'Storm Water', code: 'STW' },
-  { key: 'fire_fighting', label: 'Fire Fighting', code: 'FFG' },
-  { key: 'electrical', label: 'Electrical', code: 'ELE' },
+  { key: 'overview', get label() { return i18n.t('proj.detail.overview', { defaultValue: "Overview" }) }, code: null },
+  { key: 'civil', get label() { return i18n.t('proj.detail.civil', { defaultValue: "Civil" }) }, code: 'CIV' },
+  { key: 'structural', get label() { return i18n.t('proj.detail.structural', { defaultValue: "Structural" }) }, code: 'STR' },
+  { key: 'architectural', get label() { return i18n.t('proj.detail.architectural', { defaultValue: "Architectural" }) }, code: 'ARC' },
+  { key: 'mechanical', get label() { return i18n.t('proj.detail.mechanical', { defaultValue: "Mechanical" }) }, code: 'MEC' },
+  { key: 'hvac', get label() { return i18n.t('proj.detail.hvac', { defaultValue: "HVAC" }) }, code: 'HVC' },
+  { key: 'plumbing', get label() { return i18n.t('proj.detail.plumbing', { defaultValue: "Plumbing" }) }, code: 'PLB' },
+  { key: 'sewerage', get label() { return i18n.t('proj.detail.sewerage', { defaultValue: "Sewerage" }) }, code: 'SEW' },
+  { key: 'water_supply', get label() { return i18n.t('proj.detail.waterSupply', { defaultValue: "Water Supply" }) }, code: 'WTS' },
+  { key: 'storm_water', get label() { return i18n.t('proj.detail.stormWater', { defaultValue: "Storm Water" }) }, code: 'STW' },
+  { key: 'fire_fighting', get label() { return i18n.t('proj.detail.fireFighting', { defaultValue: "Fire Fighting" }) }, code: 'FFG' },
+  { key: 'electrical', get label() { return i18n.t('proj.detail.electrical', { defaultValue: "Electrical" }) }, code: 'ELE' },
   { key: 'ist', label: 'IST', code: 'IST' },
-  { key: 'telecommunications', label: 'Telecommunications', code: 'TEL' },
+  { key: 'telecommunications', get label() { return i18n.t('proj.detail.telecommunications', { defaultValue: "Telecommunications" }) }, code: 'TEL' },
   { key: 'ict', label: 'ICT', code: 'ICT' },
-  { key: 'process', label: 'Process', code: 'PRC' },
-  { key: 'hse_eng', label: 'HSE Engineering', code: 'HSE' },
-  { key: 'qa_qc', label: 'QA/QC', code: 'QAQ' },
-  { key: 'document_control', label: 'Document Control', code: 'DOC' },
-  { key: 'others', label: 'Others', code: 'OTH' },
+  { key: 'process', get label() { return i18n.t('proj.detail.process', { defaultValue: "Process" }) }, code: 'PRC' },
+  { key: 'hse_eng', get label() { return i18n.t('proj.detail.hseEngineering', { defaultValue: "HSE Engineering" }) }, code: 'HSE' },
+  { key: 'qa_qc', get label() { return i18n.t('proj.detail.qaQc', { defaultValue: "QA/QC" }) }, code: 'QAQ' },
+  { key: 'document_control', get label() { return i18n.t('proj.detail.documentControl', { defaultValue: "Document Control" }) }, code: 'DOC' },
+  { key: 'others', get label() { return i18n.t('proj.detail.others', { defaultValue: "Others" }) }, code: 'OTH' },
 ] as const
 
 const ENG_DOC_TYPES = [
-  { key: 'all', label: 'All' },
-  { key: 'calculation', label: 'Calculations' },
-  { key: 'drawing', label: 'Drawings' },
-  { key: 'datasheet', label: 'Datasheets' },
-  { key: 'specification', label: 'Specifications' },
-  { key: 'other', label: 'Others' },
+  { key: 'all', get label() { return i18n.t('proj.detail.all', { defaultValue: "All" }) } },
+  { key: 'calculation', get label() { return i18n.t('proj.detail.calculations', { defaultValue: "Calculations" }) } },
+  { key: 'drawing', get label() { return i18n.t('proj.detail.drawings', { defaultValue: "Drawings" }) } },
+  { key: 'datasheet', get label() { return i18n.t('proj.detail.datasheets', { defaultValue: "Datasheets" }) } },
+  { key: 'specification', get label() { return i18n.t('proj.detail.specifications', { defaultValue: "Specifications" }) } },
+  { key: 'other', get label() { return i18n.t('proj.detail.others', { defaultValue: "Others" }) } },
 ] as const
 
 const ENG_DOC_STATUSES: Record<string, { label: string; dot: string; text: string; bg: string }> = {
   // Track 1 – internal
-  draft: { label: 'Draft', dot: '#94a3b8', text: '#475569', bg: '#f1f5f9' },
-  under_check: { label: 'Under Check', dot: '#f59e0b', text: '#a16207', bg: '#fffbeb' },
-  under_approval: { label: 'Under Approval', dot: '#8b5cf6', text: '#5b21b6', bg: '#f5f3ff' },
-  ready_to_issue: { label: 'Ready to Issue', dot: '#06b6d4', text: '#0e7490', bg: '#ecfeff' },
+  draft: { get label() { return i18n.t('proj.detail.draft', { defaultValue: "Draft" }) }, dot: '#94a3b8', text: '#475569', bg: '#f1f5f9' },
+  under_check: { get label() { return i18n.t('proj.detail.underCheck', { defaultValue: "Under Check" }) }, dot: '#f59e0b', text: '#a16207', bg: '#fffbeb' },
+  under_approval: { get label() { return i18n.t('proj.detail.underApproval', { defaultValue: "Under Approval" }) }, dot: '#8b5cf6', text: '#5b21b6', bg: '#f5f3ff' },
+  ready_to_issue: { get label() { return i18n.t('proj.detail.readyToIssue', { defaultValue: "Ready to Issue" }) }, dot: '#06b6d4', text: '#0e7490', bg: '#ecfeff' },
   // Track 2 – client codes
   IFA: { label: 'IFA', dot: '#f59e0b', text: '#a16207', bg: '#fffbeb' },
   IFR: { label: 'IFR', dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
@@ -11113,53 +11062,53 @@ const ENG_DOC_STATUSES: Record<string, { label: string; dot: string; text: strin
   // Client response outcomes
   AFC: { label: 'AFC', dot: '#22c55e', text: '#15803d', bg: '#f0fdf4' },
   approved_with_comments: {
-    label: 'Appr. w/ Comments',
+    get label() { return i18n.t('proj.detail.apprWComments', { defaultValue: "Appr. w/ Comments" }) },
     dot: '#84cc16',
     text: '#3f6212',
     bg: '#f7fee7',
   },
-  acknowledged: { label: 'Acknowledged', dot: '#10b981', text: '#065f46', bg: '#f0fdf4' },
+  acknowledged: { get label() { return i18n.t('proj.detail.acknowledged', { defaultValue: "Acknowledged" }) }, dot: '#10b981', text: '#065f46', bg: '#f0fdf4' },
   // Terminal / lifecycle
-  as_built: { label: 'As-Built', dot: '#06b6d4', text: '#0e7490', bg: '#ecfeff' },
-  bidding: { label: 'Bidding', dot: '#f59e0b', text: '#92400e', bg: '#fef3c7' },
-  superseded: { label: 'Superseded', dot: '#9ca3af', text: '#6b7280', bg: '#f9fafb' },
-  cancelled: { label: 'Cancelled', dot: '#ef4444', text: '#dc2626', bg: '#fef2f2' },
+  as_built: { get label() { return i18n.t('proj.detail.asBuilt', { defaultValue: "As-Built" }) }, dot: '#06b6d4', text: '#0e7490', bg: '#ecfeff' },
+  bidding: { get label() { return i18n.t('proj.detail.bidding', { defaultValue: "Bidding" }) }, dot: '#f59e0b', text: '#92400e', bg: '#fef3c7' },
+  superseded: { get label() { return i18n.t('proj.detail.superseded', { defaultValue: "Superseded" }) }, dot: '#9ca3af', text: '#6b7280', bg: '#f9fafb' },
+  cancelled: { get label() { return i18n.t('proj.detail.cancelled3', { defaultValue: "Cancelled" }) }, dot: '#ef4444', text: '#dc2626', bg: '#fef2f2' },
   // Legacy
-  preliminary: { label: 'Preliminary', dot: '#94a3b8', text: '#475569', bg: '#f1f5f9' },
-  for_review: { label: 'For Review', dot: '#f59e0b', text: '#a16207', bg: '#fffbeb' },
-  for_construction: { label: 'For Construction', dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
+  preliminary: { get label() { return i18n.t('proj.detail.preliminary', { defaultValue: "Preliminary" }) }, dot: '#94a3b8', text: '#475569', bg: '#f1f5f9' },
+  for_review: { get label() { return i18n.t('proj.detail.forReview', { defaultValue: "For Review" }) }, dot: '#f59e0b', text: '#a16207', bg: '#fffbeb' },
+  for_construction: { get label() { return i18n.t('proj.detail.forConstruction', { defaultValue: "For Construction" }) }, dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
 }
 
 const ENG_PURPOSE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  IFA: { label: 'For Approval', color: '#a16207', bg: '#fffbeb' },
-  IFR: { label: 'For Review', color: '#1d4ed8', bg: '#eff6ff' },
-  IFI: { label: 'For Information', color: '#5b21b6', bg: '#ede9fe' },
-  IFC: { label: 'For Construction', color: '#c2410c', bg: '#fff7ed' },
-  AFC: { label: 'Appr. for Constr.', color: '#15803d', bg: '#f0fdf4' },
+  IFA: { get label() { return i18n.t('proj.detail.forApproval', { defaultValue: "For Approval" }) }, color: '#a16207', bg: '#fffbeb' },
+  IFR: { get label() { return i18n.t('proj.detail.forReview', { defaultValue: "For Review" }) }, color: '#1d4ed8', bg: '#eff6ff' },
+  IFI: { get label() { return i18n.t('proj.detail.forInformation', { defaultValue: "For Information" }) }, color: '#5b21b6', bg: '#ede9fe' },
+  IFC: { get label() { return i18n.t('proj.detail.forConstruction', { defaultValue: "For Construction" }) }, color: '#c2410c', bg: '#fff7ed' },
+  AFC: { get label() { return i18n.t('proj.detail.apprForConstr', { defaultValue: "Appr. for Constr." }) }, color: '#15803d', bg: '#f0fdf4' },
 }
 
 const DOC_CATEGORY_META: Record<string, { label: string; color: string; bg: string }> = {
-  major: { label: 'Major', color: '#dc2626', bg: '#fee2e2' },
-  minor: { label: 'Minor', color: '#d97706', bg: '#fef3c7' },
-  info: { label: 'Info', color: '#2563eb', bg: '#dbeafe' },
+  major: { get label() { return i18n.t('proj.detail.major', { defaultValue: "Major" }) }, color: '#dc2626', bg: '#fee2e2' },
+  minor: { get label() { return i18n.t('proj.detail.minor', { defaultValue: "Minor" }) }, color: '#d97706', bg: '#fef3c7' },
+  info: { get label() { return i18n.t('proj.detail.info', { defaultValue: "Info" }) }, color: '#2563eb', bg: '#dbeafe' },
 }
 
 const DOC_RESOLUTION_META: Record<string, { label: string; color: string; bg: string }> = {
-  accepted: { label: 'Accepted', color: '#15803d', bg: '#f0fdf4' },
-  partial: { label: 'Partial', color: '#a16207', bg: '#fffbeb' },
-  rejected: { label: 'Rejected', color: '#dc2626', bg: '#fee2e2' },
-  withdrawn: { label: 'Withdrawn', color: '#6b7280', bg: '#f9fafb' },
+  accepted: { get label() { return i18n.t('proj.detail.accepted', { defaultValue: "Accepted" }) }, color: '#15803d', bg: '#f0fdf4' },
+  partial: { get label() { return i18n.t('proj.detail.partial', { defaultValue: "Partial" }) }, color: '#a16207', bg: '#fffbeb' },
+  rejected: { get label() { return i18n.t('proj.detail.rejected', { defaultValue: "Rejected" }) }, color: '#dc2626', bg: '#fee2e2' },
+  withdrawn: { get label() { return i18n.t('proj.detail.withdrawn', { defaultValue: "Withdrawn" }) }, color: '#6b7280', bg: '#f9fafb' },
 }
 
 // Linear pipeline view of the two-track eng-doc workflow (for the stepper).
 const ENG_STEPPER_STAGES = [
-  { key: 'draft', label: 'Draft' },
-  { key: 'check', label: 'Check' },
-  { key: 'approval', label: 'Approval' },
-  { key: 'ready', label: 'Ready' },
-  { key: 'issued', label: 'Issued' },
-  { key: 'response', label: 'Response' },
-  { key: 'as_built', label: 'As-Built' },
+  { key: 'draft', get label() { return i18n.t('proj.detail.draft', { defaultValue: "Draft" }) } },
+  { key: 'check', get label() { return i18n.t('proj.detail.check', { defaultValue: "Check" }) } },
+  { key: 'approval', get label() { return i18n.t('proj.detail.approval', { defaultValue: "Approval" }) } },
+  { key: 'ready', get label() { return i18n.t('proj.detail.ready', { defaultValue: "Ready" }) } },
+  { key: 'issued', get label() { return i18n.t('proj.detail.issued', { defaultValue: "Issued" }) } },
+  { key: 'response', get label() { return i18n.t('proj.detail.response', { defaultValue: "Response" }) } },
+  { key: 'as_built', get label() { return i18n.t('proj.detail.asBuilt', { defaultValue: "As-Built" }) } },
 ]
 const ENG_STATUS_STAGE: Record<string, number> = {
   draft: 0,
@@ -11201,6 +11150,7 @@ function EngineeringTab({
   projectManagerName?: string
   teamMembers?: { id: string; employee_name: string; job_title?: string; member_type?: string }[]
 }) {
+  const { t } = useTranslation()
   const addToast = useToastStore((s) => s.addToast)
 
   // sub-view
@@ -11323,7 +11273,7 @@ function EngineeringTab({
         })
         onPicked(fileId, file.name)
       } catch {
-        addToast({ type: 'error', message: 'File upload failed' })
+        addToast({ type: 'error', message: t('proj.detail.fileUploadFailed') })
       } finally {
         setUploading(false)
       }
@@ -11333,7 +11283,7 @@ function EngineeringTab({
 
   const handleCreate = async () => {
     if (!form.title) {
-      addToast({ type: 'error', message: 'Title is required' })
+      addToast({ type: 'error', message: t('proj.detail.titleIsRequired') })
       return
     }
     try {
@@ -11356,7 +11306,7 @@ function EngineeringTab({
           purposeOfIssue: form.purposeOfIssue || null,
         },
       })
-      addToast({ type: 'success', message: 'Document added' })
+      addToast({ type: 'success', message: t('proj.detail.documentAdded') })
       setShowModal(false)
       setForm({
         title: '',
@@ -11382,7 +11332,7 @@ function EngineeringTab({
   const handleRevise = async () => {
     if (!reviseDoc) return
     if (!revForm.revision) {
-      addToast({ type: 'error', message: 'Revision is required' })
+      addToast({ type: 'error', message: t('proj.detail.revisionIsRequired') })
       return
     }
     try {
@@ -11399,7 +11349,7 @@ function EngineeringTab({
           purposeOfIssue: revForm.purposeOfIssue || null,
         },
       })
-      addToast({ type: 'success', message: 'Revision issued' })
+      addToast({ type: 'success', message: t('proj.detail.revisionIssued') })
       setReviseDoc(null)
       setRevForm({
         revision: '',
@@ -11430,7 +11380,7 @@ function EngineeringTab({
           category: commentForm.category,
         },
       })
-      addToast({ type: 'success', message: 'Comment added' })
+      addToast({ type: 'success', message: t('proj.detail.commentAdded') })
       setCommentForm({ locationRef: '', commentText: '', category: 'minor' })
       setShowCommentForm(false)
       void refetchComments()
@@ -11450,7 +11400,7 @@ function EngineeringTab({
           resolution: responseForm.resolution,
         },
       })
-      addToast({ type: 'success', message: 'Response submitted' })
+      addToast({ type: 'success', message: t('proj.detail.responseSubmitted') })
       setRespondingTo(null)
       setResponseForm({ responseText: '', resolution: 'accepted' })
       void refetchComments()
@@ -11461,7 +11411,7 @@ function EngineeringTab({
   }
 
   const handleDeleteComment = async (id: string) => {
-    if (!window.confirm('Delete this comment?')) return
+    if (!window.confirm(t('proj.detail.deleteThisComment'))) return
     try {
       await deleteCommentM({ variables: { id } })
       void refetchComments()
@@ -11474,7 +11424,7 @@ function EngineeringTab({
 
   const handleDelete = async (doc: EngDoc | EngDocHistoryEntry) => {
     const label = 'title' in doc ? doc.title : doc.refNumber
-    if (!window.confirm(`Delete "${label}" (${doc.refNumber})?`)) return
+    if (!window.confirm(t('proj.detail.delete4', { label, refNumber: doc.refNumber }))) return
     try {
       await deleteDocM({ variables: { id: doc.id } })
       void refetch()
@@ -11588,286 +11538,286 @@ function EngineeringTab({
     // ── Track 1: Internal ───────────────────────────────────────────────────
     draft: [
       {
-        label: 'Send for Check',
+        label: t('proj.detail.sendForCheck'),
         action: 'send_for_check',
         variant: 'blue',
-        modalTitle: 'Send for Internal Check',
-        modalDesc: 'The document will be sent to the checker for internal technical review.',
+        modalTitle: t('proj.detail.sendForInternalCheck'),
+        modalDesc: t('proj.detail.theDocumentWillBeSentTo'),
         showSubmittedTo: true,
         showDueDate: true,
-        confirmLabel: 'Send for Check',
+        confirmLabel: t('proj.detail.sendForCheck'),
       },
       {
-        label: 'Send for Approval',
+        label: t('proj.detail.sendForApproval'),
         action: 'send_for_approval',
         variant: 'purple',
-        modalTitle: 'Send for Internal Approval',
-        modalDesc: 'Skip checking — send directly to the approver for sign-off.',
+        modalTitle: t('proj.detail.sendForInternalApproval'),
+        modalDesc: t('proj.detail.skipCheckingSendDirectlyToThe'),
         showSubmittedTo: true,
         showDueDate: true,
-        confirmLabel: 'Send for Approval',
+        confirmLabel: t('proj.detail.sendForApproval'),
       },
     ],
     under_check: [
       {
-        label: 'Approve Check',
+        label: t('proj.detail.approveCheck'),
         action: 'send_for_approval',
         variant: 'blue',
-        modalTitle: 'Send for Approval',
-        modalDesc: 'Checking is complete. The document will be sent to the approver.',
+        modalTitle: t('proj.detail.sendForApproval'),
+        modalDesc: t('proj.detail.checkingIsCompleteTheDocumentWill'),
         showSubmittedTo: true,
         showDueDate: true,
-        confirmLabel: 'Send for Approval',
+        confirmLabel: t('proj.detail.sendForApproval'),
       },
       {
-        label: 'Return to Author',
+        label: t('proj.detail.returnToAuthor'),
         action: 'return_to_author',
         variant: 'red',
-        modalTitle: 'Return to Author',
-        modalDesc: 'The document will be returned to the author with comments for revision.',
-        confirmLabel: 'Return to Author',
+        modalTitle: t('proj.detail.returnToAuthor'),
+        modalDesc: t('proj.detail.theDocumentWillBeReturnedTo'),
+        confirmLabel: t('proj.detail.returnToAuthor'),
       },
     ],
     under_approval: [
       {
-        label: 'Approve for Issue',
+        label: t('proj.detail.approveForIssue'),
         action: 'approve_for_issue',
         variant: 'green',
-        modalTitle: 'Approve for Issue',
-        modalDesc: 'Approving will mark the document as ready to issue to the client.',
-        confirmLabel: 'Approve for Issue',
+        modalTitle: t('proj.detail.approveForIssue'),
+        modalDesc: t('proj.detail.approvingWillMarkTheDocumentAs'),
+        confirmLabel: t('proj.detail.approveForIssue'),
       },
       {
-        label: 'Return to Checker',
+        label: t('proj.detail.returnToChecker'),
         action: 'return_to_checker',
         variant: 'orange',
-        modalTitle: 'Return to Checker',
-        modalDesc: 'The document will be returned to the checker with comments.',
-        confirmLabel: 'Return to Checker',
+        modalTitle: t('proj.detail.returnToChecker'),
+        modalDesc: t('proj.detail.theDocumentWillBeReturnedTo2'),
+        confirmLabel: t('proj.detail.returnToChecker'),
       },
       {
-        label: 'Return to Author',
+        label: t('proj.detail.returnToAuthor'),
         action: 'return_to_author',
         variant: 'red',
-        modalTitle: 'Return to Author',
-        modalDesc: 'The document will be returned to the author, bypassing the checker.',
-        confirmLabel: 'Return to Author',
+        modalTitle: t('proj.detail.returnToAuthor'),
+        modalDesc: t('proj.detail.theDocumentWillBeReturnedTo3'),
+        confirmLabel: t('proj.detail.returnToAuthor'),
       },
     ],
     ready_to_issue: [
       {
-        label: 'Issue for Approval',
+        label: t('proj.detail.issueForApproval'),
         action: 'issue',
         issueType: 'IFA',
         variant: 'blue',
-        modalTitle: 'Issue for Approval (IFA)',
-        modalDesc: 'Submit the document to the client for formal approval.',
+        modalTitle: t('proj.detail.issueForApprovalIfa'),
+        modalDesc: t('proj.detail.submitTheDocumentToTheClient'),
         showSubmittedTo: true,
         showDueDate: true,
-        confirmLabel: 'Issue for Approval',
+        confirmLabel: t('proj.detail.issueForApproval'),
       },
       {
-        label: 'Issue for Review',
+        label: t('proj.detail.issueForReview'),
         action: 'issue',
         issueType: 'IFR',
         variant: 'blue',
-        modalTitle: 'Issue for Review (IFR)',
-        modalDesc: 'Submit the document to the client for review and comments.',
+        modalTitle: t('proj.detail.issueForReviewIfr'),
+        modalDesc: t('proj.detail.submitTheDocumentToTheClient2'),
         showSubmittedTo: true,
         showDueDate: true,
-        confirmLabel: 'Issue for Review',
+        confirmLabel: t('proj.detail.issueForReview'),
       },
       {
-        label: 'Issue for Info',
+        label: t('proj.detail.issueForInfo'),
         action: 'issue',
         issueType: 'IFI',
         variant: 'purple',
-        modalTitle: 'Issue for Information (IFI)',
-        modalDesc: 'Submit the document for reference — no client action required.',
+        modalTitle: t('proj.detail.issueForInformationIfi'),
+        modalDesc: t('proj.detail.submitTheDocumentForReferenceNo'),
         showSubmittedTo: true,
-        confirmLabel: 'Issue for Information',
+        confirmLabel: t('proj.detail.issueForInformation'),
       },
       {
-        label: 'Issue for Constr.',
+        label: t('proj.detail.issueForConstr'),
         action: 'issue',
         issueType: 'IFC',
         variant: 'orange',
-        modalTitle: 'Issue for Construction (IFC)',
-        modalDesc: 'Submit the document to site for construction use.',
+        modalTitle: t('proj.detail.issueForConstructionIfc'),
+        modalDesc: t('proj.detail.submitTheDocumentToSiteFor'),
         showSubmittedTo: true,
-        confirmLabel: 'Issue for Construction',
+        confirmLabel: t('proj.detail.issueForConstruction'),
       },
     ],
     // ── Track 2: Client codes ────────────────────────────────────────────────
     IFA: [
       {
-        label: 'Record Client Response',
+        label: t('proj.detail.recordClientResponse'),
         action: 'record_client_response',
         variant: 'green',
-        modalTitle: 'Record Client Response',
-        modalDesc: "Record the client's review code for this submission.",
+        modalTitle: t('proj.detail.recordClientResponse'),
+        modalDesc: t('proj.detail.recordTheClientSReviewCode'),
         showClientResponse: true,
-        confirmLabel: 'Record Response',
+        confirmLabel: t('proj.detail.recordResponse'),
       },
       {
-        label: 'Return to Draft',
+        label: t('proj.detail.returnToDraft'),
         action: 'return_to_author',
         variant: 'red',
-        modalTitle: 'Return to Draft',
-        modalDesc: 'Withdraw this submission and return the document to draft for revision.',
-        confirmLabel: 'Return to Draft',
+        modalTitle: t('proj.detail.returnToDraft'),
+        modalDesc: t('proj.detail.withdrawThisSubmissionAndReturnThe'),
+        confirmLabel: t('proj.detail.returnToDraft'),
       },
     ],
     IFR: [
       {
-        label: 'Record Client Response',
+        label: t('proj.detail.recordClientResponse'),
         action: 'record_client_response',
         variant: 'green',
-        modalTitle: 'Record Client Response',
-        modalDesc: "Record the client's review code for this submission.",
+        modalTitle: t('proj.detail.recordClientResponse'),
+        modalDesc: t('proj.detail.recordTheClientSReviewCode'),
         showClientResponse: true,
-        confirmLabel: 'Record Response',
+        confirmLabel: t('proj.detail.recordResponse'),
       },
       {
-        label: 'Return to Draft',
+        label: t('proj.detail.returnToDraft'),
         action: 'return_to_author',
         variant: 'red',
-        modalTitle: 'Return to Draft',
-        modalDesc: 'Withdraw this submission and return the document to draft for revision.',
-        confirmLabel: 'Return to Draft',
+        modalTitle: t('proj.detail.returnToDraft'),
+        modalDesc: t('proj.detail.withdrawThisSubmissionAndReturnThe'),
+        confirmLabel: t('proj.detail.returnToDraft'),
       },
     ],
     IFI: [
       {
-        label: 'Record Client Response',
+        label: t('proj.detail.recordClientResponse'),
         action: 'record_client_response',
         variant: 'teal',
-        modalTitle: 'Record Acknowledgement',
-        modalDesc: 'Record that the client has acknowledged this document.',
+        modalTitle: t('proj.detail.recordAcknowledgement'),
+        modalDesc: t('proj.detail.recordThatTheClientHasAcknowledged'),
         showClientResponse: true,
-        confirmLabel: 'Record Acknowledgement',
+        confirmLabel: t('proj.detail.recordAcknowledgement'),
       },
       {
-        label: 'Return to Draft',
+        label: t('proj.detail.returnToDraft'),
         action: 'return_to_author',
         variant: 'red',
-        modalTitle: 'Return to Draft',
-        modalDesc: 'Withdraw this document and return to draft.',
-        confirmLabel: 'Return to Draft',
+        modalTitle: t('proj.detail.returnToDraft'),
+        modalDesc: t('proj.detail.withdrawThisDocumentAndReturnTo'),
+        confirmLabel: t('proj.detail.returnToDraft'),
       },
     ],
     IFC: [
       {
-        label: 'Record Client Response',
+        label: t('proj.detail.recordClientResponse'),
         action: 'record_client_response',
         variant: 'green',
-        modalTitle: 'Record Client Response',
-        modalDesc: "Record the client's review code for this construction issue.",
+        modalTitle: t('proj.detail.recordClientResponse'),
+        modalDesc: t('proj.detail.recordTheClientSReviewCode2'),
         showClientResponse: true,
-        confirmLabel: 'Record Response',
+        confirmLabel: t('proj.detail.recordResponse'),
       },
       {
-        label: 'Return to Draft',
+        label: t('proj.detail.returnToDraft'),
         action: 'return_to_author',
         variant: 'red',
-        modalTitle: 'Return to Draft',
-        modalDesc: 'Withdraw this document and return to draft.',
-        confirmLabel: 'Return to Draft',
+        modalTitle: t('proj.detail.returnToDraft'),
+        modalDesc: t('proj.detail.withdrawThisDocumentAndReturnTo'),
+        confirmLabel: t('proj.detail.returnToDraft'),
       },
     ],
     // ── Client response outcomes ─────────────────────────────────────────────
     AFC: [
       {
-        label: 'Mark As-Built',
+        label: t('proj.detail.markAsBuilt'),
         action: 'mark_as_built',
         variant: 'teal',
-        modalTitle: 'Mark as As-Built',
+        modalTitle: t('proj.detail.markAsAsBuilt'),
         modalDesc:
-          'Confirm the as-built record is complete and reflects the final installed condition.',
-        confirmLabel: 'Mark As-Built',
+          t('proj.detail.confirmTheAsBuiltRecordIs'),
+        confirmLabel: t('proj.detail.markAsBuilt'),
       },
     ],
     approved_with_comments: [
       {
-        label: 'Revise & Resubmit',
+        label: t('proj.detail.reviseResubmit'),
         action: 'return_to_author',
         variant: 'orange',
-        modalTitle: 'Return for Revision',
-        modalDesc: 'Return the document to the author to address client comments, then resubmit.',
-        confirmLabel: 'Return for Revision',
+        modalTitle: t('proj.detail.returnForRevision'),
+        modalDesc: t('proj.detail.returnTheDocumentToTheAuthor'),
+        confirmLabel: t('proj.detail.returnForRevision'),
       },
       {
-        label: 'Mark As-Built',
+        label: t('proj.detail.markAsBuilt'),
         action: 'mark_as_built',
         variant: 'teal',
-        modalTitle: 'Mark as As-Built',
-        modalDesc: 'Accept comments as minor and close the document as as-built.',
-        confirmLabel: 'Mark As-Built',
+        modalTitle: t('proj.detail.markAsAsBuilt'),
+        modalDesc: t('proj.detail.acceptCommentsAsMinorAndClose'),
+        confirmLabel: t('proj.detail.markAsBuilt'),
       },
     ],
     acknowledged: [
       {
-        label: 'Mark As-Built',
+        label: t('proj.detail.markAsBuilt'),
         action: 'mark_as_built',
         variant: 'teal',
-        modalTitle: 'Mark as As-Built',
-        modalDesc: 'Close the document as as-built.',
-        confirmLabel: 'Mark As-Built',
+        modalTitle: t('proj.detail.markAsAsBuilt'),
+        modalDesc: t('proj.detail.closeTheDocumentAsAsBuilt'),
+        confirmLabel: t('proj.detail.markAsBuilt'),
       },
     ],
     as_built: [
       {
-        label: 'Move to Bidding',
+        label: t('proj.detail.moveToBidding'),
         action: 'move_to_bidding',
         variant: 'blue',
-        modalTitle: 'Move to Bidding',
+        modalTitle: t('proj.detail.moveToBidding'),
         modalDesc:
-          'Mark this as-built document as part of a bid package. The document remains as-built — this records it has entered the bidding stage.',
-        confirmLabel: 'Move to Bidding',
+          t('proj.detail.markThisAsBuiltDocumentAs'),
+        confirmLabel: t('proj.detail.moveToBidding'),
       },
       {
-        label: 'Supersede',
+        label: t('proj.detail.supersede'),
         action: 'return_to_author',
         variant: 'slate',
-        modalTitle: 'Issue New Revision — Supersede',
+        modalTitle: t('proj.detail.issueNewRevisionSupersede'),
         modalDesc:
-          'This will return the document to Draft and mark the current as-built revision as Superseded. The previous record cannot be restored to as-built.',
-        confirmLabel: 'Confirm Supersede',
+          t('proj.detail.thisWillReturnTheDocumentTo'),
+        confirmLabel: t('proj.detail.confirmSupersede'),
         requireConfirmPhrase: 'SUPERSEDE',
       },
     ],
     // ── Legacy ──────────────────────────────────────────────────────────────
     preliminary: [
       {
-        label: 'Send for Check',
+        label: t('proj.detail.sendForCheck'),
         action: 'send_for_check',
         variant: 'blue',
-        modalTitle: 'Send for Internal Check',
-        modalDesc: 'Send this preliminary document for checking.',
+        modalTitle: t('proj.detail.sendForInternalCheck'),
+        modalDesc: t('proj.detail.sendThisPreliminaryDocumentForChecking'),
         showSubmittedTo: true,
-        confirmLabel: 'Send for Check',
+        confirmLabel: t('proj.detail.sendForCheck'),
       },
     ],
     for_review: [
       {
-        label: 'Advance → IFC',
+        label: t('proj.detail.advanceIfc'),
         action: 'issue',
         issueType: 'IFC',
         variant: 'blue',
-        modalTitle: 'Advance to IFC',
-        modalDesc: 'Move this document to Issued for Construction.',
-        confirmLabel: 'Advance to IFC',
+        modalTitle: t('proj.detail.advanceToIfc'),
+        modalDesc: t('proj.detail.moveThisDocumentToIssuedFor'),
+        confirmLabel: t('proj.detail.advanceToIfc'),
       },
     ],
     for_construction: [
       {
-        label: 'Record AFC',
+        label: t('proj.detail.recordAfc'),
         action: 'record_client_response',
         variant: 'green',
-        modalTitle: 'Record AFC',
-        modalDesc: 'Record client approval.',
+        modalTitle: t('proj.detail.recordAfc'),
+        modalDesc: t('proj.detail.recordClientApproval'),
         showClientResponse: true,
-        confirmLabel: 'Record AFC',
+        confirmLabel: t('proj.detail.recordAfc'),
       },
     ],
   }
@@ -11997,7 +11947,7 @@ function EngineeringTab({
               viewBox="0 0 24 24"
               fill="none"
               style={{
-                marginLeft: 1,
+                marginInlineStart: 1,
                 opacity: 0.5,
                 transition: 'transform 0.15s',
                 transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
@@ -12048,7 +11998,7 @@ function EngineeringTab({
                     color: theme.textPrimary,
                     fontSize: 12,
                     fontWeight: k === s ? 700 : 400,
-                    textAlign: 'left' as const,
+                    textAlign: 'start' as const,
                   }}
                 >
                   <span
@@ -12125,14 +12075,14 @@ function EngineeringTab({
         title={tooltip}
         onClick={onClick}
         onMouseEnter={(e) => {
-          const t = e.currentTarget
-          t.style.background = s.hoverBg
-          t.style.borderColor = variant === 'danger' ? '#fca5a5' : theme.border
+          const tx = e.currentTarget
+          tx.style.background = s.hoverBg
+          tx.style.borderColor = variant === 'danger' ? '#fca5a5' : theme.border
         }}
         onMouseLeave={(e) => {
-          const t = e.currentTarget
-          t.style.background = 'transparent'
-          t.style.borderColor = 'transparent'
+          const tx = e.currentTarget
+          tx.style.background = 'transparent'
+          tx.style.borderColor = 'transparent'
         }}
         style={{
           display: 'inline-flex',
@@ -12178,7 +12128,7 @@ function EngineeringTab({
       }}
     />
   )
-  const lbl = (t: string, req = false) => (
+  const lbl = (tx: string, req = false) => (
     <div
       style={{
         fontSize: 11,
@@ -12189,8 +12139,8 @@ function EngineeringTab({
         letterSpacing: '0.05em',
       }}
     >
-      {t}
-      {req && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+      {tx}
+      {req && <span style={{ color: '#ef4444', marginInlineStart: 2 }}>*</span>}
     </div>
   )
 
@@ -12223,7 +12173,7 @@ function EngineeringTab({
       ? (ENG_DISCIPLINES.find((d) => d.key === doc.discipline)?.label ?? doc.discipline)
       : null
     const typeLabel = 'docType' in doc
-      ? (ENG_DOC_TYPES.find((t) => t.key === doc.docType)?.label ?? doc.docType)
+      ? (ENG_DOC_TYPES.find((tx) => tx.key === doc.docType)?.label ?? doc.docType)
       : null
     const displayTitle = 'title' in doc ? doc.title : doc.refNumber
     const meta = [
@@ -12257,7 +12207,7 @@ function EngineeringTab({
                   all: 'unset',
                   cursor: 'pointer',
                   color: theme.textMuted,
-                  marginRight: -8,
+                  marginInlineEnd: -8,
                   position: 'relative',
                   zIndex: 1,
                   padding: '4px 2px',
@@ -12386,7 +12336,7 @@ function EngineeringTab({
                   alignItems: 'center',
                   gap: 3,
                   marginTop: 3,
-                  marginLeft: doc.purposeOfIssue ? 6 : 0,
+                  marginInlineStart: doc.purposeOfIssue ? 6 : 0,
                   padding: '1px 6px',
                   borderRadius: 4,
                   fontSize: 10,
@@ -12410,7 +12360,7 @@ function EngineeringTab({
                     {doc.openCommentCount}
                   </text>
                 </svg>
-                {doc.openCommentCount} open
+                {doc.openCommentCount} {t('proj.detail.open5')}
               </button>
             )}
             {!isHistory && doc.clientCommentCount > 0 && (
@@ -12428,7 +12378,7 @@ function EngineeringTab({
                   alignItems: 'center',
                   gap: 3,
                   marginTop: 3,
-                  marginLeft: 4,
+                  marginInlineStart: 4,
                   padding: '1px 6px',
                   borderRadius: 4,
                   fontSize: 10,
@@ -12449,8 +12399,8 @@ function EngineeringTab({
                   />
                 </svg>
                 {doc.openClientCommentCount > 0
-                  ? `${doc.openClientCommentCount} client open`
-                  : `${doc.clientCommentCount} client closed`}
+                  ? t('proj.detail.clientOpen', { openClientCommentCount: doc.openClientCommentCount })
+                  : t('proj.detail.clientClosed', { clientCommentCount: doc.clientCommentCount })}
               </button>
             )}
             {doc.notes && (
@@ -12483,9 +12433,7 @@ function EngineeringTab({
                   fontWeight: 700,
                   whiteSpace: 'nowrap',
                 }}
-              >
-                Rev {doc.revision}
-              </span>
+              >{t('proj.detail.rev2', { revision: doc.revision })}</span>
             ) : (
               <span style={{ color: theme.textMuted, fontSize: 12 }}>—</span>
             )}
@@ -12508,7 +12456,7 @@ function EngineeringTab({
             {!isHistory && doc.activities.length > 0 && (
               <button
                 onClick={() => { setActivityDocId(activityDocId === doc.id ? null : doc.id); }}
-                title="View activity log"
+                title={t('proj.detail.viewActivityLog')}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -12574,7 +12522,7 @@ function EngineeringTab({
                             strokeLinejoin="round"
                           />
                         </svg>
-                        Internal approved — issue to client:
+                        {t('proj.detail.internalApprovedIssueToClient')}
                       </span>
                     )}
                     {wfBtns.map((btn) => {
@@ -12619,7 +12567,7 @@ function EngineeringTab({
               })()}
             {doc.downloadUrl &&
               iconActionBtn(
-                'Preview',
+                t('proj.detail.preview'),
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <path
                     d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
@@ -12636,7 +12584,7 @@ function EngineeringTab({
               )}
             {doc.downloadUrl &&
               iconActionBtn(
-                'Download',
+                t('proj.detail.download'),
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <path
                     d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
@@ -12681,7 +12629,7 @@ function EngineeringTab({
               ) : null)}
             {!isHistory &&
               iconActionBtn(
-                'Issue revision',
+                t('proj.detail.issueRevision3'),
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <path
                     d="M12 20h9"
@@ -12718,7 +12666,7 @@ function EngineeringTab({
             {isAdmin &&
               !isHistory &&
               iconActionBtn(
-                'Delete',
+                t('proj.detail.delete'),
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <polyline
                     points="3 6 5 6 21 6"
@@ -12789,9 +12737,7 @@ function EngineeringTab({
                   letterSpacing: '0.04em',
                   textTransform: 'uppercase',
                 }}
-              >
-                Activity Log — {doc.activities.length} event{doc.activities.length !== 1 ? 's' : ''}
-              </span>
+              >{t('proj.detail.activityLogEvent', { count: doc.activities.length })}</span>
             </div>
             {/* Pipeline stepper — the document's position in the two-track lifecycle */}
             {(() => {
@@ -12815,7 +12761,7 @@ function EngineeringTab({
                       marginBottom: 10,
                     }}
                   >
-                    Pipeline
+                    {t('proj.detail.pipeline')}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-start', overflowX: 'auto' }}>
                     {ENG_STEPPER_STAGES.map((stage, si) => {
@@ -12898,7 +12844,7 @@ function EngineeringTab({
                                 marginTop: 1,
                               }}
                             >
-                              you are here
+                              {t('proj.detail.youAreHere')}
                             </span>
                           )}
                         </div>
@@ -12916,7 +12862,7 @@ function EngineeringTab({
                         letterSpacing: '0.05em',
                       }}
                     >
-                      {doc.status === 'cancelled' ? '✕ Cancelled' : '⊘ Superseded'}
+                      {doc.status === 'cancelled' ? t('proj.detail.cancelled2') : t('proj.detail.superseded2')}
                     </div>
                   )}
                 </div>
@@ -12931,10 +12877,10 @@ function EngineeringTab({
                 const toColor = ENG_DOC_STATUSES[act.toStatus]?.dot ?? '#94a3b8'
                 const isLast = i === doc.activities.length - 1
                 const RESPONSE_LABELS: Record<string, string> = {
-                  A: 'Code A — Approved for Construction',
-                  B: 'Code B — Approved with Comments',
-                  C: 'Code C — Not Approved (Resubmit)',
-                  D: 'Code D — For Information',
+                  A: t('proj.detail.codeAApprovedForConstruction'),
+                  B: t('proj.detail.codeBApprovedWithComments'),
+                  C: t('proj.detail.codeCNotApprovedResubmit'),
+                  D: t('proj.detail.codeDForInformation'),
                 }
                 return (
                   <div
@@ -13043,9 +12989,7 @@ function EngineeringTab({
                           </span>
                         )}
                         {act.dueDate && (
-                          <span style={{ fontSize: 10, color: theme.textMuted }}>
-                            Due {act.dueDate}
-                          </span>
+                          <span style={{ fontSize: 10, color: theme.textMuted }}>{t('proj.detail.due2', { dueDate: act.dueDate })}</span>
                         )}
                         <span style={{ fontSize: 10, color: theme.textMuted }}>
                           {new Date(act.createdAt).toLocaleDateString(undefined, {
@@ -13109,7 +13053,7 @@ function EngineeringTab({
                   />
                 </svg>
                 <span style={{ fontSize: 12, fontWeight: 700, color: theme.textPrimary }}>
-                  Client Comment Register
+                  {t('proj.detail.clientCommentRegister')}
                 </span>
                 {doc.openClientCommentCount > 0 && (
                   <span
@@ -13121,17 +13065,15 @@ function EngineeringTab({
                       fontSize: 10,
                       fontWeight: 700,
                     }}
-                  >
-                    {doc.openClientCommentCount} open
-                  </span>
+                  >{t('proj.detail.open2', { openClientCommentCount: doc.openClientCommentCount })}</span>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   onClick={() => void (async () => {
-                    const desc = window.prompt('Comment description:')
+                    const desc = window.prompt(t('proj.detail.commentDescription'))
                     if (!desc?.trim()) return
-                    const clauseRef = window.prompt('Clause/section reference (optional):') ?? ''
+                    const clauseRef = window.prompt(t('proj.detail.clauseSectionReferenceOptional')) ?? ''
                     try {
                       await addClientCommentM({
                         variables: {
@@ -13158,7 +13100,7 @@ function EngineeringTab({
                     fontWeight: 600,
                   }}
                 >
-                  + Add
+                  {t('proj.detail.add2')}
                 </button>
                 <button
                   onClick={() => { setExpandedClientCommentsId(null); }}
@@ -13197,7 +13139,7 @@ function EngineeringTab({
                       fontSize: 12,
                     }}
                   >
-                    Loading comments…
+                    {t('proj.detail.loadingComments')}
                   </div>
                 )
               }
@@ -13211,7 +13153,7 @@ function EngineeringTab({
                       fontSize: 12,
                     }}
                   >
-                    No client comments on record.
+                    {t('proj.detail.noClientCommentsOnRecord')}
                   </div>
                 )
               }
@@ -13240,7 +13182,7 @@ function EngineeringTab({
                 },
                 {
                   key: 'description',
-                  header: 'Description',
+                  header: t('proj.detail.description'),
                   mobilePrimary: true,
                   render: (c) => (
                     <div style={{ color: theme.textPrimary, maxWidth: 300, whiteSpace: 'normal' }}>
@@ -13250,7 +13192,7 @@ function EngineeringTab({
                 },
                 {
                   key: 'clauseRef',
-                  header: 'Clause',
+                  header: t('proj.detail.clause'),
                   mobilePriority: 4,
                   render: (c) => (
                     <span style={{ color: theme.textMuted }}>{c.clauseRef ?? '—'}</span>
@@ -13258,7 +13200,7 @@ function EngineeringTab({
                 },
                 {
                   key: 'category',
-                  header: 'Category',
+                  header: t('proj.detail.category'),
                   mobileSecondary: true,
                   render: (c) => {
                     const cat = CAT_COLORS[c.category] ?? CAT_COLORS.general
@@ -13280,7 +13222,7 @@ function EngineeringTab({
                 },
                 {
                   key: 'status',
-                  header: 'Status',
+                  header: t('proj.detail.status'),
                   mobilePriority: 1,
                   render: (c) => {
                     const isClosed = c.status !== 'open'
@@ -13295,7 +13237,7 @@ function EngineeringTab({
                           color: '#15803d',
                         }}
                       >
-                        {c.status === 'waived' ? 'Waived' : 'Closed'}
+                        {c.status === 'waived' ? t('proj.detail.waived') : t('proj.detail.closed')}
                       </span>
                     ) : (
                       <span
@@ -13308,14 +13250,14 @@ function EngineeringTab({
                           color: '#92400e',
                         }}
                       >
-                        Open
+                        {t('proj.detail.open')}
                       </span>
                     )
                   },
                 },
                 {
                   key: 'resolution',
-                  header: 'Resolution',
+                  header: t('proj.detail.resolution'),
                   mobilePriority: 2,
                   render: (c) => {
                     const isClosed = c.status !== 'open'
@@ -13329,7 +13271,7 @@ function EngineeringTab({
                       >
                         {c.resolution ?? (isClosed ? '' : '—')}
                         {c.closedByName && (
-                          <span style={{ color: theme.textMuted, marginLeft: 4 }}>
+                          <span style={{ color: theme.textMuted, marginInlineStart: 4 }}>
                             ({c.closedByName})
                           </span>
                         )}
@@ -13339,7 +13281,7 @@ function EngineeringTab({
                 },
                 {
                   key: 'actions',
-                  header: 'Actions',
+                  header: t('proj.detail.actions'),
                   mobileAction: true,
                   render: (c) => {
                     const isClosed = c.status !== 'open'
@@ -13348,7 +13290,7 @@ function EngineeringTab({
                         {isAdmin && !isClosed && (
                           <button
                             onClick={() => void (async () => {
-                              const res = window.prompt('Resolution / how was this addressed?')
+                              const res = window.prompt(t('proj.detail.resolutionHowWasThisAddressed'))
                               if (!res?.trim()) return
                               try {
                                 await closeClientCommentM({
@@ -13371,7 +13313,7 @@ function EngineeringTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Close
+                            {t('proj.detail.close')}
                           </button>
                         )}
                         {isAdmin && isClosed && (
@@ -13396,7 +13338,7 @@ function EngineeringTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Reopen
+                            {t('proj.detail.reopen')}
                           </button>
                         )}
                       </>
@@ -13496,10 +13438,10 @@ function EngineeringTab({
       >
         {(
           [
-            { key: 'register', label: 'Register', Icon: IconRegister },
+            { key: 'register', label: t('proj.detail.register'), Icon: IconRegister },
             {
               key: 'review',
-              label: 'Review',
+              label: t('proj.detail.review'),
               Icon: IconReview,
               badge: allDocs.filter((d) => d.openCommentCount > 0).length,
             },
@@ -13577,7 +13519,7 @@ function EngineeringTab({
                   fill="none"
                   style={{
                     position: 'absolute',
-                    left: 10,
+                    insetInlineStart: 10,
                     top: '50%',
                     transform: 'translateY(-50%)',
                     color: theme.textMuted,
@@ -13598,7 +13540,7 @@ function EngineeringTab({
                 <input
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); }}
-                  placeholder="Search documents…"
+                  placeholder={t('proj.detail.searchDocuments')}
                   style={{
                     padding: '7px 12px 7px 32px',
                     border: `1px solid ${theme.border}`,
@@ -13648,7 +13590,7 @@ function EngineeringTab({
                     strokeLinecap="round"
                   />
                 </svg>
-                Add Document
+                {t('proj.detail.addDocument')}
               </button>
             </div>
 
@@ -13722,17 +13664,17 @@ function EngineeringTab({
                   borderBottom: `1px solid ${theme.border}`,
                 }}
               >
-                {ENG_DOC_TYPES.map((t) => {
+                {ENG_DOC_TYPES.map((tx) => {
                   const cnt =
-                    t.key === 'all'
+                    tx.key === 'all'
                       ? allDocs.filter((x) => x.discipline === discipline).length
-                      : allDocs.filter((x) => x.discipline === discipline && x.docType === t.key)
+                      : allDocs.filter((x) => x.discipline === discipline && x.docType === tx.key)
                           .length
-                  const active = docType === t.key
+                  const active = docType === tx.key
                   return (
                     <button
-                      key={t.key}
-                      onClick={() => { setDocType(t.key); }}
+                      key={tx.key}
+                      onClick={() => { setDocType(tx.key); }}
                       style={{
                         padding: '8px 16px',
                         fontSize: 13,
@@ -13751,7 +13693,7 @@ function EngineeringTab({
                         transition: 'color 0.1s',
                       }}
                     >
-                      {t.label}
+                      {tx.label}
                       {cnt > 0 && (
                         <span
                           style={{
@@ -13797,7 +13739,7 @@ function EngineeringTab({
                     strokeLinecap="round"
                   />
                 </svg>
-                Loading documents…
+                {t('proj.detail.loadingDocuments')}
               </div>
             ) : filtered.length === 0 ? (
               <div
@@ -13853,8 +13795,8 @@ function EngineeringTab({
                   }}
                 >
                   {search || discipline !== 'overview' || docType !== 'all'
-                    ? 'No matching documents'
-                    : 'No engineering documents yet'}
+                    ? t('proj.detail.noMatchingDocuments')
+                    : t('proj.detail.noEngineeringDocumentsYet')}
                 </div>
                 <div
                   style={{
@@ -13866,8 +13808,8 @@ function EngineeringTab({
                   }}
                 >
                   {search || discipline !== 'overview' || docType !== 'all'
-                    ? 'Try adjusting your search or filter.'
-                    : 'Add calculations, drawings, datasheets, and specifications organised by discipline.'}
+                    ? t('proj.detail.tryAdjustingYourSearchOrFilter')
+                    : t('proj.detail.addCalculationsDrawingsDatasheetsAndSpecific')}
                 </div>
                 {!search && discipline === 'overview' && docType === 'all' && (
                   <button
@@ -13883,7 +13825,7 @@ function EngineeringTab({
                       cursor: 'pointer',
                     }}
                   >
-                    Add First Document
+                    {t('proj.detail.addFirstDocument')}
                   </button>
                 )}
               </div>
@@ -13905,7 +13847,7 @@ function EngineeringTab({
                     borderBottom: `1px solid ${theme.border}`,
                   }}
                 >
-                  {['', 'Document', 'Revision', 'Status', 'Actions'].map((h, i) => (
+                  {['', t('proj.detail.document2'), t('proj.detail.revision'), t('proj.detail.status'), t('proj.detail.actions')].map((h, i) => (
                     <div
                       key={i}
                       style={{
@@ -13967,15 +13909,15 @@ function EngineeringTab({
                   letterSpacing: '0.06em',
                 }}
               >
-                Documents
+                {t('proj.detail.documents')}
               </span>
-              <span style={{ fontSize: 11, color: theme.textMuted }}>{allDocs.length} total</span>
+              <span style={{ fontSize: 11, color: theme.textMuted }}>{t('proj.detail.total2', { length: allDocs.length })}</span>
             </div>
             {allDocs.length === 0 ? (
               <div
                 style={{ padding: 32, textAlign: 'center', color: theme.textMuted, fontSize: 13 }}
               >
-                No documents yet
+                {t('proj.detail.noDocumentsYet')}
               </div>
             ) : (
               allDocs.map((doc) => {
@@ -13998,11 +13940,11 @@ function EngineeringTab({
                       background: isSelected ? theme.accentBg : 'transparent',
                       borderBottom: `1px solid ${theme.border}`,
                       border: 'none',
-                      borderLeft: isSelected
+                      borderInlineStart: isSelected
                         ? `3px solid ${theme.accent}`
                         : '3px solid transparent',
                       cursor: 'pointer',
-                      textAlign: 'left',
+                      textAlign: 'start',
                     }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -14066,9 +14008,7 @@ function EngineeringTab({
                               fontSize: 10,
                               fontWeight: 700,
                             }}
-                          >
-                            {doc.openCommentCount} open
-                          </span>
+                          >{t('proj.detail.open3', { openCommentCount: doc.openCommentCount })}</span>
                         )}
                         {doc.openCommentCount === 0 && doc.commentCount > 0 && (
                           <span
@@ -14080,9 +14020,7 @@ function EngineeringTab({
                               fontSize: 10,
                               fontWeight: 700,
                             }}
-                          >
-                            {doc.commentCount} resolved
-                          </span>
+                          >{t('proj.detail.resolved', { commentCount: doc.commentCount })}</span>
                         )}
                       </div>
                     </div>
@@ -14123,11 +14061,7 @@ function EngineeringTab({
                   <div style={{ fontSize: 14, fontWeight: 700, color: theme.textPrimary }}>
                     {reviewDoc.title}
                   </div>
-                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
-                    Rev {reviewDoc.revision ?? '—'}
-                    {reviewDoc.originatorName && ` · Orig: ${reviewDoc.originatorName}`}
-                    {reviewDoc.checkerName && ` · Checker: ${reviewDoc.checkerName}`}
-                  </div>
+                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{t('proj.detail.rev4', { value: reviewDoc.revision ?? '—', value2: reviewDoc.originatorName && ` · Orig: ${reviewDoc.originatorName}`, value3: reviewDoc.checkerName && ` · Checker: ${reviewDoc.checkerName}` })}</div>
                 </div>
                 <button
                   onClick={() => { setShowCommentForm((v) => !v); }}
@@ -14166,7 +14100,7 @@ function EngineeringTab({
                       strokeLinecap="round"
                     />
                   </svg>
-                  Add Comment
+                  {t('proj.detail.addComment')}
                 </button>
               </div>
 
@@ -14191,7 +14125,7 @@ function EngineeringTab({
                       letterSpacing: '0.05em',
                     }}
                   >
-                    New Review Comment
+                    {t('proj.detail.newReviewComment')}
                   </div>
                   <div
                     style={{
@@ -14202,7 +14136,7 @@ function EngineeringTab({
                     }}
                   >
                     <div>
-                      {lbl('Category', true)}
+                      {lbl(t('proj.detail.category'), true)}
                       <select
                         value={commentForm.category}
                         onChange={(e) =>
@@ -14222,25 +14156,25 @@ function EngineeringTab({
                           boxSizing: 'border-box' as const,
                         }}
                       >
-                        <option value="major">Major — Must resolve before approval</option>
-                        <option value="minor">Minor — Noted, address if possible</option>
-                        <option value="info">Info — For reference only</option>
+                        <option value="major">{t('proj.detail.majorMustResolveBeforeApproval')}</option>
+                        <option value="minor">{t('proj.detail.minorNotedAddressIfPossible')}</option>
+                        <option value="info">{t('proj.detail.infoForReferenceOnly')}</option>
                       </select>
                     </div>
                     <div>
-                      {lbl('Location Reference')}
+                      {lbl(t('proj.detail.locationReference'))}
                       {inp(
                         commentForm.locationRef,
                         (v) => { setCommentForm((f) => ({ ...f, locationRef: v })); },
-                        'e.g. Sheet 3, Clause 4.2',
+                        t('proj.detail.eGSheet3Clause4'),
                       )}
                     </div>
                   </div>
-                  {lbl('Comment Text', true)}
+                  {lbl(t('proj.detail.commentText'), true)}
                   <textarea
                     value={commentForm.commentText}
                     onChange={(e) => { setCommentForm((f) => ({ ...f, commentText: e.target.value })); }}
-                    placeholder="Describe the issue clearly…"
+                    placeholder={t('proj.detail.describeTheIssueClearly')}
                     style={{
                       width: '100%',
                       padding: '9px 12px',
@@ -14272,7 +14206,7 @@ function EngineeringTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Cancel
+                      {t('proj.detail.cancel')}
                     </button>
                     <button
                       disabled={!commentForm.commentText}
@@ -14288,7 +14222,7 @@ function EngineeringTab({
                         cursor: commentForm.commentText ? 'pointer' : 'not-allowed',
                       }}
                     >
-                      Submit Comment
+                      {t('proj.detail.submitComment')}
                     </button>
                   </div>
                 </div>
@@ -14327,10 +14261,10 @@ function EngineeringTab({
                       marginBottom: 4,
                     }}
                   >
-                    No comments yet
+                    {t('proj.detail.noCommentsYet')}
                   </div>
                   <div style={{ fontSize: 12, color: theme.textMuted }}>
-                    Click "Add Comment" to start the review thread
+                    {t('proj.detail.clickAddCommentToStartThe')}
                   </div>
                 </div>
               ) : (
@@ -14399,9 +14333,9 @@ function EngineeringTab({
                             </span>
                           )}
                           <span
-                            style={{ marginLeft: 'auto', fontSize: 11, color: theme.textMuted }}
+                            style={{ marginInlineStart: 'auto', fontSize: 11, color: theme.textMuted }}
                           >
-                            {c.reviewerName ?? 'Reviewer'} ·{' '}
+                            {c.reviewerName ?? t('proj.detail.reviewer')} ·{' '}
                             {new Date(c.createdAt).toLocaleDateString()}
                           </span>
                           {isAdmin && !hasResponse && (
@@ -14475,7 +14409,7 @@ function EngineeringTab({
                                 />
                               </svg>
                               <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d' }}>
-                                Response
+                                {t('proj.detail.response')}
                               </span>
                               {resMeta && (
                                 <span
@@ -14491,7 +14425,7 @@ function EngineeringTab({
                                   {resMeta.label}
                                 </span>
                               )}
-                              <span style={{ marginLeft: 'auto', fontSize: 11, color: '#15803d' }}>
+                              <span style={{ marginInlineStart: 'auto', fontSize: 11, color: '#15803d' }}>
                                 {c.responseName ?? ''}
                                 {c.responseDate
                                   ? ` · ${new Date(c.responseDate).toLocaleDateString()}`
@@ -14527,7 +14461,7 @@ function EngineeringTab({
                                         responseText: e.target.value,
                                       })); }
                                     }
-                                    placeholder="Enter response to this comment…"
+                                    placeholder={t('proj.detail.enterResponseToThisComment')}
                                     style={{
                                       width: '100%',
                                       padding: '8px 10px',
@@ -14558,10 +14492,10 @@ function EngineeringTab({
                                       alignSelf: 'flex-start',
                                     }}
                                   >
-                                    <option value="accepted">Accepted</option>
-                                    <option value="partial">Partial</option>
-                                    <option value="rejected">Rejected</option>
-                                    <option value="withdrawn">Withdrawn</option>
+                                    <option value="accepted">{t('proj.detail.accepted')}</option>
+                                    <option value="partial">{t('proj.detail.partial')}</option>
+                                    <option value="rejected">{t('proj.detail.rejected')}</option>
+                                    <option value="withdrawn">{t('proj.detail.withdrawn')}</option>
                                   </select>
                                 </div>
                                 <div
@@ -14582,7 +14516,7 @@ function EngineeringTab({
                                       cursor: 'pointer',
                                     }}
                                   >
-                                    Cancel
+                                    {t('proj.detail.cancel')}
                                   </button>
                                   <button
                                     disabled={!responseForm.responseText}
@@ -14600,7 +14534,7 @@ function EngineeringTab({
                                       cursor: responseForm.responseText ? 'pointer' : 'not-allowed',
                                     }}
                                   >
-                                    Submit Response
+                                    {t('proj.detail.submitResponse')}
                                   </button>
                                 </div>
                               </div>
@@ -14620,7 +14554,7 @@ function EngineeringTab({
                                   fontWeight: 600,
                                 }}
                               >
-                                ↩ Respond to this comment
+                                {t('proj.detail.respondToThisComment')}
                               </button>
                             )}
                           </div>
@@ -14662,10 +14596,10 @@ function EngineeringTab({
                 />
               </svg>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                Select a document
+                {t('proj.detail.selectADocument')}
               </div>
               <div style={{ fontSize: 12 }}>
-                Choose a document from the list to view and add review comments
+                {t('proj.detail.chooseADocumentFromTheList')}
               </div>
             </div>
           )}
@@ -14679,7 +14613,7 @@ function EngineeringTab({
         <Modal
           open={true}
           size="lg"
-          title="Add Engineering Document"
+          title={t('proj.detail.addEngineeringDocument')}
           onClose={() => { setShowModal(false); }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -14692,14 +14626,14 @@ function EngineeringTab({
                 fontSize: 12,
               }}
             >
-              <span style={{ color: theme.textMuted }}>Reference will be assigned as: </span>
+              <span style={{ color: theme.textMuted }}>{t('proj.detail.referenceWillBeAssignedAs')} </span>
               <strong style={{ fontFamily: 'monospace', color: theme.accent }}>
                 {projectCode}-{activeDisciplineCode ?? 'OTH'}-{TYPE_CODE_MAP[docType] ?? 'OTH'}-####
               </strong>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
-                {lbl('Discipline', true)}
+                {lbl(t('proj.detail.discipline'), true)}
                 <select
                   value={discipline === 'overview' ? 'others' : discipline}
                   onChange={(e) => { setDiscipline(e.target.value); }}
@@ -14722,7 +14656,7 @@ function EngineeringTab({
                 </select>
               </div>
               <div>
-                {lbl('Document Type', true)}
+                {lbl(t('proj.detail.documentType'), true)}
                 <select
                   value={docType === 'all' ? 'other' : docType}
                   onChange={(e) => { setDocType(e.target.value); }}
@@ -14737,19 +14671,19 @@ function EngineeringTab({
                     boxSizing: 'border-box' as const,
                   }}
                 >
-                  {ENG_DOC_TYPES.filter((t) => t.key !== 'all').map((t) => (
-                    <option key={t.key} value={t.key}>
-                      {t.label}
+                  {ENG_DOC_TYPES.filter((tx) => tx.key !== 'all').map((tx) => (
+                    <option key={tx.key} value={tx.key}>
+                      {tx.label}
                     </option>
                   ))}
                 </select>
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Title', true)}
-                {inp(form.title, (v) => { setForm((f) => ({ ...f, title: v })); }, 'Document title')}
+                {lbl(t('proj.detail.title'), true)}
+                {inp(form.title, (v) => { setForm((f) => ({ ...f, title: v })); }, t('proj.detail.documentTitle2'))}
               </div>
               <div>
-                {lbl('Revision')}
+                {lbl(t('proj.detail.revision'))}
                 {inp(
                   form.revision,
                   (v) => { setForm((f) => ({ ...f, revision: v })); },
@@ -14757,11 +14691,11 @@ function EngineeringTab({
                 )}
               </div>
               <div>
-                {lbl('Issue Date')}
+                {lbl(t('proj.detail.issueDate'))}
                 {inp(form.issueDate, (v) => { setForm((f) => ({ ...f, issueDate: v })); }, '', 'date')}
               </div>
               <div>
-                {lbl('Purpose of Issue')}
+                {lbl(t('proj.detail.purposeOfIssue'))}
                 <select
                   value={form.purposeOfIssue}
                   onChange={(e) => { setForm((f) => ({ ...f, purposeOfIssue: e.target.value })); }}
@@ -14776,7 +14710,7 @@ function EngineeringTab({
                     boxSizing: 'border-box' as const,
                   }}
                 >
-                  <option value="">— None —</option>
+                  <option value="">{t('proj.detail.none2')}</option>
                   {Object.entries(ENG_PURPOSE_LABELS).map(([k, v]) => (
                     <option key={k} value={k}>
                       {v.label}
@@ -14785,18 +14719,18 @@ function EngineeringTab({
                 </select>
               </div>
               <div>
-                {lbl('Originator')}
+                {lbl(t('proj.detail.originator'))}
                 <div style={{ position: 'relative' }}>
                   {inp(
                     form.originatorName,
                     (v) => { setForm((f) => ({ ...f, originatorName: v })); },
-                    'Submitting user',
+                    t('proj.detail.submittingUser'),
                   )}
                   {form.originatorName === currentUserName && currentUserName && (
                     <span
                       style={{
                         position: 'absolute',
-                        right: 10,
+                        insetInlineEnd: 10,
                         top: '50%',
                         transform: 'translateY(-50%)',
                         fontSize: 10,
@@ -14805,13 +14739,13 @@ function EngineeringTab({
                         pointerEvents: 'none',
                       }}
                     >
-                      YOU
+                      {t('proj.detail.you')}
                     </span>
                   )}
                 </div>
               </div>
               <div>
-                {lbl('Checker')}
+                {lbl(t('proj.detail.checker'))}
                 <select
                   value={form.checkerName}
                   onChange={(e) => { setForm((f) => ({ ...f, checkerName: e.target.value })); }}
@@ -14826,7 +14760,7 @@ function EngineeringTab({
                     boxSizing: 'border-box' as const,
                   }}
                 >
-                  <option value="">— Select checker —</option>
+                  <option value="">{t('proj.detail.selectChecker')}</option>
                   {(teamMembers ?? []).map((m) => (
                     <option key={m.id} value={m.employee_name}>
                       {m.employee_name}
@@ -14836,7 +14770,7 @@ function EngineeringTab({
                 </select>
               </div>
               <div>
-                {lbl('Approver')}
+                {lbl(t('proj.detail.approver'))}
                 <select
                   value={form.approverName}
                   onChange={(e) => { setForm((f) => ({ ...f, approverName: e.target.value })); }}
@@ -14851,11 +14785,9 @@ function EngineeringTab({
                     boxSizing: 'border-box' as const,
                   }}
                 >
-                  <option value="">— Select approver —</option>
+                  <option value="">{t('proj.detail.selectApprover')}</option>
                   {projectManagerName && (
-                    <option value={projectManagerName}>
-                      {projectManagerName} (Project Manager)
-                    </option>
+                    <option value={projectManagerName}>{t('proj.detail.projectManager', { projectManagerName })}</option>
                   )}
                   {(teamMembers ?? [])
                     .filter((m) => m.employee_name !== projectManagerName)
@@ -14870,11 +14802,11 @@ function EngineeringTab({
               {(docType === 'drawing' || docType === 'all') && (
                 <>
                   <div>
-                    {lbl('Scale')}
+                    {lbl(t('proj.detail.scale'))}
                     {inp(form.scale, (v) => { setForm((f) => ({ ...f, scale: v })); }, '1:100')}
                   </div>
                   <div>
-                    {lbl('Paper Size')}
+                    {lbl(t('proj.detail.paperSize'))}
                     <select
                       value={form.paperSize}
                       onChange={(e) => { setForm((f) => ({ ...f, paperSize: e.target.value })); }}
@@ -14889,10 +14821,10 @@ function EngineeringTab({
                         boxSizing: 'border-box' as const,
                       }}
                     >
-                      <option value="">— Select —</option>
+                      <option value="">{t('proj.detail.select')}</option>
                       {['A0', 'A1', 'A2', 'A3', 'A4', 'Letter', 'Tabloid', 'Custom'].map((s) => (
                         <option key={s} value={s}>
-                          {s}
+                          {tlh('proj.detail', s)}
                         </option>
                       ))}
                     </select>
@@ -14900,11 +14832,11 @@ function EngineeringTab({
                 </>
               )}
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Description')}
+                {lbl(t('proj.detail.description'))}
                 <textarea
                   value={form.description}
                   onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
-                  placeholder="Optional description…"
+                  placeholder={t('proj.detail.optionalDescription')}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -14921,12 +14853,12 @@ function EngineeringTab({
                 />
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Notes')}
-                {inp(form.notes, (v) => { setForm((f) => ({ ...f, notes: v })); }, 'Optional notes')}
+                {lbl(t('proj.detail.notes2'))}
+                {inp(form.notes, (v) => { setForm((f) => ({ ...f, notes: v })); }, t('proj.detail.optionalNotes'))}
               </div>
             </div>
             <div>
-              {lbl('File')}
+              {lbl(t('proj.detail.file3'))}
               <div
                 onClick={() => {
                   if (!uploading)
@@ -14970,7 +14902,7 @@ function EngineeringTab({
                         strokeLinecap="round"
                       />
                     </svg>
-                    Uploading…
+                    {t('proj.detail.uploading')}
                   </div>
                 ) : form.fileId ? (
                   <div>
@@ -14979,7 +14911,7 @@ function EngineeringTab({
                       {form.filename}
                     </div>
                     <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
-                      Click to replace
+                      {t('proj.detail.clickToReplace')}
                     </div>
                   </div>
                 ) : (
@@ -15016,10 +14948,10 @@ function EngineeringTab({
                       />
                     </svg>
                     <div style={{ color: theme.textSecondary, fontSize: 13 }}>
-                      Click to browse or drop a file
+                      {t('proj.detail.clickToBrowseOrDropA')}
                     </div>
                     <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
-                      PDF, DWG, DXF, PNG, JPG, DOC, XLS
+                      {t('proj.detail.pdfDwgDxfPngJpgDoc')}
                     </div>
                   </div>
                 )}
@@ -15047,7 +14979,7 @@ function EngineeringTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 disabled={!form.title || uploading}
@@ -15063,7 +14995,7 @@ function EngineeringTab({
                   cursor: form.title && !uploading ? 'pointer' : 'not-allowed',
                 }}
               >
-                Add Document
+                {t('proj.detail.addDocument')}
               </button>
             </div>
           </div>
@@ -15074,7 +15006,7 @@ function EngineeringTab({
       {reviseDoc && (
         <Modal
           open={true}
-          title={`Issue Revision — ${reviseDoc.refNumber}`}
+          title={t('proj.detail.issueRevision2', { refNumber: reviseDoc.refNumber })}
           onClose={() => { setReviseDoc(null); }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -15088,19 +15020,17 @@ function EngineeringTab({
                 color: theme.textSecondary,
               }}
             >
-              Current: <strong style={{ color: theme.textPrimary }}>{reviseDoc.title}</strong>
+              {t('proj.detail.current')} <strong style={{ color: theme.textPrimary }}>{reviseDoc.title}</strong>
               {reviseDoc.revision && (
-                <span style={{ marginLeft: 8, color: theme.textMuted }}>
-                  Rev {reviseDoc.revision}
-                </span>
+                <span style={{ marginInlineStart: 8, color: theme.textMuted }}>{t('proj.detail.rev2', { revision: reviseDoc.revision })}</span>
               )}
-              <span style={{ marginLeft: 8, color: '#b45309', fontWeight: 500 }}>
-                → will be superseded
+              <span style={{ marginInlineStart: 8, color: '#b45309', fontWeight: 500 }}>
+                {t('proj.detail.willBeSuperseded')}
               </span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
-                {lbl('New Revision', true)}
+                {lbl(t('proj.detail.newRevision2'), true)}
                 {inp(
                   revForm.revision,
                   (v) => { setRevForm((f) => ({ ...f, revision: v })); },
@@ -15108,7 +15038,7 @@ function EngineeringTab({
                 )}
               </div>
               <div>
-                {lbl('Issue Date')}
+                {lbl(t('proj.detail.issueDate'))}
                 {inp(
                   revForm.issueDate,
                   (v) => { setRevForm((f) => ({ ...f, issueDate: v })); },
@@ -15117,18 +15047,18 @@ function EngineeringTab({
                 )}
               </div>
               <div>
-                {lbl('Originator')}
+                {lbl(t('proj.detail.originator'))}
                 <div style={{ position: 'relative' }}>
                   {inp(
                     revForm.originatorName,
                     (v) => { setRevForm((f) => ({ ...f, originatorName: v })); },
-                    'Submitting user',
+                    t('proj.detail.submittingUser'),
                   )}
                   {revForm.originatorName === currentUserName && currentUserName && (
                     <span
                       style={{
                         position: 'absolute',
-                        right: 10,
+                        insetInlineEnd: 10,
                         top: '50%',
                         transform: 'translateY(-50%)',
                         fontSize: 10,
@@ -15137,13 +15067,13 @@ function EngineeringTab({
                         pointerEvents: 'none',
                       }}
                     >
-                      YOU
+                      {t('proj.detail.you')}
                     </span>
                   )}
                 </div>
               </div>
               <div>
-                {lbl('Checker')}
+                {lbl(t('proj.detail.checker'))}
                 <select
                   value={revForm.checkerName}
                   onChange={(e) => { setRevForm((f) => ({ ...f, checkerName: e.target.value })); }}
@@ -15158,7 +15088,7 @@ function EngineeringTab({
                     boxSizing: 'border-box' as const,
                   }}
                 >
-                  <option value="">— Select checker —</option>
+                  <option value="">{t('proj.detail.selectChecker')}</option>
                   {(teamMembers ?? []).map((m) => (
                     <option key={m.id} value={m.employee_name}>
                       {m.employee_name}
@@ -15168,7 +15098,7 @@ function EngineeringTab({
                 </select>
               </div>
               <div>
-                {lbl('Approver')}
+                {lbl(t('proj.detail.approver'))}
                 <select
                   value={revForm.approverName}
                   onChange={(e) => { setRevForm((f) => ({ ...f, approverName: e.target.value })); }}
@@ -15183,11 +15113,9 @@ function EngineeringTab({
                     boxSizing: 'border-box' as const,
                   }}
                 >
-                  <option value="">— Select approver —</option>
+                  <option value="">{t('proj.detail.selectApprover')}</option>
                   {projectManagerName && (
-                    <option value={projectManagerName}>
-                      {projectManagerName} (Project Manager)
-                    </option>
+                    <option value={projectManagerName}>{t('proj.detail.projectManager', { projectManagerName })}</option>
                   )}
                   {(teamMembers ?? [])
                     .filter((m) => m.employee_name !== projectManagerName)
@@ -15200,11 +15128,11 @@ function EngineeringTab({
                 </select>
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Change Notes')}
+                {lbl(t('proj.detail.changeNotes'))}
                 <textarea
                   value={revForm.notes}
                   onChange={(e) => { setRevForm((f) => ({ ...f, notes: e.target.value })); }}
-                  placeholder="What changed in this revision?"
+                  placeholder={t('proj.detail.whatChangedInThisRevision')}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -15222,7 +15150,7 @@ function EngineeringTab({
               </div>
             </div>
             <div>
-              {lbl('Revised File')}
+              {lbl(t('proj.detail.revisedFile'))}
               <div
                 onClick={() => {
                   if (!uploading)
@@ -15240,19 +15168,16 @@ function EngineeringTab({
                 }}
               >
                 {uploading ? (
-                  <div style={{ color: theme.textMuted, fontSize: 13 }}>Uploading…</div>
+                  <div style={{ color: theme.textMuted, fontSize: 13 }}>{t('proj.detail.uploading')}</div>
                 ) : revForm.fileId ? (
                   <div style={{ fontSize: 13, fontWeight: 600, color: theme.accent }}>
                     ✓ {revForm.filename}{' '}
                     <span style={{ fontSize: 11, color: theme.textMuted, fontWeight: 400 }}>
-                      — click to replace
+                      {t('proj.detail.clickToReplace2')}
                     </span>
                   </div>
                 ) : (
-                  <div style={{ color: theme.textSecondary, fontSize: 13 }}>
-                    Click to attach revised file{' '}
-                    <span style={{ color: theme.textMuted }}>(optional)</span>
-                  </div>
+                  <div style={{ color: theme.textSecondary, fontSize: 13 }}><Trans i18nKey="proj.detail.clickToAttachRevisedFile" values={{ t: t('proj.detail.optional2') }} components={[<span style={{ color: theme.textMuted }} />]} /></div>
                 )}
               </div>
             </div>
@@ -15278,7 +15203,7 @@ function EngineeringTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 disabled={!revForm.revision || uploading || docLock.lockedByOther}
@@ -15300,14 +15225,11 @@ function EngineeringTab({
                       : 'not-allowed',
                 }}
               >
-                Issue Revision
+                {t('proj.detail.issueRevision')}
               </button>
             </div>
             {docLock.lockedByOther && (
-              <div style={{ fontSize: 12, color: theme.warning }}>
-                <strong>{docLock.lockedByName}</strong> is currently working on this document —
-                issuing a revision is disabled until they finish.
-              </div>
+              <div style={{ fontSize: 12, color: theme.warning }}><Trans i18nKey="proj.detail.isCurrentlyWorkingOnThisDocument" values={{ lockedByName: docLock.lockedByName }} components={[<strong />]} /></div>
             )}
           </div>
         </Modal>
@@ -15349,10 +15271,7 @@ function EngineeringTab({
                 <div style={{ fontWeight: 600, fontSize: 13, color: theme.textPrimary }}>
                   {workflowAction.doc.title}
                 </div>
-                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
-                  Rev {workflowAction.doc.revision ?? '—'} ·{' '}
-                  {ENG_DOC_STATUSES[workflowAction.doc.status]?.label ?? workflowAction.doc.status}
-                </div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>{t('proj.detail.rev5', { value: workflowAction.doc.revision ?? '—', value2: ENG_DOC_STATUSES[workflowAction.doc.status]?.label ?? workflowAction.doc.status })}</div>
               </div>
             </div>
             {/* Description */}
@@ -15372,34 +15291,34 @@ function EngineeringTab({
             {/* Client Response (A/B/C/D) */}
             {workflowAction.btn.showClientResponse && (
               <div>
-                {lbl('Client Review Code', true)}
+                {lbl(t('proj.detail.clientReviewCode'), true)}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   {(
                     [
                       {
                         code: 'A',
-                        label: 'Code A — Approved for Construction',
+                        label: t('proj.detail.codeAApprovedForConstruction'),
                         color: '#15803d',
                         bg: '#f0fdf4',
                         border: '#bbf7d0',
                       },
                       {
                         code: 'B',
-                        label: 'Code B — Approved with Comments',
+                        label: t('proj.detail.codeBApprovedWithComments'),
                         color: '#3f6212',
                         bg: '#f7fee7',
                         border: '#bef264',
                       },
                       {
                         code: 'C',
-                        label: 'Code C — Not Approved (Resubmit)',
+                        label: t('proj.detail.codeCNotApprovedResubmit'),
                         color: '#c2410c',
                         bg: '#fff7ed',
                         border: '#fed7aa',
                       },
                       {
                         code: 'D',
-                        label: 'Code D — For Information',
+                        label: t('proj.detail.codeDForInformation'),
                         color: '#0e7490',
                         bg: '#ecfeff',
                         border: '#a5f3fc',
@@ -15420,7 +15339,7 @@ function EngineeringTab({
                         border: `2px solid ${workflowAction.responseCode === code ? color : theme.border}`,
                         background: workflowAction.responseCode === code ? bg : theme.bgCanvas,
                         cursor: 'pointer',
-                        textAlign: 'left' as const,
+                        textAlign: 'start' as const,
                       }}
                     >
                       <span
@@ -15458,7 +15377,7 @@ function EngineeringTab({
             {/* Transmittal Ref */}
             {workflowAction.btn.showTransmittalRef && (
               <div>
-                {lbl('Transmittal Reference')}
+                {lbl(t('proj.detail.transmittalReference'))}
                 {inp(
                   workflowAction.transmittalRef,
                   (v) => { setWorkflowAction((a) => (a ? { ...a, transmittalRef: v } : a)); },
@@ -15469,18 +15388,18 @@ function EngineeringTab({
             {/* Submitted To */}
             {workflowAction.btn.showSubmittedTo && (
               <div>
-                {lbl('Submitted To')}
+                {lbl(t('proj.detail.submittedTo'))}
                 {inp(
                   workflowAction.submittedTo,
                   (v) => { setWorkflowAction((a) => (a ? { ...a, submittedTo: v } : a)); },
-                  'Name or organisation',
+                  t('proj.detail.nameOrOrganisation'),
                 )}
               </div>
             )}
             {/* Due Date */}
             {workflowAction.btn.showDueDate && (
               <div>
-                {lbl('Response Due By')}
+                {lbl(t('proj.detail.responseDueBy'))}
                 {inp(
                   workflowAction.dueDate,
                   (v) => { setWorkflowAction((a) => (a ? { ...a, dueDate: v } : a)); },
@@ -15538,15 +15457,9 @@ function EngineeringTab({
                     <div
                       style={{ fontSize: 13, fontWeight: 700, color: '#991b1b', marginBottom: 6 }}
                     >
-                      Destructive action — this cannot be undone
+                      {t('proj.detail.destructiveActionThisCannotBeUndone')}
                     </div>
-                    <div style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.6 }}>
-                      Superseding marks the current as-built revision as <strong>Superseded</strong>{' '}
-                      and opens a new <strong>Draft</strong> for the author. The previous as-built
-                      record will be locked and labelled Superseded permanently. Only proceed if a
-                      genuine new revision is required — do <strong>not</strong> use this to fix
-                      minor errors.
-                    </div>
+                    <div style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.6 }}><Trans i18nKey="proj.detail.supersedingMarksTheCurrentAsBuilt" values={{ t: t('proj.detail.superseded'), t2: t('proj.detail.draft'), t3: t('proj.detail.not') }} components={[<strong />, <strong />, <strong />]} /></div>
                   </div>
                 </div>
                 <div
@@ -15565,26 +15478,13 @@ function EngineeringTab({
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                     }}
-                  >
-                    Type{' '}
-                    <span
-                      style={{
-                        fontFamily: 'monospace',
-                        background: '#fecaca',
-                        padding: '1px 6px',
-                        borderRadius: 4,
-                      }}
-                    >
-                      SUPERSEDE
-                    </span>{' '}
-                    to unlock the confirm button
-                  </div>
+                  ><Trans i18nKey="proj.detail.typeToUnlockTheConfirmButton" values={{ t: t('proj.detail.supersede2') }} components={[<span style={{ fontFamily: 'monospace', background: '#fecaca', padding: '1px 6px', borderRadius: 4, }}  />]} /></div>
                   <input
                     value={workflowAction.enteredPhrase}
                     onChange={(e) =>
                       { setWorkflowAction((a) => (a ? { ...a, enteredPhrase: e.target.value } : a)); }
                     }
-                    placeholder="SUPERSEDE"
+                    placeholder={t('proj.detail.supersede2')}
                     autoComplete="off"
                     style={{
                       width: '100%',
@@ -15633,20 +15533,18 @@ function EngineeringTab({
                         letterSpacing: '0.05em',
                       }}
                     >
-                      Client Comments
+                      {t('proj.detail.clientComments')}
                       {workflowAction.comments.length > 0 && (
                         <span
                           style={{
-                            marginLeft: 6,
+                            marginInlineStart: 6,
                             padding: '2px 7px',
                             borderRadius: 999,
                             background: '#fef3c7',
                             color: '#92400e',
                             fontSize: 10,
                           }}
-                        >
-                          {workflowAction.comments.length} pending
-                        </span>
+                        >{t('proj.detail.pending3', { length: workflowAction.comments.length })}</span>
                       )}
                     </div>
                     <button
@@ -15674,7 +15572,7 @@ function EngineeringTab({
                         fontWeight: 600,
                       }}
                     >
-                      + Add Comment
+                      {t('proj.detail.addComment2')}
                     </button>
                   </div>
                   {workflowAction.comments.length === 0 ? (
@@ -15686,7 +15584,7 @@ function EngineeringTab({
                         padding: '10px 0',
                       }}
                     >
-                      No comments added. Click "+ Add Comment" to log client remarks for tracking.
+                      {t('proj.detail.noCommentsAddedClickAddComment')}
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -15702,7 +15600,7 @@ function EngineeringTab({
                         >
                           <input
                             value={c.description}
-                            placeholder="Comment description *"
+                            placeholder={t('proj.detail.commentDescription2')}
                             onChange={(e) =>
                               { setWorkflowAction((a) => {
                                 if (!a) return a
@@ -15723,7 +15621,7 @@ function EngineeringTab({
                           />
                           <input
                             value={c.clauseRef}
-                            placeholder="Clause ref"
+                            placeholder={t('proj.detail.clauseRef')}
                             onChange={(e) =>
                               { setWorkflowAction((a) => {
                                 if (!a) return a
@@ -15761,10 +15659,10 @@ function EngineeringTab({
                               fontSize: 12,
                             }}
                           >
-                            <option value="general">General</option>
-                            <option value="technical">Technical</option>
-                            <option value="contractual">Contractual</option>
-                            <option value="administrative">Admin</option>
+                            <option value="general">{t('proj.detail.general')}</option>
+                            <option value="technical">{t('proj.detail.technical')}</option>
+                            <option value="contractual">{t('proj.detail.contractual')}</option>
+                            <option value="administrative">{t('proj.detail.admin')}</option>
                           </select>
                           <button
                             onClick={() =>
@@ -15797,11 +15695,11 @@ function EngineeringTab({
               )}
             {/* Note */}
             <div>
-              {lbl('Notes / Comments')}
+              {lbl(t('proj.detail.notesComments'))}
               <textarea
                 value={workflowAction.note}
                 onChange={(e) => { setWorkflowAction((a) => (a ? { ...a, note: e.target.value } : a)); }}
-                placeholder="Optional — add context or instructions for the next reviewer…"
+                placeholder={t('proj.detail.optionalAddContextOrInstructionsFor')}
                 style={{
                   width: '100%',
                   padding: '9px 12px',
@@ -15839,7 +15737,7 @@ function EngineeringTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               {(() => {
                 const phraseOk =
@@ -15851,7 +15749,7 @@ function EngineeringTab({
                     disabled={!phraseOk}
                     title={
                       !phraseOk
-                        ? `Type ${workflowAction.btn.requireConfirmPhrase} to confirm`
+                        ? t('proj.detail.typeToConfirm', { requireConfirmPhrase: workflowAction.btn.requireConfirmPhrase })
                         : undefined
                     }
                     style={{
@@ -15911,16 +15809,16 @@ interface ProjectTQ {
 }
 
 const TQ_STATUS: Record<string, { label: string; dot: string; text: string; bg: string }> = {
-  open: { label: 'Open', dot: '#f59e0b', text: '#92400e', bg: '#fffbeb' },
-  under_review: { label: 'Under Review', dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
-  responded: { label: 'Responded', dot: '#8b5cf6', text: '#5b21b6', bg: '#ede9fe' },
-  closed: { label: 'Closed', dot: '#22c55e', text: '#15803d', bg: '#f0fdf4' },
+  open: { get label() { return i18n.t('proj.detail.open', { defaultValue: "Open" }) }, dot: '#f59e0b', text: '#92400e', bg: '#fffbeb' },
+  under_review: { get label() { return i18n.t('proj.detail.underReview', { defaultValue: "Under Review" }) }, dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
+  responded: { get label() { return i18n.t('proj.detail.responded', { defaultValue: "Responded" }) }, dot: '#8b5cf6', text: '#5b21b6', bg: '#ede9fe' },
+  closed: { get label() { return i18n.t('proj.detail.closed', { defaultValue: "Closed" }) }, dot: '#22c55e', text: '#15803d', bg: '#f0fdf4' },
 }
 
 const TQ_PRIORITY: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  urgent: { label: 'URGENT', color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
-  normal: { label: 'Normal', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
-  low: { label: 'Low', color: '#64748b', bg: '#f1f5f9', border: '#cbd5e1' },
+  urgent: { get label() { return i18n.t('proj.detail.urgent', { defaultValue: "URGENT" }) }, color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
+  normal: { get label() { return i18n.t('proj.detail.normal', { defaultValue: "Normal" }) }, color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+  low: { get label() { return i18n.t('proj.detail.low', { defaultValue: "Low" }) }, color: '#64748b', bg: '#f1f5f9', border: '#cbd5e1' },
 }
 
 const TQ_DISCIPLINES = [
@@ -15944,6 +15842,7 @@ function TQTab({
   theme: ReturnType<typeof useTheme>['theme']
   isAdmin?: boolean
 }) {
+  const { t } = useTranslation()
   const addToast = useToastStore((s) => s.addToast)
 
   const [statusFilter, setStatusFilter] = React.useState<string>('all')
@@ -15998,16 +15897,16 @@ function TQTab({
   })
 
   const kpi = {
-    open: tqs.filter((t) => t.status === 'open').length,
-    under_review: tqs.filter((t) => t.status === 'under_review').length,
-    responded: tqs.filter((t) => t.status === 'responded').length,
-    closed: tqs.filter((t) => t.status === 'closed').length,
-    overdue: tqs.filter((t) => t.isOverdue).length,
+    open: tqs.filter((tx) => tx.status === 'open').length,
+    under_review: tqs.filter((tx) => tx.status === 'under_review').length,
+    responded: tqs.filter((tx) => tx.status === 'responded').length,
+    closed: tqs.filter((tx) => tx.status === 'closed').length,
+    overdue: tqs.filter((tx) => tx.isOverdue).length,
   }
 
   const handleSave = async () => {
     if (!form.subject.trim()) {
-      addToast({ type: 'error', message: 'Subject is required' })
+      addToast({ type: 'error', message: t('proj.detail.subjectIsRequired') })
       return
     }
     try {
@@ -16025,10 +15924,10 @@ function TQTab({
       }
       if (editTQ) {
         await updateTQ({ variables: { id: editTQ.id, ...vars } })
-        addToast({ type: 'success', message: 'TQ updated' })
+        addToast({ type: 'success', message: t('proj.detail.tqUpdated') })
       } else {
         await createTQ({ variables: vars })
-        addToast({ type: 'success', message: 'TQ created' })
+        addToast({ type: 'success', message: t('proj.detail.tqCreated') })
       }
       setShowModal(false)
       setEditTQ(null)
@@ -16045,7 +15944,7 @@ function TQTab({
       await respondTQM({
         variables: { id: respondId, response: responseText, responseBy: responseBy || null },
       })
-      addToast({ type: 'success', message: 'Response recorded' })
+      addToast({ type: 'success', message: t('proj.detail.responseRecorded') })
       setRespondId(null)
       setResponseText('')
       setResponseBy('')
@@ -16074,7 +15973,7 @@ function TQTab({
       }}
     />
   )
-  const lbl = (t: string, req = false) => (
+  const lbl = (tx: string, req = false) => (
     <div
       style={{
         fontSize: 11,
@@ -16085,8 +15984,8 @@ function TQTab({
         letterSpacing: '0.05em',
       }}
     >
-      {t}
-      {req && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+      {tx}
+      {req && <span style={{ color: '#ef4444', marginInlineStart: 2 }}>*</span>}
     </div>
   )
   const statusPill = (s: string) => {
@@ -16138,11 +16037,11 @@ function TQTab({
       {/* KPI */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
         {[
-          { label: 'Open', value: kpi.open, color: '#92400e', bg: '#fffbeb' },
-          { label: 'Under Review', value: kpi.under_review, color: '#1d4ed8', bg: '#eff6ff' },
-          { label: 'Responded', value: kpi.responded, color: '#5b21b6', bg: '#ede9fe' },
-          { label: 'Closed', value: kpi.closed, color: '#15803d', bg: '#f0fdf4' },
-          { label: 'Overdue', value: kpi.overdue, color: '#dc2626', bg: '#fee2e2' },
+          { label: t('proj.detail.open'), value: kpi.open, color: '#92400e', bg: '#fffbeb' },
+          { label: t('proj.detail.underReview'), value: kpi.under_review, color: '#1d4ed8', bg: '#eff6ff' },
+          { label: t('proj.detail.responded'), value: kpi.responded, color: '#5b21b6', bg: '#ede9fe' },
+          { label: t('proj.detail.closed'), value: kpi.closed, color: '#15803d', bg: '#f0fdf4' },
+          { label: t('proj.detail.overdue'), value: kpi.overdue, color: '#dc2626', bg: '#fee2e2' },
         ].map((k) => (
           <div
             key={k.label}
@@ -16203,10 +16102,10 @@ function TQTab({
                 cursor: 'pointer',
                 fontSize: 11,
                 fontWeight: statusFilter === s ? 600 : 400,
-                borderRight: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none',
+                borderInlineEnd: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none',
               }}
             >
-              {s === 'all' ? 'All' : (TQ_STATUS[s]?.label ?? s)}
+              {s === 'all' ? t('proj.detail.all') : (TQ_STATUS[s]?.label ?? s)}
             </button>
           ))}
         </div>
@@ -16251,7 +16150,7 @@ function TQTab({
               strokeLinecap="round"
             />
           </svg>
-          Raise TQ
+          {t('proj.detail.raiseTq')}
         </button>
       </div>
 
@@ -16282,7 +16181,7 @@ function TQTab({
               strokeLinecap="round"
             />
           </svg>
-          Loading…
+          {t('proj.detail.loading')}
         </div>
       ) : tqs.length === 0 ? (
         <div
@@ -16295,13 +16194,12 @@ function TQTab({
         >
           <div style={{ fontSize: 36, marginBottom: 12 }}>❓</div>
           <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>
-            No Technical Queries
+            {t('proj.detail.noTechnicalQueries')}
           </div>
           <div
             style={{ fontSize: 13, color: theme.textMuted, maxWidth: 380, margin: '0 auto 24px' }}
           >
-            Raise a TQ when a question against a specific document or specification needs a formal
-            tracked response.
+            {t('proj.detail.raiseATqWhenAQuestion')}
           </div>
           <button
             onClick={() => {
@@ -16320,7 +16218,7 @@ function TQTab({
               cursor: 'pointer',
             }}
           >
-            Raise First TQ
+            {t('proj.detail.raiseFirstTq')}
           </button>
         </div>
       ) : (
@@ -16397,7 +16295,7 @@ function TQTab({
                             color: '#dc2626',
                           }}
                         >
-                          OVERDUE
+                          {t('proj.detail.overdue2')}
                         </span>
                       )}
                     </div>
@@ -16467,7 +16365,7 @@ function TQTab({
                             marginBottom: 6,
                           }}
                         >
-                          Description
+                          {t('proj.detail.description')}
                         </div>
                         {tq.description}
                       </div>
@@ -16488,7 +16386,7 @@ function TQTab({
                                 marginBottom: 2,
                               }}
                             >
-                              Document Ref
+                              {t('proj.detail.documentRef')}
                             </div>
                             <div
                               style={{
@@ -16498,7 +16396,7 @@ function TQTab({
                               }}
                             >
                               {tq.documentRef}
-                              {tq.documentRevision ? ` Rev ${tq.documentRevision}` : ''}
+                              {tq.documentRevision ? t('proj.detail.rev7', { documentRevision: tq.documentRevision }) : ''}
                             </div>
                           </div>
                         )}
@@ -16525,10 +16423,7 @@ function TQTab({
                             letterSpacing: '0.05em',
                             marginBottom: 6,
                           }}
-                        >
-                          Response{tq.responseBy ? ` — ${tq.responseBy}` : ''}
-                          {tq.responseDate ? `, ${tq.responseDate}` : ''}
-                        </div>
+                        >{t('proj.detail.response2', { value: tq.responseBy ? ` — ${tq.responseBy}` : '', value2: tq.responseDate ? `, ${tq.responseDate}` : '' })}</div>
                         <div style={{ fontSize: 13, color: '#14532d', lineHeight: 1.6 }}>
                           {tq.response}
                         </div>
@@ -16555,12 +16450,12 @@ function TQTab({
                             marginBottom: 10,
                           }}
                         >
-                          Write Response
+                          {t('proj.detail.writeResponse')}
                         </div>
                         <textarea
                           value={responseText}
                           onChange={(e) => { setResponseText(e.target.value); }}
-                          placeholder="Enter formal response…"
+                          placeholder={t('proj.detail.enterFormalResponse')}
                           style={{
                             width: '100%',
                             padding: '9px 12px',
@@ -16579,7 +16474,7 @@ function TQTab({
                         <input
                           value={responseBy}
                           onChange={(e) => { setResponseBy(e.target.value); }}
-                          placeholder="Responded by (name)"
+                          placeholder={t('proj.detail.respondedByName')}
                           style={{
                             width: '100%',
                             padding: '7px 12px',
@@ -16610,7 +16505,7 @@ function TQTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Cancel
+                            {t('proj.detail.cancel')}
                           </button>
                           <button
                             onClick={() => void handleRespond()}
@@ -16625,7 +16520,7 @@ function TQTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Submit Response
+                            {t('proj.detail.submitResponse')}
                           </button>
                         </div>
                       </div>
@@ -16650,9 +16545,7 @@ function TQTab({
                               textTransform: 'uppercase',
                               letterSpacing: '0.06em',
                             }}
-                          >
-                            Attachments {tq.files.length > 0 && `(${tq.files.length})`}
-                          </span>
+                          >{t('proj.detail.attachments2', { value: tq.files.length > 0 && `(${tq.files.length})` })}</span>
                           {tq.status !== 'closed' && (
                             <ExecUploadButton
                               entityId={tq.id}
@@ -16673,7 +16566,7 @@ function TQTab({
                           )}
                           {tq.files.length === 0 && (
                             <div style={{ fontSize: 12, color: theme.textMuted }}>
-                              No attachments.
+                              {t('proj.detail.noAttachments')}
                             </div>
                           )}
                         </div>
@@ -16712,13 +16605,13 @@ function TQTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Edit
+                            {t('proj.detail.edit')}
                           </button>
                           <button
                             onClick={() => {
                               void reviewTQM({ variables: { id: tq.id } })
                                 .then(() => {
-                                  addToast({ type: 'success', message: 'TQ under review' })
+                                  addToast({ type: 'success', message: t('proj.detail.tqUnderReview') })
                                   void refetch()
                                 })
                                 .catch((e: unknown) =>
@@ -16736,7 +16629,7 @@ function TQTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Mark Under Review
+                            {t('proj.detail.markUnderReview')}
                           </button>
                           <button
                             onClick={() => {
@@ -16755,11 +16648,11 @@ function TQTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Respond
+                            {t('proj.detail.respond')}
                           </button>
                           <button
                             onClick={() => {
-                              if (window.confirm(`Delete ${tq.tqNumber}?`))
+                              if (window.confirm(t('proj.detail.delete5', { tqNumber: tq.tqNumber })))
                                 void deleteTQM({ variables: { id: tq.id } })
                                   .then(() => {
                                     void refetch()
@@ -16778,7 +16671,7 @@ function TQTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Delete
+                            {t('proj.detail.delete')}
                           </button>
                         </>
                       )}
@@ -16800,7 +16693,7 @@ function TQTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Respond
+                          {t('proj.detail.respond')}
                         </button>
                       )}
                       {(tq.status === 'responded' || tq.status === 'under_review') && (
@@ -16808,7 +16701,7 @@ function TQTab({
                           onClick={() =>
                             void closeTQM({ variables: { id: tq.id } })
                               .then(() => {
-                                addToast({ type: 'success', message: 'TQ closed' })
+                                addToast({ type: 'success', message: t('proj.detail.tqClosed') })
                                 void refetch()
                               })
                               .catch((e: unknown) =>
@@ -16826,7 +16719,7 @@ function TQTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Close TQ
+                          {t('proj.detail.closeTq')}
                         </button>
                       )}
                     </div>
@@ -16842,7 +16735,7 @@ function TQTab({
       {showModal && (
         <Modal
           open={true}
-          title={editTQ ? `Edit ${editTQ.tqNumber}` : 'Raise Technical Query'}
+          title={editTQ ? t('proj.detail.edit2', { tqNumber: editTQ.tqNumber }) : t('proj.detail.raiseTechnicalQuery')}
           onClose={() => {
             setShowModal(false)
             setEditTQ(null)
@@ -16852,15 +16745,15 @@ function TQTab({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Subject', true)}
+                {lbl(t('proj.detail.subject2'), true)}
                 {inp(
                   form.subject,
                   (v) => { setForm((f) => ({ ...f, subject: v })); },
-                  'Brief description of the query',
+                  t('proj.detail.briefDescriptionOfTheQuery'),
                 )}
               </div>
               <div>
-                {lbl('Discipline')}
+                {lbl(t('proj.detail.discipline'))}
                 <select
                   value={form.discipline}
                   onChange={(e) => { setForm((f) => ({ ...f, discipline: e.target.value })); }}
@@ -16875,7 +16768,7 @@ function TQTab({
                     boxSizing: 'border-box' as const,
                   }}
                 >
-                  <option value="">— Select —</option>
+                  <option value="">{t('proj.detail.select')}</option>
                   {TQ_DISCIPLINES.map((d) => (
                     <option key={d} value={d}>
                       {d}
@@ -16884,7 +16777,7 @@ function TQTab({
                 </select>
               </div>
               <div>
-                {lbl('Priority')}
+                {lbl(t('proj.detail.priority'))}
                 <select
                   value={form.priority}
                   onChange={(e) => { setForm((f) => ({ ...f, priority: e.target.value })); }}
@@ -16899,17 +16792,17 @@ function TQTab({
                     boxSizing: 'border-box' as const,
                   }}
                 >
-                  <option value="urgent">Urgent</option>
-                  <option value="normal">Normal</option>
-                  <option value="low">Low</option>
+                  <option value="urgent">{t('proj.detail.urgent2')}</option>
+                  <option value="normal">{t('proj.detail.normal')}</option>
+                  <option value="low">{t('proj.detail.low')}</option>
                 </select>
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Description')}
+                {lbl(t('proj.detail.description'))}
                 <textarea
                   value={form.description}
                   onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
-                  placeholder="Detailed description of the question or clarification needed…"
+                  placeholder={t('proj.detail.detailedDescriptionOfTheQuestionOr')}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -16926,35 +16819,35 @@ function TQTab({
                 />
               </div>
               <div>
-                {lbl('Raised By')}
+                {lbl(t('proj.detail.raisedBy'))}
                 {inp(
                   form.raisedBy,
                   (v) => { setForm((f) => ({ ...f, raisedBy: v })); },
-                  'Name of person raising TQ',
+                  t('proj.detail.nameOfPersonRaisingTq'),
                 )}
               </div>
               <div>
-                {lbl('Date Raised')}
+                {lbl(t('proj.detail.dateRaised'))}
                 {inp(form.raisedDate, (v) => { setForm((f) => ({ ...f, raisedDate: v })); }, '', 'date')}
               </div>
               <div>
-                {lbl('Document / Spec Ref')}
+                {lbl(t('proj.detail.documentSpecRef'))}
                 {inp(
                   form.documentRef,
                   (v) => { setForm((f) => ({ ...f, documentRef: v })); },
-                  'e.g. FNC-CIV-DRG-0001',
+                  t('proj.detail.eGFncCivDrg0001'),
                 )}
               </div>
               <div>
-                {lbl('Revision')}
+                {lbl(t('proj.detail.revision'))}
                 {inp(
                   form.documentRevision,
                   (v) => { setForm((f) => ({ ...f, documentRevision: v })); },
-                  'e.g. Rev A',
+                  t('proj.detail.eGRevA'),
                 )}
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Response Due Date')}
+                {lbl(t('proj.detail.responseDueDate'))}
                 {inp(form.dueDate, (v) => { setForm((f) => ({ ...f, dueDate: v })); }, '', 'date')}
               </div>
             </div>
@@ -16984,7 +16877,7 @@ function TQTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 disabled={!form.subject.trim()}
@@ -17000,7 +16893,7 @@ function TQTab({
                   cursor: form.subject.trim() ? 'pointer' : 'not-allowed',
                 }}
               >
-                {editTQ ? 'Save Changes' : 'Raise TQ'}
+                {editTQ ? t('proj.detail.saveChanges') : t('proj.detail.raiseTq')}
               </button>
             </div>
           </div>
@@ -17053,24 +16946,24 @@ interface PunchItem {
 
 const PUNCH_CATEGORIES = {
   A: {
-    label: 'A-Punch',
-    desc: 'Safety / Operability Critical',
+    get label() { return i18n.t('proj.detail.aPunch', { defaultValue: "A-Punch" }) },
+    get desc() { return i18n.t('proj.detail.safetyOperabilityCritical', { defaultValue: "Safety / Operability Critical" }) },
     color: '#dc2626',
     bg: '#fee2e2',
     border: '#fca5a5',
     dot: '#ef4444',
   },
   B: {
-    label: 'B-Punch',
-    desc: 'Non-Critical Defects',
+    get label() { return i18n.t('proj.detail.bPunch', { defaultValue: "B-Punch" }) },
+    get desc() { return i18n.t('proj.detail.nonCriticalDefects', { defaultValue: "Non-Critical Defects" }) },
     color: '#d97706',
     bg: '#fffbeb',
     border: '#fde68a',
     dot: '#f59e0b',
   },
   C: {
-    label: 'C-Punch',
-    desc: 'Commissioning Items',
+    get label() { return i18n.t('proj.detail.cPunch', { defaultValue: "C-Punch" }) },
+    get desc() { return i18n.t('proj.detail.commissioningItems', { defaultValue: "Commissioning Items" }) },
     color: '#1d4ed8',
     bg: '#eff6ff',
     border: '#bfdbfe',
@@ -17079,10 +16972,10 @@ const PUNCH_CATEGORIES = {
 } as const
 
 const PUNCH_STATUS: Record<string, { label: string; text: string; bg: string }> = {
-  open: { label: 'Open', text: '#475569', bg: '#f1f5f9' },
-  in_progress: { label: 'In Progress', text: '#92400e', bg: '#fffbeb' },
-  supervisor_signed: { label: 'Supervisor Signed', text: '#5b21b6', bg: '#ede9fe' },
-  closed: { label: 'Closed', text: '#15803d', bg: '#f0fdf4' },
+  open: { get label() { return i18n.t('proj.detail.open', { defaultValue: "Open" }) }, text: '#475569', bg: '#f1f5f9' },
+  in_progress: { get label() { return i18n.t('proj.detail.inProgress', { defaultValue: "In Progress" }) }, text: '#92400e', bg: '#fffbeb' },
+  supervisor_signed: { get label() { return i18n.t('proj.detail.supervisorSigned', { defaultValue: "Supervisor Signed" }) }, text: '#5b21b6', bg: '#ede9fe' },
+  closed: { get label() { return i18n.t('proj.detail.closed', { defaultValue: "Closed" }) }, text: '#15803d', bg: '#f0fdf4' },
 }
 
 const PUNCH_DISCIPLINES = [
@@ -17106,6 +16999,7 @@ function PunchListTab({
   theme: ReturnType<typeof useTheme>['theme']
   isAdmin?: boolean
 }) {
+  const { t } = useTranslation()
   const addToast = useToastStore((s) => s.addToast)
 
   const [catFilter, setCatFilter] = React.useState<string>('all')
@@ -17177,7 +17071,7 @@ function PunchListTab({
 
   const handleSave = async () => {
     if (!form.title.trim()) {
-      addToast({ type: 'error', message: 'Title is required' })
+      addToast({ type: 'error', message: t('proj.detail.titleIsRequired') })
       return
     }
     try {
@@ -17196,10 +17090,10 @@ function PunchListTab({
       }
       if (editItem) {
         await updateItem({ variables: { id: editItem.id, ...vars } })
-        addToast({ type: 'success', message: 'Punch item updated' })
+        addToast({ type: 'success', message: t('proj.detail.punchItemUpdated') })
       } else {
         await createItem({ variables: vars })
-        addToast({ type: 'success', message: 'Punch item raised' })
+        addToast({ type: 'success', message: t('proj.detail.punchItemRaised') })
       }
       setShowModal(false)
       setEditItem(null)
@@ -17215,10 +17109,10 @@ function PunchListTab({
     try {
       if (signModal.step === 'supervisor') {
         await supervisorSign({ variables: { id: signModal.item.id, signedBy: signerName || null } })
-        addToast({ type: 'success', message: 'Supervisor sign-off recorded' })
+        addToast({ type: 'success', message: t('proj.detail.supervisorSignOffRecorded') })
       } else {
         await pmSign({ variables: { id: signModal.item.id, signedBy: signerName || null } })
-        addToast({ type: 'success', message: 'PM sign-off recorded — item closed' })
+        addToast({ type: 'success', message: t('proj.detail.pmSignOffRecordedItemClosed') })
       }
       setSignModal(null)
       setSignerName('')
@@ -17230,7 +17124,7 @@ function PunchListTab({
 
   const handleAddPhoto = async (punchId: string) => {
     if (!photoUrl.trim()) {
-      addToast({ type: 'error', message: 'URL is required' })
+      addToast({ type: 'error', message: t('proj.detail.urlIsRequired') })
       return
     }
     try {
@@ -17302,7 +17196,7 @@ function PunchListTab({
       }}
     />
   )
-  const lbl = (t: string, req = false) => (
+  const lbl = (tx: string, req = false) => (
     <div
       style={{
         fontSize: 11,
@@ -17313,8 +17207,8 @@ function PunchListTab({
         letterSpacing: '0.05em',
       }}
     >
-      {t}
-      {req && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+      {tx}
+      {req && <span style={{ color: '#ef4444', marginInlineStart: 2 }}>*</span>}
     </div>
   )
 
@@ -17361,7 +17255,7 @@ function PunchListTab({
   const SignOffDots = ({ item }: { item: PunchItem }) => (
     <div
       style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-      title={`Supervisor: ${item.supervisorSignedBy ?? '—'} | PM: ${item.pmSignedBy ?? '—'}`}
+      title={t('proj.detail.supervisorPm', { value: item.supervisorSignedBy ?? '—', value2: item.pmSignedBy ?? '—' })}
     >
       <div
         style={{
@@ -17370,7 +17264,7 @@ function PunchListTab({
           borderRadius: '50%',
           background: item.supervisorSignedAt ? '#8b5cf6' : theme.border,
         }}
-        title="Supervisor sign-off"
+        title={t('proj.detail.supervisorSignOff')}
       />
       <div style={{ width: 20, height: 1, background: theme.border }} />
       <div
@@ -17380,7 +17274,7 @@ function PunchListTab({
           borderRadius: '50%',
           background: item.pmSignedAt ? '#22c55e' : theme.border,
         }}
-        title="PM sign-off"
+        title={t('proj.detail.pmSignOff')}
       />
     </div>
   )
@@ -17418,10 +17312,10 @@ function PunchListTab({
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
                 {[
-                  { label: 'Open', value: k.open, dimColor: '#64748b' },
-                  { label: 'In Prog', value: k.inProgress, dimColor: '#92400e' },
-                  { label: 'Signed', value: k.signed, dimColor: '#5b21b6' },
-                  { label: 'Closed', value: k.closed, dimColor: '#15803d' },
+                  { label: t('proj.detail.open'), value: k.open, dimColor: '#64748b' },
+                  { label: t('proj.detail.inProg'), value: k.inProgress, dimColor: '#92400e' },
+                  { label: t('proj.detail.signed'), value: k.signed, dimColor: '#5b21b6' },
+                  { label: t('proj.detail.closed'), value: k.closed, dimColor: '#15803d' },
                 ].map((s) => (
                   <div key={s.label} style={{ textAlign: 'center' }}>
                     <div
@@ -17452,9 +17346,7 @@ function PunchListTab({
                     fontWeight: 700,
                     display: 'inline-block',
                   }}
-                >
-                  {k.overdue} OVERDUE
-                </div>
+                >{t('proj.detail.overdue3', { overdue: k.overdue })}</div>
               )}
               <div
                 style={{
@@ -17476,7 +17368,7 @@ function PunchListTab({
                 />
               </div>
               <div style={{ fontSize: 9, color: c.color, opacity: 0.7, marginTop: 3 }}>
-                {total > 0 ? `${Math.round((k.closed / total) * 100)}% cleared` : 'No items'}
+                {total > 0 ? t('proj.detail.cleared', { value: Math.round((k.closed / total) * 100) }) : t('proj.detail.noItems')}
               </div>
             </div>
           )
@@ -17517,10 +17409,10 @@ function PunchListTab({
                   cursor: 'pointer',
                   fontSize: 11,
                   fontWeight: catFilter === c ? 700 : 400,
-                  borderRight: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none',
+                  borderInlineEnd: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none',
                 }}
               >
-                {c === 'all' ? 'All' : `${c}-Punch`}
+                {c === 'all' ? t('proj.detail.all') : `${c}-Punch`}
               </button>
             )
           })}
@@ -17548,10 +17440,10 @@ function PunchListTab({
                   cursor: 'pointer',
                   fontSize: 11,
                   fontWeight: statusFilter === s ? 600 : 400,
-                  borderRight: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none',
+                  borderInlineEnd: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none',
                 }}
               >
-                {s === 'all' ? 'All Status' : (PUNCH_STATUS[s]?.label ?? s)}
+                {s === 'all' ? t('proj.detail.allStatus') : (PUNCH_STATUS[s]?.label ?? s)}
               </button>
             ),
           )}
@@ -17569,7 +17461,7 @@ function PunchListTab({
             cursor: 'pointer',
           }}
         >
-          ↓ Export CSV
+          {t('proj.detail.exportCsv')}
         </button>
         <button
           onClick={() => {
@@ -17611,7 +17503,7 @@ function PunchListTab({
               strokeLinecap="round"
             />
           </svg>
-          Raise Punch Item
+          {t('proj.detail.raisePunchItem')}
         </button>
       </div>
 
@@ -17642,7 +17534,7 @@ function PunchListTab({
               strokeLinecap="round"
             />
           </svg>
-          Loading…
+          {t('proj.detail.loading')}
         </div>
       ) : items.length === 0 ? (
         <div
@@ -17655,13 +17547,12 @@ function PunchListTab({
         >
           <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
           <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>
-            No Punch Items
+            {t('proj.detail.noPunchItems')}
           </div>
           <div
             style={{ fontSize: 13, color: theme.textMuted, maxWidth: 380, margin: '0 auto 24px' }}
           >
-            Raise punch items to track pre-handover defects and commissioning snags. Two-step
-            sign-off ensures every item is supervisor and PM approved before closure.
+            {t('proj.detail.raisePunchItemsToTrackPre')}
           </div>
           <button
             onClick={() => {
@@ -17680,7 +17571,7 @@ function PunchListTab({
               cursor: 'pointer',
             }}
           >
-            Raise First Punch Item
+            {t('proj.detail.raiseFirstPunchItem')}
           </button>
         </div>
       ) : (
@@ -17761,9 +17652,7 @@ function PunchListTab({
                         </span>
                       )}
                       {item.area && (
-                        <span style={{ fontSize: 10, color: theme.textMuted }}>
-                          Area: {item.area}
-                        </span>
+                        <span style={{ fontSize: 10, color: theme.textMuted }}>{t('proj.detail.area2', { area: item.area })}</span>
                       )}
                       {item.isOverdue && (
                         <span
@@ -17776,7 +17665,7 @@ function PunchListTab({
                             color: '#dc2626',
                           }}
                         >
-                          OVERDUE
+                          {t('proj.detail.overdue2')}
                         </span>
                       )}
                     </div>
@@ -17852,12 +17741,12 @@ function PunchListTab({
                       }}
                     >
                       {[
-                        { label: 'Raised By', value: item.raisedBy ?? '—' },
-                        { label: 'Raised Date', value: item.raisedDate ?? '—' },
-                        { label: 'Subcontractor', value: item.subcontractor ?? '—' },
-                        { label: 'Responsible', value: item.responsible ?? '—' },
-                        { label: 'Target Date', value: item.targetDate ?? '—' },
-                        { label: 'Area', value: item.area ?? '—' },
+                        { label: t('proj.detail.raisedBy'), value: item.raisedBy ?? '—' },
+                        { label: t('proj.detail.raisedDate'), value: item.raisedDate ?? '—' },
+                        { label: t('proj.detail.subcontractor'), value: item.subcontractor ?? '—' },
+                        { label: t('proj.detail.responsible'), value: item.responsible ?? '—' },
+                        { label: t('proj.detail.targetDate'), value: item.targetDate ?? '—' },
+                        { label: t('proj.detail.area'), value: item.area ?? '—' },
                       ].map((m) => (
                         <div key={m.label}>
                           <div
@@ -17906,7 +17795,7 @@ function PunchListTab({
                           marginBottom: 8,
                         }}
                       >
-                        Sign-Off Workflow
+                        {t('proj.detail.signOffWorkflow')}
                       </div>
                       <div
                         style={{
@@ -17922,7 +17811,7 @@ function PunchListTab({
                           style={{
                             padding: '10px 20px',
                             background: item.supervisorSignedAt ? '#ede9fe' : theme.bgCanvas,
-                            borderRight: `1px solid ${theme.border}`,
+                            borderInlineEnd: `1px solid ${theme.border}`,
                           }}
                         >
                           <div
@@ -17948,7 +17837,7 @@ function PunchListTab({
                                 color: item.supervisorSignedAt ? '#5b21b6' : theme.textMuted,
                               }}
                             >
-                              Step 1 — Supervisor
+                              {t('proj.detail.step1Supervisor')}
                             </span>
                           </div>
                           {item.supervisorSignedBy ? (
@@ -17959,7 +17848,7 @@ function PunchListTab({
                                 : ''}
                             </div>
                           ) : (
-                            <div style={{ fontSize: 11, color: theme.textMuted }}>Pending</div>
+                            <div style={{ fontSize: 11, color: theme.textMuted }}>{t('proj.detail.pending')}</div>
                           )}
                         </div>
                         <div
@@ -17991,7 +17880,7 @@ function PunchListTab({
                                 color: item.pmSignedAt ? '#15803d' : theme.textMuted,
                               }}
                             >
-                              Step 2 — Project Manager
+                              {t('proj.detail.step2ProjectManager')}
                             </span>
                           </div>
                           {item.pmSignedBy ? (
@@ -18003,7 +17892,7 @@ function PunchListTab({
                             </div>
                           ) : (
                             <div style={{ fontSize: 11, color: theme.textMuted }}>
-                              Pending supervisor sign first
+                              {t('proj.detail.pendingSupervisorSignFirst')}
                             </div>
                           )}
                         </div>
@@ -18028,9 +17917,7 @@ function PunchListTab({
                             textTransform: 'uppercase',
                             letterSpacing: '0.04em',
                           }}
-                        >
-                          Photo Evidence ({item.photos.length})
-                        </div>
+                        >{t('proj.detail.photoEvidence', { length: item.photos.length })}</div>
                         <button
                           onClick={() => {
                             setPhotoModal(item)
@@ -18047,7 +17934,7 @@ function PunchListTab({
                             cursor: 'pointer',
                           }}
                         >
-                          + Add Photo
+                          {t('proj.detail.addPhoto')}
                         </button>
                       </div>
 
@@ -18072,7 +17959,7 @@ function PunchListTab({
                             <input
                               value={photoUrl}
                               onChange={(e) => { setPhotoUrl(e.target.value); }}
-                              placeholder="Image URL or paste link…"
+                              placeholder={t('proj.detail.imageUrlOrPasteLink')}
                               style={{
                                 padding: '7px 10px',
                                 border: `1px solid ${theme.border}`,
@@ -18086,7 +17973,7 @@ function PunchListTab({
                             <input
                               value={photoCaption}
                               onChange={(e) => { setPhotoCaption(e.target.value); }}
-                              placeholder="Caption (optional)"
+                              placeholder={t('proj.detail.captionOptional')}
                               style={{
                                 padding: '7px 10px',
                                 border: `1px solid ${theme.border}`,
@@ -18112,7 +17999,7 @@ function PunchListTab({
                                 cursor: 'pointer',
                               }}
                             >
-                              Cancel
+                              {t('proj.detail.cancel')}
                             </button>
                             <button
                               onClick={() => void handleAddPhoto(item.id)}
@@ -18127,7 +18014,7 @@ function PunchListTab({
                                 cursor: 'pointer',
                               }}
                             >
-                              Add Photo
+                              {t('proj.detail.addPhoto2')}
                             </button>
                           </div>
                         </div>
@@ -18144,7 +18031,7 @@ function PunchListTab({
                             color: theme.textMuted,
                           }}
                         >
-                          No photos attached
+                          {t('proj.detail.noPhotosAttached')}
                         </div>
                       ) : (
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -18205,7 +18092,7 @@ function PunchListTab({
                               )}
                               <button
                                 onClick={() => {
-                                  if (window.confirm('Delete photo?'))
+                                  if (window.confirm(t('proj.detail.deletePhoto')))
                                     void deletePhoto({ variables: { id: photo.id } })
                                       .then(() => void refetch())
                                       .catch((e: unknown) =>
@@ -18215,7 +18102,7 @@ function PunchListTab({
                                 style={{
                                   position: 'absolute',
                                   top: 3,
-                                  right: 3,
+                                  insetInlineEnd: 3,
                                   width: 18,
                                   height: 18,
                                   borderRadius: '50%',
@@ -18276,7 +18163,7 @@ function PunchListTab({
                           cursor: 'pointer',
                         }}
                       >
-                        Edit
+                        {t('proj.detail.edit')}
                       </button>
 
                       {item.status === 'open' && (
@@ -18301,7 +18188,7 @@ function PunchListTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Mark In Progress
+                          {t('proj.detail.markInProgress')}
                         </button>
                       )}
 
@@ -18322,7 +18209,7 @@ function PunchListTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Supervisor Sign-Off
+                          {t('proj.detail.supervisorSignOff2')}
                         </button>
                       )}
 
@@ -18343,7 +18230,7 @@ function PunchListTab({
                             cursor: 'pointer',
                           }}
                         >
-                          PM Counter-Sign
+                          {t('proj.detail.pmCounterSign')}
                         </button>
                       )}
 
@@ -18351,7 +18238,7 @@ function PunchListTab({
                         <button
                           onClick={() => {
                             if (
-                              window.confirm(`Reopen ${item.punchNo}? Sign-offs will be cleared.`)
+                              window.confirm(t('proj.detail.reopenSignOffsWillBeCleared', { punchNo: item.punchNo }))
                             )
                               void reopenItem({ variables: { id: item.id } })
                                 .then(() => void refetch())
@@ -18369,13 +18256,13 @@ function PunchListTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Reopen
+                          {t('proj.detail.reopen')}
                         </button>
                       )}
 
                       <button
                         onClick={() => {
-                          if (window.confirm(`Delete ${item.punchNo}?`))
+                          if (window.confirm(t('proj.detail.delete6', { punchNo: item.punchNo })))
                             void deleteItem({ variables: { id: item.id } })
                               .then(() => void refetch())
                               .catch((e: unknown) =>
@@ -18392,7 +18279,7 @@ function PunchListTab({
                           cursor: 'pointer',
                         }}
                       >
-                        Delete
+                        {t('proj.detail.delete')}
                       </button>
                     </div>
                   </div>
@@ -18408,7 +18295,7 @@ function PunchListTab({
         <Modal
           open={true}
           size="lg"
-          title={editItem ? `Edit ${editItem.punchNo}` : 'Raise Punch Item'}
+          title={editItem ? t('proj.detail.edit3', { punchNo: editItem.punchNo }) : t('proj.detail.raisePunchItem')}
           onClose={() => {
             setShowModal(false)
             setEditItem(null)
@@ -18418,7 +18305,7 @@ function PunchListTab({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {/* Category selector */}
             <div>
-              {lbl('Category', true)}
+              {lbl(t('proj.detail.category'), true)}
               <div style={{ display: 'flex', gap: 8 }}>
                 {(['A', 'B', 'C'] as const).map((cat) => {
                   const c = PUNCH_CATEGORIES[cat]
@@ -18463,15 +18350,15 @@ function PunchListTab({
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Title', true)}
+                {lbl(t('proj.detail.title'), true)}
                 {inp(
                   form.title,
                   (v) => { setForm((f) => ({ ...f, title: v })); },
-                  'Brief description of the defect or punch item',
+                  t('proj.detail.briefDescriptionOfTheDefectOr'),
                 )}
               </div>
               <div>
-                {lbl('Discipline')}
+                {lbl(t('proj.detail.discipline'))}
                 <select
                   value={form.discipline}
                   onChange={(e) => { setForm((f) => ({ ...f, discipline: e.target.value })); }}
@@ -18486,7 +18373,7 @@ function PunchListTab({
                     boxSizing: 'border-box' as const,
                   }}
                 >
-                  <option value="">— Select —</option>
+                  <option value="">{t('proj.detail.select')}</option>
                   {PUNCH_DISCIPLINES.map((d) => (
                     <option key={d} value={d}>
                       {d}
@@ -18495,47 +18382,47 @@ function PunchListTab({
                 </select>
               </div>
               <div>
-                {lbl('Area / System')}
+                {lbl(t('proj.detail.areaSystem'))}
                 {inp(
                   form.area,
                   (v) => { setForm((f) => ({ ...f, area: v })); },
-                  'e.g. Area 3B, System 02',
+                  t('proj.detail.eGArea3bSystem02'),
                 )}
               </div>
               <div>
-                {lbl('Subcontractor')}
+                {lbl(t('proj.detail.subcontractor'))}
                 {inp(
                   form.subcontractor,
                   (v) => { setForm((f) => ({ ...f, subcontractor: v })); },
-                  'Responsible subcontractor',
+                  t('proj.detail.responsibleSubcontractor'),
                 )}
               </div>
               <div>
-                {lbl('Responsible Person')}
-                {inp(form.responsible, (v) => { setForm((f) => ({ ...f, responsible: v })); }, 'Name')}
+                {lbl(t('proj.detail.responsiblePerson'))}
+                {inp(form.responsible, (v) => { setForm((f) => ({ ...f, responsible: v })); }, t('proj.detail.name'))}
               </div>
               <div>
-                {lbl('Raised By')}
+                {lbl(t('proj.detail.raisedBy'))}
                 {inp(
                   form.raisedBy,
                   (v) => { setForm((f) => ({ ...f, raisedBy: v })); },
-                  'Inspector / surveyor name',
+                  t('proj.detail.inspectorSurveyorName'),
                 )}
               </div>
               <div>
-                {lbl('Date Raised')}
+                {lbl(t('proj.detail.dateRaised'))}
                 {inp(form.raisedDate, (v) => { setForm((f) => ({ ...f, raisedDate: v })); }, '', 'date')}
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Target Close Date')}
+                {lbl(t('proj.detail.targetCloseDate'))}
                 {inp(form.targetDate, (v) => { setForm((f) => ({ ...f, targetDate: v })); }, '', 'date')}
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Description')}
+                {lbl(t('proj.detail.description'))}
                 <textarea
                   value={form.description}
                   onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
-                  placeholder="Detailed description of the defect…"
+                  placeholder={t('proj.detail.detailedDescriptionOfTheDefect')}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -18579,7 +18466,7 @@ function PunchListTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 disabled={!form.title.trim()}
@@ -18595,7 +18482,7 @@ function PunchListTab({
                   cursor: form.title.trim() ? 'pointer' : 'not-allowed',
                 }}
               >
-                {editItem ? 'Save Changes' : 'Raise Punch Item'}
+                {editItem ? t('proj.detail.saveChanges') : t('proj.detail.raisePunchItem')}
               </button>
             </div>
           </div>
@@ -18608,8 +18495,8 @@ function PunchListTab({
           open={true}
           title={
             signModal.step === 'supervisor'
-              ? `Supervisor Sign-Off — ${signModal.item.punchNo}`
-              : `PM Counter-Sign — ${signModal.item.punchNo}`
+              ? t('proj.detail.supervisorSignOff3', { punchNo: signModal.item.punchNo })
+              : t('proj.detail.pmCounterSign2', { punchNo: signModal.item.punchNo })
           }
           onClose={() => {
             setSignModal(null)
@@ -18628,8 +18515,8 @@ function PunchListTab({
               }}
             >
               {signModal.step === 'supervisor'
-                ? 'Supervisor sign-off confirms the defect has been rectified and is ready for PM review.'
-                : 'PM counter-sign closes this punch item. This action cannot be undone without reopening.'}
+                ? t('proj.detail.supervisorSignOffConfirmsTheDefect')
+                : t('proj.detail.pmCounterSignClosesThisPunch')}
             </div>
             <div
               style={{
@@ -18660,12 +18547,12 @@ function PunchListTab({
                   letterSpacing: '0.05em',
                 }}
               >
-                {signModal.step === 'supervisor' ? 'Supervisor Name' : 'Project Manager Name'}
+                {signModal.step === 'supervisor' ? t('proj.detail.supervisorName') : t('proj.detail.projectManagerName')}
               </div>
               <input
                 value={signerName}
                 onChange={(e) => { setSignerName(e.target.value); }}
-                placeholder="Full name (optional)"
+                placeholder={t('proj.detail.fullNameOptional')}
                 style={{
                   width: '100%',
                   padding: '9px 12px',
@@ -18695,7 +18582,7 @@ function PunchListTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 onClick={() => void handleSign()}
@@ -18710,7 +18597,7 @@ function PunchListTab({
                   cursor: 'pointer',
                 }}
               >
-                {signModal.step === 'supervisor' ? 'Sign Off' : 'Counter-Sign & Close'}
+                {signModal.step === 'supervisor' ? t('proj.detail.signOff') : t('proj.detail.counterSignClose')}
               </button>
             </div>
           </div>
@@ -18733,6 +18620,7 @@ function AttachmentsTab({
   // from technical members; unrelated to isAdmin (company-wide edit permission).
   viewerRole?: 'admin' | 'pm' | 'technical' | 'commercial' | 'both' | 'none'
 }) {
+  const { t } = useTranslation()
   const addToast = useToastStore((s) => s.addToast)
   const fileRef = React.useRef<HTMLInputElement>(null)
   const [files, setFiles] = React.useState<FileAttachment[]>([])
@@ -18780,7 +18668,7 @@ function AttachmentsTab({
 
   async function upload(file: File) {
     if (file.size > 52_428_800) {
-      addToast({ type: 'error', message: 'File too large (max 50 MB)' })
+      addToast({ type: 'error', message: t('proj.detail.fileTooLargeMax50Mb') })
       return
     }
     setUploading(true)
@@ -18811,9 +18699,9 @@ function AttachmentsTab({
         params: { entityType: 'project', entityId: projectId },
       })
       setFiles(r.data as unknown as FileAttachment[])
-      addToast({ type: 'success', message: `"${file.name}" uploaded (${uploadCategory})` })
+      addToast({ type: 'success', message: t('proj.detail.uploaded', { name: file.name, uploadCategory: docCatLabel(uploadCategory) }) })
     } catch {
-      addToast({ type: 'error', message: 'Upload failed — please try again' })
+      addToast({ type: 'error', message: t('proj.detail.uploadFailedPleaseTryAgain') })
     } finally {
       setUploading(false)
       setProgress(0)
@@ -18832,7 +18720,7 @@ function AttachmentsTab({
       a.download = f.original_filename
       a.click()
     } catch {
-      addToast({ type: 'error', message: 'Download failed' })
+      addToast({ type: 'error', message: t('proj.detail.downloadFailed') })
     }
   }
 
@@ -18840,9 +18728,9 @@ function AttachmentsTab({
     try {
       await api.delete(`/files/attachments/${attachment.id}`)
       setFiles((prev) => prev.filter((f) => f.id !== attachment.id))
-      addToast({ type: 'success', message: 'Attachment removed' })
+      addToast({ type: 'success', message: t('proj.detail.attachmentRemoved') })
     } catch {
-      addToast({ type: 'error', message: 'Failed to remove attachment' })
+      addToast({ type: 'error', message: t('proj.detail.failedToRemoveAttachment') })
     }
   }
 
@@ -18861,9 +18749,7 @@ function AttachmentsTab({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       {/* Header row: count + category filters */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '13px', color: theme.textMuted, marginRight: '4px' }}>
-          {visibleFiles.length} document{visibleFiles.length !== 1 ? 's' : ''}
-        </span>
+        <span style={{ fontSize: '13px', color: theme.textMuted, marginInlineEnd: '4px' }}>{t('proj.detail.document', { count: visibleFiles.length })}</span>
         {/* Category filter chips */}
         {(['All', ...Array.from(visibleCategories)] as (DocCategory | 'All')[]).map((cat) => (
           <button
@@ -18890,12 +18776,12 @@ function AttachmentsTab({
               border: `1px solid ${filterCategory === cat ? 'transparent' : theme.border}`,
             }}
           >
-            {cat}
+            {docCatLabel(cat)}
             {cat !== 'All' &&
               files.filter(
                 (f) => parseFileCategory(f.label || f.original_filename).category === cat,
               ).length > 0 && (
-                <span style={{ marginLeft: '4px', opacity: 0.75 }}>
+                <span style={{ marginInlineStart: '4px', opacity: 0.75 }}>
                   (
                   {
                     files.filter(
@@ -18915,7 +18801,7 @@ function AttachmentsTab({
 
       {/* File list */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '32px', color: theme.textMuted }}>Loading…</div>
+        <div style={{ textAlign: 'center', padding: '32px', color: theme.textMuted }}>{t('proj.detail.loading')}</div>
       ) : visibleFiles.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 16px', color: theme.textMuted }}>
           <div
@@ -18947,12 +18833,9 @@ function AttachmentsTab({
           <div
             style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary, marginBottom: 4 }}
           >
-            No documents found
+            {t('proj.detail.noDocumentsFound')}
           </div>
-          <div style={{ fontSize: '13px' }}>
-            No documents in{' '}
-            {filterCategory === 'All' ? 'this project' : `the ${filterCategory} category`}.
-          </div>
+          <div style={{ fontSize: '13px' }}>{t('proj.detail.noDocumentsIn', { value: filterCategory === 'All' ? t('proj.detail.thisProject') : t('proj.detail.theCategory', { category: docCatLabel(filterCategory) }) })}</div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -19019,7 +18902,7 @@ function AttachmentsTab({
                     })}
                   </div>
                 </div>
-                <button style={btnStyle} title="Download" onClick={() => void download(f)}>
+                <button style={btnStyle} title={t('proj.detail.download')} onClick={() => void download(f)}>
                   <svg
                     width="15"
                     height="15"
@@ -19036,7 +18919,7 @@ function AttachmentsTab({
                 {isAdmin && (
                   <button
                     style={{ ...btnStyle, color: '#ef4444' }}
-                    title="Remove"
+                    title={t('proj.detail.remove2')}
                     onClick={() => void remove(f)}
                   >
                     <svg
@@ -19077,7 +18960,7 @@ function AttachmentsTab({
             marginBottom: '10px',
           }}
         >
-          Upload Document
+          {t('proj.detail.uploadDocument')}
         </div>
         {/* Category selector */}
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
@@ -19096,7 +18979,7 @@ function AttachmentsTab({
                 color: uploadCategory === cat ? CAT_COLOR[cat].color : theme.textMuted,
               }}
             >
-              {cat}
+              {docCatLabel(cat)}
             </button>
           ))}
         </div>
@@ -19159,20 +19042,12 @@ function AttachmentsTab({
                   }}
                 />
               </div>
-              <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0 }}>
-                Uploading as {uploadCategory}… {progress}%
-              </p>
+              <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0 }}>{t('proj.detail.uploadingAs', { uploadCategory: docCatLabel(uploadCategory), progress })}</p>
             </div>
           ) : (
             <>
-              <p style={{ fontSize: '13px', color: theme.textMuted, margin: '0 0 4px' }}>
-                Drop file here or <span style={{ color: theme.accent }}>browse</span>
-              </p>
-              <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>
-                Will be tagged as{' '}
-                <strong style={{ color: CAT_COLOR[uploadCategory].color }}>{uploadCategory}</strong>{' '}
-                · Excel, PDF, Word, images, ZIP · Max 50 MB
-              </p>
+              <p style={{ fontSize: '13px', color: theme.textMuted, margin: '0 0 4px' }}><Trans i18nKey="proj.detail.dropFileHereOr" values={{ t: t('proj.detail.browse') }} components={[<span style={{ color: theme.accent }} />]} /></p>
+              <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}><Trans i18nKey="proj.detail.willBeTaggedAsExcelPdf" values={{ uploadCategory: docCatLabel(uploadCategory) }} components={[<strong style={{ color: CAT_COLOR[uploadCategory].color }} />]} /></p>
             </>
           )}
         </div>
@@ -19313,28 +19188,28 @@ const HANDOVER_STATUS: Record<
   string,
   { label: string; bg: string; color: string; border: string }
 > = {
-  draft: { label: 'Draft', bg: '#f9fafb', color: '#6b7280', border: '#e5e7eb' },
-  issued: { label: 'Issued', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+  draft: { get label() { return i18n.t('proj.detail.draft', { defaultValue: "Draft" }) }, bg: '#f9fafb', color: '#6b7280', border: '#e5e7eb' },
+  issued: { get label() { return i18n.t('proj.detail.issued', { defaultValue: "Issued" }) }, bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
   pending_acceptance: {
-    label: 'Pending Acceptance',
+    get label() { return i18n.t('proj.detail.pendingAcceptance', { defaultValue: "Pending Acceptance" }) },
     bg: '#fffbeb',
     color: '#92400e',
     border: '#fde68a',
   },
-  accepted: { label: 'Accepted', bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' },
-  rejected: { label: 'Rejected', bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
+  accepted: { get label() { return i18n.t('proj.detail.accepted', { defaultValue: "Accepted" }) }, bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' },
+  rejected: { get label() { return i18n.t('proj.detail.rejected', { defaultValue: "Rejected" }) }, bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
 }
 
 const HANDOVER_ITEM_CATEGORIES = [
-  { value: 'documentation', label: 'Documentation' },
-  { value: 'systems', label: 'Systems' },
-  { value: 'utilities', label: 'Utilities' },
-  { value: 'safety', label: 'Safety' },
-  { value: 'training', label: 'Training' },
-  { value: 'spares', label: 'Spares' },
-  { value: 'punchlists', label: 'Punch Lists' },
-  { value: 'keys_access', label: 'Keys & Access' },
-  { value: 'other', label: 'Other' },
+  { value: 'documentation', get label() { return i18n.t('proj.detail.documentation', { defaultValue: "Documentation" }) } },
+  { value: 'systems', get label() { return i18n.t('proj.detail.systems', { defaultValue: "Systems" }) } },
+  { value: 'utilities', get label() { return i18n.t('proj.detail.utilities', { defaultValue: "Utilities" }) } },
+  { value: 'safety', get label() { return i18n.t('proj.detail.safety', { defaultValue: "Safety" }) } },
+  { value: 'training', get label() { return i18n.t('proj.detail.training', { defaultValue: "Training" }) } },
+  { value: 'spares', get label() { return i18n.t('proj.detail.spares', { defaultValue: "Spares" }) } },
+  { value: 'punchlists', get label() { return i18n.t('proj.detail.punchLists', { defaultValue: "Punch Lists" }) } },
+  { value: 'keys_access', get label() { return i18n.t('proj.detail.keysAccess', { defaultValue: "Keys & Access" }) } },
+  { value: 'other', get label() { return i18n.t('proj.detail.other', { defaultValue: "Other" }) } },
 ]
 
 const HANDOVER_ITEM_STATUS_COLOR: Record<string, { bg: string; color: string }> = {
@@ -19345,8 +19220,8 @@ const HANDOVER_ITEM_STATUS_COLOR: Record<string, { bg: string; color: string }> 
 }
 
 const HANDOVER_SUB_TABS = [
-  { key: 'certificates', label: 'Certificates' },
-  { key: 'punch_list', label: 'Punch List' },
+  { key: 'certificates', get label() { return i18n.t('proj.detail.certificates', { defaultValue: "Certificates" }) } },
+  { key: 'punch_list', get label() { return i18n.t('proj.detail.punchList', { defaultValue: "Punch List" }) } },
 ]
 
 function HandoverTab({
@@ -19358,6 +19233,7 @@ function HandoverTab({
   theme: ReturnType<typeof useTheme>['theme']
   isAdmin?: boolean
 }) {
+  const { t } = useTranslation()
   const th = theme as unknown as Record<string, string>
   const addToast = useToastStore((s) => s.addToast)
 
@@ -19376,14 +19252,14 @@ function HandoverTab({
   const [createCert] = useMutation<CreateHandoverCertificateMutation, CreateHandoverCertificateMutationVariables>(CREATE_HANDOVER_CERT, {
     onCompleted: () => {
       refresh()
-      addToast({ type: 'success', message: 'Certificate created' })
+      addToast({ type: 'success', message: t('proj.detail.certificateCreated') })
     },
     onError,
   })
   const [updateCert] = useMutation<UpdateHandoverCertificateMutation, UpdateHandoverCertificateMutationVariables>(UPDATE_HANDOVER_CERT, {
     onCompleted: () => {
       refresh()
-      addToast({ type: 'success', message: 'Certificate updated' })
+      addToast({ type: 'success', message: t('proj.detail.certificateUpdated') })
     },
     onError,
   })
@@ -19391,14 +19267,14 @@ function HandoverTab({
   const [acceptCert] = useMutation<AcceptHandoverCertificateMutation, AcceptHandoverCertificateMutationVariables>(ACCEPT_HANDOVER_CERT, {
     onCompleted: () => {
       refresh()
-      addToast({ type: 'success', message: 'Certificate accepted' })
+      addToast({ type: 'success', message: t('proj.detail.certificateAccepted') })
     },
     onError,
   })
   const [rejectCert] = useMutation<RejectHandoverCertificateMutation, RejectHandoverCertificateMutationVariables>(REJECT_HANDOVER_CERT, {
     onCompleted: () => {
       refresh()
-      addToast({ type: 'success', message: 'Certificate rejected' })
+      addToast({ type: 'success', message: t('proj.detail.certificateRejected') })
     },
     onError,
   })
@@ -19416,7 +19292,7 @@ function HandoverTab({
   const [verifyItem] = useMutation<VerifyHandoverItemMutation, VerifyHandoverItemMutationVariables>(VERIFY_HANDOVER_ITEM, {
     onCompleted: () => {
       refresh()
-      addToast({ type: 'success', message: 'Item verified' })
+      addToast({ type: 'success', message: t('proj.detail.itemVerified') })
     },
     onError,
   })
@@ -19481,7 +19357,7 @@ function HandoverTab({
       })
       onPicked(fileId, file.name)
     } catch {
-      addToast({ type: 'error', message: 'File upload failed' })
+      addToast({ type: 'error', message: t('proj.detail.fileUploadFailed') })
     } finally {
       setUploading(false)
     }
@@ -19562,7 +19438,7 @@ function HandoverTab({
     fontSize: '12px',
     fontWeight: 600,
     flexShrink: 0,
-    marginLeft: '8px',
+    marginInlineStart: '8px',
   }
   const field = (label: string, ctrl: React.ReactNode) => (
     <div style={{ marginBottom: '12px' }}>
@@ -19676,7 +19552,7 @@ function HandoverTab({
         if (failed > 0) {
           addToast({
             type: 'error',
-            message: `Certificate created, but ${failed} file${failed > 1 ? 's' : ''} failed to attach`,
+            message: t('proj.detail.certificateCreatedButFileFailedTo', { count: failed }),
           })
         }
       }
@@ -19746,7 +19622,7 @@ function HandoverTab({
     },
     {
       key: 'category',
-      header: 'Category',
+      header: t('proj.detail.category'),
       mobileSecondary: true,
       render: (item) => {
         const catLabel =
@@ -19760,7 +19636,7 @@ function HandoverTab({
     },
     {
       key: 'description',
-      header: 'Description',
+      header: t('proj.detail.description'),
       mobilePrimary: true,
       render: (item) => (
         <>
@@ -19782,7 +19658,7 @@ function HandoverTab({
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('proj.detail.status'),
       mobilePriority: 1,
       render: (item) => {
         const iSt = HANDOVER_ITEM_STATUS_COLOR[item.status] ?? HANDOVER_ITEM_STATUS_COLOR.pending
@@ -19805,7 +19681,7 @@ function HandoverTab({
     },
     {
       key: 'verifiedBy',
-      header: 'Verified By',
+      header: t('proj.detail.verifiedBy'),
       mobilePriority: 2,
       render: (item) => (
         <span style={{ color: th.textSecondary, fontSize: '12px' }}>{item.verifiedBy ?? '—'}</span>
@@ -19813,7 +19689,7 @@ function HandoverTab({
     },
     {
       key: 'verifiedAt',
-      header: 'Verified At',
+      header: t('proj.detail.verifiedAt'),
       mobilePriority: 3,
       render: (item) => (
         <span style={{ color: th.textSecondary, fontSize: '12px', whiteSpace: 'nowrap' }}>
@@ -19843,7 +19719,7 @@ function HandoverTab({
                 cursor: 'pointer',
               }}
             >
-              Verify
+              {t('proj.detail.verify')}
             </button>
           )}
           {isAdmin && (
@@ -19859,13 +19735,13 @@ function HandoverTab({
                 cursor: 'pointer',
               }}
             >
-              Edit
+              {t('proj.detail.edit')}
             </button>
           )}
           {isAdmin && (
             <button
               onClick={() => {
-                if (window.confirm('Delete this item?'))
+                if (window.confirm(t('proj.detail.deleteThisItem')))
                   void deleteItem({ variables: { id: item.id } })
               }}
               style={{
@@ -19878,7 +19754,7 @@ function HandoverTab({
                 cursor: 'pointer',
               }}
             >
-              Del
+              {t('proj.detail.del')}
             </button>
           )}
         </div>
@@ -19889,7 +19765,7 @@ function HandoverTab({
   if (loading && !certs.length)
     return (
       <div style={{ padding: '40px', textAlign: 'center', color: th.textMuted }}>
-        Loading handover data…
+        {t('proj.detail.loadingHandoverData')}
       </div>
     )
 
@@ -19905,7 +19781,7 @@ function HandoverTab({
           flexWrap: 'wrap',
         }}
       >
-        {HANDOVER_SUB_TABS.map((t) => navBtn(t.key, t.label, sub, setSub))}
+        {HANDOVER_SUB_TABS.map((tx) => navBtn(tx.key, tx.label, sub, setSub))}
       </div>
 
       {sub === 'punch_list' && (
@@ -19924,12 +19800,12 @@ function HandoverTab({
             }}
           >
             {[
-              { label: 'Certificates', value: totalCerts, color: th.accent },
-          { label: 'Accepted', value: acceptedCerts, color: '#16a34a' },
-          { label: 'Pending Acceptance', value: pendingCerts, color: '#d97706' },
-          { label: 'DLP Active', value: dlpActive, color: '#7c3aed' },
+              { label: t('proj.detail.certificates'), value: totalCerts, color: th.accent },
+          { label: t('proj.detail.accepted'), value: acceptedCerts, color: '#16a34a' },
+          { label: t('proj.detail.pendingAcceptance'), value: pendingCerts, color: '#d97706' },
+          { label: t('proj.detail.dlpActive'), value: dlpActive, color: '#7c3aed' },
           {
-            label: 'Open Checklist Items',
+            label: t('proj.detail.openChecklistItems'),
             value: openItems,
             color: openItems > 0 ? '#dc2626' : '#16a34a',
           },
@@ -19979,7 +19855,7 @@ function HandoverTab({
         }}
       >
         <div style={{ fontSize: '14px', fontWeight: 700, color: th.textPrimary }}>
-          Handover Certificates
+          {t('proj.detail.handoverCertificates')}
         </div>
         {isAdmin && (
           <button
@@ -20018,7 +19894,7 @@ function HandoverTab({
                 strokeLinecap="round"
               />
             </svg>
-            New Certificate
+            {t('proj.detail.newCertificate')}
           </button>
         )}
       </div>
@@ -20043,10 +19919,10 @@ function HandoverTab({
               marginBottom: '6px',
             }}
           >
-            No Handover Certificates
+            {t('proj.detail.noHandoverCertificates')}
           </div>
           <div style={{ fontSize: '13px', color: th.textMuted }}>
-            Create a certificate when the project or a zone is ready for handover.
+            {t('proj.detail.createACertificateWhenTheProject')}
           </div>
         </div>
       ) : (
@@ -20138,7 +20014,7 @@ function HandoverTab({
                             fontWeight: 700,
                           }}
                         >
-                          DLP ACTIVE
+                          {t('proj.detail.dlpActive2')}
                         </span>
                       )}
                       {cert.files.length > 0 && (
@@ -20178,10 +20054,10 @@ function HandoverTab({
                       }}
                     >
                       {cert.areaZone && <span>📍 {cert.areaZone}</span>}
-                      {cert.handoverDate && <span>📅 Handover: {cert.handoverDate}</span>}
-                      {cert.acceptedDate && <span>✅ Accepted: {cert.acceptedDate}</span>}
+                      {cert.handoverDate && <span>{t('proj.detail.handover2', { handoverDate: cert.handoverDate })}</span>}
+                      {cert.acceptedDate && <span>{t('proj.detail.accepted2', { acceptedDate: cert.acceptedDate })}</span>}
                       {cert.defectLiabilityEnd && (
-                        <span>🔒 DLP Ends: {cert.defectLiabilityEnd}</span>
+                        <span>{t('proj.detail.dlpEnds', { defectLiabilityEnd: cert.defectLiabilityEnd })}</span>
                       )}
                     </div>
                   </div>
@@ -20220,9 +20096,7 @@ function HandoverTab({
                             }}
                           />
                         </div>
-                        <div style={{ fontSize: '10px', color: th.textMuted, marginTop: '2px' }}>
-                          {progress}% done
-                        </div>
+                        <div style={{ fontSize: '10px', color: th.textMuted, marginTop: '2px' }}>{t('proj.detail.done2', { progress })}</div>
                       </div>
                     )}
                     {isAdmin && (
@@ -20230,7 +20104,7 @@ function HandoverTab({
                         {cert.status === 'draft' && (
                           <button
                             onClick={() => {
-                              if (window.confirm('Issue this certificate to the client?'))
+                              if (window.confirm(t('proj.detail.issueThisCertificateToTheClient')))
                                 void issueCert({ variables: { id: cert.id } })
                             }}
                             style={{
@@ -20244,7 +20118,7 @@ function HandoverTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Issue
+                            {t('proj.detail.issue')}
                           </button>
                         )}
                         {(cert.status === 'issued' || cert.status === 'pending_acceptance') && (
@@ -20268,7 +20142,7 @@ function HandoverTab({
                                 cursor: 'pointer',
                               }}
                             >
-                              Accept
+                              {t('proj.detail.accept')}
                             </button>
                             <button
                               onClick={() => {
@@ -20286,7 +20160,7 @@ function HandoverTab({
                                 cursor: 'pointer',
                               }}
                             >
-                              Reject
+                              {t('proj.detail.reject')}
                             </button>
                           </>
                         )}
@@ -20302,11 +20176,11 @@ function HandoverTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Edit
+                          {t('proj.detail.edit')}
                         </button>
                         <button
                           onClick={() => {
-                            if (window.confirm('Delete this certificate and all its items?'))
+                            if (window.confirm(t('proj.detail.deleteThisCertificateAndAllIts')))
                               void deleteCert({ variables: { id: cert.id } })
                           }}
                           style={{
@@ -20319,7 +20193,7 @@ function HandoverTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Del
+                          {t('proj.detail.del')}
                         </button>
                       </div>
                     )}
@@ -20346,7 +20220,7 @@ function HandoverTab({
                       {cert.contractorRep && (
                         <div>
                           <span style={{ fontWeight: 600, color: th.textPrimary }}>
-                            Contractor Rep:{' '}
+                            {t('proj.detail.contractorRep')}{' '}
                           </span>
                           {cert.contractorRep}
                         </div>
@@ -20354,7 +20228,7 @@ function HandoverTab({
                       {cert.clientRep && (
                         <div>
                           <span style={{ fontWeight: 600, color: th.textPrimary }}>
-                            Client Rep:{' '}
+                            {t('proj.detail.clientRep')}{' '}
                           </span>
                           {cert.clientRep}
                         </div>
@@ -20362,20 +20236,20 @@ function HandoverTab({
                       {cert.defectLiabilityStart && (
                         <div>
                           <span style={{ fontWeight: 600, color: th.textPrimary }}>
-                            DLP Start:{' '}
+                            {t('proj.detail.dlpStart')}{' '}
                           </span>
                           {cert.defectLiabilityStart}
                         </div>
                       )}
                       {cert.defectLiabilityEnd && (
                         <div>
-                          <span style={{ fontWeight: 600, color: th.textPrimary }}>DLP End: </span>
+                          <span style={{ fontWeight: 600, color: th.textPrimary }}>{t('proj.detail.dlpEnd')} </span>
                           {cert.defectLiabilityEnd}
                         </div>
                       )}
                       {cert.notes && (
                         <div style={{ gridColumn: '1/-1' }}>
-                          <span style={{ fontWeight: 600, color: th.textPrimary }}>Notes: </span>
+                          <span style={{ fontWeight: 600, color: th.textPrimary }}>{t('proj.detail.notes')} </span>
                           {cert.notes}
                         </div>
                       )}
@@ -20391,7 +20265,7 @@ function HandoverTab({
                       }}
                     >
                       <div style={{ fontSize: '13px', fontWeight: 700, color: th.textPrimary }}>
-                        Handover Checklist
+                        {t('proj.detail.handoverChecklist')}
                       </div>
                       {isAdmin && (
                         <button
@@ -20407,7 +20281,7 @@ function HandoverTab({
                             cursor: 'pointer',
                           }}
                         >
-                          + Add Item
+                          {t('proj.detail.addItem')}
                         </button>
                       )}
                     </div>
@@ -20422,7 +20296,7 @@ function HandoverTab({
                           borderRadius: '8px',
                         }}
                       >
-                        No checklist items yet. Add items to track handover requirements.
+                        {t('proj.detail.noChecklistItemsYetAddItems')}
                       </div>
                     ) : (
                       <Table columns={itemColumns} data={cert.items} rowKey="id" />
@@ -20462,29 +20336,29 @@ function HandoverTab({
             }}
           >
             <h3 style={{ margin: '0 0 20px', fontSize: '16px', color: th.textPrimary }}>
-              {certModal.mode === 'create' ? 'New Handover Certificate' : 'Edit Certificate'}
+              {certModal.mode === 'create' ? t('proj.detail.newHandoverCertificate') : t('proj.detail.editCertificate')}
             </h3>
             {field(
-              'Title *',
+              t('proj.detail.title2'),
               <input
                 value={certForm.title}
                 onChange={(e) => { setCertForm((f) => ({ ...f, title: e.target.value })); }}
                 style={inputSt}
-                placeholder="e.g. Zone A Mechanical Completion"
+                placeholder={t('proj.detail.eGZoneAMechanicalCompletion')}
               />,
             )}
             {field(
-              'Area / Zone',
+              t('proj.detail.areaZone'),
               <input
                 value={certForm.areaZone}
                 onChange={(e) => { setCertForm((f) => ({ ...f, areaZone: e.target.value })); }}
                 style={inputSt}
-                placeholder="e.g. Block 1, Zone A"
+                placeholder={t('proj.detail.eGBlock1ZoneA')}
               />,
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Handover Date',
+                t('proj.detail.handoverDate'),
                 <input
                   type="date"
                   value={certForm.handoverDate}
@@ -20493,21 +20367,21 @@ function HandoverTab({
                 />,
               )}
               {field(
-                'Contractor Rep',
+                t('proj.detail.contractorRep2'),
                 <input
                   value={certForm.contractorRep}
                   onChange={(e) => { setCertForm((f) => ({ ...f, contractorRep: e.target.value })); }}
                   style={inputSt}
-                  placeholder="Name"
+                  placeholder={t('proj.detail.name')}
                 />,
               )}
               {field(
-                'Client Rep',
+                t('proj.detail.clientRep2'),
                 <input
                   value={certForm.clientRep}
                   onChange={(e) => { setCertForm((f) => ({ ...f, clientRep: e.target.value })); }}
                   style={inputSt}
-                  placeholder="Name"
+                  placeholder={t('proj.detail.name')}
                 />,
               )}
             </div>
@@ -20521,7 +20395,7 @@ function HandoverTab({
                 letterSpacing: '0.04em',
               }}
             >
-              Defect Liability Period
+              {t('proj.detail.defectLiabilityPeriod')}
             </div>
             <div
               style={{
@@ -20532,7 +20406,7 @@ function HandoverTab({
               }}
             >
               {field(
-                'Start Date',
+                t('proj.detail.startDate'),
                 <input
                   type="date"
                   value={certForm.defectLiabilityStart}
@@ -20543,7 +20417,7 @@ function HandoverTab({
                 />,
               )}
               {field(
-                'End Date',
+                t('proj.detail.endDate'),
                 <input
                   type="date"
                   value={certForm.defectLiabilityEnd}
@@ -20555,16 +20429,16 @@ function HandoverTab({
               )}
             </div>
             {field(
-              'Notes',
+              t('proj.detail.notes2'),
               <textarea
                 value={certForm.notes}
                 onChange={(e) => { setCertForm((f) => ({ ...f, notes: e.target.value })); }}
                 style={{ ...inputSt, height: '72px', resize: 'vertical' }}
-                placeholder="Any additional notes…"
+                placeholder={t('proj.detail.anyAdditionalNotes')}
               />,
             )}
             {field(
-              'Attachments',
+              t('proj.detail.attachments'),
               <div>
                 {certModal.mode === 'create'
                   ? pendingFiles.map((f) => (
@@ -20574,7 +20448,7 @@ function HandoverTab({
                           onClick={() => { removePendingFile(f.fileId); }}
                           style={attachmentRemoveSt}
                         >
-                          Remove
+                          {t('proj.detail.remove2')}
                         </button>
                       </div>
                     ))
@@ -20607,7 +20481,7 @@ function HandoverTab({
                           }
                           style={attachmentRemoveSt}
                         >
-                          Remove
+                          {t('proj.detail.remove2')}
                         </button>
                       </div>
                     ))}
@@ -20635,7 +20509,7 @@ function HandoverTab({
                     opacity: uploading ? 0.6 : 1,
                   }}
                 >
-                  {uploading ? 'Uploading…' : '+ Add File'}
+                  {uploading ? t('proj.detail.uploading') : t('proj.detail.addFile')}
                 </button>
               </div>,
             )}
@@ -20653,7 +20527,7 @@ function HandoverTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 onClick={(...args: Parameters<typeof saveCert>) => void saveCert(...args)}
@@ -20669,7 +20543,7 @@ function HandoverTab({
                   opacity: certForm.title.trim() ? 1 : 0.5,
                 }}
               >
-                {certModal.mode === 'create' ? 'Create Certificate' : 'Save Changes'}
+                {certModal.mode === 'create' ? t('proj.detail.createCertificate') : t('proj.detail.saveChanges')}
               </button>
             </div>
           </div>
@@ -20699,10 +20573,10 @@ function HandoverTab({
             }}
           >
             <h3 style={{ margin: '0 0 20px', fontSize: '16px', color: th.textPrimary }}>
-              {itemModal.mode === 'create' ? 'Add Checklist Item' : 'Edit Checklist Item'}
+              {itemModal.mode === 'create' ? t('proj.detail.addChecklistItem') : t('proj.detail.editChecklistItem')}
             </h3>
             {field(
-              'Category',
+              t('proj.detail.category'),
               <select
                 value={itemForm.category}
                 onChange={(e) => { setItemForm((f) => ({ ...f, category: e.target.value })); }}
@@ -20716,17 +20590,17 @@ function HandoverTab({
               </select>,
             )}
             {field(
-              'Description *',
+              t('proj.detail.description2'),
               <input
                 value={itemForm.description}
                 onChange={(e) => { setItemForm((f) => ({ ...f, description: e.target.value })); }}
                 style={inputSt}
-                placeholder="e.g. Submit O&M manuals to client"
+                placeholder={t('proj.detail.eGSubmitOMManuals')}
               />,
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Sequence',
+                t('proj.detail.sequence'),
                 <input
                   type="number"
                   min={1}
@@ -20737,7 +20611,7 @@ function HandoverTab({
               )}
               {itemModal.mode === 'edit' &&
                 field(
-                  'Status',
+                  t('proj.detail.status'),
                   <select
                     value={itemForm.status}
                     onChange={(e) => { setItemForm((f) => ({ ...f, status: e.target.value })); }}
@@ -20752,12 +20626,12 @@ function HandoverTab({
                 )}
             </div>
             {field(
-              'Notes',
+              t('proj.detail.notes2'),
               <input
                 value={itemForm.notes}
                 onChange={(e) => { setItemForm((f) => ({ ...f, notes: e.target.value })); }}
                 style={inputSt}
-                placeholder="Optional notes"
+                placeholder={t('proj.detail.optionalNotes')}
               />,
             )}
             <div
@@ -20774,7 +20648,7 @@ function HandoverTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 onClick={saveItem}
@@ -20790,7 +20664,7 @@ function HandoverTab({
                   opacity: itemForm.description.trim() ? 1 : 0.5,
                 }}
               >
-                {itemModal.mode === 'create' ? 'Add Item' : 'Save'}
+                {itemModal.mode === 'create' ? t('proj.detail.addItem2') : t('proj.detail.save')}
               </button>
             </div>
           </div>
@@ -20820,18 +20694,18 @@ function HandoverTab({
             }}
           >
             <h3 style={{ margin: '0 0 8px', fontSize: '16px', color: th.textPrimary }}>
-              Verify Item
+              {t('proj.detail.verifyItem')}
             </h3>
             <div style={{ fontSize: '13px', color: th.textSecondary, marginBottom: '20px' }}>
               {verifyModal.item.description}
             </div>
             {field(
-              'Verified By *',
+              t('proj.detail.verifiedBy2'),
               <input
                 value={verifyName}
                 onChange={(e) => { setVerifyName(e.target.value); }}
                 style={inputSt}
-                placeholder="Your name"
+                placeholder={t('proj.detail.yourName')}
                 autoFocus
               />,
             )}
@@ -20847,7 +20721,7 @@ function HandoverTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 onClick={() => {
@@ -20868,7 +20742,7 @@ function HandoverTab({
                   opacity: verifyName.trim() ? 1 : 0.5,
                 }}
               >
-                Mark Verified
+                {t('proj.detail.markVerified')}
               </button>
             </div>
           </div>
@@ -20898,10 +20772,10 @@ function HandoverTab({
             }}
           >
             <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>
-              Accept Certificate
+              {t('proj.detail.acceptCertificate')}
             </h3>
             {field(
-              'Accepted Date',
+              t('proj.detail.acceptedDate'),
               <input
                 type="date"
                 value={acceptForm.acceptedDate}
@@ -20910,12 +20784,12 @@ function HandoverTab({
               />,
             )}
             {field(
-              'Client Representative',
+              t('proj.detail.clientRepresentative'),
               <input
                 value={acceptForm.clientRep}
                 onChange={(e) => { setAcceptForm((f) => ({ ...f, clientRep: e.target.value })); }}
                 style={inputSt}
-                placeholder="Name"
+                placeholder={t('proj.detail.name')}
               />,
             )}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -20930,7 +20804,7 @@ function HandoverTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 onClick={() => {
@@ -20953,7 +20827,7 @@ function HandoverTab({
                   cursor: 'pointer',
                 }}
               >
-                Accept
+                {t('proj.detail.accept')}
               </button>
             </div>
           </div>
@@ -20983,15 +20857,15 @@ function HandoverTab({
             }}
           >
             <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>
-              Reject Certificate
+              {t('proj.detail.rejectCertificate')}
             </h3>
             {field(
-              'Reason / Notes',
+              t('proj.detail.reasonNotes'),
               <textarea
                 value={rejectNotes}
                 onChange={(e) => { setRejectNotes(e.target.value); }}
                 style={{ ...inputSt, height: '80px', resize: 'vertical' }}
-                placeholder="Reason for rejection…"
+                placeholder={t('proj.detail.reasonForRejection')}
               />,
             )}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -21006,7 +20880,7 @@ function HandoverTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 onClick={() => {
@@ -21025,7 +20899,7 @@ function HandoverTab({
                   cursor: 'pointer',
                 }}
               >
-                Reject
+                {t('proj.detail.reject')}
               </button>
             </div>
           </div>
@@ -21044,6 +20918,7 @@ function RiskRegisterTab({
   theme: ReturnType<typeof useTheme>['theme']
   isAdmin?: boolean
 }) {
+  const { t } = useTranslation()
   const th = theme as unknown as Record<string, string>
   const addToast = useToastStore((s) => s.addToast)
 
@@ -21096,31 +20971,31 @@ function RiskRegisterTab({
   const [createRisk] = useMutation<CreateRiskMutation, CreateRiskMutationVariables>(CREATE_RISK, {
     onCompleted: () => {
       void refetch()
-      addToast({ variant: 'success', message: 'Risk created' })
+      addToast({ variant: 'success', message: t('proj.detail.riskCreated') })
     },
   })
   const [updateRisk] = useMutation<UpdateRiskMutation, UpdateRiskMutationVariables>(UPDATE_RISK, {
     onCompleted: () => {
       void refetch()
-      addToast({ variant: 'success', message: 'Risk updated' })
+      addToast({ variant: 'success', message: t('proj.detail.riskUpdated') })
     },
   })
   const [updateRiskStatus] = useMutation<UpdateRiskStatusMutation, UpdateRiskStatusMutationVariables>(UPDATE_RISK_STATUS, {
     onCompleted: () => {
       void refetch()
-      addToast({ variant: 'success', message: 'Status updated' })
+      addToast({ variant: 'success', message: t('proj.detail.statusUpdated') })
     },
   })
   const [addRiskReview] = useMutation<AddRiskReviewMutation, AddRiskReviewMutationVariables>(ADD_RISK_REVIEW, {
     onCompleted: () => {
       void refetch()
-      addToast({ variant: 'success', message: 'Review recorded' })
+      addToast({ variant: 'success', message: t('proj.detail.reviewRecorded') })
     },
   })
   const [deleteRisk] = useMutation<DeleteRiskMutation, DeleteRiskMutationVariables>(DELETE_RISK, {
     onCompleted: () => {
       void refetch()
-      addToast({ variant: 'success', message: 'Risk deleted' })
+      addToast({ variant: 'success', message: t('proj.detail.riskDeleted') })
     },
   })
 
@@ -21227,15 +21102,15 @@ function RiskRegisterTab({
   }
   const row1: React.CSSProperties = { marginBottom: '12px' }
 
-  const PROB_LABELS = ['', 'Rare', 'Unlikely', 'Possible', 'Likely', 'Almost Certain']
-  const IMPACT_LABELS = ['', 'Insignificant', 'Minor', 'Moderate', 'Major', 'Catastrophic']
+  const PROB_LABELS = ['', t('proj.detail.rare'), t('proj.detail.unlikely'), t('proj.detail.possible'), t('proj.detail.likely'), t('proj.detail.almostCertain')]
+  const IMPACT_LABELS = ['', t('proj.detail.insignificant'), t('proj.detail.minor'), t('proj.detail.moderate'), t('proj.detail.major'), t('proj.detail.catastrophic')]
 
   const filtered = risks
 
   if (loading)
     return (
       <div style={{ padding: '40px', textAlign: 'center', color: th.textMuted }}>
-        Loading risk register…
+        {t('proj.detail.loadingRiskRegister')}
       </div>
     )
 
@@ -21254,15 +21129,15 @@ function RiskRegisterTab({
     },
     {
       key: 'category',
-      header: 'Category',
+      header: t('proj.detail.category'),
       mobilePriority: 6,
       render: (r) => (
-        <span style={{ color: th.textPrimary, textTransform: 'capitalize' }}>{r.category}</span>
+        <span style={{ color: th.textPrimary, textTransform: 'capitalize' }}>{enumLabel(r.category)}</span>
       ),
     },
     {
       key: 'title',
-      header: 'Title',
+      header: t('proj.detail.title'),
       mobilePrimary: true,
       render: (r) => (
         <span
@@ -21282,7 +21157,7 @@ function RiskRegisterTab({
     },
     {
       key: 'probability',
-      header: 'Probability',
+      header: t('proj.detail.probability'),
       mobilePriority: 4,
       render: (r) => (
         <span
@@ -21305,7 +21180,7 @@ function RiskRegisterTab({
     },
     {
       key: 'impact',
-      header: 'Impact',
+      header: t('proj.detail.impact'),
       mobilePriority: 5,
       render: (r) => (
         <span
@@ -21328,7 +21203,7 @@ function RiskRegisterTab({
     },
     {
       key: 'riskScore',
-      header: 'Score',
+      header: t('proj.detail.score'),
       mobilePriority: 3,
       render: (r) => (
         <span
@@ -21348,13 +21223,13 @@ function RiskRegisterTab({
     },
     {
       key: 'riskLevel',
-      header: 'Level',
+      header: t('proj.detail.level'),
       mobilePriority: 1,
       render: (r) => riskLevelBadge(r.riskLevel),
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('proj.detail.status'),
       mobilePriority: 2,
       render: (r) => (
         <span
@@ -21375,7 +21250,7 @@ function RiskRegisterTab({
     },
     {
       key: 'owner',
-      header: 'Owner',
+      header: t('proj.detail.owner'),
       mobilePriority: 7,
       render: (r) => (
         <span style={{ color: th.textSecondary, fontSize: '12px' }}>{r.owner ?? '—'}</span>
@@ -21383,7 +21258,7 @@ function RiskRegisterTab({
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: t('proj.detail.actions'),
       mobileAction: true,
       render: (r) => (
         <div style={{ display: 'flex', gap: '6px' }}>
@@ -21403,7 +21278,7 @@ function RiskRegisterTab({
                 cursor: 'pointer',
               }}
             >
-              Edit
+              {t('proj.detail.edit')}
             </button>
           )}
           <button
@@ -21427,13 +21302,13 @@ function RiskRegisterTab({
               cursor: 'pointer',
             }}
           >
-            Review
+            {t('proj.detail.review')}
           </button>
           {isAdmin && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                if (window.confirm('Delete this risk?'))
+                if (window.confirm(t('proj.detail.deleteThisRisk')))
                   void deleteRisk({ variables: { id: r.id } })
               }}
               style={{
@@ -21446,7 +21321,7 @@ function RiskRegisterTab({
                 cursor: 'pointer',
               }}
             >
-              Del
+              {t('proj.detail.del')}
             </button>
           )}
         </div>
@@ -21466,10 +21341,10 @@ function RiskRegisterTab({
         }}
       >
         {[
-          { label: 'Open Risks', value: kpi.open, color: '#3b82f6' },
-          { label: 'High / Critical', value: kpi.high, color: '#f59e0b' },
-          { label: 'Critical', value: kpi.critical, color: '#ef4444' },
-          { label: 'Mitigated', value: kpi.mitigated, color: '#10b981' },
+          { label: t('proj.detail.openRisks'), value: kpi.open, color: '#3b82f6' },
+          { label: t('proj.detail.highCritical'), value: kpi.high, color: '#f59e0b' },
+          { label: t('proj.detail.critical'), value: kpi.critical, color: '#ef4444' },
+          { label: t('proj.detail.mitigated'), value: kpi.mitigated, color: '#10b981' },
         ].map((k) => (
           <div
             key={k.label}
@@ -21502,7 +21377,7 @@ function RiskRegisterTab({
           onChange={(e) => { setCatFilter(e.target.value); }}
           style={{ ...inputStyle, width: 'auto', fontSize: '13px' }}
         >
-          <option value="all">All Categories</option>
+          <option value="all">{t('proj.detail.allCategories')}</option>
           {RISK_CATEGORIES.map((c) => (
             <option key={c} value={c}>
               {c.charAt(0).toUpperCase() + c.slice(1)}
@@ -21514,7 +21389,7 @@ function RiskRegisterTab({
           onChange={(e) => { setStatusFilter(e.target.value); }}
           style={{ ...inputStyle, width: 'auto', fontSize: '13px' }}
         >
-          <option value="all">All Statuses</option>
+          <option value="all">{t('proj.detail.allStatuses')}</option>
           {RISK_STATUSES.map((s) => (
             <option key={s} value={s}>
               {s.charAt(0).toUpperCase() + s.slice(1)}
@@ -21526,7 +21401,7 @@ function RiskRegisterTab({
           onChange={(e) => { setLevelFilter(e.target.value); }}
           style={{ ...inputStyle, width: 'auto', fontSize: '13px' }}
         >
-          <option value="all">All Levels</option>
+          <option value="all">{t('proj.detail.allLevels')}</option>
           {['low', 'medium', 'high', 'critical'].map((l) => (
             <option key={l} value={l}>
               {l.charAt(0).toUpperCase() + l.slice(1)}
@@ -21548,7 +21423,7 @@ function RiskRegisterTab({
               cursor: 'pointer',
             }}
           >
-            + Add Risk
+            {t('proj.detail.addRisk')}
           </button>
         )}
       </div>
@@ -21558,7 +21433,7 @@ function RiskRegisterTab({
         columns={riskColumns}
         data={filtered}
         rowKey="id"
-        emptyMessage="No risks recorded"
+        emptyMessage={t('proj.detail.noRisksRecorded')}
         onRowClick={(r) => { setExpandedId(expandedId === r.id ? null : r.id); }}
         renderExpanded={(r) =>
           expandedId === r.id ? (
@@ -21580,7 +21455,7 @@ function RiskRegisterTab({
                     marginBottom: '4px',
                   }}
                 >
-                  Description
+                  {t('proj.detail.description')}
                 </div>
                 <div style={{ color: th.textPrimary }}>{r.description ?? '—'}</div>
                 <div
@@ -21593,7 +21468,7 @@ function RiskRegisterTab({
                     marginTop: '12px',
                   }}
                 >
-                  Cause
+                  {t('proj.detail.cause')}
                 </div>
                 <div style={{ color: th.textPrimary }}>{r.cause ?? '—'}</div>
                 <div
@@ -21606,7 +21481,7 @@ function RiskRegisterTab({
                     marginTop: '12px',
                   }}
                 >
-                  Consequence
+                  {t('proj.detail.consequence')}
                 </div>
                 <div style={{ color: th.textPrimary }}>{r.consequence ?? '—'}</div>
               </div>
@@ -21620,7 +21495,7 @@ function RiskRegisterTab({
                     marginBottom: '4px',
                   }}
                 >
-                  Mitigation Plan
+                  {t('proj.detail.mitigationPlan')}
                 </div>
                 <div style={{ color: th.textPrimary }}>{r.mitigationPlan ?? '—'}</div>
                 <div
@@ -21633,7 +21508,7 @@ function RiskRegisterTab({
                     marginTop: '12px',
                   }}
                 >
-                  Contingency Plan
+                  {t('proj.detail.contingencyPlan')}
                 </div>
                 <div style={{ color: th.textPrimary }}>{r.contingencyPlan ?? '—'}</div>
                 {r.residualScore != null && (
@@ -21648,7 +21523,7 @@ function RiskRegisterTab({
                         marginTop: '12px',
                       }}
                     >
-                      Residual Risk
+                      {t('proj.detail.residualRisk')}
                     </div>
                     <div>
                       {riskLevelBadge(r.residualLevel ?? 'low')}{' '}
@@ -21656,7 +21531,7 @@ function RiskRegisterTab({
                         style={{
                           color: th.textMuted,
                           fontSize: '12px',
-                          marginLeft: '6px',
+                          marginInlineStart: '6px',
                         }}
                       >
                         P={r.residualProbability} × I={r.residualImpact} = {r.residualScore}
@@ -21675,10 +21550,10 @@ function RiskRegisterTab({
                     marginBottom: '8px',
                   }}
                 >
-                  Review History
+                  {t('proj.detail.reviewHistory')}
                 </div>
                 {r.reviews.length === 0 ? (
-                  <div style={{ color: th.textMuted }}>No reviews yet</div>
+                  <div style={{ color: th.textMuted }}>{t('proj.detail.noReviewsYet')}</div>
                 ) : (
                   r.reviews.map((rv) => (
                     <div
@@ -21724,7 +21599,7 @@ function RiskRegisterTab({
                   ))
                 )}
                 <div style={{ marginTop: '12px' }}>
-                  <label style={labelStyle}>Change Status</label>
+                  <label style={labelStyle}>{t('proj.detail.changeStatus')}</label>
                   <select
                     value={r.status}
                     onChange={(e) =>
@@ -21772,11 +21647,11 @@ function RiskRegisterTab({
             }}
           >
             <h3 style={{ margin: '0 0 20px', fontSize: '16px', color: th.textPrimary }}>
-              {editRisk ? 'Edit Risk' : 'Add Risk'}
+              {editRisk ? t('proj.detail.editRisk') : t('proj.detail.addRisk2')}
             </h3>
             <div style={row2}>
               <div>
-                <label style={labelStyle}>Category</label>
+                <label style={labelStyle}>{t('proj.detail.category')}</label>
                 <select
                   value={form.category}
                   onChange={(e) => { setForm((f) => ({ ...f, category: e.target.value })); }}
@@ -21790,7 +21665,7 @@ function RiskRegisterTab({
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Status</label>
+                <label style={labelStyle}>{t('proj.detail.status')}</label>
                 <select
                   value={form.status}
                   onChange={(e) => { setForm((f) => ({ ...f, status: e.target.value })); }}
@@ -21805,16 +21680,16 @@ function RiskRegisterTab({
               </div>
             </div>
             <div style={row1}>
-              <label style={labelStyle}>Title *</label>
+              <label style={labelStyle}>{t('proj.detail.title2')}</label>
               <input
                 value={form.title}
                 onChange={(e) => { setForm((f) => ({ ...f, title: e.target.value })); }}
                 style={inputStyle}
-                placeholder="Risk title"
+                placeholder={t('proj.detail.riskTitle')}
               />
             </div>
             <div style={row1}>
-              <label style={labelStyle}>Description</label>
+              <label style={labelStyle}>{t('proj.detail.description')}</label>
               <textarea
                 value={form.description}
                 onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
@@ -21823,7 +21698,7 @@ function RiskRegisterTab({
             </div>
             <div style={row2}>
               <div>
-                <label style={labelStyle}>Cause</label>
+                <label style={labelStyle}>{t('proj.detail.cause')}</label>
                 <input
                   value={form.cause}
                   onChange={(e) => { setForm((f) => ({ ...f, cause: e.target.value })); }}
@@ -21831,7 +21706,7 @@ function RiskRegisterTab({
                 />
               </div>
               <div>
-                <label style={labelStyle}>Consequence</label>
+                <label style={labelStyle}>{t('proj.detail.consequence')}</label>
                 <input
                   value={form.consequence}
                   onChange={(e) => { setForm((f) => ({ ...f, consequence: e.target.value })); }}
@@ -21841,9 +21716,7 @@ function RiskRegisterTab({
             </div>
             <div style={row2}>
               <div>
-                <label style={labelStyle}>
-                  Probability (1–5) — {PROB_LABELS[Number(form.probability)]}
-                </label>
+                <label style={labelStyle}>{t('proj.detail.probability152', { value: PROB_LABELS[Number(form.probability)] })}</label>
                 <input
                   type="range"
                   min={1}
@@ -21866,9 +21739,7 @@ function RiskRegisterTab({
                 </div>
               </div>
               <div>
-                <label style={labelStyle}>
-                  Impact (1–5) — {IMPACT_LABELS[Number(form.impact)]}
-                </label>
+                <label style={labelStyle}>{t('proj.detail.impact152', { value: IMPACT_LABELS[Number(form.impact)] })}</label>
                 <input
                   type="range"
                   min={1}
@@ -21901,18 +21772,9 @@ function RiskRegisterTab({
                 fontWeight: 700,
                 color: '#374151',
               }}
-            >
-              Risk Score: {Number(form.probability) * Number(form.impact)} —{' '}
-              {Number(form.probability) * Number(form.impact) >= 15
-                ? 'CRITICAL'
-                : Number(form.probability) * Number(form.impact) >= 9
-                  ? 'HIGH'
-                  : Number(form.probability) * Number(form.impact) >= 4
-                    ? 'MEDIUM'
-                    : 'LOW'}
-            </div>
+            >{t('proj.detail.riskScore', { value: Number(form.probability) * Number(form.impact), value2: Number(form.probability) * Number(form.impact) >= 15 ? t('proj.detail.critical2') : Number(form.probability) * Number(form.impact) >= 9 ? t('proj.detail.high') : Number(form.probability) * Number(form.impact) >= 4 ? t('proj.detail.medium') : t('proj.detail.low2') })}</div>
             <div style={row1}>
-              <label style={labelStyle}>Mitigation Plan</label>
+              <label style={labelStyle}>{t('proj.detail.mitigationPlan')}</label>
               <textarea
                 value={form.mitigationPlan}
                 onChange={(e) => { setForm((f) => ({ ...f, mitigationPlan: e.target.value })); }}
@@ -21920,7 +21782,7 @@ function RiskRegisterTab({
               />
             </div>
             <div style={row1}>
-              <label style={labelStyle}>Contingency Plan</label>
+              <label style={labelStyle}>{t('proj.detail.contingencyPlan')}</label>
               <textarea
                 value={form.contingencyPlan}
                 onChange={(e) => { setForm((f) => ({ ...f, contingencyPlan: e.target.value })); }}
@@ -21929,7 +21791,7 @@ function RiskRegisterTab({
             </div>
             <div style={row2}>
               <div>
-                <label style={labelStyle}>Residual Probability</label>
+                <label style={labelStyle}>{t('proj.detail.residualProbability')}</label>
                 <input
                   type="number"
                   min={1}
@@ -21940,7 +21802,7 @@ function RiskRegisterTab({
                 />
               </div>
               <div>
-                <label style={labelStyle}>Residual Impact</label>
+                <label style={labelStyle}>{t('proj.detail.residualImpact')}</label>
                 <input
                   type="number"
                   min={1}
@@ -21953,7 +21815,7 @@ function RiskRegisterTab({
             </div>
             <div style={row2}>
               <div>
-                <label style={labelStyle}>Owner</label>
+                <label style={labelStyle}>{t('proj.detail.owner')}</label>
                 <input
                   value={form.owner}
                   onChange={(e) => { setForm((f) => ({ ...f, owner: e.target.value })); }}
@@ -21961,7 +21823,7 @@ function RiskRegisterTab({
                 />
               </div>
               <div>
-                <label style={labelStyle}>Raised By</label>
+                <label style={labelStyle}>{t('proj.detail.raisedBy')}</label>
                 <input
                   value={form.raisedBy}
                   onChange={(e) => { setForm((f) => ({ ...f, raisedBy: e.target.value })); }}
@@ -21971,7 +21833,7 @@ function RiskRegisterTab({
             </div>
             <div style={row2}>
               <div>
-                <label style={labelStyle}>Raised Date</label>
+                <label style={labelStyle}>{t('proj.detail.raisedDate')}</label>
                 <input
                   type="date"
                   value={form.raisedDate}
@@ -21980,7 +21842,7 @@ function RiskRegisterTab({
                 />
               </div>
               <div>
-                <label style={labelStyle}>Review Date</label>
+                <label style={labelStyle}>{t('proj.detail.reviewDate')}</label>
                 <input
                   type="date"
                   value={form.reviewDate}
@@ -22003,7 +21865,7 @@ function RiskRegisterTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 onClick={() => void saveRisk()}
@@ -22019,7 +21881,7 @@ function RiskRegisterTab({
                   opacity: form.title ? 1 : 0.5,
                 }}
               >
-                {editRisk ? 'Save Changes' : 'Create Risk'}
+                {editRisk ? t('proj.detail.saveChanges') : t('proj.detail.createRisk')}
               </button>
             </div>
           </div>
@@ -22049,14 +21911,14 @@ function RiskRegisterTab({
             }}
           >
             <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>
-              Record Risk Review
+              {t('proj.detail.recordRiskReview')}
             </h3>
             <div style={{ fontSize: '13px', color: th.textSecondary, marginBottom: '16px' }}>
               {reviewModal.riskNo} — {reviewModal.title}
             </div>
             <div style={row2}>
               <div>
-                <label style={labelStyle}>Probability (1–5)</label>
+                <label style={labelStyle}>{t('proj.detail.probability15')}</label>
                 <input
                   type="range"
                   min={1}
@@ -22079,7 +21941,7 @@ function RiskRegisterTab({
                 </div>
               </div>
               <div>
-                <label style={labelStyle}>Impact (1–5)</label>
+                <label style={labelStyle}>{t('proj.detail.impact15')}</label>
                 <input
                   type="range"
                   min={1}
@@ -22110,11 +21972,9 @@ function RiskRegisterTab({
                 fontWeight: 700,
                 color: '#374151',
               }}
-            >
-              Score: {reviewForm.probability * reviewForm.impact}
-            </div>
+            >{t('proj.detail.score2', { value: reviewForm.probability * reviewForm.impact })}</div>
             <div style={row1}>
-              <label style={labelStyle}>Notes</label>
+              <label style={labelStyle}>{t('proj.detail.notes2')}</label>
               <textarea
                 value={reviewForm.notes}
                 onChange={(e) => { setReviewForm((f) => ({ ...f, notes: e.target.value })); }}
@@ -22122,7 +21982,7 @@ function RiskRegisterTab({
               />
             </div>
             <div style={row1}>
-              <label style={labelStyle}>Reviewed By</label>
+              <label style={labelStyle}>{t('proj.detail.reviewedBy')}</label>
               <input
                 value={reviewForm.reviewedBy}
                 onChange={(e) => { setReviewForm((f) => ({ ...f, reviewedBy: e.target.value })); }}
@@ -22143,7 +22003,7 @@ function RiskRegisterTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 onClick={() => void saveReview()}
@@ -22157,7 +22017,7 @@ function RiskRegisterTab({
                   cursor: 'pointer',
                 }}
               >
-                Save Review
+                {t('proj.detail.saveReview')}
               </button>
             </div>
           </div>
@@ -22345,6 +22205,7 @@ function ContractManagementTab({
   onUpdateContract,
   onReviseContract,
 }: ContractMgmtProps) {
+  const { t } = useTranslation()
   const th = theme as unknown as Record<string, string>
   const [selectedContractId, setSelectedContractId] = React.useState<string | null>(
     contracts[0]?.id ?? null,
@@ -22394,7 +22255,7 @@ function ContractManagementTab({
   const saveRevise = () => {
     if (!reviseModal) return
     if (!reviseForm.changeSummary.trim()) {
-      alert('A change summary is required')
+      alert(t('proj.detail.aChangeSummaryIsRequired'))
       return
     }
     onReviseContract({
@@ -22528,10 +22389,10 @@ function ContractManagementTab({
         <div
           style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary, marginBottom: '6px' }}
         >
-          No Contracts
+          {t('proj.detail.noContracts')}
         </div>
         <div style={{ fontSize: '13px', marginBottom: '20px' }}>
-          Contract records will appear here once added.
+          {t('proj.detail.contractRecordsWillAppearHereOnce')}
         </div>
         {isAdmin && (
           <button
@@ -22547,7 +22408,7 @@ function ContractManagementTab({
               cursor: 'pointer',
             }}
           >
-            + New Contract
+            {t('proj.detail.newContract')}
           </button>
         )}
         {contractModal && renderContractModal()}
@@ -22583,12 +22444,9 @@ function ContractManagementTab({
             overflowY: 'auto',
           }}
         >
-          <h3 style={{ margin: '0 0 6px', fontSize: '16px', color: th.textPrimary }}>
-            Revise Contract — Rev {c.revision + 1}
-          </h3>
+          <h3 style={{ margin: '0 0 6px', fontSize: '16px', color: th.textPrimary }}>{t('proj.detail.reviseContractRev', { value: c.revision + 1 })}</h3>
           <p style={{ margin: '0 0 18px', fontSize: '12px', color: th.textMuted }}>
-            Records an amendment: the current terms are saved to the revision history and the
-            contract updates to the new values.
+            {t('proj.detail.recordsAnAmendmentTheCurrentTerms')}
           </p>
           <div
             style={{
@@ -22599,7 +22457,7 @@ function ContractManagementTab({
             }}
           >
             <div>
-              <label style={labelStyle}>New Contract Value *</label>
+              <label style={labelStyle}>{t('proj.detail.newContractValue')}</label>
               <input
                 type="number"
                 min={0}
@@ -22615,14 +22473,11 @@ function ContractManagementTab({
                     marginTop: '3px',
                     color: delta > 0 ? '#15803d' : '#dc2626',
                   }}
-                >
-                  {delta > 0 ? '+' : ''}
-                  {fmt(delta, c.currencyCode)} vs Rev {c.revision}
-                </div>
+                >{t('proj.detail.vsRev', { value: delta > 0 ? '+' : '', value2: fmt(delta, c.currencyCode), revision: c.revision })}</div>
               )}
             </div>
             <div>
-              <label style={labelStyle}>Retention %</label>
+              <label style={labelStyle}>{t('proj.detail.retention')}</label>
               <input
                 type="number"
                 min={0}
@@ -22635,7 +22490,7 @@ function ContractManagementTab({
             </div>
           </div>
           <div style={{ marginBottom: '12px' }}>
-            <label style={labelStyle}>Effective Date</label>
+            <label style={labelStyle}>{t('proj.detail.effectiveDate')}</label>
             <input
               type="date"
               value={reviseForm.effectiveDate}
@@ -22644,12 +22499,12 @@ function ContractManagementTab({
             />
           </div>
           <div style={{ marginBottom: '20px' }}>
-            <label style={labelStyle}>Change Summary *</label>
+            <label style={labelStyle}>{t('proj.detail.changeSummary')}</label>
             <textarea
               value={reviseForm.changeSummary}
               onChange={(e) => { setReviseForm((f) => ({ ...f, changeSummary: e.target.value })); }}
               style={{ ...inputStyle, minHeight: '70px', resize: 'vertical' }}
-              placeholder="Why is the contract being amended? (e.g. approved VO-003, scope addition)"
+              placeholder={t('proj.detail.whyIsTheContractBeingAmended')}
             />
           </div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -22664,7 +22519,7 @@ function ContractManagementTab({
                 cursor: 'pointer',
               }}
             >
-              Cancel
+              {t('proj.detail.cancel')}
             </button>
             <button
               onClick={saveRevise}
@@ -22678,7 +22533,7 @@ function ContractManagementTab({
                 cursor: 'pointer',
               }}
             >
-              Save Revision
+              {t('proj.detail.saveRevision')}
             </button>
           </div>
         </div>
@@ -22711,7 +22566,7 @@ function ContractManagementTab({
           }}
         >
           <h3 style={{ margin: '0 0 20px', fontSize: '16px', color: th.textPrimary }}>
-            {contractModal?.mode === 'create' ? 'New Contract' : 'Edit Contract'}
+            {contractModal?.mode === 'create' ? t('proj.detail.newContract2') : t('proj.detail.editContract')}
           </h3>
           {contractModal?.mode === 'create' && (
             <div
@@ -22735,29 +22590,29 @@ function ContractManagementTab({
                   letterSpacing: '0.05em',
                 }}
               >
-                Contract No.
+                {t('proj.detail.contractNo')}
               </span>
               <span style={{ fontSize: '12px', color: th.textMuted, fontStyle: 'italic' }}>
-                Auto-generated (e.g. CTR-0001)
+                {t('proj.detail.autoGeneratedEGCtr0001')}
               </span>
             </div>
           )}
           <div style={{ marginBottom: '12px' }}>
-            <label style={labelStyle}>Contract Name *</label>
+            <label style={labelStyle}>{t('proj.detail.contractName')}</label>
             <input
               value={cForm.contractName}
               onChange={(e) => { setCForm((f) => ({ ...f, contractName: e.target.value })); }}
               style={inputStyle}
-              placeholder="e.g. Main EPC Contract"
+              placeholder={t('proj.detail.eGMainEpcContract')}
             />
           </div>
           <div style={{ marginBottom: '12px' }}>
-            <label style={labelStyle}>Client Name</label>
+            <label style={labelStyle}>{t('proj.detail.clientName')}</label>
             <input
               value={cForm.clientName}
               onChange={(e) => { setCForm((f) => ({ ...f, clientName: e.target.value })); }}
               style={inputStyle}
-              placeholder="e.g. Saudi Aramco"
+              placeholder={t('proj.detail.eGSaudiAramco')}
             />
           </div>
           <div
@@ -22769,7 +22624,7 @@ function ContractManagementTab({
             }}
           >
             <div>
-              <label style={labelStyle}>Contract Value *</label>
+              <label style={labelStyle}>{t('proj.detail.contractValue')}</label>
               <input
                 type="number"
                 min={0}
@@ -22781,7 +22636,7 @@ function ContractManagementTab({
               />
             </div>
             <div>
-              <label style={labelStyle}>Currency</label>
+              <label style={labelStyle}>{t('proj.detail.currency')}</label>
               <select
                 value={cForm.currencyCode}
                 onChange={(e) => { setCForm((f) => ({ ...f, currencyCode: e.target.value })); }}
@@ -22804,7 +22659,7 @@ function ContractManagementTab({
             }}
           >
             <div>
-              <label style={labelStyle}>Billing Method</label>
+              <label style={labelStyle}>{t('proj.detail.billingMethod')}</label>
               <select
                 value={cForm.defaultBillingMethod}
                 onChange={(e) => { setCForm((f) => ({ ...f, defaultBillingMethod: e.target.value })); }}
@@ -22818,7 +22673,7 @@ function ContractManagementTab({
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Retention %</label>
+              <label style={labelStyle}>{t('proj.detail.retention')}</label>
               <input
                 type="number"
                 min={0}
@@ -22831,7 +22686,7 @@ function ContractManagementTab({
             </div>
           </div>
           <div style={{ marginBottom: '20px' }}>
-            <label style={labelStyle}>Status</label>
+            <label style={labelStyle}>{t('proj.detail.status')}</label>
             <select
               value={cForm.status}
               onChange={(e) => { setCForm((f) => ({ ...f, status: e.target.value })); }}
@@ -22856,7 +22711,7 @@ function ContractManagementTab({
                 cursor: 'pointer',
               }}
             >
-              Cancel
+              {t('proj.detail.cancel')}
             </button>
             <button
               onClick={saveContract}
@@ -22872,7 +22727,7 @@ function ContractManagementTab({
                 opacity: contractFormValid ? 1 : 0.5,
               }}
             >
-              {contractModal?.mode === 'create' ? 'Create Contract' : 'Save Changes'}
+              {contractModal?.mode === 'create' ? t('proj.detail.createContract') : t('proj.detail.saveChanges')}
             </button>
           </div>
         </div>
@@ -22918,7 +22773,7 @@ function ContractManagementTab({
           <button
             onClick={openCreateContract}
             style={{
-              marginLeft: 'auto',
+              marginInlineStart: 'auto',
               padding: '8px 16px',
               background: th.accent,
               color: '#fff',
@@ -22931,7 +22786,7 @@ function ContractManagementTab({
               flexShrink: 0,
             }}
           >
-            + New Contract
+            {t('proj.detail.newContract')}
           </button>
         )}
       </div>
@@ -22975,9 +22830,7 @@ function ContractManagementTab({
                     background: th.bgCanvas,
                     border: `1px solid ${th.border}`,
                   }}
-                >
-                  Rev {selectedContract.revision}
-                </span>
+                >{t('proj.detail.rev2', { revision: selectedContract.revision })}</span>
                 {isAdmin && (
                   <button
                     onClick={() => { openReviseContract(selectedContract); }}
@@ -22992,7 +22845,7 @@ function ContractManagementTab({
                       cursor: 'pointer',
                     }}
                   >
-                    Revise
+                    {t('proj.detail.revise')}
                   </button>
                 )}
                 {isAdmin && (
@@ -23009,7 +22862,7 @@ function ContractManagementTab({
                       cursor: 'pointer',
                     }}
                   >
-                    Edit
+                    {t('proj.detail.edit')}
                   </button>
                 )}
                 {contractStatusBadge(selectedContract.status)}
@@ -23018,22 +22871,22 @@ function ContractManagementTab({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
               {[
                 {
-                  label: 'Contract Value',
+                  label: t('proj.detail.contractValue2'),
                   value: fmt(selectedContract.contractValue, selectedContract.currencyCode),
                   color: th.accent,
                 },
                 {
-                  label: 'Total Invoiced',
+                  label: t('proj.detail.totalInvoiced'),
                   value: fmt(selectedContract.totalInvoiced, selectedContract.currencyCode),
                   color: '#8b5cf6',
                 },
                 {
-                  label: 'Total Paid',
+                  label: t('proj.detail.totalPaid'),
                   value: fmt(selectedContract.totalPaid, selectedContract.currencyCode),
                   color: '#10b981',
                 },
                 {
-                  label: 'Outstanding',
+                  label: t('proj.detail.outstanding'),
                   value: fmt(selectedContract.outstanding, selectedContract.currencyCode),
                   color: selectedContract.outstanding > 0 ? '#ef4444' : '#10b981',
                 },
@@ -23083,15 +22936,15 @@ function ContractManagementTab({
               }}
             >
               <div>
-                <span style={{ fontWeight: 600 }}>Billing Method: </span>
+                <span style={{ fontWeight: 600 }}>{t('proj.detail.billingMethod2')} </span>
                 {selectedContract.defaultBillingMethod.replace(/_/g, ' ')}
               </div>
               <div>
-                <span style={{ fontWeight: 600 }}>Retention: </span>
+                <span style={{ fontWeight: 600 }}>{t('proj.detail.retention2')} </span>
                 {selectedContract.retentionPct}%
               </div>
               <div>
-                <span style={{ fontWeight: 600 }}>Currency: </span>
+                <span style={{ fontWeight: 600 }}>{t('proj.detail.currency2')} </span>
                 {selectedContract.currencyCode}
               </div>
             </div>
@@ -23116,7 +22969,7 @@ function ContractManagementTab({
                   color: th.textPrimary,
                 }}
               >
-                Revision History
+                {t('proj.detail.revisionHistory')}
               </h3>
               <RevisionHistory
                 th={th}
@@ -23127,9 +22980,9 @@ function ContractManagementTab({
                   summary: rv.changeSummary,
                   current: rv.revision === selectedContract.revision,
                   meta: [
-                    { label: 'Value', value: fmt(rv.contractValue, rv.currencyCode) },
-                    { label: 'Retention', value: `${rv.retentionPct}%` },
-                    ...(rv.effectiveDate ? [{ label: 'Effective', value: rv.effectiveDate }] : []),
+                    { label: t('proj.detail.value'), value: fmt(rv.contractValue, rv.currencyCode) },
+                    { label: t('proj.detail.retention3'), value: `${rv.retentionPct}%` },
+                    ...(rv.effectiveDate ? [{ label: t('proj.detail.effective'), value: rv.effectiveDate }] : []),
                   ],
                 }))}
               />
@@ -23155,7 +23008,7 @@ function ContractManagementTab({
               }}
             >
               <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: th.textPrimary }}>
-                Milestones
+                {t('proj.detail.milestones')}
               </h3>
               {isAdmin && (
                 <button
@@ -23171,7 +23024,7 @@ function ContractManagementTab({
                     cursor: 'pointer',
                   }}
                 >
-                  + Add Milestone
+                  {t('proj.detail.addMilestone')}
                 </button>
               )}
             </div>
@@ -23189,7 +23042,7 @@ function ContractManagementTab({
                 },
                 {
                   key: 'name',
-                  header: 'Milestone',
+                  header: t('proj.detail.milestone'),
                   mobilePrimary: true,
                   render: (ms) => (
                     <span style={{ color: th.textPrimary, fontWeight: 500 }}>{ms.name}</span>
@@ -23197,7 +23050,7 @@ function ContractManagementTab({
                 },
                 {
                   key: 'amount',
-                  header: 'Amount',
+                  header: t('proj.detail.amount'),
                   mobileSecondary: true,
                   render: (ms) => (
                     <span style={{ fontVariantNumeric: 'tabular-nums', color: th.textPrimary }}>
@@ -23207,7 +23060,7 @@ function ContractManagementTab({
                 },
                 {
                   key: 'status',
-                  header: 'Status',
+                  header: t('proj.detail.status'),
                   mobilePriority: 1,
                   render: (ms) =>
                     ms.status === 'reached' ? (
@@ -23222,7 +23075,7 @@ function ContractManagementTab({
                           border: '1px solid #bbf7d0',
                         }}
                       >
-                        REACHED
+                        {t('proj.detail.reached')}
                       </span>
                     ) : (
                       <span
@@ -23236,13 +23089,13 @@ function ContractManagementTab({
                           border: '1px solid #fde68a',
                         }}
                       >
-                        PENDING
+                        {t('proj.detail.pending2')}
                       </span>
                     ),
                 },
                 {
                   key: 'reachedAt',
-                  header: 'Reached',
+                  header: t('proj.detail.reached2'),
                   mobilePriority: 2,
                   render: (ms) => (
                     <span style={{ color: th.textSecondary, fontSize: '12px' }}>
@@ -23252,14 +23105,14 @@ function ContractManagementTab({
                 },
                 {
                   key: 'actions',
-                  header: 'Actions',
+                  header: t('proj.detail.actions'),
                   mobileAction: true,
                   render: (ms) => (
                     <div style={{ display: 'flex', gap: '6px' }}>
                       {isAdmin && ms.status !== 'reached' && (
                         <button
                           onClick={() => {
-                            if (window.confirm(`Mark "${ms.name}" as reached?`))
+                            if (window.confirm(t('proj.detail.markAsReached', { name: ms.name })))
                               onReachMilestone(selectedContract.id, ms.id)
                           }}
                           style={{
@@ -23272,7 +23125,7 @@ function ContractManagementTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Reach
+                          {t('proj.detail.reach')}
                         </button>
                       )}
                       {isAdmin && (
@@ -23288,13 +23141,13 @@ function ContractManagementTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Edit
+                          {t('proj.detail.edit')}
                         </button>
                       )}
                       {isAdmin && (
                         <button
                           onClick={() => {
-                            if (window.confirm('Delete this milestone?')) onDeleteMilestone(ms.id)
+                            if (window.confirm(t('proj.detail.deleteThisMilestone'))) onDeleteMilestone(ms.id)
                           }}
                           style={{
                             fontSize: '11px',
@@ -23306,7 +23159,7 @@ function ContractManagementTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Del
+                          {t('proj.detail.del')}
                         </button>
                       )}
                     </div>
@@ -23318,7 +23171,7 @@ function ContractManagementTab({
                   columns={milestoneColumns}
                   data={[...selectedContract.milestones].sort((a, b) => a.sequence - b.sequence)}
                   rowKey="id"
-                  emptyMessage="No milestones defined"
+                  emptyMessage={t('proj.detail.noMilestonesDefined')}
                 />
               )
             })()}
@@ -23341,7 +23194,7 @@ function ContractManagementTab({
                 color: th.textPrimary,
               }}
             >
-              Invoices
+              {t('proj.detail.invoices')}
             </h3>
             {contractInvoices.length === 0 ? (
               <div
@@ -23352,14 +23205,14 @@ function ContractManagementTab({
                   fontSize: '13px',
                 }}
               >
-                No invoices for this contract
+                {t('proj.detail.noInvoicesForThisContract')}
               </div>
             ) : (
               <Table
                 columns={[
                   {
                     key: 'invoiceNumber',
-                    header: 'Invoice No.',
+                    header: t('proj.detail.invoiceNo'),
                     mobilePrimary: true,
                     render: (inv: InvoiceSummary) => (
                       <span style={{ fontWeight: 600, color: th.textPrimary }}>
@@ -23369,19 +23222,19 @@ function ContractManagementTab({
                   },
                   {
                     key: 'billingMethod',
-                    header: 'Method',
+                    header: t('proj.detail.method'),
                     mobileSecondary: true,
                     render: (inv: InvoiceSummary) => inv.billingMethod.replace(/_/g, ' '),
                   },
                   {
                     key: 'status',
-                    header: 'Status',
+                    header: t('proj.detail.status'),
                     mobilePriority: 1,
                     render: (inv: InvoiceSummary) => invoiceStatusBadge(inv.status),
                   },
                   {
                     key: 'netPayable',
-                    header: 'Net Payable',
+                    header: t('proj.detail.netPayable'),
                     mobilePriority: 2,
                     render: (inv: InvoiceSummary) => (
                       <span
@@ -23397,19 +23250,19 @@ function ContractManagementTab({
                   },
                   {
                     key: 'invoiceDate',
-                    header: 'Invoice Date',
+                    header: t('proj.detail.invoiceDate'),
                     mobilePriority: 3,
                     render: (inv: InvoiceSummary) => inv.invoiceDate.slice(0, 10),
                   },
                   {
                     key: 'dueDate',
-                    header: 'Due Date',
+                    header: t('proj.detail.dueDate'),
                     mobilePriority: 4,
                     render: (inv: InvoiceSummary) => (inv.dueDate ? inv.dueDate.slice(0, 10) : '—'),
                   },
                   {
                     key: 'grossTotal',
-                    header: 'Gross',
+                    header: t('proj.detail.gross'),
                     mobilePriority: 5,
                     render: (inv: InvoiceSummary) => (
                       <span style={{ fontVariantNumeric: 'tabular-nums', color: th.textPrimary }}>
@@ -23419,7 +23272,7 @@ function ContractManagementTab({
                   },
                   {
                     key: 'retentionAmount',
-                    header: 'Retention',
+                    header: t('proj.detail.retention3'),
                     mobilePriority: 6,
                     render: (inv: InvoiceSummary) => (
                       <span style={{ fontVariantNumeric: 'tabular-nums', color: th.textMuted }}>
@@ -23459,15 +23312,15 @@ function ContractManagementTab({
             }}
           >
             <h3 style={{ margin: '0 0 20px', fontSize: '16px', color: th.textPrimary }}>
-              {milestoneModal.mode === 'create' ? 'Add Milestone' : 'Edit Milestone'}
+              {milestoneModal.mode === 'create' ? t('proj.detail.addMilestone2') : t('proj.detail.editMilestone')}
             </h3>
             <div style={{ marginBottom: '12px' }}>
-              <label style={labelStyle}>Milestone Name *</label>
+              <label style={labelStyle}>{t('proj.detail.milestoneName')}</label>
               <input
                 value={msForm.name}
                 onChange={(e) => { setMsForm((f) => ({ ...f, name: e.target.value })); }}
                 style={inputStyle}
-                placeholder="e.g. Design Approval"
+                placeholder={t('proj.detail.eGDesignApproval')}
               />
             </div>
             <div
@@ -23479,7 +23332,7 @@ function ContractManagementTab({
               }}
             >
               <div>
-                <label style={labelStyle}>Sequence</label>
+                <label style={labelStyle}>{t('proj.detail.sequence')}</label>
                 <input
                   type="number"
                   min={1}
@@ -23489,7 +23342,7 @@ function ContractManagementTab({
                 />
               </div>
               <div>
-                <label style={labelStyle}>Currency</label>
+                <label style={labelStyle}>{t('proj.detail.currency')}</label>
                 <input
                   value={msForm.currencyCode}
                   onChange={(e) => { setMsForm((f) => ({ ...f, currencyCode: e.target.value })); }}
@@ -23498,7 +23351,7 @@ function ContractManagementTab({
               </div>
             </div>
             <div style={{ marginBottom: '12px' }}>
-              <label style={labelStyle}>Billable Amount *</label>
+              <label style={labelStyle}>{t('proj.detail.billableAmount')}</label>
               <input
                 type="number"
                 min={0}
@@ -23522,7 +23375,7 @@ function ContractManagementTab({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 onClick={saveMilestone}
@@ -23538,7 +23391,7 @@ function ContractManagementTab({
                   opacity: msForm.name && msForm.billableAmount ? 1 : 0.5,
                 }}
               >
-                {milestoneModal.mode === 'create' ? 'Add Milestone' : 'Save Changes'}
+                {milestoneModal.mode === 'create' ? t('proj.detail.addMilestone2') : t('proj.detail.saveChanges')}
               </button>
             </div>
           </div>
@@ -23896,6 +23749,7 @@ function execSectionHeader(
   isEditable: boolean,
   th: Record<string, string>,
 ) {
+  const { t } = useTranslation()
   return (
     <div
       style={{
@@ -23923,7 +23777,7 @@ function execSectionHeader(
             cursor: 'pointer',
           }}
         >
-          + Add
+          {t('proj.detail.add2')}
         </button>
       )}
     </div>
@@ -24078,6 +23932,7 @@ function ExecUploadButton({
   onUpload: (v: Record<string, unknown>) => void
   th: Record<string, string>
 }) {
+  const { t } = useTranslation()
   const [state, setState] = React.useState<UploadState>({ uploading: false, progress: 0 })
   const ref = React.useRef<HTMLInputElement>(null)
   return (
@@ -24111,7 +23966,7 @@ function ExecUploadButton({
         }}
       >
         {state.uploading ? (
-          <>{state.progress}%&nbsp;uploading…</>
+          <>{t('proj.detail.uploading2', { progress: state.progress })}</>
         ) : (
           <>
             <svg
@@ -24126,7 +23981,7 @@ function ExecUploadButton({
             >
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
-            Attach File
+            {t('proj.detail.attachFile')}
           </>
         )}
       </button>
@@ -24135,17 +23990,17 @@ function ExecUploadButton({
 }
 
 const EXEC_SUB_TABS = [
-  { key: 'ifc_drawings', label: 'IFC Drawing Register' },
-  { key: 'rfis', label: 'RFIs' },
-  { key: 'site_instructions', label: 'Site Instructions' },
-  { key: 'qa_qc', label: 'QA/QC' },
+  { key: 'ifc_drawings', get label() { return i18n.t('proj.detail.ifcDrawingRegister', { defaultValue: "IFC Drawing Register" }) } },
+  { key: 'rfis', get label() { return i18n.t('proj.detail.rfis', { defaultValue: "RFIs" }) } },
+  { key: 'site_instructions', get label() { return i18n.t('proj.detail.siteInstructions', { defaultValue: "Site Instructions" }) } },
+  { key: 'qa_qc', get label() { return i18n.t('proj.detail.qaQc', { defaultValue: "QA/QC" }) } },
   { key: 'hse', label: 'HSE' },
-  { key: 'daily_reports', label: 'Daily Reports' },
+  { key: 'daily_reports', get label() { return i18n.t('proj.detail.dailyReports', { defaultValue: "Daily Reports" }) } },
 ]
 const QA_SUB_TABS = [
-  { key: 'itps', label: 'ITPs' },
-  { key: 'irs', label: 'Inspection Requests' },
-  { key: 'ncrs', label: 'NCRs' },
+  { key: 'itps', get label() { return i18n.t('proj.detail.itps', { defaultValue: "ITPs" }) } },
+  { key: 'irs', get label() { return i18n.t('proj.detail.inspectionRequests', { defaultValue: "Inspection Requests" }) } },
+  { key: 'ncrs', get label() { return i18n.t('proj.detail.ncrs', { defaultValue: "NCRs" }) } },
 ]
 const HSE_TYPES = ['all', 'toolbox_talk', 'incident', 'observation', 'ptw']
 
@@ -24331,6 +24186,7 @@ function ExecutionTab({
   onAttachMachineryPhoto,
   onDeleteMachinery,
 }: ExecProps) {
+  const { t } = useTranslation()
   const addToast = useToastStore((s) => s.addToast)
   const currentUser = useAuthStore((s) => s.user)
   const currentUserName = currentUser
@@ -24655,7 +24511,7 @@ function ExecutionTab({
       }}
     />
   )
-  const modalBtns = (onSave: () => void, onClose: () => void, label = 'Save') => (
+  const modalBtns = (onSave: () => void, onClose: () => void, label = t('proj.detail.save')) => (
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
       <button
         onClick={onClose}
@@ -24669,7 +24525,7 @@ function ExecutionTab({
           cursor: 'pointer',
         }}
       >
-        Cancel
+        {t('proj.detail.cancel')}
       </button>
       <button
         onClick={onSave}
@@ -24817,7 +24673,7 @@ function ExecutionTab({
                 width: '100%',
               }}
             >
-              {opts?.addLabel ?? '+ Add Row'}
+              {opts?.addLabel ?? t('proj.detail.addRow')}
             </button>
           )}
         </div>
@@ -25358,7 +25214,7 @@ function ExecutionTab({
       if (!fileId) {
         addToast({
           type: 'error',
-          message: 'No live photo attached — this PO is now flagged and management has been notified.',
+          message: t('proj.detail.noLivePhotoAttachedThisPo'),
         })
       }
       setMachineryForm(emptyMachineryForm())
@@ -25400,13 +25256,13 @@ function ExecutionTab({
   const itpItemColumns: Column<ITPItemRow>[] = [
     {
       key: 'activity',
-      header: 'Activity',
+      header: t('proj.detail.activity'),
       mobilePrimary: true,
       render: (item) => <span style={{ color: th.textPrimary }}>{item.activity}</span>,
     },
     {
       key: 'inspectionType',
-      header: 'Type',
+      header: t('proj.detail.type'),
       mobileSecondary: true,
       render: (item) => (
         <span
@@ -25428,32 +25284,32 @@ function ExecutionTab({
     },
     {
       key: 'result',
-      header: 'Result',
+      header: t('proj.detail.result'),
       mobilePriority: 1,
       render: (item) =>
         item.result ? execBadge(item.result, th) : <span style={{ color: th.textMuted }}>—</span>,
     },
     {
       key: 'inspectionDate',
-      header: 'Date',
+      header: t('proj.detail.date'),
       mobilePriority: 2,
       render: (item) => <span style={{ color: th.textMuted }}>{item.inspectionDate ?? '—'}</span>,
     },
     {
       key: 'inspectorName',
-      header: 'Inspector',
+      header: t('proj.detail.inspector'),
       mobilePriority: 3,
       render: (item) => <span style={{ color: th.textMuted }}>{item.inspectorName ?? '—'}</span>,
     },
     {
       key: 'contractorRole',
-      header: 'Contractor',
+      header: t('proj.detail.contractor'),
       mobilePriority: 4,
       render: (item) => <span style={{ color: th.textMuted }}>{item.contractorRole ?? '—'}</span>,
     },
     {
       key: 'clientRole',
-      header: 'Client',
+      header: t('proj.detail.client'),
       mobilePriority: 5,
       render: (item) => <span style={{ color: th.textMuted }}>{item.clientRole ?? '—'}</span>,
     },
@@ -25467,7 +25323,7 @@ function ExecutionTab({
       ? [
           {
             key: 'action',
-            header: 'Action',
+            header: t('proj.detail.action'),
             mobileAction: true,
             render: (item: ITPItemRow) => (
               <button
@@ -25491,7 +25347,7 @@ function ExecutionTab({
                   cursor: 'pointer',
                 }}
               >
-                Record
+                {t('proj.detail.record')}
               </button>
             ),
           } satisfies Column<ITPItemRow>,
@@ -25511,7 +25367,7 @@ function ExecutionTab({
           flexWrap: 'wrap',
         }}
       >
-        {EXEC_SUB_TABS.map((t) => navBtn(t.key, t.label, sub, setSub))}
+        {EXEC_SUB_TABS.map((tx) => navBtn(tx.key, tx.label, sub, setSub))}
       </div>
 
       {/* ── IFC Drawing Register ── */}
@@ -25548,7 +25404,7 @@ function ExecutionTab({
           const ifcColumns: Column<(typeof ifcDocs)[number]>[] = [
             {
               key: 'refNumber',
-              header: 'Ref No.',
+              header: t('proj.detail.refNo'),
               mobilePrimary: true,
               render: (doc) => (
                 <span
@@ -25565,7 +25421,7 @@ function ExecutionTab({
             },
             {
               key: 'title',
-              header: 'Title',
+              header: t('proj.detail.title'),
               mobileSecondary: true,
               render: (doc) => (
                 <span style={{ color: th.textPrimary, fontWeight: 500 }}>{doc.title}</span>
@@ -25573,7 +25429,7 @@ function ExecutionTab({
             },
             {
               key: 'status',
-              header: 'Status',
+              header: t('proj.detail.status'),
               mobilePriority: 1,
               render: (doc) => (
                 <span
@@ -25594,7 +25450,7 @@ function ExecutionTab({
             },
             {
               key: 'issueDate',
-              header: 'Issue Date',
+              header: t('proj.detail.issueDate'),
               mobilePriority: 2,
               render: (doc) => (
                 <span
@@ -25610,7 +25466,7 @@ function ExecutionTab({
             },
             {
               key: 'docType',
-              header: 'Type',
+              header: t('proj.detail.type'),
               mobilePriority: 3,
               render: (doc) => (
                 <span
@@ -25627,7 +25483,7 @@ function ExecutionTab({
             },
             {
               key: 'originatorName',
-              header: 'Originator',
+              header: t('proj.detail.originator'),
               mobilePriority: 4,
               render: (doc) => (
                 <span style={{ color: th.textSecondary, whiteSpace: 'nowrap' }}>
@@ -25637,7 +25493,7 @@ function ExecutionTab({
             },
             {
               key: 'revision',
-              header: 'Rev',
+              header: t('proj.detail.rev'),
               mobilePriority: 5,
               render: (doc) => (
                 <span
@@ -25654,7 +25510,7 @@ function ExecutionTab({
             },
             {
               key: 'purposeOfIssue',
-              header: 'Purpose',
+              header: t('proj.detail.purpose'),
               mobilePriority: 6,
               render: (doc) => (
                 <span style={{ color: th.textMuted, fontSize: 12 }}>
@@ -25701,10 +25557,10 @@ function ExecutionTab({
                       <polyline points="7 10 12 15 17 10" />
                       <line x1="12" y1="15" x2="12" y2="3" />
                     </svg>
-                    Download
+                    {t('proj.detail.download')}
                   </a>
                 ) : (
-                  <span style={{ fontSize: 11, color: th.textMuted }}>No file</span>
+                  <span style={{ fontSize: 11, color: th.textMuted }}>{t('proj.detail.noFile')}</span>
                 ),
             },
           ]
@@ -25720,12 +25576,9 @@ function ExecutionTab({
               >
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: th.textPrimary }}>
-                    IFC Drawing Register
+                    {t('proj.detail.ifcDrawingRegister')}
                   </div>
-                  <div style={{ fontSize: 12, color: th.textSecondary, marginTop: 2 }}>
-                    {ifcDocs.length} current document{ifcDocs.length !== 1 ? 's' : ''} — Issued for
-                    Construction / Approved for Construction
-                  </div>
+                  <div style={{ fontSize: 12, color: th.textSecondary, marginTop: 2 }}>{t('proj.detail.currentDocumentIssuedForConstructionApproved', { count: ifcDocs.length })}</div>
                 </div>
                 <span
                   style={{
@@ -25738,7 +25591,7 @@ function ExecutionTab({
                     fontWeight: 600,
                   }}
                 >
-                  Read-only
+                  {t('proj.detail.readOnly')}
                 </span>
               </div>
 
@@ -25754,11 +25607,10 @@ function ExecutionTab({
                     borderRadius: 10,
                   }}
                 >
-                  No IFC or AFC documents have been issued yet.
+                  {t('proj.detail.noIfcOrAfcDocumentsHave')}
                   <br />
                   <span style={{ fontSize: 12, marginTop: 6, display: 'block' }}>
-                    Documents will appear here automatically when their status is set to IFC or AFC
-                    in the Engineering tab.
+                    {t('proj.detail.documentsWillAppearHereAutomaticallyWhen')}
                   </span>
                 </div>
               ) : (
@@ -25805,9 +25657,7 @@ function ExecutionTab({
                           >
                             {discipline.replace(/_/g, ' ')}
                           </span>
-                          <span style={{ fontSize: 11, color: th.textMuted, marginLeft: 4 }}>
-                            {docs.length} doc{docs.length !== 1 ? 's' : ''}
-                          </span>
+                          <span style={{ fontSize: 11, color: th.textMuted, marginInlineStart: 4 }}>{t('proj.detail.doc', { count: docs.length })}</span>
                         </div>
                         <Table columns={ifcColumns} data={docs} rowKey="id" />
                       </div>
@@ -25822,7 +25672,7 @@ function ExecutionTab({
       {sub === 'rfis' && (
         <div>
           {execSectionHeader(
-            'Requests for Information',
+            t('proj.detail.requestsForInformation'),
             rfis.length,
             isEditable ? openRfiCreate : null,
             isEditable,
@@ -25837,7 +25687,7 @@ function ExecutionTab({
                 fontSize: '13px',
               }}
             >
-              No RFIs raised yet.
+              {t('proj.detail.noRfisRaisedYet')}
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -25848,7 +25698,7 @@ function ExecutionTab({
                   border: `1px solid ${th.border}`,
                   borderRadius: 10,
                   overflow: 'hidden',
-                  borderLeft: `3px solid ${statusBorderColor(r.status)}`,
+                  borderInlineStart: `3px solid ${statusBorderColor(r.status)}`,
                 }}
               >
                 {/* Card header */}
@@ -25870,24 +25720,20 @@ function ExecutionTab({
                       fontFamily: 'monospace',
                       flexShrink: 0,
                     }}
-                  >
-                    RFI-{r.rfiNumber}
-                  </span>
+                  >{t('proj.detail.rfi', { rfiNumber: r.rfiNumber })}</span>
                   {execBadge(r.status, th)}
                   <div
                     style={{
-                      marginLeft: 'auto',
+                      marginInlineStart: 'auto',
                       display: 'flex',
                       gap: 12,
                       fontSize: '11px',
                       color: th.textMuted,
                     }}
                   >
-                    <span>Raised: {r.raisedDate}</span>
+                    <span>{t('proj.detail.raised', { raisedDate: r.raisedDate })}</span>
                     {r.requiredDate && (
-                      <span style={{ color: '#ef4444', fontWeight: 500 }}>
-                        Required: {r.requiredDate}
-                      </span>
+                      <span style={{ color: '#ef4444', fontWeight: 500 }}>{t('proj.detail.required', { requiredDate: r.requiredDate })}</span>
                     )}
                   </div>
                 </div>
@@ -25929,20 +25775,13 @@ function ExecutionTab({
                       }}
                     >
                       {r.raisedByName && (
-                        <span>
-                          Raised by:{' '}
-                          <strong style={{ color: th.textPrimary }}>{r.raisedByName}</strong>
-                        </span>
+                        <span><Trans i18nKey="proj.detail.raisedBy2" values={{ raisedByName: r.raisedByName }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                       )}
                       {r.drawingRef && (
-                        <span>
-                          Drawing: <strong style={{ color: th.textPrimary }}>{r.drawingRef}</strong>
-                        </span>
+                        <span><Trans i18nKey="proj.detail.drawing3" values={{ drawingRef: r.drawingRef }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                       )}
                       {r.specRef && (
-                        <span>
-                          Spec: <strong style={{ color: th.textPrimary }}>{r.specRef}</strong>
-                        </span>
+                        <span><Trans i18nKey="proj.detail.spec" values={{ specRef: r.specRef }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                       )}
                     </div>
                   )}
@@ -25967,7 +25806,7 @@ function ExecutionTab({
                           marginBottom: 6,
                         }}
                       >
-                        Response
+                        {t('proj.detail.response')}
                       </div>
                       <div style={{ fontSize: '13px', color: th.textPrimary, lineHeight: 1.5 }}>
                         {r.response}
@@ -25982,7 +25821,7 @@ function ExecutionTab({
                   ) : (
                     r.status === 'open' && (
                       <div style={{ fontSize: '12px', color: th.textMuted, fontStyle: 'italic' }}>
-                        No response yet.
+                        {t('proj.detail.noResponseYet')}
                       </div>
                     )
                   )}
@@ -26006,9 +25845,7 @@ function ExecutionTab({
                             textTransform: 'uppercase',
                             letterSpacing: '0.06em',
                           }}
-                        >
-                          Attachments {r.files.length > 0 && `(${r.files.length})`}
-                        </span>
+                        >{t('proj.detail.attachments2', { value: r.files.length > 0 && `(${r.files.length})` })}</span>
                         {isEditable && (
                           <ExecUploadButton
                             entityId={r.id}
@@ -26027,7 +25864,7 @@ function ExecutionTab({
                         )}
                         {r.files.length === 0 && (
                           <div style={{ fontSize: '12px', color: th.textMuted }}>
-                            No attachments.
+                            {t('proj.detail.noAttachments')}
                           </div>
                         )}
                       </div>
@@ -26077,7 +25914,7 @@ function ExecutionTab({
                           <polyline points="9 17 4 12 9 7" />
                           <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
                         </svg>
-                        Respond
+                        {t('proj.detail.respond')}
                       </button>
                     )}
                     <button
@@ -26093,20 +25930,20 @@ function ExecutionTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Edit
+                      {t('proj.detail.edit')}
                     </button>
                     <button
                       onClick={() =>
                         { addToast({
                           type: 'danger',
-                          message: `Delete RFI-${r.rfiNumber}?`,
+                          message: t('proj.detail.deleteRfi', { rfiNumber: r.rfiNumber }),
                           actions: [
                             {
-                              label: 'Delete',
+                              label: t('proj.detail.delete'),
                               variant: 'danger',
                               onClick: () => { onDeleteRFI(r.id); },
                             },
-                            { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
+                            { label: t('proj.detail.cancel'), onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                           ],
                         }); }
                       }
@@ -26119,10 +25956,10 @@ function ExecutionTab({
                         fontSize: '12px',
                         fontWeight: 500,
                         cursor: 'pointer',
-                        marginLeft: 'auto',
+                        marginInlineStart: 'auto',
                       }}
                     >
-                      Delete
+                      {t('proj.detail.delete')}
                     </button>
                   </div>
                 )}
@@ -26136,7 +25973,7 @@ function ExecutionTab({
       {sub === 'site_instructions' && (
         <div>
           {execSectionHeader(
-            'Site Instructions',
+            t('proj.detail.siteInstructions'),
             siteInstructions.length,
             isEditable ? openSICreate : null,
             isEditable,
@@ -26151,7 +25988,7 @@ function ExecutionTab({
                 fontSize: '13px',
               }}
             >
-              No site instructions yet.
+              {t('proj.detail.noSiteInstructionsYet')}
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -26162,7 +25999,7 @@ function ExecutionTab({
                   border: `1px solid ${th.border}`,
                   borderRadius: 10,
                   overflow: 'hidden',
-                  borderLeft: `3px solid ${statusBorderColor(r.status)}`,
+                  borderInlineStart: `3px solid ${statusBorderColor(r.status)}`,
                 }}
               >
                 <div
@@ -26199,19 +26036,19 @@ function ExecutionTab({
                         border: '1px solid #fed7aa',
                       }}
                     >
-                      VO Potential
+                      {t('proj.detail.voPotential')}
                     </span>
                   )}
                   <div
                     style={{
-                      marginLeft: 'auto',
+                      marginInlineStart: 'auto',
                       display: 'flex',
                       gap: 12,
                       fontSize: '11px',
                       color: th.textMuted,
                     }}
                   >
-                    {r.issuedBy && <span>Issued by: {r.issuedBy}</span>}
+                    {r.issuedBy && <span>{t('proj.detail.issuedBy', { issuedBy: r.issuedBy })}</span>}
                     <span>{r.issuedDate}</span>
                   </div>
                 </div>
@@ -26251,16 +26088,10 @@ function ExecutionTab({
                       }}
                     >
                       {r.acknowledgedByName && (
-                        <span>
-                          Acknowledged:{' '}
-                          <strong style={{ color: th.textPrimary }}>{r.acknowledgedByName}</strong>{' '}
-                          {r.acknowledgedDate && `· ${r.acknowledgedDate}`}
-                        </span>
+                        <span><Trans i18nKey="proj.detail.acknowledged2" values={{ acknowledgedByName: r.acknowledgedByName, value: r.acknowledgedDate && `· ${r.acknowledgedDate}` }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                       )}
                       {r.voRef && (
-                        <span>
-                          VO Ref: <strong style={{ color: th.textPrimary }}>{r.voRef}</strong>
-                        </span>
+                        <span><Trans i18nKey="proj.detail.voRef" values={{ voRef: r.voRef }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                       )}
                     </div>
                   )}
@@ -26282,9 +26113,7 @@ function ExecutionTab({
                             textTransform: 'uppercase',
                             letterSpacing: '0.06em',
                           }}
-                        >
-                          Attachments {r.files.length > 0 && `(${r.files.length})`}
-                        </span>
+                        >{t('proj.detail.attachments2', { value: r.files.length > 0 && `(${r.files.length})` })}</span>
                         {isEditable && (
                           <ExecUploadButton
                             entityId={r.id}
@@ -26303,7 +26132,7 @@ function ExecutionTab({
                         )}
                         {r.files.length === 0 && (
                           <div style={{ fontSize: '12px', color: th.textMuted }}>
-                            No attachments.
+                            {t('proj.detail.noAttachments')}
                           </div>
                         )}
                       </div>
@@ -26334,7 +26163,7 @@ function ExecutionTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Edit
+                      {t('proj.detail.edit')}
                     </button>
                     {r.status === 'open' && (
                       <button
@@ -26364,17 +26193,17 @@ function ExecutionTab({
                           cursor: 'pointer',
                         }}
                       >
-                        Acknowledge
+                        {t('proj.detail.acknowledge')}
                       </button>
                     )}
                     <button
                       onClick={() =>
                         { addToast({
                           type: 'danger',
-                          message: `Delete SI-${r.siNumber}?`,
+                          message: t('proj.detail.deleteSi', { siNumber: r.siNumber }),
                           actions: [
-                            { label: 'Delete', variant: 'danger', onClick: () => { onDeleteSI(r.id); } },
-                            { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
+                            { label: t('proj.detail.delete'), variant: 'danger', onClick: () => { onDeleteSI(r.id); } },
+                            { label: t('proj.detail.cancel'), onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                           ],
                         }); }
                       }
@@ -26387,10 +26216,10 @@ function ExecutionTab({
                         fontSize: '12px',
                         fontWeight: 500,
                         cursor: 'pointer',
-                        marginLeft: 'auto',
+                        marginInlineStart: 'auto',
                       }}
                     >
-                      Delete
+                      {t('proj.detail.delete')}
                     </button>
                   </div>
                 )}
@@ -26411,14 +26240,14 @@ function ExecutionTab({
               marginBottom: '20px',
             }}
           >
-            {QA_SUB_TABS.map((t) => navBtn(t.key, t.label, qaSub, setQaSub))}
+            {QA_SUB_TABS.map((tx) => navBtn(tx.key, tx.label, qaSub, setQaSub))}
           </div>
 
           {/* ITPs */}
           {qaSub === 'itps' && (
             <div>
               {execSectionHeader(
-                'Inspection Test Plans',
+                t('proj.detail.inspectionTestPlans'),
                 itps.length,
                 isEditable ? openITPCreate : null,
                 isEditable,
@@ -26433,7 +26262,7 @@ function ExecutionTab({
                     fontSize: '13px',
                   }}
                 >
-                  No ITPs created yet.
+                  {t('proj.detail.noItpsCreatedYet')}
                 </div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -26444,7 +26273,7 @@ function ExecutionTab({
                       border: `1px solid ${th.border}`,
                       borderRadius: 10,
                       overflow: 'hidden',
-                      borderLeft: `3px solid ${statusBorderColor(r.status)}`,
+                      borderInlineStart: `3px solid ${statusBorderColor(r.status)}`,
                     }}
                   >
                     <div
@@ -26491,25 +26320,21 @@ function ExecutionTab({
                                   cursor: 'pointer',
                                 }}
                               >
-                                <option value="draft">Draft</option>
-                                <option value="approved">Approved</option>
-                                <option value="active">Active</option>
-                                <option value="closed">Closed</option>
+                                <option value="draft">{t('proj.detail.draft')}</option>
+                                <option value="approved">{t('proj.detail.approved')}</option>
+                                <option value="active">{t('proj.detail.active')}</option>
+                                <option value="closed">{t('proj.detail.closed')}</option>
                               </select>
                             )
                           })()
                         : execBadge(r.status, th)}
-                      <span style={{ fontSize: '11px', color: th.textMuted }}>
-                        Rev. {r.revision}
-                      </span>
+                      <span style={{ fontSize: '11px', color: th.textMuted }}>{t('proj.detail.rev6', { revision: r.revision })}</span>
                       {r.discipline && (
                         <span style={{ fontSize: '11px', color: th.textMuted }}>
                           · {r.discipline}
                         </span>
                       )}
-                      <span style={{ marginLeft: 'auto', fontSize: '11px', color: th.textMuted }}>
-                        {r.items.length} checklist item{r.items.length !== 1 ? 's' : ''}
-                      </span>
+                      <span style={{ marginInlineStart: 'auto', fontSize: '11px', color: th.textMuted }}>{t('proj.detail.checklistItem', { count: r.items.length })}</span>
                     </div>
                     <div style={{ padding: '14px 16px' }}>
                       <div
@@ -26523,10 +26348,7 @@ function ExecutionTab({
                         {r.title}
                       </div>
                       {r.workPackage && (
-                        <div style={{ fontSize: '12px', color: th.textMuted }}>
-                          Work Package:{' '}
-                          <strong style={{ color: th.textPrimary }}>{r.workPackage}</strong>
-                        </div>
+                        <div style={{ fontSize: '12px', color: th.textMuted }}><Trans i18nKey="proj.detail.workPackage" values={{ workPackage: r.workPackage }} components={[<strong style={{ color: th.textPrimary }} />]} /></div>
                       )}
                     </div>
                     {expandedId === r.id && r.items.length > 0 && (
@@ -26560,7 +26382,7 @@ function ExecutionTab({
                           cursor: 'pointer',
                         }}
                       >
-                        {expandedId === r.id ? '▲ Hide Items' : '▼ View Items'}
+                        {expandedId === r.id ? t('proj.detail.hideItems') : t('proj.detail.viewItems')}
                       </button>
                       {isEditable && (
                         <>
@@ -26577,7 +26399,7 @@ function ExecutionTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Edit Items
+                            {t('proj.detail.editItems')}
                           </button>
                           <button
                             onClick={() => { openITPEdit(r); }}
@@ -26592,20 +26414,20 @@ function ExecutionTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Edit
+                            {t('proj.detail.edit')}
                           </button>
                           <button
                             onClick={() =>
                               { addToast({
                                 type: 'danger',
-                                message: `Delete ITP "${r.title}"?`,
+                                message: t('proj.detail.deleteItp', { title: r.title }),
                                 actions: [
                                   {
-                                    label: 'Delete',
+                                    label: t('proj.detail.delete'),
                                     variant: 'danger',
                                     onClick: () => { onDeleteITP(r.id); },
                                   },
-                                  { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
+                                  { label: t('proj.detail.cancel'), onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                                 ],
                               }); }
                             }
@@ -26618,10 +26440,10 @@ function ExecutionTab({
                               fontSize: '12px',
                               fontWeight: 500,
                               cursor: 'pointer',
-                              marginLeft: 'auto',
+                              marginInlineStart: 'auto',
                             }}
                           >
-                            Delete
+                            {t('proj.detail.delete')}
                           </button>
                         </>
                       )}
@@ -26636,7 +26458,7 @@ function ExecutionTab({
           {qaSub === 'irs' && (
             <div>
               {execSectionHeader(
-                'Inspection Requests',
+                t('proj.detail.inspectionRequests'),
                 inspectionRequests.length,
                 isEditable ? openIRCreate : null,
                 isEditable,
@@ -26651,7 +26473,7 @@ function ExecutionTab({
                     fontSize: '13px',
                   }}
                 >
-                  No inspection requests yet.
+                  {t('proj.detail.noInspectionRequestsYet')}
                 </div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -26662,7 +26484,7 @@ function ExecutionTab({
                       border: `1px solid ${th.border}`,
                       borderRadius: 10,
                       overflow: 'hidden',
-                      borderLeft: `3px solid ${statusBorderColor(r.status)}`,
+                      borderInlineStart: `3px solid ${statusBorderColor(r.status)}`,
                     }}
                   >
                     <div
@@ -26690,15 +26512,15 @@ function ExecutionTab({
                       {r.result && execBadge(r.result, th)}
                       <div
                         style={{
-                          marginLeft: 'auto',
+                          marginInlineStart: 'auto',
                           display: 'flex',
                           gap: 12,
                           fontSize: '11px',
                           color: th.textMuted,
                         }}
                       >
-                        <span>Requested: {r.requestedDate}</span>
-                        {r.actualDate && <span>Actual: {r.actualDate}</span>}
+                        <span>{t('proj.detail.requested', { requestedDate: r.requestedDate })}</span>
+                        {r.actualDate && <span>{t('proj.detail.actual3', { actualDate: r.actualDate })}</span>}
                       </div>
                     </div>
                     <div
@@ -26730,22 +26552,13 @@ function ExecutionTab({
                           }}
                         >
                           {r.workPackage && (
-                            <span>
-                              Work Pkg:{' '}
-                              <strong style={{ color: th.textPrimary }}>{r.workPackage}</strong>
-                            </span>
+                            <span><Trans i18nKey="proj.detail.workPkg" values={{ workPackage: r.workPackage }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                           )}
                           {r.location && (
-                            <span>
-                              Location:{' '}
-                              <strong style={{ color: th.textPrimary }}>{r.location}</strong>
-                            </span>
+                            <span><Trans i18nKey="proj.detail.location" values={{ location: r.location }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                           )}
                           {r.inspectorName && (
-                            <span>
-                              Inspector:{' '}
-                              <strong style={{ color: th.textPrimary }}>{r.inspectorName}</strong>
-                            </span>
+                            <span><Trans i18nKey="proj.detail.inspector2" values={{ inspectorName: r.inspectorName }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                           )}
                         </div>
                         {r.remarks && (
@@ -26779,9 +26592,7 @@ function ExecutionTab({
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.06em',
                               }}
-                            >
-                              Attachments {r.files.length > 0 && `(${r.files.length})`}
-                            </span>
+                            >{t('proj.detail.attachments2', { value: r.files.length > 0 && `(${r.files.length})` })}</span>
                             {isEditable && (
                               <ExecUploadButton
                                 entityId={r.id}
@@ -26802,7 +26613,7 @@ function ExecutionTab({
                             )}
                             {r.files.length === 0 && (
                               <div style={{ fontSize: '12px', color: th.textMuted }}>
-                                No attachments.
+                                {t('proj.detail.noAttachments')}
                               </div>
                             )}
                           </div>
@@ -26833,7 +26644,7 @@ function ExecutionTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Edit
+                          {t('proj.detail.edit')}
                         </button>
                         {r.status === 'pending' && (
                           <button
@@ -26849,21 +26660,21 @@ function ExecutionTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Record Inspection
+                            {t('proj.detail.recordInspection')}
                           </button>
                         )}
                         <button
                           onClick={() =>
                             { addToast({
                               type: 'danger',
-                              message: `Delete IR-${r.irNumber}?`,
+                              message: t('proj.detail.deleteIr', { irNumber: r.irNumber }),
                               actions: [
                                 {
-                                  label: 'Delete',
+                                  label: t('proj.detail.delete'),
                                   variant: 'danger',
                                   onClick: () => { onDeleteIR(r.id); },
                                 },
-                                { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
+                                { label: t('proj.detail.cancel'), onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                               ],
                             }); }
                           }
@@ -26876,10 +26687,10 @@ function ExecutionTab({
                             fontSize: '12px',
                             fontWeight: 500,
                             cursor: 'pointer',
-                            marginLeft: 'auto',
+                            marginInlineStart: 'auto',
                           }}
                         >
-                          Delete
+                          {t('proj.detail.delete')}
                         </button>
                       </div>
                     )}
@@ -26893,7 +26704,7 @@ function ExecutionTab({
           {qaSub === 'ncrs' && (
             <div>
               {execSectionHeader(
-                'Non-Conformance Reports',
+                t('proj.detail.nonConformanceReports'),
                 ncrs.length,
                 isEditable ? openNCRCreate : null,
                 isEditable,
@@ -26908,7 +26719,7 @@ function ExecutionTab({
                     fontSize: '13px',
                   }}
                 >
-                  No NCRs raised yet.
+                  {t('proj.detail.noNcrsRaisedYet')}
                 </div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -26919,7 +26730,7 @@ function ExecutionTab({
                       border: `1px solid ${th.border}`,
                       borderRadius: 10,
                       overflow: 'hidden',
-                      borderLeft: `3px solid ${statusBorderColor(r.severity)}`,
+                      borderInlineStart: `3px solid ${statusBorderColor(r.severity)}`,
                     }}
                   >
                     <div
@@ -26940,14 +26751,12 @@ function ExecutionTab({
                           fontFamily: 'monospace',
                           flexShrink: 0,
                         }}
-                      >
-                        NCR-{r.ncrNumber}
-                      </span>
+                      >{t('proj.detail.ncr', { ncrNumber: r.ncrNumber })}</span>
                       {execBadge(r.severity, th)}
                       {execBadge(r.status, th)}
                       <div
                         style={{
-                          marginLeft: 'auto',
+                          marginInlineStart: 'auto',
                           display: 'flex',
                           gap: 12,
                           fontSize: '11px',
@@ -26957,9 +26766,7 @@ function ExecutionTab({
                         {r.raisedByName && <span>{r.raisedByName}</span>}
                         <span>{r.raisedDate}</span>
                         {r.dueDate && (
-                          <span style={{ color: '#f59e0b', fontWeight: 500 }}>
-                            Due: {r.dueDate}
-                          </span>
+                          <span style={{ color: '#f59e0b', fontWeight: 500 }}>{t('proj.detail.due3', { dueDate: r.dueDate })}</span>
                         )}
                       </div>
                     </div>
@@ -26990,10 +26797,7 @@ function ExecutionTab({
                           </div>
                         )}
                         {r.closedDate && (
-                          <div style={{ fontSize: '12px', color: '#22c55e', marginTop: 4 }}>
-                            Closed: {r.closedDate}
-                            {r.closedByName ? ` · ${r.closedByName}` : ''}
-                          </div>
+                          <div style={{ fontSize: '12px', color: '#22c55e', marginTop: 4 }}>{t('proj.detail.closed2', { closedDate: r.closedDate, value: r.closedByName ? ` · ${r.closedByName}` : '' })}</div>
                         )}
                       </div>
                       {r.correctiveAction && (
@@ -27015,7 +26819,7 @@ function ExecutionTab({
                               marginBottom: 6,
                             }}
                           >
-                            Corrective Action
+                            {t('proj.detail.correctiveAction')}
                           </div>
                           <div style={{ fontSize: '13px', color: th.textPrimary, lineHeight: 1.5 }}>
                             {r.correctiveAction}
@@ -27040,9 +26844,7 @@ function ExecutionTab({
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.06em',
                               }}
-                            >
-                              Attachments {r.files.length > 0 && `(${r.files.length})`}
-                            </span>
+                            >{t('proj.detail.attachments2', { value: r.files.length > 0 && `(${r.files.length})` })}</span>
                             {isEditable && (
                               <ExecUploadButton
                                 entityId={r.id}
@@ -27063,7 +26865,7 @@ function ExecutionTab({
                             )}
                             {r.files.length === 0 && (
                               <div style={{ fontSize: '12px', color: th.textMuted }}>
-                                No attachments.
+                                {t('proj.detail.noAttachments')}
                               </div>
                             )}
                           </div>
@@ -27094,7 +26896,7 @@ function ExecutionTab({
                             cursor: 'pointer',
                           }}
                         >
-                          Edit
+                          {t('proj.detail.edit')}
                         </button>
                         {r.status !== 'closed' && (
                           <button
@@ -27110,21 +26912,21 @@ function ExecutionTab({
                               cursor: 'pointer',
                             }}
                           >
-                            Resolve NCR
+                            {t('proj.detail.resolveNcr')}
                           </button>
                         )}
                         <button
                           onClick={() =>
                             { addToast({
                               type: 'danger',
-                              message: `Delete NCR-${r.ncrNumber}?`,
+                              message: t('proj.detail.deleteNcr', { ncrNumber: r.ncrNumber }),
                               actions: [
                                 {
-                                  label: 'Delete',
+                                  label: t('proj.detail.delete'),
                                   variant: 'danger',
                                   onClick: () => { onDeleteNCR(r.id); },
                                 },
-                                { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
+                                { label: t('proj.detail.cancel'), onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                               ],
                             }); }
                           }
@@ -27137,10 +26939,10 @@ function ExecutionTab({
                             fontSize: '12px',
                             fontWeight: 500,
                             cursor: 'pointer',
-                            marginLeft: 'auto',
+                            marginInlineStart: 'auto',
                           }}
                         >
-                          Delete
+                          {t('proj.detail.delete')}
                         </button>
                       </div>
                     )}
@@ -27167,31 +26969,31 @@ function ExecutionTab({
           >
             <div>
               <div style={{ fontSize: '15px', fontWeight: 700, color: th.textPrimary }}>
-                HSE Records{' '}
+                {t('proj.detail.hseRecords')}{' '}
                 <span style={{ fontSize: '13px', fontWeight: 400, color: th.textMuted }}>
                   ({filteredHSE.length})
                 </span>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-              {HSE_TYPES.map((t) => (
+              {HSE_TYPES.map((tx) => (
                 <button
-                  key={t}
-                  onClick={() => { setHseType(t); }}
+                  key={tx}
+                  onClick={() => { setHseType(tx); }}
                   style={{
                     padding: '5px 12px',
                     borderRadius: '6px',
-                    border: `1px solid ${hseType === t ? th.accent : th.border}`,
-                    background: hseType === t ? th.accent : 'none',
-                    color: hseType === t ? '#fff' : th.textSecondary,
+                    border: `1px solid ${hseType === tx ? th.accent : th.border}`,
+                    background: hseType === tx ? th.accent : 'none',
+                    color: hseType === tx ? '#fff' : th.textSecondary,
                     fontSize: '12px',
-                    fontWeight: hseType === t ? 600 : 400,
+                    fontWeight: hseType === tx ? 600 : 400,
                     cursor: 'pointer',
                   }}
                 >
-                  {t === 'all'
-                    ? 'All'
-                    : t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                  {tx === 'all'
+                    ? t('proj.detail.all')
+                    : tx.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
                 </button>
               ))}
               {isEditable && (
@@ -27206,10 +27008,10 @@ function ExecutionTab({
                     fontSize: '12px',
                     fontWeight: 600,
                     cursor: 'pointer',
-                    marginLeft: '4px',
+                    marginInlineStart: '4px',
                   }}
                 >
-                  + Add
+                  {t('proj.detail.add2')}
                 </button>
               )}
             </div>
@@ -27223,7 +27025,7 @@ function ExecutionTab({
                 fontSize: '13px',
               }}
             >
-              No HSE records yet.
+              {t('proj.detail.noHseRecordsYet')}
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -27234,7 +27036,7 @@ function ExecutionTab({
                   border: `1px solid ${th.border}`,
                   borderRadius: 10,
                   overflow: 'hidden',
-                  borderLeft: `3px solid ${statusBorderColor(r.recordType)}`,
+                  borderInlineStart: `3px solid ${statusBorderColor(r.recordType)}`,
                 }}
               >
                 <div
@@ -27300,10 +27102,10 @@ function ExecutionTab({
                               cursor: 'pointer',
                             }}
                           >
-                            <option value="pending">Pending</option>
-                            <option value="active">Active</option>
-                            <option value="expired">Expired</option>
-                            <option value="cancelled">Cancelled</option>
+                            <option value="pending">{t('proj.detail.pending')}</option>
+                            <option value="active">{t('proj.detail.active')}</option>
+                            <option value="expired">{t('proj.detail.expired')}</option>
+                            <option value="cancelled">{t('proj.detail.cancelled3')}</option>
                           </select>
                         )
                       })()
@@ -27311,7 +27113,7 @@ function ExecutionTab({
                   {execBadge(r.status, th)}
                   <div
                     style={{
-                      marginLeft: 'auto',
+                      marginInlineStart: 'auto',
                       display: 'flex',
                       gap: 12,
                       fontSize: '11px',
@@ -27352,21 +27154,14 @@ function ExecutionTab({
                       }}
                     >
                       {r.attendeeCount != null && (
-                        <span>
-                          Attendees:{' '}
-                          <strong style={{ color: th.textPrimary }}>{r.attendeeCount}</strong>
-                        </span>
+                        <span><Trans i18nKey="proj.detail.attendees2" values={{ attendeeCount: r.attendeeCount }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                       )}
                       {r.ptwNumber && (
-                        <span>
-                          PTW#: <strong style={{ color: th.textPrimary }}>{r.ptwNumber}</strong>
-                        </span>
+                        <span><Trans i18nKey="proj.detail.ptw" values={{ ptwNumber: r.ptwNumber }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                       )}
-                      {r.ptwType && <span>Type: {r.ptwType.replace(/_/g, ' ')}</span>}
+                      {r.ptwType && <span>{t('proj.detail.type2', { ptwType: r.ptwType.replace(/_/g, ' ') })}</span>}
                       {r.validFrom && (
-                        <span>
-                          Valid: {r.validFrom.slice(0, 10)} → {r.validTo?.slice(0, 10)}
-                        </span>
+                        <span>{t('proj.detail.valid', { validFrom: r.validFrom.slice(0, 10), validTo: r.validTo?.slice(0, 10) })}</span>
                       )}
                     </div>
                     {r.description && (
@@ -27401,7 +27196,7 @@ function ExecutionTab({
                           marginBottom: 6,
                         }}
                       >
-                        Corrective Action
+                        {t('proj.detail.correctiveAction')}
                       </div>
                       <div style={{ fontSize: '13px', color: th.textPrimary, lineHeight: 1.5 }}>
                         {r.correctiveAction}
@@ -27426,9 +27221,7 @@ function ExecutionTab({
                             textTransform: 'uppercase',
                             letterSpacing: '0.06em',
                           }}
-                        >
-                          Attachments {r.files.length > 0 && `(${r.files.length})`}
-                        </span>
+                        >{t('proj.detail.attachments2', { value: r.files.length > 0 && `(${r.files.length})` })}</span>
                         {isEditable && (
                           <ExecUploadButton
                             entityId={r.id}
@@ -27447,7 +27240,7 @@ function ExecutionTab({
                         )}
                         {r.files.length === 0 && (
                           <div style={{ fontSize: '12px', color: th.textMuted }}>
-                            No attachments.
+                            {t('proj.detail.noAttachments')}
                           </div>
                         )}
                       </div>
@@ -27478,7 +27271,7 @@ function ExecutionTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Edit
+                      {t('proj.detail.edit')}
                     </button>
                     {r.recordType !== 'ptw' && r.status === 'open' && (
                       <button
@@ -27520,21 +27313,21 @@ function ExecutionTab({
                           cursor: 'pointer',
                         }}
                       >
-                        Close Record
+                        {t('proj.detail.closeRecord')}
                       </button>
                     )}
                     <button
                       onClick={() =>
                         { addToast({
                           type: 'danger',
-                          message: `Delete HSE record "${r.title}"?`,
+                          message: t('proj.detail.deleteHseRecord', { title: r.title }),
                           actions: [
                             {
-                              label: 'Delete',
+                              label: t('proj.detail.delete'),
                               variant: 'danger',
                               onClick: () => { onDeleteHSE(r.id); },
                             },
-                            { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
+                            { label: t('proj.detail.cancel'), onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                           ],
                         }); }
                       }
@@ -27547,10 +27340,10 @@ function ExecutionTab({
                         fontSize: '12px',
                         fontWeight: 500,
                         cursor: 'pointer',
-                        marginLeft: 'auto',
+                        marginInlineStart: 'auto',
                       }}
                     >
-                      Delete
+                      {t('proj.detail.delete')}
                     </button>
                   </div>
                 )}
@@ -27573,7 +27366,7 @@ function ExecutionTab({
             }}
           >
             <div style={{ fontSize: '15px', fontWeight: 700, color: th.textPrimary }}>
-              Daily Reports{' '}
+              {t('proj.detail.dailyReports')}{' '}
               <span style={{ fontSize: '13px', fontWeight: 400, color: th.textMuted }}>
                 ({dailyReports.length})
               </span>
@@ -27592,7 +27385,7 @@ function ExecutionTab({
                   cursor: 'pointer',
                 }}
               >
-                + New Report
+                {t('proj.detail.newReport')}
               </button>
             )}
           </div>
@@ -27600,7 +27393,7 @@ function ExecutionTab({
             <div
               style={{ textAlign: 'center', padding: '40px', color: th.textMuted, fontSize: '13px' }}
             >
-              No daily reports filed yet.
+              {t('proj.detail.noDailyReportsFiledYet')}
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -27637,14 +27430,14 @@ function ExecutionTab({
                   {r.qualityStatus && execBadge(r.qualityStatus, th)}
                   <div
                     style={{
-                      marginLeft: 'auto',
+                      marginInlineStart: 'auto',
                       display: 'flex',
                       gap: 12,
                       fontSize: '11px',
                       color: th.textMuted,
                     }}
                   >
-                    {r.preparedBy && <span>Prepared by: {r.preparedBy}</span>}
+                    {r.preparedBy && <span>{t('proj.detail.preparedBy', { preparedBy: r.preparedBy })}</span>}
                     {r.weatherConditions && <span>{r.weatherConditions}</span>}
                   </div>
                 </div>
@@ -27652,7 +27445,7 @@ function ExecutionTab({
                   {r.keyAccomplishments && (
                     <div>
                       <div style={{ fontSize: '10px', fontWeight: 700, color: th.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
-                        Key Accomplishments
+                        {t('proj.detail.keyAccomplishments')}
                       </div>
                       <div style={{ fontSize: '13px', color: th.textSecondary, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
                         {r.keyAccomplishments}
@@ -27669,7 +27462,7 @@ function ExecutionTab({
                       }}
                     >
                       <div style={{ fontSize: '10px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                        Major Concerns / Delays
+                        {t('proj.detail.majorConcernsDelays')}
                       </div>
                       <div style={{ fontSize: '13px', color: th.textPrimary, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
                         {r.majorConcerns}
@@ -27679,9 +27472,7 @@ function ExecutionTab({
                   {(r.files.length > 0 || isEditable) && (
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                        <span style={{ fontSize: '10px', fontWeight: 700, color: th.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                          Photos {r.files.length > 0 && `(${r.files.length})`}
-                        </span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: th.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t('proj.detail.photos', { value: r.files.length > 0 && `(${r.files.length})` })}</span>
                         {isEditable && (
                           <ExecUploadButton
                             entityId={r.id}
@@ -27701,7 +27492,7 @@ function ExecutionTab({
                           th,
                         )}
                         {r.files.length === 0 && (
-                          <div style={{ fontSize: '12px', color: th.textMuted }}>No photos attached.</div>
+                          <div style={{ fontSize: '12px', color: th.textMuted }}>{t('proj.detail.noPhotosAttached2')}</div>
                         )}
                       </div>
                     </div>
@@ -27730,7 +27521,7 @@ function ExecutionTab({
                       cursor: 'pointer',
                     }}
                   >
-                    View
+                    {t('proj.detail.view')}
                   </button>
                   {isEditable && (
                     <button
@@ -27746,7 +27537,7 @@ function ExecutionTab({
                         cursor: 'pointer',
                       }}
                     >
-                      Edit
+                      {t('proj.detail.edit')}
                     </button>
                   )}
                   {isEditable && (
@@ -27754,10 +27545,10 @@ function ExecutionTab({
                       onClick={() =>
                         { addToast({
                           type: 'danger',
-                          message: `Delete Daily Report "${r.reportNumber}"?`,
+                          message: t('proj.detail.deleteDailyReport', { reportNumber: r.reportNumber }),
                           actions: [
-                            { label: 'Delete', variant: 'danger', onClick: () => { onDeleteDailyReport(r.id); } },
-                            { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
+                            { label: t('proj.detail.delete'), variant: 'danger', onClick: () => { onDeleteDailyReport(r.id); } },
+                            { label: t('proj.detail.cancel'), onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                           ],
                         }); }
                       }
@@ -27770,10 +27561,10 @@ function ExecutionTab({
                         fontSize: '12px',
                         fontWeight: 500,
                         cursor: 'pointer',
-                        marginLeft: 'auto',
+                        marginInlineStart: 'auto',
                       }}
                     >
-                      Delete
+                      {t('proj.detail.delete')}
                     </button>
                   )}
                 </div>
@@ -27789,10 +27580,10 @@ function ExecutionTab({
           <>
             <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>
               {rfiModal.mode === 'create'
-                ? 'New RFI'
+                ? t('proj.detail.newRfi')
                 : rfiModal.mode === 'respond'
-                  ? 'Respond to RFI'
-                  : 'Edit RFI'}
+                  ? t('proj.detail.respondToRfi')
+                  : t('proj.detail.editRfi')}
             </h3>
             {rfiModal.mode !== 'respond' &&
               (() => {
@@ -27824,7 +27615,7 @@ function ExecutionTab({
                           marginBottom: '4px',
                         }}
                       >
-                        RFI Number
+                        {t('proj.detail.rfiNumber')}
                       </label>
                       {rfiModal.mode === 'create' ? (
                         <div
@@ -27838,23 +27629,21 @@ function ExecutionTab({
                             fontFamily: 'monospace',
                             fontWeight: 700,
                           }}
-                        >
-                          RFI-{rfiForm.rfiNumber}
-                        </div>
+                        >{t('proj.detail.rfi', { rfiNumber: rfiForm.rfiNumber })}</div>
                       ) : (
                         inp(rfiForm.rfiNumber, (v) => { setRfiForm((f) => ({ ...f, rfiNumber: v })); })
                       )}
                     </div>
                     {field(
-                      'Subject *',
+                      t('proj.detail.subject'),
                       inp(
                         rfiForm.subject,
                         (v) => { setRfiForm((f) => ({ ...f, subject: v })); },
-                        'Brief subject',
+                        t('proj.detail.briefSubject'),
                       ),
                     )}
                     {field(
-                      'Description',
+                      t('proj.detail.description'),
                       textarea(rfiForm.description, (v) =>
                         { setRfiForm((f) => ({ ...f, description: v })); },
                       ),
@@ -27871,35 +27660,35 @@ function ExecutionTab({
                     </datalist>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       {field(
-                        'Drawing Ref',
+                        t('proj.detail.drawingRef'),
                         <input
                           list="rfi-drawing-refs"
                           value={rfiForm.drawingRef}
                           onChange={(e) =>
                             { setRfiForm((f) => ({ ...f, drawingRef: e.target.value })); }
                           }
-                          placeholder="e.g. DWG-A101"
+                          placeholder={t('proj.detail.eGDwgA101')}
                           style={comboStyle}
                         />,
                       )}
                       {field(
-                        'Spec Ref',
+                        t('proj.detail.specRef'),
                         <input
                           list="rfi-spec-refs"
                           value={rfiForm.specRef}
                           onChange={(e) => { setRfiForm((f) => ({ ...f, specRef: e.target.value })); }}
-                          placeholder="e.g. Section 03300"
+                          placeholder={t('proj.detail.eGSection03300')}
                           style={comboStyle}
                         />,
                       )}
                       {field(
-                        'Raised By',
+                        t('proj.detail.raisedBy'),
                         inp(rfiForm.raisedByName, (v) =>
                           { setRfiForm((f) => ({ ...f, raisedByName: v })); },
                         ),
                       )}
                       {field(
-                        'Raised Date',
+                        t('proj.detail.raisedDate'),
                         inp(
                           rfiForm.raisedDate,
                           (v) => { setRfiForm((f) => ({ ...f, raisedDate: v })); },
@@ -27908,7 +27697,7 @@ function ExecutionTab({
                         ),
                       )}
                       {field(
-                        'Required By',
+                        t('proj.detail.requiredBy'),
                         inp(
                           rfiForm.requiredDate,
                           (v) => { setRfiForm((f) => ({ ...f, requiredDate: v })); },
@@ -27917,7 +27706,7 @@ function ExecutionTab({
                         ),
                       )}
                       {field(
-                        'Status',
+                        t('proj.detail.status'),
                         sel(rfiForm.status, (v) => { setRfiForm((f) => ({ ...f, status: v })); }, [
                           'open',
                           'responded',
@@ -27931,22 +27720,22 @@ function ExecutionTab({
             {rfiModal.mode === 'respond' && (
               <>
                 {field(
-                  'Response *',
+                  t('proj.detail.response3'),
                   textarea(
                     rfiForm.response,
                     (v) => { setRfiForm((f) => ({ ...f, response: v })); },
-                    'Enter response…',
+                    t('proj.detail.enterResponse'),
                   ),
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   {field(
-                    'Responded By',
+                    t('proj.detail.respondedBy'),
                     inp(rfiForm.respondedByName, (v) =>
                       { setRfiForm((f) => ({ ...f, respondedByName: v })); },
                     ),
                   )}
                   {field(
-                    'Response Date',
+                    t('proj.detail.responseDate'),
                     inp(
                       rfiForm.respondedDate,
                       (v) => { setRfiForm((f) => ({ ...f, respondedDate: v })); },
@@ -27960,7 +27749,7 @@ function ExecutionTab({
             {modalBtns(
               saveRfi,
               () => { setRfiModal({ open: false, row: null, mode: 'create' }); },
-              rfiModal.mode === 'respond' ? 'Submit Response' : 'Save',
+              rfiModal.mode === 'respond' ? t('proj.detail.submitResponse') : t('proj.detail.save'),
             )}
           </>,
           () => { setRfiModal({ open: false, row: null, mode: 'create' }); },
@@ -27971,7 +27760,7 @@ function ExecutionTab({
         modalOverlay(
           <>
             <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>
-              {siModal.row ? 'Edit Site Instruction' : 'New Site Instruction'}
+              {siModal.row ? t('proj.detail.editSiteInstruction') : t('proj.detail.newSiteInstruction')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
@@ -27984,7 +27773,7 @@ function ExecutionTab({
                     marginBottom: '4px',
                   }}
                 >
-                  SI Number
+                  {t('proj.detail.siNumber')}
                 </label>
                 {!siModal.row ? (
                   <div
@@ -28006,7 +27795,7 @@ function ExecutionTab({
                 )}
               </div>
               {field(
-                'Issued Date',
+                t('proj.detail.issuedDate'),
                 inp(
                   siForm.issuedDate,
                   (v) => { setSiForm((f) => ({ ...f, issuedDate: v })); },
@@ -28016,20 +27805,20 @@ function ExecutionTab({
               )}
             </div>
             {field(
-              'Subject *',
+              t('proj.detail.subject'),
               inp(siForm.subject, (v) => { setSiForm((f) => ({ ...f, subject: v })); }),
             )}
             {field(
-              'Description',
+              t('proj.detail.description'),
               textarea(siForm.description, (v) => { setSiForm((f) => ({ ...f, description: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Issued By',
+                t('proj.detail.issuedBy2'),
                 inp(siForm.issuedBy, (v) => { setSiForm((f) => ({ ...f, issuedBy: v })); }),
               )}
               {field(
-                'Status',
+                t('proj.detail.status'),
                 sel(siForm.status, (v) => { setSiForm((f) => ({ ...f, status: v })); }, [
                   'open',
                   'acknowledged',
@@ -28037,13 +27826,13 @@ function ExecutionTab({
                 ]),
               )}
               {field(
-                'Acknowledged By',
+                t('proj.detail.acknowledgedBy'),
                 inp(siForm.acknowledgedByName, (v) =>
                   { setSiForm((f) => ({ ...f, acknowledgedByName: v })); },
                 ),
               )}
               {field(
-                'Acknowledged Date',
+                t('proj.detail.acknowledgedDate'),
                 inp(
                   siForm.acknowledgedDate,
                   (v) => { setSiForm((f) => ({ ...f, acknowledgedDate: v })); },
@@ -28062,12 +27851,12 @@ function ExecutionTab({
                 onChange={(e) => { setSiForm((f) => ({ ...f, potentialVo: e.target.checked })); }}
               />
               <label htmlFor="si-vo" style={{ fontSize: '13px', color: th.textPrimary }}>
-                Potential Variation Order
+                {t('proj.detail.potentialVariationOrder')}
               </label>
             </div>
             {siForm.potentialVo &&
               field(
-                'VO Reference',
+                t('proj.detail.voReference'),
                 inp(siForm.voRef, (v) => { setSiForm((f) => ({ ...f, voRef: v })); }),
               )}
             {modalBtns(saveSI, () => { setSiModal({ open: false, row: null }); })}
@@ -28080,27 +27869,27 @@ function ExecutionTab({
         modalOverlay(
           <>
             <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>
-              {itpModal.row ? 'Edit ITP' : 'New ITP'}
+              {itpModal.row ? t('proj.detail.editItp') : t('proj.detail.newItp')}
             </h3>
             {field(
-              'Title *',
+              t('proj.detail.title2'),
               inp(itpForm.title, (v) => { setItpForm((f) => ({ ...f, title: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Work Package',
+                t('proj.detail.workPackage2'),
                 inp(itpForm.workPackage, (v) => { setItpForm((f) => ({ ...f, workPackage: v })); }),
               )}
               {field(
-                'Discipline',
+                t('proj.detail.discipline'),
                 inp(itpForm.discipline, (v) => { setItpForm((f) => ({ ...f, discipline: v })); }),
               )}
               {field(
-                'Revision',
+                t('proj.detail.revision'),
                 inp(itpForm.revision, (v) => { setItpForm((f) => ({ ...f, revision: v })); }),
               )}
               {field(
-                'Status',
+                t('proj.detail.status'),
                 sel(itpForm.status, (v) => { setItpForm((f) => ({ ...f, status: v })); }, [
                   'draft',
                   'approved',
@@ -28109,7 +27898,7 @@ function ExecutionTab({
                 ]),
               )}
               {field(
-                'Created By',
+                t('proj.detail.createdBy'),
                 inp(itpForm.createdByName, (v) => { setItpForm((f) => ({ ...f, createdByName: v })); }),
               )}
             </div>
@@ -28123,11 +27912,9 @@ function ExecutionTab({
       {itpItemsModal.open &&
         modalOverlay(
           <>
-            <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: th.textPrimary }}>
-              ITP Checklist — {itpItemsModal.itp?.title}
-            </h3>
+            <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: th.textPrimary }}>{t('proj.detail.itpChecklist', { title: itpItemsModal.itp?.title })}</h3>
             <p style={{ fontSize: '12px', color: th.textMuted, margin: '0 0 14px' }}>
-              Type: C=Check, H=Hold, W=Witness, R=Review
+              {t('proj.detail.typeCCheckHHoldW')}
             </p>
             <div style={{ overflowX: 'auto', paddingBottom: '4px' }}>
               <div style={{ minWidth: '820px' }}>
@@ -28152,7 +27939,7 @@ function ExecutionTab({
                           prev.map((x, i) => (i === idx ? { ...x, activity: e.target.value } : x)),
                         ); }
                       }
-                      placeholder="Activity"
+                      placeholder={t('proj.detail.activity')}
                       style={{
                         padding: '5px 8px',
                         borderRadius: '5px',
@@ -28182,10 +27969,10 @@ function ExecutionTab({
                         fontSize: '12px',
                       }}
                     >
-                      <option value="check">Check</option>
-                      <option value="hold">Hold</option>
-                      <option value="witness">Witness</option>
-                      <option value="review">Review</option>
+                      <option value="check">{t('proj.detail.check')}</option>
+                      <option value="hold">{t('proj.detail.hold')}</option>
+                      <option value="witness">{t('proj.detail.witness')}</option>
+                      <option value="review">{t('proj.detail.review')}</option>
                     </select>
                     <input
                       value={item.contractorRole ?? ''}
@@ -28196,7 +27983,7 @@ function ExecutionTab({
                           ),
                         ); }
                       }
-                      placeholder="Contractor role"
+                      placeholder={t('proj.detail.contractorRole')}
                       style={{
                         padding: '5px 8px',
                         borderRadius: '5px',
@@ -28217,7 +28004,7 @@ function ExecutionTab({
                           ),
                         ); }
                       }
-                      placeholder="Client role"
+                      placeholder={t('proj.detail.clientRole')}
                       style={{
                         padding: '5px 8px',
                         borderRadius: '5px',
@@ -28259,14 +28046,14 @@ function ExecutionTab({
                     width: '100%',
                   }}
                 >
-                  + Add Item
+                  {t('proj.detail.addItem')}
                 </button>
               </div>
             </div>
             {modalBtns(
               saveITPItems,
               () => { setItpItemsModal({ open: false, itp: null }); },
-              'Save Checklist',
+              t('proj.detail.saveChecklist'),
             )}
           </>,
           () => { setItpItemsModal({ open: false, itp: null }); },
@@ -28279,13 +28066,13 @@ function ExecutionTab({
         modalOverlay(
           <>
             <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: th.textPrimary }}>
-              Record Inspection Result
+              {t('proj.detail.recordInspectionResult')}
             </h3>
             <p style={{ fontSize: '12px', color: th.textMuted, margin: '0 0 16px' }}>
               {itpResultModal.item?.activity}
             </p>
             {field(
-              'Result',
+              t('proj.detail.result'),
               sel(itpResultForm.result, (v) => { setItpResultForm((f) => ({ ...f, result: v })); }, [
                 'pass',
                 'fail',
@@ -28294,13 +28081,13 @@ function ExecutionTab({
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Inspector Name',
+                t('proj.detail.inspectorName'),
                 inp(itpResultForm.inspectorName, (v) =>
                   { setItpResultForm((f) => ({ ...f, inspectorName: v })); },
                 ),
               )}
               {field(
-                'Inspection Date',
+                t('proj.detail.inspectionDate'),
                 inp(
                   itpResultForm.inspectionDate,
                   (v) => { setItpResultForm((f) => ({ ...f, inspectionDate: v })); },
@@ -28310,7 +28097,7 @@ function ExecutionTab({
               )}
             </div>
             {field(
-              'Remarks',
+              t('proj.detail.remarks'),
               textarea(itpResultForm.remarks, (v) =>
                 { setItpResultForm((f) => ({ ...f, remarks: v })); },
               ),
@@ -28329,7 +28116,7 @@ function ExecutionTab({
                 }
               },
               () => { setItpResultModal({ open: false, item: null }); },
-              'Record',
+              t('proj.detail.record'),
             )}
           </>,
           () => { setItpResultModal({ open: false, item: null }); },
@@ -28340,11 +28127,11 @@ function ExecutionTab({
         modalOverlay(
           <>
             <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>
-              {irModal.row ? 'Edit Inspection Request' : 'New Inspection Request'}
+              {irModal.row ? t('proj.detail.editInspectionRequest') : t('proj.detail.newInspectionRequest')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'IR Number',
+                t('proj.detail.irNumber'),
                 irModal.row ? (
                   inp(irForm.irNumber, (v) => { setIrForm((f) => ({ ...f, irNumber: v })); })
                 ) : (
@@ -28365,7 +28152,7 @@ function ExecutionTab({
                 ),
               )}
               {field(
-                'Requested Date',
+                t('proj.detail.requestedDate'),
                 inp(
                   irForm.requestedDate,
                   (v) => { setIrForm((f) => ({ ...f, requestedDate: v })); },
@@ -28375,20 +28162,20 @@ function ExecutionTab({
               )}
             </div>
             {field(
-              'Title *',
+              t('proj.detail.title2'),
               inp(irForm.title, (v) => { setIrForm((f) => ({ ...f, title: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Work Package',
+                t('proj.detail.workPackage2'),
                 inp(irForm.workPackage, (v) => { setIrForm((f) => ({ ...f, workPackage: v })); }),
               )}
               {field(
-                'Location',
+                t('proj.detail.location2'),
                 inp(irForm.location, (v) => { setIrForm((f) => ({ ...f, location: v })); }),
               )}
               {field(
-                'Requested By',
+                t('proj.detail.requestedBy'),
                 inp(irForm.requestedByName, (v) =>
                   { setIrForm((f) => ({ ...f, requestedByName: v })); },
                 ),
@@ -28413,17 +28200,17 @@ function ExecutionTab({
                       marginBottom: '12px',
                     }}
                   >
-                    Inspection Details
+                    {t('proj.detail.inspectionDetails')}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     {field(
-                      'Inspector Name',
+                      t('proj.detail.inspectorName'),
                       inp(irForm.inspectorName, (v) =>
                         { setIrForm((f) => ({ ...f, inspectorName: v })); },
                       ),
                     )}
                     {field(
-                      'Actual Date',
+                      t('proj.detail.actualDate'),
                       inp(
                         irForm.actualDate,
                         (v) => { setIrForm((f) => ({ ...f, actualDate: v })); },
@@ -28432,7 +28219,7 @@ function ExecutionTab({
                       ),
                     )}
                     {field(
-                      'Result',
+                      t('proj.detail.result'),
                       sel(
                         irForm.result,
                         (v) => {
@@ -28443,7 +28230,7 @@ function ExecutionTab({
                       ),
                     )}
                     {field(
-                      'Status',
+                      t('proj.detail.status'),
                       sel(irForm.status, (v) => { setIrForm((f) => ({ ...f, status: v })); }, [
                         'pending',
                         'accepted',
@@ -28453,7 +28240,7 @@ function ExecutionTab({
                     )}
                   </div>
                   {field(
-                    'Remarks',
+                    t('proj.detail.remarks'),
                     textarea(irForm.remarks, (v) => { setIrForm((f) => ({ ...f, remarks: v })); }),
                   )}
                 </div>
@@ -28469,20 +28256,20 @@ function ExecutionTab({
         modalOverlay(
           <>
             <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: th.textPrimary }}>
-              Record Inspection
+              {t('proj.detail.recordInspection')}
             </h3>
             <p style={{ fontSize: '12px', color: th.textMuted, margin: '0 0 16px' }}>
               IR-{irInspectModal.row?.irNumber} · {irInspectModal.row?.title}
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Inspector Name',
+                t('proj.detail.inspectorName'),
                 inp(irInspectForm.inspectorName, (v) =>
                   { setIrInspectForm((f) => ({ ...f, inspectorName: v })); },
                 ),
               )}
               {field(
-                'Actual Date',
+                t('proj.detail.actualDate'),
                 inp(
                   irInspectForm.actualDate,
                   (v) => { setIrInspectForm((f) => ({ ...f, actualDate: v })); },
@@ -28492,7 +28279,7 @@ function ExecutionTab({
               )}
             </div>
             {field(
-              'Result *',
+              t('proj.detail.result2'),
               sel(irInspectForm.result, (v) => { setIrInspectForm((f) => ({ ...f, result: v })); }, [
                 '',
                 'accepted',
@@ -28501,7 +28288,7 @@ function ExecutionTab({
               ]),
             )}
             {field(
-              'Remarks',
+              t('proj.detail.remarks'),
               textarea(irInspectForm.remarks, (v) =>
                 { setIrInspectForm((f) => ({ ...f, remarks: v })); },
               ),
@@ -28509,7 +28296,7 @@ function ExecutionTab({
             {modalBtns(
               saveIRInspect,
               () => { setIrInspectModal({ open: false, row: null }); },
-              'Save Inspection',
+              t('proj.detail.saveInspection'),
             )}
           </>,
           () => { setIrInspectModal({ open: false, row: null }); },
@@ -28520,11 +28307,11 @@ function ExecutionTab({
         modalOverlay(
           <>
             <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>
-              {ncrModal.row ? 'Edit NCR' : 'New NCR'}
+              {ncrModal.row ? t('proj.detail.editNcr') : t('proj.detail.newNcr')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'NCR Number',
+                t('proj.detail.ncrNumber'),
                 ncrModal.row ? (
                   inp(ncrForm.ncrNumber, (v) => { setNcrForm((f) => ({ ...f, ncrNumber: v })); })
                 ) : (
@@ -28539,13 +28326,11 @@ function ExecutionTab({
                       fontFamily: 'monospace',
                       fontWeight: 700,
                     }}
-                  >
-                    NCR-{ncrForm.ncrNumber}
-                  </div>
+                  >{t('proj.detail.ncr', { ncrNumber: ncrForm.ncrNumber })}</div>
                 ),
               )}
               {field(
-                'Raised Date',
+                t('proj.detail.raisedDate'),
                 inp(
                   ncrForm.raisedDate,
                   (v) => { setNcrForm((f) => ({ ...f, raisedDate: v })); },
@@ -28555,28 +28340,28 @@ function ExecutionTab({
               )}
             </div>
             {field(
-              'Title *',
+              t('proj.detail.title2'),
               inp(ncrForm.title, (v) => { setNcrForm((f) => ({ ...f, title: v })); }),
             )}
             {field(
-              'Description *',
+              t('proj.detail.description2'),
               textarea(ncrForm.description, (v) => { setNcrForm((f) => ({ ...f, description: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Work Package',
+                t('proj.detail.workPackage2'),
                 inp(ncrForm.workPackage, (v) => { setNcrForm((f) => ({ ...f, workPackage: v })); }),
               )}
               {field(
-                'Location',
+                t('proj.detail.location2'),
                 inp(ncrForm.location, (v) => { setNcrForm((f) => ({ ...f, location: v })); }),
               )}
               {field(
-                'Raised By',
+                t('proj.detail.raisedBy'),
                 inp(ncrForm.raisedByName, (v) => { setNcrForm((f) => ({ ...f, raisedByName: v })); }),
               )}
               {field(
-                'Severity',
+                t('proj.detail.severity'),
                 sel(ncrForm.severity, (v) => { setNcrForm((f) => ({ ...f, severity: v })); }, [
                   'minor',
                   'major',
@@ -28584,7 +28369,7 @@ function ExecutionTab({
                 ]),
               )}
               {field(
-                'Due Date',
+                t('proj.detail.dueDate'),
                 inp(ncrForm.dueDate, (v) => { setNcrForm((f) => ({ ...f, dueDate: v })); }, '', 'date'),
               )}
             </div>
@@ -28607,11 +28392,11 @@ function ExecutionTab({
                       marginBottom: '12px',
                     }}
                   >
-                    Resolution
+                    {t('proj.detail.resolution')}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     {field(
-                      'Status',
+                      t('proj.detail.status'),
                       sel(ncrForm.status, (v) => { setNcrForm((f) => ({ ...f, status: v })); }, [
                         'open',
                         'pending_close',
@@ -28619,7 +28404,7 @@ function ExecutionTab({
                       ]),
                     )}
                     {field(
-                      'Closed Date',
+                      t('proj.detail.closedDate'),
                       inp(
                         ncrForm.closedDate,
                         (v) => {
@@ -28643,14 +28428,14 @@ function ExecutionTab({
                       ),
                     )}
                     {field(
-                      'Closed By',
+                      t('proj.detail.closedBy'),
                       inp(ncrForm.closedByName, (v) =>
                         { setNcrForm((f) => ({ ...f, closedByName: v })); },
                       ),
                     )}
                   </div>
                   {field(
-                    'Root Cause',
+                    t('proj.detail.rootCause'),
                     textarea(ncrForm.rootCause, (v) => {
                       const s =
                         v && ncrForm.correctiveAction && ncrForm.status === 'open'
@@ -28660,7 +28445,7 @@ function ExecutionTab({
                     }),
                   )}
                   {field(
-                    'Corrective Action',
+                    t('proj.detail.correctiveAction'),
                     textarea(ncrForm.correctiveAction, (v) => {
                       const s =
                         v && ncrForm.rootCause && ncrForm.status === 'open'
@@ -28670,7 +28455,7 @@ function ExecutionTab({
                     }),
                   )}
                   {field(
-                    'Preventive Action',
+                    t('proj.detail.preventiveAction'),
                     textarea(ncrForm.preventiveAction, (v) =>
                       { setNcrForm((f) => ({ ...f, preventiveAction: v })); },
                     ),
@@ -28688,13 +28473,11 @@ function ExecutionTab({
         modalOverlay(
           <>
             <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: th.textPrimary }}>
-              Resolve NCR
+              {t('proj.detail.resolveNcr')}
             </h3>
-            <p style={{ fontSize: '12px', color: th.textMuted, margin: '0 0 16px' }}>
-              NCR-{ncrResolveModal.row?.ncrNumber} · {ncrResolveModal.row?.title}
-            </p>
+            <p style={{ fontSize: '12px', color: th.textMuted, margin: '0 0 16px' }}>{t('proj.detail.ncr2', { ncrNumber: ncrResolveModal.row?.ncrNumber, title: ncrResolveModal.row?.title })}</p>
             {field(
-              'Root Cause',
+              t('proj.detail.rootCause'),
               textarea(ncrResolveForm.rootCause, (v) => {
                 const s =
                   v && ncrResolveForm.correctiveAction && ncrResolveForm.status === 'open'
@@ -28704,7 +28487,7 @@ function ExecutionTab({
               }),
             )}
             {field(
-              'Corrective Action',
+              t('proj.detail.correctiveAction'),
               textarea(ncrResolveForm.correctiveAction, (v) => {
                 const s =
                   v && ncrResolveForm.rootCause && ncrResolveForm.status === 'open'
@@ -28714,14 +28497,14 @@ function ExecutionTab({
               }),
             )}
             {field(
-              'Preventive Action',
+              t('proj.detail.preventiveAction'),
               textarea(ncrResolveForm.preventiveAction, (v) =>
                 { setNcrResolveForm((f) => ({ ...f, preventiveAction: v })); },
               ),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Closed Date',
+                t('proj.detail.closedDate'),
                 inp(
                   ncrResolveForm.closedDate,
                   (v) => {
@@ -28745,7 +28528,7 @@ function ExecutionTab({
                 ),
               )}
               {field(
-                'Closed By',
+                t('proj.detail.closedBy'),
                 inp(ncrResolveForm.closedByName, (v) =>
                   { setNcrResolveForm((f) => ({ ...f, closedByName: v })); },
                 ),
@@ -28764,7 +28547,7 @@ function ExecutionTab({
               }}
             >
               <span style={{ fontSize: '11px', fontWeight: 600, color: th.textMuted }}>
-                Status will be saved as:
+                {t('proj.detail.statusWillBeSavedAs')}
               </span>
               {(() => {
                 const s = ncrResolveForm.closedDate
@@ -28778,7 +28561,7 @@ function ExecutionTab({
             {modalBtns(
               saveNCRResolve,
               () => { setNcrResolveModal({ open: false, row: null }); },
-              'Save Resolution',
+              t('proj.detail.saveResolution'),
             )}
           </>,
           () => { setNcrResolveModal({ open: false, row: null }); },
@@ -28789,10 +28572,10 @@ function ExecutionTab({
         modalOverlay(
           <>
             <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>
-              {hseModal.row ? 'Edit HSE Record' : 'New HSE Record'}
+              {hseModal.row ? t('proj.detail.editHseRecord') : t('proj.detail.newHseRecord')}
             </h3>
             {field(
-              'Record Type',
+              t('proj.detail.recordType'),
               sel(hseForm.recordType, (v) => { setHseForm((f) => ({ ...f, recordType: v })); }, [
                 'toolbox_talk',
                 'incident',
@@ -28801,12 +28584,12 @@ function ExecutionTab({
               ]),
             )}
             {field(
-              'Title *',
+              t('proj.detail.title2'),
               inp(hseForm.title, (v) => { setHseForm((f) => ({ ...f, title: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Date',
+                t('proj.detail.date'),
                 inp(
                   hseForm.recordDate,
                   (v) => { setHseForm((f) => ({ ...f, recordDate: v })); },
@@ -28815,15 +28598,15 @@ function ExecutionTab({
                 ),
               )}
               {field(
-                'Conducted By',
+                t('proj.detail.conductedBy'),
                 inp(hseForm.conductedBy, (v) => { setHseForm((f) => ({ ...f, conductedBy: v })); }),
               )}
               {field(
-                'Location',
+                t('proj.detail.location2'),
                 inp(hseForm.location, (v) => { setHseForm((f) => ({ ...f, location: v })); }),
               )}
               {field(
-                'Status',
+                t('proj.detail.status'),
                 sel(hseForm.status, (v) => { setHseForm((f) => ({ ...f, status: v })); }, [
                   'open',
                   'closed',
@@ -28831,14 +28614,14 @@ function ExecutionTab({
               )}
             </div>
             {field(
-              'Description',
+              t('proj.detail.description'),
               textarea(hseForm.description, (v) => { setHseForm((f) => ({ ...f, description: v })); }),
             )}
 
             {hseForm.recordType === 'toolbox_talk' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 {field(
-                  'Attendee Count',
+                  t('proj.detail.attendeeCount'),
                   inp(
                     hseForm.attendeeCount,
                     (v) => { setHseForm((f) => ({ ...f, attendeeCount: v })); },
@@ -28847,7 +28630,7 @@ function ExecutionTab({
                   ),
                 )}
                 {field(
-                  'Attendee Names',
+                  t('proj.detail.attendeeNames'),
                   inp(hseForm.attendeeNames, (v) =>
                     { setHseForm((f) => ({ ...f, attendeeNames: v })); },
                   ),
@@ -28859,7 +28642,7 @@ function ExecutionTab({
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   {field(
-                    'Incident Type',
+                    t('proj.detail.incidentType'),
                     sel(
                       hseForm.incidentType,
                       (v) => { setHseForm((f) => ({ ...f, incidentType: v })); },
@@ -28867,7 +28650,7 @@ function ExecutionTab({
                     ),
                   )}
                   {field(
-                    'Severity',
+                    t('proj.detail.severity'),
                     sel(hseForm.severity, (v) => { setHseForm((f) => ({ ...f, severity: v })); }, [
                       'low',
                       'medium',
@@ -28876,13 +28659,13 @@ function ExecutionTab({
                     ]),
                   )}
                   {field(
-                    'Injured Person',
+                    t('proj.detail.injuredPerson'),
                     inp(hseForm.injuredPerson, (v) =>
                       { setHseForm((f) => ({ ...f, injuredPerson: v })); },
                     ),
                   )}
                   {field(
-                    'Corrective Due Date',
+                    t('proj.detail.correctiveDueDate'),
                     inp(
                       hseForm.correctiveDueDate,
                       (v) => { setHseForm((f) => ({ ...f, correctiveDueDate: v })); },
@@ -28892,11 +28675,11 @@ function ExecutionTab({
                   )}
                 </div>
                 {field(
-                  'Root Cause',
+                  t('proj.detail.rootCause'),
                   textarea(hseForm.rootCause, (v) => { setHseForm((f) => ({ ...f, rootCause: v })); }),
                 )}
                 {field(
-                  'Corrective Action',
+                  t('proj.detail.correctiveAction'),
                   textarea(hseForm.correctiveAction, (v) =>
                     { setHseForm((f) => ({ ...f, correctiveAction: v })); },
                   ),
@@ -28906,7 +28689,7 @@ function ExecutionTab({
 
             {hseForm.recordType === 'observation' &&
               field(
-                'Observation Type',
+                t('proj.detail.observationType'),
                 sel(
                   hseForm.observationType,
                   (v) => { setHseForm((f) => ({ ...f, observationType: v })); },
@@ -28918,7 +28701,7 @@ function ExecutionTab({
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   {field(
-                    'PTW Type',
+                    t('proj.detail.ptwType'),
                     sel(hseForm.ptwType, (v) => { setHseForm((f) => ({ ...f, ptwType: v })); }, [
                       'hot_work',
                       'confined_space',
@@ -28929,11 +28712,11 @@ function ExecutionTab({
                     ]),
                   )}
                   {field(
-                    'PTW Number',
+                    t('proj.detail.ptwNumber'),
                     inp(hseForm.ptwNumber, (v) => { setHseForm((f) => ({ ...f, ptwNumber: v })); }),
                   )}
                   {field(
-                    'Valid From',
+                    t('proj.detail.validFrom'),
                     inp(
                       hseForm.validFrom,
                       (v) => { setHseForm((f) => ({ ...f, validFrom: v })); },
@@ -28942,7 +28725,7 @@ function ExecutionTab({
                     ),
                   )}
                   {field(
-                    'Valid To',
+                    t('proj.detail.validTo'),
                     inp(
                       hseForm.validTo,
                       (v) => { setHseForm((f) => ({ ...f, validTo: v })); },
@@ -28951,11 +28734,11 @@ function ExecutionTab({
                     ),
                   )}
                   {field(
-                    'Approved By',
+                    t('proj.detail.approvedBy'),
                     inp(hseForm.approvedBy, (v) => { setHseForm((f) => ({ ...f, approvedBy: v })); }),
                   )}
                   {field(
-                    'PTW Status',
+                    t('proj.detail.ptwStatus'),
                     sel(hseForm.ptwStatus, (v) => { setHseForm((f) => ({ ...f, ptwStatus: v })); }, [
                       'pending',
                       'active',
@@ -28977,214 +28760,202 @@ function ExecutionTab({
           <>
             <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: th.textPrimary }}>
               {dailyReportModal.row
-                ? `${dailyReportModal.mode === 'view' ? 'View' : 'Edit'} Daily Report — ${dailyReportModal.row.reportNumber}`
-                : 'New Daily Report'}
+                ? t(dailyReportModal.mode === 'view' ? 'proj.detail.viewDailyReport' : 'proj.detail.editDailyReport', { number: dailyReportModal.row.reportNumber })
+                : t('proj.detail.newDailyReport')}
             </h3>
             <p style={{ fontSize: '12px', color: th.textMuted, margin: '0 0 4px' }}>
               {dailyReportModal.row
-                ? 'Report number is assigned automatically and cannot be changed.'
-                : 'A report number will be assigned automatically on save.'}
+                ? t('proj.detail.reportNumberIsAssignedAutomaticallyAnd')
+                : t('proj.detail.aReportNumberWillBeAssigned')}
             </p>
             {(!isEditable || dailyReportModal.mode === 'view') && (
-              <p style={{ fontSize: '12px', color: th.accent, margin: '0 0 4px', fontWeight: 600 }}>
-                View only{!isEditable ? " — you don't have permission to edit Daily Reports." : '.'}
-              </p>
+              <p style={{ fontSize: '12px', color: th.accent, margin: '0 0 4px', fontWeight: 600 }}>{t('proj.detail.viewOnly', { value: !isEditable ? t('proj.detail.youDonTHavePermissionTo') : '.' })}</p>
             )}
 
             <fieldset disabled={!isEditable || dailyReportModal.mode === 'view'} style={{ border: 'none', margin: 0, padding: 0 }}>
 
-            {sectionTitle('Report Info')}
+            {sectionTitle(t('proj.detail.reportInfo'))}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {field(
-                'Report Date',
+                t('proj.detail.reportDate'),
                 inp(dailyReportForm.reportDate, (v) => { setDailyReportForm((f) => ({ ...f, reportDate: v })); }, '', 'date'),
               )}
-              {field('Prepared By', inp(dailyReportForm.preparedBy, (v) => { setDailyReportForm((f) => ({ ...f, preparedBy: v })); }))}
-              {field('Reviewed By', inp(dailyReportForm.reviewedBy, (v) => { setDailyReportForm((f) => ({ ...f, reviewedBy: v })); }))}
-              {field('Weather Conditions', inp(dailyReportForm.weatherConditions, (v) => { setDailyReportForm((f) => ({ ...f, weatherConditions: v })); }))}
-              {field('Temperature', inp(dailyReportForm.temperature, (v) => { setDailyReportForm((f) => ({ ...f, temperature: v })); }))}
+              {field(t('proj.detail.preparedBy2'), inp(dailyReportForm.preparedBy, (v) => { setDailyReportForm((f) => ({ ...f, preparedBy: v })); }))}
+              {field(t('proj.detail.reviewedBy'), inp(dailyReportForm.reviewedBy, (v) => { setDailyReportForm((f) => ({ ...f, reviewedBy: v })); }))}
+              {field(t('proj.detail.weatherConditions'), inp(dailyReportForm.weatherConditions, (v) => { setDailyReportForm((f) => ({ ...f, weatherConditions: v })); }))}
+              {field(t('proj.detail.temperature'), inp(dailyReportForm.temperature, (v) => { setDailyReportForm((f) => ({ ...f, temperature: v })); }))}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
-              {field('Schedule Status', sel(dailyReportForm.scheduleStatus, (v) => { setDailyReportForm((f) => ({ ...f, scheduleStatus: v })); }, ['on_track', 'at_risk', 'delayed']))}
-              {field('Cost Status', sel(dailyReportForm.costStatus, (v) => { setDailyReportForm((f) => ({ ...f, costStatus: v })); }, ['on_budget', 'at_risk', 'over_budget']))}
-              {field('Safety Status', sel(dailyReportForm.safetyStatus, (v) => { setDailyReportForm((f) => ({ ...f, safetyStatus: v })); }, ['good', 'fair', 'poor']))}
-              {field('Quality Status', sel(dailyReportForm.qualityStatus, (v) => { setDailyReportForm((f) => ({ ...f, qualityStatus: v })); }, ['good', 'fair', 'poor']))}
+              {field(t('proj.detail.scheduleStatus'), sel(dailyReportForm.scheduleStatus, (v) => { setDailyReportForm((f) => ({ ...f, scheduleStatus: v })); }, ['on_track', 'at_risk', 'delayed']))}
+              {field(t('proj.detail.costStatus'), sel(dailyReportForm.costStatus, (v) => { setDailyReportForm((f) => ({ ...f, costStatus: v })); }, ['on_budget', 'at_risk', 'over_budget']))}
+              {field(t('proj.detail.safetyStatus'), sel(dailyReportForm.safetyStatus, (v) => { setDailyReportForm((f) => ({ ...f, safetyStatus: v })); }, ['good', 'fair', 'poor']))}
+              {field(t('proj.detail.qualityStatus'), sel(dailyReportForm.qualityStatus, (v) => { setDailyReportForm((f) => ({ ...f, qualityStatus: v })); }, ['good', 'fair', 'poor']))}
             </div>
 
-            {sectionTitle('Executive Summary — Overall Progress (%)')}
+            {sectionTitle(t('proj.detail.executiveSummaryOverallProgress'))}
             {rowsEditor(
               dailyReportForm.progressMetrics,
               (rows) => { setDailyReportForm((f) => ({ ...f, progressMetrics: rows })); },
               [
-                { key: 'metric', label: 'Category', options: ['engineering', 'procurement', 'construction', 'overall'] },
-                { key: 'planned', label: 'Planned %', type: 'number' },
-                { key: 'actual', label: 'Actual %', type: 'number' },
+                { key: 'metric', label: t('proj.detail.category'), options: ['engineering', 'procurement', 'construction', 'overall'] },
+                { key: 'planned', label: t('proj.detail.planned'), type: 'number' },
+                { key: 'actual', label: t('proj.detail.actual2'), type: 'number' },
               ],
               { allowAddRemove: false },
             )}
-            {field('Key Accomplishments Today', textarea(dailyReportForm.keyAccomplishments, (v) => { setDailyReportForm((f) => ({ ...f, keyAccomplishments: v })); }, 'One per line…'))}
-            {field('Major Concerns / Delays', textarea(dailyReportForm.majorConcerns, (v) => { setDailyReportForm((f) => ({ ...f, majorConcerns: v })); }, 'One per line…'))}
+            {field(t('proj.detail.keyAccomplishmentsToday'), textarea(dailyReportForm.keyAccomplishments, (v) => { setDailyReportForm((f) => ({ ...f, keyAccomplishments: v })); }, t('proj.detail.onePerLine')))}
+            {field(t('proj.detail.majorConcernsDelays'), textarea(dailyReportForm.majorConcerns, (v) => { setDailyReportForm((f) => ({ ...f, majorConcerns: v })); }, t('proj.detail.onePerLine')))}
 
-            {sectionTitle('HSE — Safety Statistics')}
+            {sectionTitle(t('proj.detail.hseSafetyStatistics'))}
             {rowsEditor(
               dailyReportForm.safetyStats,
               (rows) => { setDailyReportForm((f) => ({ ...f, safetyStats: rows })); },
               [
-                { key: 'item', label: 'Item', options: ['Man-hours Worked', 'Lost Time Injuries', 'Medical Cases', 'Near Misses', 'Safety Observations', 'Toolbox Talks Conducted'] },
-                { key: 'today', label: 'Today', type: 'number' },
-                { key: 'mtd', label: 'MTD', type: 'number' },
-                { key: 'ltd', label: 'LTD', type: 'number' },
+                { key: 'item', label: t('proj.detail.item'), options: ['Man-hours Worked', 'Lost Time Injuries', 'Medical Cases', 'Near Misses', 'Safety Observations', 'Toolbox Talks Conducted'] },
+                { key: 'today', label: t('proj.detail.today'), type: 'number' },
+                { key: 'mtd', label: t('proj.detail.mtd'), type: 'number' },
+                { key: 'ltd', label: t('proj.detail.ltd'), type: 'number' },
               ],
             )}
             <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
-              Safety Activities Performed
+              {t('proj.detail.safetyActivitiesPerformed')}
             </div>
             {checkboxGroup(SAFETY_ACTIVITY_OPTIONS, dailyReportForm.safetyActivities, (next) => { setDailyReportForm((f) => ({ ...f, safetyActivities: next })); })}
-            {field('Safety Remarks', textarea(dailyReportForm.safetyRemarks, (v) => { setDailyReportForm((f) => ({ ...f, safetyRemarks: v })); }))}
+            {field(t('proj.detail.safetyRemarks'), textarea(dailyReportForm.safetyRemarks, (v) => { setDailyReportForm((f) => ({ ...f, safetyRemarks: v })); }))}
 
-            {sectionTitle('Engineering')}
+            {sectionTitle(t('proj.detail.engineering'))}
             {rowsEditor(
               dailyReportForm.engineeringProgress,
               (rows) => { setDailyReportForm((f) => ({ ...f, engineeringProgress: rows })); },
               [
-                { key: 'discipline', label: 'Discipline', options: DISCIPLINE_OPTIONS },
-                { key: 'planned', label: 'Planned %', type: 'number' },
-                { key: 'actual', label: 'Actual %', type: 'number' },
-                { key: 'remarks', label: 'Remarks' },
+                { key: 'discipline', label: t('proj.detail.discipline'), options: DISCIPLINE_OPTIONS },
+                { key: 'planned', label: t('proj.detail.planned'), type: 'number' },
+                { key: 'actual', label: t('proj.detail.actual2'), type: 'number' },
+                { key: 'remarks', label: t('proj.detail.remarks') },
               ],
             )}
             <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
-              Deliverables Issued Today
+              {t('proj.detail.deliverablesIssuedToday')}
             </div>
             {rowsEditor(
               dailyReportForm.engineeringDeliverables,
               (rows) => { setDailyReportForm((f) => ({ ...f, engineeringDeliverables: rows })); },
               [
-                { key: 'docNo', label: 'Document No.' },
-                { key: 'description', label: 'Description' },
-                { key: 'status', label: 'Status', options: ['issued', 'pending', 'approved'] },
+                { key: 'docNo', label: t('proj.detail.documentNo') },
+                { key: 'description', label: t('proj.detail.description') },
+                { key: 'status', label: t('proj.detail.status'), options: ['issued', 'pending', 'approved'] },
               ],
-              { addLabel: '+ Add Deliverable' },
+              { addLabel: t('proj.detail.addDeliverable') },
             )}
-            {field('Engineering Issues', textarea(dailyReportForm.engineeringIssues, (v) => { setDailyReportForm((f) => ({ ...f, engineeringIssues: v })); }))}
+            {field(t('proj.detail.engineeringIssues'), textarea(dailyReportForm.engineeringIssues, (v) => { setDailyReportForm((f) => ({ ...f, engineeringIssues: v })); }))}
 
-            {sectionTitle('Procurement')}
+            {sectionTitle(t('proj.detail.procurement'))}
             <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
-              Material / Equipment Status
+              {t('proj.detail.materialEquipmentStatus')}
             </div>
             {rowsEditor(
               dailyReportForm.procurementItems,
               (rows) => { setDailyReportForm((f) => ({ ...f, procurementItems: rows })); },
               [
-                { key: 'item', label: 'Item' },
+                { key: 'item', label: t('proj.detail.item') },
                 { key: 'poNo', label: 'PO No.' },
-                { key: 'status', label: 'Status', options: ['ordered', 'in_transit', 'delivered', 'delayed'] },
-                { key: 'expectedDelivery', label: 'Expected Delivery', type: 'date' },
+                { key: 'status', label: t('proj.detail.status'), options: ['ordered', 'in_transit', 'delivered', 'delayed'] },
+                { key: 'expectedDelivery', label: t('proj.detail.expectedDelivery'), type: 'date' },
               ],
-              { addLabel: '+ Add Item' },
+              { addLabel: t('proj.detail.addItem') },
             )}
             <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
-              Deliveries Received Today
+              {t('proj.detail.deliveriesReceivedToday')}
             </div>
             {rowsEditor(
               dailyReportForm.deliveriesReceived,
               (rows) => { setDailyReportForm((f) => ({ ...f, deliveriesReceived: rows })); },
               [
-                { key: 'material', label: 'Material' },
-                { key: 'quantity', label: 'Quantity' },
-                { key: 'remarks', label: 'Remarks' },
+                { key: 'material', label: t('proj.detail.material') },
+                { key: 'quantity', label: t('proj.detail.quantity') },
+                { key: 'remarks', label: t('proj.detail.remarks') },
               ],
-              { addLabel: '+ Add Delivery' },
+              { addLabel: t('proj.detail.addDelivery') },
             )}
-            {field('Procurement Concerns', textarea(dailyReportForm.procurementConcerns, (v) => { setDailyReportForm((f) => ({ ...f, procurementConcerns: v })); }))}
+            {field(t('proj.detail.procurementConcerns'), textarea(dailyReportForm.procurementConcerns, (v) => { setDailyReportForm((f) => ({ ...f, procurementConcerns: v })); }))}
 
-            {sectionTitle('Construction Progress')}
+            {sectionTitle(t('proj.detail.constructionProgress'))}
             {rowsEditor(
               dailyReportForm.constructionProgress,
               (rows) => { setDailyReportForm((f) => ({ ...f, constructionProgress: rows })); },
               [
-                { key: 'discipline', label: 'Discipline', options: DISCIPLINE_OPTIONS },
-                { key: 'activity', label: 'Activity' },
-                { key: 'unit', label: 'Unit' },
-                { key: 'planned', label: 'Planned', type: 'number' },
-                { key: 'actual', label: 'Actual', type: 'number' },
-                { key: 'remarks', label: 'Remarks' },
+                { key: 'discipline', label: t('proj.detail.discipline'), options: DISCIPLINE_OPTIONS },
+                { key: 'activity', label: t('proj.detail.activity') },
+                { key: 'unit', label: t('proj.detail.unit') },
+                { key: 'planned', label: t('proj.detail.planned2'), type: 'number' },
+                { key: 'actual', label: t('proj.detail.actual'), type: 'number' },
+                { key: 'remarks', label: t('proj.detail.remarks') },
               ],
-              { addLabel: '+ Add Activity' },
+              { addLabel: t('proj.detail.addActivity') },
             )}
 
-            {sectionTitle('Quality Control')}
+            {sectionTitle(t('proj.detail.qualityControl'))}
             <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
-              Inspections Conducted
+              {t('proj.detail.inspectionsConducted')}
             </div>
             {rowsEditor(
               dailyReportForm.qcInspections,
               (rows) => { setDailyReportForm((f) => ({ ...f, qcInspections: rows })); },
               [
-                { key: 'type', label: 'Inspection Type', options: DISCIPLINE_OPTIONS },
-                { key: 'total', label: 'Total', type: 'number' },
-                { key: 'passed', label: 'Passed', type: 'number' },
-                { key: 'failed', label: 'Failed', type: 'number' },
+                { key: 'type', label: t('proj.detail.inspectionType'), options: DISCIPLINE_OPTIONS },
+                { key: 'total', label: t('proj.detail.total'), type: 'number' },
+                { key: 'passed', label: t('proj.detail.passed'), type: 'number' },
+                { key: 'failed', label: t('proj.detail.failed'), type: 'number' },
               ],
             )}
             <div style={{ marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: th.textSecondary }}>
-              NCR Status
+              {t('proj.detail.ncrStatus')}
             </div>
             {rowsEditor(
               dailyReportForm.ncrStatus,
               (rows) => { setDailyReportForm((f) => ({ ...f, ncrStatus: rows })); },
               [
-                { key: 'ncrNo', label: 'NCR No.' },
-                { key: 'description', label: 'Description' },
-                { key: 'status', label: 'Status', options: ['open', 'pending', 'closed'] },
+                { key: 'ncrNo', label: t('proj.detail.ncrNo') },
+                { key: 'description', label: t('proj.detail.description') },
+                { key: 'status', label: t('proj.detail.status'), options: ['open', 'pending', 'closed'] },
               ],
-              { addLabel: '+ Add NCR' },
+              { addLabel: t('proj.detail.addNcr') },
             )}
-            {field('Quality Remarks', textarea(dailyReportForm.qualityRemarks, (v) => { setDailyReportForm((f) => ({ ...f, qualityRemarks: v })); }))}
+            {field(t('proj.detail.qualityRemarks'), textarea(dailyReportForm.qualityRemarks, (v) => { setDailyReportForm((f) => ({ ...f, qualityRemarks: v })); }))}
 
-            {sectionTitle('Manpower')}
+            {sectionTitle(t('proj.detail.manpower'))}
             {rowsEditor(
               dailyReportForm.manpower,
               (rows) => { setDailyReportForm((f) => ({ ...f, manpower: rows })); },
               [
-                { key: 'discipline', label: 'Discipline', options: [...DISCIPLINE_OPTIONS, 'other'] },
-                { key: 'supervisors', label: 'Supervisors', type: 'number' },
-                { key: 'skilled', label: 'Skilled', type: 'number' },
-                { key: 'unskilled', label: 'Unskilled', type: 'number' },
+                { key: 'discipline', label: t('proj.detail.discipline'), options: [...DISCIPLINE_OPTIONS, 'other'] },
+                { key: 'supervisors', label: t('proj.detail.supervisors'), type: 'number' },
+                { key: 'skilled', label: t('proj.detail.skilled'), type: 'number' },
+                { key: 'unskilled', label: t('proj.detail.unskilled'), type: 'number' },
               ],
             )}
-            <div style={{ fontSize: '12px', color: th.textMuted, marginBottom: '12px' }}>
-              Total Workforce Today:{' '}
-              <strong style={{ color: th.textPrimary }}>
-                {dailyReportForm.manpower.reduce(
-                  (sum, m) =>
-                    sum + (Number(m.supervisors) || 0) + (Number(m.skilled) || 0) + (Number(m.unskilled) || 0),
-                  0,
-                )}
-              </strong>
-            </div>
+            <div style={{ fontSize: '12px', color: th.textMuted, marginBottom: '12px' }}><Trans i18nKey="proj.detail.totalWorkforceToday" values={{ value: dailyReportForm.manpower.reduce( (sum, m) => sum + (Number(m.supervisors) || 0) + (Number(m.skilled) || 0) + (Number(m.unskilled) || 0), 0, ) }} components={[<strong style={{ color: th.textPrimary }} />]} /></div>
 
-            {sectionTitle('Equipment Utilization')}
+            {sectionTitle(t('proj.detail.equipmentUtilization'))}
             {rowsEditor(
               dailyReportForm.equipmentUtilization,
               (rows) => { setDailyReportForm((f) => ({ ...f, equipmentUtilization: rows })); },
               [
-                { key: 'equipment', label: 'Equipment', options: ['Excavator', 'Crane', 'Forklift', 'Truck', 'Generator'] },
-                { key: 'working', label: 'Working', type: 'number' },
-                { key: 'idle', label: 'Idle', type: 'number' },
-                { key: 'breakdown', label: 'Breakdown', type: 'number' },
+                { key: 'equipment', label: t('proj.detail.equipment'), options: ['Excavator', 'Crane', 'Forklift', 'Truck', 'Generator'] },
+                { key: 'working', label: t('proj.detail.working'), type: 'number' },
+                { key: 'idle', label: t('proj.detail.idle'), type: 'number' },
+                { key: 'breakdown', label: t('proj.detail.breakdown'), type: 'number' },
               ],
             )}
-            {field('Breakdown Details', textarea(dailyReportForm.breakdownDetails, (v) => { setDailyReportForm((f) => ({ ...f, breakdownDetails: v })); }))}
+            {field(t('proj.detail.breakdownDetails'), textarea(dailyReportForm.breakdownDetails, (v) => { setDailyReportForm((f) => ({ ...f, breakdownDetails: v })); }))}
 
-            {sectionTitle('Machinery (PO-Linked)')}
+            {sectionTitle(t('proj.detail.machineryPoLinked'))}
             <p style={{ fontSize: '11px', color: th.textMuted, margin: '0 0 10px' }}>
-              Every machinery PO logged here needs a live photo taken today. Skipping the photo
-              flags that PO and notifies management — it does not block the PO's own workflow.
+              {t('proj.detail.everyMachineryPoLoggedHereNeeds')}
             </p>
             {!dailyReportModal.row && (
               <p style={{ fontSize: '11px', color: th.textMuted, margin: '4px 0 12px' }}>
-                Machinery can be linked after the report is saved.
+                {t('proj.detail.machineryCanBeLinkedAfterThe')}
               </p>
             )}
             {dailyReportModal.row && (
@@ -29220,22 +28991,22 @@ function ExecutionTab({
                               href={m.livePhotoDownloadUrl}
                               target="_blank"
                               rel="noreferrer"
-                              style={{ fontSize: '11px', color: th.accent, marginLeft: 'auto' }}
+                              style={{ fontSize: '11px', color: th.accent, marginInlineStart: 'auto' }}
                             >
-                              View photo
+                              {t('proj.detail.viewPhoto')}
                             </a>
                           )
                         ) : (
                           <span
                             style={{
-                              marginLeft: 'auto',
+                              marginInlineStart: 'auto',
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: 8,
                             }}
                           >
                             <span style={{ fontSize: '11px', fontWeight: 700, color: '#991b1b' }}>
-                              ⚠ No live photo — PO flagged
+                              {t('proj.detail.noLivePhotoPoFlagged')}
                             </span>
                             <label
                               style={{
@@ -29245,7 +29016,7 @@ function ExecutionTab({
                                 cursor: machineryUploading ? 'not-allowed' : 'pointer',
                               }}
                             >
-                              Attach photo
+                              {t('proj.detail.attachPhoto')}
                               <input
                                 type="file"
                                 accept="image/*"
@@ -29290,7 +29061,7 @@ function ExecutionTab({
                     onChange={(e) => { setMachineryForm((f) => ({ ...f, poId: e.target.value })); }}
                     style={smallCellStyle}
                   >
-                    <option value="">Select PO…</option>
+                    <option value="">{t('proj.detail.selectPo')}</option>
                     {projectPOs.map((po) => (
                       <option key={po.id} value={po.id}>
                         {po.poNumber}
@@ -29298,28 +29069,28 @@ function ExecutionTab({
                     ))}
                   </select>
                   <input
-                    placeholder="Equipment description"
+                    placeholder={t('proj.detail.equipmentDescription')}
                     value={machineryForm.equipmentDescription}
                     onChange={(e) => { setMachineryForm((f) => ({ ...f, equipmentDescription: e.target.value })); }}
                     style={smallCellStyle}
                   />
                   <input
                     type="number"
-                    placeholder="Working"
+                    placeholder={t('proj.detail.working')}
                     value={machineryForm.workingHours}
                     onChange={(e) => { setMachineryForm((f) => ({ ...f, workingHours: e.target.value })); }}
                     style={smallCellStyle}
                   />
                   <input
                     type="number"
-                    placeholder="Idle"
+                    placeholder={t('proj.detail.idle')}
                     value={machineryForm.idleHours}
                     onChange={(e) => { setMachineryForm((f) => ({ ...f, idleHours: e.target.value })); }}
                     style={smallCellStyle}
                   />
                   <input
                     type="number"
-                    placeholder="Breakdown"
+                    placeholder={t('proj.detail.breakdown')}
                     value={machineryForm.breakdownHours}
                     onChange={(e) => { setMachineryForm((f) => ({ ...f, breakdownHours: e.target.value })); }}
                     style={smallCellStyle}
@@ -29334,7 +29105,7 @@ function ExecutionTab({
                       color: machineryPhoto ? th.textPrimary : th.textMuted,
                     }}
                   >
-                    {machineryPhoto ? machineryPhoto.name.slice(0, 14) : '📷 Live Photo'}
+                    {machineryPhoto ? machineryPhoto.name.slice(0, 14) : t('proj.detail.livePhoto')}
                     <input
                       type="file"
                       accept="image/*"
@@ -29358,51 +29129,51 @@ function ExecutionTab({
                       opacity: !machineryForm.poId || machineryUploading ? 0.6 : 1,
                     }}
                   >
-                    {machineryUploading ? '…' : '+ Add'}
+                    {machineryUploading ? '…' : t('proj.detail.add2')}
                   </button>
                 </div>
               </>
             )}
 
-            {sectionTitle('Risks / Issues')}
+            {sectionTitle(t('proj.detail.risksIssues'))}
             {rowsEditor(
               dailyReportForm.risksIssues,
               (rows) => { setDailyReportForm((f) => ({ ...f, risksIssues: rows })); },
               [
-                { key: 'issue', label: 'Issue' },
-                { key: 'impact', label: 'Impact' },
-                { key: 'responsiblePerson', label: 'Responsible' },
-                { key: 'targetDate', label: 'Target Date', type: 'date' },
+                { key: 'issue', label: t('proj.detail.issue') },
+                { key: 'impact', label: t('proj.detail.impact') },
+                { key: 'responsiblePerson', label: t('proj.detail.responsible') },
+                { key: 'targetDate', label: t('proj.detail.targetDate'), type: 'date' },
               ],
-              { addLabel: '+ Add Risk' },
+              { addLabel: t('proj.detail.addRisk') },
             )}
 
-            {sectionTitle('Client Actions Required')}
+            {sectionTitle(t('proj.detail.clientActionsRequired'))}
             {rowsEditor(
               dailyReportForm.clientActions,
               (rows) => { setDailyReportForm((f) => ({ ...f, clientActions: rows })); },
               [
-                { key: 'item', label: 'Item' },
-                { key: 'requiredAction', label: 'Required Action' },
-                { key: 'dueDate', label: 'Due Date', type: 'date' },
+                { key: 'item', label: t('proj.detail.item') },
+                { key: 'requiredAction', label: t('proj.detail.requiredAction') },
+                { key: 'dueDate', label: t('proj.detail.dueDate'), type: 'date' },
               ],
-              { addLabel: '+ Add Action' },
+              { addLabel: t('proj.detail.addAction') },
             )}
 
-            {sectionTitle('Look-Ahead Plan (Next 7 Days)')}
+            {sectionTitle(t('proj.detail.lookAheadPlanNext7Days'))}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              {field('Engineering', textarea(dailyReportForm.lookaheadEngineering, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadEngineering: v })); }))}
-              {field('Procurement', textarea(dailyReportForm.lookaheadProcurement, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadProcurement: v })); }))}
-              {field('Construction', textarea(dailyReportForm.lookaheadConstruction, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadConstruction: v })); }))}
-              {field('Commissioning', textarea(dailyReportForm.lookaheadCommissioning, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadCommissioning: v })); }))}
+              {field(t('proj.detail.engineering'), textarea(dailyReportForm.lookaheadEngineering, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadEngineering: v })); }))}
+              {field(t('proj.detail.procurement'), textarea(dailyReportForm.lookaheadProcurement, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadProcurement: v })); }))}
+              {field(t('proj.detail.construction'), textarea(dailyReportForm.lookaheadConstruction, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadConstruction: v })); }))}
+              {field(t('proj.detail.commissioning'), textarea(dailyReportForm.lookaheadCommissioning, (v) => { setDailyReportForm((f) => ({ ...f, lookaheadCommissioning: v })); }))}
             </div>
 
-            {sectionTitle('Management Comments')}
-            {field('Project Manager Remarks', textarea(dailyReportForm.managementComments, (v) => { setDailyReportForm((f) => ({ ...f, managementComments: v })); }))}
+            {sectionTitle(t('proj.detail.managementComments'))}
+            {field(t('proj.detail.projectManagerRemarks'), textarea(dailyReportForm.managementComments, (v) => { setDailyReportForm((f) => ({ ...f, managementComments: v })); }))}
 
             {!dailyReportModal.row && (
               <p style={{ fontSize: '11px', color: th.textMuted, margin: '4px 0 0' }}>
-                Photos can be attached to the report after it's saved.
+                {t('proj.detail.photosCanBeAttachedToThe')}
               </p>
             )}
 
@@ -29424,7 +29195,7 @@ function ExecutionTab({
                     cursor: 'pointer',
                   }}
                 >
-                  Close
+                  {t('proj.detail.close')}
                 </button>
               </div>
             )}
@@ -29602,6 +29373,7 @@ interface PlanningProps {
 }
 
 function PlanningTab(props: PlanningProps) {
+  const { t } = useTranslation()
   const {
     projectId,
     th,
@@ -29723,12 +29495,12 @@ function PlanningTab(props: PlanningProps) {
   const importFileRef = React.useRef<HTMLInputElement>(null)
 
   const nav: { key: PlanSection; label: string }[] = [
-    { key: 'overview', label: 'Overview (EVM)' },
-    { key: 'wbs', label: 'WBS' },
-    { key: 'schedule', label: 'Schedule' },
-    { key: 'resources', label: 'Resources' },
-    { key: 'baselines', label: 'Baselines' },
-    { key: 'import', label: 'Import' },
+    { key: 'overview', label: t('proj.detail.overviewEvm') },
+    { key: 'wbs', label: t('proj.detail.wbs') },
+    { key: 'schedule', label: t('proj.detail.schedule') },
+    { key: 'resources', label: t('proj.detail.resources') },
+    { key: 'baselines', label: t('proj.detail.baselines') },
+    { key: 'import', label: t('proj.detail.import') },
   ]
 
   const s = { fontFamily: 'system-ui,sans-serif', color: th.textPrimary }
@@ -29908,18 +29680,18 @@ function PlanningTab(props: PlanningProps) {
     const acts: Record<string, unknown>[] = []
     const deps: Record<string, unknown>[] = []
     const idToCode = new Map<string, string>()
-    for (const t of tasks) {
-      const uid = t.querySelector('UID')?.textContent ?? '0'
+    for (const tx of tasks) {
+      const uid = tx.querySelector('UID')?.textContent ?? '0'
       if (uid === '0') continue
-      const code = t.querySelector('WBS')?.textContent ?? `A${uid}`
-      const name = t.querySelector('Name')?.textContent ?? 'Activity'
-      const dur = t.querySelector('Duration')?.textContent ?? 'PT0H0M0S'
+      const code = tx.querySelector('WBS')?.textContent ?? `A${uid}`
+      const name = tx.querySelector('Name')?.textContent ?? 'Activity'
+      const dur = tx.querySelector('Duration')?.textContent ?? 'PT0H0M0S'
       const dMatch = dur.match(/PT(\d+)H/)
       const dDays = dMatch ? Math.round(parseInt(dMatch[1]) / 8) : 0
-      const start = t.querySelector('Start')?.textContent?.slice(0, 10) ?? null
-      const finish = t.querySelector('Finish')?.textContent?.slice(0, 10) ?? null
-      const milestone = t.querySelector('Milestone')?.textContent === '1'
-      const budget = parseFloat(t.querySelector('Cost')?.textContent ?? '0') || 0
+      const start = tx.querySelector('Start')?.textContent?.slice(0, 10) ?? null
+      const finish = tx.querySelector('Finish')?.textContent?.slice(0, 10) ?? null
+      const milestone = tx.querySelector('Milestone')?.textContent === '1'
+      const budget = parseFloat(tx.querySelector('Cost')?.textContent ?? '0') || 0
       idToCode.set(uid, code)
       acts.push({
         activityCode: code,
@@ -29931,7 +29703,7 @@ function PlanningTab(props: PlanningProps) {
         budgetAmount: budget,
         sequence: acts.length,
       })
-      for (const pred of Array.from(t.querySelectorAll('PredecessorLink'))) {
+      for (const pred of Array.from(tx.querySelectorAll('PredecessorLink'))) {
         const predUid = pred.querySelector('PredecessorUID')?.textContent ?? ''
         const type = pred.querySelector('Type')?.textContent ?? '1'
         const lag = Math.round(parseInt(pred.querySelector('LinkLag')?.textContent ?? '0') / 4800)
@@ -29956,18 +29728,18 @@ function PlanningTab(props: PlanningProps) {
   const renderOverview = () => {
     const evmTiles = evm
       ? [
-          { label: 'BAC', value: evmFmt(evm.bac), color: th.textPrimary },
+          { label: t('proj.detail.bac'), value: evmFmt(evm.bac), color: th.textPrimary },
           { label: 'PV', value: evmFmt(evm.pv), color: th.textPrimary },
           { label: 'EV', value: evmFmt(evm.ev), color: th.textPrimary },
           { label: 'AC', value: evmFmt(evm.ac), color: th.textPrimary },
           { label: 'SV', value: evmFmt(evm.sv), color: evm.sv >= 0 ? '#22c55e' : '#ef4444' },
           { label: 'CV', value: evmFmt(evm.cv), color: evm.cv >= 0 ? '#22c55e' : '#ef4444' },
-          { label: 'SPI', value: evm.spi.toFixed(2), color: evmColor(evm.spi, 'gt1') },
-          { label: 'CPI', value: evm.cpi.toFixed(2), color: evmColor(evm.cpi, 'gt1') },
-          { label: 'EAC', value: evmFmt(evm.eac), color: th.textPrimary },
-          { label: 'ETC', value: evmFmt(evm.etc), color: th.textPrimary },
-          { label: 'VAC', value: evmFmt(evm.vac), color: evm.vac >= 0 ? '#22c55e' : '#ef4444' },
-          { label: 'TCPI', value: evm.tcpi.toFixed(2), color: evmColor(evm.tcpi, 'lt1') },
+          { label: t('proj.detail.spi'), value: evm.spi.toFixed(2), color: evmColor(evm.spi, 'gt1') },
+          { label: t('proj.detail.cpi'), value: evm.cpi.toFixed(2), color: evmColor(evm.cpi, 'gt1') },
+          { label: t('proj.detail.eac'), value: evmFmt(evm.eac), color: th.textPrimary },
+          { label: t('proj.detail.etc'), value: evmFmt(evm.etc), color: th.textPrimary },
+          { label: t('proj.detail.vac'), value: evmFmt(evm.vac), color: evm.vac >= 0 ? '#22c55e' : '#ef4444' },
+          { label: t('proj.detail.tcpi'), value: evm.tcpi.toFixed(2), color: evmColor(evm.tcpi, 'lt1') },
         ]
       : []
     return (
@@ -29981,7 +29753,7 @@ function PlanningTab(props: PlanningProps) {
           }}
         >
           <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>
-            EVM Dashboard{' '}
+            {t('proj.detail.evmDashboard')}{' '}
             {evm && (
               <span style={{ fontSize: '12px', fontWeight: 400, color: th.textSecondary }}>
                 — {evm.statusDate}
@@ -29991,19 +29763,19 @@ function PlanningTab(props: PlanningProps) {
           <div style={{ display: 'flex', gap: '8px' }}>
             {isEditable && (
               <button style={btn()} onClick={onRecalculateCPM}>
-                Recalculate CPM
+                {t('proj.detail.recalculateCpm')}
               </button>
             )}
             {isEditable && (
               <button style={btn({ background: '#f59e0b' })} onClick={onLevelResources}>
-                Level Resources
+                {t('proj.detail.levelResources')}
               </button>
             )}
           </div>
         </div>
         {!evm && (
           <div style={{ color: th.textSecondary, fontSize: '13px' }}>
-            No schedule data. Add activities to see EVM metrics.
+            {t('proj.detail.noScheduleDataAddActivitiesTo')}
           </div>
         )}
         {evm && (
@@ -30016,8 +29788,8 @@ function PlanningTab(props: PlanningProps) {
                 marginBottom: '16px',
               }}
             >
-              {evmTiles.map((t) => (
-                <div key={t.label} style={{ ...card, marginBottom: 0, textAlign: 'center' }}>
+              {evmTiles.map((tx) => (
+                <div key={tx.label} style={{ ...card, marginBottom: 0, textAlign: 'center' }}>
                   <div
                     style={{
                       fontSize: '11px',
@@ -30026,9 +29798,9 @@ function PlanningTab(props: PlanningProps) {
                       marginBottom: '4px',
                     }}
                   >
-                    {t.label}
+                    {tx.label}
                   </div>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: t.color }}>{t.value}</div>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: tx.color }}>{tx.value}</div>
                 </div>
               ))}
             </div>
@@ -30041,7 +29813,7 @@ function PlanningTab(props: PlanningProps) {
                   marginBottom: '8px',
                 }}
               >
-                Critical Path Progress
+                {t('proj.detail.criticalPathProgress')}
               </div>
               <div
                 style={{
@@ -30059,9 +29831,7 @@ function PlanningTab(props: PlanningProps) {
                   }}
                 />
               </div>
-              <div style={{ fontSize: '12px', color: th.textSecondary, marginTop: '4px' }}>
-                {evm.criticalPathComplete.toFixed(1)}% of critical activities complete
-              </div>
+              <div style={{ fontSize: '12px', color: th.textSecondary, marginTop: '4px' }}>{t('proj.detail.ofCriticalActivitiesComplete', { criticalPathComplete: evm.criticalPathComplete.toFixed(1) })}</div>
             </div>
           </>
         )}
@@ -30074,23 +29844,9 @@ function PlanningTab(props: PlanningProps) {
               marginBottom: '8px',
             }}
           >
-            Schedule Summary
+            {t('proj.detail.scheduleSummary')}
           </div>
-          <div style={{ fontSize: '13px', color: th.textSecondary }}>
-            Total: <strong style={{ color: th.textPrimary }}>{activities.length}</strong>{' '}
-            &nbsp;·&nbsp; Critical:{' '}
-            <strong style={{ color: '#ef4444' }}>
-              {activities.filter((a) => a.isCritical).length}
-            </strong>{' '}
-            &nbsp;·&nbsp; Complete:{' '}
-            <strong style={{ color: '#22c55e' }}>
-              {activities.filter((a) => a.percentComplete >= 100).length}
-            </strong>{' '}
-            &nbsp;·&nbsp; In Progress:{' '}
-            <strong style={{ color: '#f59e0b' }}>
-              {activities.filter((a) => a.percentComplete > 0 && a.percentComplete < 100).length}
-            </strong>
-          </div>
+          <div style={{ fontSize: '13px', color: th.textSecondary }}><Trans i18nKey="proj.detail.totalCriticalCompleteInProgress" values={{ length: activities.length, length2: activities.filter((a) => a.isCritical).length, length3: activities.filter((a) => a.percentComplete >= 100).length, length4: activities.filter((a) => a.percentComplete > 0 && a.percentComplete < 100).length }} components={[<strong style={{ color: th.textPrimary }} />, <strong style={{ color: '#ef4444' }} />, <strong style={{ color: '#22c55e' }} />, <strong style={{ color: '#f59e0b' }} />]} /></div>
         </div>
       </div>
     )
@@ -30126,7 +29882,7 @@ function PlanningTab(props: PlanningProps) {
                 color: th.textSecondary,
                 width: '20px',
                 padding: 0,
-                marginRight: '4px',
+                marginInlineEnd: '4px',
               }}
             >
               {isExpanded ? '▾' : '▸'}
@@ -30143,13 +29899,13 @@ function PlanningTab(props: PlanningProps) {
               fontSize: '12px',
               color: th.textSecondary,
               width: '100px',
-              textAlign: 'right',
+              textAlign: 'end',
             }}
           >
             ${node.budgetAmount.toLocaleString()}
           </span>
           {isEditable && (
-            <div style={{ display: 'flex', gap: '6px', marginLeft: '12px' }}>
+            <div style={{ display: 'flex', gap: '6px', marginInlineStart: '12px' }}>
               <button
                 style={{
                   ...btn({
@@ -30196,15 +29952,15 @@ function PlanningTab(props: PlanningProps) {
                   })
                 }}
               >
-                Edit
+                {t('proj.detail.edit')}
               </button>
               <button
                 style={{ ...btn({ background: '#ef4444', padding: '3px 8px' }) }}
                 onClick={() => {
-                  if (confirm('Delete?')) onDeleteWBS(node.id)
+                  if (confirm(t('proj.detail.delete2'))) onDeleteWBS(node.id)
                 }}
               >
-                Del
+                {t('proj.detail.del')}
               </button>
             </div>
           )}
@@ -30225,7 +29981,7 @@ function PlanningTab(props: PlanningProps) {
         }}
       >
         <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>
-          Work Breakdown Structure
+          {t('proj.detail.workBreakdownStructure')}
         </div>
         {isEditable && (
           <button
@@ -30243,7 +29999,7 @@ function PlanningTab(props: PlanningProps) {
               })
             }}
           >
-            + Root Node
+            {t('proj.detail.rootNode')}
           </button>
         )}
       </div>
@@ -30261,9 +30017,9 @@ function PlanningTab(props: PlanningProps) {
           }}
         >
           <span style={{ width: '24px' }} />
-          <span style={{ width: '80px' }}>Code</span>
-          <span style={{ flex: 1 }}>Name</span>
-          <span style={{ width: '100px', textAlign: 'right' }}>Budget</span>
+          <span style={{ width: '80px' }}>{t('proj.detail.code')}</span>
+          <span style={{ flex: 1 }}>{t('proj.detail.name')}</span>
+          <span style={{ width: '100px', textAlign: 'end' }}>{t('proj.detail.budget')}</span>
           {isEditable && <span style={{ width: '140px' }} />}
         </div>
         {wbsNodes.length === 0 && (
@@ -30275,7 +30031,7 @@ function PlanningTab(props: PlanningProps) {
               fontSize: '13px',
             }}
           >
-            No WBS nodes yet.
+            {t('proj.detail.noWbsNodesYet')}
           </div>
         )}
         {wbsNodes.map((n) => renderWBSNode(n))}
@@ -30296,7 +30052,7 @@ function PlanningTab(props: PlanningProps) {
         }}
       >
         <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>
-          Activity Schedule
+          {t('proj.detail.activitySchedule')}
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <div
@@ -30320,7 +30076,7 @@ function PlanningTab(props: PlanningProps) {
                 }}
                 onClick={() => { setViewMode(v); }}
               >
-                {v === 'list' ? 'List' : 'Gantt'}
+                {v === 'list' ? t('proj.detail.list') : t('proj.detail.gantt')}
               </button>
             ))}
           </div>
@@ -30347,17 +30103,17 @@ function PlanningTab(props: PlanningProps) {
                 })
               }}
             >
-              + Activity
+              {t('proj.detail.activity2')}
             </button>
           )}
           {isEditable && (
             <button style={btn({ background: '#6366f1' })} onClick={() => { setDepModal(true); }}>
-              + Dependency
+              {t('proj.detail.dependency')}
             </button>
           )}
           {isEditable && (
             <button style={btn({ background: '#0ea5e9' })} onClick={onRecalculateCPM}>
-              Run CPM
+              {t('proj.detail.runCpm')}
             </button>
           )}
         </div>
@@ -30377,12 +30133,12 @@ function PlanningTab(props: PlanningProps) {
               textTransform: 'uppercase',
             }}
           >
-            <span>Code</span>
-            <span>Name</span>
-            <span>Start</span>
-            <span>Finish</span>
-            <span>Days</span>
-            <span>Float</span>
+            <span>{t('proj.detail.code')}</span>
+            <span>{t('proj.detail.name')}</span>
+            <span>{t('proj.detail.start2')}</span>
+            <span>{t('proj.detail.finish')}</span>
+            <span>{t('proj.detail.days')}</span>
+            <span>{t('proj.detail.float')}</span>
             <span>%</span>
           </div>
           {activities.length === 0 && (
@@ -30394,7 +30150,7 @@ function PlanningTab(props: PlanningProps) {
                 fontSize: '13px',
               }}
             >
-              No activities yet.
+              {t('proj.detail.noActivitiesYet')}
             </div>
           )}
           {activities.map((a) => (
@@ -30425,7 +30181,7 @@ function PlanningTab(props: PlanningProps) {
                 padding: '8px 12px',
                 borderBottom: `1px solid ${th.border}`,
                 background: th.bgCanvas,
-                borderLeft: a.isCritical ? '3px solid #ef4444' : '3px solid transparent',
+                borderInlineStart: a.isCritical ? '3px solid #ef4444' : '3px solid transparent',
                 alignItems: 'center',
                 cursor: 'pointer',
               }}
@@ -30447,7 +30203,7 @@ function PlanningTab(props: PlanningProps) {
                         padding: '1px 5px',
                       }}
                     >
-                      Critical
+                      {t('proj.detail.critical')}
                     </span>
                   )}
                   {a.activityType === 'milestone' && (
@@ -30461,7 +30217,7 @@ function PlanningTab(props: PlanningProps) {
                         padding: '1px 5px',
                       }}
                     >
-                      Milestone
+                      {t('proj.detail.milestone')}
                     </span>
                   )}
                   {a.predecessors.length > 0 && (
@@ -30535,7 +30291,7 @@ function PlanningTab(props: PlanningProps) {
                 textTransform: 'uppercase',
               }}
             >
-              Activity
+              {t('proj.detail.activity')}
             </div>
             <div
               style={{
@@ -30559,7 +30315,7 @@ function PlanningTab(props: PlanningProps) {
                 fontSize: '13px',
               }}
             >
-              No activities with dates.
+              {t('proj.detail.noActivitiesWithDates')}
             </div>
           )}
           {ganttActs.map((a) => (
@@ -30571,7 +30327,7 @@ function PlanningTab(props: PlanningProps) {
                 background: th.bgCanvas,
                 padding: '5px 12px',
                 alignItems: 'center',
-                borderLeft: a.isCritical ? '3px solid #ef4444' : '3px solid transparent',
+                borderInlineStart: a.isCritical ? '3px solid #ef4444' : '3px solid transparent',
               }}
             >
               <div
@@ -30646,7 +30402,7 @@ function PlanningTab(props: PlanningProps) {
               <div
                 style={{ width: '16px', height: '8px', background: '#3b82f6', borderRadius: '2px' }}
               />{' '}
-              Planned
+              {t('proj.detail.planned2')}
             </div>
             <div
               style={{
@@ -30660,7 +30416,7 @@ function PlanningTab(props: PlanningProps) {
               <div
                 style={{ width: '16px', height: '8px', background: '#ef4444', borderRadius: '2px' }}
               />{' '}
-              Critical
+              {t('proj.detail.critical')}
             </div>
             <div
               style={{
@@ -30674,14 +30430,14 @@ function PlanningTab(props: PlanningProps) {
               <div
                 style={{ width: '16px', height: '4px', background: '#94a3b8', borderRadius: '2px' }}
               />{' '}
-              Baseline
+              {t('proj.detail.baseline')}
             </div>
           </div>
         </div>
       )}
       {isEditable && activities.length > 0 && (
         <div style={{ marginTop: '12px', fontSize: '12px', color: th.textSecondary }}>
-          Click any activity row to edit it or update progress.
+          {t('proj.detail.clickAnyActivityRowToEdit')}
         </div>
       )}
     </div>
@@ -30697,7 +30453,7 @@ function PlanningTab(props: PlanningProps) {
           marginBottom: '16px',
         }}
       >
-        <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>Resources</div>
+        <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>{t('proj.detail.resources')}</div>
         {isEditable && (
           <button
             style={btn()}
@@ -30713,7 +30469,7 @@ function PlanningTab(props: PlanningProps) {
               })
             }}
           >
-            + Resource
+            {t('proj.detail.resource')}
           </button>
         )}
       </div>
@@ -30739,11 +30495,11 @@ function PlanningTab(props: PlanningProps) {
               textTransform: 'uppercase',
             }}
           >
-            <span>Name</span>
-            <span>Type</span>
-            <span>Unit</span>
-            <span>Max/Day</span>
-            <span>Cost/Unit</span>
+            <span>{t('proj.detail.name')}</span>
+            <span>{t('proj.detail.type')}</span>
+            <span>{t('proj.detail.unit')}</span>
+            <span>{t('proj.detail.maxDay')}</span>
+            <span>{t('proj.detail.costUnit')}</span>
           </div>
           {resources.map((r) => (
             <div
@@ -30774,7 +30530,7 @@ function PlanningTab(props: PlanningProps) {
       )}
       {resources.length === 0 && (
         <div style={{ color: th.textSecondary, fontSize: '13px', marginBottom: '20px' }}>
-          No resources defined yet.
+          {t('proj.detail.noResourcesDefinedYet')}
         </div>
       )}
       {resourceLoading.length > 0 && (
@@ -30787,7 +30543,7 @@ function PlanningTab(props: PlanningProps) {
               marginBottom: '12px',
             }}
           >
-            Loading Histogram
+            {t('proj.detail.loadingHistogram')}
           </div>
           {resourceLoading.map((rl) => {
             const overDays = rl.days.filter((d) => d.isOverloaded).length
@@ -30802,9 +30558,7 @@ function PlanningTab(props: PlanningProps) {
                     {rl.resourceName} ({rl.unit})
                   </span>
                   {overDays > 0 && (
-                    <span style={{ fontSize: '12px', color: '#ef4444' }}>
-                      {overDays} overloaded days
-                    </span>
+                    <span style={{ fontSize: '12px', color: '#ef4444' }}>{t('proj.detail.overloadedDays', { overDays })}</span>
                   )}
                 </div>
                 <div
@@ -30831,7 +30585,7 @@ function PlanningTab(props: PlanningProps) {
                   ))}
                   {visibleDays.length === 0 && (
                     <span style={{ fontSize: '12px', color: th.textSecondary }}>
-                      No loading in date range.
+                      {t('proj.detail.noLoadingInDateRange')}
                     </span>
                   )}
                 </div>
@@ -30840,7 +30594,7 @@ function PlanningTab(props: PlanningProps) {
           })}
           {isEditable && (
             <button style={btn({ background: '#f59e0b' })} onClick={onLevelResources}>
-              Auto-Level Resources
+              {t('proj.detail.autoLevelResources')}
             </button>
           )}
         </div>
@@ -30855,7 +30609,7 @@ function PlanningTab(props: PlanningProps) {
               marginBottom: '12px',
             }}
           >
-            Activity Assignments
+            {t('proj.detail.activityAssignments')}
           </div>
           {activities.slice(0, 20).map((a) => (
             <div key={a.id} style={{ ...card, marginBottom: '8px' }}>
@@ -30876,7 +30630,7 @@ function PlanningTab(props: PlanningProps) {
                     })
                   }}
                 >
-                  + Assign
+                  {t('proj.detail.assign')}
                 </button>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -30894,7 +30648,7 @@ function PlanningTab(props: PlanningProps) {
                       alignItems: 'center',
                     }}
                   >
-                    {r.resourceName}: {r.unitsPerDay} {r.unit}/day
+                    {r.resourceName}: {r.unitsPerDay} {r.unit}{t('proj.detail.day')}
                     <button
                       style={{
                         background: 'none',
@@ -30912,7 +30666,7 @@ function PlanningTab(props: PlanningProps) {
                 ))}
                 {a.resources.length === 0 && (
                   <span style={{ fontSize: '11px', color: th.textSecondary }}>
-                    No resources assigned
+                    {t('proj.detail.noResourcesAssigned')}
                   </span>
                 )}
               </div>
@@ -30934,7 +30688,7 @@ function PlanningTab(props: PlanningProps) {
         }}
       >
         <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>
-          Schedule Baselines
+          {t('proj.detail.scheduleBaselines')}
         </div>
         {isEditable && (
           <button
@@ -30944,19 +30698,19 @@ function PlanningTab(props: PlanningProps) {
               setBlForm({ name: '', description: '' })
             }}
           >
-            Save Current as Baseline
+            {t('proj.detail.saveCurrentAsBaseline')}
           </button>
         )}
       </div>
       {baselines.length === 0 && (
-        <div style={{ color: th.textSecondary, fontSize: '13px' }}>No baselines saved yet.</div>
+        <div style={{ color: th.textSecondary, fontSize: '13px' }}>{t('proj.detail.noBaselinesSavedYet')}</div>
       )}
       {baselines.map((b) => (
         <div
           key={b.id}
           style={{
             ...card,
-            borderLeft: b.isActive ? `4px solid ${th.accent}` : `1px solid ${th.border}`,
+            borderInlineStart: b.isActive ? `4px solid ${th.accent}` : `1px solid ${th.border}`,
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -30972,10 +30726,10 @@ function PlanningTab(props: PlanningProps) {
                     color: '#fff',
                     borderRadius: '3px',
                     padding: '2px 6px',
-                    marginLeft: '8px',
+                    marginInlineStart: '8px',
                   }}
                 >
-                  Active
+                  {t('proj.detail.active')}
                 </span>
               )}
               {b.description && (
@@ -30994,7 +30748,7 @@ function PlanningTab(props: PlanningProps) {
                     style={btn({ background: '#22c55e', fontSize: '11px', padding: '4px 10px' })}
                     onClick={() => { onSetActiveBaseline(b.id); }}
                   >
-                    Set Active
+                    {t('proj.detail.setActive')}
                   </button>
                 )}
                 <button
@@ -31002,38 +30756,38 @@ function PlanningTab(props: PlanningProps) {
                   onClick={() =>
                     { addToast({
                       type: 'warning',
-                      message: `Apply "${b.name}" to the schedule? Current planned dates will be overwritten.`,
+                      message: t('proj.detail.applyToTheScheduleCurrentPlanned', { name: b.name }),
                       actions: [
                         {
-                          label: 'Apply',
+                          label: t('proj.detail.apply'),
                           variant: 'primary',
                           onClick: () => { onApplyBaseline(b.id); },
                         },
-                        { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
+                        { label: t('proj.detail.cancel'), onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                       ],
                     }); }
                   }
                 >
-                  Apply
+                  {t('proj.detail.apply')}
                 </button>
                 <button
                   style={btn({ background: '#ef4444', fontSize: '11px', padding: '4px 10px' })}
                   onClick={() =>
                     { addToast({
                       type: 'danger',
-                      message: `Delete baseline "${b.name}"? This cannot be undone.`,
+                      message: t('proj.detail.deleteBaselineThisCannotBeUndone', { name: b.name }),
                       actions: [
                         {
-                          label: 'Delete',
+                          label: t('proj.detail.delete'),
                           variant: 'danger',
                           onClick: () => { onDeleteBaseline(b.id); },
                         },
-                        { label: 'Cancel', onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
+                        { label: t('proj.detail.cancel'), onClick: () => { /* toast dismissal is handled by Toast.tsx itself */ } },
                       ],
                     }); }
                   }
                 >
-                  Delete
+                  {t('proj.detail.delete')}
                 </button>
               </div>
             )}
@@ -31048,10 +30802,10 @@ function PlanningTab(props: PlanningProps) {
       {/* Header */}
       <div>
         <div style={{ fontSize: '15px', fontWeight: 700, color: th.textPrimary }}>
-          Import Schedule
+          {t('proj.detail.importSchedule')}
         </div>
         <div style={{ fontSize: '12px', color: th.textSecondary, marginTop: 3 }}>
-          Bring in your existing schedule from MS Project or Primavera P6
+          {t('proj.detail.bringInYourExistingScheduleFrom')}
         </div>
       </div>
 
@@ -31059,7 +30813,7 @@ function PlanningTab(props: PlanningProps) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {[
           {
-            label: 'MS Project XML',
+            label: t('proj.detail.msProjectXml'),
             ext: '.xml',
             icon: (
               <svg
@@ -31080,10 +30834,10 @@ function PlanningTab(props: PlanningProps) {
               </svg>
             ),
             color: '#3b82f6',
-            desc: 'Export from Microsoft Project as .xml',
+            desc: t('proj.detail.exportFromMicrosoftProjectAsXml'),
           },
           {
-            label: 'Primavera P6 XER',
+            label: t('proj.detail.primaveraP6Xer'),
             ext: '.xer',
             icon: (
               <svg
@@ -31102,7 +30856,7 @@ function PlanningTab(props: PlanningProps) {
               </svg>
             ),
             color: '#f59e0b',
-            desc: 'Export from Oracle Primavera P6 as .xer',
+            desc: t('proj.detail.exportFromOraclePrimaveraP6As'),
           },
         ].map((f) => (
           <div
@@ -31240,15 +30994,15 @@ function PlanningTab(props: PlanningProps) {
                     color: importFormat === 'msproject' ? '#3b82f6' : '#f59e0b',
                   }}
                 >
-                  {importFormat === 'msproject' ? 'MS Project XML' : 'Primavera P6 XER'}
+                  {importFormat === 'msproject' ? t('proj.detail.msProjectXml') : t('proj.detail.primaveraP6Xer')}
                 </span>
               )}
               {!importPreview && !importFormat && (
-                <span style={{ fontSize: '12px', color: th.textSecondary }}>Parsing…</span>
+                <span style={{ fontSize: '12px', color: th.textSecondary }}>{t('proj.detail.parsing')}</span>
               )}
             </div>
             <div style={{ fontSize: '12px', color: th.accent, marginTop: 8, cursor: 'pointer' }}>
-              Click to choose a different file
+              {t('proj.detail.clickToChooseADifferentFile')}
             </div>
           </>
         ) : (
@@ -31284,10 +31038,10 @@ function PlanningTab(props: PlanningProps) {
             <div
               style={{ fontSize: '14px', fontWeight: 600, color: th.textPrimary, marginBottom: 4 }}
             >
-              Click to choose a file
+              {t('proj.detail.clickToChooseAFile')}
             </div>
             <div style={{ fontSize: '12px', color: th.textSecondary }}>
-              Accepts .xml (MS Project) and .xer (Primavera P6)
+              {t('proj.detail.acceptsXmlMsProjectAndXer')}
             </div>
           </>
         )}
@@ -31325,10 +31079,10 @@ function PlanningTab(props: PlanningProps) {
               display: 'block',
             }}
           >
-            Clear existing activities before import
+            {t('proj.detail.clearExistingActivitiesBeforeImport')}
           </label>
           <div style={{ fontSize: '12px', color: th.textSecondary, marginTop: 2 }}>
-            All current activities and dependencies will be removed before adding imported data
+            {t('proj.detail.allCurrentActivitiesAndDependenciesWill')}
           </div>
         </div>
       </div>
@@ -31348,18 +31102,9 @@ function PlanningTab(props: PlanningProps) {
           >
             <div>
               <div style={{ fontSize: '13px', fontWeight: 700, color: th.textPrimary }}>
-                Import Preview
+                {t('proj.detail.importPreview')}
               </div>
-              <div style={{ fontSize: '12px', color: th.textSecondary, marginTop: 2 }}>
-                <span style={{ color: '#3b82f6', fontWeight: 600 }}>
-                  {importPreview.activities.length}
-                </span>{' '}
-                activities &nbsp;·&nbsp;
-                <span style={{ color: '#8b5cf6', fontWeight: 600 }}>
-                  {importPreview.dependencies.length}
-                </span>{' '}
-                dependencies
-              </div>
+              <div style={{ fontSize: '12px', color: th.textSecondary, marginTop: 2 }}><Trans i18nKey="proj.detail.activitiesDependencies" values={{ length: importPreview.activities.length, length2: importPreview.dependencies.length }} components={[<span style={{ color: '#3b82f6', fontWeight: 600 }} />, <span style={{ color: '#8b5cf6', fontWeight: 600 }} />]} /></div>
             </div>
             <button
               onClick={() => {
@@ -31394,11 +31139,11 @@ function PlanningTab(props: PlanningProps) {
               letterSpacing: '0.05em',
             }}
           >
-            <span>Code</span>
-            <span>Name</span>
-            <span>Start</span>
-            <span>Finish</span>
-            <span>Days</span>
+            <span>{t('proj.detail.code')}</span>
+            <span>{t('proj.detail.name')}</span>
+            <span>{t('proj.detail.start2')}</span>
+            <span>{t('proj.detail.finish')}</span>
+            <span>{t('proj.detail.days')}</span>
           </div>
           <div style={{ maxHeight: 260, overflowY: 'auto' }}>
             {(
@@ -31458,9 +31203,7 @@ function PlanningTab(props: PlanningProps) {
                   background: th.bgSurface,
                   textAlign: 'center',
                 }}
-              >
-                + {importPreview.activities.length - 15} more activities
-              </div>
+              >{t('proj.detail.moreActivities', { value: importPreview.activities.length - 15 })}</div>
             )}
           </div>
           <div
@@ -31476,8 +31219,8 @@ function PlanningTab(props: PlanningProps) {
           >
             <div style={{ fontSize: '12px', color: th.textSecondary }}>
               {clearExisting
-                ? 'Existing activities will be cleared before import.'
-                : 'Activities will be merged with existing schedule.'}
+                ? t('proj.detail.existingActivitiesWillBeClearedBefore')
+                : t('proj.detail.activitiesWillBeMergedWithExisting')}
             </div>
             <button
               style={btn({
@@ -31499,7 +31242,7 @@ function PlanningTab(props: PlanningProps) {
                 if (importFileRef.current) importFileRef.current.value = ''
               }}
             >
-              Confirm Import
+              {t('proj.detail.confirmImport')}
             </button>
           </div>
         </div>
@@ -31542,18 +31285,18 @@ function PlanningTab(props: PlanningProps) {
         })}
         onClick={onClose}
       >
-        Cancel
+        {t('proj.detail.cancel')}
       </button>
       <button style={btn()} onClick={onSave}>
-        Save
+        {t('proj.detail.save')}
       </button>
     </div>
   )
 
   const activityTypes = [
-    { value: 'task', label: 'Task' },
-    { value: 'milestone', label: 'Milestone' },
-    { value: 'summary', label: 'Summary' },
+    { value: 'task', label: t('proj.detail.task') },
+    { value: 'milestone', label: t('proj.detail.milestone') },
+    { value: 'summary', label: t('proj.detail.summary') },
   ]
   const flattenWBS = (nodes: WBSNodeType[], acc: WBSNodeType[] = []): WBSNodeType[] => {
     for (const n of nodes) {
@@ -31654,9 +31397,9 @@ function PlanningTab(props: PlanningProps) {
           <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {actModal.mode === 'progress' ? (
               <>
-                {mHdr(`Progress: ${actModal.act.activityCode ?? ''}`)}
+                {mHdr(t('proj.detail.progress2', { value: actModal.act.activityCode ?? '' }))}
                 {planField(
-                  '% Complete',
+                  t('proj.detail.complete2'),
                   planInp(
                     actForm.percentComplete,
                     (v) => { setActForm((f) => ({ ...f, percentComplete: v })); },
@@ -31665,7 +31408,7 @@ function PlanningTab(props: PlanningProps) {
                   ),
                 )}
                 {planField(
-                  'Actual Start',
+                  t('proj.detail.actualStart'),
                   planInp(
                     actForm.actualStart,
                     (v) => { setActForm((f) => ({ ...f, actualStart: v })); },
@@ -31674,7 +31417,7 @@ function PlanningTab(props: PlanningProps) {
                   ),
                 )}
                 {planField(
-                  'Actual Finish',
+                  t('proj.detail.actualFinish'),
                   planInp(
                     actForm.actualFinish,
                     (v) => { setActForm((f) => ({ ...f, actualFinish: v })); },
@@ -31685,17 +31428,17 @@ function PlanningTab(props: PlanningProps) {
               </>
             ) : (
               <>
-                {mHdr(actModal.mode === 'create' ? 'Add Activity' : 'Edit Activity')}
+                {mHdr(actModal.mode === 'create' ? t('proj.detail.addActivity2') : t('proj.detail.editActivity'))}
                 {wbsOptions.length > 0 &&
                   planField(
-                    'WBS',
+                    t('proj.detail.wbs'),
                     planSel(actForm.wbsId, (v) => { setActForm((f) => ({ ...f, wbsId: v })); }, [
-                      { value: '', label: '— None —' },
+                      { value: '', label: t('proj.detail.none2') },
                       ...wbsOptions.map((n) => ({ value: n.id, label: `${n.wbsCode} ${n.name}` })),
                     ]),
                   )}
                 {planField(
-                  'Activity Code',
+                  t('proj.detail.activityCode'),
                   planInp(
                     actForm.activityCode,
                     (v) => { setActForm((f) => ({ ...f, activityCode: v })); },
@@ -31703,11 +31446,11 @@ function PlanningTab(props: PlanningProps) {
                   ),
                 )}
                 {planField(
-                  'Name',
+                  t('proj.detail.name'),
                   planInp(actForm.name, (v) => { setActForm((f) => ({ ...f, name: v })); }),
                 )}
                 {planField(
-                  'Type',
+                  t('proj.detail.type'),
                   planSel(
                     actForm.activityType,
                     (v) => { setActForm((f) => ({ ...f, activityType: v })); },
@@ -31715,7 +31458,7 @@ function PlanningTab(props: PlanningProps) {
                   ),
                 )}
                 {planField(
-                  'Planned Start',
+                  t('proj.detail.plannedStart'),
                   planInp(
                     actForm.plannedStart,
                     (v) => { setActForm((f) => ({ ...f, plannedStart: v })); },
@@ -31724,7 +31467,7 @@ function PlanningTab(props: PlanningProps) {
                   ),
                 )}
                 {planField(
-                  'Planned Finish',
+                  t('proj.detail.plannedFinish'),
                   planInp(
                     actForm.plannedFinish,
                     (v) => { setActForm((f) => ({ ...f, plannedFinish: v })); },
@@ -31733,7 +31476,7 @@ function PlanningTab(props: PlanningProps) {
                   ),
                 )}
                 {planField(
-                  'Duration (days)',
+                  t('proj.detail.durationDays'),
                   planInp(
                     actForm.durationDays,
                     (v) => { setActForm((f) => ({ ...f, durationDays: v })); },
@@ -31742,13 +31485,13 @@ function PlanningTab(props: PlanningProps) {
                   ),
                 )}
                 {planField(
-                  'Responsible',
+                  t('proj.detail.responsible'),
                   planInp(actForm.responsible, (v) =>
                     { setActForm((f) => ({ ...f, responsible: v })); },
                   ),
                 )}
                 {planField(
-                  'Budget Amount',
+                  t('proj.detail.budgetAmount'),
                   planInp(
                     actForm.budgetAmount,
                     (v) => { setActForm((f) => ({ ...f, budgetAmount: v })); },
@@ -31757,7 +31500,7 @@ function PlanningTab(props: PlanningProps) {
                   ),
                 )}
                 {planField(
-                  'Remarks',
+                  t('proj.detail.remarks'),
                   <textarea
                     style={{ ...inputSt, minHeight: '60px' }}
                     value={actForm.remarks}
@@ -31780,13 +31523,13 @@ function PlanningTab(props: PlanningProps) {
                   }),
                 }}
                 onClick={() => {
-                  if (confirm('Delete activity?') && actModal.act.id) {
+                  if (confirm(t('proj.detail.deleteActivity')) && actModal.act.id) {
                     onDeleteActivity(actModal.act.id)
                     setActModal({ open: false, mode: 'create', act: {} })
                   }
                 }}
               >
-                Delete Activity
+                {t('proj.detail.deleteActivity2')}
               </button>
             )}
           </div>
@@ -31799,17 +31542,17 @@ function PlanningTab(props: PlanningProps) {
           onClick={() => { setWbsModal({ open: false, mode: 'create', node: {} }); }}
         >
           <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr(wbsModal.mode === 'create' ? 'Add WBS Node' : 'Edit WBS Node')}
+            {mHdr(wbsModal.mode === 'create' ? t('proj.detail.addWbsNode') : t('proj.detail.editWbsNode'))}
             {planField(
-              'WBS Code',
+              t('proj.detail.wbsCode'),
               planInp(wbsForm.wbsCode, (v) => { setWbsForm((f) => ({ ...f, wbsCode: v })); }, '1.1.2'),
             )}
             {planField(
-              'Name',
+              t('proj.detail.name'),
               planInp(wbsForm.name, (v) => { setWbsForm((f) => ({ ...f, name: v })); }),
             )}
             {planField(
-              'Description',
+              t('proj.detail.description'),
               <textarea
                 style={{ ...inputSt, minHeight: '60px' }}
                 value={wbsForm.description}
@@ -31817,11 +31560,11 @@ function PlanningTab(props: PlanningProps) {
               />,
             )}
             {planField(
-              'Level',
+              t('proj.detail.level'),
               planInp(wbsForm.level, (v) => { setWbsForm((f) => ({ ...f, level: v })); }, '1', 'number'),
             )}
             {planField(
-              'Budget Amount',
+              t('proj.detail.budgetAmount'),
               planInp(
                 wbsForm.budgetAmount,
                 (v) => { setWbsForm((f) => ({ ...f, budgetAmount: v })); },
@@ -31830,7 +31573,7 @@ function PlanningTab(props: PlanningProps) {
               ),
             )}
             {planField(
-              'Responsible',
+              t('proj.detail.responsible'),
               planInp(wbsForm.responsible, (v) => { setWbsForm((f) => ({ ...f, responsible: v })); }),
             )}
             {mBtns(
@@ -31872,14 +31615,14 @@ function PlanningTab(props: PlanningProps) {
           }}
         >
           <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr('Add Dependency')}
+            {mHdr(t('proj.detail.addDependency'))}
             {planField(
-              'Predecessor',
+              t('proj.detail.predecessor'),
               planSel(
                 depForm.predecessorId,
                 (v) => { setDepForm((f) => ({ ...f, predecessorId: v })); },
                 [
-                  { value: '', label: '— Select —' },
+                  { value: '', label: t('proj.detail.select') },
                   ...activities.map((a) => ({
                     value: a.id,
                     label: `${a.activityCode}: ${a.name}`,
@@ -31888,27 +31631,27 @@ function PlanningTab(props: PlanningProps) {
               ),
             )}
             {planField(
-              'Successor',
+              t('proj.detail.successor'),
               planSel(depForm.successorId, (v) => { setDepForm((f) => ({ ...f, successorId: v })); }, [
-                { value: '', label: '— Select —' },
+                { value: '', label: t('proj.detail.select') },
                 ...activities.map((a) => ({ value: a.id, label: `${a.activityCode}: ${a.name}` })),
               ]),
             )}
             {planField(
-              'Type',
+              t('proj.detail.type'),
               planSel(
                 depForm.dependencyType,
                 (v) => { setDepForm((f) => ({ ...f, dependencyType: v })); },
                 [
-                  { value: 'FS', label: 'Finish-to-Start (FS)' },
-                  { value: 'SS', label: 'Start-to-Start (SS)' },
-                  { value: 'FF', label: 'Finish-to-Finish (FF)' },
-                  { value: 'SF', label: 'Start-to-Finish (SF)' },
+                  { value: 'FS', label: t('proj.detail.finishToStartFs') },
+                  { value: 'SS', label: t('proj.detail.startToStartSs') },
+                  { value: 'FF', label: t('proj.detail.finishToFinishFf') },
+                  { value: 'SF', label: t('proj.detail.startToFinishSf') },
                 ],
               ),
             )}
             {planField(
-              'Lag Days',
+              t('proj.detail.lagDays'),
               planInp(
                 depForm.lagDays,
                 (v) => { setDepForm((f) => ({ ...f, lagDays: v })); },
@@ -31942,13 +31685,13 @@ function PlanningTab(props: PlanningProps) {
           }}
         >
           <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr('Save Baseline')}
+            {mHdr(t('proj.detail.saveBaseline'))}
             {planField(
-              'Name',
-              planInp(blForm.name, (v) => { setBlForm((f) => ({ ...f, name: v })); }, 'Baseline 1'),
+              t('proj.detail.name'),
+              planInp(blForm.name, (v) => { setBlForm((f) => ({ ...f, name: v })); }, t('proj.detail.baseline1')),
             )}
             {planField(
-              'Description',
+              t('proj.detail.description'),
               <textarea
                 style={{ ...inputSt, minHeight: '60px' }}
                 value={blForm.description}
@@ -31976,29 +31719,29 @@ function PlanningTab(props: PlanningProps) {
           onClick={() => { setResModal({ open: false, mode: 'create', res: {} }); }}
         >
           <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr(resModal.mode === 'create' ? 'Add Resource' : 'Edit Resource')}
+            {mHdr(resModal.mode === 'create' ? t('proj.detail.addResource') : t('proj.detail.editResource'))}
             {planField(
-              'Name',
+              t('proj.detail.name'),
               planInp(resForm.name, (v) => { setResForm((f) => ({ ...f, name: v })); }),
             )}
             {planField(
-              'Type',
+              t('proj.detail.type'),
               planSel(resForm.resourceType, (v) => { setResForm((f) => ({ ...f, resourceType: v })); }, [
-                { value: 'labor', label: 'Labor' },
-                { value: 'equipment', label: 'Equipment' },
-                { value: 'material', label: 'Material' },
+                { value: 'labor', label: t('proj.detail.labor') },
+                { value: 'equipment', label: t('proj.detail.equipment') },
+                { value: 'material', label: t('proj.detail.material') },
               ]),
             )}
             {planField(
-              'Unit',
+              t('proj.detail.unit'),
               planInp(
                 resForm.unit,
                 (v) => { setResForm((f) => ({ ...f, unit: v })); },
-                'hrs, days, m², kg',
+                t('proj.detail.hrsDaysMKg'),
               ),
             )}
             {planField(
-              'Max Units/Day',
+              t('proj.detail.maxUnitsDay'),
               planInp(
                 resForm.maxUnitsPerDay,
                 (v) => { setResForm((f) => ({ ...f, maxUnitsPerDay: v })); },
@@ -32007,7 +31750,7 @@ function PlanningTab(props: PlanningProps) {
               ),
             )}
             {planField(
-              'Cost/Unit',
+              t('proj.detail.costUnit'),
               planInp(
                 resForm.costPerUnit,
                 (v) => { setResForm((f) => ({ ...f, costPerUnit: v })); },
@@ -32016,7 +31759,7 @@ function PlanningTab(props: PlanningProps) {
               ),
             )}
             {planField(
-              'Currency',
+              t('proj.detail.currency'),
               planInp(
                 resForm.currencyCode,
                 (v) => { setResForm((f) => ({ ...f, currencyCode: v })); },
@@ -32060,9 +31803,9 @@ function PlanningTab(props: PlanningProps) {
           }}
         >
           <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr('Assign Resource')}
+            {mHdr(t('proj.detail.assignResource'))}
             {planField(
-              'Resource',
+              t('proj.detail.resource2'),
               planSel(
                 assignForm.resourceId,
                 (v) => { setAssignForm((f) => ({ ...f, resourceId: v })); },
@@ -32070,7 +31813,7 @@ function PlanningTab(props: PlanningProps) {
               ),
             )}
             {planField(
-              'Units/Day',
+              t('proj.detail.unitsDay'),
               planInp(
                 assignForm.unitsPerDay,
                 (v) => { setAssignForm((f) => ({ ...f, unitsPerDay: v })); },
@@ -32079,7 +31822,7 @@ function PlanningTab(props: PlanningProps) {
               ),
             )}
             {planField(
-              'Budgeted Cost',
+              t('proj.detail.budgetedCost'),
               planInp(
                 assignForm.budgetedCost,
                 (v) => { setAssignForm((f) => ({ ...f, budgetedCost: v })); },
@@ -32292,6 +32035,7 @@ interface CostControlProps {
 }
 
 function CostControlTab(props: CostControlProps) {
+  const { t } = useTranslation()
   const {
     projectId,
     th,
@@ -32358,15 +32102,15 @@ function CostControlTab(props: CostControlProps) {
   })
 
   const nav: { key: CCSection; label: string }[] = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'budget', label: 'Budget' },
-    { key: 'committed', label: 'Committed' },
-    { key: 'subcontract', label: 'Subcontracts' },
-    { key: 'labor', label: 'Labor' },
-    { key: 'equipment', label: 'Equipment' },
-    { key: 'cash', label: 'Cash Flow' },
-    { key: 'forecast', label: 'Forecast' },
-    { key: 'billing', label: 'Client Billing' },
+    { key: 'overview', label: t('proj.detail.overview') },
+    { key: 'budget', label: t('proj.detail.budget') },
+    { key: 'committed', label: t('proj.detail.committed') },
+    { key: 'subcontract', label: t('proj.detail.subcontracts') },
+    { key: 'labor', label: t('proj.detail.labor') },
+    { key: 'equipment', label: t('proj.detail.equipment') },
+    { key: 'cash', label: t('proj.detail.cashFlow') },
+    { key: 'forecast', label: t('proj.detail.forecast') },
+    { key: 'billing', label: t('proj.detail.clientBilling') },
   ]
 
   const card = {
@@ -32486,9 +32230,9 @@ function CostControlTab(props: CostControlProps) {
     maxHeight: '90vh',
     overflowY: 'auto',
   }
-  const mHdr = (t: string) => (
+  const mHdr = (tx: string) => (
     <div style={{ fontSize: '16px', fontWeight: 700, color: th.textPrimary, marginBottom: '16px' }}>
-      {t}
+      {tx}
     </div>
   )
   const mBtns = (onSave: () => void, onClose: () => void) => (
@@ -32501,10 +32245,10 @@ function CostControlTab(props: CostControlProps) {
         })}
         onClick={onClose}
       >
-        Cancel
+        {t('proj.detail.cancel')}
       </button>
       <button style={btn()} onClick={onSave}>
-        Save
+        {t('proj.detail.save')}
       </button>
     </div>
   )
@@ -32515,32 +32259,32 @@ function CostControlTab(props: CostControlProps) {
     if (!s)
       return (
         <div style={{ color: th.textSecondary, fontSize: '13px' }}>
-          No cost data yet. Add cost codes and entries to see the summary.
+          {t('proj.detail.noCostDataYetAddCost')}
         </div>
       )
     const topTiles = [
-      { label: 'Total Budget', value: fmt(s.totalBudget), color: th.textPrimary },
-      { label: 'Committed', value: fmt(s.totalCommitted), color: '#f59e0b' },
-      { label: 'Actual Cost', value: fmt(s.totalActual), color: '#3b82f6' },
+      { label: t('proj.detail.totalBudget'), value: fmt(s.totalBudget), color: th.textPrimary },
+      { label: t('proj.detail.committed'), value: fmt(s.totalCommitted), color: '#f59e0b' },
+      { label: t('proj.detail.actualCost'), value: fmt(s.totalActual), color: '#3b82f6' },
       {
-        label: 'Forecast (EAC)',
+        label: t('proj.detail.forecastEac'),
         value: fmt(s.totalForecastEAC),
         color: s.totalForecastEAC > s.totalBudget ? '#ef4444' : '#22c55e',
       },
       {
-        label: 'Remaining',
+        label: t('proj.detail.remaining'),
         value: fmt(s.totalRemaining),
         color: s.totalRemaining < 0 ? '#ef4444' : '#22c55e',
       },
-      { label: 'Variance', value: fmt(s.totalVariance), color: varColor(s.totalVariance) },
+      { label: t('proj.detail.variance'), value: fmt(s.totalVariance), color: varColor(s.totalVariance) },
     ]
     const billingTiles = [
-      { label: 'Total Billed', value: fmt(s.totalBilled) },
-      { label: 'Certified', value: fmt(s.totalCertified) },
-      { label: 'Paid by Client', value: fmt(s.totalPaidByClient) },
-      { label: 'Retention Held', value: fmt(s.totalRetentionHeld) },
+      { label: t('proj.detail.totalBilled'), value: fmt(s.totalBilled) },
+      { label: t('proj.detail.certified'), value: fmt(s.totalCertified) },
+      { label: t('proj.detail.paidByClient'), value: fmt(s.totalPaidByClient) },
+      { label: t('proj.detail.retentionHeld'), value: fmt(s.totalRetentionHeld) },
       {
-        label: 'Outstanding',
+        label: t('proj.detail.outstanding'),
         value: fmt(s.outstandingReceivable),
         color: s.outstandingReceivable > 0 ? '#f59e0b' : th.textPrimary,
       },
@@ -32555,8 +32299,8 @@ function CostControlTab(props: CostControlProps) {
             marginBottom: '16px',
           }}
         >
-          {topTiles.map((t) => (
-            <div key={t.label} style={{ ...card, marginBottom: 0, textAlign: 'center' }}>
+          {topTiles.map((tx) => (
+            <div key={tx.label} style={{ ...card, marginBottom: 0, textAlign: 'center' }}>
               <div
                 style={{
                   fontSize: '10px',
@@ -32566,10 +32310,10 @@ function CostControlTab(props: CostControlProps) {
                   marginBottom: '4px',
                 }}
               >
-                {t.label}
+                {tx.label}
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 700, color: t.color }}>
-                {t.value}
+              <div style={{ fontSize: '20px', fontWeight: 700, color: tx.color }}>
+                {tx.value}
               </div>
             </div>
           ))}
@@ -32578,7 +32322,7 @@ function CostControlTab(props: CostControlProps) {
         <div style={{ ...card, marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
             <span style={{ fontSize: '13px', fontWeight: 600, color: th.textPrimary }}>
-              Budget Consumption
+              {t('proj.detail.budgetConsumption')}
             </span>
             <span
               style={{
@@ -32632,7 +32376,7 @@ function CostControlTab(props: CostControlProps) {
                   borderRadius: '2px',
                 }}
               />{' '}
-              Actual
+              {t('proj.detail.actual')}
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span
@@ -32644,7 +32388,7 @@ function CostControlTab(props: CostControlProps) {
                   borderRadius: '2px',
                 }}
               />{' '}
-              Committed
+              {t('proj.detail.committed')}
             </span>
           </div>
         </div>
@@ -32659,7 +32403,7 @@ function CostControlTab(props: CostControlProps) {
                 marginBottom: '10px',
               }}
             >
-              By Category
+              {t('proj.detail.byCategory')}
             </div>
             {s.byCategory.map((c) => {
               const consumed =
@@ -32683,14 +32427,12 @@ function CostControlTab(props: CostControlProps) {
                           background: catColors[c.category] ?? '#94a3b8',
                           display: 'inline-block',
                           borderRadius: '50%',
-                          marginRight: '6px',
+                          marginInlineEnd: '6px',
                         }}
                       />
                       {c.category.charAt(0).toUpperCase() + c.category.slice(1)}
                     </span>
-                    <span style={{ fontSize: '12px', color: th.textSecondary }}>
-                      {fmt(c.budgetAmount)} budget · {fmt(c.actualAmount + c.committedAmount)} spent
-                    </span>
+                    <span style={{ fontSize: '12px', color: th.textSecondary }}>{t('proj.detail.budgetSpent', { value: fmt(c.budgetAmount), value2: fmt(c.actualAmount + c.committedAmount) })}</span>
                   </div>
                   <div
                     style={{
@@ -32723,7 +32465,7 @@ function CostControlTab(props: CostControlProps) {
             marginTop: '4px',
           }}
         >
-          Client Billing (AR)
+          {t('proj.detail.clientBillingAr')}
         </div>
         <div
           style={{
@@ -32732,8 +32474,8 @@ function CostControlTab(props: CostControlProps) {
             gap: '10px',
           }}
         >
-          {billingTiles.map((t) => (
-            <div key={t.label} style={{ ...card, marginBottom: 0, textAlign: 'center' }}>
+          {billingTiles.map((tx) => (
+            <div key={tx.label} style={{ ...card, marginBottom: 0, textAlign: 'center' }}>
               <div
                 style={{
                   fontSize: '10px',
@@ -32742,16 +32484,16 @@ function CostControlTab(props: CostControlProps) {
                   marginBottom: '4px',
                 }}
               >
-                {t.label}
+                {tx.label}
               </div>
               <div
                 style={{
                   fontSize: '18px',
                   fontWeight: 700,
-                  color: (t as { color?: string }).color ?? th.textPrimary,
+                  color: (tx as { color?: string }).color ?? th.textPrimary,
                 }}
               >
-                {t.value}
+                {tx.value}
               </div>
             </div>
           ))}
@@ -32772,7 +32514,7 @@ function CostControlTab(props: CostControlProps) {
         }}
       >
         <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>
-          Cost Codes & Budget
+          {t('proj.detail.costCodesBudget')}
         </div>
         {isEditable && (
           <button
@@ -32789,7 +32531,7 @@ function CostControlTab(props: CostControlProps) {
               })
             }}
           >
-            + Cost Code
+            {t('proj.detail.costCode')}
           </button>
         )}
       </div>
@@ -32809,13 +32551,13 @@ function CostControlTab(props: CostControlProps) {
               textTransform: 'uppercase',
             }}
           >
-            <span>Code</span>
-            <span>Name</span>
-            <span>Category</span>
-            <span style={{ textAlign: 'right' }}>Budget</span>
-            <span style={{ textAlign: 'right' }}>Committed</span>
-            <span style={{ textAlign: 'right' }}>Actual</span>
-            <span style={{ textAlign: 'right' }}>Remaining</span>
+            <span>{t('proj.detail.code')}</span>
+            <span>{t('proj.detail.name')}</span>
+            <span>{t('proj.detail.category')}</span>
+            <span style={{ textAlign: 'end' }}>{t('proj.detail.budget')}</span>
+            <span style={{ textAlign: 'end' }}>{t('proj.detail.committed')}</span>
+            <span style={{ textAlign: 'end' }}>{t('proj.detail.actual')}</span>
+            <span style={{ textAlign: 'end' }}>{t('proj.detail.remaining')}</span>
             <span style={{ textAlign: 'center' }}>%</span>
           </div>
           {costCodes.length === 0 && (
@@ -32827,7 +32569,7 @@ function CostControlTab(props: CostControlProps) {
                 fontSize: '13px',
               }}
             >
-              No cost codes yet. Add cost codes to track budget.
+              {t('proj.detail.noCostCodesYetAddCost')}
             </div>
           )}
           {costCodes.map((c) => (
@@ -32853,7 +32595,7 @@ function CostControlTab(props: CostControlProps) {
                 background: th.bgCanvas,
                 cursor: 'pointer',
                 boxSizing: 'border-box',
-                borderLeft: `3px solid ${catColors[c.category] ?? '#94a3b8'}`,
+                borderInlineStart: `3px solid ${catColors[c.category] ?? '#94a3b8'}`,
                 alignItems: 'center',
               }}
             >
@@ -32893,21 +32635,21 @@ function CostControlTab(props: CostControlProps) {
                 {c.category}
               </span>
               <span
-                style={{ fontSize: '12px', color: th.textPrimary, textAlign: 'right', minWidth: 0 }}
+                style={{ fontSize: '12px', color: th.textPrimary, textAlign: 'end', minWidth: 0 }}
               >
                 {fmt(c.budgetAmount)}
               </span>
-              <span style={{ fontSize: '12px', color: '#f59e0b', textAlign: 'right', minWidth: 0 }}>
+              <span style={{ fontSize: '12px', color: '#f59e0b', textAlign: 'end', minWidth: 0 }}>
                 {fmt(c.committedAmount)}
               </span>
-              <span style={{ fontSize: '12px', color: '#3b82f6', textAlign: 'right', minWidth: 0 }}>
+              <span style={{ fontSize: '12px', color: '#3b82f6', textAlign: 'end', minWidth: 0 }}>
                 {fmt(c.actualAmount)}
               </span>
               <span
                 style={{
                   fontSize: '12px',
                   color: c.remainingBudget < 0 ? '#ef4444' : '#22c55e',
-                  textAlign: 'right',
+                  textAlign: 'end',
                   minWidth: 0,
                 }}
               >
@@ -32940,18 +32682,18 @@ function CostControlTab(props: CostControlProps) {
               }}
             >
               <span />
-              <span>Total</span>
+              <span>{t('proj.detail.total')}</span>
               <span />
-              <span style={{ textAlign: 'right' }}>
+              <span style={{ textAlign: 'end' }}>
                 {fmt(costCodes.reduce((s, c) => s + c.budgetAmount, 0))}
               </span>
-              <span style={{ textAlign: 'right', color: '#f59e0b' }}>
+              <span style={{ textAlign: 'end', color: '#f59e0b' }}>
                 {fmt(costCodes.reduce((s, c) => s + c.committedAmount, 0))}
               </span>
-              <span style={{ textAlign: 'right', color: '#3b82f6' }}>
+              <span style={{ textAlign: 'end', color: '#3b82f6' }}>
                 {fmt(costCodes.reduce((s, c) => s + c.actualAmount, 0))}
               </span>
-              <span style={{ textAlign: 'right' }}>
+              <span style={{ textAlign: 'end' }}>
                 {fmt(costCodes.reduce((s, c) => s + c.remainingBudget, 0))}
               </span>
               <span />
@@ -32978,7 +32720,7 @@ function CostControlTab(props: CostControlProps) {
   } | null>(null)
   const [rowForm, setRowForm] = React.useState<Record<string, string>>({})
   const codeSelOpts = [
-    { value: '', label: '— No Cost Code —' },
+    { value: '', label: t('proj.detail.noCostCode') },
     ...costCodes.map((c) => ({ value: c.id, label: `${c.code} ${c.name}` })),
   ]
 
@@ -32995,125 +32737,125 @@ function CostControlTab(props: CostControlProps) {
     committed: [
       {
         k: 'commitmentType',
-        label: 'Type',
+        label: t('proj.detail.type'),
         type: 'select',
         opts: [
-          { value: 'purchase_order', label: 'Purchase Order' },
-          { value: 'subcontract', label: 'Subcontract' },
-          { value: 'other', label: 'Other' },
+          { value: 'purchase_order', label: t('proj.detail.purchaseOrder') },
+          { value: 'subcontract', label: t('proj.detail.subcontract') },
+          { value: 'other', label: t('proj.detail.other') },
         ],
         required: true,
         createOnly: true,
       },
-      { k: 'referenceNumber', label: 'Reference #' },
-      { k: 'description', label: 'Description', required: true },
-      { k: 'vendorName', label: 'Vendor' },
-      { k: 'costCodeId', label: 'Cost Code', type: 'select', opts: codeSelOpts },
-      { k: 'committedAmount', label: 'Committed Amount', type: 'number', required: true },
-      { k: 'invoicedAmount', label: 'Invoiced', type: 'number', editOnly: true },
-      { k: 'paidAmount', label: 'Paid', type: 'number', editOnly: true },
-      { k: 'commitmentDate', label: 'Commitment Date', type: 'date' },
-      { k: 'expectedInvoiceDate', label: 'Expected Invoice', type: 'date' },
+      { k: 'referenceNumber', label: t('proj.detail.reference') },
+      { k: 'description', label: t('proj.detail.description'), required: true },
+      { k: 'vendorName', label: t('proj.detail.vendor') },
+      { k: 'costCodeId', label: t('proj.detail.costCode2'), type: 'select', opts: codeSelOpts },
+      { k: 'committedAmount', label: t('proj.detail.committedAmount'), type: 'number', required: true },
+      { k: 'invoicedAmount', label: t('proj.detail.invoiced'), type: 'number', editOnly: true },
+      { k: 'paidAmount', label: t('proj.detail.paid'), type: 'number', editOnly: true },
+      { k: 'commitmentDate', label: t('proj.detail.commitmentDate'), type: 'date' },
+      { k: 'expectedInvoiceDate', label: t('proj.detail.expectedInvoice'), type: 'date' },
       {
         k: 'status',
-        label: 'Status',
+        label: t('proj.detail.status'),
         type: 'select',
         opts: statusOpts(['open', 'partial', 'closed', 'cancelled']),
         editOnly: true,
       },
-      { k: 'notes', label: 'Notes', type: 'textarea' },
+      { k: 'notes', label: t('proj.detail.notes2'), type: 'textarea' },
     ],
     subcontract: [
-      { k: 'subcontractNumber', label: 'Subcontract #', required: true, createOnly: true },
-      { k: 'subcontractorName', label: 'Subcontractor', required: true },
-      { k: 'costCodeId', label: 'Cost Code', type: 'select', opts: codeSelOpts },
-      { k: 'description', label: 'Description' },
-      { k: 'scopeOfWork', label: 'Scope of Work', type: 'textarea' },
-      { k: 'contractValue', label: 'Contract Value', type: 'number', required: true },
-      { k: 'revisedValue', label: 'Revised Value', type: 'number', editOnly: true },
-      { k: 'retentionPercentage', label: 'Retention %', type: 'number' },
-      { k: 'certifiedAmount', label: 'Certified', type: 'number', editOnly: true },
-      { k: 'paidAmount', label: 'Paid', type: 'number', editOnly: true },
-      { k: 'startDate', label: 'Start Date', type: 'date' },
-      { k: 'endDate', label: 'End Date', type: 'date' },
+      { k: 'subcontractNumber', label: t('proj.detail.subcontract2'), required: true, createOnly: true },
+      { k: 'subcontractorName', label: t('proj.detail.subcontractor'), required: true },
+      { k: 'costCodeId', label: t('proj.detail.costCode2'), type: 'select', opts: codeSelOpts },
+      { k: 'description', label: t('proj.detail.description') },
+      { k: 'scopeOfWork', label: t('proj.detail.scopeOfWork'), type: 'textarea' },
+      { k: 'contractValue', label: t('proj.detail.contractValue2'), type: 'number', required: true },
+      { k: 'revisedValue', label: t('proj.detail.revisedValue'), type: 'number', editOnly: true },
+      { k: 'retentionPercentage', label: t('proj.detail.retention'), type: 'number' },
+      { k: 'certifiedAmount', label: t('proj.detail.certified'), type: 'number', editOnly: true },
+      { k: 'paidAmount', label: t('proj.detail.paid'), type: 'number', editOnly: true },
+      { k: 'startDate', label: t('proj.detail.startDate'), type: 'date' },
+      { k: 'endDate', label: t('proj.detail.endDate'), type: 'date' },
       {
         k: 'status',
-        label: 'Status',
+        label: t('proj.detail.status'),
         type: 'select',
         opts: statusOpts(['active', 'completed', 'terminated', 'on_hold']),
         editOnly: true,
       },
     ],
     labor: [
-      { k: 'workDate', label: 'Work Date', type: 'date', required: true, createOnly: true },
-      { k: 'trade', label: 'Trade', required: true },
-      { k: 'workerName', label: 'Worker Name' },
-      { k: 'costCodeId', label: 'Cost Code', type: 'select', opts: codeSelOpts, createOnly: true },
-      { k: 'regularHours', label: 'Regular Hours', type: 'number', required: true },
-      { k: 'overtimeHours', label: 'Overtime Hours', type: 'number' },
-      { k: 'costPerHour', label: 'Cost / Hour', type: 'number', required: true },
-      { k: 'notes', label: 'Notes', type: 'textarea' },
+      { k: 'workDate', label: t('proj.detail.workDate'), type: 'date', required: true, createOnly: true },
+      { k: 'trade', label: t('proj.detail.trade'), required: true },
+      { k: 'workerName', label: t('proj.detail.workerName') },
+      { k: 'costCodeId', label: t('proj.detail.costCode2'), type: 'select', opts: codeSelOpts, createOnly: true },
+      { k: 'regularHours', label: t('proj.detail.regularHours'), type: 'number', required: true },
+      { k: 'overtimeHours', label: t('proj.detail.overtimeHours'), type: 'number' },
+      { k: 'costPerHour', label: t('proj.detail.costHour'), type: 'number', required: true },
+      { k: 'notes', label: t('proj.detail.notes2'), type: 'textarea' },
     ],
     equipment: [
-      { k: 'logDate', label: 'Log Date', type: 'date', required: true, createOnly: true },
-      { k: 'equipmentName', label: 'Equipment', required: true },
-      { k: 'equipmentType', label: 'Type' },
+      { k: 'logDate', label: t('proj.detail.logDate'), type: 'date', required: true, createOnly: true },
+      { k: 'equipmentName', label: t('proj.detail.equipment'), required: true },
+      { k: 'equipmentType', label: t('proj.detail.type') },
       {
         k: 'ownership',
-        label: 'Ownership',
+        label: t('proj.detail.ownership'),
         type: 'select',
         opts: [
-          { value: 'owned', label: 'Owned' },
-          { value: 'rented', label: 'Rented' },
+          { value: 'owned', label: t('proj.detail.owned') },
+          { value: 'rented', label: t('proj.detail.rented') },
         ],
         createOnly: true,
       },
-      { k: 'costCodeId', label: 'Cost Code', type: 'select', opts: codeSelOpts, createOnly: true },
-      { k: 'workingHours', label: 'Working Hours', type: 'number', required: true },
-      { k: 'standbyHours', label: 'Standby Hours', type: 'number' },
-      { k: 'costPerHour', label: 'Cost / Hour', type: 'number', required: true },
-      { k: 'standbyRate', label: 'Standby Rate', type: 'number' },
-      { k: 'notes', label: 'Notes', type: 'textarea' },
+      { k: 'costCodeId', label: t('proj.detail.costCode2'), type: 'select', opts: codeSelOpts, createOnly: true },
+      { k: 'workingHours', label: t('proj.detail.workingHours'), type: 'number', required: true },
+      { k: 'standbyHours', label: t('proj.detail.standbyHours'), type: 'number' },
+      { k: 'costPerHour', label: t('proj.detail.costHour'), type: 'number', required: true },
+      { k: 'standbyRate', label: t('proj.detail.standbyRate'), type: 'number' },
+      { k: 'notes', label: t('proj.detail.notes2'), type: 'textarea' },
     ],
     cash: [
-      { k: 'periodYear', label: 'Year', type: 'number', required: true },
-      { k: 'periodMonth', label: 'Month (1-12)', type: 'number', required: true },
-      { k: 'plannedOutflow', label: 'Planned Outflow', type: 'number' },
-      { k: 'actualOutflow', label: 'Actual Outflow', type: 'number' },
-      { k: 'forecastOutflow', label: 'Forecast Outflow', type: 'number' },
-      { k: 'plannedInflow', label: 'Planned Inflow', type: 'number' },
-      { k: 'actualInflow', label: 'Actual Inflow', type: 'number' },
-      { k: 'forecastInflow', label: 'Forecast Inflow', type: 'number' },
-      { k: 'notes', label: 'Notes', type: 'textarea' },
+      { k: 'periodYear', label: t('proj.detail.year'), type: 'number', required: true },
+      { k: 'periodMonth', label: t('proj.detail.month112'), type: 'number', required: true },
+      { k: 'plannedOutflow', label: t('proj.detail.plannedOutflow'), type: 'number' },
+      { k: 'actualOutflow', label: t('proj.detail.actualOutflow'), type: 'number' },
+      { k: 'forecastOutflow', label: t('proj.detail.forecastOutflow'), type: 'number' },
+      { k: 'plannedInflow', label: t('proj.detail.plannedInflow'), type: 'number' },
+      { k: 'actualInflow', label: t('proj.detail.actualInflow'), type: 'number' },
+      { k: 'forecastInflow', label: t('proj.detail.forecastInflow'), type: 'number' },
+      { k: 'notes', label: t('proj.detail.notes2'), type: 'textarea' },
     ],
     forecast: [
-      { k: 'costCodeId', label: 'Cost Code', type: 'select', opts: codeSelOpts },
-      { k: 'forecastDate', label: 'Forecast Date', type: 'date', required: true },
-      { k: 'etcAmount', label: 'ETC (Est. to Complete)', type: 'number', required: true },
-      { k: 'eacAmount', label: 'EAC (Est. at Completion)', type: 'number', required: true },
-      { k: 'notes', label: 'Notes', type: 'textarea' },
+      { k: 'costCodeId', label: t('proj.detail.costCode2'), type: 'select', opts: codeSelOpts },
+      { k: 'forecastDate', label: t('proj.detail.forecastDate'), type: 'date', required: true },
+      { k: 'etcAmount', label: t('proj.detail.etcEstToComplete'), type: 'number', required: true },
+      { k: 'eacAmount', label: t('proj.detail.eacEstAtCompletion'), type: 'number', required: true },
+      { k: 'notes', label: t('proj.detail.notes2'), type: 'textarea' },
     ],
     billing: [
-      { k: 'billingNumber', label: 'Billing #', required: true, createOnly: true },
-      { k: 'billingDate', label: 'Billing Date', type: 'date', required: true },
-      { k: 'periodFrom', label: 'Period From', type: 'date' },
-      { k: 'periodTo', label: 'Period To', type: 'date' },
-      { k: 'grossAmount', label: 'Gross Amount', type: 'number', required: true },
-      { k: 'retentionPercentage', label: 'Retention %', type: 'number' },
-      { k: 'retentionAmount', label: 'Retention Amount', type: 'number' },
-      { k: 'netAmount', label: 'Net Amount', type: 'number', required: true },
-      { k: 'certifiedAmount', label: 'Certified', type: 'number', editOnly: true },
-      { k: 'certifiedDate', label: 'Certified Date', type: 'date', editOnly: true },
-      { k: 'paidAmount', label: 'Paid', type: 'number', editOnly: true },
-      { k: 'paidDate', label: 'Paid Date', type: 'date', editOnly: true },
+      { k: 'billingNumber', label: t('proj.detail.billing'), required: true, createOnly: true },
+      { k: 'billingDate', label: t('proj.detail.billingDate'), type: 'date', required: true },
+      { k: 'periodFrom', label: t('proj.detail.periodFrom'), type: 'date' },
+      { k: 'periodTo', label: t('proj.detail.periodTo'), type: 'date' },
+      { k: 'grossAmount', label: t('proj.detail.grossAmount'), type: 'number', required: true },
+      { k: 'retentionPercentage', label: t('proj.detail.retention'), type: 'number' },
+      { k: 'retentionAmount', label: t('proj.detail.retentionAmount'), type: 'number' },
+      { k: 'netAmount', label: t('proj.detail.netAmount'), type: 'number', required: true },
+      { k: 'certifiedAmount', label: t('proj.detail.certified'), type: 'number', editOnly: true },
+      { k: 'certifiedDate', label: t('proj.detail.certifiedDate'), type: 'date', editOnly: true },
+      { k: 'paidAmount', label: t('proj.detail.paid'), type: 'number', editOnly: true },
+      { k: 'paidDate', label: t('proj.detail.paidDate'), type: 'date', editOnly: true },
       {
         k: 'status',
-        label: 'Status',
+        label: t('proj.detail.status'),
         type: 'select',
         opts: statusOpts(['draft', 'submitted', 'certified', 'paid']),
         editOnly: true,
       },
-      { k: 'notes', label: 'Notes', type: 'textarea' },
+      { k: 'notes', label: t('proj.detail.notes2'), type: 'textarea' },
     ],
   }
   const NUM_FIELDS = new Set([
@@ -33167,7 +32909,7 @@ function CostControlTab(props: CostControlProps) {
     )
     for (const f of fields)
       if (f.required && !(rowForm[f.k] ?? '').trim()) {
-        alert(`${f.label} is required`)
+        alert(t('proj.detail.isRequired', { label: f.label }))
         return
       }
     const v: Record<string, unknown> = {}
@@ -33311,7 +33053,7 @@ function CostControlTab(props: CostControlProps) {
         {extra}
         {isEditable && (
           <button style={btn()} onClick={() => { openRow(entity, 'create'); }}>
-            + Add
+            {t('proj.detail.add2')}
           </button>
         )}
       </div>
@@ -33322,7 +33064,7 @@ function CostControlTab(props: CostControlProps) {
   const renderCommitted = () => (
     <div>
       {secHeader(
-        'Committed Costs',
+        t('proj.detail.committedCosts'),
         'committed',
         isEditable ? (
           <button
@@ -33333,141 +33075,141 @@ function CostControlTab(props: CostControlProps) {
             })}
             onClick={() => { onSyncPO({ projectId }); }}
           >
-            Sync POs
+            {t('proj.detail.syncPos')}
           </button>
         ) : null,
       )}
       {dataTable<CCCommitted>(
         committedCosts,
         [
-          { h: 'Reference', w: '120px', render: (r) => r.referenceNumber ?? '—' },
-          { h: 'Description', w: '1fr', render: (r) => r.description },
-          { h: 'Vendor', w: '130px', render: (r) => r.vendorName ?? '—' },
-          { h: 'Committed', w: '110px', align: 'right', render: (r) => fmt(r.committedAmount) },
-          { h: 'Invoiced', w: '100px', align: 'right', render: (r) => fmt(r.invoicedAmount) },
-          { h: 'Status', w: '90px', render: (r) => r.status },
+          { h: t('proj.detail.reference2'), w: '120px', render: (r) => r.referenceNumber ?? '—' },
+          { h: t('proj.detail.description'), w: '1fr', render: (r) => r.description },
+          { h: t('proj.detail.vendor'), w: '130px', render: (r) => r.vendorName ?? '—' },
+          { h: t('proj.detail.committed'), w: '110px', align: 'right', render: (r) => fmt(r.committedAmount) },
+          { h: t('proj.detail.invoiced'), w: '100px', align: 'right', render: (r) => fmt(r.invoicedAmount) },
+          { h: t('proj.detail.status'), w: '90px', render: (r) => r.status },
         ],
         (r) => { openRow('committed', 'edit', r as unknown as Record<string, unknown>); },
-        'No committed costs yet.',
+        t('proj.detail.noCommittedCostsYet'),
       )}
     </div>
   )
   const renderSub = () => (
     <div>
-      {secHeader('Subcontracts', 'subcontract')}
+      {secHeader(t('proj.detail.subcontracts'), 'subcontract')}
       {dataTable<CCSubcontract>(
         subcontracts,
         [
-          { h: 'Number', w: '120px', render: (r) => r.subcontractNumber },
-          { h: 'Subcontractor', w: '1fr', render: (r) => r.subcontractorName },
+          { h: t('proj.detail.number'), w: '120px', render: (r) => r.subcontractNumber },
+          { h: t('proj.detail.subcontractor'), w: '1fr', render: (r) => r.subcontractorName },
           {
-            h: 'Value',
+            h: t('proj.detail.value'),
             w: '110px',
             align: 'right',
             render: (r) => fmt(r.revisedValue ?? r.contractValue),
           },
-          { h: 'Certified', w: '100px', align: 'right', render: (r) => fmt(r.certifiedAmount) },
-          { h: 'Paid', w: '100px', align: 'right', render: (r) => fmt(r.paidAmount) },
-          { h: 'Status', w: '90px', render: (r) => r.status },
+          { h: t('proj.detail.certified'), w: '100px', align: 'right', render: (r) => fmt(r.certifiedAmount) },
+          { h: t('proj.detail.paid'), w: '100px', align: 'right', render: (r) => fmt(r.paidAmount) },
+          { h: t('proj.detail.status'), w: '90px', render: (r) => r.status },
         ],
         (r) => { openRow('subcontract', 'edit', r as unknown as Record<string, unknown>); },
-        'No subcontracts yet.',
+        t('proj.detail.noSubcontractsYet'),
       )}
     </div>
   )
   const renderLabor = () => (
     <div>
-      {secHeader('Labor Entries', 'labor')}
+      {secHeader(t('proj.detail.laborEntries'), 'labor')}
       {dataTable<CCLabor>(
         laborEntries,
         [
-          { h: 'Date', w: '100px', render: (r) => dstr(r.workDate) },
-          { h: 'Trade', w: '1fr', render: (r) => r.trade },
-          { h: 'Worker', w: '130px', render: (r) => r.workerName ?? '—' },
-          { h: 'Reg Hrs', w: '80px', align: 'right', render: (r) => r.regularHours },
-          { h: 'OT Hrs', w: '80px', align: 'right', render: (r) => r.overtimeHours },
-          { h: 'Total', w: '110px', align: 'right', render: (r) => fmt(r.totalCost) },
+          { h: t('proj.detail.date'), w: '100px', render: (r) => dstr(r.workDate) },
+          { h: t('proj.detail.trade'), w: '1fr', render: (r) => r.trade },
+          { h: t('proj.detail.worker'), w: '130px', render: (r) => r.workerName ?? '—' },
+          { h: t('proj.detail.regHrs'), w: '80px', align: 'right', render: (r) => r.regularHours },
+          { h: t('proj.detail.otHrs'), w: '80px', align: 'right', render: (r) => r.overtimeHours },
+          { h: t('proj.detail.total'), w: '110px', align: 'right', render: (r) => fmt(r.totalCost) },
         ],
         (r) => { openRow('labor', 'edit', r as unknown as Record<string, unknown>); },
-        'No labor entries yet.',
+        t('proj.detail.noLaborEntriesYet'),
       )}
     </div>
   )
   const renderEquip = () => (
     <div>
-      {secHeader('Equipment Log', 'equipment')}
+      {secHeader(t('proj.detail.equipmentLog'), 'equipment')}
       {dataTable<CCEquipment>(
         equipmentLog,
         [
-          { h: 'Date', w: '100px', render: (r) => dstr(r.logDate) },
-          { h: 'Equipment', w: '1fr', render: (r) => r.equipmentName },
-          { h: 'Type', w: '110px', render: (r) => r.equipmentType ?? '—' },
-          { h: 'Work Hrs', w: '90px', align: 'right', render: (r) => r.workingHours },
-          { h: 'Standby', w: '90px', align: 'right', render: (r) => r.standbyHours },
-          { h: 'Total', w: '110px', align: 'right', render: (r) => fmt(r.totalCost) },
+          { h: t('proj.detail.date'), w: '100px', render: (r) => dstr(r.logDate) },
+          { h: t('proj.detail.equipment'), w: '1fr', render: (r) => r.equipmentName },
+          { h: t('proj.detail.type'), w: '110px', render: (r) => r.equipmentType ?? '—' },
+          { h: t('proj.detail.workHrs'), w: '90px', align: 'right', render: (r) => r.workingHours },
+          { h: t('proj.detail.standby'), w: '90px', align: 'right', render: (r) => r.standbyHours },
+          { h: t('proj.detail.total'), w: '110px', align: 'right', render: (r) => fmt(r.totalCost) },
         ],
         (r) => { openRow('equipment', 'edit', r as unknown as Record<string, unknown>); },
-        'No equipment log entries yet.',
+        t('proj.detail.noEquipmentLogEntriesYet'),
       )}
     </div>
   )
   const renderCash = () => (
     <div>
-      {secHeader('Cash Flow', 'cash')}
+      {secHeader(t('proj.detail.cashFlow'), 'cash')}
       {dataTable<CCCashFlow>(
         [...cashFlow].sort((a, b) => a.periodYear - b.periodYear || a.periodMonth - b.periodMonth),
         [
           {
-            h: 'Period',
+            h: t('proj.detail.period'),
             w: '120px',
             render: (r) => r.label || `${r.periodYear}-${String(r.periodMonth).padStart(2, '0')}`,
           },
-          { h: 'Planned Out', w: '1fr', align: 'right', render: (r) => fmt(r.plannedOutflow) },
-          { h: 'Actual Out', w: '110px', align: 'right', render: (r) => fmt(r.actualOutflow) },
-          { h: 'Planned In', w: '110px', align: 'right', render: (r) => fmt(r.plannedInflow) },
-          { h: 'Actual In', w: '110px', align: 'right', render: (r) => fmt(r.actualInflow) },
+          { h: t('proj.detail.plannedOut'), w: '1fr', align: 'right', render: (r) => fmt(r.plannedOutflow) },
+          { h: t('proj.detail.actualOut'), w: '110px', align: 'right', render: (r) => fmt(r.actualOutflow) },
+          { h: t('proj.detail.plannedIn'), w: '110px', align: 'right', render: (r) => fmt(r.plannedInflow) },
+          { h: t('proj.detail.actualIn'), w: '110px', align: 'right', render: (r) => fmt(r.actualInflow) },
         ],
         (r) => { openRow('cash', 'edit', r as unknown as Record<string, unknown>); },
-        'No cash flow periods yet.',
+        t('proj.detail.noCashFlowPeriodsYet'),
       )}
     </div>
   )
   const renderForecast = () => (
     <div>
-      {secHeader('Cost Forecast', 'forecast')}
+      {secHeader(t('proj.detail.costForecast'), 'forecast')}
       {dataTable<CCForecast>(
         costForecast,
         [
-          { h: 'Date', w: '120px', render: (r) => dstr(r.forecastDate) },
-          { h: 'Cost Code', w: '1fr', render: (r) => r.costCodeName ?? 'Project-wide' },
-          { h: 'ETC', w: '130px', align: 'right', render: (r) => fmt(r.etcAmount) },
-          { h: 'EAC', w: '130px', align: 'right', render: (r) => fmt(r.eacAmount) },
+          { h: t('proj.detail.date'), w: '120px', render: (r) => dstr(r.forecastDate) },
+          { h: t('proj.detail.costCode2'), w: '1fr', render: (r) => r.costCodeName ?? t('proj.detail.projectWide') },
+          { h: t('proj.detail.etc'), w: '130px', align: 'right', render: (r) => fmt(r.etcAmount) },
+          { h: t('proj.detail.eac'), w: '130px', align: 'right', render: (r) => fmt(r.eacAmount) },
         ],
         (r) => { openRow('forecast', 'edit', r as unknown as Record<string, unknown>); },
-        'No forecasts yet.',
+        t('proj.detail.noForecastsYet'),
       )}
     </div>
   )
   const renderBilling = () => (
     <div>
-      {secHeader('Client Billing', 'billing')}
+      {secHeader(t('proj.detail.clientBilling'), 'billing')}
       {dataTable<CCBilling>(
         clientBillings,
         [
-          { h: 'Number', w: '120px', render: (r) => r.billingNumber },
-          { h: 'Date', w: '100px', render: (r) => dstr(r.billingDate) },
-          { h: 'Gross', w: '1fr', align: 'right', render: (r) => fmt(r.grossAmount) },
+          { h: t('proj.detail.number'), w: '120px', render: (r) => r.billingNumber },
+          { h: t('proj.detail.date'), w: '100px', render: (r) => dstr(r.billingDate) },
+          { h: t('proj.detail.gross'), w: '1fr', align: 'right', render: (r) => fmt(r.grossAmount) },
           {
-            h: 'Retention',
+            h: t('proj.detail.retention3'),
             w: '100px',
             align: 'right',
             render: (r) => fmt(r.retentionAmount ?? 0),
           },
-          { h: 'Net', w: '110px', align: 'right', render: (r) => fmt(r.netAmount) },
-          { h: 'Status', w: '90px', render: (r) => r.status },
+          { h: t('proj.detail.net'), w: '110px', align: 'right', render: (r) => fmt(r.netAmount) },
+          { h: t('proj.detail.status'), w: '90px', render: (r) => r.status },
         ],
         (r) => { openRow('billing', 'edit', r as unknown as Record<string, unknown>); },
-        'No client billings yet.',
+        t('proj.detail.noClientBillingsYet'),
       )}
     </div>
   )
@@ -33522,9 +33264,9 @@ function CostControlTab(props: CostControlProps) {
           onClick={() => { setCodeModal({ open: false, mode: 'create', item: {} }); }}
         >
           <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr(codeModal.mode === 'create' ? 'Add Cost Code' : 'Edit Cost Code')}
+            {mHdr(codeModal.mode === 'create' ? t('proj.detail.addCostCode') : t('proj.detail.editCostCode'))}
             {ff(
-              'Analytic Account',
+              t('proj.detail.analyticAccount'),
               <div
                 style={{
                   padding: '7px 10px',
@@ -33539,11 +33281,11 @@ function CostControlTab(props: CostControlProps) {
               </div>,
             )}
             {ff(
-              'Category',
+              t('proj.detail.category'),
               fs(codeForm.category, (v) => { setCodeForm((f) => ({ ...f, category: v })); }, catOpts),
             )}
             {ff(
-              'Budget Amount',
+              t('proj.detail.budgetAmount'),
               fi(
                 codeForm.budgetAmount,
                 (v) => { setCodeForm((f) => ({ ...f, budgetAmount: v })); },
@@ -33584,13 +33326,13 @@ function CostControlTab(props: CostControlProps) {
                   }),
                 }}
                 onClick={() => {
-                  if (confirm('Delete cost code?') && codeModal.item.id) {
+                  if (confirm(t('proj.detail.deleteCostCode')) && codeModal.item.id) {
                     onDeleteCostCode(codeModal.item.id)
                     setCodeModal({ open: false, mode: 'create', item: {} })
                   }
                 }}
               >
-                Delete
+                {t('proj.detail.delete')}
               </button>
             )}
           </div>
@@ -33604,13 +33346,13 @@ function CostControlTab(props: CostControlProps) {
             rowModal.mode === 'create' ? !f.editOnly : !f.createOnly,
           )
           const titleMap: Record<CCEntity, string> = {
-            committed: 'Committed Cost',
-            subcontract: 'Subcontract',
-            labor: 'Labor Entry',
-            equipment: 'Equipment Log',
-            cash: 'Cash Flow Period',
-            forecast: 'Cost Forecast',
-            billing: 'Client Billing',
+            committed: t('proj.detail.committedCost'),
+            subcontract: t('proj.detail.subcontract'),
+            labor: t('proj.detail.laborEntry'),
+            equipment: t('proj.detail.equipmentLog'),
+            cash: t('proj.detail.cashFlowPeriod'),
+            forecast: t('proj.detail.costForecast'),
+            billing: t('proj.detail.clientBilling'),
           }
           const canDelete =
             rowModal.mode === 'edit' && rowModal.entity !== 'cash' && rowModal.entity !== 'forecast'
@@ -33657,10 +33399,10 @@ function CostControlTab(props: CostControlProps) {
                       textAlign: 'center',
                     })}
                     onClick={() => {
-                      if (confirm('Delete this record?')) deleteRow()
+                      if (confirm(t('proj.detail.deleteThisRecord'))) deleteRow()
                     }}
                   >
-                    Delete
+                    {t('proj.detail.delete')}
                   </button>
                 )}
               </div>
@@ -33763,6 +33505,7 @@ interface VariationOrdersProps {
 }
 
 function VariationOrdersTab(props: VariationOrdersProps) {
+  const { t } = useTranslation()
   const {
     projectId,
     th,
@@ -33978,9 +33721,9 @@ function VariationOrdersTab(props: VariationOrdersProps) {
     maxHeight: '90vh',
     overflowY: 'auto',
   }
-  const mHdr = (t: string) => (
+  const mHdr = (tx: string) => (
     <div style={{ fontSize: '16px', fontWeight: 700, color: th.textPrimary, marginBottom: '16px' }}>
-      {t}
+      {tx}
     </div>
   )
   const mBtnsVO = (onSave: () => void, onClose: () => void, saveDisabled = false) => (
@@ -33993,10 +33736,10 @@ function VariationOrdersTab(props: VariationOrdersProps) {
         })}
         onClick={onClose}
       >
-        Cancel
+        {t('proj.detail.cancel')}
       </button>
       <button style={vbtn()} disabled={saveDisabled} onClick={onSave}>
-        Save
+        {t('proj.detail.save')}
       </button>
     </div>
   )
@@ -34011,18 +33754,18 @@ function VariationOrdersTab(props: VariationOrdersProps) {
     on_hold: '#f97316',
   }
   const CHANGE_TYPE_LABEL: Record<string, string> = {
-    additional_work: 'Additional Work',
-    omission: 'Omission',
-    substitution: 'Substitution',
-    acceleration: 'Acceleration',
-    prolongation: 'Prolongation',
-    other: 'Other',
+    additional_work: t('proj.detail.additionalWork'),
+    omission: t('proj.detail.omission'),
+    substitution: t('proj.detail.substitution'),
+    acceleration: t('proj.detail.acceleration'),
+    prolongation: t('proj.detail.prolongation'),
+    other: t('proj.detail.other'),
   }
   const INITIATED_BY_LABEL: Record<string, string> = {
-    client: 'Client',
-    engineer: 'Engineer',
-    contractor: 'Contractor',
-    regulatory: 'Regulatory',
+    client: t('proj.detail.client'),
+    engineer: t('proj.detail.engineer'),
+    contractor: t('proj.detail.contractor'),
+    regulatory: t('proj.detail.regulatory'),
   }
 
   const changeTypeOpts = Object.entries(CHANGE_TYPE_LABEL).map(([v, l]) => ({ value: v, label: l }))
@@ -34040,8 +33783,8 @@ function VariationOrdersTab(props: VariationOrdersProps) {
     'other',
   ].map((c) => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))
   const dirOpts = [
-    { value: 'received', label: 'Received from Client' },
-    { value: 'sent', label: 'Sent to Client' },
+    { value: 'received', label: t('proj.detail.receivedFromClient') },
+    { value: 'sent', label: t('proj.detail.sentToClient') },
   ]
 
   const nextVONumber = `VO-${String(variationOrders.length + 1).padStart(3, '0')}`
@@ -34134,17 +33877,17 @@ function VariationOrdersTab(props: VariationOrdersProps) {
           }}
         >
           {[
-            { label: 'Total VOs', value: String(variationOrders.length), color: th.textPrimary },
-            { label: 'Approved Value', value: fmt(totalApproved), color: '#22c55e' },
-            { label: 'Pending Value', value: fmt(totalPending), color: '#f59e0b' },
-            { label: 'Rejected', value: fmt(totalRejected), color: '#ef4444' },
+            { label: t('proj.detail.totalVos'), value: String(variationOrders.length), color: th.textPrimary },
+            { label: t('proj.detail.approvedValue'), value: fmt(totalApproved), color: '#22c55e' },
+            { label: t('proj.detail.pendingValue'), value: fmt(totalPending), color: '#f59e0b' },
+            { label: t('proj.detail.rejected'), value: fmt(totalRejected), color: '#ef4444' },
             {
-              label: 'Schedule Impact',
+              label: t('proj.detail.scheduleImpact'),
               value: `+${totalSchedule} days`,
               color: totalSchedule > 0 ? '#f97316' : th.textPrimary,
             },
-          ].map((t) => (
-            <div key={t.label} style={{ ...card, marginBottom: 0, textAlign: 'center' }}>
+          ].map((tx) => (
+            <div key={tx.label} style={{ ...card, marginBottom: 0, textAlign: 'center' }}>
               <div
                 style={{
                   fontSize: '10px',
@@ -34154,9 +33897,9 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   marginBottom: '4px',
                 }}
               >
-                {t.label}
+                {tx.label}
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 700, color: t.color }}>{t.value}</div>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: tx.color }}>{tx.value}</div>
             </div>
           ))}
         </div>
@@ -34169,13 +33912,13 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               marginBottom: '12px',
             }}
           >
-            Status Breakdown
+            {t('proj.detail.statusBreakdown')}
           </div>
           {[
-            { label: `Approved (${approved.length})`, value: totalApproved, color: '#22c55e' },
-            { label: `Pending (${pending.length})`, value: totalPending, color: '#f59e0b' },
-            { label: `Draft (${draft.length})`, value: totalDraft, color: '#94a3b8' },
-            { label: `Rejected (${rejected.length})`, value: totalRejected, color: '#ef4444' },
+            { label: t('proj.detail.approved3', { length: approved.length }), value: totalApproved, color: '#22c55e' },
+            { label: t('proj.detail.pending4', { length: pending.length }), value: totalPending, color: '#f59e0b' },
+            { label: t('proj.detail.draft2', { length: draft.length }), value: totalDraft, color: '#94a3b8' },
+            { label: t('proj.detail.rejected2', { length: rejected.length }), value: totalRejected, color: '#ef4444' },
           ].map((row) => (
             <div key={row.label} style={{ marginBottom: '10px' }}>
               <div
@@ -34218,7 +33961,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 marginBottom: '8px',
               }}
             >
-              By Change Type
+              {t('proj.detail.byChangeType')}
             </div>
             {byChangeType.map(([k, v]) => (
               <div
@@ -34236,7 +33979,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
             ))}
             {byChangeType.length === 0 && (
-              <div style={{ color: th.textSecondary, fontSize: '12px' }}>No data</div>
+              <div style={{ color: th.textSecondary, fontSize: '12px' }}>{t('proj.detail.noData')}</div>
             )}
           </div>
           <div style={card}>
@@ -34248,7 +33991,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 marginBottom: '8px',
               }}
             >
-              By Initiated By
+              {t('proj.detail.byInitiatedBy')}
             </div>
             {byInitiator.map(([k, v]) => (
               <div
@@ -34266,7 +34009,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
             ))}
             {byInitiator.length === 0 && (
-              <div style={{ color: th.textSecondary, fontSize: '12px' }}>No data</div>
+              <div style={{ color: th.textSecondary, fontSize: '12px' }}>{t('proj.detail.noData')}</div>
             )}
           </div>
         </div>
@@ -34286,11 +34029,11 @@ function VariationOrdersTab(props: VariationOrdersProps) {
         }}
       >
         <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>
-          Variation Order Register
+          {t('proj.detail.variationOrderRegister')}
         </div>
         {isAdmin && (
           <button style={vbtn()} onClick={openCreateVO}>
-            + New VO
+            {t('proj.detail.newVo')}
           </button>
         )}
       </div>
@@ -34304,7 +34047,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             padding: '40px',
           }}
         >
-          No variation orders yet. Click "+ New VO" to raise the first change.
+          {t('proj.detail.noVariationOrdersYetClickNew')}
         </div>
       )}
       {variationOrders.map((vo) => {
@@ -34317,7 +34060,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             key={vo.id}
             style={{
               border: `1px solid ${th.border}`,
-              borderLeft: `4px solid ${sc}`,
+              borderInlineStart: `4px solid ${sc}`,
               borderRadius: '8px',
               overflow: 'hidden',
               marginBottom: '10px',
@@ -34415,7 +34158,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                     style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#f59e0b' })}
                     onClick={() => { onSubmitVO(vo.id); }}
                   >
-                    Submit
+                    {t('proj.detail.submit')}
                   </button>
                 )}
                 {isAdmin && vo.status === 'submitted' && (
@@ -34423,7 +34166,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                     style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#3b82f6' })}
                     onClick={() => { onSetVOStatus(vo.id, 'under_review'); }}
                   >
-                    Under Review
+                    {t('proj.detail.underReview')}
                   </button>
                 )}
                 {isAdmin && ['submitted', 'under_review'].includes(vo.status) && (
@@ -34442,7 +34185,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                         setApprovedValue(String(vo.voValue))
                       }}
                     >
-                      Approve
+                      {t('proj.detail.approve')}
                     </button>
                     <button
                       style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#ef4444' })}
@@ -34451,7 +34194,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                         setRejectReason('')
                       }}
                     >
-                      Reject
+                      {t('proj.detail.reject')}
                     </button>
                   </>
                 )}
@@ -34466,7 +34209,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                     })}
                     onClick={() => { openEditVO(vo); }}
                   >
-                    Edit
+                    {t('proj.detail.edit')}
                   </button>
                 )}
                 {isAdmin && vo.status === 'draft' && (
@@ -34474,12 +34217,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                     style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#ef4444' })}
                     onClick={() =>
                       { setConfirmDel({
-                        message: `Delete ${vo.voNumber}?`,
+                        message: t('proj.detail.delete7', { voNumber: vo.voNumber }),
                         onConfirm: () => { onDeleteVO(vo.id); },
                       }); }
                     }
                   >
-                    Del
+                    {t('proj.detail.del')}
                   </button>
                 )}
               </div>
@@ -34496,14 +34239,14 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               }}
             >
               {[
-                { label: 'Value', value: fmt(vo.voValue), color: th.textPrimary },
+                { label: t('proj.detail.value'), value: fmt(vo.voValue), color: th.textPrimary },
                 ...(vo.approvedValue != null
-                  ? [{ label: 'Approved', value: fmt(vo.approvedValue), color: '#22c55e' }]
+                  ? [{ label: t('proj.detail.approved'), value: fmt(vo.approvedValue), color: '#22c55e' }]
                   : []),
                 ...(vo.appliedValue != null && vo.contractId
                   ? [
                       {
-                        label: 'Contract',
+                        label: t('proj.detail.contract'),
                         value: contracts.find((c) => c.id === vo.contractId)?.contractNumber ?? '—',
                         color: '#22c55e',
                       },
@@ -34512,29 +34255,29 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 ...(vo.scheduleImpactDays !== 0
                   ? [
                       {
-                        label: 'Schedule',
+                        label: t('proj.detail.schedule'),
                         value: `${vo.scheduleImpactDays > 0 ? '+' : ''}${vo.scheduleImpactDays}d`,
                         color: vo.scheduleImpactDays > 0 ? '#f97316' : '#22c55e',
                       },
                     ]
                   : []),
                 {
-                  label: 'From',
+                  label: t('proj.detail.from'),
                   value: INITIATED_BY_LABEL[vo.initiatedBy],
                   color: th.textSecondary,
                 },
                 ...(vo.clientRef
-                  ? [{ label: 'Ref', value: vo.clientRef, color: th.textSecondary }]
+                  ? [{ label: t('proj.detail.ref'), value: vo.clientRef, color: th.textSecondary }]
                   : []),
                 ...(vo.receivedDate
-                  ? [{ label: 'Received', value: vo.receivedDate, color: th.textSecondary }]
+                  ? [{ label: t('proj.detail.received'), value: vo.receivedDate, color: th.textSecondary }]
                   : []),
               ].map((m) => (
                 <div
                   key={m.label}
                   style={{
                     padding: '7px 14px',
-                    borderRight: `1px solid ${th.border}`,
+                    borderInlineEnd: `1px solid ${th.border}`,
                     fontSize: '12px',
                   }}
                 >
@@ -34544,7 +34287,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                       fontSize: '10px',
                       textTransform: 'uppercase',
                       fontWeight: 600,
-                      marginRight: '5px',
+                      marginInlineEnd: '5px',
                     }}
                   >
                     {m.label}
@@ -34564,9 +34307,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   fontSize: '12px',
                   color: '#ef4444',
                 }}
-              >
-                Rejection reason: {vo.rejectionReason}
-              </div>
+              >{t('proj.detail.rejectionReason', { rejectionReason: vo.rejectionReason })}</div>
             )}
 
             {/* ── Expanded content ── */}
@@ -34582,9 +34323,9 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                     }}
                   >
                     {[
-                      { label: 'Description', value: vo.description },
-                      { label: 'Impact Analysis', value: vo.impactAnalysis },
-                      { label: 'Technical Notes', value: vo.technicalNotes },
+                      { label: t('proj.detail.description'), value: vo.description },
+                      { label: t('proj.detail.impactAnalysis'), value: vo.impactAnalysis },
+                      { label: t('proj.detail.technicalNotes'), value: vo.technicalNotes },
                     ]
                       .filter((f) => f.value)
                       .map((f, i, arr) => (
@@ -34592,7 +34333,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                           key={f.label}
                           style={{
                             padding: '10px 14px',
-                            borderRight: i < arr.length - 1 ? `1px solid ${th.border}` : 'none',
+                            borderInlineEnd: i < arr.length - 1 ? `1px solid ${th.border}` : 'none',
                             background: th.bgSurface,
                           }}
                         >
@@ -34625,25 +34366,25 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                     background: th.bgSurface,
                   }}
                 >
-                  {(['cost', 'correspondence', 'drawings'] as VOSubTab[]).map((t) => (
+                  {(['cost', 'correspondence', 'drawings'] as VOSubTab[]).map((tx) => (
                     <button
-                      key={t}
-                      onClick={() => { setSubTab((s) => ({ ...s, [vo.id]: t })); }}
+                      key={tx}
+                      onClick={() => { setSubTab((s) => ({ ...s, [vo.id]: tx })); }}
                       style={{
                         padding: '8px 14px',
                         border: 'none',
                         cursor: 'pointer',
                         fontSize: '12px',
-                        fontWeight: st === t ? 600 : 400,
-                        color: st === t ? th.accent : th.textSecondary,
+                        fontWeight: st === tx ? 600 : 400,
+                        color: st === tx ? th.accent : th.textSecondary,
                         background: 'transparent',
-                        borderBottom: `2px solid ${st === t ? th.accent : 'transparent'}`,
+                        borderBottom: `2px solid ${st === tx ? th.accent : 'transparent'}`,
                         marginBottom: '-1px',
                       }}
                     >
-                      {t === 'cost'
-                        ? `Cost (${vo.costItems.length})`
-                        : t === 'correspondence'
+                      {tx === 'cost'
+                        ? t('proj.detail.cost', { length: vo.costItems.length })
+                        : tx === 'correspondence'
                           ? `Correspondence (${vo.correspondence.length})`
                           : `Drawings (${vo.drawings.length})`}
                     </button>
@@ -34663,12 +34404,10 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                         }}
                       >
                         <span style={{ fontSize: '12px', color: th.textSecondary }}>
-                          Line items total:{' '}
+                          {t('proj.detail.lineItemsTotal')}{' '}
                           <strong style={{ color: th.accent }}>{fmt(costTotal)}</strong>
                           {costTotal !== vo.voValue && (
-                            <span style={{ color: '#f59e0b', marginLeft: '6px' }}>
-                              (VO submitted: {fmt(vo.voValue)})
-                            </span>
+                            <span style={{ color: '#f59e0b', marginInlineStart: '6px' }}>{t('proj.detail.voSubmitted', { value: fmt(vo.voValue) })}</span>
                           )}
                         </span>
                         {isAdmin && (
@@ -34687,7 +34426,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                               })
                             }}
                           >
-                            + Line
+                            {t('proj.detail.line')}
                           </button>
                         )}
                       </div>
@@ -34711,12 +34450,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                               textTransform: 'uppercase',
                             }}
                           >
-                            <span>Category</span>
-                            <span>Description</span>
-                            <span>Qty</span>
-                            <span>Unit</span>
-                            <span style={{ textAlign: 'right' }}>Rate</span>
-                            <span style={{ textAlign: 'right' }}>Amount</span>
+                            <span>{t('proj.detail.category')}</span>
+                            <span>{t('proj.detail.description')}</span>
+                            <span>{t('proj.detail.qty')}</span>
+                            <span>{t('proj.detail.unit')}</span>
+                            <span style={{ textAlign: 'end' }}>{t('proj.detail.rate')}</span>
+                            <span style={{ textAlign: 'end' }}>{t('proj.detail.amount')}</span>
                             <span />
                           </div>
                           {vo.costItems.map((ci) => (
@@ -34738,15 +34477,15 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                 {ci.category}
                               </span>
                               <span style={{ color: th.textPrimary }}>{ci.description}</span>
-                              <span style={{ color: th.textSecondary, textAlign: 'right' }}>
+                              <span style={{ color: th.textSecondary, textAlign: 'end' }}>
                                 {ci.quantity}
                               </span>
                               <span style={{ color: th.textSecondary }}>{ci.unit ?? ''}</span>
-                              <span style={{ color: th.textSecondary, textAlign: 'right' }}>
+                              <span style={{ color: th.textSecondary, textAlign: 'end' }}>
                                 {fmt(ci.unitRate)}
                               </span>
                               <span
-                                style={{ color: th.accent, fontWeight: 600, textAlign: 'right' }}
+                                style={{ color: th.accent, fontWeight: 600, textAlign: 'end' }}
                               >
                                 {fmt(ci.amount)}
                               </span>
@@ -34759,7 +34498,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                   }}
                                 >
                                   <button
-                                    title="Edit"
+                                    title={t('proj.detail.edit')}
                                     style={vbtn({
                                       padding: '4px 6px',
                                       background: 'transparent',
@@ -34799,7 +34538,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                     </svg>
                                   </button>
                                   <button
-                                    title="Delete"
+                                    title={t('proj.detail.delete')}
                                     style={vbtn({
                                       padding: '4px 6px',
                                       background: 'transparent',
@@ -34808,7 +34547,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                     })}
                                     onClick={() =>
                                       { setConfirmDel({
-                                        message: 'Delete cost item?',
+                                        message: t('proj.detail.deleteCostItem'),
                                         onConfirm: () => { onDeleteCostItem(ci.id); },
                                       }); }
                                     }
@@ -34845,11 +34584,11 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                             }}
                           >
                             <span />
-                            <span style={{ color: th.textPrimary }}>Total</span>
+                            <span style={{ color: th.textPrimary }}>{t('proj.detail.total')}</span>
                             <span />
                             <span />
                             <span />
-                            <span style={{ color: th.accent, textAlign: 'right' }}>
+                            <span style={{ color: th.accent, textAlign: 'end' }}>
                               {fmt(costTotal)}
                             </span>
                             <span />
@@ -34857,7 +34596,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                         </div>
                       ) : (
                         <div style={{ color: th.textSecondary, fontSize: '12px' }}>
-                          No cost items yet.
+                          {t('proj.detail.noCostItemsYet')}
                         </div>
                       )}
                     </div>
@@ -34872,9 +34611,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                           alignItems: 'center',
                         }}
                       >
-                        <span style={{ fontSize: '12px', color: th.textSecondary }}>
-                          {vo.correspondence.length} entries
-                        </span>
+                        <span style={{ fontSize: '12px', color: th.textSecondary }}>{t('proj.detail.entries', { length: vo.correspondence.length })}</span>
                         {isAdmin && (
                           <button
                             style={vbtn({ padding: '3px 10px', fontSize: '11px' })}
@@ -34889,7 +34626,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                               })
                             }}
                           >
-                            + Entry
+                            {t('proj.detail.entry')}
                           </button>
                         )}
                       </div>
@@ -34900,7 +34637,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                             ...card,
                             marginBottom: '8px',
                             padding: '10px 12px',
-                            borderLeft: `3px solid ${c.direction === 'received' ? '#3b82f6' : '#22c55e'}`,
+                            borderInlineStart: `3px solid ${c.direction === 'received' ? '#3b82f6' : '#22c55e'}`,
                           }}
                         >
                           <div
@@ -34931,7 +34668,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                     padding: '2px 6px',
                                   }}
                                 >
-                                  {c.direction === 'received' ? '← Received' : '→ Sent'}
+                                  {c.direction === 'received' ? t('proj.detail.received2') : t('proj.detail.sent')}
                                 </span>
                                 <span
                                   style={{
@@ -34943,9 +34680,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                   {c.subject}
                                 </span>
                                 {c.referenceNumber && (
-                                  <span style={{ fontSize: '11px', color: th.textSecondary }}>
-                                    Ref: {c.referenceNumber}
-                                  </span>
+                                  <span style={{ fontSize: '11px', color: th.textSecondary }}>{t('proj.detail.ref2', { referenceNumber: c.referenceNumber })}</span>
                                 )}
                                 <span style={{ fontSize: '11px', color: th.textSecondary }}>
                                   {c.correspondenceDate}
@@ -34966,12 +34701,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                 })}
                                 onClick={() =>
                                   { setConfirmDel({
-                                    message: 'Delete correspondence entry?',
+                                    message: t('proj.detail.deleteCorrespondenceEntry'),
                                     onConfirm: () => { onDeleteCorrespondence(c.id); },
                                   }); }
                                 }
                               >
-                                Del
+                                {t('proj.detail.del')}
                               </button>
                             )}
                           </div>
@@ -34979,7 +34714,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                       ))}
                       {vo.correspondence.length === 0 && (
                         <div style={{ color: th.textSecondary, fontSize: '12px' }}>
-                          No correspondence yet.
+                          {t('proj.detail.noCorrespondenceYet')}
                         </div>
                       )}
                     </div>
@@ -34994,9 +34729,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                           alignItems: 'center',
                         }}
                       >
-                        <span style={{ fontSize: '12px', color: th.textSecondary }}>
-                          {vo.drawings.length} linked drawings
-                        </span>
+                        <span style={{ fontSize: '12px', color: th.textSecondary }}>{t('proj.detail.linkedDrawings', { length: vo.drawings.length })}</span>
                         {isAdmin && (
                           <button
                             style={vbtn({ padding: '3px 10px', fontSize: '11px' })}
@@ -35005,7 +34738,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                               setDrawForm({ drawingNumber: '', revision: '', title: '', notes: '' })
                             }}
                           >
-                            + Drawing
+                            {t('proj.detail.drawing')}
                           </button>
                         )}
                       </div>
@@ -35029,10 +34762,10 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                               textTransform: 'uppercase',
                             }}
                           >
-                            <span>Drawing #</span>
-                            <span>Rev</span>
-                            <span>Title</span>
-                            <span>Notes</span>
+                            <span>{t('proj.detail.drawing2')}</span>
+                            <span>{t('proj.detail.rev')}</span>
+                            <span>{t('proj.detail.title')}</span>
+                            <span>{t('proj.detail.notes2')}</span>
                             <span />
                           </div>
                           {vo.drawings.map((d) => (
@@ -35065,12 +34798,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                                   })}
                                   onClick={() =>
                                     { setConfirmDel({
-                                      message: 'Remove linked drawing?',
+                                      message: t('proj.detail.removeLinkedDrawing'),
                                       onConfirm: () => { onRemoveDrawing(d.id); },
                                     }); }
                                   }
                                 >
-                                  Del
+                                  {t('proj.detail.del')}
                                 </button>
                               )}
                             </div>
@@ -35078,7 +34811,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                         </div>
                       ) : (
                         <div style={{ color: th.textSecondary, fontSize: '12px' }}>
-                          No linked drawings yet.
+                          {t('proj.detail.noLinkedDrawingsYet')}
                         </div>
                       )}
                     </div>
@@ -35104,8 +34837,8 @@ function VariationOrdersTab(props: VariationOrdersProps) {
       >
         {(
           [
-            ['register', `Register (${variationOrders.length})`],
-            ['analysis', 'Analysis'],
+            ['register', t('proj.detail.register2', { length: variationOrders.length })],
+            ['analysis', t('proj.detail.analysis')],
           ] as [VOSection, string][]
         ).map(([key, label]) => (
           <button
@@ -35139,17 +34872,17 @@ function VariationOrdersTab(props: VariationOrdersProps) {
           }}
         >
           <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr(voModal.mode === 'create' ? 'New Variation Order' : `Edit ${voForm.voNumber}`)}
+            {mHdr(voModal.mode === 'create' ? t('proj.detail.newVariationOrder') : t('proj.detail.edit4', { voNumber: voForm.voNumber }))}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
                 {voff(
-                  'VO Number',
+                  t('proj.detail.voNumber'),
                   vfi(voForm.voNumber, (v) => { setVOForm((f) => ({ ...f, voNumber: v })); }, 'VO-001'),
                 )}
               </div>
               <div>
                 {voff(
-                  'Currency',
+                  t('proj.detail.currency'),
                   vfi(
                     voForm.currencyCode,
                     (v) => { setVOForm((f) => ({ ...f, currencyCode: v })); },
@@ -35159,11 +34892,11 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
             </div>
             {voff(
-              'Title',
+              t('proj.detail.title'),
               vfi(voForm.title, (v) => { setVOForm((f) => ({ ...f, title: v })); }),
             )}
             {voff(
-              'Description',
+              t('proj.detail.description'),
               <textarea
                 style={{ ...inputSt, minHeight: '60px' }}
                 value={voForm.description}
@@ -35173,7 +34906,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
                 {voff(
-                  'Change Type',
+                  t('proj.detail.changeType'),
                   vfs(
                     voForm.changeType,
                     (v) => { setVOForm((f) => ({ ...f, changeType: v })); },
@@ -35183,7 +34916,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
               <div>
                 {voff(
-                  'Initiated By',
+                  t('proj.detail.initiatedBy'),
                   vfs(
                     voForm.initiatedBy,
                     (v) => { setVOForm((f) => ({ ...f, initiatedBy: v })); },
@@ -35193,7 +34926,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
               <div>
                 {voff(
-                  'Instruction Date',
+                  t('proj.detail.instructionDate'),
                   vfi(
                     voForm.instructionDate,
                     (v) => { setVOForm((f) => ({ ...f, instructionDate: v })); },
@@ -35204,7 +34937,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
               <div>
                 {voff(
-                  'Received Date',
+                  t('proj.detail.receivedDate'),
                   vfi(
                     voForm.receivedDate,
                     (v) => { setVOForm((f) => ({ ...f, receivedDate: v })); },
@@ -35215,7 +34948,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
               <div>
                 {voff(
-                  'Submitted Value ($)',
+                  t('proj.detail.submittedValue2'),
                   voModal.mode === 'edit' && voModal.item.status === 'approved' ? (
                     <div
                       style={{
@@ -35226,9 +34959,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                         fontSize: '13px',
                         color: th.textSecondary,
                       }}
-                    >
-                      {fmt(parseFloat(voForm.voValue) || 0)} (locked)
-                    </div>
+                    >{t('proj.detail.locked', { value: fmt(parseFloat(voForm.voValue) || 0) })}</div>
                   ) : (
                     vfi(
                       voForm.voValue,
@@ -35241,7 +34972,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
               <div>
                 {voff(
-                  'Schedule Impact (days)',
+                  t('proj.detail.scheduleImpactDays'),
                   vfi(
                     voForm.scheduleImpactDays,
                     (v) => { setVOForm((f) => ({ ...f, scheduleImpactDays: v })); },
@@ -35252,7 +34983,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
             </div>
             {voff(
-              'Client Reference',
+              t('proj.detail.clientReference'),
               vfi(voForm.clientRef, (v) => { setVOForm((f) => ({ ...f, clientRef: v })); }),
             )}
             {contracts.length > 1 &&
@@ -35269,13 +35000,10 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                       fontSize: '13px',
                       color: th.textSecondary,
                     }}
-                  >
-                    {contracts.find((c) => c.id === voForm.contractId)?.contractNumber ?? '—'}{' '}
-                    (locked — revert status to change)
-                  </div>
+                  >{t('proj.detail.lockedRevertStatusToChange', { value: contracts.find((c) => c.id === voForm.contractId)?.contractNumber ?? '—' })}</div>
                 ) : (
                   vfs(voForm.contractId, (v) => { setVOForm((f) => ({ ...f, contractId: v })); }, [
-                    { value: '', label: 'Select contract…' },
+                    { value: '', label: t('proj.detail.selectContract') },
                     ...contracts.map((c) => ({
                       value: c.id,
                       label: `${c.contractNumber} — ${c.contractName}`,
@@ -35284,7 +35012,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 ),
               )}
             {voff(
-              'Impact Analysis',
+              t('proj.detail.impactAnalysis'),
               <textarea
                 style={{ ...inputSt, minHeight: '60px' }}
                 value={voForm.impactAnalysis}
@@ -35292,7 +35020,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               />,
             )}
             {voff(
-              'Technical Notes',
+              t('proj.detail.technicalNotes'),
               <textarea
                 style={{ ...inputSt, minHeight: '50px' }}
                 value={voForm.technicalNotes}
@@ -35303,7 +35031,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               () => {
                 const locked = voModal.mode === 'edit' && voModal.item.status === 'approved'
                 if (!locked && contracts.length > 1 && !voForm.contractId) {
-                  alert('Select which contract this VO applies to')
+                  alert(t('proj.detail.selectWhichContractThisVoApplies'))
                   return
                 }
                 if (voModal.mode === 'create')
@@ -35351,10 +35079,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               voLock.lockedByOther,
             )}
             {voLock.lockedByOther && (
-              <div style={{ fontSize: '12px', color: th.warning, marginTop: '8px' }}>
-                <strong>{voLock.lockedByName}</strong> is currently working on this VO — saving is
-                disabled until they finish.
-              </div>
+              <div style={{ fontSize: '12px', color: th.warning, marginTop: '8px' }}><Trans i18nKey="proj.detail.isCurrentlyWorkingOnThisVo" values={{ lockedByName: voLock.lockedByName }} components={[<strong />]} /></div>
             )}
           </div>
         </div>
@@ -35369,13 +35094,10 @@ function VariationOrdersTab(props: VariationOrdersProps) {
           }}
         >
           <div style={{ ...modalBox, maxWidth: '380px' }} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr(`Approve ${approveModal.voNumber}`)}
-            <div style={{ fontSize: '13px', color: th.textSecondary, marginBottom: '12px' }}>
-              Submitted value:{' '}
-              <strong style={{ color: th.textPrimary }}>{fmt(approveModal.voValue)}</strong>
-            </div>
+            {mHdr(t('proj.detail.approve2', { voNumber: approveModal.voNumber }))}
+            <div style={{ fontSize: '13px', color: th.textSecondary, marginBottom: '12px' }}><Trans i18nKey="proj.detail.submittedValue" values={{ value: fmt(approveModal.voValue) }} components={[<strong style={{ color: th.textPrimary }} />]} /></div>
             {voff(
-              'Approved Value ($)',
+              t('proj.detail.approvedValue2'),
               <input
                 style={inputSt}
                 type="number"
@@ -35384,16 +35106,16 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               />,
             )}
             <div style={{ fontSize: '11px', color: th.textSecondary, marginBottom: '8px' }}>
-              Enter a different amount for partial approval.
+              {t('proj.detail.enterADifferentAmountForPartial')}
             </div>
             {contracts.length > 1 &&
               voff(
-                'Applies to Contract *',
+                t('proj.detail.appliesToContract'),
                 vfs(
                   approveModal.contractId,
                   (v) => { setApproveModal((m) => ({ ...m, contractId: v })); },
                   [
-                    { value: '', label: 'Select contract…' },
+                    { value: '', label: t('proj.detail.selectContract') },
                     ...contracts.map((c) => ({
                       value: c.id,
                       label: `${c.contractNumber} — ${c.contractName}`,
@@ -35402,20 +35124,17 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 ),
               )}
             {contracts.length === 1 && (
-              <div style={{ fontSize: '11px', color: th.textSecondary, marginBottom: '8px' }}>
-                Approving will add this value to contract {contracts[0].contractNumber}.
-              </div>
+              <div style={{ fontSize: '11px', color: th.textSecondary, marginBottom: '8px' }}>{t('proj.detail.approvingWillAddThisValueTo', { contractNumber: contracts[0].contractNumber })}</div>
             )}
             {contracts.length === 0 && (
               <div style={{ fontSize: '11px', color: '#f59e0b', marginBottom: '8px' }}>
-                No contract exists on this project yet — approval will still record the VO but won't
-                update any contract value.
+                {t('proj.detail.noContractExistsOnThisProject')}
               </div>
             )}
             {mBtnsVO(
               () => {
                 if (contracts.length > 1 && !approveModal.contractId) {
-                  alert('Select which contract this VO applies to')
+                  alert(t('proj.detail.selectWhichContractThisVoApplies'))
                   return
                 }
                 onApproveVO(
@@ -35441,14 +35160,14 @@ function VariationOrdersTab(props: VariationOrdersProps) {
           }}
         >
           <div style={{ ...modalBox, maxWidth: '420px' }} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr(`Reject ${rejectModal.voNumber}`)}
+            {mHdr(t('proj.detail.reject2', { voNumber: rejectModal.voNumber }))}
             {voff(
-              'Reason for Rejection',
+              t('proj.detail.reasonForRejection2'),
               <textarea
                 style={{ ...inputSt, minHeight: '80px' }}
                 value={rejectReason}
                 onChange={(e) => { setRejectReason(e.target.value); }}
-                placeholder="Enter reason…"
+                placeholder={t('proj.detail.enterReason')}
               />,
             )}
             {mBtnsVO(
@@ -35468,19 +35187,19 @@ function VariationOrdersTab(props: VariationOrdersProps) {
       {costModal.open && (
         <div style={modalOverlay}>
           <div style={modalBox}>
-            {mHdr(costModal.mode === 'create' ? 'Add Cost Item' : 'Edit Cost Item')}
+            {mHdr(costModal.mode === 'create' ? t('proj.detail.addCostItem') : t('proj.detail.editCostItem'))}
             {voff(
-              'Category',
+              t('proj.detail.category'),
               vfs(costForm.category, (v) => { setCostForm((f) => ({ ...f, category: v })); }, catOpts),
             )}
             {voff(
-              'Description',
+              t('proj.detail.description'),
               vfi(costForm.description, (v) => { setCostForm((f) => ({ ...f, description: v })); }),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
               <div>
                 {voff(
-                  'Quantity',
+                  t('proj.detail.quantity'),
                   vfi(
                     costForm.quantity,
                     (v) => { setCostForm((f) => ({ ...f, quantity: v })); },
@@ -35491,17 +35210,17 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
               <div>
                 {voff(
-                  'Unit',
+                  t('proj.detail.unit'),
                   vfi(
                     costForm.unit,
                     (v) => { setCostForm((f) => ({ ...f, unit: v })); },
-                    'm², ton, day…',
+                    t('proj.detail.mTonDay'),
                   ),
                 )}
               </div>
               <div>
                 {voff(
-                  'Unit Rate ($)',
+                  t('proj.detail.unitRate'),
                   vfi(
                     costForm.unitRate,
                     (v) => { setCostForm((f) => ({ ...f, unitRate: v })); },
@@ -35512,11 +35231,11 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
             </div>
             {voff(
-              'Amount ($)',
+              t('proj.detail.amount3'),
               vfi(costForm.amount, (v) => { setCostForm((f) => ({ ...f, amount: v })); }, '0', 'number'),
             )}
             {voff(
-              'Notes',
+              t('proj.detail.notes2'),
               <textarea
                 style={{ ...inputSt, minHeight: '50px' }}
                 value={costForm.notes}
@@ -35564,11 +35283,11 @@ function VariationOrdersTab(props: VariationOrdersProps) {
           }}
         >
           <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr('Add Correspondence Entry')}
+            {mHdr(t('proj.detail.addCorrespondenceEntry'))}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
                 {voff(
-                  'Date',
+                  t('proj.detail.date'),
                   vfi(
                     corrForm.correspondenceDate,
                     (v) => { setCorrForm((f) => ({ ...f, correspondenceDate: v })); },
@@ -35579,7 +35298,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
               <div>
                 {voff(
-                  'Direction',
+                  t('proj.detail.direction'),
                   vfs(
                     corrForm.direction,
                     (v) => { setCorrForm((f) => ({ ...f, direction: v })); },
@@ -35589,7 +35308,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               </div>
             </div>
             {voff(
-              'Reference Number',
+              t('proj.detail.referenceNumber'),
               vfi(
                 corrForm.referenceNumber,
                 (v) => { setCorrForm((f) => ({ ...f, referenceNumber: v })); },
@@ -35597,11 +35316,11 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               ),
             )}
             {voff(
-              'Subject',
+              t('proj.detail.subject2'),
               vfi(corrForm.subject, (v) => { setCorrForm((f) => ({ ...f, subject: v })); }),
             )}
             {voff(
-              'Description / Summary',
+              t('proj.detail.descriptionSummary'),
               <textarea
                 style={{ ...inputSt, minHeight: '80px' }}
                 value={corrForm.description}
@@ -35635,35 +35354,35 @@ function VariationOrdersTab(props: VariationOrdersProps) {
           }}
         >
           <div style={{ ...modalBox, maxWidth: '440px' }} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr('Link Affected Drawing')}
+            {mHdr(t('proj.detail.linkAffectedDrawing'))}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
                 {voff(
-                  'Drawing Number',
+                  t('proj.detail.drawingNumber'),
                   vfi(
                     drawForm.drawingNumber,
                     (v) => { setDrawForm((f) => ({ ...f, drawingNumber: v })); },
-                    'DWG-A-001',
+                    t('proj.detail.dwgA001'),
                   ),
                 )}
               </div>
               <div>
                 {voff(
-                  'Revision',
+                  t('proj.detail.revision'),
                   vfi(
                     drawForm.revision,
                     (v) => { setDrawForm((f) => ({ ...f, revision: v })); },
-                    'Rev A',
+                    t('proj.detail.revA'),
                   ),
                 )}
               </div>
             </div>
             {voff(
-              'Title',
+              t('proj.detail.title'),
               vfi(drawForm.title, (v) => { setDrawForm((f) => ({ ...f, title: v })); }),
             )}
             {voff(
-              'Notes',
+              t('proj.detail.notes2'),
               <textarea
                 style={{ ...inputSt, minHeight: '50px' }}
                 value={drawForm.notes}
@@ -35698,7 +35417,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 marginBottom: '6px',
               }}
             >
-              Confirm
+              {t('proj.detail.confirm')}
             </div>
             <div style={{ fontSize: '13px', color: th.textSecondary, marginBottom: '20px' }}>
               {confirmDel.message}
@@ -35712,7 +35431,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 })}
                 onClick={() => { setConfirmDel(null); }}
               >
-                Cancel
+                {t('proj.detail.cancel')}
               </button>
               <button
                 style={vbtn({ background: '#ef4444' })}
@@ -35721,7 +35440,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                   setConfirmDel(null)
                 }}
               >
-                Delete
+                {t('proj.detail.delete')}
               </button>
             </div>
           </div>
@@ -35783,6 +35502,7 @@ interface MeetingsProps {
 }
 
 function MeetingsTab(props: MeetingsProps) {
+  const { t } = useTranslation()
   const {
     projectId,
     th,
@@ -35925,9 +35645,9 @@ function MeetingsTab(props: MeetingsProps) {
     maxHeight: '90vh',
     overflowY: 'auto',
   }
-  const mHdr = (t: string) => (
+  const mHdr = (tx: string) => (
     <div style={{ fontSize: '16px', fontWeight: 700, color: th.textPrimary, marginBottom: '16px' }}>
-      {t}
+      {tx}
     </div>
   )
   const mBtns = (onSave: () => void, onClose: () => void) => (
@@ -35940,10 +35660,10 @@ function MeetingsTab(props: MeetingsProps) {
         })}
         onClick={onClose}
       >
-        Cancel
+        {t('proj.detail.cancel')}
       </button>
       <button style={mbtn()} onClick={onSave}>
-        Save
+        {t('proj.detail.save')}
       </button>
     </div>
   )
@@ -35966,26 +35686,26 @@ function MeetingsTab(props: MeetingsProps) {
   }
 
   const MEETING_TYPE_OPTS = [
-    { value: 'site', label: 'Site Meeting' },
-    { value: 'technical', label: 'Technical' },
-    { value: 'commercial', label: 'Commercial' },
-    { value: 'kickoff', label: 'Kick-off' },
-    { value: 'coordination', label: 'Coordination' },
-    { value: 'closeout', label: 'Closeout' },
-    { value: 'subcontractor', label: 'Subcontractor' },
-    { value: 'hse', label: 'HSE' },
-    { value: 'other', label: 'Other' },
+    { value: 'site', label: t('proj.detail.siteMeeting') },
+    { value: 'technical', label: t('proj.detail.technical') },
+    { value: 'commercial', label: t('proj.detail.commercial') },
+    { value: 'kickoff', label: t('proj.detail.kickOff') },
+    { value: 'coordination', label: t('proj.detail.coordination') },
+    { value: 'closeout', label: t('proj.detail.closeout') },
+    { value: 'subcontractor', label: t('proj.detail.subcontractor') },
+    { value: 'hse', label: t('proj.detail.hse') },
+    { value: 'other', label: t('proj.detail.other') },
   ]
   const PRIORITY_OPTS = [
-    { value: 'low', label: 'Low' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'high', label: 'High' },
-    { value: 'critical', label: 'Critical' },
+    { value: 'low', label: t('proj.detail.low') },
+    { value: 'medium', label: t('proj.detail.medium2') },
+    { value: 'high', label: t('proj.detail.high2') },
+    { value: 'critical', label: t('proj.detail.critical') },
   ]
   const ACTION_STATUS_OPTS = [
-    { value: 'open', label: 'Open' },
-    { value: 'in_progress', label: 'In Progress' },
-    { value: 'closed', label: 'Closed' },
+    { value: 'open', label: t('proj.detail.open') },
+    { value: 'in_progress', label: t('proj.detail.inProgress') },
+    { value: 'closed', label: t('proj.detail.closed') },
   ]
 
   const today = new Date().toISOString().slice(0, 10)
@@ -36085,17 +35805,17 @@ function MeetingsTab(props: MeetingsProps) {
           }}
         >
           {[
-            { label: 'Total Meetings', value: String(meetings.length), color: th.textPrimary },
-            { label: 'Open Actions', value: String(open.length), color: '#f59e0b' },
-            { label: 'In Progress', value: String(inProg.length), color: '#3b82f6' },
-            { label: 'Closed', value: String(closed.length), color: '#22c55e' },
+            { label: t('proj.detail.totalMeetings'), value: String(meetings.length), color: th.textPrimary },
+            { label: t('proj.detail.openActions'), value: String(open.length), color: '#f59e0b' },
+            { label: t('proj.detail.inProgress'), value: String(inProg.length), color: '#3b82f6' },
+            { label: t('proj.detail.closed'), value: String(closed.length), color: '#22c55e' },
             {
-              label: 'Overdue',
+              label: t('proj.detail.overdue'),
               value: String(overdue.length),
               color: overdue.length > 0 ? '#ef4444' : th.textPrimary,
             },
-          ].map((t) => (
-            <div key={t.label} style={{ ...card, marginBottom: 0, textAlign: 'center' }}>
+          ].map((tx) => (
+            <div key={tx.label} style={{ ...card, marginBottom: 0, textAlign: 'center' }}>
               <div
                 style={{
                   fontSize: '10px',
@@ -36105,9 +35825,9 @@ function MeetingsTab(props: MeetingsProps) {
                   marginBottom: '4px',
                 }}
               >
-                {t.label}
+                {tx.label}
               </div>
-              <div style={{ fontSize: '22px', fontWeight: 700, color: t.color }}>{t.value}</div>
+              <div style={{ fontSize: '22px', fontWeight: 700, color: tx.color }}>{tx.value}</div>
             </div>
           ))}
         </div>
@@ -36121,7 +35841,7 @@ function MeetingsTab(props: MeetingsProps) {
                 marginBottom: '8px',
               }}
             >
-              Meetings by Type
+              {t('proj.detail.meetingsByType')}
             </div>
             {byType.map((row) => (
               <div
@@ -36139,7 +35859,7 @@ function MeetingsTab(props: MeetingsProps) {
               </div>
             ))}
             {byType.length === 0 && (
-              <div style={{ color: th.textSecondary, fontSize: '12px' }}>No meetings yet.</div>
+              <div style={{ color: th.textSecondary, fontSize: '12px' }}>{t('proj.detail.noMeetingsYet')}</div>
             )}
           </div>
           <div style={card}>
@@ -36151,7 +35871,7 @@ function MeetingsTab(props: MeetingsProps) {
                 marginBottom: '8px',
               }}
             >
-              Actions by Responsible
+              {t('proj.detail.actionsByResponsible')}
             </div>
             {byPerson.slice(0, 8).map(([name, count]) => (
               <div
@@ -36169,7 +35889,7 @@ function MeetingsTab(props: MeetingsProps) {
               </div>
             ))}
             {byPerson.length === 0 && (
-              <div style={{ color: th.textSecondary, fontSize: '12px' }}>No action items yet.</div>
+              <div style={{ color: th.textSecondary, fontSize: '12px' }}>{t('proj.detail.noActionItemsYet')}</div>
             )}
           </div>
         </div>
@@ -36195,11 +35915,11 @@ function MeetingsTab(props: MeetingsProps) {
         <div
           style={{ fontSize: '13px', fontWeight: 600, color: th.textPrimary, marginBottom: '12px' }}
         >
-          Open Action Items — {openActions.length} pending
+          {t('proj.detail.openActionItems')} {openActions.length} {t('proj.detail.hdr_pending')}
           {openActions.filter(isOverdue).length > 0 && (
             <span
               style={{
-                marginLeft: '8px',
+                marginInlineStart: '8px',
                 fontSize: '11px',
                 background: '#ef444415',
                 color: '#ef4444',
@@ -36207,9 +35927,7 @@ function MeetingsTab(props: MeetingsProps) {
                 borderRadius: '4px',
                 padding: '2px 7px',
               }}
-            >
-              {openActions.filter(isOverdue).length} overdue
-            </span>
+            >{t('proj.detail.overdue4', { length: openActions.filter(isOverdue).length })}</span>
           )}
         </div>
         {openActions.length === 0 && (
@@ -36222,7 +35940,7 @@ function MeetingsTab(props: MeetingsProps) {
               padding: '40px',
             }}
           >
-            All action items are closed.
+            {t('proj.detail.allActionItemsAreClosed')}
           </div>
         )}
         {openActions.map((a) => {
@@ -36234,7 +35952,7 @@ function MeetingsTab(props: MeetingsProps) {
               key={a.id}
               style={{
                 ...card,
-                borderLeft: `4px solid ${od ? '#ef4444' : pc}`,
+                borderInlineStart: `4px solid ${od ? '#ef4444' : pc}`,
                 marginBottom: '8px',
                 padding: '10px 14px',
               }}
@@ -36297,7 +36015,7 @@ function MeetingsTab(props: MeetingsProps) {
                           padding: '1px 5px',
                         }}
                       >
-                        OVERDUE
+                        {t('proj.detail.overdue2')}
                       </span>
                     )}
                   </div>
@@ -36314,15 +36032,10 @@ function MeetingsTab(props: MeetingsProps) {
                     }}
                   >
                     {a.responsiblePerson && (
-                      <span>
-                        Resp:{' '}
-                        <strong style={{ color: th.textPrimary }}>{a.responsiblePerson}</strong>
-                      </span>
+                      <span><Trans i18nKey="proj.detail.resp" values={{ responsiblePerson: a.responsiblePerson }} components={[<strong style={{ color: th.textPrimary }} />]} /></span>
                     )}
                     {a.dueDate && (
-                      <span style={{ color: od ? '#ef4444' : th.textSecondary }}>
-                        Due: {a.dueDate}
-                      </span>
+                      <span style={{ color: od ? '#ef4444' : th.textSecondary }}>{t('proj.detail.due3', { dueDate: a.dueDate })}</span>
                     )}
                   </div>
                 </div>
@@ -36332,7 +36045,7 @@ function MeetingsTab(props: MeetingsProps) {
                       style={mbtn({ padding: '3px 10px', fontSize: '11px', background: '#22c55e' })}
                       onClick={() => { onUpdateAction({ id: a.id, status: 'closed' }); }}
                     >
-                      Close
+                      {t('proj.detail.close')}
                     </button>
                   )}
                   {a.status === 'open' && (
@@ -36340,7 +36053,7 @@ function MeetingsTab(props: MeetingsProps) {
                       style={mbtn({ padding: '3px 10px', fontSize: '11px', background: '#3b82f6' })}
                       onClick={() => { onUpdateAction({ id: a.id, status: 'in_progress' }); }}
                     >
-                      Start
+                      {t('proj.detail.start2')}
                     </button>
                   )}
                   <button
@@ -36353,16 +36066,16 @@ function MeetingsTab(props: MeetingsProps) {
                     })}
                     onClick={() => { openEditAction(a); }}
                   >
-                    Edit
+                    {t('proj.detail.edit')}
                   </button>
                   {isAdmin && (
                     <button
                       style={mbtn({ padding: '3px 10px', fontSize: '11px', background: '#ef4444' })}
                       onClick={() => {
-                        if (confirm('Delete action?')) onDeleteAction(a.id)
+                        if (confirm(t('proj.detail.deleteAction'))) onDeleteAction(a.id)
                       }}
                     >
-                      Del
+                      {t('proj.detail.del')}
                     </button>
                   )}
                 </div>
@@ -36386,10 +36099,10 @@ function MeetingsTab(props: MeetingsProps) {
         }}
       >
         <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>
-          Meeting Register
+          {t('proj.detail.meetingRegister')}
         </div>
         <button style={mbtn()} onClick={openCreateMeeting}>
-          + New Meeting
+          {t('proj.detail.newMeeting')}
         </button>
       </div>
       {meetings.length === 0 && (
@@ -36402,7 +36115,7 @@ function MeetingsTab(props: MeetingsProps) {
             padding: '40px',
           }}
         >
-          No meetings recorded yet. Click "+ New Meeting" to add the first MOM.
+          {t('proj.detail.noMeetingsRecordedYetClickNew')}
         </div>
       )}
       {meetings.map((m) => {
@@ -36413,7 +36126,7 @@ function MeetingsTab(props: MeetingsProps) {
         const typeLabel =
           MEETING_TYPE_OPTS.find((o) => o.value === m.meetingType)?.label ?? m.meetingType
         return (
-          <div key={m.id} style={{ ...card, borderLeft: `4px solid ${sc}`, marginBottom: '10px' }}>
+          <div key={m.id} style={{ ...card, borderInlineStart: `4px solid ${sc}`, marginBottom: '10px' }}>
             <div
               style={{
                 display: 'flex',
@@ -36466,19 +36179,15 @@ function MeetingsTab(props: MeetingsProps) {
                 >
                   <span>{m.meetingDate}</span>
                   {m.location && <span>📍 {m.location}</span>}
-                  {m.chairperson && <span>Chair: {m.chairperson}</span>}
+                  {m.chairperson && <span>{t('proj.detail.chair', { chairperson: m.chairperson })}</span>}
                   <span>
-                    Actions:{' '}
-                    <strong style={{ color: openCnt > 0 ? '#f59e0b' : '#22c55e' }}>
-                      {openCnt} open
-                    </strong>
+                    {t('proj.detail.actions2')}{' '}
+                    <strong style={{ color: openCnt > 0 ? '#f59e0b' : '#22c55e' }}>{t('proj.detail.open4', { openCnt })}</strong>
                     {overdueCnt > 0 && (
-                      <span style={{ color: '#ef4444', marginLeft: '4px' }}>
-                        ({overdueCnt} overdue)
-                      </span>
+                      <span style={{ color: '#ef4444', marginInlineStart: '4px' }}>{t('proj.detail.overdue5', { overdueCnt })}</span>
                     )}
                   </span>
-                  {m.issuedAt && <span>Issued: {String(m.issuedAt).slice(0, 10)}</span>}
+                  {m.issuedAt && <span>{t('proj.detail.issued2', { value: String(m.issuedAt).slice(0, 10) })}</span>}
                 </div>
               </div>
               <div
@@ -36489,7 +36198,7 @@ function MeetingsTab(props: MeetingsProps) {
                     style={mbtn({ padding: '4px 10px', fontSize: '11px', background: '#3b82f6' })}
                     onClick={() => { onIssueMeeting(m.id); }}
                   >
-                    Issue
+                    {t('proj.detail.issue')}
                   </button>
                 )}
                 {m.status === 'issued' && isAdmin && (
@@ -36497,7 +36206,7 @@ function MeetingsTab(props: MeetingsProps) {
                     style={mbtn({ padding: '4px 10px', fontSize: '11px', background: '#22c55e' })}
                     onClick={() => { onCloseMeeting(m.id); }}
                   >
-                    Close
+                    {t('proj.detail.close')}
                   </button>
                 )}
                 <button
@@ -36510,16 +36219,16 @@ function MeetingsTab(props: MeetingsProps) {
                   })}
                   onClick={() => { openEditMeeting(m); }}
                 >
-                  Edit
+                  {t('proj.detail.edit')}
                 </button>
                 {isAdmin && m.status === 'draft' && (
                   <button
                     style={mbtn({ padding: '4px 10px', fontSize: '11px', background: '#ef4444' })}
                     onClick={() => {
-                      if (confirm(`Delete ${m.meetingNumber}?`)) onDeleteMeeting(m.id)
+                      if (confirm(t('proj.detail.delete8', { meetingNumber: m.meetingNumber }))) onDeleteMeeting(m.id)
                     }}
                   >
-                    Del
+                    {t('proj.detail.del')}
                   </button>
                 )}
               </div>
@@ -36561,7 +36270,7 @@ function MeetingsTab(props: MeetingsProps) {
                             marginBottom: '4px',
                           }}
                         >
-                          Attendees
+                          {t('proj.detail.attendees')}
                         </div>
                         <div
                           style={{
@@ -36592,7 +36301,7 @@ function MeetingsTab(props: MeetingsProps) {
                             marginBottom: '4px',
                           }}
                         >
-                          Agenda
+                          {t('proj.detail.agenda')}
                         </div>
                         <div
                           style={{
@@ -36623,7 +36332,7 @@ function MeetingsTab(props: MeetingsProps) {
                             marginBottom: '4px',
                           }}
                         >
-                          Distribution
+                          {t('proj.detail.distribution')}
                         </div>
                         <div
                           style={{
@@ -36657,7 +36366,7 @@ function MeetingsTab(props: MeetingsProps) {
                         fontWeight: 600,
                       }}
                     >
-                      Minutes / Notes
+                      {t('proj.detail.minutesNotes')}
                     </div>
                     {editingMinutes !== m.id ? (
                       <button
@@ -36673,7 +36382,7 @@ function MeetingsTab(props: MeetingsProps) {
                           setMinutesDraft(m.minutes ?? '')
                         }}
                       >
-                        Edit
+                        {t('proj.detail.edit')}
                       </button>
                     ) : (
                       <div style={{ display: 'flex', gap: '4px' }}>
@@ -36684,7 +36393,7 @@ function MeetingsTab(props: MeetingsProps) {
                             setEditingMinutes(null)
                           }}
                         >
-                          Save
+                          {t('proj.detail.save')}
                         </button>
                         <button
                           style={mbtn({
@@ -36696,7 +36405,7 @@ function MeetingsTab(props: MeetingsProps) {
                           })}
                           onClick={() => { setEditingMinutes(null); }}
                         >
-                          Cancel
+                          {t('proj.detail.cancel')}
                         </button>
                       </div>
                     )}
@@ -36706,7 +36415,7 @@ function MeetingsTab(props: MeetingsProps) {
                       style={{ ...inputSt, minHeight: '100px', fontFamily: 'system-ui,sans-serif' }}
                       value={minutesDraft}
                       onChange={(e) => { setMinutesDraft(e.target.value); }}
-                      placeholder="Record meeting minutes, decisions, and key points…"
+                      placeholder={t('proj.detail.recordMeetingMinutesDecisionsAndKey')}
                     />
                   ) : m.minutes ? (
                     <div
@@ -36725,7 +36434,7 @@ function MeetingsTab(props: MeetingsProps) {
                     </div>
                   ) : (
                     <div style={{ color: th.textSecondary, fontSize: '12px', fontStyle: 'italic' }}>
-                      No minutes recorded. Click Edit to add.
+                      {t('proj.detail.noMinutesRecordedClickEditTo')}
                     </div>
                   )}
                 </div>
@@ -36747,14 +36456,12 @@ function MeetingsTab(props: MeetingsProps) {
                         textTransform: 'uppercase',
                         fontWeight: 600,
                       }}
-                    >
-                      Action Items ({m.actions.length})
-                    </div>
+                    >{t('proj.detail.actionItems', { length: m.actions.length })}</div>
                     <button
                       style={mbtn({ padding: '3px 10px', fontSize: '11px' })}
                       onClick={() => { openCreateAction(m.id); }}
                     >
-                      + Action
+                      {t('proj.detail.action2')}
                     </button>
                   </div>
                   {m.actions.length > 0 ? (
@@ -36778,11 +36485,11 @@ function MeetingsTab(props: MeetingsProps) {
                         }}
                       >
                         <span>#</span>
-                        <span>Action</span>
-                        <span>Responsible</span>
-                        <span>Due</span>
-                        <span>Priority</span>
-                        <span>Status</span>
+                        <span>{t('proj.detail.action')}</span>
+                        <span>{t('proj.detail.responsible')}</span>
+                        <span>{t('proj.detail.due')}</span>
+                        <span>{t('proj.detail.priority')}</span>
+                        <span>{t('proj.detail.status')}</span>
                         <span />
                       </div>
                       {m.actions.map((a) => {
@@ -36809,7 +36516,7 @@ function MeetingsTab(props: MeetingsProps) {
                               <div style={{ color: th.textPrimary }}>{a.description}</div>
                               {a.carryOverFrom && (
                                 <div style={{ fontSize: '10px', color: '#8b5cf6' }}>
-                                  ↩ carried over
+                                  {t('proj.detail.carriedOver')}
                                 </div>
                               )}
                               {a.remarks && (
@@ -36891,7 +36598,7 @@ function MeetingsTab(props: MeetingsProps) {
                                     background: '#ef4444',
                                   })}
                                   onClick={() => {
-                                    if (confirm('Delete action?')) onDeleteAction(a.id)
+                                    if (confirm(t('proj.detail.deleteAction'))) onDeleteAction(a.id)
                                   }}
                                 >
                                   D
@@ -36904,7 +36611,7 @@ function MeetingsTab(props: MeetingsProps) {
                     </div>
                   ) : (
                     <div style={{ color: th.textSecondary, fontSize: '12px' }}>
-                      No action items. Click "+ Action" to add one.
+                      {t('proj.detail.noActionItemsClickActionTo')}
                     </div>
                   )}
                 </div>
@@ -36919,18 +36626,18 @@ function MeetingsTab(props: MeetingsProps) {
   const renderCalendar = () => {
     const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     const MONTH_NAMES = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
+      t('proj.detail.january'),
+      t('proj.detail.february'),
+      t('proj.detail.march'),
+      t('proj.detail.april'),
+      t('proj.detail.may'),
+      t('proj.detail.june'),
+      t('proj.detail.july'),
+      t('proj.detail.august'),
+      t('proj.detail.september'),
+      t('proj.detail.october'),
+      t('proj.detail.november'),
+      t('proj.detail.december'),
     ]
     const year = calMonth.getFullYear()
     const month = calMonth.getMonth()
@@ -37061,7 +36768,7 @@ function MeetingsTab(props: MeetingsProps) {
                     style={{
                       minHeight: '88px',
                       padding: '6px',
-                      borderRight: di < 6 ? `1px solid ${th.border}` : 'none',
+                      borderInlineEnd: di < 6 ? `1px solid ${th.border}` : 'none',
                       background: day ? th.bgSurface : th.bgCanvas,
                       position: 'relative',
                     }}
@@ -37111,10 +36818,8 @@ function MeetingsTab(props: MeetingsProps) {
                           ))}
                           {dayMeetings.length > 3 && (
                             <div
-                              style={{ fontSize: '10px', color: th.textMuted, paddingLeft: '4px' }}
-                            >
-                              +{dayMeetings.length - 3} more
-                            </div>
+                              style={{ fontSize: '10px', color: th.textMuted, paddingInlineStart: '4px' }}
+                            >{t('proj.detail.more', { value: dayMeetings.length - 3 })}</div>
                           )}
                         </div>
                       </>
@@ -37171,10 +36876,10 @@ function MeetingsTab(props: MeetingsProps) {
       >
         {(
           [
-            ['register', `Register (${meetings.length})`],
-            ['actions', 'Action Tracker'],
-            ['analysis', 'Analysis'],
-            ['calendar', 'Calendar'],
+            ['register', t('proj.detail.register2', { length: meetings.length })],
+            ['actions', t('proj.detail.actionTracker')],
+            ['analysis', t('proj.detail.analysis')],
+            ['calendar', t('proj.detail.calendar')],
           ] as [MSection, string][]
         ).map(([key, label]) => (
           <button
@@ -37212,11 +36917,11 @@ function MeetingsTab(props: MeetingsProps) {
           <div style={modalBox} onClick={(e) => { e.stopPropagation(); }}>
             {mHdr(
               mModal.mode === 'create'
-                ? 'New Meeting (MOM)'
-                : `Edit Meeting — ${mModal.item.meetingNumber ?? ''}`,
+                ? t('proj.detail.newMeetingMom')
+                : t('proj.detail.editMeeting', { value: mModal.item.meetingNumber ?? '' }),
             )}
             {voff(
-              'Meeting Type',
+              t('proj.detail.meetingType'),
               vfs(
                 mForm.meetingType,
                 (v) => { setMForm((f) => ({ ...f, meetingType: v })); },
@@ -37224,17 +36929,17 @@ function MeetingsTab(props: MeetingsProps) {
               ),
             )}
             {voff(
-              'Title',
+              t('proj.detail.title'),
               vfi(
                 mForm.title,
                 (v) => { setMForm((f) => ({ ...f, title: v })); },
-                'e.g. Weekly Site Meeting #12',
+                t('proj.detail.eGWeeklySiteMeeting12'),
               ),
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
                 {voff(
-                  'Date',
+                  t('proj.detail.date'),
                   vfi(
                     mForm.meetingDate,
                     (v) => { setMForm((f) => ({ ...f, meetingDate: v })); },
@@ -37245,48 +36950,48 @@ function MeetingsTab(props: MeetingsProps) {
               </div>
               <div>
                 {voff(
-                  'Location / Link',
+                  t('proj.detail.locationLink'),
                   vfi(
                     mForm.location,
                     (v) => { setMForm((f) => ({ ...f, location: v })); },
-                    'Site office or paste full https:// link for a Join button',
+                    t('proj.detail.siteOfficeOrPasteFullHttps'),
                   ),
                 )}
               </div>
             </div>
             {voff(
-              'Chairperson',
+              t('proj.detail.chairperson'),
               vfi(
                 mForm.chairperson,
                 (v) => { setMForm((f) => ({ ...f, chairperson: v })); },
-                'Name of meeting chair',
+                t('proj.detail.nameOfMeetingChair'),
               ),
             )}
             {voff(
-              'Attendees',
+              t('proj.detail.attendees'),
               <textarea
                 style={{ ...inputSt, minHeight: '60px' }}
                 value={mForm.attendees}
                 onChange={(e) => { setMForm((f) => ({ ...f, attendees: e.target.value })); }}
-                placeholder="One name per line or comma-separated"
+                placeholder={t('proj.detail.oneNamePerLineOrComma')}
               />,
             )}
             {voff(
-              'Agenda',
+              t('proj.detail.agenda'),
               <textarea
                 style={{ ...inputSt, minHeight: '70px' }}
                 value={mForm.agenda}
                 onChange={(e) => { setMForm((f) => ({ ...f, agenda: e.target.value })); }}
-                placeholder="List agenda items…"
+                placeholder={t('proj.detail.listAgendaItems')}
               />,
             )}
             {voff(
-              'Distribution List',
+              t('proj.detail.distributionList'),
               <textarea
                 style={{ ...inputSt, minHeight: '50px' }}
                 value={mForm.distributionList}
                 onChange={(e) => { setMForm((f) => ({ ...f, distributionList: e.target.value })); }}
-                placeholder="email@example.com, another@example.com…"
+                placeholder={t('proj.detail.emailExampleComAnotherExampleCom')}
               />,
             )}
             {mBtns(
@@ -37320,36 +37025,36 @@ function MeetingsTab(props: MeetingsProps) {
           }}
         >
           <div style={{ ...modalBox, maxWidth: '480px' }} onClick={(e) => { e.stopPropagation(); }}>
-            {mHdr(aModal.mode === 'create' ? 'Add Action Item' : 'Edit Action Item')}
+            {mHdr(aModal.mode === 'create' ? t('proj.detail.addActionItem') : t('proj.detail.editActionItem'))}
             {voff(
-              'Description',
+              t('proj.detail.description'),
               <textarea
                 style={{ ...inputSt, minHeight: '70px' }}
                 value={aForm.description}
                 onChange={(e) => { setAForm((f) => ({ ...f, description: e.target.value })); }}
-                placeholder="What needs to be done?"
+                placeholder={t('proj.detail.whatNeedsToBeDone')}
               />,
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
                 {voff(
-                  'Responsible Person',
+                  t('proj.detail.responsiblePerson'),
                   vfi(
                     aForm.responsiblePerson,
                     (v) => { setAForm((f) => ({ ...f, responsiblePerson: v })); },
-                    'Name',
+                    t('proj.detail.name'),
                   ),
                 )}
               </div>
               <div>
                 {voff(
-                  'Due Date',
+                  t('proj.detail.dueDate'),
                   vfi(aForm.dueDate, (v) => { setAForm((f) => ({ ...f, dueDate: v })); }, '', 'date'),
                 )}
               </div>
               <div>
                 {voff(
-                  'Priority',
+                  t('proj.detail.priority'),
                   vfs(
                     aForm.priority,
                     (v) => { setAForm((f) => ({ ...f, priority: v })); },
@@ -37360,7 +37065,7 @@ function MeetingsTab(props: MeetingsProps) {
               {aModal.mode === 'edit' && (
                 <div>
                   {voff(
-                    'Status',
+                    t('proj.detail.status'),
                     vfs(
                       aForm.status,
                       (v) => { setAForm((f) => ({ ...f, status: v })); },
@@ -37371,12 +37076,12 @@ function MeetingsTab(props: MeetingsProps) {
               )}
             </div>
             {voff(
-              'Remarks',
+              t('proj.detail.remarks'),
               <textarea
                 style={{ ...inputSt, minHeight: '50px' }}
                 value={aForm.remarks}
                 onChange={(e) => { setAForm((f) => ({ ...f, remarks: e.target.value })); }}
-                placeholder="Notes or updates on this action…"
+                placeholder={t('proj.detail.notesOrUpdatesOnThisAction')}
               />,
             )}
             {mBtns(

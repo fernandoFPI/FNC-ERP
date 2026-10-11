@@ -1,4 +1,6 @@
-﻿import React, { useState, useEffect } from 'react'
+﻿import i18n from '../../i18n'
+import { useTranslation } from 'react-i18next'
+import React, { useState, useEffect } from 'react'
 import { useMutation, useQuery } from '@apollo/client'
 import { useTheme } from '../../theme/ThemeContext'
 import { PROJECT_QUERY, UPDATE_PROJECT } from '../../graphql/projects'
@@ -15,13 +17,13 @@ interface Employee {
 }
 
 const PROJECT_TYPES = [
-  { value: 'construction', label: 'Construction' },
-  { value: 'supply', label: 'Supply' },
-  { value: 'services', label: 'Services' },
-  { value: 'rental', label: 'Rental' },
-  { value: 'fabrication', label: 'Fabrication' },
-  { value: 'manpower_supply', label: 'Manpower Supply' },
-  { value: 'operation_maintenance', label: 'Operation & Maintenance' },
+  { value: 'construction', get label() { return i18n.t('proj.edit.construction', { defaultValue: "Construction" }) } },
+  { value: 'supply', get label() { return i18n.t('proj.edit.supply', { defaultValue: "Supply" }) } },
+  { value: 'services', get label() { return i18n.t('proj.edit.services', { defaultValue: "Services" }) } },
+  { value: 'rental', get label() { return i18n.t('proj.edit.rental', { defaultValue: "Rental" }) } },
+  { value: 'fabrication', get label() { return i18n.t('proj.edit.fabrication', { defaultValue: "Fabrication" }) } },
+  { value: 'manpower_supply', get label() { return i18n.t('proj.edit.manpowerSupply', { defaultValue: "Manpower Supply" }) } },
+  { value: 'operation_maintenance', get label() { return i18n.t('proj.edit.operationMaintenance', { defaultValue: "Operation & Maintenance" }) } },
   { value: 'epc', label: 'EPC' },
 ]
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'GBP']
@@ -34,6 +36,7 @@ interface Props {
 }
 
 export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isSystemLevel } = usePermission()
   const [form, setForm] = useState<Record<string, string>>({})
@@ -168,7 +171,7 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
       <div
         style={{
           position: 'fixed',
-          right: 0,
+          insetInlineEnd: 0,
           top: 0,
           height: '100%',
           width: '100%',
@@ -191,7 +194,7 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
           }}
         >
           <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '15px' }}>
-            Edit Project
+            {t('proj.edit.editProject')}
           </span>
           <button
             onClick={onClose}
@@ -219,9 +222,9 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
             gap: '12px',
           }}
         >
-          {field('name', 'Project Name')}
+          {field('name', t('proj.edit.projectName'))}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label style={labelStyle}>RFQ Number</label>
+            <label style={labelStyle}>{t('proj.edit.rfqNumber')}</label>
             <input
               type="text"
               style={inputStyle}
@@ -229,20 +232,20 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
               onChange={set('rfqNumber')}
             />
             <span style={{ fontSize: 11, color: theme.textMuted }}>
-              Auto-derived from Project No on creation. Edit here to override.
+              {t('proj.edit.autoDerivedFromProjectNoOn')}
             </span>
           </div>
-          {field('contractName', 'Contract Name / Number')}
-          {field('projectLocation', 'Project Location')}
+          {field('contractName', t('proj.edit.contractNameNumber'))}
+          {field('projectLocation', t('proj.edit.projectLocation'))}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label style={labelStyle}>Project Type</label>
+            <label style={labelStyle}>{t('proj.edit.projectType')}</label>
             {customTypeMode ? (
               <div style={{ display: 'flex', gap: '6px' }}>
                 <input
                   autoFocus
                   style={inputStyle}
-                  placeholder="Enter new type label"
+                  placeholder={t('proj.edit.enterNewTypeLabel')}
                   value={customTypeText}
                   onChange={(e) => {
                     setCustomTypeText(e.target.value)
@@ -267,7 +270,7 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  Add
+                  {t('proj.edit.add')}
                 </button>
                 <button
                   type="button"
@@ -299,24 +302,24 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
                 options={[
                   ...PROJECT_TYPES,
                   ...customTypeOptions,
-                  ...(isSystemLevel ? [{ value: '__add_new__', label: '＋ Add new type…' }] : []),
+                  ...(isSystemLevel ? [{ value: '__add_new__', label: t('proj.edit.addNewType') }] : []),
                 ]}
               />
             )}
           </div>
 
-          {field('clientName', 'Client Name')}
-          {field('clientContact', 'Client Contact')}
+          {field('clientName', t('proj.edit.clientName'))}
+          {field('clientContact', t('proj.edit.clientContact'))}
 
           <SearchableSelect
-            label="Project Manager"
+            label={t('proj.edit.projectManager')}
             value={form.managerId ?? ''}
             onChange={(v) => {
               setForm((f) => ({ ...f, managerId: v }))
             }}
-            placeholder="Select project manager…"
+            placeholder={t('proj.edit.selectProjectManager')}
             options={[
-              { value: '', label: '— None —' },
+              { value: '', label: t('proj.edit.none') },
               ...employees.map((e) => ({
                 value: e.id,
                 label: `${e.first_name} ${e.last_name}${e.job_title ? ` — ${e.job_title}` : ''}`,
@@ -331,13 +334,13 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
               gap: '10px',
             }}
           >
-            {field('projectValue', 'Project Value', 'number')}
-            {field('budgetAmount', 'Budget Amount', 'number')}
+            {field('projectValue', t('proj.edit.projectValue'), 'number')}
+            {field('budgetAmount', t('proj.edit.budgetAmount'), 'number')}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <SearchableSelect
-              label="Currency"
+              label={t('proj.edit.currency')}
               value={form.currencyCode ?? ''}
               onChange={(v) => {
                 setForm((f) => ({ ...f, currencyCode: v }))
@@ -353,8 +356,8 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
               gap: '10px',
             }}
           >
-            {field('startDate', 'Start Date', 'date')}
-            {field('endDate', 'End Date', 'date')}
+            {field('startDate', t('proj.edit.startDate'), 'date')}
+            {field('endDate', t('proj.edit.endDate'), 'date')}
           </div>
         </div>
 
@@ -380,7 +383,7 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
               fontSize: '13px',
             }}
           >
-            Cancel
+            {t('proj.edit.cancel')}
           </button>
           <button
             onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)}
@@ -396,7 +399,7 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
               fontWeight: 500,
             }}
           >
-            {saving ? 'Saving…' : 'Save Changes'}
+            {saving ? t('proj.edit.saving') : t('proj.edit.saveChanges')}
           </button>
         </div>
       </div>

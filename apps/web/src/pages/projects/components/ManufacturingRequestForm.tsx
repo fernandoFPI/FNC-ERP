@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useMutation, useQuery } from '@apollo/client'
 import {
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -60,7 +62,7 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
           },
         },
       })
-      addToast({ type: 'success', message: 'Manufacturing request created' })
+      addToast({ type: 'success', message: t('proj.mfgReq.manufacturingRequestCreated') })
       onCreated?.()
       onClose()
     } catch (err) {
@@ -89,24 +91,24 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
   }
 
   return (
-    <Modal open={true} title="New Manufacturing Request" onClose={onClose}>
+    <Modal open={true} title={t('proj.mfgReq.newManufacturingRequest')} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '420px' }}>
         <div>
           <SearchableSelect
-            label="Product (BOM)"
+            label={t('proj.mfgReq.productBom')}
             value={form.bomId}
             onChange={(v) => {
               const bom = boms.find((b) => b.id === v)
               setForm((f) => ({ ...f, bomId: v, productId: bom?.finished_product_id ?? '' }))
             }}
-            placeholder="— Select a product —"
+            placeholder={t('proj.mfgReq.selectAProduct')}
             options={boms.map((b) => ({ value: b.id, label: `${b.product_name} (v${b.version})` }))}
           />
         </div>
 
         <div>
           <label style={labelStyle}>
-            Quantity Requested <span style={{ color: theme.danger }}>*</span>
+            {t('proj.mfgReq.quantityRequested')} <span style={{ color: theme.danger }}>*</span>
           </label>
           <input
             type="number"
@@ -121,7 +123,7 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
         </div>
 
         <div>
-          <label style={labelStyle}>Required By Date</label>
+          <label style={labelStyle}>{t('proj.mfgReq.requiredByDate')}</label>
           <input
             type="date"
             style={inputStyle}
@@ -133,7 +135,7 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
         </div>
 
         <div>
-          <label style={labelStyle}>Description</label>
+          <label style={labelStyle}>{t('proj.mfgReq.description')}</label>
           <textarea
             rows={3}
             style={{ ...inputStyle, resize: 'vertical' }}
@@ -141,12 +143,12 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
             onChange={(e) => {
               setForm((f) => ({ ...f, description: e.target.value }))
             }}
-            placeholder="Describe what needs to be manufactured…"
+            placeholder={t('proj.mfgReq.describeWhatNeedsToBeManufactured')}
           />
         </div>
 
         <div>
-          <label style={labelStyle}>Notes</label>
+          <label style={labelStyle}>{t('proj.mfgReq.notes')}</label>
           <textarea
             rows={2}
             style={{ ...inputStyle, resize: 'vertical' }}
@@ -159,10 +161,10 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '4px' }}>
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancel
+            {t('proj.mfgReq.cancel')}
           </Button>
           <Button variant="primary" size="sm" loading={loading} onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
-            Create Request
+            {t('proj.mfgReq.createRequest')}
           </Button>
         </div>
       </div>

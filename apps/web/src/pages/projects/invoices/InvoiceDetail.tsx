@@ -1,4 +1,6 @@
-﻿import { useState, useRef, useEffect } from 'react'
+﻿import i18n, { enumLabel, tlh } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -40,10 +42,10 @@ import type { BankAccountsQuery, BankAccountsQueryVariables, ProjectInvoiceQuery
 type BankAccount = InvoiceBankAccount
 
 const TABS = [
-  { key: 'lines', label: 'Lines' },
-  { key: 'payments', label: 'Payments' },
+  { key: 'lines', get label() { return i18n.t('proj.invDetail.lines', { defaultValue: "Lines" }) } },
+  { key: 'payments', get label() { return i18n.t('proj.invDetail.payments', { defaultValue: "Payments" }) } },
   { key: 'pdf', label: 'PDF' },
-  { key: 'activity', label: 'Activity' },
+  { key: 'activity', get label() { return i18n.t('proj.invDetail.activity', { defaultValue: "Activity" }) } },
 ]
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'neutral' | 'danger'> = {
@@ -64,6 +66,7 @@ interface Payment {
 }
 
 export default function InvoiceDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
@@ -115,7 +118,7 @@ export default function InvoiceDetail() {
       await setBankAccount({ variables: { invoiceId: id ?? '', bankAccountId } })
       addToast({
         type: 'success',
-        message: bankAccountId ? 'Bank account set' : 'Bank account removed',
+        message: bankAccountId ? t('proj.invDetail.bankAccountSet') : t('proj.invDetail.bankAccountRemoved'),
       })
       void refetch()
     } catch (e: unknown) {
@@ -142,7 +145,7 @@ export default function InvoiceDetail() {
       addToast({ type: 'success', message: successMsg })
       void refetch()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Action failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('proj.invDetail.actionFailed')) })
     } finally {
       setTransitioning(false)
     }
@@ -153,7 +156,7 @@ export default function InvoiceDetail() {
       variables: { id: id ?? '' },
       refetchQueries: [{ query: PROJECT_INVOICE_QUERY, variables: { id } }],
     })
-    addToast({ type: 'success', message: 'Invoice voided' })
+    addToast({ type: 'success', message: t('proj.invDetail.invoiceVoided') })
     setShowVoid(false)
     void refetch()
   }
@@ -214,11 +217,11 @@ export default function InvoiceDetail() {
           })),
         },
       })
-      addToast({ type: 'success', message: 'Invoice updated' })
+      addToast({ type: 'success', message: t('proj.invDetail.invoiceUpdated') })
       setEditMode(false)
       void refetch()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message ?? 'Save failed' })
+      addToast({ type: 'error', message: (e as Error).message ?? t('proj.invDetail.saveFailed') })
     }
   }
 
@@ -227,7 +230,7 @@ export default function InvoiceDetail() {
   }
 
   if (loading || !inv)
-    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading…</div>
+    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>{t('proj.invDetail.loading')}</div>
 
   const cur = inv.currencyCode
   const payments: Payment[] = inv.payments
@@ -265,7 +268,7 @@ export default function InvoiceDetail() {
     },
     {
       key: 'description',
-      label: 'Description',
+      label: t('proj.invDetail.description'),
       render: (el) => (
         <input
           style={{ ...editInputStyle, minWidth: '200px' }}
@@ -280,18 +283,18 @@ export default function InvoiceDetail() {
     },
     {
       key: 'source',
-      label: 'Source',
+      label: t('proj.invDetail.source'),
       width: '110px',
       render: (el) => {
         const original = inv.lines.find(
           (l: InvoiceLine) => l.id === el.id,
         )
-        return <Badge variant="neutral">{original?.sourceType ?? 'manual'}</Badge>
+        return <Badge variant="neutral">{enumLabel(original?.sourceType ?? 'manual')}</Badge>
       },
     },
     {
       key: 'qty',
-      label: 'Qty',
+      label: t('proj.invDetail.qty'),
       width: '80px',
       render: (el) => (
         <input
@@ -313,7 +316,7 @@ export default function InvoiceDetail() {
     },
     {
       key: 'unitCost',
-      label: 'Unit Cost',
+      label: t('proj.invDetail.unitCost'),
       width: '130px',
       render: (el) => (
         <input
@@ -335,7 +338,7 @@ export default function InvoiceDetail() {
     },
     {
       key: 'total',
-      label: 'Total (preview)',
+      label: t('proj.invDetail.totalPreview'),
       width: '140px',
       render: (el) => {
         const qty = parseFloat(el.qty) || 0
@@ -360,7 +363,7 @@ export default function InvoiceDetail() {
   const paymentColumns: Column<Payment>[] = [
     {
       key: 'amount',
-      header: 'Amount',
+      header: t('proj.invDetail.amount'),
       mobilePrimary: true,
       render: (p) => (
         <span style={{ fontWeight: 600 }}>
@@ -370,7 +373,7 @@ export default function InvoiceDetail() {
     },
     {
       key: 'paymentDate',
-      header: 'Date',
+      header: t('proj.invDetail.date'),
       mobileSecondary: true,
       render: (p) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{p.paymentDate}</span>
@@ -378,7 +381,7 @@ export default function InvoiceDetail() {
     },
     {
       key: 'paymentMethod',
-      header: 'Method',
+      header: t('proj.invDetail.method'),
       mobilePriority: 1,
       render: (p) =>
         p.paymentMethod ? (
@@ -389,7 +392,7 @@ export default function InvoiceDetail() {
     },
     {
       key: 'paymentReference',
-      header: 'Reference',
+      header: t('proj.invDetail.reference'),
       mobilePriority: 2,
       render: (p) => (
         <span style={{ color: theme.textMuted, fontSize: '12px', fontFamily: 'monospace' }}>
@@ -402,11 +405,11 @@ export default function InvoiceDetail() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1160px' }}>
       <PageHeader
-        title={`Invoice ${inv.invoiceNumber}`}
+        title={t('proj.invDetail.invoice', { invoiceNumber: inv.invoiceNumber })}
         subtitle={`${inv.billingMethod} · ${inv.invoiceDate}`}
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <Badge variant={STATUS_VARIANT[inv.status] ?? 'neutral'}>{inv.status}</Badge>
+            <Badge variant={STATUS_VARIANT[inv.status] ?? 'neutral'}>{enumLabel(inv.status)}</Badge>
             {editMode ? (
               <>
                 <Button
@@ -415,15 +418,15 @@ export default function InvoiceDetail() {
                   loading={saving}
                   onClick={() => void saveEdit()}
                 >
-                  Save Changes
+                  {t('proj.invDetail.saveChanges')}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={cancelEdit}>
-                  Cancel
+                  {t('proj.invDetail.cancel')}
                 </Button>
               </>
             ) : (
               <Button variant="ghost" size="sm" onClick={startEdit}>
-                Edit
+                {t('proj.invDetail.edit')}
               </Button>
             )}
             {inv.status === 'draft' && (
@@ -433,10 +436,10 @@ export default function InvoiceDetail() {
                   size="sm"
                   loading={transitioning}
                   onClick={() =>
-                    void handleTransition('submit-for-review', 'Invoice submitted for review')
+                    void handleTransition('submit-for-review', t('proj.invDetail.invoiceSubmittedForReview'))
                   }
                 >
-                  Submit for Review
+                  {t('proj.invDetail.submitForReview')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -445,7 +448,7 @@ export default function InvoiceDetail() {
                     setShowVoid(true)
                   }}
                 >
-                  Void
+                  {t('proj.invDetail.void')}
                 </Button>
               </>
             )}
@@ -454,9 +457,9 @@ export default function InvoiceDetail() {
                 variant="primary"
                 size="sm"
                 loading={transitioning}
-                onClick={() => void handleTransition('approve', 'Invoice approved')}
+                onClick={() => void handleTransition('approve', t('proj.invDetail.invoiceApproved'))}
               >
-                Approve
+                {t('proj.invDetail.approve')}
               </Button>
             )}
             {inv.status === 'approved' && (
@@ -464,9 +467,9 @@ export default function InvoiceDetail() {
                 variant="primary"
                 size="sm"
                 loading={transitioning}
-                onClick={() => void handleTransition('issue', 'Invoice issued')}
+                onClick={() => void handleTransition('issue', t('proj.invDetail.invoiceIssued'))}
               >
-                Issue Invoice
+                {t('proj.invDetail.issueInvoice')}
               </Button>
             )}
             {canPay && (
@@ -477,7 +480,7 @@ export default function InvoiceDetail() {
                   setPaymentFormOpen(true)
                 }}
               >
-                Record Payment
+                {t('proj.invDetail.recordPayment')}
               </Button>
             )}
           </div>
@@ -494,9 +497,9 @@ export default function InvoiceDetail() {
         }}
       >
         {[
-          { label: 'Gross Total', value: inv.grossTotal },
-          { label: 'Retention', value: inv.retentionAmount },
-          { label: 'Net Payable', value: inv.netPayable },
+          { label: t('proj.invDetail.grossTotal'), value: inv.grossTotal },
+          { label: t('proj.invDetail.retention'), value: inv.retentionAmount },
+          { label: t('proj.invDetail.netPayable'), value: inv.netPayable },
         ].map(({ label, value }) => (
           <Card key={label} style={{ padding: '16px' }}>
             <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -520,27 +523,27 @@ export default function InvoiceDetail() {
           }}
         >
           <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-            Payment type:
+            {t('proj.invDetail.paymentType')}
           </span>
           <SearchableSelect
             value={inv.paymentType}
             onChange={(v) => void handleSetPaymentType(v)}
             disabled={settingPaymentType}
             options={[
-              { value: 'wire_transfer', label: 'Wire Transfer' },
-              { value: 'cash', label: 'Cash' },
+              { value: 'wire_transfer', label: t('proj.invDetail.wireTransfer') },
+              { value: 'cash', label: t('proj.invDetail.cash') },
             ]}
           />
           {inv.paymentType === 'wire_transfer' && (
             <>
               <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-                Bank account:
+                {t('proj.invDetail.bankAccount')}
               </span>
               <SearchableSelect
                 value={inv.bankAccountId ?? ''}
                 onChange={(v) => void handleSetBank(v || null)}
                 disabled={settingBank}
-                placeholder="— None selected —"
+                placeholder={t('proj.invDetail.noneSelected')}
                 options={bankAccounts.map((a) => ({
                   value: a.id,
                   label: `${a.accountName} (${a.bankName} · ${a.currencyCode})`,
@@ -559,7 +562,7 @@ export default function InvoiceDetail() {
             gap: '10px',
           }}
         >
-          <Badge variant="neutral">{inv.paymentType === 'cash' ? 'Cash' : 'Wire Transfer'}</Badge>
+          <Badge variant="neutral">{inv.paymentType === 'cash' ? t('proj.invDetail.cash') : t('proj.invDetail.wireTransfer')}</Badge>
           {selectedBank && (
             <>
               <span style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
@@ -596,12 +599,12 @@ export default function InvoiceDetail() {
               }}
             >
               <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-                Invoice Lines
+                {t('proj.invDetail.invoiceLines')}
               </div>
               {editMode && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '12px', color: theme.textMuted }}>Invoice date:</span>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('proj.invDetail.invoiceDate')}</span>
                     <input
                       type="date"
                       value={editDate}
@@ -619,7 +622,7 @@ export default function InvoiceDetail() {
                     />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '12px', color: theme.textMuted }}>Due date:</span>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('proj.invDetail.dueDate')}</span>
                     <input
                       type="date"
                       value={editDueDate}
@@ -638,7 +641,7 @@ export default function InvoiceDetail() {
                   </div>
                   {inv.status === 'draft' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '12px', color: theme.textMuted }}>Currency:</span>
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('proj.invDetail.currency')}</span>
                       <select
                         value={editCurrency}
                         onChange={(e) => {
@@ -655,7 +658,7 @@ export default function InvoiceDetail() {
                       >
                         {['IQD', 'USD', 'EUR', 'GBP'].map((c) => (
                           <option key={c} value={c}>
-                            {c}
+                            {tlh('proj.invDetail', c)}
                           </option>
                         ))}
                       </select>
@@ -673,7 +676,7 @@ export default function InvoiceDetail() {
                   removeEditLine(editLines[idx]._key)
                 }}
                 onAddRow={addEditLine}
-                addLabel="+ Add Line"
+                addLabel={t('proj.invDetail.addLine')}
               />
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -681,19 +684,19 @@ export default function InvoiceDetail() {
                   <tr style={{ background: theme.bgSurfaceHover }}>
                     {[
                       '#',
-                      'Description',
-                      'Source',
-                      'Qty',
-                      'Unit Cost',
-                      'Subtotal',
-                      'Margin',
-                      'Total',
+                      t('proj.invDetail.description'),
+                      t('proj.invDetail.source'),
+                      t('proj.invDetail.qty'),
+                      t('proj.invDetail.unitCost'),
+                      t('proj.invDetail.subtotal'),
+                      t('proj.invDetail.margin'),
+                      t('proj.invDetail.total'),
                     ].map((h, i) => (
                       <th
                         key={i}
                         style={{
                           padding: '8px 12px',
-                          textAlign: 'left',
+                          textAlign: 'start',
                           fontSize: '11px',
                           color: theme.textMuted,
                           fontWeight: 600,
@@ -721,7 +724,7 @@ export default function InvoiceDetail() {
                         {l.description}
                       </td>
                       <td style={{ padding: '8px 12px' }}>
-                        <Badge variant="neutral">{l.sourceType}</Badge>
+                        <Badge variant="neutral">{enumLabel(l.sourceType)}</Badge>
                       </td>
                       <td
                         style={{
@@ -767,8 +770,7 @@ export default function InvoiceDetail() {
                 >
                   <span>⚠</span>
                   <span>
-                    Editing recalculates totals from qty × unit cost. Margin percentage is
-                    preserved; net payable is recalculated automatically.
+                    {t('proj.invDetail.editingRecalculatesTotalsFromQtyUnit')}
                   </span>
                 </div>
               </>
@@ -789,9 +791,7 @@ export default function InvoiceDetail() {
                   marginBottom: '10px',
                 }}
               >
-                <div style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: 500 }}>
-                  {formatCurrency(totalPaid, cur)} paid of {formatCurrency(inv.netPayable, cur)}
-                </div>
+                <div style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: 500 }}>{t('proj.invDetail.paidOf', { currency: formatCurrency(totalPaid, cur), currency2: formatCurrency(inv.netPayable, cur) })}</div>
                 <div
                   style={{
                     fontSize: '13px',
@@ -801,7 +801,7 @@ export default function InvoiceDetail() {
                 >
                   {outstanding > 0
                     ? `${formatCurrency(outstanding, cur)} outstanding`
-                    : 'Fully paid'}
+                    : t('proj.invDetail.fullyPaid')}
                 </div>
               </div>
               <div
@@ -831,7 +831,7 @@ export default function InvoiceDetail() {
                       setPaymentFormOpen(true)
                     }}
                   >
-                    Record Payment
+                    {t('proj.invDetail.recordPayment')}
                   </Button>
                 </div>
               )}
@@ -848,7 +848,7 @@ export default function InvoiceDetail() {
                     fontSize: '14px',
                   }}
                 >
-                  Payment History
+                  {t('proj.invDetail.paymentHistory')}
                 </div>
                 <Table columns={paymentColumns} data={payments} rowKey="id" />
               </Card>
@@ -861,7 +861,7 @@ export default function InvoiceDetail() {
                   fontSize: '13px',
                 }}
               >
-                No payments recorded yet
+                {t('proj.invDetail.noPaymentsRecordedYet')}
               </div>
             )}
           </div>
@@ -872,7 +872,7 @@ export default function InvoiceDetail() {
           <div>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
               <Button variant="primary" size="sm" onClick={handlePrint}>
-                Print / Save as PDF
+                {t('proj.invDetail.printSaveAsPdf')}
               </Button>
             </div>
             <div
@@ -893,7 +893,7 @@ export default function InvoiceDetail() {
                   qrDataUrl,
                 )}
                 style={{ width: '100%', height: '820px', border: 'none', display: 'block' }}
-                title={`Invoice ${inv.invoiceNumber}`}
+                title={t('proj.invDetail.invoice', { invoiceNumber: inv.invoiceNumber })}
               />
             </div>
           </div>
@@ -905,9 +905,9 @@ export default function InvoiceDetail() {
 
       <ConfirmDialog
         open={showVoid}
-        title="Void Invoice"
-        message="This will permanently void the invoice. This cannot be undone."
-        confirmLabel="Void Invoice"
+        title={t('proj.invDetail.voidInvoice')}
+        message={t('proj.invDetail.thisWillPermanentlyVoidTheInvoice')}
+        confirmLabel={t('proj.invDetail.voidInvoice')}
         variant="danger"
         onConfirm={(...args: Parameters<typeof handleVoid>) => void handleVoid(...args)}
         onCancel={() => {

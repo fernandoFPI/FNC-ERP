@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -19,6 +21,7 @@ import { useRecordLock } from '../../../hooks/useRecordLock'
 import type { CreateProjectInvoiceMutation, CreateProjectInvoiceMutationVariables, ProjectContractQuery, ProjectContractQueryVariables, ReachMilestoneMutation, ReachMilestoneMutationVariables } from '../../../graphql/generated'
 
 export default function ContractDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -60,12 +63,12 @@ export default function ContractDetail() {
         },
       },
     })
-    addToast({ type: 'success', message: 'Invoice created' })
+    addToast({ type: 'success', message: t('proj.contractDetail.invoiceCreated') })
     void refetch()
   }
 
   if (loading || !contract)
-    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading…</div>
+    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>{t('proj.contractDetail.loading')}</div>
 
   const cur = contract.currencyCode
 
@@ -84,7 +87,7 @@ export default function ContractDetail() {
                 setShowInvoiceBuilder(true)
               }}
             >
-              Create Invoice
+              {t('proj.contractDetail.createInvoice')}
             </Button>
             <Button
               variant="ghost"
@@ -94,7 +97,7 @@ export default function ContractDetail() {
                 navigate(`/projects/contracts/${id}/edit`)
               }}
             >
-              Edit
+              {t('proj.contractDetail.edit')}
             </Button>
           </div>
         }
@@ -124,8 +127,7 @@ export default function ContractDetail() {
               flexShrink: 0,
             }}
           />
-          <strong>{lock.lockedByName}</strong>&nbsp;is currently working on this contract — actions
-          are disabled until they finish.
+          <strong>{lock.lockedByName}</strong>{t('proj.contractDetail.isCurrentlyWorkingOnThisContract')}
         </div>
       )}
 
@@ -139,10 +141,10 @@ export default function ContractDetail() {
         }}
       >
         {[
-          { label: 'Contract Value', value: contract.contractValue, cur },
-          { label: 'Invoiced', value: contract.totalInvoiced, cur },
-          { label: 'Paid', value: contract.totalPaid, cur },
-          { label: 'Outstanding', value: contract.outstanding, cur },
+          { label: t('proj.contractDetail.contractValue'), value: contract.contractValue, cur },
+          { label: t('proj.contractDetail.invoiced'), value: contract.totalInvoiced, cur },
+          { label: t('proj.contractDetail.paid'), value: contract.totalPaid, cur },
+          { label: t('proj.contractDetail.outstanding'), value: contract.outstanding, cur },
         ].map(({ label, value, cur: c }) => (
           <Card key={label} style={{ padding: '16px' }}>
             <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -163,7 +165,7 @@ export default function ContractDetail() {
             fontSize: '14px',
           }}
         >
-          Milestones
+          {t('proj.contractDetail.milestones')}
         </div>
         {contract.milestones.map(
           (m) => (
@@ -192,7 +194,7 @@ export default function ContractDetail() {
                     {m.reachedAt.slice(0, 10)}
                   </span>
                 )}
-                <Badge variant={m.status === 'reached' ? 'success' : 'neutral'}>{m.status}</Badge>
+                <Badge variant={m.status === 'reached' ? 'success' : 'neutral'}>{enumLabel(m.status)}</Badge>
                 {m.status === 'pending' && (
                   <Button
                     variant="ghost"
@@ -201,10 +203,10 @@ export default function ContractDetail() {
                     onClick={() => void (async () => {
                       await reachMilestone({ variables: { contractId: id ?? '', milestoneId: m.id } })
                       void refetch()
-                      addToast({ type: 'success', message: 'Milestone reached' })
+                      addToast({ type: 'success', message: t('proj.contractDetail.milestoneReached') })
                     })()}
                   >
-                    Mark Reached
+                    {t('proj.contractDetail.markReached')}
                   </Button>
                 )}
               </div>
@@ -223,7 +225,7 @@ export default function ContractDetail() {
             fontSize: '14px',
           }}
         >
-          Invoices
+          {t('proj.contractDetail.invoices')}
         </div>
         {contract.invoices.map(
           (inv: {
@@ -256,12 +258,12 @@ export default function ContractDetail() {
                     fontFamily: 'monospace',
                     color: theme.accent,
                     fontSize: '13px',
-                    marginRight: '8px',
+                    marginInlineEnd: '8px',
                   }}
                 >
                   {inv.invoiceNumber}
                 </span>
-                <Badge variant="neutral">{inv.billingMethod}</Badge>
+                <Badge variant="neutral">{enumLabel(inv.billingMethod)}</Badge>
               </div>
               <div
                 style={{
@@ -272,7 +274,7 @@ export default function ContractDetail() {
                   color: theme.textMuted,
                 }}
               >
-                <span>Due: {inv.dueDate}</span>
+                <span>{t('proj.contractDetail.due', { dueDate: inv.dueDate })}</span>
                 <AmountDisplay amount={inv.netPayable} currency={cur} />
                 <Badge
                   variant={
@@ -298,7 +300,7 @@ export default function ContractDetail() {
               padding: '20px',
             }}
           >
-            No invoices yet
+            {t('proj.contractDetail.noInvoicesYet')}
           </div>
         )}
       </Card>

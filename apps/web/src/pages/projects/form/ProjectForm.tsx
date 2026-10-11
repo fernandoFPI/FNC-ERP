@@ -1,3 +1,5 @@
+import i18n, { tl } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -19,14 +21,14 @@ interface Employee {
 }
 
 const PROJECT_TYPES = [
-  { value: 'construction', label: 'Construction' },
-  { value: 'supply', label: 'Supply' },
-  { value: 'direct_supply', label: 'Direct Supply' },
-  { value: 'services', label: 'Services' },
-  { value: 'rental', label: 'Rental' },
-  { value: 'fabrication', label: 'Fabrication' },
-  { value: 'manpower_supply', label: 'Manpower Supply' },
-  { value: 'operation_maintenance', label: 'Operation & Maintenance' },
+  { value: 'construction', get label() { return i18n.t('proj.form.construction', { defaultValue: "Construction" }) } },
+  { value: 'supply', get label() { return i18n.t('proj.form.supply', { defaultValue: "Supply" }) } },
+  { value: 'direct_supply', get label() { return i18n.t('proj.form.directSupply', { defaultValue: "Direct Supply" }) } },
+  { value: 'services', get label() { return i18n.t('proj.form.services', { defaultValue: "Services" }) } },
+  { value: 'rental', get label() { return i18n.t('proj.form.rental', { defaultValue: "Rental" }) } },
+  { value: 'fabrication', get label() { return i18n.t('proj.form.fabrication', { defaultValue: "Fabrication" }) } },
+  { value: 'manpower_supply', get label() { return i18n.t('proj.form.manpowerSupply', { defaultValue: "Manpower Supply" }) } },
+  { value: 'operation_maintenance', get label() { return i18n.t('proj.form.operationMaintenance', { defaultValue: "Operation & Maintenance" }) } },
   { value: 'epc', label: 'EPC' },
 ]
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'GBP']
@@ -107,6 +109,7 @@ const BLANK: FormState = {
 }
 
 export default function ProjectForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams()
   const { theme } = useTheme()
@@ -202,12 +205,12 @@ export default function ProjectForm() {
 
   const validate = (): boolean => {
     const e: typeof errors = {}
-    if (!form.name.trim()) e.name = 'Required'
-    if (!form.projectType) e.projectType = 'Required'
-    if (form.projectValue && isNaN(Number(form.projectValue))) e.projectValue = 'Must be a number'
-    if (form.budgetAmount && isNaN(Number(form.budgetAmount))) e.budgetAmount = 'Must be a number'
-    if (!form.receivingDate) e.receivingDate = 'Required'
-    if (!form.submissionDate) e.submissionDate = 'Required'
+    if (!form.name.trim()) e.name = t('proj.form.required')
+    if (!form.projectType) e.projectType = t('proj.form.required')
+    if (form.projectValue && isNaN(Number(form.projectValue))) e.projectValue = t('proj.form.mustBeNumber')
+    if (form.budgetAmount && isNaN(Number(form.budgetAmount))) e.budgetAmount = t('proj.form.mustBeNumber')
+    if (!form.receivingDate) e.receivingDate = t('proj.form.required')
+    if (!form.submissionDate) e.submissionDate = t('proj.form.required')
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -240,12 +243,12 @@ export default function ProjectForm() {
     try {
       if (isEdit) {
         await updateProject({ variables: { id, input } })
-        addToast({ type: 'success', message: 'Project updated' })
+        addToast({ type: 'success', message: t('proj.form.projectUpdated') })
         navigate(`/projects/${id}`)
       } else {
         const res = await createRFQ({ variables: { input } })
         const newId = res.data?.createRFQ.id
-        addToast({ type: 'success', message: 'RFQ created' })
+        addToast({ type: 'success', message: t('proj.form.rfqCreated') })
         navigate(newId ? `/projects/${newId}` : '/projects')
       }
     } catch (err) {
@@ -310,7 +313,7 @@ export default function ProjectForm() {
         {label}
         {errors[key] && (
           <span
-            style={{ color: '#ef4444', fontWeight: 400, marginLeft: '6px', textTransform: 'none' }}
+            style={{ color: '#ef4444', fontWeight: 400, marginInlineStart: '6px', textTransform: 'none' }}
           >
             {errors[key]}
           </span>
@@ -342,7 +345,7 @@ export default function ProjectForm() {
               style={{
                 color: '#ef4444',
                 fontWeight: 400,
-                marginLeft: '6px',
+                marginInlineStart: '6px',
                 textTransform: 'none',
               }}
             >
@@ -358,7 +361,7 @@ export default function ProjectForm() {
         />
       </div>
       <div>
-        <label style={labelStyle}>Time</label>
+        <label style={labelStyle}>{t('proj.form.time')}</label>
         <input type="time" style={inputStyle()} value={form[timeKey]} onChange={set(timeKey)} />
       </div>
     </div>
@@ -367,15 +370,15 @@ export default function ProjectForm() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader
-        title={isEdit ? 'Edit Project' : 'New RFQ'}
-        subtitle={isEdit && projectCode ? `${projectCode}` : 'Create a new Request for Quotation'}
+        title={isEdit ? t('proj.form.editProject') : t('proj.form.newRfq')}
+        subtitle={isEdit && projectCode ? projectCode : t('proj.form.createANewRequestForQuotation')}
       />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', paddingBottom: '80px' }}>
         {/* ── Lifecycle bar ─────────────────────────────────── */}
         <div style={{ ...card, padding: '16px 22px' }}>
           <div style={{ ...cardTitle, marginBottom: '14px' }}>
-            {isEdit ? 'Project Stage' : isDirectSupply ? 'Starting at: Execution' : 'Starting at: Client Enquiry'}
+            {isEdit ? t('proj.form.projectStage') : isDirectSupply ? t('proj.form.startingAtExecution') : t('proj.form.startingAtClientEnquiry')}
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-start' }}>
             {lifecycleStages.map((s, i) => (
@@ -421,7 +424,7 @@ export default function ProjectForm() {
                       fontWeight: i === stageIdx ? 700 : 400,
                     }}
                   >
-                    {s}
+                    {tl('proj.form.lifecycleOpts', s, s)}
                   </div>
                 </div>
                 {i < lifecycleStages.length - 1 && (
@@ -441,7 +444,7 @@ export default function ProjectForm() {
 
         {/* ── Identification ────────────────────────────────── */}
         <div style={card}>
-          <div style={cardTitle}>Identification</div>
+          <div style={cardTitle}>{t('proj.form.identification')}</div>
           {!isEdit && (
             <div
               style={{
@@ -454,28 +457,28 @@ export default function ProjectForm() {
                 color: theme.textMuted,
               }}
             >
-              RFQ number and project code are auto-generated on save.
+              {t('proj.form.rfqNumberAndProjectCodeAre')}
             </div>
           )}
           <div style={grid2}>
-            {field('name', 'Project / Tender Name *', 'text', 'Enter project name')}
-            {field('contractName', 'Contract Name / Number')}
+            {field('name', t('proj.form.projectTenderName'), 'text', t('proj.form.enterProjectName'))}
+            {field('contractName', t('proj.form.contractNameNumber'))}
           </div>
         </div>
 
         {/* ── Classification ────────────────────────────────── */}
         <div style={card}>
-          <div style={cardTitle}>Classification</div>
+          <div style={cardTitle}>{t('proj.form.classification')}</div>
           <div style={grid3}>
             <div>
               <label style={labelStyle}>
-                Project Type *
+                {t('proj.form.projectType')}
                 {errors.projectType && (
                   <span
                     style={{
                       color: '#ef4444',
                       fontWeight: 400,
-                      marginLeft: '6px',
+                      marginInlineStart: '6px',
                       textTransform: 'none',
                     }}
                   >
@@ -488,7 +491,7 @@ export default function ProjectForm() {
                   <input
                     autoFocus
                     style={inputStyle()}
-                    placeholder="Enter new type label"
+                    placeholder={t('proj.form.enterNewTypeLabel')}
                     value={customTypeText}
                     onChange={(e) => {
                       setCustomTypeText(e.target.value)
@@ -513,7 +516,7 @@ export default function ProjectForm() {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    Add
+                    {t('proj.form.add')}
                   </button>
                   <button
                     type="button"
@@ -545,13 +548,13 @@ export default function ProjectForm() {
                   options={[
                     ...PROJECT_TYPES,
                     ...customTypeOptions,
-                    ...(isSystemLevel ? [{ value: '__add_new__', label: '＋ Add new type…' }] : []),
+                    ...(isSystemLevel ? [{ value: '__add_new__', label: t('proj.form.addNewType') }] : []),
                   ]}
                 />
               )}
             </div>
             <SearchableSelect
-              label="Currency"
+              label={t('proj.form.currency')}
               value={form.currencyCode}
               onChange={(v) => {
                 setForm((f) => ({ ...f, currencyCode: v }))
@@ -559,31 +562,31 @@ export default function ProjectForm() {
               options={CURRENCIES.map((c) => ({ value: c, label: c }))}
               error={errors.currencyCode}
             />
-            {field('projectLocation', 'Project Location')}
+            {field('projectLocation', t('proj.form.projectLocation'))}
           </div>
         </div>
 
         {/* ── Client ────────────────────────────────────────── */}
         <div style={card}>
-          <div style={cardTitle}>Client</div>
+          <div style={cardTitle}>{t('proj.form.client')}</div>
           <div style={grid2}>
-            {field('clientName', 'Client Name')}
-            {field('clientContact', 'Client Contact / Email')}
+            {field('clientName', t('proj.form.clientName'))}
+            {field('clientContact', t('proj.form.clientContactEmail'))}
           </div>
         </div>
 
         {/* ── Team ──────────────────────────────────────────── */}
         <div style={card}>
-          <div style={cardTitle}>Team</div>
+          <div style={cardTitle}>{t('proj.form.team')}</div>
           <SearchableSelect
-            label="Project Manager"
+            label={t('proj.form.projectManager')}
             value={form.managerId}
             onChange={(v) => {
               setForm((f) => ({ ...f, managerId: v }))
             }}
-            placeholder="Select project manager…"
+            placeholder={t('proj.form.selectProjectManager')}
             options={[
-              { value: '', label: '— None —' },
+              { value: '', label: t('proj.form.none') },
               ...employees.map((e) => ({
                 value: e.id,
                 label: `${e.first_name} ${e.last_name}${e.job_title ? ` — ${e.job_title}` : ''}`,
@@ -591,34 +594,33 @@ export default function ProjectForm() {
             ]}
           />
           <p style={{ margin: '10px 0 0', fontSize: '12px', color: theme.textMuted }}>
-            Additional team members (technical, commercial, site) can be added from the Team tab
-            after creation.
+            {t('proj.form.additionalTeamMembersTechnicalCommercialSite')}
           </p>
         </div>
 
         {/* ── Financials ────────────────────────────────────── */}
         <div style={card}>
-          <div style={cardTitle}>Financials</div>
+          <div style={cardTitle}>{t('proj.form.financials')}</div>
           <div style={grid3}>
-            {field('projectValue', 'Bid Price (Project Value)', 'number', '0.00')}
-            {field('rfqEstimatedCost', 'Internal Cost Estimate', 'number', '0.00')}
-            {field('budgetAmount', 'Budget Amount', 'number', '0.00')}
+            {field('projectValue', t('proj.form.bidPriceProjectValue'), 'number', '0.00')}
+            {field('rfqEstimatedCost', t('proj.form.internalCostEstimate'), 'number', '0.00')}
+            {field('budgetAmount', t('proj.form.budgetAmount'), 'number', '0.00')}
           </div>
         </div>
 
         {/* ── RFQ Dates ─────────────────────────────────────── */}
         <div style={card}>
-          <div style={cardTitle}>RFQ Dates</div>
+          <div style={cardTitle}>{t('proj.form.rfqDates')}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
               <label style={labelStyle}>
-                Receiving Date *
+                {t('proj.form.receivingDate')}
                 {errors.receivingDate && (
                   <span
                     style={{
                       color: '#ef4444',
                       fontWeight: 400,
-                      marginLeft: '6px',
+                      marginInlineStart: '6px',
                       textTransform: 'none',
                     }}
                   >
@@ -633,31 +635,31 @@ export default function ProjectForm() {
                 onChange={set('receivingDate')}
               />
             </div>
-            {dateTimeRow('submissionDate', 'Submission Deadline', 'submissionTime', true)}
-            {dateTimeRow('siteVisitDate', 'Site Visit', 'siteVisitTime')}
-            {dateTimeRow('questionDate', 'Questions Deadline', 'questionTime')}
+            {dateTimeRow('submissionDate', t('proj.form.submissionDeadline'), 'submissionTime', true)}
+            {dateTimeRow('siteVisitDate', t('proj.form.siteVisit'), 'siteVisitTime')}
+            {dateTimeRow('questionDate', t('proj.form.questionsDeadline'), 'questionTime')}
           </div>
         </div>
 
         {/* ── Execution Dates ───────────────────────────────── */}
         <div style={card}>
-          <div style={cardTitle}>Execution Dates</div>
+          <div style={cardTitle}>{t('proj.form.executionDates')}</div>
           <p style={{ margin: '0 0 14px', fontSize: '12px', color: theme.textMuted }}>
-            Planned project start and end dates for the execution phase.
+            {t('proj.form.plannedProjectStartAndEndDates')}
           </p>
           <div style={grid2}>
-            {field('startDate', 'Planned Start Date', 'date')}
-            {field('endDate', 'Planned End Date', 'date')}
+            {field('startDate', t('proj.form.plannedStartDate'), 'date')}
+            {field('endDate', t('proj.form.plannedEndDate'), 'date')}
           </div>
         </div>
 
         {/* ── Description ───────────────────────────────────── */}
         <div style={card}>
-          <div style={cardTitle}>Description</div>
+          <div style={cardTitle}>{t('proj.form.description')}</div>
           <textarea
             rows={4}
             style={{ ...inputStyle(), resize: 'vertical' }}
-            placeholder="Project description, scope summary, special notes…"
+            placeholder={t('proj.form.projectDescriptionScopeSummarySpecialNotes')}
             value={form.description}
             onChange={set('description')}
           />
@@ -684,10 +686,10 @@ export default function ProjectForm() {
             navigate(isEdit ? `/projects/${id}` : '/projects')
           }}
         >
-          Cancel
+          {t('proj.form.cancel')}
         </Button>
         <Button variant="primary" disabled={saving} onClick={() => void submit()}>
-          {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create RFQ'}
+          {saving ? t('proj.form.saving') : isEdit ? t('proj.form.saveChanges') : t('proj.form.createRfq')}
         </Button>
       </div>
     </div>

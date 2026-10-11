@@ -1,4 +1,6 @@
-﻿import { useNavigate } from 'react-router-dom'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { PROJECT_CONTRACTS_QUERY } from '../../../graphql/projects'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -27,6 +29,7 @@ interface Contract {
 }
 
 export default function ContractsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
 
@@ -36,7 +39,7 @@ export default function ContractsPage() {
   const columns: Column<Contract>[] = [
     {
       key: 'contractNumber',
-      header: 'Number',
+      header: t('proj.contracts.number'),
       render: (c) => (
         <button
           onClick={() => {
@@ -57,7 +60,7 @@ export default function ContractsPage() {
     },
     {
       key: 'projectCode',
-      header: 'Project',
+      header: t('proj.contracts.project'),
       render: (c) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
           {[c.projectCode, c.projectName].filter(Boolean).join(' — ')}
@@ -66,7 +69,7 @@ export default function ContractsPage() {
     },
     {
       key: 'contractName',
-      header: 'Name',
+      header: t('proj.contracts.name'),
       render: (c) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500, fontSize: '13px' }}>
           {c.contractName}
@@ -75,31 +78,31 @@ export default function ContractsPage() {
     },
     {
       key: 'clientName',
-      header: 'Client',
+      header: t('proj.contracts.client'),
       render: (c) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{c.clientName}</span>
       ),
     },
     {
       key: 'contractValue',
-      header: 'Value',
+      header: t('proj.contracts.value'),
       render: (c) => <AmountDisplay amount={c.contractValue} currency={c.currencyCode} />,
     },
     {
       key: 'totalInvoiced',
-      header: 'Invoiced',
+      header: t('proj.contracts.invoiced'),
       render: (c) => <AmountDisplay amount={c.totalInvoiced} currency={c.currencyCode} />,
     },
     {
       key: 'outstanding',
-      header: 'Outstanding',
+      header: t('proj.contracts.outstanding'),
       render: (c) => <AmountDisplay amount={c.outstanding} currency={c.currencyCode} />,
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('proj.contracts.status'),
       render: (c) => (
-        <Badge variant={c.status === 'active' ? 'success' : 'neutral'}>{c.status}</Badge>
+        <Badge variant={c.status === 'active' ? 'success' : 'neutral'}>{enumLabel(c.status)}</Badge>
       ),
     },
     {
@@ -113,7 +116,7 @@ export default function ContractsPage() {
             navigate(`/projects/contracts/${c.id}`)
           }}
         >
-          View
+          {t('proj.contracts.view')}
         </Button>
       ),
     },
@@ -122,7 +125,7 @@ export default function ContractsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
       <PageHeader
-        title="Project Contracts"
+        title={t('proj.contracts.projectContracts')}
         subtitle={`${contracts.length} contracts`}
         actions={
           <Button
@@ -132,7 +135,7 @@ export default function ContractsPage() {
               navigate('/projects/contracts/new')
             }}
           >
-            New Contract
+            {t('proj.contracts.newContract')}
           </Button>
         }
       />

@@ -1,4 +1,6 @@
-﻿import { useState, useEffect } from 'react'
+﻿import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState, useEffect } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { api } from '../../../lib/axios'
 import { Modal } from '../../../components/ui/Modal'
@@ -28,10 +30,10 @@ interface Props {
 }
 
 const PAYMENT_METHODS = [
-  { value: 'bank_transfer', label: 'Bank Transfer' },
-  { value: 'cheque', label: 'Cheque' },
-  { value: 'cash', label: 'Cash' },
-  { value: 'other', label: 'Other' },
+  { value: 'bank_transfer', get label() { return i18n.t('proj.invPay.bankTransfer', { defaultValue: "Bank Transfer" }) } },
+  { value: 'cheque', get label() { return i18n.t('proj.invPay.cheque', { defaultValue: "Cheque" }) } },
+  { value: 'cash', get label() { return i18n.t('proj.invPay.cash', { defaultValue: "Cash" }) } },
+  { value: 'other', get label() { return i18n.t('proj.invPay.other', { defaultValue: "Other" }) } },
 ]
 
 export function InvoicePaymentForm({
@@ -47,6 +49,7 @@ export function InvoicePaymentForm({
   onClose,
   onSuccess,
 }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   // For Scenario A (client withholds), cash received = netPayable − WHT.
@@ -90,15 +93,15 @@ export function InvoicePaymentForm({
       addToast({
         type: 'success',
         message: isFullyPaid
-          ? `Invoice fully paid · ${formatCurrency(amountValue, currency)} recorded`
-          : `Payment of ${formatCurrency(amountValue, currency)} recorded`,
+          ? t('proj.invPay.invoiceFullyPaidRecorded', { currency: formatCurrency(amountValue, currency) })
+          : t('proj.invPay.paymentOfRecorded', { currency: formatCurrency(amountValue, currency) }),
       })
       onSuccess()
       onClose()
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response
         ?.data?.error?.message
-      addToast({ type: 'error', message: msg ?? 'Failed to record payment' })
+      addToast({ type: 'error', message: msg ?? t('proj.invPay.failedToRecordPayment') })
     } finally {
       setSubmitting(false)
     }
@@ -109,15 +112,15 @@ export function InvoicePaymentForm({
       open={open}
       onClose={onClose}
       size="md"
-      title="Record Payment"
-      description={`Invoice ${invoiceNumber}`}
+      title={t('proj.invPay.recordPayment')}
+      description={t('proj.invPay.invoice', { invoiceNumber })}
       footer={
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t('proj.invPay.cancel')}
           </Button>
           <Button variant="primary" loading={submitting} disabled={!isValid} onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
-            Record Payment
+            {t('proj.invPay.recordPayment')}
           </Button>
         </div>
       }
@@ -136,8 +139,8 @@ export function InvoicePaymentForm({
             }}
           >
             {whtScenario === 'client_withholds'
-              ? `WHT (client withholds): ${formatCurrency(whtAmount, currency)} — client remits this to the tax authority. Cash you receive: ${formatCurrency(cashTarget, currency)}.`
-              : `WHT (FNC pays): ${formatCurrency(whtAmount, currency)} — you receive full ${formatCurrency(netPayable, currency)}, FNC remits WHT annually.`}
+              ? t('proj.invPay.whtClientWithholdsClientRemitsThis', { currency: formatCurrency(whtAmount, currency), currency2: formatCurrency(cashTarget, currency) })
+              : t('proj.invPay.whtFncPaysYouReceiveFull', { currency: formatCurrency(whtAmount, currency), currency2: formatCurrency(netPayable, currency) })}
           </div>
         )}
 
@@ -154,15 +157,15 @@ export function InvoicePaymentForm({
           }}
         >
           {[
-            { label: 'Cash Target', value: cashTarget, color: theme.textSecondary, large: false },
+            { label: t('proj.invPay.cashTarget'), value: cashTarget, color: theme.textSecondary, large: false },
             {
-              label: 'Paid So Far',
+              label: t('proj.invPay.paidSoFar'),
               value: totalPaid,
               color: totalPaid > 0 ? theme.success : theme.textMuted,
               large: false,
             },
             {
-              label: 'Outstanding',
+              label: t('proj.invPay.outstanding'),
               value: outstanding,
               color: outstanding > 0 ? theme.accent : theme.success,
               large: true,
@@ -204,12 +207,12 @@ export function InvoicePaymentForm({
               fontWeight: 500,
             }}
           >
-            ✓ This invoice is fully paid
+            {t('proj.invPay.thisInvoiceIsFullyPaid')}
           </div>
         ) : (
           <>
             <DatePicker
-              label="Payment date"
+              label={t('proj.invPay.paymentDate')}
               value={form.paymentDate}
               onChange={(v) => {
                 setForm((f) => ({ ...f, paymentDate: v }))
@@ -217,7 +220,7 @@ export function InvoicePaymentForm({
             />
 
             <CurrencyInput
-              label="Amount received"
+              label={t('proj.invPay.amountReceived')}
               value={form.amount}
               onChange={(v) => {
                 setForm((f) => ({ ...f, amount: v }))
@@ -225,13 +228,13 @@ export function InvoicePaymentForm({
               currency={form.currencyCode}
               error={
                 isOverpayment
-                  ? `Cannot exceed outstanding balance of ${formatCurrency(outstanding, currency)}`
+                  ? t('proj.invPay.cannotExceedOutstandingBalanceOf', { currency: formatCurrency(outstanding, currency) })
                   : undefined
               }
             />
 
             <Select
-              label="Payment method"
+              label={t('proj.invPay.paymentMethod')}
               value={form.paymentMethod}
               onChange={(e) => {
                 setForm((f) => ({ ...f, paymentMethod: e.target.value }))
@@ -240,16 +243,16 @@ export function InvoicePaymentForm({
             />
 
             <Input
-              label="Reference / transaction ID"
+              label={t('proj.invPay.referenceTransactionId')}
               value={form.paymentReference}
               onChange={(e) => {
                 setForm((f) => ({ ...f, paymentReference: e.target.value }))
               }}
-              placeholder="Bank transfer ref, cheque number…"
+              placeholder={t('proj.invPay.bankTransferRefChequeNumber')}
             />
 
             <Textarea
-              label="Notes"
+              label={t('proj.invPay.notes')}
               value={form.notes}
               onChange={(e) => {
                 setForm((f) => ({ ...f, notes: e.target.value }))

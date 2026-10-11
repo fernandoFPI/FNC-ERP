@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from 'react-i18next'
 import React, { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 
@@ -30,6 +31,7 @@ const stageColor = (status: string) =>
   })[status] ?? '#d1d5db'
 
 export function ProjectStageBar({ stages, onStageClick }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [tooltip, setTooltip] = useState<{ stage: Stage; x: number; y: number } | null>(null)
   const sorted = [...stages].sort((a, b) => a.sequence - b.sequence)
@@ -55,7 +57,7 @@ export function ProjectStageBar({ stages, onStageClick }: Props) {
               setTooltip({ stage, x: e.clientX, y: e.clientY })
             }}
             onMouseMove={(e) => {
-              setTooltip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : null))
+              setTooltip((tx) => (tx ? { ...tx, x: e.clientX, y: e.clientY } : null))
             }}
             onMouseLeave={() => {
               setTooltip(null)
@@ -94,20 +96,13 @@ export function ProjectStageBar({ stages, onStageClick }: Props) {
           <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
             {tooltip.stage.name}
           </div>
+          <div style={{ color: theme.textMuted }}><Trans i18nKey="proj.stageBar.status" values={{ status: tooltip.stage.status.replace('_', ' ') }} components={[<span style={{ color: theme.textPrimary, textTransform: 'capitalize' }} />]} /></div>
           <div style={{ color: theme.textMuted }}>
-            Status:{' '}
-            <span style={{ color: theme.textPrimary, textTransform: 'capitalize' }}>
-              {tooltip.stage.status.replace('_', ' ')}
-            </span>
-          </div>
-          <div style={{ color: theme.textMuted }}>
-            Completion:{' '}
+            {t('proj.stageBar.completion')}{' '}
             <span style={{ color: theme.textPrimary }}>{tooltip.stage.completionPct}%</span>
           </div>
           {tooltip.stage.plannedStartDate && (
-            <div style={{ color: theme.textMuted, marginTop: '2px' }}>
-              Planned: {tooltip.stage.plannedStartDate} → {tooltip.stage.plannedEndDate ?? '—'}
-            </div>
+            <div style={{ color: theme.textMuted, marginTop: '2px' }}>{t('proj.stageBar.planned', { plannedStartDate: tooltip.stage.plannedStartDate, value: tooltip.stage.plannedEndDate ?? '—' })}</div>
           )}
           {tooltip.stage.notes && (
             <div style={{ color: theme.textMuted, fontStyle: 'italic', marginTop: '4px' }}>

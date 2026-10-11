@@ -1,4 +1,6 @@
-﻿import { useNavigate } from 'react-router-dom'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { PROJECT_INVOICES_QUERY } from '../../../graphql/projects'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -22,6 +24,7 @@ interface ProjectInvoice {
 }
 
 export default function InvoicesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
 
@@ -31,7 +34,7 @@ export default function InvoicesPage() {
   const columns: Column<ProjectInvoice>[] = [
     {
       key: 'invoiceNumber',
-      header: 'Invoice #',
+      header: t('proj.invList.invoice'),
       render: (inv) => (
         <button
           onClick={() => {
@@ -52,36 +55,36 @@ export default function InvoicesPage() {
     },
     {
       key: 'billingMethod',
-      header: 'Method',
-      render: (inv) => <Badge variant="neutral">{inv.billingMethod}</Badge>,
+      header: t('proj.invList.method'),
+      render: (inv) => <Badge variant="neutral">{enumLabel(inv.billingMethod)}</Badge>,
     },
     {
       key: 'invoiceDate',
-      header: 'Date',
+      header: t('proj.invList.date'),
       render: (inv) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{inv.invoiceDate}</span>
       ),
     },
     {
       key: 'dueDate',
-      header: 'Due',
+      header: t('proj.invList.due'),
       render: (inv) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{inv.dueDate}</span>
       ),
     },
     {
       key: 'grossTotal',
-      header: 'Gross',
+      header: t('proj.invList.gross'),
       render: (inv) => <AmountDisplay amount={inv.grossTotal} currency="IQD" />,
     },
     {
       key: 'netPayable',
-      header: 'Net Payable',
+      header: t('proj.invList.netPayable'),
       render: (inv) => <AmountDisplay amount={inv.netPayable} currency="IQD" />,
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('proj.invList.status'),
       render: (inv) => (
         <Badge
           variant={
@@ -96,7 +99,7 @@ export default function InvoicesPage() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
-      <PageHeader title="Project Invoices" subtitle={`${invoices.length} invoices`} />
+      <PageHeader title={t('proj.invList.projectInvoices')} subtitle={`${invoices.length} invoices`} />
       <Card style={{ marginTop: '20px' }}>
         <Table columns={columns} data={invoices} loading={loading} rowKey="id" />
       </Card>

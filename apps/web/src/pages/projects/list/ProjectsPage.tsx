@@ -1,4 +1,6 @@
-﻿import React, { useEffect, useState } from 'react'
+﻿import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
@@ -15,27 +17,27 @@ import { Table } from '../../../components/ui/Table'
 import type { ProjectsQuery, ProjectsQueryVariables } from '../../../graphql/generated'
 
 const STATUS_OPTIONS_ADMIN = [
-  { value: 'pending', label: 'Pending' },
-  { value: 'ongoing', label: 'Ongoing' },
-  { value: 'submitted', label: 'Submitted' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'on_hold', label: 'On Hold' },
-  { value: 'cancelled', label: 'Cancelled' },
-  { value: 'cancelled_after_approval', label: 'Cancelled (Post-Approval)' },
+  { value: 'pending', get label() { return i18n.t('proj.list.pending', { defaultValue: "Pending" }) } },
+  { value: 'ongoing', get label() { return i18n.t('proj.list.ongoing', { defaultValue: "Ongoing" }) } },
+  { value: 'submitted', get label() { return i18n.t('proj.list.submitted', { defaultValue: "Submitted" }) } },
+  { value: 'approved', get label() { return i18n.t('proj.list.approved', { defaultValue: "Approved" }) } },
+  { value: 'completed', get label() { return i18n.t('proj.list.completed', { defaultValue: "Completed" }) } },
+  { value: 'on_hold', get label() { return i18n.t('proj.list.onHold', { defaultValue: "On Hold" }) } },
+  { value: 'cancelled', get label() { return i18n.t('proj.list.cancelled', { defaultValue: "Cancelled" }) } },
+  { value: 'cancelled_after_approval', get label() { return i18n.t('proj.list.cancelledPostApproval', { defaultValue: "Cancelled (Post-Approval)" }) } },
 ]
 
 const STATUS_OPTIONS_USER = STATUS_OPTIONS_ADMIN.filter((o) => o.value !== 'pending')
 
 const TYPE_OPTIONS = [
-  { value: 'construction', label: 'Construction' },
-  { value: 'supply', label: 'Supply' },
-  { value: 'direct_supply', label: 'Direct Supply' },
-  { value: 'services', label: 'Services' },
-  { value: 'rental', label: 'Rental' },
-  { value: 'fabrication', label: 'Fabrication' },
-  { value: 'manpower_supply', label: 'Manpower Supply' },
-  { value: 'operation_maintenance', label: 'Operation & Maintenance' },
+  { value: 'construction', get label() { return i18n.t('proj.list.construction', { defaultValue: "Construction" }) } },
+  { value: 'supply', get label() { return i18n.t('proj.list.supply', { defaultValue: "Supply" }) } },
+  { value: 'direct_supply', get label() { return i18n.t('proj.list.directSupply', { defaultValue: "Direct Supply" }) } },
+  { value: 'services', get label() { return i18n.t('proj.list.services', { defaultValue: "Services" }) } },
+  { value: 'rental', get label() { return i18n.t('proj.list.rental', { defaultValue: "Rental" }) } },
+  { value: 'fabrication', get label() { return i18n.t('proj.list.fabrication', { defaultValue: "Fabrication" }) } },
+  { value: 'manpower_supply', get label() { return i18n.t('proj.list.manpowerSupply', { defaultValue: "Manpower Supply" }) } },
+  { value: 'operation_maintenance', get label() { return i18n.t('proj.list.operationMaintenance', { defaultValue: "Operation & Maintenance" }) } },
   { value: 'epc', label: 'EPC' },
 ]
 
@@ -102,6 +104,7 @@ interface Project {
 }
 
 export default function ProjectsPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { theme } = useTheme()
   const { can } = usePermission()
@@ -157,7 +160,7 @@ export default function ProjectsPage() {
   const columns: Column<Project>[] = [
     {
       key: 'name',
-      header: 'Name',
+      header: t('proj.list.name'),
       mobilePrimary: true,
       render: (p) => (
         <span
@@ -177,7 +180,7 @@ export default function ProjectsPage() {
     },
     {
       key: 'code',
-      header: 'Code',
+      header: t('proj.list.code'),
       mobileSecondary: true,
       render: (p) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textMuted }}>
@@ -190,7 +193,7 @@ export default function ProjectsPage() {
       // Number (contractName) instead of the actual rfqNumber field — that's
       // the identifier people are actually filling in and looking for here.
       key: 'contractName',
-      header: 'RFQ #',
+      header: t('proj.list.rfq'),
       mobileHide: true,
       render: (p) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textMuted }}>
@@ -200,12 +203,12 @@ export default function ProjectsPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('proj.list.status'),
       mobilePriority: 1,
       render: (p) => (
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           {p.isRfq && !['approved', 'completed', 'cancelled_after_approval'].includes(p.status) && (
-            <Badge variant="info">RFQ</Badge>
+            <Badge variant="info">{t('proj.list.rfq2')}</Badge>
           )}
           <Badge variant={STATUS_VARIANT[p.status] ?? 'neutral'}>
             {p.status.replace(/_/g, ' ')}
@@ -215,7 +218,7 @@ export default function ProjectsPage() {
     },
     {
       key: 'clientName',
-      header: 'Client',
+      header: t('proj.list.client'),
       mobilePriority: 2,
       render: (p) => (
         <span
@@ -234,7 +237,7 @@ export default function ProjectsPage() {
     },
     {
       key: 'overallCompletionPct',
-      header: 'Completion',
+      header: t('proj.list.completion'),
       mobilePriority: 3,
       render: (p) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -264,7 +267,7 @@ export default function ProjectsPage() {
     },
     {
       key: 'projectType',
-      header: 'Type',
+      header: t('proj.list.type'),
       mobilePriority: 4,
       render: (p) => (
         <span style={{ color: theme.textMuted, textTransform: 'capitalize' }}>
@@ -274,7 +277,7 @@ export default function ProjectsPage() {
     },
     {
       key: 'openPoCount',
-      header: 'POs',
+      header: t('proj.list.pos'),
       mobilePriority: 5,
       render: (p) => (
         <div style={{ textAlign: 'center' }}>
@@ -290,12 +293,12 @@ export default function ProjectsPage() {
       ? [
           {
             key: 'projectValue',
-            header: 'Value',
+            header: t('proj.list.value'),
             mobilePriority: 6,
             render: (p: Project) => (
               <div
                 style={{
-                  textAlign: 'right',
+                  textAlign: 'end',
                   fontVariantNumeric: 'tabular-nums',
                   color: theme.textPrimary,
                 }}
@@ -306,12 +309,12 @@ export default function ProjectsPage() {
           },
           {
             key: 'budgetAmount',
-            header: 'Budget',
+            header: t('proj.list.budget'),
             mobilePriority: 7,
             render: (p: Project) => (
               <div
                 style={{
-                  textAlign: 'right',
+                  textAlign: 'end',
                   fontVariantNumeric: 'tabular-nums',
                   color: theme.textMuted,
                 }}
@@ -327,7 +330,7 @@ export default function ProjectsPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Projects"
+        title={t('proj.list.projects')}
         subtitle={
           pagination ? `${pagination.total} project${pagination.total !== 1 ? 's' : ''}` : undefined
         }
@@ -340,7 +343,7 @@ export default function ProjectsPage() {
                 navigate('/projects/new')
               }}
             >
-              + New RFQ
+              {t('proj.list.newRfq')}
             </Button>
           ) : undefined
         }
@@ -369,7 +372,7 @@ export default function ProjectsPage() {
               color: theme.textPrimary,
               fontSize: '13px',
             }}
-            placeholder="Search by name, code, client…"
+            placeholder={t('proj.list.searchByNameCodeClient')}
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -383,7 +386,7 @@ export default function ProjectsPage() {
                 setProjectType(v)
                 setPage(1)
               }}
-              placeholder="All types"
+              placeholder={t('proj.list.allTypes')}
               options={TYPE_OPTIONS}
             />
           </div>
@@ -411,7 +414,7 @@ export default function ProjectsPage() {
                   color: view === v ? '#fff' : theme.textMuted,
                 }}
               >
-                {v === 'table' ? '☰ Table' : '⊞ Cards'}
+                {v === 'table' ? t('proj.list.table') : t('proj.list.cards')}
               </button>
             ))}
           </div>
@@ -435,7 +438,7 @@ export default function ProjectsPage() {
               color: myProjectsOnly ? '#fff' : theme.textMuted,
             }}
           >
-            👤 My Projects
+            {t('proj.list.myProjects')}
           </button>
           <div style={{ width: '1px', background: theme.border, margin: '2px 4px' }} />
           {STATUS_OPTIONS.map((o) => {
@@ -477,7 +480,7 @@ export default function ProjectsPage() {
                 color: theme.textMuted,
               }}
             >
-              Clear ×
+              {t('proj.list.clear')}
             </button>
           )}
           <div style={{ width: '1px', background: theme.border, margin: '2px 4px' }} />
@@ -497,7 +500,7 @@ export default function ProjectsPage() {
               color: projectType === 'direct_supply' ? '#fff' : theme.textMuted,
             }}
           >
-            Direct Supply
+            {t('proj.list.directSupply')}
           </button>
         </div>
       </div>
@@ -506,12 +509,12 @@ export default function ProjectsPage() {
       <div style={{ marginTop: '16px' }}>
         {loading && projects.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px', color: theme.textMuted }}>
-            Loading…
+            {t('proj.list.loading')}
           </div>
         ) : projects.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px', color: theme.textMuted }}>
             <div style={{ fontSize: '40px', marginBottom: '8px' }}>📁</div>
-            <div style={{ marginBottom: '12px' }}>No projects found</div>
+            <div style={{ marginBottom: '12px' }}>{t('proj.list.noProjectsFound')}</div>
             {isAdmin && (
               <Button
                 variant="primary"
@@ -520,7 +523,7 @@ export default function ProjectsPage() {
                   navigate('/projects/new')
                 }}
               >
-                Create first project
+                {t('proj.list.createFirstProject')}
               </Button>
             )}
           </div>
@@ -563,9 +566,7 @@ export default function ProjectsPage() {
             marginTop: '16px',
           }}
         >
-          <span style={{ fontSize: '13px', color: theme.textMuted }}>
-            Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
-          </span>
+          <span style={{ fontSize: '13px', color: theme.textMuted }}>{t('proj.list.pageOfTotal', { page: pagination.page, totalPages: pagination.totalPages, total: pagination.total })}</span>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button
               size="sm"
@@ -575,7 +576,7 @@ export default function ProjectsPage() {
                 setPage((p) => p - 1)
               }}
             >
-              ← Prev
+              {t('proj.list.prev')}
             </Button>
             <Button
               size="sm"
@@ -585,7 +586,7 @@ export default function ProjectsPage() {
                 setPage((p) => p + 1)
               }}
             >
-              Next →
+              {t('proj.list.next')}
             </Button>
           </div>
         </div>
@@ -603,6 +604,7 @@ function CardView({
   theme: ReturnType<typeof useTheme>['theme']
   onNavigate: (id: string) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div
       style={{
@@ -678,7 +680,7 @@ function CardView({
                 marginBottom: '4px',
               }}
             >
-              <span>Progress</span>
+              <span>{t('proj.list.progress')}</span>
               <span>{p.overallCompletionPct ?? 0}%</span>
             </div>
             <div
@@ -707,9 +709,7 @@ function CardView({
             }}
           >
             <span>{formatCurrency(p.projectValue ?? 0, p.budgetCurrency ?? 'IQD')}</span>
-            <span>
-              {p.teamCount ?? 0} members · {p.openPoCount ?? 0} open POs
-            </span>
+            <span>{t('proj.list.membersOpenPos', { value: p.teamCount ?? 0, value2: p.openPoCount ?? 0 })}</span>
           </div>
         </div>
       ))}

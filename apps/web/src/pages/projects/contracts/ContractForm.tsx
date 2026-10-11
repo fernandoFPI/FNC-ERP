@@ -1,3 +1,5 @@
+import i18n from '../../../i18n'
+import { Trans, useTranslation } from 'react-i18next'
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -23,10 +25,10 @@ import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import type { CreateContractMilestoneMutation, CreateContractMilestoneMutationVariables, CreateProjectContractMutation, CreateProjectContractMutationVariables, DeleteContractMilestoneMutation, DeleteContractMilestoneMutationVariables, ProjectContractQuery, ProjectContractQueryVariables, ProjectsQuery, ProjectsQueryVariables, UpdateContractMilestoneMutation, UpdateContractMilestoneMutationVariables, UpdateProjectContractMutation, UpdateProjectContractMutationVariables } from '../../../graphql/generated'
 
 const BILLING_METHODS: { value: string; label: string }[] = [
-  { value: 'fixed_lump_sum', label: 'Fixed Lump Sum' },
-  { value: 'milestone', label: 'Milestone' },
-  { value: 'cost_plus', label: 'Cost Plus (Time & Material)' },
-  { value: 'progress', label: 'Progress (Percentage)' },
+  { value: 'fixed_lump_sum', get label() { return i18n.t('proj.contractForm.fixedLumpSum', { defaultValue: "Fixed Lump Sum" }) } },
+  { value: 'milestone', get label() { return i18n.t('proj.contractForm.milestone', { defaultValue: "Milestone" }) } },
+  { value: 'cost_plus', get label() { return i18n.t('proj.contractForm.costPlusTimeMaterial', { defaultValue: "Cost Plus (Time & Material)" }) } },
+  { value: 'progress', get label() { return i18n.t('proj.contractForm.progressPercentage', { defaultValue: "Progress (Percentage)" }) } },
 ]
 
 const CURRENCIES = [
@@ -56,6 +58,7 @@ const BLANK_MILESTONE: MilestoneRow = {
 }
 
 export default function ContractForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams()
   const [searchParams] = useSearchParams()
@@ -157,7 +160,7 @@ export default function ContractForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!isEdit && !selectedProjectId) {
-      setProjectError('Please select a project')
+      setProjectError(t('proj.contractForm.pleaseSelectAProject'))
       return
     }
     setProjectError('')
@@ -170,15 +173,15 @@ export default function ContractForm() {
     try {
       if (isEdit) {
         await updateContract({ variables: { id, input } })
-        addToast({ type: 'success', message: 'Contract updated' })
+        addToast({ type: 'success', message: t('proj.contractForm.contractUpdated') })
         navigate(`/projects/contracts/${id}`)
       } else {
         const res = await createContract({ variables: { projectId: selectedProjectId, input } })
         if (!res.data?.createProjectContract) {
-          addToast({ type: 'error', message: 'Contract creation did not return a result' })
+          addToast({ type: 'error', message: t('proj.contractForm.contractCreationDidNotReturnA') })
           return
         }
-        addToast({ type: 'success', message: 'Contract created' })
+        addToast({ type: 'success', message: t('proj.contractForm.contractCreated') })
         navigate(`/projects/contracts/${res.data.createProjectContract.id}`)
       }
     } catch (err) {
@@ -188,7 +191,7 @@ export default function ContractForm() {
 
   async function handleAddMilestone() {
     if (!newMilestone.name.trim() || !newMilestone.billableAmount) {
-      addToast({ type: 'error', message: 'Name and billable amount are required' })
+      addToast({ type: 'error', message: t('proj.contractForm.nameAndBillableAmountAreRequired') })
       return
     }
     setAddingMilestone(true)
@@ -204,7 +207,7 @@ export default function ContractForm() {
           },
         },
       })
-      addToast({ type: 'success', message: 'Milestone added' })
+      addToast({ type: 'success', message: t('proj.contractForm.milestoneAdded') })
       setNewMilestone({ ...BLANK_MILESTONE })
       await refetch()
     } catch (err) {
@@ -229,7 +232,7 @@ export default function ContractForm() {
           },
         },
       })
-      addToast({ type: 'success', message: 'Milestone saved' })
+      addToast({ type: 'success', message: t('proj.contractForm.milestoneSaved') })
       await refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -241,7 +244,7 @@ export default function ContractForm() {
   async function handleDeleteMilestone(milestoneId: string) {
     try {
       await deleteMilestone({ variables: { id: milestoneId } })
-      addToast({ type: 'success', message: 'Milestone removed' })
+      addToast({ type: 'success', message: t('proj.contractForm.milestoneRemoved') })
       await refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -298,7 +301,7 @@ export default function ContractForm() {
     },
     {
       key: 'name',
-      label: 'Name',
+      label: t('proj.contractForm.name'),
       render: (m, idx) => {
         const isPending = !m.status || m.status === 'pending'
         return isPending ? (
@@ -318,7 +321,7 @@ export default function ContractForm() {
     },
     {
       key: 'billableAmount',
-      label: 'Amount',
+      label: t('proj.contractForm.amount'),
       width: '160px',
       render: (m, idx) => {
         const isPending = !m.status || m.status === 'pending'
@@ -343,7 +346,7 @@ export default function ContractForm() {
     },
     {
       key: 'currencyCode',
-      label: 'Currency',
+      label: t('proj.contractForm.currency'),
       width: '90px',
       render: (m, idx) => {
         const isPending = !m.status || m.status === 'pending'
@@ -370,7 +373,7 @@ export default function ContractForm() {
     },
     {
       key: 'status',
-      label: 'Status',
+      label: t('proj.contractForm.status'),
       width: '90px',
       render: (m) => statusBadge(m.status ?? 'pending'),
     },
@@ -389,7 +392,7 @@ export default function ContractForm() {
                 loading={savingMilestoneId === m.id}
                 onClick={() => void handleSaveMilestone(m)}
               >
-                Save
+                {t('proj.contractForm.save')}
               </Button>
               <Button
                 variant="ghost"
@@ -400,7 +403,7 @@ export default function ContractForm() {
                 }}
                 style={{ color: '#ef4444' }}
               >
-                Delete
+                {t('proj.contractForm.delete')}
               </Button>
             </div>
           )
@@ -411,7 +414,7 @@ export default function ContractForm() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '960px' }}>
-      <PageHeader title={isEdit ? 'Edit Contract' : 'New Contract'} subtitle="Project contract" />
+      <PageHeader title={isEdit ? t('proj.contractForm.editContract') : t('proj.contractForm.newContract')} subtitle={t('proj.contractForm.projectContract')} />
 
       <Card style={{ marginTop: '20px' }}>
         <form
@@ -429,9 +432,9 @@ export default function ContractForm() {
                   fontWeight: 500,
                 }}
               >
-                Project *
+                {t('proj.contractForm.project')}
                 {projectError && (
-                  <span style={{ marginLeft: '6px', fontWeight: 400 }}>{projectError}</span>
+                  <span style={{ marginInlineStart: '6px', fontWeight: 400 }}>{projectError}</span>
                 )}
               </label>
               <div style={{ position: 'relative' }}>
@@ -444,7 +447,7 @@ export default function ContractForm() {
                         })()
                       : projectSearch
                   }
-                  placeholder="Search projects…"
+                  placeholder={t('proj.contractForm.searchProjects')}
                   onFocus={() => {
                     setProjectOpen(true)
                   }}
@@ -460,14 +463,14 @@ export default function ContractForm() {
                   style={{
                     ...selectStyle,
                     cursor: 'text',
-                    paddingRight: '28px',
+                    paddingInlineEnd: '28px',
                     borderColor: projectError ? '#ef4444' : undefined,
                   }}
                 />
                 <span
                   style={{
                     position: 'absolute',
-                    right: '10px',
+                    insetInlineEnd: '10px',
                     top: '50%',
                     transform: 'translateY(-50%)',
                     pointerEvents: 'none',
@@ -501,7 +504,7 @@ export default function ContractForm() {
                           setProjectSearch(e.target.value)
                           setSelectedProjectId('')
                         }}
-                        placeholder="Type to search…"
+                        placeholder={t('proj.contractForm.typeToSearch')}
                         style={{
                           width: '100%',
                           padding: '6px 10px',
@@ -550,7 +553,7 @@ export default function ContractForm() {
                               fontFamily: 'monospace',
                               fontSize: '12px',
                               color: theme.textMuted,
-                              marginRight: '8px',
+                              marginInlineEnd: '8px',
                             }}
                           >
                             {p.code}
@@ -566,7 +569,7 @@ export default function ContractForm() {
                       <div
                         style={{ padding: '12px 14px', fontSize: '13px', color: theme.textMuted }}
                       >
-                        No projects found
+                        {t('proj.contractForm.noProjectsFound')}
                       </div>
                     )}
                   </div>
@@ -576,7 +579,7 @@ export default function ContractForm() {
           )}
 
           <Input
-            label="Contract Name"
+            label={t('proj.contractForm.contractName')}
             value={form.contractName}
             onChange={(e) => {
               setForm((f) => ({ ...f, contractName: e.target.value }))
@@ -584,7 +587,7 @@ export default function ContractForm() {
             required
           />
           <Input
-            label="Client Name"
+            label={t('proj.contractForm.clientName')}
             value={form.clientName}
             onChange={(e) => {
               setForm((f) => ({ ...f, clientName: e.target.value }))
@@ -600,7 +603,7 @@ export default function ContractForm() {
             }}
           >
             <Input
-              label="Contract Value"
+              label={t('proj.contractForm.contractValue')}
               type="number"
               step="0.01"
               value={form.contractValue}
@@ -611,7 +614,7 @@ export default function ContractForm() {
             />
             <div>
               <SearchableSelect
-                label="Currency"
+                label={t('proj.contractForm.currency')}
                 value={form.currencyCode}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, currencyCode: v }))
@@ -623,7 +626,7 @@ export default function ContractForm() {
 
           <div>
             <SearchableSelect
-              label="Default Billing Method"
+              label={t('proj.contractForm.defaultBillingMethod')}
               value={form.defaultBillingMethod}
               onChange={(v) => {
                 setForm((f) => ({ ...f, defaultBillingMethod: v }))
@@ -640,7 +643,7 @@ export default function ContractForm() {
             }}
           >
             <Input
-              label="Default Margin %"
+              label={t('proj.contractForm.defaultMargin')}
               type="number"
               step="0.1"
               value={form.defaultMarginPct}
@@ -649,7 +652,7 @@ export default function ContractForm() {
               }}
             />
             <Input
-              label="Retention %"
+              label={t('proj.contractForm.retention')}
               type="number"
               step="0.1"
               value={form.retentionPct}
@@ -667,10 +670,10 @@ export default function ContractForm() {
                 navigate(-1)
               }}
             >
-              Cancel
+              {t('proj.contractForm.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={creating || updating}>
-              {isEdit ? 'Save' : 'Create'}
+              {isEdit ? t('proj.contractForm.save') : t('proj.contractForm.create')}
             </Button>
           </div>
         </form>
@@ -684,12 +687,9 @@ export default function ContractForm() {
               <h3
                 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}
               >
-                Milestones
+                {t('proj.contractForm.milestones')}
               </h3>
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: theme.textMuted }}>
-                Define payment milestones for milestone-based billing. Only <strong>pending</strong>{' '}
-                milestones can be edited or deleted.
-              </p>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: theme.textMuted }}><Trans i18nKey="proj.contractForm.definePaymentMilestonesForMilestoneBased" values={{ t: t('proj.contractForm.pending') }} components={[<strong />]} /></p>
             </div>
 
             {/* Existing milestones */}
@@ -722,7 +722,7 @@ export default function ContractForm() {
                   letterSpacing: '0.05em',
                 }}
               >
-                Add Milestone
+                {t('proj.contractForm.addMilestone')}
               </div>
               <div
                 style={{
@@ -741,7 +741,7 @@ export default function ContractForm() {
                       marginBottom: '4px',
                     }}
                   >
-                    Seq
+                    {t('proj.contractForm.seq')}
                   </label>
                   <input
                     type="number"
@@ -762,10 +762,10 @@ export default function ContractForm() {
                       marginBottom: '4px',
                     }}
                   >
-                    Name *
+                    {t('proj.contractForm.name2')}
                   </label>
                   <input
-                    placeholder="Milestone name"
+                    placeholder={t('proj.contractForm.milestoneName')}
                     value={newMilestone.name}
                     onChange={(e) => {
                       setNewMilestone((m) => ({ ...m, name: e.target.value }))
@@ -782,7 +782,7 @@ export default function ContractForm() {
                       marginBottom: '4px',
                     }}
                   >
-                    Billable Amount *
+                    {t('proj.contractForm.billableAmount')}
                   </label>
                   <input
                     type="number"
@@ -804,7 +804,7 @@ export default function ContractForm() {
                       marginBottom: '4px',
                     }}
                   >
-                    Currency
+                    {t('proj.contractForm.currency')}
                   </label>
                   <select
                     value={newMilestone.currencyCode}
@@ -828,7 +828,7 @@ export default function ContractForm() {
                     onClick={(...args: Parameters<typeof handleAddMilestone>) => void handleAddMilestone(...args)}
                     style={{ marginTop: '19px' }}
                   >
-                    Add
+                    {t('proj.contractForm.add')}
                   </Button>
                 </div>
               </div>
@@ -839,9 +839,9 @@ export default function ContractForm() {
 
       <ConfirmDialog
         open={!!confirmDeleteMilestone}
-        title="Delete Milestone"
-        message="Remove this milestone? This cannot be undone."
-        confirmLabel="Delete"
+        title={t('proj.contractForm.deleteMilestone')}
+        message={t('proj.contractForm.removeThisMilestoneThisCannotBe')}
+        confirmLabel={t('proj.contractForm.delete')}
         confirmVariant="danger"
         onConfirm={() => void (async () => {
           if (confirmDeleteMilestone) await handleDeleteMilestone(confirmDeleteMilestone)

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useMutation } from '@apollo/client'
 import { useTheme } from '../../theme/ThemeContext'
@@ -48,6 +49,7 @@ export function StageEditDrawer({
   teamMembers = [],
   isAdmin = false,
 }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const isCreate = !stage
   const [form, setForm] = useState<Partial<Stage & { assignedTo: string }>>({})
@@ -154,7 +156,7 @@ export function StageEditDrawer({
       <div
         style={{
           position: 'fixed',
-          right: 0,
+          insetInlineEnd: 0,
           top: 0,
           height: '100%',
           width: '100%',
@@ -176,7 +178,7 @@ export function StageEditDrawer({
           }}
         >
           <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '15px' }}>
-            {isCreate ? 'Add Stage' : 'Edit Stage'}
+            {isCreate ? t('proj.stageEdit.addStage') : t('proj.stageEdit.editStage')}
           </span>
           <button
             onClick={onClose}
@@ -203,7 +205,7 @@ export function StageEditDrawer({
             gap: '14px',
           }}
         >
-          {inp('name', 'Stage Name')}
+          {inp('name', t('proj.stageEdit.stageName'))}
 
           {/* Responsible team member */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -216,7 +218,7 @@ export function StageEditDrawer({
                 letterSpacing: '0.05em',
               }}
             >
-              Responsible Member
+              {t('proj.stageEdit.responsibleMember')}
             </label>
             {isAdmin ? (
               <>
@@ -225,7 +227,7 @@ export function StageEditDrawer({
                   onChange={(v) => {
                     set('assignedTo', v)
                   }}
-                  placeholder="— Unassigned —"
+                  placeholder={t('proj.stageEdit.unassigned')}
                   options={teamMembers.map((m) => ({
                     value: m.employeeId,
                     label: `${m.name}${m.role ? ` (${m.role})` : ''}`,
@@ -233,7 +235,7 @@ export function StageEditDrawer({
                 />
                 {teamMembers.length === 0 && (
                   <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                    Add team members on the Team tab first.
+                    {t('proj.stageEdit.addTeamMembersOnTheTeam')}
                   </span>
                 )}
               </>
@@ -248,7 +250,7 @@ export function StageEditDrawer({
                   fontSize: '13px',
                 }}
               >
-                {stage?.assignedToName ?? '— Unassigned —'}
+                {stage?.assignedToName ?? t('proj.stageEdit.unassigned')}
               </div>
             )}
           </div>
@@ -257,7 +259,7 @@ export function StageEditDrawer({
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <SearchableSelect
-                  label="Status"
+                  label={t('proj.stageEdit.status')}
                   value={form.status ?? 'pending'}
                   onChange={handleStatusChange}
                   options={STAGE_STATUSES.map((s) => ({ value: s, label: s.replace('_', ' ') }))}
@@ -274,7 +276,7 @@ export function StageEditDrawer({
                     letterSpacing: '0.05em',
                   }}
                 >
-                  Completion:{' '}
+                  {t('proj.stageEdit.completion')}{' '}
                   <span style={{ color: theme.accent }}>{form.completionPct ?? 0}%</span>
                 </label>
                 <input
@@ -293,10 +295,10 @@ export function StageEditDrawer({
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            {inp('plannedStartDate', 'Planned Start', 'date')}
-            {inp('plannedEndDate', 'Planned End', 'date')}
-            {!isCreate && inp('actualStartDate', 'Actual Start', 'date')}
-            {!isCreate && inp('actualEndDate', 'Actual End', 'date')}
+            {inp('plannedStartDate', t('proj.stageEdit.plannedStart'), 'date')}
+            {inp('plannedEndDate', t('proj.stageEdit.plannedEnd'), 'date')}
+            {!isCreate && inp('actualStartDate', t('proj.stageEdit.actualStart'), 'date')}
+            {!isCreate && inp('actualEndDate', t('proj.stageEdit.actualEnd'), 'date')}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -309,7 +311,7 @@ export function StageEditDrawer({
                 letterSpacing: '0.05em',
               }}
             >
-              Notes
+              {t('proj.stageEdit.notes')}
             </label>
             <textarea
               rows={3}
@@ -351,7 +353,7 @@ export function StageEditDrawer({
               fontSize: '13px',
             }}
           >
-            Cancel
+            {t('proj.stageEdit.cancel')}
           </button>
           <button
             onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)}
@@ -367,7 +369,7 @@ export function StageEditDrawer({
               fontWeight: 500,
             }}
           >
-            {saving ? 'Saving…' : 'Save Stage'}
+            {saving ? t('proj.stageEdit.saving') : t('proj.stageEdit.saveStage')}
           </button>
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React, { useState } from 'react'
 import { useMutation } from '@apollo/client'
 import { useTheme } from '../../theme/ThemeContext'
@@ -69,13 +70,14 @@ function getPhaseButtons(
   allowedActions: string[],
   isRfq: boolean,
 ): PhaseButton[] {
+  const { t } = useTranslation()
   const has = (a: string) => allowedActions.includes(a)
 
   if (['cancelled', 'cancelled_after_approval'].includes(status)) return []
 
   // On hold — only resume
   if (status === 'on_hold') {
-    return has('resume') ? [{ key: 'resume', label: 'Resume Project', variant: 'primary' }] : []
+    return has('resume') ? [{ key: 'resume', label: t('proj.statusBar.resumeProject'), variant: 'primary' }] : []
   }
 
   switch (phase) {
@@ -85,21 +87,21 @@ function getPhaseButtons(
       if (startKey)
         btns.push({
           key: startKey,
-          label: 'Start Scope Review',
+          label: t('proj.statusBar.startScopeReview'),
           variant: 'primary',
           requiresTimeline: 'rfq',
         })
       if (has('hold'))
-        btns.push({ key: 'hold', label: 'Put On Hold', variant: 'warning', requiresReason: true })
+        btns.push({ key: 'hold', label: t('proj.statusBar.putOnHold'), variant: 'warning', requiresReason: true })
       if (has('cancel'))
-        btns.push({ key: 'cancel', label: 'Cancel', variant: 'danger', requiresReason: true })
+        btns.push({ key: 'cancel', label: t('proj.statusBar.cancel'), variant: 'danger', requiresReason: true })
       return btns
     }
     case 'scope_review': {
       const btns: PhaseButton[] = [
         {
           key: 'advance_bidding',
-          label: 'Advance to Bidding',
+          label: t('proj.statusBar.advanceToBidding'),
           variant: 'primary',
           isAdvancePhase: true,
           targetPhase: 'bidding',
@@ -107,9 +109,9 @@ function getPhaseButtons(
         },
       ]
       if (has('hold'))
-        btns.push({ key: 'hold', label: 'Put On Hold', variant: 'warning', requiresReason: true })
+        btns.push({ key: 'hold', label: t('proj.statusBar.putOnHold'), variant: 'warning', requiresReason: true })
       if (has('cancel'))
-        btns.push({ key: 'cancel', label: 'Cancel', variant: 'danger', requiresReason: true })
+        btns.push({ key: 'cancel', label: t('proj.statusBar.cancel'), variant: 'danger', requiresReason: true })
       return btns
     }
     case 'bidding': {
@@ -117,53 +119,53 @@ function getPhaseButtons(
       if (has('submit'))
         btns.push({
           key: 'submit',
-          label: 'Submit Bid to Client',
+          label: t('proj.statusBar.submitBidToClient'),
           variant: 'success',
           requiresTimeline: 'bid',
         })
       if (has('hold'))
-        btns.push({ key: 'hold', label: 'Put On Hold', variant: 'warning', requiresReason: true })
+        btns.push({ key: 'hold', label: t('proj.statusBar.putOnHold'), variant: 'warning', requiresReason: true })
       if (has('cancel'))
-        btns.push({ key: 'cancel', label: 'Cancel', variant: 'danger', requiresReason: true })
+        btns.push({ key: 'cancel', label: t('proj.statusBar.cancel'), variant: 'danger', requiresReason: true })
       return btns
     }
     case 'client_approval': {
       const btns: PhaseButton[] = []
       if (isRfq) {
         if (has('approve_rfq'))
-          btns.push({ key: 'approve_rfq', label: 'Mark as Awarded', variant: 'success' })
+          btns.push({ key: 'approve_rfq', label: t('proj.statusBar.markAsAwarded'), variant: 'success' })
         if (has('reject_rfq'))
           btns.push({
             key: 'reject_rfq',
-            label: 'Reject Bid',
+            label: t('proj.statusBar.rejectBid'),
             variant: 'danger',
             requiresReason: true,
           })
       } else {
         if (has('approve'))
-          btns.push({ key: 'approve', label: 'Mark as Awarded', variant: 'success' })
+          btns.push({ key: 'approve', label: t('proj.statusBar.markAsAwarded'), variant: 'success' })
         if (has('reject_back'))
           btns.push({
             key: 'reject_back',
-            label: 'Request Revision',
+            label: t('proj.statusBar.requestRevision'),
             variant: 'warning',
             requiresReason: true,
           })
       }
       if (has('cancel'))
-        btns.push({ key: 'cancel', label: 'Cancel', variant: 'danger', requiresReason: true })
+        btns.push({ key: 'cancel', label: t('proj.statusBar.cancel'), variant: 'danger', requiresReason: true })
       return btns
     }
     case 'execution': {
       const btns: PhaseButton[] = []
       if (has('complete'))
-        btns.push({ key: 'complete', label: 'Close Project', variant: 'success' })
+        btns.push({ key: 'complete', label: t('proj.statusBar.closeProject'), variant: 'success' })
       if (has('hold'))
-        btns.push({ key: 'hold', label: 'Put On Hold', variant: 'warning', requiresReason: true })
+        btns.push({ key: 'hold', label: t('proj.statusBar.putOnHold'), variant: 'warning', requiresReason: true })
       if (has('cancel_after_approval'))
         btns.push({
           key: 'cancel_after_approval',
-          label: 'Cancel Project',
+          label: t('proj.statusBar.cancelProject'),
           variant: 'danger',
           requiresReason: true,
         })
@@ -212,6 +214,7 @@ export function ProjectStatusBar({
   onTransitioned,
   timeline,
 }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [pendingBtn, setPendingBtn] = useState<PhaseButton | null>(null)
   const [reason, setReason] = useState('')
@@ -256,7 +259,7 @@ export function ProjectStatusBar({
       cancel_after_approval: cancelProjectAfterApproval,
     })[key] ?? null
 
-  const sliceTime = (t?: string | null) => (t ? String(t).slice(0, 5) : '')
+  const sliceTime = (tx?: string | null) => (tx ? String(tx).slice(0, 5) : '')
 
   const handleClick = (btn: PhaseButton) => {
     if (btn.gate) return // gated — button is disabled
@@ -344,9 +347,9 @@ export function ProjectStatusBar({
 
   const isSideState = ['on_hold', 'cancelled', 'cancelled_after_approval'].includes(status)
   const sideLabel: Record<string, string> = {
-    on_hold: 'On Hold',
-    cancelled: 'Cancelled',
-    cancelled_after_approval: 'Cancelled After Approval',
+    on_hold: t('proj.statusBar.onHold'),
+    cancelled: t('proj.statusBar.cancelled'),
+    cancelled_after_approval: t('proj.statusBar.cancelledAfterApproval'),
   }
   const sideColor: Record<string, string> = {
     on_hold: '#f59e0b',
@@ -408,7 +411,7 @@ export function ProjectStatusBar({
               color: theme.textPrimary,
               fontSize: '13px',
             }}
-            placeholder={`Reason for "${pendingBtn.label}"…`}
+            placeholder={t('proj.statusBar.reasonFor', { label: pendingBtn.label })}
             value={reason}
             onChange={(e) => {
               setReason(e.target.value)
@@ -429,7 +432,7 @@ export function ProjectStatusBar({
               fontWeight: 500,
             }}
           >
-            Confirm
+            {t('proj.statusBar.confirm')}
           </button>
           <button
             onClick={() => {
@@ -445,7 +448,7 @@ export function ProjectStatusBar({
               fontSize: '13px',
             }}
           >
-            Cancel
+            {t('proj.statusBar.cancel')}
           </button>
         </div>
       )}
@@ -464,11 +467,11 @@ export function ProjectStatusBar({
           }}
         >
           <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-            Before starting — confirm the tender schedule
+            {t('proj.statusBar.beforeStartingConfirmTheTenderSchedule')}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
-              <label style={labelStyle(theme)}>Site Visit Date</label>
+              <label style={labelStyle(theme)}>{t('proj.statusBar.siteVisitDate')}</label>
               <input
                 type="date"
                 style={inputStyle(theme)}
@@ -477,7 +480,7 @@ export function ProjectStatusBar({
               />
             </div>
             <div>
-              <label style={labelStyle(theme)}>Site Visit Time</label>
+              <label style={labelStyle(theme)}>{t('proj.statusBar.siteVisitTime')}</label>
               <input
                 type="time"
                 style={inputStyle(theme)}
@@ -486,7 +489,7 @@ export function ProjectStatusBar({
               />
             </div>
             <div>
-              <label style={labelStyle(theme)}>Question Deadline Date</label>
+              <label style={labelStyle(theme)}>{t('proj.statusBar.questionDeadlineDate')}</label>
               <input
                 type="date"
                 style={inputStyle(theme)}
@@ -495,7 +498,7 @@ export function ProjectStatusBar({
               />
             </div>
             <div>
-              <label style={labelStyle(theme)}>Question Deadline Time</label>
+              <label style={labelStyle(theme)}>{t('proj.statusBar.questionDeadlineTime')}</label>
               <input
                 type="time"
                 style={inputStyle(theme)}
@@ -519,7 +522,7 @@ export function ProjectStatusBar({
                 fontWeight: 500,
               }}
             >
-              {saving ? 'Saving…' : `Confirm & ${pendingBtn.label}`}
+              {saving ? t('proj.statusBar.saving') : t('proj.statusBar.confirm2', { label: pendingBtn.label })}
             </button>
             <button
               disabled={saving}
@@ -534,7 +537,7 @@ export function ProjectStatusBar({
                 fontSize: '13px',
               }}
             >
-              Skip
+              {t('proj.statusBar.skip')}
             </button>
             <button
               disabled={saving}
@@ -551,7 +554,7 @@ export function ProjectStatusBar({
                 fontSize: '13px',
               }}
             >
-              Cancel
+              {t('proj.statusBar.cancel')}
             </button>
           </div>
         </div>
@@ -571,11 +574,11 @@ export function ProjectStatusBar({
           }}
         >
           <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-            Confirm bid submission details
+            {t('proj.statusBar.confirmBidSubmissionDetails')}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
-              <label style={labelStyle(theme)}>Submission Date *</label>
+              <label style={labelStyle(theme)}>{t('proj.statusBar.submissionDate')}</label>
               <input
                 type="date"
                 style={inputStyle(theme)}
@@ -584,7 +587,7 @@ export function ProjectStatusBar({
               />
             </div>
             <div>
-              <label style={labelStyle(theme)}>Submission Time</label>
+              <label style={labelStyle(theme)}>{t('proj.statusBar.submissionTime')}</label>
               <input
                 type="time"
                 style={inputStyle(theme)}
@@ -608,7 +611,7 @@ export function ProjectStatusBar({
                 fontWeight: 500,
               }}
             >
-              {saving ? 'Saving…' : 'Confirm & Submit Bid'}
+              {saving ? t('proj.statusBar.saving') : t('proj.statusBar.confirmSubmitBid')}
             </button>
             <button
               disabled={saving}
@@ -625,7 +628,7 @@ export function ProjectStatusBar({
                 fontSize: '13px',
               }}
             >
-              Cancel
+              {t('proj.statusBar.cancel')}
             </button>
           </div>
         </div>

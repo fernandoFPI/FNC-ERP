@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { formatCurrency } from '../../lib/format'
@@ -23,6 +24,7 @@ export function ProjectKPIRow({
   costSummary,
   showFinance = true,
 }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const actual = costSummary?.actualCosts ?? 0
   const committed = costSummary?.committedCosts ?? 0
@@ -32,14 +34,14 @@ export function ProjectKPIRow({
   const financeKpis = showFinance
     ? [
         {
-          label: 'Project Value',
+          label: t('proj.kpi.projectValue'),
           value: formatCurrency(projectValue, currencyCode),
           color: theme.accent,
         },
         {
-          label: 'Budget Remaining',
+          label: t('proj.kpi.budgetRemaining'),
           value: formatCurrency(Math.abs(remaining), currencyCode),
-          sub: overBudget ? 'Over budget' : `of ${formatCurrency(budgetAmount, currencyCode)}`,
+          sub: overBudget ? t('proj.kpi.overBudget') : `of ${formatCurrency(budgetAmount, currencyCode)}`,
           color: overBudget ? '#ef4444' : '#22c55e',
         },
       ]
@@ -48,15 +50,15 @@ export function ProjectKPIRow({
   const kpis = [
     ...financeKpis,
     {
-      label: 'Completion',
+      label: t('proj.kpi.completion'),
       value: `${overallCompletionPct}%`,
-      sub: 'Overall progress',
+      sub: t('proj.kpi.overallProgress'),
       color: theme.accent,
     },
     {
-      label: 'Team / Open POs',
+      label: t('proj.kpi.teamOpenPos'),
       value: `${teamCount} / ${openPoCount}`,
-      sub: 'Members · Purchase orders',
+      sub: t('proj.kpi.membersPurchaseOrders'),
       color: openPoCount > 0 ? '#f59e0b' : theme.textPrimary,
     },
   ]
