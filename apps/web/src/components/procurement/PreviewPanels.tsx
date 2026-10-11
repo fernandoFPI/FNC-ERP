@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../i18n'
 import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
@@ -551,7 +552,7 @@ export function RequisitionPreviewPanel({
           {tab === 'Details' && (
             <>
               <KeyValue label={t('preview.requisition')}>{row.requisition_number}</KeyValue>
-              <KeyValue label={t('preview.purpose')}>{req?.purpose ?? '—'}</KeyValue>
+              <KeyValue label={t('preview.purpose')}>{enumLabel(req?.purpose) || '—'}</KeyValue>
               <KeyValue label={t('preview.project')}>
                 {req?.projectCode
                   ? [req.projectCode, req.projectName].filter(Boolean).join(' — ')
@@ -561,7 +562,7 @@ export function RequisitionPreviewPanel({
               <KeyValue label={t('preview.organizer')}>
                 <PersonCell name={row.organizerName} />
               </KeyValue>
-              <KeyValue label={t('preview.priority')}>{req?.priority ?? '—'}</KeyValue>
+              <KeyValue label={t('preview.priority')}>{enumLabel(req?.priority) || '—'}</KeyValue>
               <KeyValue label={t('preview.createdAt')}>{formatDateTime(row.created_at)}</KeyValue>
               <KeyValue label={t('preview.expectedDelivery')}>
                 {formatLongDate(req?.expected_delivery_date)}

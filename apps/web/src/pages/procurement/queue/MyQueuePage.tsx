@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import i18n, { enumLabel } from '../../../i18n'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
@@ -99,6 +101,8 @@ const KIND_OPTIONS = (Object.keys(KIND_LABELS) as Kind[]).map((k) => ({
   label: KIND_LABELS[k],
 }))
 
+const tAct = (label: string) => i18n.t(`queue.act.${label}`, { defaultValue: label })
+
 function titleCase(s: string): string {
   const t = s.replace(/_/g, ' ')
   return t.charAt(0).toUpperCase() + t.slice(1)
@@ -112,15 +116,17 @@ function roleLabel(
 ): string {
   // inventory_check is the one status where both isOrganizer and
   // requiredPosition can apply — attribute the row to whichever one got it here.
-  if (action?.isOrganizer && organizerId === currentUserId) return 'Organizer'
-  if (action?.requiredPosition) return titleCase(action.requiredPosition)
-  if (action?.isOrganizer) return 'Organizer'
-  if (action?.requiredRole === 'finance') return 'Finance'
-  if (action?.requiredRole === 'dept_head_or_admin') return 'Dept head / Admin'
+  const role = (key: string, fallback: string) => i18n.t(`queue.role.${key}`, { defaultValue: fallback })
+  if (action?.isOrganizer && organizerId === currentUserId) return role('organizer', 'Organizer')
+  if (action?.requiredPosition) return role(action.requiredPosition, titleCase(action.requiredPosition))
+  if (action?.isOrganizer) return role('organizer', 'Organizer')
+  if (action?.requiredRole === 'finance') return role('finance', 'Finance')
+  if (action?.requiredRole === 'dept_head_or_admin') return role('dept_head_or_admin', 'Dept head / Admin')
   return '—'
 }
 
 export default function MyQueuePage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [params] = useSearchParams()
@@ -195,9 +201,9 @@ export default function MyQueuePage() {
   }, [canApproveExpenses, canApproveAdvances])
   useEffect(() => {
     loadFinanceItems()
-    const t = setInterval(loadFinanceItems, 60_000)
+    const timer = setInterval(loadFinanceItems, 60_000)
     return () => {
-      clearInterval(t)
+      clearInterval(timer)
     }
   }, [loadFinanceItems])
 
@@ -217,7 +223,7 @@ export default function MyQueuePage() {
         status: r.status,
         statusLabel: getRequisitionStatusLabel(r.status),
         statusVariant: getRequisitionStatusVariant(r.status),
-        action: action?.label ?? 'Action needed',
+        action: tAct(action?.label ?? 'Action needed'),
         role: roleLabel(action, r.organizer_id, currentUserId),
         updatedAt: r.updated_at,
         href:
@@ -244,7 +250,9 @@ export default function MyQueuePage() {
         status: p.status,
         statusLabel: getPOStatusLabel(p.status),
         statusVariant: getPOStatusVariant(p.status),
-        action: isJobsiteDelivery ? 'Confirm jobsite delivery' : (action?.label ?? 'Action needed'),
+        action: isJobsiteDelivery
+          ? tAct('Confirm jobsite delivery')
+          : tAct(action?.label ?? 'Action needed'),
         role: roleLabel(action, p.organizer_id, currentUserId),
         updatedAt: p.updated_at,
         href: `/procurement/purchase-orders/${p.id}`,
@@ -260,12 +268,12 @@ export default function MyQueuePage() {
         id: c.id,
         number: c.claim_number,
         headline: c.employee_name,
-        sub: 'Expense claim',
+        sub: t('queue.expenseClaim'),
         status: c.status,
-        statusLabel: funding ? 'Awaiting funding decision' : 'Pending approval',
+        statusLabel: funding ? tAct('Awaiting funding decision') : tAct('Pending approval'),
         statusVariant: 'warning',
-        action: funding ? 'Decide expense funding source' : 'Approve expense claim',
-        role: 'Approver',
+        action: funding ? tAct('Decide expense funding source') : tAct('Approve expense claim'),
+        role: i18n.t('queue.role.approver', { defaultValue: 'Approver' }),
         updatedAt: c.created_at,
         href: `/finance/expense-claims/${c.id}`,
         needsApproval: !funding,
@@ -279,12 +287,12 @@ export default function MyQueuePage() {
         id: s.id,
         number: s.settlement_number,
         headline: s.employee_name,
-        sub: 'Advance settlement',
+        sub: t('queue.advanceSettlement'),
         status: s.status,
-        statusLabel: 'Pending approval',
+        statusLabel: tAct('Pending approval'),
         statusVariant: 'warning',
-        action: 'Approve advance settlement',
-        role: 'Approver',
+        action: tAct('Approve advance settlement'),
+        role: i18n.t('queue.role.approver', { defaultValue: 'Approver' }),
         updatedAt: s.created_at,
         href: `/finance/advances/${s.advance_id}`,
         needsApproval: true,
@@ -293,7 +301,7 @@ export default function MyQueuePage() {
     }
     // Longest-waiting first — the oldest item is the most overdue.
     return out.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
-  }, [reqData, poData, expenseRows, settlementRows, currentUserId])
+  }, [reqData, poData, expenseRows, settlementRows, currentUserId, t])
 
   const loading = (poLoading || reqLoading) && items.length === 0
   const count = (k: Kind) => items.filter((i) => i.kind === k).length
@@ -334,7 +342,7 @@ export default function MyQueuePage() {
   const columns: Column<QueueItem>[] = [
     {
       key: 'number',
-      header: 'Item',
+      header: t('queue.item'),
       mobilePrimary: true,
       render: (i) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -370,7 +378,7 @@ export default function MyQueuePage() {
     },
     {
       key: 'headline',
-      header: 'Details',
+      header: t('queue.details'),
       mobileSecondary: true,
       render: (i) => (
         <div>
@@ -381,7 +389,7 @@ export default function MyQueuePage() {
     },
     {
       key: 'action',
-      header: 'Your action',
+      header: t('queue.yourAction'),
       mobilePriority: 1,
       render: (i) => (
         <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
@@ -391,20 +399,20 @@ export default function MyQueuePage() {
     },
     {
       key: 'role',
-      header: 'Your role',
-      mobileLabel: 'Role',
+      header: t('queue.yourRole'),
+      mobileLabel: t('queue.mobileRole'),
       mobilePriority: 3,
-      render: (i) => <span style={{ fontSize: '13px', color: theme.textSecondary }}>{i.role}</span>,
+      render: (i) => <span style={{ fontSize: '13px', color: theme.textSecondary }}>{enumLabel(i.role)}</span>,
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('queue.status'),
       mobilePriority: 2,
       render: (i) => <Badge variant={i.statusVariant}>{i.statusLabel}</Badge>,
     },
     {
       key: 'waiting',
-      header: 'Waiting',
+      header: t('queue.waiting'),
       mobilePriority: 4,
       render: (i) => {
         const d = daysSince(i.updatedAt)
@@ -433,17 +441,17 @@ export default function MyQueuePage() {
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '2400px' }}>
       <PageTitle
         icon="doc"
-        title="My Queue"
-        subtitle="Everything waiting on you — requisitions, purchase orders and approvals — in one place."
+        title={t('queue.myQueue')}
+        subtitle={t('queue.everythingWaitingOnYouRequisitionsPurchase')}
       />
 
       <KpiRow>
         <KpiTile
           tone="accent"
           icon="doc"
-          label="My Queue"
+          label={t('queue.myQueue')}
           value={items.length}
-          sub="Actions required"
+          sub={t('queue.actionsRequired')}
           loading={loading}
           active={!anyFilter}
           onClick={() => {
@@ -456,9 +464,9 @@ export default function MyQueuePage() {
         <KpiTile
           tone="info"
           icon="doc"
-          label="Requisitions"
+          label={t('queue.requisitions')}
           value={count('requisition')}
-          sub="Awaiting your action"
+          sub={t('queue.awaitingYourAction')}
           loading={loading}
           active={kindFilter === 'requisition'}
           onClick={() => {
@@ -468,9 +476,9 @@ export default function MyQueuePage() {
         <KpiTile
           tone="success"
           icon="cart"
-          label="Purchase Orders"
+          label={t('queue.purchaseOrders')}
           value={count('po')}
-          sub="Awaiting your action"
+          sub={t('queue.awaitingYourAction')}
           loading={loading}
           active={kindFilter === 'po'}
           onClick={() => {
@@ -480,9 +488,9 @@ export default function MyQueuePage() {
         <KpiTile
           tone="warning"
           icon="clock"
-          label="Needs My Approval"
+          label={t('queue.needsMyApproval')}
           value={approvalCount}
-          sub="Awaiting your sign-off"
+          sub={t('queue.awaitingYourSignOff')}
           loading={loading}
           active={quick === 'approval'}
           onClick={() => {
@@ -492,7 +500,7 @@ export default function MyQueuePage() {
         <KpiTile
           tone="danger"
           icon="alert"
-          label="Overdue"
+          label={t('queue.overdue')}
           value={overdueCount}
           sub={`Waiting ${OVERDUE_DAYS}+ days`}
           loading={loading}
@@ -508,22 +516,25 @@ export default function MyQueuePage() {
           <SearchBox
             value={search}
             onChange={setSearch}
-            placeholder="Search number, project, vendor, action…"
+            placeholder={t('queue.searchNumberProjectVendorAction')}
           />
           <PillSelect
-            label="Type"
+            label={t('queue.type')}
             value={kindFilter}
-            options={KIND_OPTIONS}
+            options={KIND_OPTIONS.map((o) => ({
+              ...o,
+              label: t(`queue.kind.${o.value}`, { defaultValue: o.label }),
+            }))}
             onChange={setKindFilter}
           />
           <PillSelect
-            label="Action"
+            label={t('queue.action')}
             value={actionFilter}
             options={actionOptions}
             onChange={setActionFilter}
           />
           <IconButton
-            title="Refresh"
+            title={t('queue.refresh')}
             onClick={() => {
               void refetchPO()
               void refetchReq()
@@ -538,12 +549,12 @@ export default function MyQueuePage() {
           {!loading && filtered.length === 0 ? (
             <div style={{ padding: '56px 16px', textAlign: 'center' }}>
               <div style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>
-                {anyFilter ? 'Nothing matches these filters' : "You're all caught up"}
+                {anyFilter ? t('queue.nothingMatchesTheseFilters') : t('queue.youReAllCaughtUp')}
               </div>
               <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
                 {anyFilter
-                  ? 'Clear a filter to see the rest of your queue.'
-                  : 'No requisitions, purchase orders or approvals are waiting on you.'}
+                  ? t('queue.clearAFilterToSeeThe')
+                  : t('queue.noRequisitionsPurchaseOrdersOrApprovals')}
               </div>
             </div>
           ) : (
@@ -557,7 +568,7 @@ export default function MyQueuePage() {
               }}
               getRowStyle={(i) =>
                 daysSince(i.updatedAt) >= OVERDUE_DAYS
-                  ? { borderLeft: `3px solid ${theme.danger}` }
+                  ? { borderInlineStart: `3px solid ${theme.danger}` }
                   : {}
               }
             />

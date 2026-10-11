@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { VENDORS_QUERY } from '../../../graphql/procurement'
@@ -26,6 +27,7 @@ interface Vendor {
 }
 
 export default function VendorsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
@@ -50,7 +52,7 @@ export default function VendorsPage() {
   const columns: Column<Vendor>[] = [
     {
       key: 'name',
-      header: 'Vendor Name',
+      header: t('vendor.list.vendorName'),
       render: (v) => (
         <div>
           <div style={{ color: theme.textPrimary, fontWeight: 500 }}>{v.name}</div>
@@ -62,7 +64,7 @@ export default function VendorsPage() {
     },
     {
       key: 'tax_id',
-      header: 'Tax ID',
+      header: t('vendor.list.taxId'),
       render: (v) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px', fontFamily: 'monospace' }}>
           {v.tax_id ?? '—'}
@@ -71,21 +73,21 @@ export default function VendorsPage() {
     },
     {
       key: 'currency_code',
-      header: 'Currency',
+      header: t('vendor.list.currency'),
       render: (v) => <Badge variant="info">{v.currency_code}</Badge>,
     },
     {
       key: 'payment_terms_days',
-      header: 'Payment Terms',
+      header: t('vendor.list.paymentTerms'),
       render: (v) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
-          Net {v.payment_terms_days} days
+          {t('vendor.list.netDays', { days: v.payment_terms_days })}
         </span>
       ),
     },
     {
       key: 'country_code',
-      header: 'Country',
+      header: t('vendor.list.country'),
       render: (v) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
           {v.country_code ?? '—'}
@@ -94,7 +96,7 @@ export default function VendorsPage() {
     },
     {
       key: 'contact_email',
-      header: 'Contact',
+      header: t('vendor.list.contact'),
       render: (v) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
           {v.contact_email ?? '—'}
@@ -103,10 +105,10 @@ export default function VendorsPage() {
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('vendor.list.status'),
       render: (v) => (
         <Badge variant={v.is_active ? 'success' : 'neutral'}>
-          {v.is_active ? 'Active' : 'Inactive'}
+          {v.is_active ? t('vendor.list.active') : t('vendor.list.inactive')}
         </Badge>
       ),
     },
@@ -115,7 +117,7 @@ export default function VendorsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
       <PageHeader
-        title="Vendors"
+        title={t('vendor.list.vendors')}
         subtitle={`${filtered.length} vendors`}
         actions={
           <Button
@@ -125,7 +127,7 @@ export default function VendorsPage() {
               navigate('/procurement/vendors/new')
             }}
           >
-            New Vendor
+            {t('vendor.list.newVendor')}
           </Button>
         }
       />

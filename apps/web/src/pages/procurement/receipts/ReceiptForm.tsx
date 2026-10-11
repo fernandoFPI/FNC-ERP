@@ -1,3 +1,5 @@
+import { Trans, useTranslation } from 'react-i18next'
+import { getPOStatusLabel } from '../../../lib/po-constants'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -191,6 +193,7 @@ function IconCamera({ size = 20 }: { size?: number }) {
 }
 
 export default function ReceiptForm() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   // Interactive PO tour: same reserved id as PurchaseOrderDetail.tsx — see
@@ -297,7 +300,7 @@ export default function ReceiptForm() {
   }[] = (employeesData?.employees ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   const employeeOptions = [
-    { value: '', label: 'Select receiver…' },
+    { value: '', label: t('receipt.form.selectReceiver') },
     ...employees.map((e) => ({
       value: e.id,
       label: `${e.first_name} ${e.last_name}`,
@@ -471,7 +474,7 @@ export default function ReceiptForm() {
                   fontSize: '12px',
                 }}
               >
-                Uploading…
+                {t('receipt.form.uploading')}
               </div>
             )}
             {photo.error && (
@@ -539,7 +542,7 @@ export default function ReceiptForm() {
           }}
         >
           <IconCamera size={22} />
-          <span>Take Photo</span>
+          <span>{t('receipt.form.takePhoto')}</span>
         </button>
         <button
           type="button"
@@ -561,8 +564,8 @@ export default function ReceiptForm() {
           }}
         >
           <span style={{ fontSize: '24px' }}>+</span>
-          <span>Add Photo / PDF</span>
-          <span style={{ fontSize: '10px' }}>or drag &amp; drop</span>
+          <span>{t('receipt.form.addPhotoPdf')}</span>
+          <span style={{ fontSize: '10px' }}>{t('receipt.form.orDragDrop')}</span>
         </button>
       </div>
     )
@@ -576,11 +579,11 @@ export default function ReceiptForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!isJobsite && !form.received_by_name.trim()) {
-      addToast({ type: 'error', message: 'Please select who received the goods' })
+      addToast({ type: 'error', message: t('receipt.form.pleaseSelectWhoReceivedTheGoods') })
       return
     }
     if (!lines.some((l) => l.selected && parseFloat(l.qty_to_receive) > 0)) {
-      addToast({ type: 'error', message: 'Select at least one item you\'re receiving' })
+      addToast({ type: 'error', message: t('receipt.form.selectAtLeastOneItemYou') })
       return
     }
     if (isJobsite) {
@@ -588,12 +591,12 @@ export default function ReceiptForm() {
       const hasMaterials = pendingPhotos.some((p) => p.kind === 'materials')
       if (!hasVendorReceipt || !hasMaterials) {
         const missing = [
-          !hasVendorReceipt ? 'the vendor receipt' : null,
-          !hasMaterials ? 'a photo of the materials delivered' : null,
+          !hasVendorReceipt ? t('receipt.form.theVendorReceipt') : null,
+          !hasMaterials ? t('receipt.form.aPhotoOfMaterials') : null,
         ]
           .filter(Boolean)
-          .join(' and ')
-        addToast({ type: 'error', message: `Please attach ${missing}` })
+          .join(t('receipt.form.andJoin'))
+        addToast({ type: 'error', message: t('receipt.form.pleaseAttach', { missing }) })
         return
       }
     }
@@ -638,7 +641,7 @@ export default function ReceiptForm() {
             setPendingPhotos((prev) =>
               prev.map((p) =>
                 p.id === photo.id
-                  ? { ...p, uploading: false, error: apiErrMsg(photoErr, 'Upload failed') }
+                  ? { ...p, uploading: false, error: apiErrMsg(photoErr, t('receipt.form.uploadFailedShort')) }
                   : p,
               ),
             )
@@ -648,14 +651,14 @@ export default function ReceiptForm() {
         if (photosFailed > 0) {
           addToast({
             type: 'error',
-            message: `Delivery recorded, but ${photosFailed} photo${photosFailed > 1 ? 's' : ''} failed to upload. Fix the errors above and try again — the delivery itself won't be recorded twice.`,
+            message: t('receipt.form.photosFailed', { count: photosFailed }),
           })
           return
         }
 
         addToast({
           type: 'success',
-          message: 'Delivery marked received — cost posted directly to the project',
+          message: t('receipt.form.deliveryMarkedReceivedCostPostedDirectly'),
         })
         navigate(`/procurement/purchase-orders/${id}`)
         return
@@ -725,18 +728,18 @@ export default function ReceiptForm() {
       if (receiptIds.length === 1) {
         addToast({
           type: 'success',
-          message: 'Draft receipt saved — attach photos and confirm to complete it',
+          message: t('receipt.form.draftReceiptSavedAttachPhotosAnd'),
         })
         navigate(`/inventory/store-in/${receiptIds[0]}`)
       } else {
         addToast({
           type: 'success',
-          message: `${receiptIds.length} draft receipts saved — open each from Store In to attach photos and confirm`,
+          message: t('receipt.form.draftReceiptsSaved', { count: receiptIds.length }),
         })
         navigate('/inventory/store-in')
       }
     } catch (err) {
-      addToast({ type: 'error', message: apiErrMsg(err, 'Save failed') })
+      addToast({ type: 'error', message: apiErrMsg(err, t('receipt.form.saveFailed')) })
     } finally {
       setSubmitting(false)
     }
@@ -780,7 +783,7 @@ export default function ReceiptForm() {
   const receiptLineFields: LineItemField<ReceiptLine>[] = [
     {
       key: 'selected',
-      label: 'Receiving?',
+      label: t('receipt.form.receiving'),
       width: '70px',
       render: (line) => (
         <input
@@ -795,7 +798,7 @@ export default function ReceiptForm() {
     },
     {
       key: 'description',
-      label: 'Item',
+      label: t('receipt.form.item'),
       render: (line) => (
         <div>
           <div
@@ -808,7 +811,7 @@ export default function ReceiptForm() {
           </div>
           {line.sku && (
             <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
-              SKU: {line.sku}
+              {t('receipt.form.skuLabel', { sku: line.sku })}
             </div>
           )}
         </div>
@@ -816,7 +819,7 @@ export default function ReceiptForm() {
     },
     {
       key: 'po_unit_price',
-      label: 'PO Price',
+      label: t('receipt.form.poPrice'),
       render: (line) => (
         <span style={{ fontFamily: 'monospace', color: theme.textMuted, whiteSpace: 'nowrap' }}>
           {line.po_unit_price > 0 ? line.po_unit_price.toLocaleString() : '—'}
@@ -825,7 +828,7 @@ export default function ReceiptForm() {
     },
     {
       key: 'ordered_qty',
-      label: 'Ordered',
+      label: t('receipt.form.ordered'),
       render: (line) => (
         <span style={{ fontFamily: 'monospace', fontWeight: 600, color: BRAND_BLUE }}>
           {line.ordered_qty.toLocaleString()}
@@ -834,7 +837,7 @@ export default function ReceiptForm() {
     },
     {
       key: 'qty_received_so_far',
-      label: 'Previously Received',
+      label: t('receipt.form.previouslyReceived'),
       render: (line) => (
         <span style={{ fontFamily: 'monospace', color: theme.textMuted }}>
           {line.qty_received_so_far.toLocaleString()}
@@ -843,7 +846,7 @@ export default function ReceiptForm() {
     },
     {
       key: 'qty_from_stock',
-      label: 'Available in Stock',
+      label: t('receipt.form.availableInStock'),
       render: (line) => (
         <span
           style={{
@@ -858,7 +861,7 @@ export default function ReceiptForm() {
     },
     {
       key: 'remaining',
-      label: 'Remaining',
+      label: t('receipt.form.remaining'),
       render: (line) => (
         <span style={{ fontFamily: 'monospace', fontWeight: 600, color: BRAND_ORANGE }}>
           {remainingQty(line).toLocaleString()}
@@ -867,7 +870,7 @@ export default function ReceiptForm() {
     },
     {
       key: 'qty_to_receive',
-      label: 'Receive Now',
+      label: t('receipt.form.receiveNow'),
       width: '140px',
       render: (line, i) => {
         const max = remainingQty(line)
@@ -891,7 +894,7 @@ export default function ReceiptForm() {
               }}
             />
             <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '2px' }}>
-              Max: {max.toLocaleString()}
+              {t('receipt.form.maxLabel', { max: max.toLocaleString() })}
             </div>
           </div>
         )
@@ -902,7 +905,7 @@ export default function ReceiptForm() {
       : [
           {
             key: 'receiver',
-            label: 'Receiver',
+            label: t('receipt.form.receiver'),
             width: '160px',
             render: (line: ReceiptLine) => (
               <Select
@@ -927,7 +930,7 @@ export default function ReceiptForm() {
                   }))
                 }}
               >
-                <option value="">— Default —</option>
+                <option value="">{t('receipt.form.default')}</option>
                 {employees.map((emp2) => (
                   <option key={emp2.id} value={emp2.id}>
                     {emp2.first_name} {emp2.last_name}
@@ -942,9 +945,9 @@ export default function ReceiptForm() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title={po?.po_number ?? 'Record Receipt'}
-        subtitle="Record Goods Receipt"
-        badge={po?.status && <Badge variant={PO_STATUS_VARIANT[po.status] ?? 'neutral'}>{po.status}</Badge>}
+        title={po?.po_number ?? t('receipt.form.recordReceiptTitle')}
+        subtitle={t('receipt.form.recordGoodsReceipt')}
+        badge={po?.status && <Badge variant={PO_STATUS_VARIANT[po.status] ?? 'neutral'}>{getPOStatusLabel(po.status)}</Badge>}
         backPath={`/procurement/purchase-orders/${id}`}
         actions={
           <Button
@@ -955,7 +958,7 @@ export default function ReceiptForm() {
             loading={submitting}
             onClick={() => formRef.current?.requestSubmit()}
           >
-            {isJobsite ? 'Mark Delivered' : 'Save Draft'}
+            {isJobsite ? t('receipt.form.markDelivered') : t('receipt.form.saveDraft')}
           </Button>
         }
       />
@@ -971,11 +974,11 @@ export default function ReceiptForm() {
         }}
       >
         <span>
-          <span style={{ color: theme.textMuted }}>Vendor:</span>{' '}
+          <span style={{ color: theme.textMuted }}>{t('receipt.form.vendor')}</span>{' '}
           <strong style={{ color: theme.textPrimary }}>{po?.vendor_name ?? '—'}</strong>
         </span>
         <span>
-          <span style={{ color: theme.textMuted }}>PO Date:</span>{' '}
+          <span style={{ color: theme.textMuted }}>{t('receipt.form.poDate')}</span>{' '}
           <strong style={{ color: theme.textPrimary }}>
             {po?.created_at ? po.created_at.slice(0, 10) : '—'}
           </strong>
@@ -1007,13 +1010,13 @@ export default function ReceiptForm() {
                 <span style={{ color: theme.textMuted, display: 'flex' }}>
                   <IconDocument />
                 </span>
-                Receipt Information
+                {t('receipt.form.receiptInformation')}
               </div>
 
               <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 <div style={{ flex: '1 1 180px' }}>
                   <Input
-                    label="Receipt Date"
+                    label={t('receipt.form.receiptDate')}
                     type="date"
                     value={form.receipt_date}
                     onChange={(e) => {
@@ -1056,18 +1059,17 @@ export default function ReceiptForm() {
                         }}
                         style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: BRAND_BLUE }}
                       />
-                      Receive All Items
+                      {t('receipt.form.receiveAllItems')}
                     </label>
-                    <div style={{ fontSize: '11px', color: theme.textMuted, marginLeft: '23px' }}>
-                      (Single receiver)
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginInlineStart: '23px' }}>
+                      {t('receipt.form.singleReceiver')}
                     </div>
                   </div>
                 )}
               </div>
               {!isJobsite && !receiveAll && (
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '-10px' }}>
-                  Each line below can be assigned its own receiver — leave a line unassigned to
-                  use the default receiver.
+                  {t('receipt.form.eachLineBelowCanBeAssigned')}
                 </div>
               )}
 
@@ -1076,13 +1078,13 @@ export default function ReceiptForm() {
                   <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                     <div style={{ flex: '1 1 200px' }}>
                       <Select
-                        label="Receiving Location (optional)"
+                        label={t('receipt.form.receivingLocationOptional')}
                         value={form.location_id}
                         onChange={(e) => {
                           setForm((f) => ({ ...f, location_id: e.target.value }))
                         }}
                       >
-                        <option value="">Select location…</option>
+                        <option value="">{t('receipt.form.selectLocation')}</option>
                         {locations.map((l) => (
                           <option key={l.id} value={l.id}>
                             {l.name}
@@ -1093,7 +1095,7 @@ export default function ReceiptForm() {
                     </div>
                     <div style={{ flex: '1 1 200px' }}>
                       <SearchableSelect
-                        label={receiveAll ? 'Received By *' : 'Default Receiver *'}
+                        label={receiveAll ? t('receipt.form.receivedBy') : t('receipt.form.defaultReceiver')}
                         value={form.received_by_id}
                         onChange={(v) => {
                           const emp = employees.find((e) => e.id === v)
@@ -1104,20 +1106,20 @@ export default function ReceiptForm() {
                           }))
                         }}
                         options={employeeOptions}
-                        placeholder="Search employee…"
+                        placeholder={t('receipt.form.searchEmployee')}
                         minDropdownWidth={280}
                       />
                       {form.received_by_id && (
                         <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
                           {receiveAll
-                            ? 'Auto-selected — change if someone else received the goods'
-                            : 'Used for any line below with no receiver of its own'}
+                            ? t('receipt.form.autoSelectedChangeIfSomeoneElse')
+                            : t('receipt.form.usedForAnyLineBelowWith')}
                         </div>
                       )}
                     </div>
                     <div style={{ flex: '1 1 200px' }}>
                       <SearchableSelect
-                        label="Received From"
+                        label={t('receipt.form.receivedFrom')}
                         value={form.received_from_id}
                         onChange={(v) => {
                           const emp = employees.find((e) => e.id === v)
@@ -1128,17 +1130,17 @@ export default function ReceiptForm() {
                           }))
                         }}
                         options={employeeOptions}
-                        placeholder="Search employee…"
+                        placeholder={t('receipt.form.searchEmployee')}
                         minDropdownWidth={280}
                       />
                       <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
-                        Which employee delivered / handed over these goods (optional)
+                        {t('receipt.form.whichEmployeeDeliveredHandedOverThese')}
                       </div>
                     </div>
                   </div>
                   <Input
-                    label="Location / Jobsite Notes"
-                    placeholder="e.g. Site B, Floor 3, Gate 2 — describe where goods were delivered"
+                    label={t('receipt.form.locationJobsiteNotes')}
+                    placeholder={t('receipt.form.eGSiteBFloor3')}
                     value={form.location_notes}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, location_notes: e.target.value }))
@@ -1148,8 +1150,8 @@ export default function ReceiptForm() {
               )}
 
               <Textarea
-                label="General Notes"
-                placeholder="Add any additional notes about this receipt (damage, condition, packaging, etc.)"
+                label={t('receipt.form.generalNotes')}
+                placeholder={t('receipt.form.addAnyAdditionalNotesAboutThis')}
                 value={form.notes}
                 onChange={(e) => {
                   setForm((f) => ({ ...f, notes: e.target.value }))
@@ -1182,21 +1184,21 @@ export default function ReceiptForm() {
                     data-tour="po-jobsite-photos"
                     style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}
                   >
-                    Vendor Receipt (required)
+                    {t('receipt.form.vendorReceiptRequired')}
                   </div>
                   {renderPhotoGrid('vendor_receipt')}
                   <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                    Photo, scan, or PDF of the vendor's actual receipt or invoice document.
+                    {t('receipt.form.photoScanOrPdfOfThe')}
                   </div>
                 </Card>
 
                 <Card style={{ padding: '20px' }}>
                   <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}>
-                    Materials Delivered (required)
+                    {t('receipt.form.materialsDeliveredRequired')}
                   </div>
                   {renderPhotoGrid('materials')}
                   <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                    Photo of the delivered goods at the jobsite.
+                    {t('receipt.form.photoOfTheDeliveredGoodsAt')}
                   </div>
                 </Card>
               </>
@@ -1227,7 +1229,7 @@ export default function ReceiptForm() {
                 <span style={{ color: theme.textMuted, display: 'flex' }}>
                   <IconBarChart />
                 </span>
-                Receipt Summary
+                {t('receipt.form.receiptSummary')}
               </div>
               <div
                 style={{
@@ -1238,15 +1240,15 @@ export default function ReceiptForm() {
                 }}
               >
                 {[
-                  { label: 'Items', value: itemCount },
-                  { label: 'Ordered Qty', value: orderedQtyTotal.toLocaleString() },
+                  { label: t('receipt.form.items'), value: itemCount },
+                  { label: t('receipt.form.orderedQty'), value: orderedQtyTotal.toLocaleString() },
                   {
-                    label: 'Received Qty',
+                    label: t('receipt.form.receivedQty'),
                     value: alreadyCoveredQty.toLocaleString(),
                     color: BRAND_GREEN,
                   },
                   {
-                    label: 'Remaining Qty',
+                    label: t('receipt.form.remainingQty'),
                     value: remainingAfterQty.toLocaleString(),
                     color: BRAND_ORANGE,
                   },
@@ -1291,7 +1293,7 @@ export default function ReceiptForm() {
                   marginBottom: '6px',
                 }}
               >
-                <span style={{ fontWeight: 600, color: theme.textPrimary }}>Receipt Progress</span>
+                <span style={{ fontWeight: 600, color: theme.textPrimary }}>{t('receipt.form.receiptProgress')}</span>
                 <span style={{ fontWeight: 700, color: BRAND_BLUE }}>{progressPct}%</span>
               </div>
               <div
@@ -1314,11 +1316,14 @@ export default function ReceiptForm() {
                 />
               </div>
               <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '10px' }}>
-                You are receiving{' '}
-                <strong style={{ color: theme.textPrimary }}>
-                  {receivingNowQty.toLocaleString()}
-                </strong>{' '}
-                of {orderedQtyTotal.toLocaleString()} items
+                <Trans
+                  i18nKey="receipt.form.youAreReceiving"
+                  values={{
+                    received: receivingNowQty.toLocaleString(),
+                    total: orderedQtyTotal.toLocaleString(),
+                  }}
+                  components={{ strong: <strong style={{ color: theme.textPrimary }} /> }}
+                />
               </div>
             </Card>
           </div>
@@ -1351,10 +1356,10 @@ export default function ReceiptForm() {
                 <span style={{ color: theme.textMuted, display: 'flex' }}>
                   <IconBox />
                 </span>
-                Receiving Lines
+                {t('receipt.form.receivingLines')}
               </div>
               <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                Review each item and enter the quantity you are receiving.
+                {t('receipt.form.reviewEachItemAndEnterThe')}
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -1378,7 +1383,7 @@ export default function ReceiptForm() {
                   )
                 }}
               >
-                Select All
+                {t('receipt.form.selectAll')}
               </Button>
               <Button
                 type="button"
@@ -1387,7 +1392,7 @@ export default function ReceiptForm() {
                   setLines((prev) => prev.map((l) => ({ ...l, selected: false })))
                 }}
               >
-                Deselect All
+                {t('receipt.form.deselectAll')}
               </Button>
             </div>
           </div>
@@ -1434,10 +1439,10 @@ export default function ReceiptForm() {
               </span>
               <div>
                 <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                  {selectedCount} Item{selectedCount === 1 ? '' : 's'} Selected
+                  {t('receipt.form.itemsSelected', { count: selectedCount })}
                 </div>
                 <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                  of {itemCount} total item{itemCount === 1 ? '' : 's'}
+                  {t('receipt.form.ofTotalItems', { count: itemCount })}
                 </div>
               </div>
             </div>
@@ -1455,10 +1460,10 @@ export default function ReceiptForm() {
               </span>
               <div>
                 <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                  Quantity Receiving: {receivingNowQty.toLocaleString()}
+                  {t('receipt.form.quantityReceiving', { qty: receivingNowQty.toLocaleString() })}
                 </div>
                 <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                  of {orderedQtyTotal.toLocaleString()} ordered
+                  {t('receipt.form.ofOrdered', { qty: orderedQtyTotal.toLocaleString() })}
                 </div>
               </div>
             </div>
@@ -1471,7 +1476,7 @@ export default function ReceiptForm() {
                 navigate(`/procurement/purchase-orders/${id}`)
               }}
             >
-              Cancel
+              {t('receipt.form.cancel')}
             </Button>
             <Button
               variant="primary"
@@ -1485,7 +1490,7 @@ export default function ReceiptForm() {
                 fontWeight: 600,
               }}
             >
-              {isJobsite ? 'Mark Delivered' : 'Save Draft'}
+              {isJobsite ? t('receipt.form.markDelivered') : t('receipt.form.saveDraft')}
             </Button>
           </div>
         </div>

@@ -1,4 +1,6 @@
-﻿import React, { useState, useCallback, useRef, useEffect } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -481,6 +483,7 @@ function DraftReceiptsNotice({
   navigate: ReturnType<typeof useNavigate>
   theme: ReturnType<typeof useTheme>['theme']
 }) {
+  const { t } = useTranslation()
   const draftReceipts = po.receipts.filter((r) => r.status === 'draft')
   if (draftReceipts.length === 0) return null
   return (
@@ -498,9 +501,7 @@ function DraftReceiptsNotice({
       }}
     >
       <div>
-        {draftReceipts.length === 1
-          ? 'A draft receipt already exists for this PO — recording another will create a separate one.'
-          : `${draftReceipts.length} draft receipts already exist for this PO — recording another will create yet another one.`}
+        {t('po.detail.draftReceiptsExist', { count: draftReceipts.length })}
       </div>
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
         {draftReceipts.map((r) => (
@@ -520,7 +521,7 @@ function DraftReceiptsNotice({
               cursor: 'pointer',
             }}
           >
-            Open {r.receipt_number ?? r.id.slice(0, 8)} →
+            {t('po.detail.openReceipt', { ref: r.receipt_number ?? r.id.slice(0, 8) })}
           </button>
         ))}
       </div>
@@ -534,6 +535,7 @@ function DraftReceiptsNotice({
 // same gap already triggered a notification to dept heads/admins when it
 // was logged. Clears itself once every gap is backfilled with a photo.
 function MachineryPhotoAlertNotice({ po }: { po: PO }) {
+  const { t } = useTranslation()
   if (!po.machineryPhotoAlert) return null
   return (
     <div
@@ -548,14 +550,13 @@ function MachineryPhotoAlertNotice({ po }: { po: PO }) {
         marginBottom: '12px',
       }}
     >
-      ⚠ A Daily Report logged machinery against this PO without a live photo. Management has been
-      notified — attach the missing photo from the project's Execution → Daily Reports tab to clear
-      this.
+      {t('po.detail.aDailyReportLoggedMachineryAgainst')}
     </div>
   )
 }
 
 export default function PurchaseOrderDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   // Interactive PO tour: a reserved id renders a synthetic, client-only demo
@@ -719,7 +720,7 @@ export default function PurchaseOrderDetail() {
   const editProducts: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
     (editProductsData?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const editProductOptions = [
-    { value: '', label: 'Custom item (no catalog link)' },
+    { value: '', label: t('po.detail.customItemNoCatalogLink') },
     ...editProducts.map((p) => ({
       value: p.id,
       label: p.name,
@@ -1123,7 +1124,7 @@ export default function PurchaseOrderDetail() {
   })
   const [finishBuyingPO, { loading: finishingBuying }] = useMutation<FinishBuyingPoMutation, FinishBuyingPoMutationVariables>(FINISH_BUYING_PO, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Buying finished — moved to Goods Received' })
+      addToast({ type: 'success', message: t('po.detail.buyingFinishedMovedToGoodsReceived') })
       void refetch()
     },
     onError: onErr,
@@ -1189,7 +1190,7 @@ export default function PurchaseOrderDetail() {
   const [adminSetPOStatus, { loading: adminSetting }] = useMutation<AdminSetPoStatusMutation, AdminSetPoStatusMutationVariables>(ADMIN_SET_PO_STATUS, {
     onCompleted: () => {
       setAdminPoStatus('')
-      addToast({ type: 'success', message: 'Status updated' })
+      addToast({ type: 'success', message: t('po.detail.statusUpdated') })
       void refetch()
     },
     onError: (e) => {
@@ -1232,7 +1233,7 @@ export default function PurchaseOrderDetail() {
   const [resolveLineComment] = useMutation<ResolvePoLineCommentMutation, ResolvePoLineCommentMutationVariables>(RESOLVE_PO_LINE_COMMENT)
   const [adminCorrectPO, { loading: adminCorrecting }] = useMutation<AdminCorrectPoMutation, AdminCorrectPoMutationVariables>(ADMIN_CORRECT_PO, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Correction applied.' })
+      addToast({ type: 'success', message: t('po.detail.correctionApplied') })
       setAdminCorrectionDraft(null)
       void refetch()
     },
@@ -1376,7 +1377,7 @@ export default function PurchaseOrderDetail() {
                 }}
               >
                 <SearchableSelect
-                  label="GL Account"
+                  label={t('po.detail.glAccount')}
                   required
                   value={line.account_id ?? ''}
                   onChange={(v) =>
@@ -1390,10 +1391,10 @@ export default function PurchaseOrderDetail() {
                     })
                   }
                   options={glAccountOptions}
-                  placeholder="Search GL accounts…"
+                  placeholder={t('po.detail.searchGlAccounts')}
                 />
                 <SearchableSelect
-                  label="Cost Center"
+                  label={t('po.detail.costCenter')}
                   required
                   value={line.cost_center_id ?? ''}
                   onChange={(v) =>
@@ -1407,7 +1408,7 @@ export default function PurchaseOrderDetail() {
                     })
                   }
                   options={costCenterOptions}
-                  placeholder="Search cost centers…"
+                  placeholder={t('po.detail.searchCostCenters')}
                 />
               </div>
             </div>
@@ -1420,8 +1421,8 @@ export default function PurchaseOrderDetail() {
   const anyLoading =
     l1 || l2 || l3 || l4 || l5 || l6 || l7 || l8 || l9 || l10 || l11 || lIssue || lAudit || lPass
 
-  if (loading) return <div style={{ padding: '48px', color: theme.textMuted }}>Loading…</div>
-  if (!po) return <div style={{ padding: '48px', color: theme.textMuted }}>PO not found.</div>
+  if (loading) return <div style={{ padding: '48px', color: theme.textMuted }}>{t('po.detail.loading')}</div>
+  if (!po) return <div style={{ padding: '48px', color: theme.textMuted }}>{t('po.detail.poNotFound')}</div>
 
   // Server-side gate — the resolver already withheld every other field, so
   // nothing past this point (lines, pricing, tabs) is safe to render.
@@ -1430,18 +1431,17 @@ export default function PurchaseOrderDetail() {
       <div style={{ ...pagePadding, maxWidth: '600px', margin: '0 auto' }}>
         <PageHeader
           title={po.po_number}
-          subtitle="Access restricted"
+          subtitle={t('po.detail.accessRestricted')}
           backPath="/procurement/purchase-orders"
         />
         <Card style={{ padding: '32px', textAlign: 'center' }}>
           <div
             style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}
           >
-            You don't have access to view this purchase order
+            {t('po.detail.youDonTHaveAccessTo')}
           </div>
           <div style={{ fontSize: '13px', color: theme.textMuted }}>
-            Only the organizer, an admin, the finance team, or whoever holds the position for its
-            current stage ({po.status.replace(/_/g, ' ')}) can view it.
+            {t('po.detail.accessRestrictedBody', { status: getPOStatusLabel(po.status) })}
           </div>
         </Card>
       </div>
@@ -1462,31 +1462,31 @@ export default function PurchaseOrderDetail() {
       }}
     >
       {hasFlaggedLines
-        ? `${flaggedLineIds.length} line${flaggedLineIds.length === 1 ? '' : 's'} flagged — check the Lines tab to add more or edit reasons.`
-        : 'Check the line(s) that need attention in the Lines tab on the right (required to reject).'}
+        ? t('po.detail.flaggedLinesBanner', { count: flaggedLineIds.length })
+        : t('po.detail.checkTheLineSThatNeed')}
     </div>
   )
 
   const pendingEdits = (po.edit_requests ?? []).filter((r) => r.status === 'pending').length
 
   const tabs: { key: Tab; label: string; badge?: number }[] = [
-    { key: 'lines', label: 'Lines' },
-    { key: 'receipts', label: 'Receipts' },
-    { key: 'returns', label: 'Returns', badge: poReturns.length || undefined },
-    { key: 'approval_log', label: 'Log' },
-    { key: 'changes', label: 'Edit requests', badge: pendingEdits },
+    { key: 'lines', label: t('po.detail.lines') },
+    { key: 'receipts', label: t('po.detail.receipts') },
+    { key: 'returns', label: t('po.detail.returns'), badge: poReturns.length || undefined },
+    { key: 'approval_log', label: t('po.detail.log') },
+    { key: 'changes', label: t('po.detail.editRequests'), badge: pendingEdits },
     ...(showAdminCorrectionTab
-      ? [{ key: 'admin_correction' as Tab, label: 'Admin correction' }]
+      ? [{ key: 'admin_correction' as Tab, label: t('po.detail.adminCorrection') }]
       : []),
   ]
 
   const phoneTabLabels: Partial<Record<Tab, string>> = {
-    lines: 'Lines',
-    receipts: 'Rec.',
-    returns: 'Rtn.',
-    approval_log: 'Log',
-    changes: 'Edits',
-    admin_correction: 'Admin',
+    lines: t('po.detail.lines'),
+    receipts: t('po.detail.tabReceiptsShort'),
+    returns: t('po.detail.tabReturnsShort'),
+    approval_log: t('po.detail.log'),
+    changes: t('po.detail.tabEditsShort'),
+    admin_correction: t('nav.Admin'),
   }
 
   return (
@@ -1503,11 +1503,11 @@ export default function PurchaseOrderDetail() {
       <MachineryPhotoAlertNotice po={po} />
       <PageHeader
         title={po.po_number}
-        subtitle={`${po.vendor_name ?? 'No vendor'} • Created ${po.created_at.slice(0, 10)}${
+        subtitle={`${po.vendor_name ?? t('po.detail.noVendor')} • ${t('po.detail.createdOnDate', { date: po.created_at.slice(0, 10) })}${
           po.project_id
-            ? ` • Project: ${[po.projectCode, po.projectName].filter(Boolean).join(' — ')}`
+            ? ` • ${t('po.detail.projectColon', { name: [po.projectCode, po.projectName].filter(Boolean).join(' — ') })}`
             : ''
-        }${po.branch_name ? ` • Branch: ${po.branch_name}` : ''}`}
+        }${po.branch_name ? ` • ${t('po.detail.branchColon', { name: po.branch_name })}` : ''}`}
         backPath="/procurement/purchase-orders"
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1515,7 +1515,7 @@ export default function PurchaseOrderDetail() {
             {po.requisitionNumber && (
               <span
                 onClick={() => { navigate(`/procurement/requisitions/${po.requisition_id}`); }}
-                title="Open the requisition this PO was forked from"
+                title={t('po.detail.openTheRequisitionThisPoWas')}
                 style={{
                   padding: '4px 10px',
                   borderRadius: '7px',
@@ -1527,7 +1527,7 @@ export default function PurchaseOrderDetail() {
                   userSelect: 'none',
                 }}
               >
-                Forked from {po.requisitionNumber}
+                {t('po.detail.forkedFrom', { ref: po.requisitionNumber })}
               </span>
             )}
             {/* Priority selector */}
@@ -1535,21 +1535,21 @@ export default function PurchaseOrderDetail() {
               const PRIORITIES = [
                 {
                   key: 'low',
-                  label: 'Low',
+                  label: t('po.detail.low'),
                   color: '#6b7280',
                   activeBg: 'rgba(107,114,128,0.12)',
                   border: '#9ca3af',
                 },
                 {
                   key: 'high',
-                  label: 'High',
+                  label: t('po.detail.high'),
                   color: '#d97706',
                   activeBg: 'rgba(217,119,6,0.12)',
                   border: '#f59e0b',
                 },
                 {
                   key: 'emergency',
-                  label: 'Emergency',
+                  label: t('po.detail.emergency'),
                   color: '#dc2626',
                   activeBg: 'rgba(220,38,38,0.12)',
                   border: '#ef4444',
@@ -1636,7 +1636,7 @@ export default function PurchaseOrderDetail() {
                       navigate(`/finance/ap/${apInvoice.id}`)
                     }}
                   >
-                    View Invoice
+                    {t('po.detail.viewInvoice')}
                   </Button>
                 ) : can('finance.ap.edit') && (po.status === 'completed' || po.status === 'closed') ? (
                   <Button
@@ -1647,7 +1647,7 @@ export default function PurchaseOrderDetail() {
                       navigate(`/finance/ap/new?po_id=${id}`)
                     }}
                   >
-                    Create Invoice
+                    {t('po.detail.createInvoice')}
                   </Button>
                 ) : null)}
               {['received', 'invoiced', 'completed', 'payment_pending', 'closed'].includes(po.status) &&
@@ -1660,7 +1660,7 @@ export default function PurchaseOrderDetail() {
                       navigate(`/procurement/purchase-orders/${id}/returns/new`)
                     }}
                   >
-                    ↩ Create Return
+                    {t('po.detail.createReturn')}
                   </Button>
                 )}
               <Button
@@ -1672,7 +1672,7 @@ export default function PurchaseOrderDetail() {
                   setShowPrintModal(true)
                 }}
               >
-                Print PO
+                {t('po.detail.printPo')}
               </Button>
             </StickyActionBar>
             {(po.status === 'draft' || po.status === 'inventory_check') && (
@@ -1684,7 +1684,7 @@ export default function PurchaseOrderDetail() {
                   setConfirmDeletePO(true)
                 }}
               >
-                Delete
+                {t('po.detail.delete')}
               </Button>
             )}
             {/* Actions dropdown — Cancel + Admin Override */}
@@ -1709,7 +1709,7 @@ export default function PurchaseOrderDetail() {
                     cursor: 'pointer',
                   }}
                 >
-                  Actions
+                  {t('po.detail.actions')}
                   <svg
                     width="12"
                     height="12"
@@ -1772,7 +1772,7 @@ export default function PurchaseOrderDetail() {
                             letterSpacing: '0.06em',
                           }}
                         >
-                          Actions
+                          {t('po.detail.actions')}
                         </span>
                         <button
                           onClick={() => {
@@ -1807,7 +1807,7 @@ export default function PurchaseOrderDetail() {
                               marginBottom: '4px',
                             }}
                           >
-                            Cancel this PO
+                            {t('po.detail.cancelThisPo')}
                           </div>
                           <div
                             style={{
@@ -1816,20 +1816,20 @@ export default function PurchaseOrderDetail() {
                               marginBottom: '10px',
                             }}
                           >
-                            This action cannot be undone without admin override.
+                            {t('po.detail.thisActionCannotBeUndoneWithout')}
                           </div>
                           <Button
                             variant="danger"
                             size="sm"
                             onClick={() => {
-                              const reason = window.prompt('Cancel reason (optional):') ?? ''
+                              const reason = window.prompt(t('po.detail.cancelReasonOptional')) ?? ''
                               void cancelPO({
                                 variables: { id: po.id, reason: reason || undefined },
                               })
                               setShowActionsPanel(false)
                             }}
                           >
-                            Cancel PO
+                            {t('po.detail.cancelPo')}
                           </Button>
                         </div>
                       )}
@@ -1866,7 +1866,7 @@ export default function PurchaseOrderDetail() {
                                 letterSpacing: '0.07em',
                               }}
                             >
-                              Admin Override
+                              {t('po.detail.adminOverride')}
                             </span>
                             <span
                               style={{
@@ -1876,7 +1876,7 @@ export default function PurchaseOrderDetail() {
                                 marginLeft: 'auto',
                               }}
                             >
-                              Bypasses workflow
+                              {t('po.detail.bypassesWorkflow')}
                             </span>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1899,26 +1899,26 @@ export default function PurchaseOrderDetail() {
                               }}
                             >
                               {[
-                                { value: 'draft', label: 'Draft' },
-                                { value: 'inventory_check', label: 'Inventory Check' },
-                                { value: 'store_pricing', label: 'Store Pricing' },
-                                { value: 'market_pricing', label: 'Market Pricing' },
-                                { value: 'price_verification', label: 'Price Verification' },
-                                { value: 'pending_approval', label: 'Pending Approval' },
-                                { value: 'approved', label: 'Approved' },
-                                { value: 'ready_to_issue', label: 'Ready to Issue' },
-                                { value: 'items_bought', label: 'Items Bought' },
-                                { value: 'bought', label: 'Bought (G1 child)' },
-                                { value: 'goods_received', label: 'Goods Received' },
-                                { value: 'finance_audit', label: 'Finance Audit' },
-                                { value: 'finance_review', label: 'Finance Review (G1 child)' },
-                                { value: 'invoiced', label: 'Invoiced' },
-                                { value: 'payment_pending', label: 'Payment Pending (G1 child)' },
-                                { value: 'completed', label: 'Completed' },
-                                { value: 'closed', label: 'Closed (G1 child)' },
-                                { value: 'rejected', label: 'Rejected' },
-                                { value: 'cancelled', label: 'Cancelled' },
-                                { value: 'deleted', label: 'Deleted' },
+                                { value: 'draft', label: getPOStatusLabel('draft') },
+                                { value: 'inventory_check', label: getPOStatusLabel('inventory_check') },
+                                { value: 'store_pricing', label: getPOStatusLabel('store_pricing') },
+                                { value: 'market_pricing', label: getPOStatusLabel('market_pricing') },
+                                { value: 'price_verification', label: getPOStatusLabel('price_verification') },
+                                { value: 'pending_approval', label: getPOStatusLabel('pending_approval') },
+                                { value: 'approved', label: getPOStatusLabel('approved') },
+                                { value: 'ready_to_issue', label: getPOStatusLabel('ready_to_issue') },
+                                { value: 'items_bought', label: getPOStatusLabel('items_bought') },
+                                { value: 'bought', label: getPOStatusLabel('bought') + ' (G1 child)' },
+                                { value: 'goods_received', label: getPOStatusLabel('goods_received') },
+                                { value: 'finance_audit', label: getPOStatusLabel('finance_audit') },
+                                { value: 'finance_review', label: getPOStatusLabel('finance_review') + ' (G1 child)' },
+                                { value: 'invoiced', label: getPOStatusLabel('invoiced') },
+                                { value: 'payment_pending', label: getPOStatusLabel('payment_pending') + ' (G1 child)' },
+                                { value: 'completed', label: getPOStatusLabel('completed') },
+                                { value: 'closed', label: getPOStatusLabel('closed') + ' (G1 child)' },
+                                { value: 'rejected', label: getPOStatusLabel('rejected') },
+                                { value: 'cancelled', label: getPOStatusLabel('cancelled') },
+                                { value: 'deleted', label: getPOStatusLabel('deleted') },
                               ].map((o) => (
                                 <option key={o.value} value={o.value}>
                                   {o.label}
@@ -1938,7 +1938,7 @@ export default function PurchaseOrderDetail() {
                                 })
                               }
                             >
-                              Apply
+                              {t('po.detail.apply')}
                             </Button>
                           </div>
                         </div>
@@ -1976,8 +1976,7 @@ export default function PurchaseOrderDetail() {
               flexShrink: 0,
             }}
           />
-          <strong>{lock.lockedByName}</strong>&nbsp;is currently working on this purchase order —
-          actions are disabled until they finish.
+          <strong>{lock.lockedByName}</strong> {t('po.detail.lockedSuffix')}
         </div>
       )}
 
@@ -2023,7 +2022,7 @@ export default function PurchaseOrderDetail() {
           <span style={{ color: theme.textMuted, display: 'flex' }}>
             <IconBarChart />
           </span>
-          PO Summary
+          {t('po.detail.poSummary')}
         </div>
         <div
           style={{
@@ -2034,7 +2033,7 @@ export default function PurchaseOrderDetail() {
         >
           {[
             {
-              label: 'Total',
+              label: t('po.detail.total'),
               // No-conversion breakdown — mirrors Requisition's own
               // currencyTotals (see getRequisitionCurrencyTotals /
               // fetchFullPurchaseOrderGW): one entry per currency actually
@@ -2057,8 +2056,8 @@ export default function PurchaseOrderDetail() {
                   </div>
                 ),
             },
-            { label: 'Expected delivery', value: po.expected_delivery_date ?? '—' },
-            { label: 'Created by', value: po.created_by_email ?? '—' },
+            { label: t('po.detail.expectedDelivery'), value: po.expected_delivery_date ?? '—' },
+            { label: t('po.detail.createdBy'), value: po.created_by_email ?? '—' },
           ].map(({ label, value }) => (
             <div
               key={label}
@@ -2099,7 +2098,7 @@ export default function PurchaseOrderDetail() {
             }}
           >
             <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
-              Vendor
+              {t('po.detail.vendor')}
             </div>
             {['draft', 'inventory_check', 'store_pricing', 'market_pricing'].includes(po.status) ? (
               <select
@@ -2119,7 +2118,7 @@ export default function PurchaseOrderDetail() {
                   padding: 0,
                 }}
               >
-                <option value="">— Not yet selected —</option>
+                <option value="">{t('po.detail.notYetSelected')}</option>
                 {vendors.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.name}
@@ -2152,7 +2151,7 @@ export default function PurchaseOrderDetail() {
               }}
             >
               <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
-                Funded by advance
+                {t('po.detail.fundedByAdvance')}
               </div>
               <div
                 style={{
@@ -2171,7 +2170,7 @@ export default function PurchaseOrderDetail() {
                     rel="noreferrer"
                     style={{ color: BRAND_BLUE }}
                   >
-                    {po.funding_advance_number ?? 'View advance'}
+                    {po.funding_advance_number ?? t('po.detail.viewAdvance')}
                   </a>
                 ) : (
                   '—'
@@ -2192,7 +2191,7 @@ export default function PurchaseOrderDetail() {
             }}
           >
             <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
-              Assigned receiver
+              {t('po.detail.assignedReceiver')}
             </div>
             {po.status === 'draft' ? (
               <select
@@ -2212,7 +2211,7 @@ export default function PurchaseOrderDetail() {
                   padding: 0,
                 }}
               >
-                <option value="">— Unassigned —</option>
+                <option value="">{t('po.detail.unassigned')}</option>
                 {employees.map((e) => (
                   <option key={e.id} value={e.id}>
                     {e.first_name} {e.last_name}
@@ -2231,7 +2230,7 @@ export default function PurchaseOrderDetail() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {po.assigned_receiver_name ?? '— Unassigned —'}
+                {po.assigned_receiver_name ?? t('po.detail.unassigned')}
               </div>
             )}
           </div>
@@ -2280,7 +2279,7 @@ export default function PurchaseOrderDetail() {
                 <span style={{ color: BRAND_BLUE, display: 'flex' }}>
                   <IconArrowRight />
                 </span>
-                Next Step
+                {t('po.detail.nextStep')}
               </div>
               <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
             </div>
@@ -2299,8 +2298,7 @@ export default function PurchaseOrderDetail() {
                         color: '#9a3412',
                       }}
                     >
-                      Emergency PO — skips inventory check, store pricing, and market pricing.
-                      Submitting will send directly for approval.
+                      {t('po.detail.emergencyPoSkipsInventoryCheckStore')}
                     </div>
                     <Button
                       variant="primary"
@@ -2319,7 +2317,7 @@ export default function PurchaseOrderDetail() {
                         })
                       }
                     >
-                      Submit for Approval
+                      {t('po.detail.submitForApproval')}
                     </Button>
                   </>
                 ) : (
@@ -2340,7 +2338,7 @@ export default function PurchaseOrderDetail() {
                       })
                     }
                   >
-                    Submit for inventory check
+                    {t('po.detail.submitForInventoryCheck')}
                   </Button>
                 ))}
 
@@ -2363,8 +2361,7 @@ export default function PurchaseOrderDetail() {
                           color: theme.textMuted,
                         }}
                       >
-                        This PO is waiting on Inventory Check. Only the organizer or someone
-                        holding the Store Keeper position (or an admin) can confirm it here.
+                        {t('po.detail.thisPoIsWaitingOnInventory')}
                       </div>
                     )
                   return (
@@ -2374,16 +2371,15 @@ export default function PurchaseOrderDetail() {
                     >
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                          Stock Availability
+                          {t('po.detail.stockAvailability')}
                         </div>
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                      Enter the quantity to take from stock for each line — the rest will be
-                      purchased.
+                      {t('po.detail.enterTheQuantityToTakeFrom')}
                     </div>
                   </div>
                   {stockAvailability.length === 0 && (
                     <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                      Loading stock levels…
+                      {t('po.detail.loadingStockLevels')}
                     </div>
                   )}
                   {stockAvailability.map((avail) => {
@@ -2401,10 +2397,10 @@ export default function PurchaseOrderDetail() {
                         ? '#d97706'
                         : '#dc2626'
                     const statusLabel = avail.isAvailable
-                      ? 'In stock'
+                      ? t('po.detail.inStock')
                       : avail.qtyOnHand > 0
-                        ? 'Partial'
-                        : 'Out of stock'
+                        ? t('po.detail.partial')
+                        : t('po.detail.outOfStock')
                     return (
                       <div
                         key={avail.lineId}
@@ -2452,19 +2448,19 @@ export default function PurchaseOrderDetail() {
                           }}
                         >
                           <span>
-                            Required:{' '}
+                            {t('po.detail.required')}{' '}
                             <strong style={{ color: theme.textPrimary }}>
                               {avail.qtyRequired}
                             </strong>
                           </span>
                           <span>
-                            On hand:{' '}
+                            {t('po.detail.onHand')}{' '}
                             <strong style={{ color: theme.textPrimary }}>
                               {avail.qtyOnHand.toFixed(2)}
                             </strong>
                           </span>
                           <span>
-                            Available:{' '}
+                            {t('po.detail.availableLabel')}{' '}
                             <strong style={{ color: theme.textPrimary }}>
                               {avail.qtyAvailable.toFixed(2)}
                             </strong>
@@ -2481,7 +2477,7 @@ export default function PurchaseOrderDetail() {
                                 marginBottom: '6px',
                               }}
                             >
-                              Source location
+                              {t('po.detail.sourceLocation')}
                             </label>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                               {avail.byLocation.map((loc) => {
@@ -2568,7 +2564,7 @@ export default function PurchaseOrderDetail() {
                                         flexShrink: 0,
                                       }}
                                     >
-                                      {loc.qtyAvailable.toFixed(2)} avail.
+                                      {t('po.detail.availShort', { qty: loc.qtyAvailable.toFixed(2) })}
                                     </span>
                                   </button>
                                 )
@@ -2583,13 +2579,13 @@ export default function PurchaseOrderDetail() {
                               color: theme.textMuted,
                             }}
                           >
-                            No stock available at any location for this item.
+                            {t('po.detail.noStockAvailableAtAnyLocation')}
                           </div>
                         )}
                         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                           <div style={{ width: '140px' }}>
                             <Input
-                              label="From stock"
+                              label={t('po.detail.fromStock')}
                               type="number"
                               min="0"
                               max={String(maxFromStock)}
@@ -2604,7 +2600,7 @@ export default function PurchaseOrderDetail() {
                             />
                           </div>
                           <div style={{ width: '140px' }}>
-                            <Input label="To purchase" value={String(toPurchase)} disabled readOnly />
+                            <Input label={t('po.detail.toPurchase')} value={String(toPurchase)} disabled readOnly />
                           </div>
                         </div>
                       </div>
@@ -2627,7 +2623,7 @@ export default function PurchaseOrderDetail() {
                       })
                     }
                   >
-                    Confirm inventory check
+                    {t('po.detail.confirmInventoryCheck')}
                   </Button>
                     </div>
                   )
@@ -2645,7 +2641,7 @@ export default function PurchaseOrderDetail() {
                       color: '#166534',
                     }}
                   >
-                    All items confirmed in stock. Approve to issue directly from inventory.
+                    {t('po.detail.allItemsConfirmedInStockApprove')}
                   </div>
                   {po.lines
                     .filter((l) => l.qty_from_stock > 0)
@@ -2666,7 +2662,7 @@ export default function PurchaseOrderDetail() {
                           {line.description || line.product_name || '—'}
                         </span>
                         <span style={{ color: theme.textMuted }}>
-                          Issue {line.qty_from_stock} {line.uom} from stock
+                          {t('po.detail.issueFromStock', { qty: line.qty_from_stock, uom: line.uom })}
                         </span>
                       </div>
                     ))}
@@ -2680,7 +2676,7 @@ export default function PurchaseOrderDetail() {
                       })
                     }
                   >
-                    Approve &amp; Issue from Stock
+                    {t('po.detail.approveIssueFromStock')}
                   </Button>
                 </div>
               )}
@@ -2700,8 +2696,7 @@ export default function PurchaseOrderDetail() {
                           color: theme.textMuted,
                         }}
                       >
-                        This PO is waiting on Store Pricing. Only someone holding the Store
-                        Pricing position (or an admin) can enter prices here.
+                        {t('po.detail.thisPoIsWaitingOnStore')}
                       </div>
                     )
                   // Store price now values whatever quantity is being pulled from stock —
@@ -2719,7 +2714,7 @@ export default function PurchaseOrderDetail() {
                           letterSpacing: '0.05em',
                         }}
                       >
-                        Enter store prices for from-stock quantities
+                        {t('po.detail.enterStorePricesForFromStock')}
                       </div>
                       {stockLines.length > 0 && (
                         <div
@@ -2736,8 +2731,7 @@ export default function PurchaseOrderDetail() {
                           }}
                         >
                           <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                            Skip entering prices — store prices will be filled in automatically
-                            from each line's current average cost.
+                            {t('po.detail.skipEnteringPricesStorePricesWill')}
                           </span>
                           <Button
                             variant="secondary"
@@ -2755,7 +2749,7 @@ export default function PurchaseOrderDetail() {
                               })
                             }
                           >
-                            Skip → Continue to Market Pricing
+                            {t('po.detail.skipContinueToMarketPricing')}
                           </Button>
                         </div>
                       )}
@@ -2770,8 +2764,7 @@ export default function PurchaseOrderDetail() {
                             background: theme.bgSurface,
                           }}
                         >
-                          No lines on this PO are being fulfilled from stock — there's nothing to
-                          price here. Continue to market pricing below.
+                          {t('po.detail.noLinesOnThisPoAre')}
                         </div>
                       )}
                       {stockLines.map((line) => {
@@ -2805,9 +2798,9 @@ export default function PurchaseOrderDetail() {
                               {line.source_location_name && (
                                 <span style={{ color: theme.textMuted }}>
                                   {' '}
-                                  · from {line.source_company_name} — {line.source_location_name}
+                                  {t('po.detail.fromSource', { company: line.source_company_name, location: line.source_location_name })}
                                   {line.source_average_cost != null &&
-                                    ` (last cost ${line.source_average_cost.toFixed(2)})`}
+                                    ` ${t('po.detail.lastCost', { cost: line.source_average_cost.toFixed(2) })}`}
                                 </span>
                               )}
                             </div>
@@ -2816,7 +2809,7 @@ export default function PurchaseOrderDetail() {
                                 type="number"
                                 step="any"
                                 min="0"
-                                placeholder="Store price"
+                                placeholder={t('po.detail.storePrice')}
                                 value={sp.price}
                                 onChange={(e) => {
                                   const val = e.target.value
@@ -2872,7 +2865,7 @@ export default function PurchaseOrderDetail() {
                           })
                         }
                       >
-                        {stockLines.length === 0 ? 'Continue to market pricing' : 'Submit store pricing'}
+                        {stockLines.length === 0 ? t('po.detail.continueToMarketPricing') : t('po.detail.submitStorePricing')}
                       </Button>
                     </div>
                   )
@@ -2893,8 +2886,7 @@ export default function PurchaseOrderDetail() {
                           color: theme.textMuted,
                         }}
                       >
-                        This PO is waiting on Market Pricing. Only someone holding the
-                        Procurement Officer position (or an admin) can enter prices here.
+                        {t('po.detail.thisPoIsWaitingOnMarket')}
                       </div>
                     )
                   const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
@@ -2917,7 +2909,7 @@ export default function PurchaseOrderDetail() {
                           letterSpacing: '0.05em',
                         }}
                       >
-                        Enter market prices
+                        {t('po.detail.enterMarketPrices')}
                       </div>
                       {stockCovered > 0 && (
                         <div
@@ -2930,8 +2922,7 @@ export default function PurchaseOrderDetail() {
                             border: `1px solid ${theme.border}`,
                           }}
                         >
-                          {stockCovered} line(s) covered from stock — showing only lines to be
-                          purchased
+                          {t('po.detail.stockCovered', { count: stockCovered })}
                         </div>
                       )}
                       {purchaseLines.map((line) => {
@@ -2972,7 +2963,7 @@ export default function PurchaseOrderDetail() {
                                 type="number"
                                 step="any"
                                 min="0"
-                                placeholder="Market price *"
+                                placeholder={t('po.detail.marketPrice')}
                                 value={mp.price}
                                 onChange={(e) => {
                                   const val = e.target.value
@@ -3008,7 +2999,7 @@ export default function PurchaseOrderDetail() {
                       })}
                       {!allPricesEntered && (
                         <div style={{ fontSize: '12px', color: '#ef4444' }}>
-                          All lines require a price greater than 0 before submitting.
+                          {t('po.detail.allLinesRequireAPriceGreater')}
                         </div>
                       )}
                       <Button
@@ -3040,7 +3031,7 @@ export default function PurchaseOrderDetail() {
                           })
                         }
                       >
-                        Submit market pricing
+                        {t('po.detail.submitMarketPricing')}
                       </Button>
                     </div>
                   )
@@ -3063,7 +3054,7 @@ export default function PurchaseOrderDetail() {
                           letterSpacing: '0.05em',
                         }}
                       >
-                        Verify prices then submit for approval
+                        {t('po.detail.verifyPricesThenSubmitForApproval')}
                       </div>
                       <div
                         style={{
@@ -3076,7 +3067,7 @@ export default function PurchaseOrderDetail() {
                           border: `1px solid ${theme.border}`,
                         }}
                       >
-                        <span style={{ fontSize: '12px', color: theme.textMuted }}>Total</span>
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('po.detail.total')}</span>
                         <span style={{ fontSize: '15px', fontWeight: 700, color: theme.textPrimary }}>
                           {parseFloat(String(po.total_amount)).toLocaleString('en-US', {
                             minimumFractionDigits: 0,
@@ -3115,7 +3106,7 @@ export default function PurchaseOrderDetail() {
                                     minimumFractionDigits: 0,
                                     maximumFractionDigits: 2,
                                   })}{' '}
-                                  {line.market_price_currency ?? po.currency_code} / unit
+                                  {line.market_price_currency ?? po.currency_code} / {t('po.detail.perUnit')}
                                 </span>
                                 <span style={{ color: theme.textPrimary, fontWeight: 600 }}>
                                   {lineTotal.toLocaleString('en-US', {
@@ -3126,7 +3117,7 @@ export default function PurchaseOrderDetail() {
                                 </span>
                               </span>
                             ) : (
-                              <span style={{ color: '#ef4444', fontWeight: 600 }}>No price set</span>
+                              <span style={{ color: '#ef4444', fontWeight: 600 }}>{t('po.detail.noPriceSet')}</span>
                             )}
                           </div>
                         )
@@ -3142,8 +3133,7 @@ export default function PurchaseOrderDetail() {
                             border: '1px solid #fecaca',
                           }}
                         >
-                          Warning: one or more lines have no price. Go back to market pricing to set
-                          them.
+                          {t('po.detail.warningOneOrMoreLinesHave')}
                         </div>
                       )}
                       <Button
@@ -3159,7 +3149,7 @@ export default function PurchaseOrderDetail() {
                           })
                         }
                       >
-                        Submit for approval
+                        {t('po.detail.submitForApproval2')}
                       </Button>
 
                       <div
@@ -3172,20 +3162,20 @@ export default function PurchaseOrderDetail() {
                         }}
                       >
                         <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
-                          Not ready to approve?
+                          {t('po.detail.notReadyToApprove')}
                         </div>
                         {renderLineFlagHint()}
                         <Textarea
-                          label="Overall reason (auto-filled from flagged lines — edit as needed)"
+                          label={t('po.detail.overallReasonAutoFilledFromFlagged')}
                           value={effectiveRejectReason}
                           onChange={(e) => {
                             setRejectReason(e.target.value)
                           }}
-                          placeholder="Flag at least one line above to reject…"
+                          placeholder={t('po.detail.flagAtLeastOneLineAbove')}
                           rows={2}
                         />
                         <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, margin: '12px 0 6px' }}>
-                          Send back to
+                          {t('po.detail.sendBackTo')}
                         </div>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           <Button
@@ -3202,7 +3192,7 @@ export default function PurchaseOrderDetail() {
                               })
                             }
                           >
-                            Market Pricing
+                            {t('po.detail.marketPricing')}
                           </Button>
                           <Button
                             variant="secondary"
@@ -3218,7 +3208,7 @@ export default function PurchaseOrderDetail() {
                               })
                             }
                           >
-                            Store Pricing
+                            {t('po.detail.storePricing')}
                           </Button>
                         </div>
                       </div>
@@ -3237,7 +3227,7 @@ export default function PurchaseOrderDetail() {
                     disabled={hasFlaggedLines}
                     onClick={() => void approvePO({ variables: { id: po.id } })}
                   >
-                    Approve PO
+                    {t('po.detail.approvePo')}
                   </Button>
 
                   {/* ── Reject ────────────────────────────────────────────────── */}
@@ -3251,16 +3241,16 @@ export default function PurchaseOrderDetail() {
                     }}
                   >
                     <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
-                      Not ready to approve?
+                      {t('po.detail.notReadyToApprove')}
                     </div>
                     {renderLineFlagHint()}
                     <Textarea
-                      label="Overall reason (auto-filled from flagged lines — edit as needed)"
+                      label={t('po.detail.overallReasonAutoFilledFromFlagged')}
                       value={effectiveRejectReason}
                       onChange={(e) => {
                         setRejectReason(e.target.value)
                       }}
-                      placeholder="Flag at least one line above to reject…"
+                      placeholder={t('po.detail.flagAtLeastOneLineAbove')}
                       rows={hasFlaggedLines ? 3 : 2}
                     />
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
@@ -3278,7 +3268,7 @@ export default function PurchaseOrderDetail() {
                           })
                         }
                       >
-                        Reject PO
+                        {t('po.detail.rejectPo')}
                       </Button>
                       <Button
                         variant="secondary"
@@ -3294,7 +3284,7 @@ export default function PurchaseOrderDetail() {
                           })
                         }
                       >
-                        Send Back to Market Pricing
+                        {t('po.detail.sendBackToMarketPricing')}
                       </Button>
                     </div>
                   </div>
@@ -3319,8 +3309,8 @@ export default function PurchaseOrderDetail() {
                         // PO's own lines were never ticked one-by-one, so there's
                         // nothing to check off here. Record the goods receipt to
                         // advance it to Goods Received.
-                        'Items for this purchase order were already bought at the requisition stage. Record a goods receipt to advance it.'
-                      : 'PO is approved. Record a goods receipt to advance to the P2P fulfillment phase.'}
+                        t('po.detail.itemsForThisPurchaseOrderWere')
+                      : t('po.detail.poIsApprovedRecordAGoods')}
                   </div>
                   <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
                   <Button
@@ -3332,7 +3322,7 @@ export default function PurchaseOrderDetail() {
                       navigate(`/procurement/purchase-orders/${po.id}/receive`)
                     }}
                   >
-                    Record Receipt
+                    {t('po.detail.recordReceipt')}
                   </Button>
                 </div>
               )}
@@ -3344,7 +3334,7 @@ export default function PurchaseOrderDetail() {
                   const buyerDisplayName =
                     po.buyerNames && po.buyerNames.length > 0
                       ? po.buyerNames.join(', ')
-                      : (po.assigned_buyer_name ?? 'The assigned buyer')
+                      : (po.assigned_buyer_name ?? t('po.detail.theAssignedBuyer'))
                   const fmtN = (n: number | string) =>
                     parseFloat(String(n)).toLocaleString('en-US', {
                       minimumFractionDigits: 0,
@@ -3366,12 +3356,10 @@ export default function PurchaseOrderDetail() {
                           color: theme.accent,
                         }}
                       >
-                        {buyerDisplayName} ticks each item off as
-                        it's bought and uploads the vendor's receipt below. Once both are done,
-                        click Finish Buying to move this PO on to Goods Received.
+                        {t('po.detail.buyerChecklistHint', { name: buyerDisplayName })}
                         {!canMarkBought && (
                           <div style={{ marginTop: '4px', opacity: 0.85 }}>
-                            You're viewing this read-only — only {buyerDisplayName} or an admin can check items off.
+                            {t('po.detail.buyerReadOnly', { name: buyerDisplayName })}
                           </div>
                         )}
                       </div>
@@ -3462,14 +3450,14 @@ export default function PurchaseOrderDetail() {
                                     }}
                                   >
                                     <span style={{ fontSize: '10px', color: theme.textMuted }}>
-                                      Actual price paid ({fmtN(toBuy)} {line.uom}):
+                                      {t('po.detail.actualPricePaid', { qty: fmtN(toBuy), uom: line.uom })}
                                     </span>
                                     <input
                                       data-tour="po-actual-price-input"
                                       type="number"
                                       min={0}
                                       disabled={!canMarkBought}
-                                      placeholder="Enter actual price…"
+                                      placeholder={t('po.detail.enterActualPrice')}
                                       value={
                                         actualPrices[line.id] ??
                                         (actualPrice != null
@@ -3500,7 +3488,7 @@ export default function PurchaseOrderDetail() {
                                         if (newVal === 0) {
                                           addToast({
                                             type: 'error',
-                                            message: 'Actual price must be greater than 0 — clear the field to unset it instead',
+                                            message: t('po.detail.actualPriceMustBeGreaterThan'),
                                           })
                                           e.target.value =
                                             effectiveCurrent != null ? String(effectiveCurrent) : ''
@@ -3520,7 +3508,7 @@ export default function PurchaseOrderDetail() {
                                             setActualPriceStatus((s) => ({ ...s, [line.id]: undefined }))
                                             addToast({
                                               type: 'error',
-                                              message: err.message || 'Failed to save actual price',
+                                              message: err.message || t('po.detail.failedSaveActualPrice'),
                                             })
                                           })
                                       }}
@@ -3546,14 +3534,14 @@ export default function PurchaseOrderDetail() {
                                     />
                                     {actualPriceStatus[line.id] === 'saving' && (
                                       <span style={{ fontSize: '10px', color: theme.textMuted }}>
-                                        Saving…
+                                        {t('po.detail.saving')}
                                       </span>
                                     )}
                                     {actualPriceStatus[line.id] === 'saved' && (
                                       <span
                                         style={{ fontSize: '10px', fontWeight: 600, color: '#16a34a' }}
                                       >
-                                        ✓ Saved
+                                        {t('po.detail.saved')}
                                       </span>
                                     )}
                                     {variance != null &&
@@ -3567,7 +3555,7 @@ export default function PurchaseOrderDetail() {
                                           }}
                                         >
                                           {variance > 0 ? '▲' : '▼'} {variance > 0 ? '+' : ''}
-                                          {variancePct.toFixed(1)}% vs PO
+                                          {t('po.detail.pctVsPo', { pct: variancePct.toFixed(1) })}
                                         </span>
                                       )}
                                   </div>
@@ -3589,7 +3577,7 @@ export default function PurchaseOrderDetail() {
                       )}
                       {showChecklist && (
                       <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                        {boughtCount} / {po.lines.length} items bought
+                        {t('po.detail.itemsBoughtProgress', { bought: boughtCount, total: po.lines.length })}
                       </div>
                       )}
                       {allBought && (
@@ -3607,7 +3595,7 @@ export default function PurchaseOrderDetail() {
                             textDecoration: 'underline',
                           }}
                         >
-                          {boughtChecklistExpanded ? 'Hide items' : 'Review items'}
+                          {boughtChecklistExpanded ? t('po.detail.hideItems') : t('po.detail.reviewItems')}
                         </button>
                       )}
                       {/* Buyer receipts are required for every PO here, jobsite-delivery
@@ -3621,9 +3609,9 @@ export default function PurchaseOrderDetail() {
                         entityId={po.id}
                         category="po_receipt_document"
                         readOnly={!canMarkBought}
-                        title="Buyer Receipts"
-                        description="Upload the vendor's receipt or invoice as proof of what was paid — the store keeper will see this when confirming Goods Received."
-                        uploadButtonLabel="Upload Receipt"
+                        title={t('po.detail.buyerReceipts')}
+                        description={t('po.detail.uploadTheVendorSReceiptOr')}
+                        uploadButtonLabel={t('po.detail.uploadReceipt')}
                         recordLabel="this purchase"
                       />
                       {allBought && canMarkBought && (
@@ -3636,11 +3624,11 @@ export default function PurchaseOrderDetail() {
                             loading={finishingBuying}
                             onClick={() => void finishBuyingPO({ variables: { poId: po.id } })}
                           >
-                            Finish Buying
+                            {t('po.detail.finishBuying')}
                           </Button>
                           {!hasBuyerReceipt && (
                             <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                              Upload at least one buyer receipt above before finishing.
+                              {t('po.detail.uploadAtLeastOneBuyerReceipt')}
                             </div>
                           )}
                         </div>
@@ -3685,7 +3673,7 @@ export default function PurchaseOrderDetail() {
                             color: '#166534',
                           }}
                         >
-                          Buying is done — record what's been delivered to move this PO forward.
+                          {t('po.detail.buyingIsDoneRecordWhatS')}
                         </div>
                         <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
                         <Button
@@ -3697,7 +3685,7 @@ export default function PurchaseOrderDetail() {
                             navigate(`/procurement/purchase-orders/${po.id}/receive`)
                           }}
                         >
-                          Record Receipt
+                          {t('po.detail.recordReceipt')}
                         </Button>
                       </div>
                     )
@@ -3707,8 +3695,7 @@ export default function PurchaseOrderDetail() {
                   {!fullyCovered && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                        Not every line is fully received yet — you can still record more, or send
-                        what's arrived to audit now.
+                        {t('po.detail.notEveryLineIsFullyReceived')}
                       </span>
                       <Button
                         variant="secondary"
@@ -3717,7 +3704,7 @@ export default function PurchaseOrderDetail() {
                           navigate(`/procurement/purchase-orders/${po.id}/receive`)
                         }}
                       >
-                        Record Receipt
+                        {t('po.detail.recordReceipt')}
                       </Button>
                     </div>
                   )}
@@ -3731,8 +3718,7 @@ export default function PurchaseOrderDetail() {
                       color: '#166534',
                     }}
                   >
-                    Goods received. Review receipts below, then send to finance for three-way match
-                    audit.
+                    {t('po.detail.goodsReceivedReviewReceiptsBelowThen')}
                   </div>
                   {/* Qty summary per line */}
                   <div
@@ -3751,7 +3737,12 @@ export default function PurchaseOrderDetail() {
                         borderBottom: `1px solid ${theme.border}`,
                       }}
                     >
-                      {['Item', 'Ordered', 'Received', 'Coverage'].map((h) => (
+                      {[
+                        t('po.detail.item'),
+                        t('po.detail.ordered'),
+                        t('po.detail.received'),
+                        t('po.detail.coverage'),
+                      ].map((h) => (
                         <span
                           key={h}
                           style={{
@@ -3814,7 +3805,7 @@ export default function PurchaseOrderDetail() {
                             </span>
                             {fromStk > 0 && (
                               <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '1px' }}>
-                                {fmtQ(rcv)} received + {fmtQ(fromStk)} from stock
+                                {t('po.detail.receivedPlusStock', { received: fmtQ(rcv), stock: fmtQ(fromStk) })}
                               </div>
                             )}
                           </div>
@@ -3859,7 +3850,7 @@ export default function PurchaseOrderDetail() {
                     loading={lAudit}
                     onClick={() => void sendToAudit({ variables: { id: po.id } })}
                   >
-                    Send to Finance Audit
+                    {t('po.detail.sendToFinanceAudit')}
                   </Button>
                 </div>
                   )
@@ -3887,7 +3878,7 @@ export default function PurchaseOrderDetail() {
                           letterSpacing: '0.05em',
                         }}
                       >
-                        Finance Audit — mark each line OK or Flagged
+                        {t('po.detail.financeAuditMarkEachLineOk')}
                       </div>
                       {po.lines.map((line) => {
                         const auditStatus = line.audit_status ?? 'pending'
@@ -3956,7 +3947,7 @@ export default function PurchaseOrderDetail() {
                                     transition: 'all 0.1s',
                                   }}
                                 >
-                                  ✓ OK
+                                  {t('po.detail.ok')}
                                 </button>
                                 <button
                                   onClick={() => {
@@ -3978,7 +3969,7 @@ export default function PurchaseOrderDetail() {
                                     transition: 'all 0.1s',
                                   }}
                                 >
-                                  ⚑ Flag
+                                  {t('po.detail.flag')}
                                 </button>
                               </div>
                             </div>
@@ -4010,7 +4001,7 @@ export default function PurchaseOrderDetail() {
                                     }}
                                   >
                                     <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                      Fulfilled / ordered
+                                      {t('po.detail.fulfilledOrdered')}
                                     </span>
                                     <div style={{ textAlign: 'right' }}>
                                       <span
@@ -4031,7 +4022,7 @@ export default function PurchaseOrderDetail() {
                                               color: '#dc2626',
                                             }}
                                           >
-                                            ({fmtQ(ord - fulfilled)} short)
+                                            {t('po.detail.shortBy', { qty: fmtQ(ord - fulfilled) })}
                                           </span>
                                         )}
                                         {over && (
@@ -4043,7 +4034,7 @@ export default function PurchaseOrderDetail() {
                                               color: '#d97706',
                                             }}
                                           >
-                                            (over by {fmtQ(rcv - ord)})
+                                            {t('po.detail.overBy', { qty: fmtQ(rcv - ord) })}
                                           </span>
                                         )}
                                       </span>
@@ -4055,7 +4046,7 @@ export default function PurchaseOrderDetail() {
                                             marginTop: '1px',
                                           }}
                                         >
-                                          {fmtQ(rcv)} received + {fmtQ(fromStk)} from stock
+                                          {t('po.detail.receivedPlusStock', { received: fmtQ(rcv), stock: fmtQ(fromStk) })}
                                         </div>
                                       )}
                                     </div>
@@ -4136,7 +4127,7 @@ export default function PurchaseOrderDetail() {
                                         marginBottom: '3px',
                                       }}
                                     >
-                                      PO Price
+                                      {t('po.detail.poPrice')}
                                     </div>
                                     <div
                                       style={{
@@ -4156,7 +4147,7 @@ export default function PurchaseOrderDetail() {
                                           marginTop: '2px',
                                         }}
                                       >
-                                        for {fmtN(toBuy)} {line.uom} to buy
+                                        {t('po.detail.forToBuy', { qty: fmtN(toBuy), uom: line.uom })}
                                       </div>
                                     )}
                                   </div>
@@ -4195,7 +4186,7 @@ export default function PurchaseOrderDetail() {
                                             fontSize: '10px',
                                           }}
                                         >
-                                          ({fmtN(toBuy)} {line.uom} purchased, entered by buyer)
+                                          {t('po.detail.purchasedEntered', { qty: fmtN(toBuy), uom: line.uom })}
                                         </span>
                                       </div>
                                       <div
@@ -4209,7 +4200,7 @@ export default function PurchaseOrderDetail() {
                                       >
                                         {actualPrice != null
                                           ? fmtN(actualPrice)
-                                          : 'Not entered yet — buyer hasn’t recorded a price'}
+                                          : t('po.detail.notEnteredYetBuyerHasnT')}
                                       </div>
                                       {variance != null &&
                                         variancePct != null &&
@@ -4223,7 +4214,7 @@ export default function PurchaseOrderDetail() {
                                             }}
                                           >
                                             {variance > 0 ? '▲' : '▼'} {variance > 0 ? '+' : ''}
-                                            {variancePct.toFixed(1)}% vs PO
+                                            {t('po.detail.pctVsPo', { pct: variancePct.toFixed(1) })}
                                           </div>
                                         )}
                                     </div>
@@ -4248,7 +4239,7 @@ export default function PurchaseOrderDetail() {
                                           marginBottom: '3px',
                                         }}
                                       >
-                                        Purchase Total
+                                        {t('po.detail.purchaseTotal')}
                                       </div>
                                       <div
                                         style={{
@@ -4291,7 +4282,7 @@ export default function PurchaseOrderDetail() {
                                           marginBottom: '3px',
                                         }}
                                       >
-                                        From Inventory
+                                        {t('po.detail.fromInventory')}
                                       </div>
                                       <div
                                         style={{
@@ -4310,7 +4301,7 @@ export default function PurchaseOrderDetail() {
                                           marginTop: '2px',
                                         }}
                                       >
-                                        No cost — issued from stock
+                                        {t('po.detail.noCostIssuedFromStock')}
                                       </div>
                                     </div>
                                   )}
@@ -4336,7 +4327,7 @@ export default function PurchaseOrderDetail() {
                                     marginBottom: '6px',
                                   }}
                                 >
-                                  ⚑ Flag reason (required)
+                                  {t('po.detail.flagReasonRequired')}
                                 </div>
                                 <textarea
                                   autoFocus
@@ -4344,7 +4335,7 @@ export default function PurchaseOrderDetail() {
                                   onChange={(e) => {
                                     setFlaggingLines((p) => ({ ...p, [line.id]: e.target.value }))
                                   }}
-                                  placeholder="Describe the issue with this line…"
+                                  placeholder={t('po.detail.describeTheIssueWithThisLine')}
                                   rows={2}
                                   style={{
                                     width: '100%',
@@ -4392,7 +4383,7 @@ export default function PurchaseOrderDetail() {
                                       fontWeight: 600,
                                     }}
                                   >
-                                    Save Flag
+                                    {t('po.detail.saveFlag')}
                                   </button>
                                   <button
                                     onClick={() => {
@@ -4412,7 +4403,7 @@ export default function PurchaseOrderDetail() {
                                       fontSize: '12px',
                                     }}
                                   >
-                                    Cancel
+                                    {t('po.detail.cancel')}
                                   </button>
                                 </div>
                               </div>
@@ -4443,8 +4434,10 @@ export default function PurchaseOrderDetail() {
                           onClick={() => void passAudit({ variables: { id: po.id } })}
                         >
                           {canPass
-                            ? 'Pass Audit → Invoiced'
-                            : `Pass Audit (${pendingCount > 0 ? `${pendingCount} pending` : `${flaggedCount} flagged`})`}
+                            ? t('po.detail.passAuditInvoiced')
+                            : pendingCount > 0
+                              ? t('po.detail.passAuditPending', { count: pendingCount })
+                              : t('po.detail.passAuditFlagged', { count: flaggedCount })}
                         </Button>
                         <Button
                           variant="ghost"
@@ -4454,7 +4447,7 @@ export default function PurchaseOrderDetail() {
                             })
                           }
                         >
-                          Return for Correction
+                          {t('po.detail.returnForCorrection')}
                         </Button>
                       </div>
                     </div>
@@ -4476,8 +4469,7 @@ export default function PurchaseOrderDetail() {
                           color: theme.textSecondary,
                         }}
                       >
-                        How was this PO paid? Pick vendor AP to create a vendor invoice, or an
-                        employee advance to settle it against someone's advance.
+                        {t('po.detail.howWasThisPoPaidPick')}
                       </div>
                       <div
                         style={{
@@ -4492,7 +4484,7 @@ export default function PurchaseOrderDetail() {
                             setFundingChoice('vendor_ap')
                           }}
                         >
-                          Vendor (Accounts Payable)
+                          {t('po.detail.vendorAccountsPayable')}
                         </Button>
                         <Button
                           variant={fundingChoice === 'employee_advance' ? 'primary' : 'secondary'}
@@ -4500,7 +4492,7 @@ export default function PurchaseOrderDetail() {
                             setFundingChoice('employee_advance')
                           }}
                         >
-                          Employee Advance
+                          {t('po.detail.employeeAdvance')}
                         </Button>
                       </div>
                       {fundingChoice === 'employee_advance' && (
@@ -4512,17 +4504,17 @@ export default function PurchaseOrderDetail() {
                           }}
                         >
                           <SearchableSelect
-                            label="Employee"
+                            label={t('po.detail.employee')}
                             value={fundingEmployeeId}
                             onChange={setFundingEmployeeId}
                             options={[
-                              { value: '', label: 'Select employee…' },
+                              { value: '', label: t('po.detail.selectEmployee') },
                               ...employees.map((e) => ({
                                 value: e.id,
                                 label: `${e.first_name} ${e.last_name}`,
                               })),
                             ]}
-                            placeholder="Search employee…"
+                            placeholder={t('po.detail.searchEmployee')}
                             minDropdownWidth={320}
                           />
                           <div>
@@ -4535,7 +4527,7 @@ export default function PurchaseOrderDetail() {
                                 marginBottom: '4px',
                               }}
                             >
-                              Advance *
+                              {t('po.detail.advance')}
                             </label>
                             <select
                               value={fundingAdvanceId}
@@ -4554,13 +4546,11 @@ export default function PurchaseOrderDetail() {
                               }}
                             >
                               <option value="">
-                                {fundingEmployeeId ? 'Select advance…' : 'Select an employee first'}
+                                {fundingEmployeeId ? t('po.detail.selectAdvance') : t('po.detail.selectEmployeeFirst')}
                               </option>
                               {fundingAdvances.map((a) => (
                                 <option key={a.id} value={a.id}>
-                                  {a.advance_number} —{' '}
-                                  {Number(a.outstanding_amount).toLocaleString()} {a.currency_code}{' '}
-                                  outstanding
+                                  {t('po.detail.advanceOption', { number: a.advance_number, amount: Number(a.outstanding_amount).toLocaleString(), currency: a.currency_code })}
                                 </option>
                               ))}
                             </select>
@@ -4588,7 +4578,7 @@ export default function PurchaseOrderDetail() {
                           })
                         }
                       >
-                        Confirm Funding Source
+                        {t('po.detail.confirmFundingSource')}
                       </Button>
                     </div>
                   ) : (
@@ -4601,11 +4591,10 @@ export default function PurchaseOrderDetail() {
                       }}
                     >
                       <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
-                        Awaiting Finance
+                        {t('po.detail.awaitingFinance')}
                       </div>
                       <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
-                        This PO has been invoiced and Finance still needs to decide how it was
-                        paid. No action required from you.
+                        {t('po.detail.thisPoHasBeenInvoicedAnd')}
                       </div>
                     </div>
                   )
@@ -4618,7 +4607,7 @@ export default function PurchaseOrderDetail() {
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           {renderGlClassificationPanel(
-                            "Funded by employee advance — no vendor invoice needed. Assign a GL account and cost center to each line, then once completed, this PO's lines will queue for settlement against the advance.",
+                            t('po.detail.fundedByAdvanceClassifyHint'),
                           )}
                           <Button
                             variant="primary"
@@ -4628,8 +4617,8 @@ export default function PurchaseOrderDetail() {
                             onClick={() => void completePO({ variables: { id: po.id } })}
                           >
                             {unclassifiedCount > 0
-                              ? `Mark as Completed (${unclassifiedCount} unclassified)`
-                              : 'Mark as Completed'}
+                              ? t('po.detail.markCompletedUnclassified', { count: unclassifiedCount })
+                              : t('po.detail.markAsCompleted')}
                           </Button>
                         </div>
                       )
@@ -4644,11 +4633,10 @@ export default function PurchaseOrderDetail() {
                       }}
                     >
                       <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
-                        Awaiting Finance
+                        {t('po.detail.awaitingFinance')}
                       </div>
                       <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
-                        This PO was funded by an employee advance and is now with the Finance team
-                        to mark complete. No action required from you.
+                        {t('po.detail.thisPoWasFundedByAn')}
                       </div>
                     </div>
                   )
@@ -4656,7 +4644,7 @@ export default function PurchaseOrderDetail() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {can('finance.ap.approve', 'approve') &&
                       renderGlClassificationPanel(
-                        'Assign a GL account and cost center to each line — Finance uses these to book the vendor invoice correctly.',
+                        t('po.detail.classifyHint'),
                       )}
                     {apInvoice ? (
                       <div
@@ -4673,7 +4661,7 @@ export default function PurchaseOrderDetail() {
                       >
                         <div>
                           <div style={{ fontSize: '12px', fontWeight: 600, color: theme.accent }}>
-                            Vendor Invoice Created
+                            {t('po.detail.vendorInvoiceCreated')}
                           </div>
                           <div
                             style={{
@@ -4683,7 +4671,7 @@ export default function PurchaseOrderDetail() {
                             }}
                           >
                             {apInvoice.invoice_number} —{' '}
-                            <span style={{ textTransform: 'capitalize' }}>{apInvoice.status}</span>
+                            <span style={{ textTransform: 'capitalize' }}>{enumLabel(apInvoice.status)}</span>
                           </div>
                         </div>
                         <Button
@@ -4693,7 +4681,7 @@ export default function PurchaseOrderDetail() {
                             navigate(`/finance/ap/${apInvoice.id}`)
                           }}
                         >
-                          View in AP
+                          {t('po.detail.viewInAp')}
                         </Button>
                       </div>
                     ) : can('finance.ap.edit') ? (
@@ -4711,7 +4699,7 @@ export default function PurchaseOrderDetail() {
                       >
                         <div>
                           <div style={{ fontSize: '12px', fontWeight: 600, color: theme.danger }}>
-                            No vendor invoice in AP yet
+                            {t('po.detail.noVendorInvoiceInApYet')}
                           </div>
                           <div
                             style={{
@@ -4721,8 +4709,7 @@ export default function PurchaseOrderDetail() {
                               marginTop: '2px',
                             }}
                           >
-                            Create a vendor invoice in AP to trigger the journal entry and payment
-                            flow.
+                            {t('po.detail.createAVendorInvoiceInAp')}
                           </div>
                         </div>
                         <Button
@@ -4733,7 +4720,7 @@ export default function PurchaseOrderDetail() {
                             navigate(`/finance/ap/new?po_id=${po.id}`)
                           }}
                         >
-                          Create in AP
+                          {t('po.detail.createInAp')}
                         </Button>
                       </div>
                     ) : (
@@ -4747,7 +4734,7 @@ export default function PurchaseOrderDetail() {
                           color: theme.textSecondary,
                         }}
                       >
-                        No vendor invoice created yet.
+                        {t('po.detail.noVendorInvoiceCreatedYet')}
                       </div>
                     )}
                     {can('finance.ap.approve', 'approve') && (
@@ -4758,12 +4745,11 @@ export default function PurchaseOrderDetail() {
                           disabled={apInvoice?.status !== 'paid' && apInvoice !== null}
                           onClick={() => void completePO({ variables: { id: po.id } })}
                         >
-                          Mark as Completed
+                          {t('po.detail.markAsCompleted')}
                         </Button>
                         {apInvoice && apInvoice.status !== 'paid' && (
                           <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                            "Mark as Completed" will be enabled once the vendor invoice is fully
-                            paid.
+                            {t('po.detail.markAsCompletedWillBeEnabled')}
                           </div>
                         )}
                       </>
@@ -4779,11 +4765,10 @@ export default function PurchaseOrderDetail() {
                     }}
                   >
                     <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
-                      Awaiting Finance
+                      {t('po.detail.awaitingFinance')}
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
-                      This PO has been invoiced and is now with the Finance team for vendor invoice
-                      processing and payment. No action required from you.
+                      {t('po.detail.thisPoHasBeenInvoicedAnd2')}
                     </div>
                   </div>
                 ))}
@@ -4800,14 +4785,14 @@ export default function PurchaseOrderDetail() {
                       color: '#991b1b',
                     }}
                   >
-                    This PO was rejected. Revise and reopen it as a draft to restart the workflow.
+                    {t('po.detail.thisPoWasRejectedReviseAnd')}
                   </div>
                   <Button
                     variant="secondary"
                     loading={anyLoading}
                     onClick={() => void reopenPO({ variables: { id: po.id } })}
                   >
-                    Reopen as Draft
+                    {t('po.detail.reopenAsDraft')}
                   </Button>
                 </div>
               )}
@@ -4842,19 +4827,19 @@ export default function PurchaseOrderDetail() {
               bg: 'rgba(239,68,68,0.08)',
               border: 'rgba(239,68,68,0.25)',
               dot: '#ef4444',
-              label: 'Dispute',
+              label: t('po.detail.dispute'),
             },
             warning: {
               bg: 'rgba(245,158,11,0.08)',
               border: 'rgba(245,158,11,0.25)',
               dot: '#f59e0b',
-              label: 'Warning',
+              label: t('po.detail.warning'),
             },
             info: {
               bg: 'rgba(59,130,246,0.08)',
               border: 'rgba(59,130,246,0.25)',
               dot: '#3b82f6',
-              label: 'Info',
+              label: t('po.detail.info'),
             },
           }
           const FLAG_PRIORITY = ['dispute', 'warning', 'info']
@@ -4888,14 +4873,14 @@ export default function PurchaseOrderDetail() {
               ? [
                   {
                     key: 'flag_toggle',
-                    header: 'Flag',
+                    header: t('po.detail.flag3'),
                     width: '36px',
                     render: (line: POLine) => (
                       <input
                         type="checkbox"
                         checked={line.id in lineFlagNotes}
                         onChange={() => { line.id in lineFlagNotes ? clearFlag(line.id) : flagLine(line.id); }}
-                        title="Flag this line for rejection"
+                        title={t('po.detail.flagThisLineForRejection')}
                       />
                     ),
                   },
@@ -4919,7 +4904,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'item',
-              header: 'Item',
+              header: t('po.detail.item'),
               mobilePrimary: true,
               render: (line) => {
                 // An edit request can override this line's own description
@@ -4966,7 +4951,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'qty',
-              header: 'Qty',
+              header: t('po.detail.qty'),
               mobilePriority: 4,
               render: (line) => {
                 const fromStock = parseFloat(String(line.qty_from_stock)) || 0
@@ -4991,7 +4976,7 @@ export default function PurchaseOrderDetail() {
                           marginTop: '2px',
                         }}
                       >
-                        From inventory: {fmtN(fromStock)}
+                        {t('po.detail.fromInventoryQty', { qty: fmtN(fromStock) })}
                       </div>
                     )}
                     {fromStock > 0 && toPurchase > 0 && (
@@ -5003,7 +4988,7 @@ export default function PurchaseOrderDetail() {
                           marginTop: '2px',
                         }}
                       >
-                        To purchase: {fmtN(toPurchase)}
+                        {t('po.detail.toPurchaseQty', { qty: fmtN(toPurchase) })}
                       </div>
                     )}
                   </div>
@@ -5012,7 +4997,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'initial_unit_price',
-              header: 'Initial Price',
+              header: t('po.detail.initialPrice'),
               mobilePriority: 5,
               render: (line) =>
                 line.initial_unit_price != null ? (
@@ -5027,14 +5012,14 @@ export default function PurchaseOrderDetail() {
                     {line.requested_currency_code ?? po.currency_code}
                   </span>
                 ) : (
-                  <span style={{ color: theme.textMuted, fontSize: '12px' }} title="Not recorded before this was tracked">
+                  <span style={{ color: theme.textMuted, fontSize: '12px' }} title={t('po.detail.notRecordedBeforeThisWasTracked')}>
                     —
                   </span>
                 ),
             },
             {
               key: 'market_price',
-              header: 'Market Price',
+              header: t('po.detail.marketPrice2'),
               mobilePriority: 6,
               render: (line) => (
                 <span
@@ -5051,7 +5036,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'store_price',
-              header: 'Store Price',
+              header: t('po.detail.storePrice2'),
               mobilePriority: 6,
               render: (line) => {
                 const sp = parseFloat(String(line.store_price ?? 0))
@@ -5073,7 +5058,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'total',
-              header: 'Total',
+              header: t('po.detail.total'),
               mobilePriority: 2,
               render: (line) => {
                 const total = poLineTotalNative(line)
@@ -5094,7 +5079,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'received',
-              header: 'Received',
+              header: t('po.detail.received'),
               mobilePriority: 3,
               render: (line) => {
                 const received = line.qty_received >= line.qty
@@ -5123,7 +5108,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'notes',
-              header: 'Notes',
+              header: t('po.detail.notes2'),
               mobilePriority: 1,
               render: (line) => {
                 const comments = lineComments[line.id] ?? []
@@ -5147,7 +5132,7 @@ export default function PurchaseOrderDetail() {
                       >
                         <span style={{ flexShrink: 0 }}>⚑</span>
                         <span style={{ color: '#dc2626', fontWeight: 400 }}>
-                          {line.audit_note || 'Flagged'}
+                          {line.audit_note || t('po.detail.flaggedLabel')}
                         </span>
                       </div>
                     )}
@@ -5199,7 +5184,7 @@ export default function PurchaseOrderDetail() {
                         ? `${flagStyle.label} · ${openCount} open`
                         : totalCount > 0
                           ? `💬 ${totalCount}`
-                          : '+ Note'}
+                          : t('po.detail.note')}
                     </button>
                   </div>
                 )
@@ -5228,10 +5213,10 @@ export default function PurchaseOrderDetail() {
                   <span style={{ color: theme.textMuted, display: 'flex' }}>
                     <IconBox />
                   </span>
-                  Purchase Order Lines
+                  {t('po.detail.purchaseOrderLines')}
                 </div>
                 <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                  {po.lines.length} item{po.lines.length === 1 ? '' : 's'} on this order.
+                  {t('po.detail.itemsOnOrder', { count: po.lines.length })}
                 </div>
               </div>
               <Table
@@ -5299,12 +5284,16 @@ export default function PurchaseOrderDetail() {
                       {hasOpenFlag && (
                         <div style={{ marginBottom: isComposing ? '10px' : 0 }}>
                           <div style={{ fontSize: '11px', fontWeight: 600, color, marginBottom: '4px' }}>
-                            {open ? 'Flagged' : 'Addressed — awaiting confirmation'}
+                            {open ? t('po.detail.flaggedLabel') : t('po.detail.addressedLabel')}
                             <span style={{ fontWeight: 400, color: theme.textMuted, marginLeft: '6px' }}>
-                              by {line.flagged_by_name ?? 'someone'} during{' '}
-                              {line.flagged_from_status === 'price_verification'
-                                ? 'Price Verification'
-                                : 'Pending Approval'}
+                              {t('po.detail.flaggedByDuring', {
+                                name: line.flagged_by_name ?? t('po.detail.someone'),
+                                stage: getPOStatusLabel(
+                                  line.flagged_from_status === 'price_verification'
+                                    ? 'price_verification'
+                                    : 'pending_approval',
+                                ),
+                              })}
                             </span>
                           </div>
                           <div
@@ -5323,7 +5312,7 @@ export default function PurchaseOrderDetail() {
                               loading={lResolveFlag}
                               onClick={() => void resolveLineFlag({ variables: { lineId: line.id } })}
                             >
-                              Resolve
+                              {t('po.detail.resolve')}
                             </Button>
                           )}
                         </div>
@@ -5331,12 +5320,12 @@ export default function PurchaseOrderDetail() {
                       {isComposing && (
                         <div>
                           <div style={{ fontSize: '11px', fontWeight: 600, color: theme.accent, marginBottom: '4px' }}>
-                            Flagging this line — required to reject
+                            {t('po.detail.flaggingThisLineRequiredToReject')}
                           </div>
                           <Textarea
                             value={lineFlagNotes[line.id] ?? ''}
                             onChange={(e) => { setFlagNote(line.id, e.target.value); }}
-                            placeholder="What's wrong with this line?"
+                            placeholder={t('po.detail.whatSWrongWithThisLine')}
                             rows={2}
                           />
                         </div>
@@ -5363,14 +5352,14 @@ export default function PurchaseOrderDetail() {
                     navigate(`/procurement/purchase-orders/${po.id}/receive`)
                   }}
                 >
-                  Record Receipt
+                  {t('po.detail.recordReceipt')}
                 </Button>
               </div>
             </div>
           )}
           {po.receipts.length === 0 && (
             <Card style={{ padding: '32px', textAlign: 'center' }}>
-              <span style={{ color: theme.textMuted, fontSize: '13px' }}>No receipts yet.</span>
+              <span style={{ color: theme.textMuted, fontSize: '13px' }}>{t('po.detail.noReceiptsYet')}</span>
             </Card>
           )}
           {po.receipts.map((r) => {
@@ -5381,7 +5370,7 @@ export default function PurchaseOrderDetail() {
             }>[] = [
               {
                 key: 'description',
-                header: 'Description',
+                header: t('po.detail.description'),
                 mobilePrimary: true,
                 render: (rl) => (
                   <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{rl.description}</span>
@@ -5389,7 +5378,7 @@ export default function PurchaseOrderDetail() {
               },
               {
                 key: 'qty_received',
-                header: 'Qty received',
+                header: t('po.detail.qtyReceived'),
                 mobilePriority: 1,
                 render: (rl) => (
                   <span style={{ color: BRAND_GREEN, fontWeight: 700, fontFamily: 'monospace' }}>
@@ -5424,12 +5413,12 @@ export default function PurchaseOrderDetail() {
                     <span style={{ color: theme.textMuted, display: 'flex' }}>
                       <IconBox />
                     </span>
-                    Receipt — {r.receipt_date}
+                    {t('po.detail.receiptDate', { date: r.receipt_date })}
                   </div>
                   {r.status === 'draft' && (
-                    <Badge variant="warning">draft — not yet added to inventory</Badge>
+                    <Badge variant="warning">{t('po.detail.draftNotYetAddedToInventory')}</Badge>
                   )}
-                  {r.status === 'cancelled' && <Badge variant="danger">cancelled</Badge>}
+                  {r.status === 'cancelled' && <Badge variant="danger">{t('po.detail.cancelled')}</Badge>}
                 </div>
                 <div style={{ padding: '16px 20px' }}>
                   <div
@@ -5450,7 +5439,7 @@ export default function PurchaseOrderDetail() {
                       }}
                     >
                       <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '3px' }}>
-                        Location
+                        {t('po.detail.location')}
                       </div>
                       <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
                         {r.location_name ?? '—'}
@@ -5466,7 +5455,7 @@ export default function PurchaseOrderDetail() {
                       }}
                     >
                       <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '3px' }}>
-                        Received By
+                        {t('po.detail.receivedBy')}
                       </div>
                       <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
                         {r.received_by_name ?? r.received_by_email ?? '—'}
@@ -5478,7 +5467,7 @@ export default function PurchaseOrderDetail() {
                       style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}
                     >
                       <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                        Jobsite/Location notes:{' '}
+                        {t('po.detail.jobsiteLocationNotes')}{' '}
                       </span>
                       {r.location_notes}
                     </div>
@@ -5487,7 +5476,7 @@ export default function PurchaseOrderDetail() {
                     <div
                       style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}
                     >
-                      <span style={{ fontSize: '11px', color: theme.textMuted }}>Notes: </span>
+                      <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('po.detail.notes')} </span>
                       {r.notes}
                     </div>
                   )}
@@ -5507,8 +5496,8 @@ export default function PurchaseOrderDetail() {
                           ...(vendorDocs.length
                             ? [
                                 {
-                                  title: 'Vendor Receipt',
-                                  description: "The vendor's own receipt or invoice document for this delivery.",
+                                  title: t('po.detail.vendorReceipt'),
+                                  description: t('po.detail.theVendorSOwnReceiptOr'),
                                   photos: vendorDocs,
                                 },
                               ]
@@ -5516,8 +5505,8 @@ export default function PurchaseOrderDetail() {
                           ...(materialPhotos.length
                             ? [
                                 {
-                                  title: 'Materials Received',
-                                  description: 'Photos of the physical goods as received at this delivery.',
+                                  title: t('po.detail.materialsReceived'),
+                                  description: t('po.detail.photosOfThePhysicalGoodsAs'),
                                   photos: materialPhotos,
                                 },
                               ]
@@ -5549,7 +5538,7 @@ export default function PurchaseOrderDetail() {
                     </div>
                   )}
                   <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}>
-                    Items Received
+                    {t('po.detail.itemsReceived')}
                   </div>
                   <Table columns={receiptLineColumns} data={r.lines} />
                 </div>
@@ -5568,22 +5557,22 @@ export default function PurchaseOrderDetail() {
               entityType="purchase_order"
               entityId={po.id}
               recordLabel="this PO"
-              title="Photos"
-              description="Buyer receipts from Items Bought, plus any photo uploaded directly against this PO."
-              uploadButtonLabel="Upload photo"
-              emptyMessage="No photos yet"
+              title={t('po.detail.photos')}
+              description={t('po.detail.buyerReceiptsFromItemsBoughtPlus')}
+              uploadButtonLabel={t('po.detail.uploadPhoto')}
+              emptyMessage={t('po.detail.noPhotosYet')}
               groupBy={[
                 {
                   match: 'po_line_purchase',
-                  title: 'Buyer Receipts',
+                  title: t('po.detail.buyerReceipts'),
                   description:
-                    "Proof of purchase the buyer attached per vendor item while buying, back at Items Bought — not re-uploadable here.",
+                    t('po.detail.proofOfPurchaseTheBuyerAttached'),
                 },
                 {
                   match: 'purchase_order',
-                  title: 'Delivery Photos',
+                  title: t('po.detail.deliveryPhotos'),
                   description:
-                    'Uploaded directly against this PO — e.g. a jobsite delivery photo not tied to a specific vendor receipt.',
+                    t('po.detail.uploadedDirectlyAgainstThisPoE'),
                 },
               ]}
             />
@@ -5604,14 +5593,14 @@ export default function PurchaseOrderDetail() {
                     navigate(`/procurement/purchase-orders/${po.id}/returns/new`)
                   }}
                 >
-                  ↩ Create Return
+                  {t('po.detail.createReturn')}
                 </Button>
               </div>
             )}
           {poReturns.length === 0 && (
             <Card style={{ padding: '32px', textAlign: 'center' }}>
               <span style={{ color: theme.textMuted, fontSize: '13px' }}>
-                No returns on this PO.
+                {t('po.detail.noReturnsOnThisPo')}
               </span>
             </Card>
           )}
@@ -5658,7 +5647,7 @@ export default function PurchaseOrderDetail() {
                       color: ret.return_type === 'damage' ? '#c2410c' : '#15803d',
                     }}
                   >
-                    {ret.return_type === 'damage' ? '⚠ Damage' : '↩ Full Refund'}
+                    {ret.return_type === 'damage' ? t('po.detail.damage') : t('po.detail.fullRefund')}
                   </span>
                   <div style={{ flex: 1 }} />
                   <span style={{ fontSize: '13px', fontWeight: 600, color: theme.accent }}>
@@ -5691,7 +5680,7 @@ export default function PurchaseOrderDetail() {
             <span style={{ color: theme.textMuted, display: 'flex' }}>
               <IconDocument />
             </span>
-            Approval Log
+            {t('po.detail.approvalLog')}
           </div>
           {po.notes && (
             <div
@@ -5710,7 +5699,7 @@ export default function PurchaseOrderDetail() {
                   marginBottom: '6px',
                 }}
               >
-                PO Notes
+                {t('po.detail.poNotes')}
               </div>
               <div style={{ fontSize: '13px', color: theme.textPrimary, whiteSpace: 'pre-wrap' }}>
                 {po.notes}
@@ -5726,7 +5715,7 @@ export default function PurchaseOrderDetail() {
                 fontSize: '13px',
               }}
             >
-              No activity yet.
+              {t('po.detail.noActivityYet')}
             </div>
           )}
           {po.approval_log.length === 0 && po.notes && (
@@ -5738,7 +5727,7 @@ export default function PurchaseOrderDetail() {
                 fontSize: '13px',
               }}
             >
-              No approval activity yet.
+              {t('po.detail.noApprovalActivityYet')}
             </div>
           )}
           {po.approval_log.map((entry) => (
@@ -5915,9 +5904,9 @@ export default function PurchaseOrderDetail() {
                       <span style={{ color: theme.textMuted, display: 'flex' }}>
                         <IconDocument />
                       </span>
-                      Request an edit
+                      {t('po.detail.requestAnEdit')}
                     </div>
-                    {hasPending && <Badge variant="warning">Pending review — submit locked</Badge>}
+                    {hasPending && <Badge variant="warning">{t('po.detail.pendingReviewSubmitLocked')}</Badge>}
                     {!editDraft && !hasPending && (
                       <Button
                         size="sm"
@@ -5926,7 +5915,7 @@ export default function PurchaseOrderDetail() {
                           setEditDraft(initDraft())
                         }}
                       >
-                        Start editing
+                        {t('po.detail.startEditing')}
                       </Button>
                     )}
                     {editDraft && (
@@ -5937,7 +5926,7 @@ export default function PurchaseOrderDetail() {
                           setEditDraft(null)
                         }}
                       >
-                        Cancel
+                        {t('po.detail.cancel')}
                       </Button>
                     )}
                   </div>
@@ -5945,8 +5934,8 @@ export default function PurchaseOrderDetail() {
                   {!editDraft && (
                     <div style={{ fontSize: '13px', color: theme.textMuted }}>
                       {hasPending
-                        ? 'There is already a pending edit request. An admin must approve or reject it before a new one can be submitted.'
-                        : 'Click "Start editing" to propose changes. Changes will not apply until an admin approves them.'}
+                        ? t('po.detail.thereIsAlreadyAPendingEdit')
+                        : t('po.detail.clickStartEditingToProposeChanges')}
                     </div>
                   )}
 
@@ -5955,7 +5944,7 @@ export default function PurchaseOrderDetail() {
                       const existingLineFields: LineItemField<EditDraft['lines'][number]>[] = [
                         {
                           key: 'description',
-                          label: 'Description',
+                          label: t('po.detail.description'),
                           render: (line, i) => (
                             <input
                               value={line.description}
@@ -5971,7 +5960,7 @@ export default function PurchaseOrderDetail() {
                         },
                         {
                           key: 'qty',
-                          label: 'Qty',
+                          label: t('po.detail.qty'),
                           width: '80px',
                           render: (line, i) => (
                             <input
@@ -5989,7 +5978,7 @@ export default function PurchaseOrderDetail() {
                         },
                         {
                           key: 'unit_price',
-                          label: 'Unit price',
+                          label: t('po.detail.unitPrice'),
                           width: '110px',
                           render: (line, i) => (
                             <input
@@ -6007,7 +5996,7 @@ export default function PurchaseOrderDetail() {
                         },
                         {
                           key: 'currency_code',
-                          label: 'Currency',
+                          label: t('po.detail.currency'),
                           width: '90px',
                           render: (line, i) => (
                             <select
@@ -6030,7 +6019,7 @@ export default function PurchaseOrderDetail() {
                         },
                         {
                           key: 'store_price',
-                          label: 'Store price',
+                          label: t('po.detail.storePrice'),
                           width: '100px',
                           render: (line, i) => (
                             <input
@@ -6048,7 +6037,7 @@ export default function PurchaseOrderDetail() {
                         },
                         {
                           key: 'actual_unit_price',
-                          label: 'Actual price',
+                          label: t('po.detail.actualPrice'),
                           width: '100px',
                           render: (line, i) => (
                             <input
@@ -6066,7 +6055,7 @@ export default function PurchaseOrderDetail() {
                         },
                         {
                           key: 'uom',
-                          label: 'UOM',
+                          label: t('po.detail.uom'),
                           width: '70px',
                           render: (line, i) => (
                             <input
@@ -6100,7 +6089,7 @@ export default function PurchaseOrderDetail() {
                                 fontSize: '12px',
                               }}
                             >
-                              {line._removed ? 'Restore' : 'Remove'}
+                              {line._removed ? t('po.detail.restore') : t('po.detail.remove')}
                             </button>
                           ),
                         },
@@ -6109,7 +6098,7 @@ export default function PurchaseOrderDetail() {
                       const addedLineFields: LineItemField<EditDraft['linesAdded'][number]>[] = [
                         {
                           key: 'description',
-                          label: 'Product / Description',
+                          label: t('po.detail.productDescription'),
                           render: (line, i) => (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <SearchableSelect
@@ -6125,11 +6114,11 @@ export default function PurchaseOrderDetail() {
                                   setEditDraft({ ...editDraft, linesAdded: a })
                                 }}
                                 options={editProductOptions}
-                                placeholder="Search by name or SKU…"
+                                placeholder={t('po.detail.searchByNameOrSku')}
                                 minDropdownWidth={360}
                               />
                               <input
-                                placeholder="Description"
+                                placeholder={t('po.detail.description')}
                                 value={line.description}
                                 style={inputStyle}
                                 onChange={(e) => {
@@ -6143,7 +6132,7 @@ export default function PurchaseOrderDetail() {
                         },
                         {
                           key: 'qty',
-                          label: 'Qty',
+                          label: t('po.detail.qty'),
                           width: '80px',
                           render: (line, i) => (
                             <input
@@ -6160,7 +6149,7 @@ export default function PurchaseOrderDetail() {
                         },
                         {
                           key: 'unit_price',
-                          label: 'Unit price',
+                          label: t('po.detail.unitPrice'),
                           width: '110px',
                           render: (line, i) => (
                             <input
@@ -6177,7 +6166,7 @@ export default function PurchaseOrderDetail() {
                         },
                         {
                           key: 'uom',
-                          label: 'UOM',
+                          label: t('po.detail.uom'),
                           width: '70px',
                           render: (line, i) => (
                             <input
@@ -6204,7 +6193,7 @@ export default function PurchaseOrderDetail() {
                             }}
                           >
                             <div>
-                              <label style={labelStyle}>Notes</label>
+                              <label style={labelStyle}>{t('po.detail.notes2')}</label>
                               <textarea
                                 value={editDraft.notes}
                                 rows={2}
@@ -6215,7 +6204,7 @@ export default function PurchaseOrderDetail() {
                               />
                             </div>
                             <div>
-                              <label style={labelStyle}>Expected delivery</label>
+                              <label style={labelStyle}>{t('po.detail.expectedDelivery')}</label>
                               <input
                                 type="date"
                                 value={editDraft.expected_delivery_date}
@@ -6242,7 +6231,7 @@ export default function PurchaseOrderDetail() {
                                 marginBottom: '8px',
                               }}
                             >
-                              Line items
+                              {t('po.detail.lineItems')}
                             </div>
                             <LineItemEditor
                               fields={existingLineFields}
@@ -6269,19 +6258,19 @@ export default function PurchaseOrderDetail() {
                                     ],
                                   })
                                 }}
-                                addLabel="+ Add line"
-                                emptyMessage="No new lines added"
+                                addLabel={t('po.detail.addLine')}
+                                emptyMessage={t('po.detail.noNewLinesAdded')}
                               />
                             </div>
                           </div>
 
                           {/* Submit */}
                           <div>
-                            <label style={labelStyle}>Reason for changes (optional)</label>
+                            <label style={labelStyle}>{t('po.detail.reasonForChangesOptional')}</label>
                             <input
                               value={editRequestNotes}
                               style={inputStyle}
-                              placeholder="Explain why these changes are needed..."
+                              placeholder={t('po.detail.explainWhyTheseChangesAreNeeded')}
                               onChange={(e) => {
                                 setEditRequestNotes(e.target.value)
                               }}
@@ -6304,7 +6293,7 @@ export default function PurchaseOrderDetail() {
                                 if (zeroActualPrice) {
                                   addToast({
                                     type: 'error',
-                                    message: 'Actual price must be greater than 0 — leave it as-is to keep it unset',
+                                    message: t('po.detail.actualPriceMustBeGreaterThan2'),
                                   })
                                   return
                                 }
@@ -6317,7 +6306,7 @@ export default function PurchaseOrderDetail() {
                                 })
                               }}
                             >
-                              Submit edit request
+                              {t('po.detail.submitEditRequest')}
                             </Button>
                           </div>
                         </div>
@@ -6342,7 +6331,7 @@ export default function PurchaseOrderDetail() {
                     <span style={{ color: theme.textMuted, display: 'flex' }}>
                       <IconBox />
                     </span>
-                    Edit Request History
+                    {t('po.detail.editRequestHistory')}
                   </div>
                   {(po.edit_requests ?? []).length === 0 && (
                     <div
@@ -6353,7 +6342,7 @@ export default function PurchaseOrderDetail() {
                         color: theme.textMuted,
                       }}
                     >
-                      No edit requests yet.
+                      {t('po.detail.noEditRequestsYet')}
                     </div>
                   )}
                   {(po.edit_requests ?? []).map((er) => {
@@ -6413,7 +6402,7 @@ export default function PurchaseOrderDetail() {
                           <span
                             style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}
                           >
-                            {totalChanges} change{totalChanges !== 1 ? 's' : ''}
+                            {t('po.detail.changesCount', { count: totalChanges })}
                           </span>
                         </div>
 
@@ -6455,7 +6444,7 @@ export default function PurchaseOrderDetail() {
                               style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
                             >
                               <span style={{ color: theme.textMuted, minWidth: '140px' }}>
-                                line {e.field.replace(/_/g, ' ')}
+                                {t('po.detail.editedLineField', { field: e.field.replace(/_/g, ' ') })}
                               </span>
                               <span style={{ color: theme.danger, textDecoration: 'line-through' }}>
                                 {String(e.from ?? '—')}
@@ -6466,13 +6455,12 @@ export default function PurchaseOrderDetail() {
                           ))}
                           {addedLines.length > 0 && (
                             <div style={{ color: theme.accent }}>
-                              + {addedLines.length} line{addedLines.length !== 1 ? 's' : ''} added
+                              {t('po.detail.linesAdded', { count: addedLines.length })}
                             </div>
                           )}
                           {removedLines.length > 0 && (
                             <div style={{ color: theme.danger }}>
-                              − {removedLines.length} line{removedLines.length !== 1 ? 's' : ''}{' '}
-                              removed
+                              {t('po.detail.linesRemoved', { count: removedLines.length })}
                             </div>
                           )}
                         </div>
@@ -6495,9 +6483,11 @@ export default function PurchaseOrderDetail() {
                           <div
                             style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '0' }}
                           >
-                            {er.status === 'approved' ? 'Approved' : 'Rejected'} by{' '}
-                            {er.reviewed_by_email} on{' '}
-                            {er.reviewed_at?.slice(0, 16).replace('T', ' ')}
+                            {t('po.detail.reviewedBy', {
+                              status: getPOStatusLabel(er.status === 'approved' ? 'approved' : 'rejected'),
+                              email: er.reviewed_by_email,
+                              date: er.reviewed_at?.slice(0, 16).replace('T', ' '),
+                            })}
                             {er.review_notes && ` — "${er.review_notes}"`}
                           </div>
                         )}
@@ -6527,7 +6517,7 @@ export default function PurchaseOrderDetail() {
                                 })
                               }
                             >
-                              Approve
+                              {t('po.detail.approve')}
                             </Button>
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                               <input
@@ -6535,7 +6525,7 @@ export default function PurchaseOrderDetail() {
                                 onChange={(e) => {
                                   setReviewNotes((p) => ({ ...p, [er.id]: e.target.value }))
                                 }}
-                                placeholder="Rejection reason (required)"
+                                placeholder={t('po.detail.rejectionReasonRequired')}
                                 style={{ ...inputStyle, width: '240px' }}
                               />
                               <Button
@@ -6553,7 +6543,7 @@ export default function PurchaseOrderDetail() {
                                   })
                                 }
                               >
-                                Reject
+                                {t('po.detail.reject')}
                               </Button>
                             </div>
                           </div>
@@ -6753,7 +6743,7 @@ export default function PurchaseOrderDetail() {
           const lineFields: LineItemField<AdminCorrectionDraft['lines'][number]>[] = [
             {
               key: 'product_id',
-              label: 'Product',
+              label: t('po.detail.product'),
               render: (line, i) => (
                 <select
                   value={line.product_id}
@@ -6765,7 +6755,7 @@ export default function PurchaseOrderDetail() {
                     setAdminCorrectionDraft({ ...adminCorrectionDraft, lines })
                   }}
                 >
-                  <option value="">— No catalog product —</option>
+                  <option value="">{t('po.detail.noCatalogProduct')}</option>
                   {adminCorrectionProducts.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.sku} — {p.name}
@@ -6776,7 +6766,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'description',
-              label: 'Description',
+              label: t('po.detail.description'),
               render: (line, i) => (
                 <input
                   value={line.description}
@@ -6792,7 +6782,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'qty',
-              label: 'Qty',
+              label: t('po.detail.qty'),
               width: '90px',
               render: (line, i) => (
                 <input
@@ -6810,7 +6800,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'unit_price',
-              label: 'Unit price',
+              label: t('po.detail.unitPrice'),
               width: '110px',
               render: (line, i) => (
                 <input
@@ -6828,7 +6818,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'uom',
-              label: 'UOM',
+              label: t('po.detail.uom'),
               width: '80px',
               render: (line, i) => (
                 <input
@@ -6845,7 +6835,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'source_location_id',
-              label: 'Stock source',
+              label: t('po.detail.stockSource'),
               render: (line, i) => (
                 <select
                   value={line.source_location_id}
@@ -6857,7 +6847,7 @@ export default function PurchaseOrderDetail() {
                     setAdminCorrectionDraft({ ...adminCorrectionDraft, lines })
                   }}
                 >
-                  <option value="">— Default warehouse —</option>
+                  <option value="">{t('po.detail.defaultWarehouse')}</option>
                   {stockLocations.map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name}
@@ -6880,10 +6870,7 @@ export default function PurchaseOrderDetail() {
                   color: '#92400e',
                 }}
               >
-                Admin correction applies immediately — there is no second-approver review step.
-                It reverses and reposts any stock movements already recorded so inventory stays
-                accurate, and refuses fields already referenced by an AP invoice. Use the reason
-                field below to explain why.
+                {t('po.detail.adminCorrectionAppliesImmediatelyThereIs')}
               </div>
 
               {!adminCorrectionDraft && (
@@ -6895,7 +6882,7 @@ export default function PurchaseOrderDetail() {
                       setAdminCorrectionConfirming(false)
                     }}
                   >
-                    Start correction
+                    {t('po.detail.startCorrection')}
                   </Button>
                 </div>
               )}
@@ -6911,7 +6898,7 @@ export default function PurchaseOrderDetail() {
                         marginBottom: '12px',
                       }}
                     >
-                      Header
+                      {t('po.detail.header')}
                     </div>
                     <div
                       style={{
@@ -6921,7 +6908,7 @@ export default function PurchaseOrderDetail() {
                       }}
                     >
                       <div>
-                        <label style={labelStyle}>Vendor</label>
+                        <label style={labelStyle}>{t('po.detail.vendor')}</label>
                         <select
                           value={adminCorrectionDraft.vendor_id}
                           style={inputStyle}
@@ -6932,7 +6919,7 @@ export default function PurchaseOrderDetail() {
                             })
                           }}
                         >
-                          <option value="">— None —</option>
+                          <option value="">{t('po.detail.none')}</option>
                           {vendors.map((v) => (
                             <option key={v.id} value={v.id}>
                               {v.name}
@@ -6941,7 +6928,7 @@ export default function PurchaseOrderDetail() {
                         </select>
                       </div>
                       <div>
-                        <label style={labelStyle}>Currency</label>
+                        <label style={labelStyle}>{t('po.detail.currency')}</label>
                         <select
                           value={adminCorrectionDraft.currency_code}
                           style={inputStyle}
@@ -6960,7 +6947,7 @@ export default function PurchaseOrderDetail() {
                         </select>
                       </div>
                       <div>
-                        <label style={labelStyle}>Analytic account</label>
+                        <label style={labelStyle}>{t('po.detail.analyticAccount')}</label>
                         <select
                           value={adminCorrectionDraft.analytic_account_id}
                           style={inputStyle}
@@ -6971,7 +6958,7 @@ export default function PurchaseOrderDetail() {
                             })
                           }}
                         >
-                          <option value="">— None —</option>
+                          <option value="">{t('po.detail.none')}</option>
                           {analyticAccounts.map((a) => (
                             <option key={a.id} value={a.id}>
                               {a.code} — {a.name}
@@ -6980,7 +6967,7 @@ export default function PurchaseOrderDetail() {
                         </select>
                       </div>
                       <div>
-                        <label style={labelStyle}>Priority</label>
+                        <label style={labelStyle}>{t('po.detail.priority')}</label>
                         <select
                           value={adminCorrectionDraft.priority}
                           style={inputStyle}
@@ -6991,13 +6978,13 @@ export default function PurchaseOrderDetail() {
                             })
                           }}
                         >
-                          <option value="low">Low</option>
-                          <option value="high">High</option>
-                          <option value="emergency">Emergency</option>
+                          <option value="low">{t('po.detail.low')}</option>
+                          <option value="high">{t('po.detail.high')}</option>
+                          <option value="emergency">{t('po.detail.emergency')}</option>
                         </select>
                       </div>
                       <div>
-                        <label style={labelStyle}>Received by</label>
+                        <label style={labelStyle}>{t('po.detail.receivedBy2')}</label>
                         <select
                           value={adminCorrectionDraft.assigned_receiver_id}
                           style={inputStyle}
@@ -7008,7 +6995,7 @@ export default function PurchaseOrderDetail() {
                             })
                           }}
                         >
-                          <option value="">— Unassigned —</option>
+                          <option value="">{t('po.detail.unassigned')}</option>
                           {employees.map((e) => (
                             <option key={e.id} value={e.id}>
                               {e.first_name} {e.last_name}
@@ -7017,7 +7004,7 @@ export default function PurchaseOrderDetail() {
                         </select>
                       </div>
                       <div>
-                        <label style={labelStyle}>Branch</label>
+                        <label style={labelStyle}>{t('po.detail.branch')}</label>
                         <select
                           value={adminCorrectionDraft.branch_id}
                           style={inputStyle}
@@ -7028,7 +7015,7 @@ export default function PurchaseOrderDetail() {
                             })
                           }}
                         >
-                          <option value="">— None —</option>
+                          <option value="">{t('po.detail.none')}</option>
                           {branches.map((b) => (
                             <option key={b.id} value={b.id}>
                               {b.name}
@@ -7038,7 +7025,7 @@ export default function PurchaseOrderDetail() {
                       </div>
                       {po.purpose === 'project' && (
                         <div>
-                          <label style={labelStyle}>Delivery destination</label>
+                          <label style={labelStyle}>{t('po.detail.deliveryDestination')}</label>
                           <select
                             value={adminCorrectionDraft.delivery_destination}
                             style={inputStyle}
@@ -7049,13 +7036,13 @@ export default function PurchaseOrderDetail() {
                               })
                             }}
                           >
-                            <option value="inventory">Warehouse (inventory)</option>
-                            <option value="jobsite">Direct to jobsite</option>
+                            <option value="inventory">{t('po.detail.warehouseInventory')}</option>
+                            <option value="jobsite">{t('po.detail.directToJobsite')}</option>
                           </select>
                         </div>
                       )}
                       <div>
-                        <label style={labelStyle}>Expected delivery</label>
+                        <label style={labelStyle}>{t('po.detail.expectedDelivery')}</label>
                         <input
                           type="date"
                           value={adminCorrectionDraft.expected_delivery_date}
@@ -7069,7 +7056,7 @@ export default function PurchaseOrderDetail() {
                         />
                       </div>
                       <div style={{ gridColumn: '1 / -1' }}>
-                        <label style={labelStyle}>Notes</label>
+                        <label style={labelStyle}>{t('po.detail.notes2')}</label>
                         <textarea
                           value={adminCorrectionDraft.notes}
                           rows={2}
@@ -7094,7 +7081,7 @@ export default function PurchaseOrderDetail() {
                         marginBottom: '12px',
                       }}
                     >
-                      Lines
+                      {t('po.detail.lines')}
                     </div>
                     <LineItemEditor
                       fields={lineFields}
@@ -7118,7 +7105,7 @@ export default function PurchaseOrderDetail() {
                             marginBottom: '12px',
                           }}
                         >
-                          Receipt {orig?.receipt_date?.slice(0, 10) ?? ''}{' '}
+                          {t('po.detail.receiptWithDate', { date: orig?.receipt_date?.slice(0, 10) ?? '' })}{' '}
                           <Badge variant={orig?.status === 'confirmed' ? 'success' : 'neutral'}>
                             {orig?.status}
                           </Badge>
@@ -7132,7 +7119,7 @@ export default function PurchaseOrderDetail() {
                           }}
                         >
                           <div>
-                            <label style={labelStyle}>Warehouse location</label>
+                            <label style={labelStyle}>{t('po.detail.warehouseLocation')}</label>
                             <select
                               value={dr.warehouse_location_id}
                               style={inputStyle}
@@ -7145,7 +7132,7 @@ export default function PurchaseOrderDetail() {
                                 setAdminCorrectionDraft({ ...adminCorrectionDraft, receipts })
                               }}
                             >
-                              <option value="">— Default warehouse —</option>
+                              <option value="">{t('po.detail.defaultWarehouse')}</option>
                               {stockLocations.map((l) => (
                                 <option key={l.id} value={l.id}>
                                   {l.name}
@@ -7154,7 +7141,7 @@ export default function PurchaseOrderDetail() {
                             </select>
                           </div>
                           <div>
-                            <label style={labelStyle}>Location notes</label>
+                            <label style={labelStyle}>{t('po.detail.locationNotes')}</label>
                             <input
                               value={dr.location_notes}
                               style={inputStyle}
@@ -7166,7 +7153,7 @@ export default function PurchaseOrderDetail() {
                             />
                           </div>
                           <div>
-                            <label style={labelStyle}>Received by</label>
+                            <label style={labelStyle}>{t('po.detail.receivedBy2')}</label>
                             <input
                               value={dr.received_by_name}
                               style={inputStyle}
@@ -7181,7 +7168,7 @@ export default function PurchaseOrderDetail() {
                             />
                           </div>
                           <div>
-                            <label style={labelStyle}>Received from</label>
+                            <label style={labelStyle}>{t('po.detail.receivedFrom')}</label>
                             <input
                               value={dr.received_from_name}
                               style={inputStyle}
@@ -7196,7 +7183,7 @@ export default function PurchaseOrderDetail() {
                             />
                           </div>
                           <div style={{ gridColumn: '1 / -1' }}>
-                            <label style={labelStyle}>Receipt notes</label>
+                            <label style={labelStyle}>{t('po.detail.receiptNotes')}</label>
                             <input
                               value={dr.notes}
                               style={inputStyle}
@@ -7213,7 +7200,7 @@ export default function PurchaseOrderDetail() {
                             fields={[
                               {
                                 key: 'description',
-                                label: 'Line',
+                                label: t('po.detail.line'),
                                 render: (rl) => {
                                   const l = orig?.lines.find((x) => x.id === rl.id)
                                   return (
@@ -7225,7 +7212,7 @@ export default function PurchaseOrderDetail() {
                               },
                               {
                                 key: 'qty_received',
-                                label: 'Qty received',
+                                label: t('po.detail.qtyReceived'),
                                 width: '110px',
                                 render: (rl) => (
                                   <input
@@ -7249,7 +7236,7 @@ export default function PurchaseOrderDetail() {
                               },
                               {
                                 key: 'actual_unit_price',
-                                label: 'Actual unit price',
+                                label: t('po.detail.actualUnitPrice'),
                                 width: '130px',
                                 render: (rl) => (
                                   <input
@@ -7281,11 +7268,11 @@ export default function PurchaseOrderDetail() {
                   })}
 
                   <Card style={{ padding: '20px' }}>
-                    <label style={labelStyle}>Reason for this correction (required)</label>
+                    <label style={labelStyle}>{t('po.detail.reasonForThisCorrectionRequired')}</label>
                     <input
                       value={adminCorrectionReason}
                       style={inputStyle}
-                      placeholder="Explain why this correction is needed..."
+                      placeholder={t('po.detail.explainWhyThisCorrectionIsNeeded')}
                       onChange={(e) => {
                         setAdminCorrectionReason(e.target.value)
                       }}
@@ -7306,7 +7293,7 @@ export default function PurchaseOrderDetail() {
                           setAdminCorrectionReason('')
                         }}
                       >
-                        Cancel
+                        {t('po.detail.cancel')}
                       </Button>
                       {!adminCorrectionConfirming && (
                         <Button
@@ -7318,15 +7305,14 @@ export default function PurchaseOrderDetail() {
                           }}
                         >
                           {totalChanges === 0
-                            ? 'No changes yet'
-                            : `Review ${totalChanges} change${totalChanges !== 1 ? 's' : ''}`}
+                            ? t('po.detail.noChangesYet')
+                            : t('po.detail.reviewChanges', { count: totalChanges })}
                         </Button>
                       )}
                       {adminCorrectionConfirming && (
                         <>
                           <span style={{ fontSize: '13px', color: theme.danger }}>
-                            Apply {totalChanges} change{totalChanges !== 1 ? 's' : ''} now?
-                            This cannot be undone from here.
+                            {t('po.detail.applyConfirm', { count: totalChanges })}
                           </span>
                           <Button
                             variant="danger"
@@ -7342,7 +7328,7 @@ export default function PurchaseOrderDetail() {
                               })
                             }}
                           >
-                            Yes, apply correction
+                            {t('po.detail.yesApplyCorrection')}
                           </Button>
                           <Button
                             variant="secondary"
@@ -7350,7 +7336,7 @@ export default function PurchaseOrderDetail() {
                               setAdminCorrectionConfirming(false)
                             }}
                           >
-                            Back
+                            {t('po.detail.back')}
                           </Button>
                         </>
                       )}
@@ -7388,7 +7374,7 @@ export default function PurchaseOrderDetail() {
         >
           <img
             src={lightboxUrl}
-            alt="Receipt photo"
+            alt={t('po.detail.receiptPhoto')}
             onMouseDown={onLbMouseDown}
             onClick={(e) => {
               e.stopPropagation()
@@ -7476,7 +7462,7 @@ export default function PurchaseOrderDetail() {
                 cursor: 'pointer',
               }}
             >
-              Reset
+              {t('po.detail.reset')}
             </button>
           </div>
           <button
@@ -7507,9 +7493,9 @@ export default function PurchaseOrderDetail() {
       {commentModal &&
         (() => {
           const FLAG_META: Record<string, { color: string; bg: string; label: string }> = {
-            info: { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', label: 'Info' },
-            warning: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: 'Warning' },
-            dispute: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: 'Dispute' },
+            info: { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', label: t('po.detail.info') },
+            warning: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: t('po.detail.warning') },
+            dispute: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: t('po.detail.dispute') },
           }
           const comments = lineComments[commentModal.lineId] ?? []
           const auditLine = po.lines.find((l) => l.id === commentModal.lineId)
@@ -7533,9 +7519,9 @@ export default function PurchaseOrderDetail() {
               fetchLineComments()
               setNewComment('')
               setNewFlag('')
-              addToast({ type: 'success', message: 'Comment added' })
+              addToast({ type: 'success', message: t('po.detail.commentAdded') })
             } catch {
-              addToast({ type: 'error', message: 'Failed to add comment' })
+              addToast({ type: 'error', message: t('po.detail.failedToAddComment') })
             } finally {
               setAddingComment(false)
             }
@@ -7546,9 +7532,9 @@ export default function PurchaseOrderDetail() {
             try {
               await resolveLineComment({ variables: { poId: id, commentId } })
               fetchLineComments()
-              addToast({ type: 'success', message: 'Flag resolved' })
+              addToast({ type: 'success', message: t('po.detail.flagResolved') })
             } catch {
-              addToast({ type: 'error', message: 'Failed to resolve flag' })
+              addToast({ type: 'error', message: t('po.detail.failedToResolveFlag') })
             } finally {
               setResolvingId(null)
             }
@@ -7585,10 +7571,10 @@ export default function PurchaseOrderDetail() {
                 {/* Header */}
                 <div style={{ padding: '18px 20px', borderBottom: `1px solid ${theme.border}` }}>
                   <div style={{ fontSize: '16px', fontWeight: 700, color: theme.textPrimary }}>
-                    Comments
+                    {t('po.detail.comments')}
                   </div>
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
-                    Item Description: {commentModal.description}
+                    {t('po.detail.itemDescriptionLabel', { text: commentModal.description })}
                   </div>
                 </div>
 
@@ -7618,16 +7604,16 @@ export default function PurchaseOrderDetail() {
                             border: '1px solid #ef4444',
                           }}
                         >
-                          ⚑ Finance Audit Flag
+                          {t('po.detail.financeAuditFlag')}
                         </span>
                       </div>
                       <div
                         style={{ fontSize: '14px', color: theme.textPrimary, marginBottom: '4px' }}
                       >
-                        {auditFlag.audit_note || '(no reason given)'}
+                        {auditFlag.audit_note || t('po.detail.noReasonGiven')}
                       </div>
                       <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                        {auditFlag.audit_flagged_by_email ?? 'Finance Team'}
+                        {auditFlag.audit_flagged_by_email ?? t('po.detail.financeTeam')}
                         {auditFlag.audit_flagged_at && (
                           <span>&nbsp;&nbsp;{fmt(auditFlag.audit_flagged_at)}</span>
                         )}
@@ -7643,7 +7629,7 @@ export default function PurchaseOrderDetail() {
                         color: theme.textMuted,
                       }}
                     >
-                      No comments yet.
+                      {t('po.detail.noCommentsYet')}
                     </div>
                   )}
                   {comments.map((c, idx) => {
@@ -7687,7 +7673,7 @@ export default function PurchaseOrderDetail() {
                                   }}
                                 >
                                   {fm.label}
-                                  {c.resolved ? ' · Resolved' : ''}
+                                  {c.resolved ? t('po.detail.resolved') : ''}
                                 </span>
                               </div>
                             )}
@@ -7706,7 +7692,7 @@ export default function PurchaseOrderDetail() {
                               {c.created_by_name}&nbsp;&nbsp;{fmt(c.created_at)}
                               {c.resolved && c.resolved_at && (
                                 <span style={{ marginLeft: '8px', color: '#10b981' }}>
-                                  · Resolved {fmt(c.resolved_at)}
+                                  {t('po.detail.resolvedOn', { date: fmt(c.resolved_at) })}
                                 </span>
                               )}
                             </div>
@@ -7728,7 +7714,7 @@ export default function PurchaseOrderDetail() {
                                 whiteSpace: 'nowrap',
                               }}
                             >
-                              {resolvingId === c.id ? '…' : 'Resolve'}
+                              {resolvingId === c.id ? '…' : t('po.detail.resolve')}
                             </button>
                           )}
                         </div>
@@ -7747,7 +7733,7 @@ export default function PurchaseOrderDetail() {
                       marginBottom: '8px',
                     }}
                   >
-                    Add Comment {comments.length + (auditFlag ? 2 : 1)}
+                    {t('po.detail.addCommentN', { n: comments.length + (auditFlag ? 2 : 1) })}
                   </div>
                   <textarea
                     value={newComment}
@@ -7755,7 +7741,7 @@ export default function PurchaseOrderDetail() {
                       setNewComment(e.target.value)
                     }}
                     rows={2}
-                    placeholder="Type your comment…"
+                    placeholder={t('po.detail.typeYourComment')}
                     style={{
                       width: '100%',
                       padding: '8px 10px',
@@ -7781,14 +7767,14 @@ export default function PurchaseOrderDetail() {
                         marginRight: '2px',
                       }}
                     >
-                      Flag:
+                      {t('po.detail.flag2')}
                     </span>
                     {(
                       [
-                        ['', 'None', theme.textMuted, theme.border],
-                        ['info', 'Info', '#3b82f6', '#3b82f6'],
-                        ['warning', 'Warning', '#f59e0b', '#f59e0b'],
-                        ['dispute', 'Dispute', '#ef4444', '#ef4444'],
+                        ['', t('po.detail.noneOption'), theme.textMuted, theme.border],
+                        ['info', t('po.detail.info'), '#3b82f6', '#3b82f6'],
+                        ['warning', t('po.detail.warning'), '#f59e0b', '#f59e0b'],
+                        ['dispute', t('po.detail.dispute'), '#ef4444', '#ef4444'],
                       ] as [string, string, string, string][]
                     ).map(([val, label, color, border]) => (
                       <button
@@ -7833,7 +7819,7 @@ export default function PurchaseOrderDetail() {
                         cursor: 'pointer',
                       }}
                     >
-                      Close
+                      {t('po.detail.close')}
                     </button>
                     <button
                       onClick={() => void handleAddComment()}
@@ -7849,7 +7835,7 @@ export default function PurchaseOrderDetail() {
                         fontWeight: 600,
                       }}
                     >
-                      {addingComment ? 'Adding…' : 'Add'}
+                      {addingComment ? t('po.detail.adding') : t('po.detail.add')}
                     </button>
                   </div>
                 </div>
@@ -7867,9 +7853,9 @@ export default function PurchaseOrderDetail() {
           setConfirmDeletePO(false)
           void deletePO({ variables: { id: po.id } })
         }}
-        title="Delete Purchase Order"
-        message={`Delete PO ${po.po_number}? This action cannot be undone.`}
-        confirmLabel="Delete"
+        title={t('po.detail.deletePurchaseOrder')}
+        message={t('po.detail.deleteConfirm', { number: po.po_number })}
+        confirmLabel={t('po.detail.delete')}
         confirmVariant="danger"
       />
 
@@ -7918,7 +7904,7 @@ export default function PurchaseOrderDetail() {
               }}
             >
               <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
-                Print Purchase Order — {po.po_number}
+                {t('po.detail.printPurchaseOrderTitle', { number: po.po_number })}
               </span>
               <button
                 onClick={() => {
@@ -7981,10 +7967,10 @@ export default function PurchaseOrderDetail() {
                   // "Buyer" is passed separately as a name-only line below.
                   approvalTrail: printWithNotes
                     ? ([
-                        { action: 'submit_to_market_pricing', label: 'Store Priced By' },
-                        { action: 'submit_to_price_verification', label: 'Market Priced By' },
-                        { action: 'submit_for_approval', label: 'Price Verified By' },
-                        { action: 'approve', label: 'Approved By' },
+                        { action: 'submit_to_market_pricing', label: t('po.detail.storePricedBy') },
+                        { action: 'submit_to_price_verification', label: t('po.detail.marketPricedBy') },
+                        { action: 'submit_for_approval', label: t('po.detail.priceVerifiedBy') },
+                        { action: 'approve', label: t('po.detail.approvedBy') },
                       ]
                         .map(({ action, label }) => {
                           const entry = [...po.approval_log]
@@ -8003,7 +7989,7 @@ export default function PurchaseOrderDetail() {
                     : undefined,
                 })}
                 style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-                title={`Purchase Order ${po.po_number}`}
+                title={t('po.detail.purchaseOrderNumber', { number: po.po_number })}
               />
             </div>
 
@@ -8037,7 +8023,7 @@ export default function PurchaseOrderDetail() {
                     setPrintWithNotes(e.target.checked)
                   }}
                 />
-                Include internal line notes (not for vendor copies)
+                {t('po.detail.includeInternalLineNotesNotFor')}
               </label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <Button
@@ -8047,14 +8033,14 @@ export default function PurchaseOrderDetail() {
                     setShowPrintModal(false)
                   }}
                 >
-                  Cancel
+                  {t('po.detail.cancel')}
                 </Button>
                 <Button
                   variant="primary"
                   size="sm"
                   onClick={() => printIframeRef.current?.contentWindow?.print()}
                 >
-                  Print / Save as PDF
+                  {t('po.detail.printSaveAsPdf')}
                 </Button>
               </div>
             </div>

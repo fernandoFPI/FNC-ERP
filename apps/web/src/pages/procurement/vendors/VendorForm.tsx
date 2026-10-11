@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -59,6 +60,7 @@ function SectionTitle({
 }
 
 export default function VendorForm() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
   const navigate = useNavigate()
@@ -125,13 +127,13 @@ export default function VendorForm() {
       }
       if (isEdit) {
         await updateVendor({ variables: { id, input } })
-        addToast({ type: 'success', message: 'Vendor updated' })
+        addToast({ type: 'success', message: t('vendor.form.vendorUpdated') })
       } else {
         await createVendor({
           variables: { input },
           refetchQueries: [{ query: VENDORS_QUERY, variables: {} }],
         })
-        addToast({ type: 'success', message: 'Vendor created' })
+        addToast({ type: 'success', message: t('vendor.form.vendorCreated') })
       }
       navigate('/procurement/vendors')
     } catch (err) {
@@ -144,8 +146,8 @@ export default function VendorForm() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '900px' }}>
       <PageHeader
-        title={isEdit ? 'Edit Vendor' : 'New Vendor'}
-        subtitle={isEdit ? 'Update vendor details' : 'Add a new vendor'}
+        title={isEdit ? t('vendor.form.editVendor') : t('vendor.form.newVendor')}
+        subtitle={isEdit ? t('vendor.form.updateVendorDetails') : t('vendor.form.addANewVendor')}
         backPath="/procurement/vendors"
       />
 
@@ -159,14 +161,14 @@ export default function VendorForm() {
             gap: '16px',
           }}
         >
-          <SectionTitle theme={theme} label="Basic Info" />
+          <SectionTitle theme={theme} label={t('vendor.form.basicInfo')} />
           <Row>
-            <Input label="Vendor Name" value={form.name} onChange={field('name')} required />
-            <Input label="Legal Name" value={form.legal_name} onChange={field('legal_name')} />
+            <Input label={t('vendor.form.vendorName')} value={form.name} onChange={field('name')} required />
+            <Input label={t('vendor.form.legalName')} value={form.legal_name} onChange={field('legal_name')} />
           </Row>
           <Row>
-            <Input label="Tax ID" value={form.tax_id} onChange={field('tax_id')} />
-            <Select label="Currency" value={form.currency_code} onChange={field('currency_code')}>
+            <Input label={t('vendor.form.taxId')} value={form.tax_id} onChange={field('tax_id')} />
+            <Select label={t('vendor.form.currency')} value={form.currency_code} onChange={field('currency_code')}>
               {CURRENCIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -176,7 +178,7 @@ export default function VendorForm() {
           </Row>
           <Row>
             <Input
-              label="Payment Terms (days)"
+              label={t('vendor.form.paymentTermsDays')}
               type="number"
               min="0"
               value={form.payment_terms_days}
@@ -184,10 +186,10 @@ export default function VendorForm() {
             />
           </Row>
 
-          <SectionTitle theme={theme} label="Address" />
+          <SectionTitle theme={theme} label={t('vendor.form.address')} />
           <Row>
             <Input
-              label="Country Code"
+              label={t('vendor.form.countryCode')}
               value={form.country_code}
               onChange={(e) => {
                 setForm((f) => ({ ...f, country_code: e.target.value.toUpperCase().slice(0, 2) }))
@@ -195,19 +197,19 @@ export default function VendorForm() {
               placeholder="IQ"
               maxLength={2}
             />
-            <Input label="City" value={form.city} onChange={field('city')} />
+            <Input label={t('vendor.form.city')} value={form.city} onChange={field('city')} />
           </Row>
-          <Input label="Address" value={form.address} onChange={field('address')} />
+          <Input label={t('vendor.form.address')} value={form.address} onChange={field('address')} />
 
-          <SectionTitle theme={theme} label="Contact" />
+          <SectionTitle theme={theme} label={t('vendor.form.contact')} />
           <Row>
             <Input
-              label="Contact Name"
+              label={t('vendor.form.contactName')}
               value={form.contact_name}
               onChange={field('contact_name')}
             />
             <Input
-              label="Contact Email"
+              label={t('vendor.form.contactEmail')}
               type="email"
               value={form.contact_email}
               onChange={field('contact_email')}
@@ -215,15 +217,15 @@ export default function VendorForm() {
           </Row>
           <Row>
             <Input
-              label="Contact Phone"
+              label={t('vendor.form.contactPhone')}
               value={form.contact_phone}
               onChange={field('contact_phone')}
             />
-            <Input label="Bank Name" value={form.bank_name} onChange={field('bank_name')} />
+            <Input label={t('vendor.form.bankName')} value={form.bank_name} onChange={field('bank_name')} />
           </Row>
 
           <Checkbox
-            label="Active"
+            label={t('vendor.form.active')}
             checked={form.is_active}
             onChange={(checked) => {
               setForm((f) => ({ ...f, is_active: checked }))
@@ -246,10 +248,10 @@ export default function VendorForm() {
                 navigate('/procurement/vendors')
               }}
             >
-              Cancel
+              {t('vendor.form.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={loading}>
-              {isEdit ? 'Save Changes' : 'Create Vendor'}
+              {isEdit ? t('vendor.form.saveChanges') : t('vendor.form.createVendor')}
             </Button>
           </div>
         </Card>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -59,6 +60,7 @@ function EmployeeCombobox({
   value: EmployeeOption | null
   onChange: (v: EmployeeOption | null) => void
 }) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
@@ -110,7 +112,7 @@ function EmployeeCombobox({
           setSearch(e.target.value)
           onChange(null)
         }}
-        placeholder="Search by name or employee number…"
+        placeholder={t('proc.positions.searchByNameOrEmployeeNumber')}
         style={{
           width: '100%',
           padding: '8px 10px',
@@ -141,7 +143,7 @@ function EmployeeCombobox({
         >
           {options.length === 0 && (
             <div style={{ padding: '12px 14px', fontSize: '12px', color: theme.textMuted }}>
-              {search ? 'No employees found' : 'Type to search…'}
+              {search ? t('proc.positions.noEmployeesFound') : t('proc.positions.typeToSearch')}
             </div>
           )}
           {options.map((opt) => (
@@ -175,6 +177,7 @@ function EmployeeCombobox({
 
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function POPositionsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const user = useAuthStore((s) => s.user)
   const [showAssignModal, setShowAssignModal] = useState(false)
@@ -262,13 +265,13 @@ export default function POPositionsPage() {
   const columns: Column<POPosition>[] = [
     {
       key: 'employeeName',
-      header: 'Employee',
+      header: t('proc.positions.employee'),
       mobilePrimary: true,
       render: (p) => <span style={{ color: theme.textPrimary }}>{p.employeeName}</span>,
     },
     {
       key: 'position',
-      header: 'Position',
+      header: t('proc.positions.position'),
       mobileSecondary: true,
       render: (p) => (
         <Badge variant={POSITION_VARIANT[p.position] ?? 'neutral'}>
@@ -278,33 +281,33 @@ export default function POPositionsPage() {
     },
     {
       key: 'isActive',
-      header: 'Active',
+      header: t('proc.positions.active'),
       mobilePriority: 1,
       render: (p) => (
         <Badge variant={p.isActive ? 'success' : 'neutral'}>
-          {p.isActive ? 'Active' : 'Inactive'}
+          {p.isActive ? t('proc.positions.active') : t('proc.positions.inactive')}
         </Badge>
       ),
     },
     {
       key: 'scope',
-      header: 'Scope',
+      header: t('proc.positions.scope'),
       mobilePriority: 2,
       render: (p) => (
         <span style={{ color: theme.textMuted }}>
           {p.projectName
-            ? `Project: ${p.projectName}`
+            ? t('proc.positions.project', { projectName: p.projectName })
             : p.departmentName
               ? `Dept: ${p.departmentName}`
               : p.branchName
                 ? `Branch: ${p.branchName}`
-                : 'Company-wide'}
+                : t('proc.positions.companyWide')}
         </span>
       ),
     },
     {
       key: 'createdAt',
-      header: 'Assigned',
+      header: t('proc.positions.assigned'),
       mobilePriority: 3,
       render: (p) => <span style={{ color: theme.textMuted }}>{p.createdAt.slice(0, 10)}</span>,
     },
@@ -320,7 +323,7 @@ export default function POPositionsPage() {
             setConfirmRemovePosition(p.id)
           }}
         >
-          Remove
+          {t('proc.positions.remove')}
         </Button>
       ),
     },
@@ -344,8 +347,8 @@ export default function POPositionsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
-        title="PO Positions"
-        subtitle="Assign employees to procurement roles per project or department"
+        title={t('proc.positions.poPositions')}
+        subtitle={t('proc.positions.assignEmployeesToProcurementRolesPer')}
         actions={
           <Button
             variant="primary"
@@ -354,7 +357,7 @@ export default function POPositionsPage() {
               setShowAssignModal(true)
             }}
           >
-            Assign position
+            {t('proc.positions.assignPosition')}
           </Button>
         }
       />
@@ -387,14 +390,14 @@ export default function POPositionsPage() {
           data={filtered}
           rowKey="id"
           loading={loading}
-          emptyMessage="No positions assigned."
+          emptyMessage={t('proc.positions.noPositionsAssigned')}
         />
       </Card>
 
       {showAssignModal && (
         <Modal
           open={showAssignModal}
-          title="Assign PO Position"
+          title={t('proc.positions.assignPoPosition')}
           onClose={() => {
             setShowAssignModal(false)
             resetForm()
@@ -412,7 +415,7 @@ export default function POPositionsPage() {
                   marginBottom: '6px',
                 }}
               >
-                Employee
+                {t('proc.positions.employee')}
               </label>
               <EmployeeCombobox value={selectedEmployee} onChange={setSelectedEmployee} />
             </div>
@@ -420,13 +423,13 @@ export default function POPositionsPage() {
             {/* Position */}
             <div>
               <Select
-                label="Position"
+                label={t('proc.positions.position')}
                 value={position}
                 onChange={(e) => {
                   setPosition(e.target.value)
                 }}
                 options={PO_POSITIONS.map((p) => ({ value: p.key, label: p.label }))}
-                placeholder="Select position"
+                placeholder={t('proc.positions.selectPosition')}
               />
               {position && (
                 <p style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.5, marginTop: '6px' }}>
@@ -446,15 +449,15 @@ export default function POPositionsPage() {
                   marginBottom: '8px',
                 }}
               >
-                Scope
+                {t('proc.positions.scope')}
               </label>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                 {(['none', 'project', 'department', 'branch'] as const).map((s) => {
                   const labels = {
-                    none: 'Company-wide',
-                    project: 'Project',
-                    department: 'Department',
-                    branch: 'Branch',
+                    none: t('proc.positions.companyWide'),
+                    project: t('proc.positions.project'),
+                    department: t('proc.positions.department'),
+                    branch: t('proc.positions.branch'),
                   }
                   const active = scopeType === s
                   return (
@@ -487,7 +490,7 @@ export default function POPositionsPage() {
 
               {scopeType === 'none' && (
                 <p style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
-                  This employee's role will apply across all projects and departments.
+                  {t('proc.positions.thisEmployeeSRoleWillApply')}
                 </p>
               )}
 
@@ -498,7 +501,7 @@ export default function POPositionsPage() {
                   onChange={(e) => {
                     setProjectId(e.target.value)
                   }}
-                  placeholder="Select project…"
+                  placeholder={t('proc.positions.selectProject')}
                   options={projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
                 />
               )}
@@ -510,7 +513,7 @@ export default function POPositionsPage() {
                   onChange={(e) => {
                     setDepartmentId(e.target.value)
                   }}
-                  placeholder="Select department…"
+                  placeholder={t('proc.positions.selectDepartment')}
                   options={departments
                     .filter((d) => d.is_active)
                     .map((d) => ({ value: d.id, label: d.name }))}
@@ -524,7 +527,7 @@ export default function POPositionsPage() {
                   onChange={(e) => {
                     setBranchId(e.target.value)
                   }}
-                  placeholder="Select branch…"
+                  placeholder={t('proc.positions.selectBranch')}
                   options={branches
                     .filter((b) => b.isActive)
                     .map((b) => ({ value: b.id, label: b.name }))}
@@ -542,7 +545,7 @@ export default function POPositionsPage() {
                   resetForm()
                 }}
               >
-                Cancel
+                {t('proc.positions.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -550,7 +553,7 @@ export default function POPositionsPage() {
                 disabled={!canSubmit}
                 onClick={handleAssign}
               >
-                Assign
+                {t('proc.positions.assign')}
               </Button>
             </div>
           </div>
@@ -567,9 +570,9 @@ export default function POPositionsPage() {
             void removePosition({ variables: { id: confirmRemovePosition } })
           setConfirmRemovePosition(null)
         }}
-        title="Remove Position"
-        message="Remove this position assignment? The employee will lose this PO role."
-        confirmLabel="Remove"
+        title={t('proc.positions.removePosition')}
+        message={t('proc.positions.removeThisPositionAssignmentTheEmployee')}
+        confirmLabel={t('proc.positions.remove')}
         confirmVariant="danger"
       />
     </div>

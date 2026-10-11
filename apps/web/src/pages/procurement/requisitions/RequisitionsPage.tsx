@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
@@ -13,7 +14,7 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { Button } from '../../../components/ui/Button'
 import {
   REQUISITION_STATUSES,
-  REQUISITION_PRIORITY_LABELS,
+  getRequisitionPriorityLabel,
   REQUISITION_TERMINAL_STATUSES,
   getRequisitionStatusVariant,
   getRequisitionStatusLabel,
@@ -22,6 +23,7 @@ import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { api } from '../../../lib/axios'
+import i18n, { enumLabel } from '../../../i18n'
 import { usePermission } from '../../../hooks/usePermission'
 import {
   miniReached,
@@ -289,9 +291,14 @@ const PURPOSE_OPTIONS = [
   { value: 'expense', label: 'Expense' },
 ]
 
+const expenseStatusLabel = (s: string) =>
+  i18n.t(`req.expenseStatus.${s}`, { defaultValue: EXPENSE_STATUS_LABELS[s] ?? s })
+const settlementStatusLabel = (s: string) =>
+  i18n.t(`req.settlementStatus.${s}`, { defaultValue: SETTLEMENT_STATUS_LABELS[s] ?? s })
+
 function rowStatusLabel(r: Requisition): string {
-  if (r.__kind === 'expense') return EXPENSE_STATUS_LABELS[r.status] ?? r.status
-  if (r.__kind === 'settlement') return SETTLEMENT_STATUS_LABELS[r.status] ?? r.status
+  if (r.__kind === 'expense') return expenseStatusLabel(r.status)
+  if (r.__kind === 'settlement') return settlementStatusLabel(r.status)
   return getRequisitionStatusLabel(r.status)
 }
 function rowStatusVariant(r: Requisition): BadgeVariant {
@@ -314,6 +321,7 @@ function downloadCSV(rows: string[][], filename: string) {
 }
 
 export default function RequisitionsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { can } = usePermission()
@@ -592,14 +600,14 @@ export default function RequisitionsPage() {
 
   const exportRows = (rows: Requisition[], filename: string) => {
     const header = [
-      'Requisition #',
-      'Purpose',
-      'Project',
-      'Branch',
-      'Status',
-      'Priority',
-      'Organizer',
-      'Created',
+      t('req.list.requisition'),
+      t('req.list.purpose'),
+      t('req.list.project'),
+      t('req.list.branch'),
+      t('req.list.status'),
+      t('req.list.priority'),
+      t('req.list.organizer'),
+      t('req.list.created'),
     ]
     const body = rows.map((r) => [
       r.requisition_number,
@@ -607,7 +615,7 @@ export default function RequisitionsPage() {
       r.projectName ?? '',
       r.branch_name ?? '',
       rowStatusLabel(r),
-      r.__kind ? '' : REQUISITION_PRIORITY_LABELS[r.priority ?? 'low'],
+      r.__kind ? '' : getRequisitionPriorityLabel(r.priority ?? 'low'),
       r.organizerName ?? '',
       r.created_at.slice(0, 10),
     ])
@@ -648,7 +656,7 @@ export default function RequisitionsPage() {
       renderHeader: () => (
         <input
           type="checkbox"
-          aria-label="Select all"
+          aria-label={t('req.list.selectAll')}
           checked={allSelected}
           ref={(el) => {
             if (el) el.indeterminate = someSelected && !allSelected
@@ -680,7 +688,7 @@ export default function RequisitionsPage() {
     },
     {
       key: 'requisition_number',
-      header: 'Requisition #',
+      header: t('req.list.requisition'),
       mobilePrimary: true,
       render: (r) => {
         const p = r.priority ?? 'low'
@@ -705,18 +713,18 @@ export default function RequisitionsPage() {
                     letterSpacing: '0.04em',
                   }}
                 >
-                  {REQUISITION_PRIORITY_LABELS[p] ?? p}
+                  {getRequisitionPriorityLabel(p)}
                 </span>
               )}
             </div>
-            <div style={{ fontSize: '11px', color: theme.textMuted }}>{r.purpose ?? '—'}</div>
+            <div style={{ fontSize: '11px', color: theme.textMuted }}>{enumLabel(r.purpose) || '—'}</div>
           </div>
         )
       },
     },
     {
       key: 'project',
-      header: 'Project',
+      header: t('req.list.project'),
       render: (r) =>
         r.project_id ? (
           <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{r.projectName ?? '—'}</span>
@@ -726,19 +734,19 @@ export default function RequisitionsPage() {
     },
     {
       key: 'branch_name',
-      header: 'Branch',
+      header: t('req.list.branch'),
       render: (r) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{r.branch_name ?? '—'}</span>
       ),
     },
     {
       key: 'organizerName',
-      header: 'Organizer',
+      header: t('req.list.organizer'),
       render: (r) => <PersonCell name={r.organizerName} />,
     },
     {
       key: 'stage',
-      header: 'Stage',
+      header: t('req.list.stage'),
       render: (r) => {
         if (r.__kind) return <span style={{ color: theme.textMuted, fontSize: '13px' }}>—</span>
         const st = requisitionStage(r.status)
@@ -753,7 +761,7 @@ export default function RequisitionsPage() {
     },
     {
       key: 'age',
-      header: 'Age',
+      header: t('req.list.age'),
       render: (r) => (
         <span style={{ fontSize: '13px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
           {formatAge(r.created_at)}
@@ -762,12 +770,12 @@ export default function RequisitionsPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('req.list.status'),
       render: (r) => <Badge variant={rowStatusVariant(r)}>{rowStatusLabel(r)}</Badge>,
     },
     {
       key: '__actions',
-      header: 'Actions',
+      header: t('req.list.actions'),
       width: '70px',
       mobileHide: true,
       render: (r) => (
@@ -776,7 +784,7 @@ export default function RequisitionsPage() {
             ...(!r.__kind
               ? [
                   {
-                    label: 'View details',
+                    label: t('req.list.viewDetails'),
                     onClick: () => {
                       setPreviewId(r.id)
                     },
@@ -784,13 +792,13 @@ export default function RequisitionsPage() {
                 ]
               : []),
             {
-              label: 'Open full page',
+              label: t('req.list.openFullPage'),
               onClick: () => {
                 openFull(r)
               },
             },
             {
-              label: 'Copy number',
+              label: t('req.list.copyNumber'),
               onClick: () => {
                 void navigator.clipboard
                   .writeText(r.requisition_number)
@@ -798,7 +806,7 @@ export default function RequisitionsPage() {
                     addToast({ type: 'success', message: `${r.requisition_number} copied` })
                   })
                   .catch(() => {
-                    addToast({ type: 'error', message: 'Could not copy' })
+                    addToast({ type: 'error', message: t('req.list.couldNotCopy') })
                   })
               },
             },
@@ -816,12 +824,12 @@ export default function RequisitionsPage() {
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '2400px' }}>
       <PageTitle
         icon="doc"
-        title="Requisitions"
-        subtitle="Create, track and manage purchase requisitions and expense claims."
+        title={t('req.list.requisitions')}
+        subtitle={t('req.list.createTrackAndManagePurchaseRequisitions')}
         actions={
           <>
             <Button variant="ghost" size="sm" onClick={handleExport}>
-              Export CSV
+              {t('req.list.exportCsv')}
             </Button>
             <Button
               data-tour="new-requisition-btn"
@@ -831,7 +839,7 @@ export default function RequisitionsPage() {
                 navigate('/procurement/requisitions/new')
               }}
             >
-              New Requisition
+              {t('req.list.newRequisition')}
             </Button>
           </>
         }
@@ -841,9 +849,9 @@ export default function RequisitionsPage() {
         <KpiTile
           tone="accent"
           icon="doc"
-          label="My Queue"
+          label={t('req.list.myQueue')}
           value={queueCount}
-          sub="Actions required"
+          sub={t('req.list.actionsRequired')}
           trailing={<Icon name="arrowRight" size={16} />}
           onClick={() => {
             navigate('/procurement/queue')
@@ -852,9 +860,9 @@ export default function RequisitionsPage() {
         <KpiTile
           tone="warning"
           icon="clock"
-          label="Pending Approval"
+          label={t('req.list.pendingApproval')}
           value={pendingApprovalCount}
-          sub="Awaiting approval"
+          sub={t('req.list.awaitingApproval')}
           active={quickFilter === 'pendingApproval'}
           onClick={() => {
             toggleQuick('pendingApproval')
@@ -863,9 +871,9 @@ export default function RequisitionsPage() {
         <KpiTile
           tone="danger"
           icon="alert"
-          label="Need Action"
+          label={t('req.list.needAction')}
           value={needActionCount}
-          sub="Requires attention"
+          sub={t('req.list.requiresAttention')}
           active={quickFilter === 'needAction'}
           onClick={() => {
             toggleQuick('needAction')
@@ -874,9 +882,9 @@ export default function RequisitionsPage() {
         <KpiTile
           tone="info"
           icon="truck"
-          label="Delayed"
+          label={t('req.list.delayed')}
           value={delayedCount}
-          sub="Overdue / delayed"
+          sub={t('req.list.overdueDelayed')}
           active={quickFilter === 'delayed'}
           onClick={() => {
             toggleQuick('delayed')
@@ -885,10 +893,10 @@ export default function RequisitionsPage() {
         <KpiTile
           tone="success"
           icon="cart"
-          label="Open Requisitions"
+          label={t('req.list.openRequisitions')}
           loading={loading && requisitions.length === 0}
           value={openCount}
-          sub="Not yet completed"
+          sub={t('req.list.notYetCompleted')}
         />
       </KpiRow>
 
@@ -923,34 +931,40 @@ export default function RequisitionsPage() {
             <SearchBox
               value={search}
               onChange={setSearch}
-              placeholder="Search requisition #, purpose, project, item, organizer…"
+              placeholder={t('req.list.searchRequisitionPurposeProjectItemOrganizer')}
             />
             <PillSelect
-              label="Status"
+              label={t('req.list.status')}
               value={statusFilter}
-              options={STATUS_OPTIONS}
+              options={STATUS_OPTIONS.map((o) => ({
+                ...o,
+                label: t(`req.status.${o.value}`, { defaultValue: o.label }),
+              }))}
               onChange={setStatusFilter}
             />
             <PillSelect
-              label="Purpose"
+              label={t('req.list.purpose')}
               value={purposeFilter}
-              options={PURPOSE_OPTIONS}
+              options={PURPOSE_OPTIONS.map((o) => ({
+                ...o,
+                label: t(`req.purpose.${o.value}`, { defaultValue: o.label }),
+              }))}
               onChange={setPurposeFilter}
             />
             <PillSelect
-              label="Organizer"
+              label={t('req.list.organizer')}
               value={organizerFilter}
               options={organizerOptions}
               onChange={setOrganizerFilter}
             />
             <PillSelect
-              label="Project"
+              label={t('req.list.project')}
               value={projectFilter}
               options={projectOptions}
               onChange={setProjectFilter}
             />
             <MoreFilters activeCount={moreFilterCount}>
-              <FilterField label="Priority">
+              <FilterField label={t('req.list.priority')}>
                 <select
                   value={priorityFilter}
                   onChange={(e) => {
@@ -958,15 +972,15 @@ export default function RequisitionsPage() {
                   }}
                   style={dateInputStyle(theme)}
                 >
-                  <option value="">All</option>
+                  <option value="">{t('req.list.all')}</option>
                   {PRIORITY_OPTIONS.map((p) => (
                     <option key={p.value} value={p.value}>
-                      {p.label}
+                      {t(`req.priority.${p.value}`, { defaultValue: p.label })}
                     </option>
                   ))}
                 </select>
               </FilterField>
-              <FilterField label="Created from">
+              <FilterField label={t('req.list.createdFrom')}>
                 <input
                   type="date"
                   value={fromDate}
@@ -976,7 +990,7 @@ export default function RequisitionsPage() {
                   style={dateInputStyle(theme)}
                 />
               </FilterField>
-              <FilterField label="Created to">
+              <FilterField label={t('req.list.createdTo')}>
                 <input
                   type="date"
                   value={toDate}
@@ -1003,7 +1017,7 @@ export default function RequisitionsPage() {
                   }}
                   style={{ accentColor: theme.accent }}
                 />
-                Only requisitions I organized
+                {t('req.list.onlyRequisitionsIOrganized')}
               </label>
               <FilterPresets
                 presets={presets}
@@ -1035,17 +1049,17 @@ export default function RequisitionsPage() {
                     color: theme.accent,
                     fontSize: '13px',
                     cursor: 'pointer',
-                    textAlign: 'left',
+                    textAlign: 'start',
                     padding: 0,
                     fontFamily: 'inherit',
                   }}
                 >
-                  Clear all filters
+                  {t('req.list.clearAllFilters')}
                 </button>
               )}
             </MoreFilters>
             <IconButton
-              title="Refresh"
+              title={t('req.list.refresh')}
               onClick={() => {
                 void refetch()
                 loadExpenseClaims()
@@ -1064,7 +1078,7 @@ export default function RequisitionsPage() {
                   exportRows(selectedRows, `requisitions-selected-${today}.csv`)
                 }}
               >
-                Export
+                {t('req.list.export')}
               </BarButton>
             </SelectionBar>
           )}
@@ -1076,7 +1090,7 @@ export default function RequisitionsPage() {
               loading={loading}
               rowKey="id"
               emptyMessage={
-                anyFilter ? 'No requisitions match these filters.' : 'No requisitions yet.'
+                anyFilter ? t('req.list.noRequisitionsMatchTheseFilters') : t('req.list.noRequisitionsYet')
               }
               onRowClick={(r) => {
                 if (r.__kind) {
@@ -1086,7 +1100,7 @@ export default function RequisitionsPage() {
                 setPreviewId(r.id)
               }}
               getRowStyle={(r) => {
-                const base = r.priority === 'emergency' ? { borderLeft: '3px solid #dc2626' } : {}
+                const base = r.priority === 'emergency' ? { borderInlineStart: '3px solid #dc2626' } : {}
                 return r.id === previewId || selectedIds.has(r.id)
                   ? { ...base, background: theme.accentBg }
                   : base
@@ -1114,7 +1128,7 @@ export default function RequisitionsPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Badge variant={EXPENSE_STATUS_VARIANTS[viewClaim.status] ?? 'neutral'}>
-                {EXPENSE_STATUS_LABELS[viewClaim.status] ?? viewClaim.status}
+                {expenseStatusLabel(viewClaim.status)}
               </Badge>
               <AmountDisplay
                 amount={Number(viewClaim.total_amount)}
@@ -1135,12 +1149,12 @@ export default function RequisitionsPage() {
                       key={h}
                       style={{
                         padding: '6px 8px',
-                        textAlign: h === 'Amount' ? 'right' : 'left',
+                        textAlign: h === 'Amount' ? 'end' : 'start',
                         color: theme.textMuted,
                         fontWeight: 500,
                       }}
                     >
-                      {h}
+                      {t(`req.list.hdr${h}`)}
                     </th>
                   ))}
                 </tr>
@@ -1159,7 +1173,7 @@ export default function RequisitionsPage() {
                     <td style={{ padding: '6px 8px', color: theme.textSecondary }}>
                       {l.description ?? '—'}
                     </td>
-                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                    <td style={{ padding: '6px 8px', textAlign: 'end' }}>
                       <AmountDisplay
                         amount={Number(l.amount)}
                         currency={l.currency_code}
@@ -1186,7 +1200,7 @@ export default function RequisitionsPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Badge variant={SETTLEMENT_STATUS_VARIANTS[viewSettlement.status] ?? 'neutral'}>
-                {SETTLEMENT_STATUS_LABELS[viewSettlement.status] ?? viewSettlement.status}
+                {settlementStatusLabel(viewSettlement.status)}
               </Badge>
               <AmountDisplay
                 amount={Number(viewSettlement.total_amount)}
@@ -1194,7 +1208,7 @@ export default function RequisitionsPage() {
                 size="sm"
               />
               <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                From advance {viewSettlement.advance_number}
+                {t('req.list.fromAdvance', { number: viewSettlement.advance_number })}
               </span>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -1205,12 +1219,12 @@ export default function RequisitionsPage() {
                       key={h}
                       style={{
                         padding: '6px 8px',
-                        textAlign: h === 'Amount' ? 'right' : 'left',
+                        textAlign: h === 'Amount' ? 'end' : 'start',
                         color: theme.textMuted,
                         fontWeight: 500,
                       }}
                     >
-                      {h}
+                      {t(`req.list.hdr${h}`)}
                     </th>
                   ))}
                 </tr>
@@ -1229,7 +1243,7 @@ export default function RequisitionsPage() {
                     <td style={{ padding: '6px 8px', color: theme.textSecondary }}>
                       {l.description ?? '—'}
                     </td>
-                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                    <td style={{ padding: '6px 8px', textAlign: 'end' }}>
                       <AmountDisplay
                         amount={Number(l.amount)}
                         currency={l.currency_code}

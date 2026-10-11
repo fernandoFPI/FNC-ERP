@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@apollo/client'
@@ -79,6 +80,7 @@ const emptyLine = (): ReqLineDraft => ({
 })
 
 export default function RequisitionForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
@@ -194,15 +196,15 @@ export default function RequisitionForm() {
     (employeesData?.employees ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
 
   const productOptions = [
-    { value: '', label: 'Custom item' },
+    { value: '', label: t('req.form.customItem') },
     ...products.map((p) => ({ value: p.id, label: p.name, sublabel: p.sku, keywords: p.name_ar ?? undefined })),
   ]
   const projectOptions = [
-    { value: '', label: 'Select project…' },
+    { value: '', label: t('req.form.selectProject') },
     ...projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` })),
   ]
   const employeeOptions = [
-    { value: '', label: 'None' },
+    { value: '', label: t('req.form.none') },
     ...employees.map((e) => ({
       value: e.id,
       label: `${e.first_name} ${e.last_name}`,
@@ -229,27 +231,27 @@ export default function RequisitionForm() {
   const lineFields: LineItemField<ReqLineDraft>[] = [
     {
       key: 'product',
-      label: 'Product / Description',
+      label: t('req.form.productDescription'),
       render: (line, i) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <SearchableSelect
             value={line.product_id}
             onChange={(v) => { updateLine(i, 'product_id', v); }}
             options={productOptions}
-            placeholder="Search by name or SKU…"
+            placeholder={t('req.form.searchByNameOrSku')}
             minDropdownWidth={400}
           />
           <Input
             value={line.description}
             onChange={(e) => { updateLine(i, 'description', e.target.value); }}
-            placeholder="Description"
+            placeholder={t('req.form.description')}
           />
         </div>
       ),
     },
     {
       key: 'uom',
-      label: 'UOM',
+      label: t('req.form.uom'),
       width: '110px',
       render: (line, i) => (
         <Input value={line.uom} onChange={(e) => { updateLine(i, 'uom', e.target.value); }} />
@@ -257,7 +259,7 @@ export default function RequisitionForm() {
     },
     {
       key: 'qty',
-      label: 'Qty',
+      label: t('req.form.qty'),
       width: '90px',
       render: (line, i) => (
         <Input
@@ -271,7 +273,7 @@ export default function RequisitionForm() {
     },
     {
       key: 'unit_price',
-      label: 'Est. Unit Price',
+      label: t('req.form.estUnitPrice'),
       width: '120px',
       render: (line, i) => (
         <Input
@@ -285,7 +287,7 @@ export default function RequisitionForm() {
     },
     {
       key: 'total',
-      label: 'Total',
+      label: t('req.form.total'),
       width: '90px',
       render: (line) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textPrimary, padding: '0 4px' }}>
@@ -306,7 +308,7 @@ export default function RequisitionForm() {
   const expenseLineFields: LineItemField<ExpenseLineDraft>[] = [
     {
       key: 'expense_date',
-      label: 'Date',
+      label: t('req.form.date'),
       width: '140px',
       render: (line, i) => (
         <Input
@@ -318,14 +320,14 @@ export default function RequisitionForm() {
     },
     {
       key: 'category_id',
-      label: 'Category',
+      label: t('req.form.category'),
       width: '200px',
       render: (line, i) => (
         <Select
           value={line.category_id}
           onChange={(e) => { updateExpenseLine(i, 'category_id', e.target.value); }}
           options={[
-            { value: '', label: '— Category —' },
+            { value: '', label: t('req.form.category2') },
             ...expenseCategories.map((c) => ({ value: c.id, label: c.name })),
           ]}
         />
@@ -333,18 +335,18 @@ export default function RequisitionForm() {
     },
     {
       key: 'description',
-      label: 'Description',
+      label: t('req.form.description'),
       render: (line, i) => (
         <Input
           value={line.description}
           onChange={(e) => { updateExpenseLine(i, 'description', e.target.value); }}
-          placeholder="What was this for?"
+          placeholder={t('req.form.whatWasThisFor')}
         />
       ),
     },
     {
       key: 'amount',
-      label: 'Amount',
+      label: t('req.form.amount'),
       width: '120px',
       render: (line, i) => (
         <Input
@@ -358,11 +360,11 @@ export default function RequisitionForm() {
     },
     {
       key: 'receipt',
-      label: 'Receipt',
+      label: t('req.form.receipt'),
       width: '170px',
       render: (_line, i) =>
         sameReceiptForAll ? (
-          <span style={{ fontSize: '11px', color: theme.textMuted }}>Shared receipt below ↓</span>
+          <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('req.form.sharedReceiptBelow')}</span>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <input
@@ -377,8 +379,7 @@ export default function RequisitionForm() {
             />
             {(pendingReceiptFiles[i] ?? []).length > 0 && (
               <span style={{ fontSize: '10px', color: theme.textMuted }}>
-                📎 {(pendingReceiptFiles[i] ?? []).length} file
-                {(pendingReceiptFiles[i] ?? []).length > 1 ? 's' : ''}
+                📎 {t('req.form.filesCount', { count: (pendingReceiptFiles[i] ?? []).length })}
               </span>
             )}
           </div>
@@ -398,7 +399,7 @@ export default function RequisitionForm() {
       },
     })
     const fileId = urlData?.requestUploadUrl.fileId
-    if (!fileId) throw new Error('Could not prepare the upload')
+    if (!fileId) throw new Error(t('req.form.couldNotPrepareUpload'))
 
     const apiBase = import.meta.env.VITE_API_URL
     const proxyRes = await fetch(`${apiBase}/api/v1/files/${fileId}/content`, {
@@ -411,7 +412,7 @@ export default function RequisitionForm() {
     })
     if (!proxyRes.ok) {
       const errJson = (await proxyRes.json().catch(() => ({}))) as { error?: { message?: string } }
-      throw new Error(errJson.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
+      throw new Error(errJson.error?.message ?? t('req.form.uploadFailed', { reason: proxyRes.statusText }))
     }
     return fileId
   }
@@ -425,7 +426,7 @@ export default function RequisitionForm() {
       .map((line, idx) => ({ line, files: pendingReceiptFiles[idx] ?? [] }))
       .filter((x) => x.line.amount && x.line.category_id)
     if (realExpenseLines.length === 0) {
-      addToast({ type: 'error', message: 'Add at least one line with a category and amount' })
+      addToast({ type: 'error', message: t('req.form.addAtLeastOneLineWith') })
       return
     }
     setSubmittingExpense(true)
@@ -466,7 +467,7 @@ export default function RequisitionForm() {
         }
       }
 
-      addToast({ type: 'success', message: 'Expense requisition submitted for approval' })
+      addToast({ type: 'success', message: t('req.form.expenseRequisitionSubmittedForApproval') })
       navigate('/procurement/requisitions')
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: { error?: { message?: string } } } }
@@ -487,25 +488,25 @@ export default function RequisitionForm() {
     }
     if (!isTourMode) {
       if (purpose === 'project' && !projectId) {
-        addToast({ type: 'error', message: 'Please select a project' })
+        addToast({ type: 'error', message: t('req.form.pleaseSelectAProject') })
         return
       }
       if (purpose === 'project' && !deliveryDestination) {
-        addToast({ type: 'error', message: 'Please select a delivery destination' })
+        addToast({ type: 'error', message: t('req.form.pleaseSelectADeliveryDestination') })
         return
       }
       if (purpose === 'manufacturing' && !linkedMoId) {
-        addToast({ type: 'error', message: 'Please select a manufacturing order' })
+        addToast({ type: 'error', message: t('req.form.pleaseSelectAManufacturingOrder') })
         return
       }
       if (branches.length > 0 && !branchId) {
-        addToast({ type: 'error', message: 'Please select a branch' })
+        addToast({ type: 'error', message: t('req.form.pleaseSelectABranch') })
         return
       }
     }
     const realLines = lines.filter((l) => l.description || l.product_id)
     if (realLines.length === 0) {
-      addToast({ type: 'error', message: 'Add at least one line' })
+      addToast({ type: 'error', message: t('req.form.addAtLeastOneLine') })
       return
     }
     try {
@@ -528,7 +529,7 @@ export default function RequisitionForm() {
         })),
       }
       const result = await createRequisition({ variables: { input } })
-      addToast({ type: 'success', message: 'Requisition created' })
+      addToast({ type: 'success', message: t('req.form.requisitionCreated') })
       const newId = result.data?.createRequisition.id
       navigate(newId ? `/procurement/requisitions/${newId}` : '/procurement/requisitions')
     } catch (err) {
@@ -553,8 +554,8 @@ export default function RequisitionForm() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="New Requisition"
-        subtitle="Request items to be sourced from stock or purchased"
+        title={t('req.form.newRequisition')}
+        subtitle={t('req.form.requestItemsToBeSourcedFrom')}
         backPath="/procurement/requisitions"
         actions={
           <Button
@@ -564,7 +565,7 @@ export default function RequisitionForm() {
             loading={purpose === 'expense' ? submittingExpense : loading}
             onClick={() => formRef.current?.requestSubmit()}
           >
-            Create Requisition
+            {t('req.form.createRequisition')}
           </Button>
         }
       />
@@ -577,45 +578,45 @@ export default function RequisitionForm() {
           data-tour="req-details-card"
           style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}
         >
-          <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Requisition Details</div>
+          <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>{t('req.form.requisitionDetails')}</div>
           <div
             data-tour="req-purpose-row"
             style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}
           >
             <div style={{ flex: '1 1 200px' }}>
               <Select
-                label="Purpose"
+                label={t('req.form.purpose')}
                 value={purpose}
                 onChange={(e) => {
                   setPurpose(e.target.value as 'stock' | 'project' | 'manufacturing' | 'expense')
                 }}
               >
-                <option value="stock">General Stock</option>
-                <option value="project">Project Supply</option>
-                <option value="manufacturing">Manufacturing / BOM</option>
-                <option value="expense">Expense</option>
+                <option value="stock">{t('req.form.generalStock')}</option>
+                <option value="project">{t('req.form.projectSupply')}</option>
+                <option value="manufacturing">{t('req.form.manufacturingBom')}</option>
+                <option value="expense">{t('req.form.expense')}</option>
               </Select>
             </div>
             {purpose !== 'expense' && (
               <div style={{ flex: '1 1 200px' }}>
                 <Select
-                  label={branches.length > 0 ? 'Branch *' : 'Branch'}
+                  label={branches.length > 0 ? t('req.form.branch') : t('req.form.branch2')}
                   value={branchId}
                   onChange={(e) => { setBranchId(e.target.value); }}
-                  options={[{ value: '', label: 'Select branch…' }, ...branches.map((b) => ({ value: b.id, label: b.name }))]}
+                  options={[{ value: '', label: t('req.form.selectBranch') }, ...branches.map((b) => ({ value: b.id, label: b.name }))]}
                 />
               </div>
             )}
             {purpose !== 'expense' && (
               <div style={{ flex: '1 1 160px' }}>
                 <Select
-                  label="Priority"
+                  label={t('req.form.priority')}
                   value={priority}
                   onChange={(e) => { setPriority(e.target.value as 'low' | 'high' | 'emergency'); }}
                 >
-                  <option value="low">Low</option>
-                  <option value="high">High</option>
-                  <option value="emergency">Emergency</option>
+                  <option value="low">{t('req.form.low')}</option>
+                  <option value="high">{t('req.form.high')}</option>
+                  <option value="emergency">{t('req.form.emergency')}</option>
                 </Select>
               </div>
             )}
@@ -625,17 +626,17 @@ export default function RequisitionForm() {
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
               <div style={{ flex: '1 1 200px' }}>
                 <SearchableSelect
-                  label="Received By"
+                  label={t('req.form.receivedBy')}
                   value={assignedReceiverId}
                   onChange={setAssignedReceiverId}
                   options={employeeOptions}
-                  placeholder="Search employee…"
+                  placeholder={t('req.form.searchEmployee')}
                   minDropdownWidth={320}
                 />
               </div>
               <div style={{ flex: '1 1 180px' }}>
                 <Input
-                  label="Expected Delivery (optional)"
+                  label={t('req.form.expectedDeliveryOptional')}
                   type="date"
                   value={expectedDeliveryDate}
                   onChange={(e) => { setExpectedDeliveryDate(e.target.value); }}
@@ -648,7 +649,7 @@ export default function RequisitionForm() {
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 160px' }}>
                 <Select
-                  label="Currency"
+                  label={t('req.form.currency')}
                   value={expenseCurrency}
                   onChange={(e) => { setExpenseCurrency(e.target.value); }}
                 >
@@ -659,11 +660,11 @@ export default function RequisitionForm() {
               </div>
               <div style={{ flex: '1 1 240px' }}>
                 <SearchableSelect
-                  label="Project (optional)"
+                  label={t('req.form.projectOptional')}
                   value={projectId}
                   onChange={setProjectId}
                   options={projectOptions}
-                  placeholder="Search project…"
+                  placeholder={t('req.form.searchProject')}
                   minDropdownWidth={360}
                 />
               </div>
@@ -678,7 +679,7 @@ export default function RequisitionForm() {
                   checked={sameReceiptForAll}
                   onChange={(e) => { setSameReceiptForAll(e.target.checked); }}
                 />
-                Attach one receipt for the whole expense (instead of one per line)
+                {t('req.form.attachOneReceiptForTheWhole')}
               </label>
               {sameReceiptForAll && (
                 <div>
@@ -693,7 +694,7 @@ export default function RequisitionForm() {
                   />
                   {globalReceiptFiles.length > 0 && (
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                      📎 {globalReceiptFiles.length} file{globalReceiptFiles.length > 1 ? 's' : ''} attached
+                      📎 {t('req.form.filesAttached', { count: globalReceiptFiles.length })}
                     </div>
                   )}
                 </div>
@@ -705,24 +706,24 @@ export default function RequisitionForm() {
             <div data-tour="req-project-row" style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 240px' }}>
                 <SearchableSelect
-                  label="Project *"
+                  label={t('req.form.project')}
                   value={projectId}
                   onChange={setProjectId}
                   options={projectOptions}
-                  placeholder={isTourMode ? 'Not needed for this walkthrough' : 'Search project…'}
+                  placeholder={isTourMode ? t('req.form.notNeededForThisWalkthrough') : t('req.form.searchProject')}
                   minDropdownWidth={360}
                   disabled={isTourMode}
                 />
               </div>
               <div style={{ flex: '1 1 200px' }}>
                 <Select
-                  label="Delivery Destination *"
+                  label={t('req.form.deliveryDestination')}
                   value={deliveryDestination}
                   onChange={(e) => { setDeliveryDestination(e.target.value as '' | 'inventory' | 'jobsite'); }}
                 >
-                  <option value="">Select destination…</option>
-                  <option value="inventory">Delivered to inventory</option>
-                  <option value="jobsite">Delivered directly to the jobsite</option>
+                  <option value="">{t('req.form.selectDestination')}</option>
+                  <option value="inventory">{t('req.form.deliveredToInventory')}</option>
+                  <option value="jobsite">{t('req.form.deliveredDirectlyToTheJobsite')}</option>
                 </Select>
               </div>
             </div>
@@ -732,11 +733,11 @@ export default function RequisitionForm() {
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 240px' }}>
                 <Select
-                  label="Manufacturing Order *"
+                  label={t('req.form.manufacturingOrder')}
                   value={linkedMoId}
                   onChange={(e) => { setLinkedMoId(e.target.value); }}
                 >
-                  <option value="">Select MO…</option>
+                  <option value="">{t('req.form.selectMo')}</option>
                   {mos.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.mo_number}
@@ -749,7 +750,7 @@ export default function RequisitionForm() {
           )}
 
           <div data-tour="req-notes">
-            <Textarea label="Notes" value={notes} onChange={(e) => { setNotes(e.target.value); }} rows={2} />
+            <Textarea label={t('req.form.notes')} value={notes} onChange={(e) => { setNotes(e.target.value); }} rows={2} />
           </div>
         </Card>
           </div>
@@ -761,20 +762,20 @@ export default function RequisitionForm() {
               style={{ padding: '24px', position: 'sticky', top: '20px', width: '100%' }}
             >
               <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary, marginBottom: '16px' }}>
-                Summary
+                {t('req.form.summary')}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
                 {(purpose === 'expense'
                   ? [
-                      { label: 'Line Items', value: String(realExpenseLines.length) },
-                      { label: 'Total', value: `${expenseTotal.toLocaleString()} ${expenseCurrency}` },
+                      { label: t('req.form.lineItems'), value: String(realExpenseLines.length) },
+                      { label: t('req.form.total'), value: `${expenseTotal.toLocaleString()} ${expenseCurrency}` },
                     ]
                   : [
-                      { label: 'Line Items', value: String(realLines.length) },
-                      { label: 'Total Qty', value: totalQty.toLocaleString() },
-                      { label: 'Est. Total', value: estTotal.toLocaleString() },
+                      { label: t('req.form.lineItems'), value: String(realLines.length) },
+                      { label: t('req.form.totalQty'), value: totalQty.toLocaleString() },
+                      { label: t('req.form.estTotal'), value: estTotal.toLocaleString() },
                       {
-                        label: 'Priority',
+                        label: t('req.form.priority'),
                         value: priority.charAt(0).toUpperCase() + priority.slice(1),
                       },
                     ]
@@ -811,15 +812,15 @@ export default function RequisitionForm() {
               <div style={{ fontSize: '12px', color: theme.textMuted }}>
                 {purpose === 'project' ? (
                   <>
-                    For project{' '}
+                    {t('req.form.forProject')}{' '}
                     <strong style={{ color: theme.textPrimary }}>
-                      {selectedProject?.code ?? '— not selected —'}
+                      {selectedProject?.code ?? t('req.form.notSelected')}
                     </strong>
                   </>
                 ) : purpose === 'expense' ? (
-                  'Submits for approval — Finance decides how it gets paid (reimbursed, from petty cash, or against an advance) and posts it once approved.'
+                  t('req.form.expenseSubmitHint')
                 ) : (
-                  'General stock requisition — not linked to a project'
+                  t('req.form.generalStockHint')
                 )}
               </div>
             </Card>
@@ -828,11 +829,11 @@ export default function RequisitionForm() {
 
         <Card data-tour="req-lines-card" style={{ marginTop: '20px' }}>
           <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
-            <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Lines</div>
+            <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>{t('req.form.lines')}</div>
             <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
               {purpose === 'expense'
-                ? 'Add each expense — category decides the GL account automatically.'
-                : "Add each item you need — GL account and cost center are worked out automatically later and aren't something you need to set here."}
+                ? t('req.form.addEachExpenseCategoryDecidesThe')
+                : t('req.form.addEachItemYouNeedGl')}
             </div>
           </div>
           <div style={{ padding: '16px 20px' }}>

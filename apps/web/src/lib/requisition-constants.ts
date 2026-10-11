@@ -1,4 +1,5 @@
 import type { BadgeVariant } from '../components/ui/Badge'
+import i18n from '../i18n'
 
 // Requisition's own status vocabulary (packages/db/migrations/258_g1_requisition_split_phase1.sql) —
 // distinct from PurchaseOrder's (po-constants.ts). A requisition never
@@ -50,23 +51,32 @@ export function getRequisitionStatusVariant(status: string): BadgeVariant {
 
 export function getRequisitionStatusLabel(status: string): string {
   const found = REQUISITION_STATUSES.find((s) => s.key === status)
-  if (found) return found.label
-  switch (status) {
-    case 'rejected':
-      return 'Rejected'
-    case 'cancelled':
-      return 'Cancelled'
-    case 'deleted':
-      return 'Deleted'
-    default:
-      return status.replace(/_/g, ' ')
-  }
+  const fallback = (() => {
+    if (found) return found.label
+    switch (status) {
+      case 'rejected':
+        return 'Rejected'
+      case 'cancelled':
+        return 'Cancelled'
+      case 'deleted':
+        return 'Deleted'
+      default:
+        return status.replace(/_/g, ' ')
+    }
+  })()
+  return i18n.t(`req.status.${status}`, { defaultValue: fallback })
 }
 
 export const REQUISITION_PRIORITY_LABELS: Record<string, string> = {
   low: 'Low',
   high: 'High',
   emergency: 'Emergency',
+}
+
+export function getRequisitionPriorityLabel(priority: string): string {
+  return i18n.t(`req.priority.${priority}`, {
+    defaultValue: REQUISITION_PRIORITY_LABELS[priority] ?? priority,
+  })
 }
 
 // G1 Phase 3 Milestone A screen 5 — mirrors po-constants.ts's

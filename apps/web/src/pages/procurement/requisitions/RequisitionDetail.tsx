@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -295,6 +296,7 @@ function fromStockDisplayValue(l: ReqLine): { amount: number; currency: string }
 }
 
 export default function RequisitionDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -618,7 +620,7 @@ export default function RequisitionDetail() {
   const editProducts: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
     (editProductsData?.products ?? []).filter((x): x is NonNullable<typeof x> => x !== null)
   const editProductOptions = [
-    { value: '', label: 'Custom item (no catalog link)' },
+    { value: '', label: t('req.detail.customItemNoCatalogLink') },
     ...editProducts.map((p) => ({
       value: p.id,
       label: p.name,
@@ -632,7 +634,7 @@ export default function RequisitionDetail() {
   if (loading && !req) {
     return (
       <div style={{ ...padding, maxWidth: '1800px', margin: '0 auto' }}>
-        <div style={{ color: theme.textMuted, fontSize: '13px' }}>Loading requisition…</div>
+        <div style={{ color: theme.textMuted, fontSize: '13px' }}>{t('req.detail.loadingRequisition')}</div>
       </div>
     )
   }
@@ -640,7 +642,7 @@ export default function RequisitionDetail() {
   if (!req) {
     return (
       <div style={{ ...padding, maxWidth: '1800px', margin: '0 auto' }}>
-        <div style={{ color: theme.textMuted, fontSize: '13px' }}>Requisition not found.</div>
+        <div style={{ color: theme.textMuted, fontSize: '13px' }}>{t('req.detail.requisitionNotFound')}</div>
       </div>
     )
   }
@@ -688,8 +690,8 @@ export default function RequisitionDetail() {
       }}
     >
       {flaggedLineIds.length > 0
-        ? `${flaggedLineIds.length} line${flaggedLineIds.length === 1 ? '' : 's'} flagged — check the Lines tab to add more or edit reasons.`
-        : 'Check the line(s) that need attention in the Lines tab on the right (required to reject).'}
+        ? t('req.detail.flaggedLinesBanner', { count: flaggedLineIds.length })
+        : t('req.detail.checkTheLineSThatNeed')}
     </div>
   )
 
@@ -721,7 +723,7 @@ export default function RequisitionDetail() {
       ? [
           {
             key: 'flag_toggle',
-            header: 'Flag',
+            header: t('req.detail.flag'),
             width: '36px',
             render: (l: ReqLine) => (
               <input
@@ -730,7 +732,7 @@ export default function RequisitionDetail() {
                 onChange={() => {
                   toggleLineFlag(l.id)
                 }}
-                title="Flag this line for rejection"
+                title={t('req.detail.flagThisLineForRejection')}
               />
             ),
           },
@@ -754,7 +756,7 @@ export default function RequisitionDetail() {
     },
     {
       key: 'description',
-      header: 'Item',
+      header: t('req.detail.item'),
       render: (l) => (
         <div>
           <div style={{ fontSize: '13px', color: theme.textPrimary }}>
@@ -771,7 +773,7 @@ export default function RequisitionDetail() {
     },
     {
       key: 'qty',
-      header: 'Qty',
+      header: t('req.detail.qty'),
       render: (l) => (
         <span style={{ fontSize: '13px' }}>
           {fmtN(l.qty)} {l.uom ?? ''}
@@ -792,7 +794,7 @@ export default function RequisitionDetail() {
       ? [
           {
             key: 'qty_from_stock',
-            header: 'From stock',
+            header: t('req.detail.fromStock'),
             render: (l: ReqLine) => (
               <span style={{ fontSize: '13px' }}>{fmtN(l.qty_from_stock ?? 0)}</span>
             ),
@@ -812,7 +814,7 @@ export default function RequisitionDetail() {
       ? [
           {
             key: 'store_price',
-            header: 'Store price',
+            header: t('req.detail.storePrice'),
             render: (l: ReqLine) => (
               <span style={{ fontSize: '13px', color: theme.textMuted }}>
                 {l.store_price ? `${fmtN(l.store_price)} ${l.store_price_currency ?? ''}` : '—'}
@@ -833,7 +835,7 @@ export default function RequisitionDetail() {
       ? [
           {
             key: 'market_price',
-            header: 'Market price',
+            header: t('req.detail.marketPrice'),
             render: (l: ReqLine) => (
               <span style={{ fontSize: '13px' }}>
                 {l.market_price ? `${fmtN(l.market_price)} ${l.market_price_currency ?? ''}` : '—'}
@@ -853,7 +855,7 @@ export default function RequisitionDetail() {
       ? [
           {
             key: 'verified_price',
-            header: 'Verified price',
+            header: t('req.detail.verifiedPrice'),
             render: (l: ReqLine) => (
               <span style={{ fontSize: '13px', fontWeight: 600 }}>
                 {l.verified_price
@@ -868,7 +870,7 @@ export default function RequisitionDetail() {
       ? [
           {
             key: 'purchases',
-            header: 'Bought',
+            header: t('req.detail.bought'),
             render: (l: ReqLine) => {
               const purchases = l.purchases ?? []
               if (purchases.length === 0)
@@ -879,7 +881,7 @@ export default function RequisitionDetail() {
                       color: l.closed_at ? theme.textMuted : theme.warning,
                     }}
                   >
-                    {l.closed_at ? `Closed — ${l.closed_reason ?? ''}` : 'Not yet bought'}
+                    {l.closed_at ? `Closed — ${l.closed_reason ?? ''}` : t('req.detail.notYetBought')}
                   </span>
                 )
               return (
@@ -889,7 +891,7 @@ export default function RequisitionDetail() {
                       {fmtN(p.qty)} @ {fmtN(p.actual_unit_price)} {p.currency_code} —{' '}
                       {p.vendor_name ?? 'vendor'}
                       {p.over_tolerance && (
-                        <span style={{ color: theme.warning, marginLeft: '4px' }}>⚠</span>
+                        <span style={{ color: theme.warning, marginInlineStart: '4px' }}>⚠</span>
                       )}
                     </span>
                   ))}
@@ -901,14 +903,14 @@ export default function RequisitionDetail() {
       : []),
     {
       key: 'total',
-      header: 'Total',
+      header: t('req.detail.total'),
       render: (l) => {
         const fromStock = (parseFloat(String(l.total)) || 0) === 0 ? fromStockDisplayValue(l) : null
         if (fromStock) {
           return (
             <span style={{ fontSize: '13px', color: theme.textMuted }}>
               {fmtN(fromStock.amount)} {fromStock.currency}
-              <span style={{ fontSize: '11px' }}> (from stock)</span>
+              <span style={{ fontSize: '11px' }}> {t('req.detail.fromStock2')}</span>
             </span>
           )
         }
@@ -1022,9 +1024,9 @@ export default function RequisitionDetail() {
     >
       <PageHeader
         title={req.requisition_number}
-        subtitle={req.purpose ? `Purpose: ${req.purpose}` : undefined}
+        subtitle={req.purpose ? t('req.detail.subtitlePurpose', { purpose: req.purpose }) : undefined}
         backPath="/procurement/requisitions"
-        backLabel="Requisitions"
+        backLabel={t('req.detail.requisitionsBack')}
         status={
           <Badge variant={getRequisitionStatusVariant(req.status)}>
             {getRequisitionStatusLabel(req.status)}
@@ -1039,7 +1041,7 @@ export default function RequisitionDetail() {
                 setShowPrintModal(true)
               }}
             >
-              Print
+              {t('req.detail.print')}
             </Button>
             {canCancel && (
               <Button
@@ -1049,7 +1051,7 @@ export default function RequisitionDetail() {
                   setShowCancelBox((v) => !v)
                 }}
               >
-                Cancel
+                {t('req.detail.cancel')}
               </Button>
             )}
           </div>
@@ -1061,18 +1063,18 @@ export default function RequisitionDetail() {
           style={{
             padding: '14px 20px',
             marginTop: '12px',
-            borderLeft: `3px solid ${theme.danger}`,
+            borderInlineStart: `3px solid ${theme.danger}`,
           }}
         >
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div style={{ flex: 1, minWidth: '200px' }}>
               <Input
-                label="Reason (optional)"
+                label={t('req.detail.reasonOptional')}
                 value={cancelReason}
                 onChange={(e) => {
                   setCancelReason(e.target.value)
                 }}
-                placeholder="Why is this requisition being cancelled?"
+                placeholder={t('req.detail.whyIsThisRequisitionBeingCancelled')}
               />
             </div>
             <Button
@@ -1083,7 +1085,7 @@ export default function RequisitionDetail() {
                 void cancel({ variables: { id: req.id, reason: cancelReason || undefined } })
               }
             >
-              Confirm Cancel
+              {t('req.detail.confirmCancel')}
             </Button>
           </div>
         </Card>
@@ -1107,7 +1109,7 @@ export default function RequisitionDetail() {
             marginBottom: '16px',
           }}
         >
-          Summary
+          {t('req.detail.summary')}
         </div>
         <div
           style={{
@@ -1118,7 +1120,7 @@ export default function RequisitionDetail() {
         >
           {[
             {
-              label: 'Total',
+              label: t('req.detail.total'),
               value: (() => {
                 // Purchased amount (per currency) plus, folded in separately
                 // since it's display-only, each from-stock line's reference
@@ -1150,7 +1152,7 @@ export default function RequisitionDetail() {
                         key={`stock-${currency}`}
                         style={{ color: theme.textMuted, fontSize: '12px' }}
                       >
-                        + {fmtN(amount)} {currency} (from stock)
+                        {t('req.detail.fromStockAmount', { amount: fmtN(amount), currency })}
                       </span>
                     ))}
                   </div>
@@ -1158,23 +1160,23 @@ export default function RequisitionDetail() {
               })(),
             },
             {
-              label: 'Priority',
+              label: t('req.detail.priority'),
               value: REQUISITION_PRIORITY_LABELS[req.priority ?? 'low'] ?? req.priority ?? '—',
             },
             {
-              label: 'Project',
+              label: t('req.detail.project'),
               value: req.projectCode
                 ? `${req.projectCode} — ${req.projectName ?? ''}`
                 : (req.projectName ?? '—'),
             },
             ...(req.linkedMoNumber
-              ? [{ label: 'Manufacturing Order', value: req.linkedMoNumber }]
+              ? [{ label: t('req.detail.manufacturingOrder'), value: req.linkedMoNumber }]
               : []),
-            { label: 'Branch', value: req.branch_name ?? '—' },
-            { label: 'Organizer', value: req.organizerName ?? '—' },
-            { label: 'Received By', value: req.assigned_receiver_name ?? '—' },
-            { label: 'Expected Delivery', value: req.expected_delivery_date?.slice(0, 10) ?? '—' },
-            { label: 'Created', value: req.created_at.slice(0, 10) },
+            { label: t('req.detail.branch'), value: req.branch_name ?? '—' },
+            { label: t('req.detail.organizer'), value: req.organizerName ?? '—' },
+            { label: t('req.detail.receivedBy'), value: req.assigned_receiver_name ?? '—' },
+            { label: t('req.detail.expectedDelivery'), value: req.expected_delivery_date?.slice(0, 10) ?? '—' },
+            { label: t('req.detail.created'), value: req.created_at.slice(0, 10) },
           ].map((f) => (
             <div
               key={f.label}
@@ -1226,11 +1228,11 @@ export default function RequisitionDetail() {
           <div style={{ marginBottom: '16px' }}>
             <TabBar
               tabs={[
-                { key: 'lines', label: 'Lines' },
-                { key: 'log', label: 'Log' },
+                { key: 'lines', label: t('req.detail.lines') },
+                { key: 'log', label: t('req.detail.log') },
                 {
                   key: 'changes',
-                  label: 'Edit requests',
+                  label: t('req.detail.editRequests'),
                   badge:
                     (req.edit_requests ?? []).filter((r) => r.status === 'pending').length ||
                     undefined,
@@ -1254,14 +1256,14 @@ export default function RequisitionDetail() {
                   // priority over an older, already-resolved-away flag.
                   if (l.id in flaggedLines) {
                     return {
-                      borderLeft: `4px solid ${theme.accent}`,
+                      borderInlineStart: `4px solid ${theme.accent}`,
                       background: `${theme.accent}0c`,
                     }
                   }
                   if (!l.flag_reason || l.flag_resolved_at) return {}
                   const open = !l.flag_addressed_at
                   const color = open ? theme.danger : theme.warning
-                  return { borderLeft: `4px solid ${color}`, background: `${color}0c` }
+                  return { borderInlineStart: `4px solid ${color}`, background: `${color}0c` }
                 }}
                 renderExpanded={(l) => {
                   const hasOpenFlag = !!l.flag_reason && !l.flag_resolved_at
@@ -1310,13 +1312,17 @@ export default function RequisitionDetail() {
                                 border: `1px solid ${color}40`,
                               }}
                             >
-                              {open ? 'Flagged' : 'Addressed — awaiting confirmation'}
+                              {open ? t('req.detail.flagged') : t('req.detail.addressedAwaitingConfirmation')}
                             </span>
                             <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                              by {l.flagged_by_name ?? 'someone'} during{' '}
-                              {l.flagged_from_status === 'price_verification'
-                                ? 'Price Verification'
-                                : 'Pending Approval'}
+                              {t('req.detail.flaggedByDuring', {
+                                name: l.flagged_by_name ?? t('req.detail.someone'),
+                                stage: getRequisitionStatusLabel(
+                                  l.flagged_from_status === 'price_verification'
+                                    ? 'price_verification'
+                                    : 'pending_approval',
+                                ),
+                              })}
                             </span>
                           </div>
                           <div
@@ -1335,7 +1341,7 @@ export default function RequisitionDetail() {
                               loading={lResolveFlag}
                               onClick={() => void resolveLineFlag({ variables: { lineId: l.id } })}
                             >
-                              Resolve
+                              {t('req.detail.resolve')}
                             </Button>
                           )}
                         </div>
@@ -1350,14 +1356,14 @@ export default function RequisitionDetail() {
                               marginBottom: '4px',
                             }}
                           >
-                            Flagging this line — required to reject
+                            {t('req.detail.flaggingThisLineRequiredToReject')}
                           </div>
                           <Textarea
                             value={flaggedLines[l.id] ?? ''}
                             onChange={(e) => {
                               setFlaggedLines((prev) => ({ ...prev, [l.id]: e.target.value }))
                             }}
-                            placeholder="What's wrong with this line?"
+                            placeholder={t('req.detail.whatSWrongWithThisLine')}
                             rows={2}
                           />
                         </div>
@@ -1380,7 +1386,7 @@ export default function RequisitionDetail() {
                   color: theme.textPrimary,
                 }}
               >
-                Approval Log
+                {t('req.detail.approvalLog')}
               </div>
               {req.notes && (
                 <div
@@ -1399,7 +1405,7 @@ export default function RequisitionDetail() {
                       marginBottom: '6px',
                     }}
                   >
-                    Requisition Notes
+                    {t('req.detail.requisitionNotes')}
                   </div>
                   <div
                     style={{ fontSize: '13px', color: theme.textPrimary, whiteSpace: 'pre-wrap' }}
@@ -1417,7 +1423,7 @@ export default function RequisitionDetail() {
                     fontSize: '13px',
                   }}
                 >
-                  No activity yet.
+                  {t('req.detail.noActivityYet')}
                 </div>
               )}
               {req.approval_log.map((entry) => (
@@ -1444,13 +1450,13 @@ export default function RequisitionDetail() {
                     {entry.action.replace(/_/g, ' ')}
                   </Badge>
                   <span style={{ fontSize: '13px', color: theme.textPrimary }}>
-                    {entry.actor_name ?? 'System'}
+                    {entry.actor_name ?? t('req.detail.systemActor')}
                     {entry.actor_position ? ` (${entry.actor_position})` : ''}
                   </span>
                   {entry.notes && (
                     <span style={{ fontSize: '12px', color: theme.textMuted }}>{entry.notes}</span>
                   )}
-                  <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}>
+                  <span style={{ fontSize: '12px', color: theme.textMuted, marginInlineStart: 'auto' }}>
                     {entry.created_at.slice(0, 16).replace('T', ' ')}
                   </span>
                 </div>
@@ -1475,7 +1481,7 @@ export default function RequisitionDetail() {
               const lineFields: LineItemField<EditLineDraft>[] = [
                 {
                   key: 'description',
-                  label: 'Description',
+                  label: t('req.detail.description'),
                   render: (line, i) => (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                       <input
@@ -1491,7 +1497,7 @@ export default function RequisitionDetail() {
                       />
                       {line._removed && (
                         <span style={{ fontSize: '11px', fontWeight: 600, color: theme.danger }}>
-                          Marked for removal — click × again to undo
+                          {t('req.detail.markedForRemovalClickAgainTo')}
                         </span>
                       )}
                     </div>
@@ -1499,7 +1505,7 @@ export default function RequisitionDetail() {
                 },
                 {
                   key: 'qty',
-                  label: 'Qty',
+                  label: t('req.detail.qty'),
                   width: '90px',
                   render: (line, i) => (
                     <input
@@ -1518,7 +1524,7 @@ export default function RequisitionDetail() {
                 },
                 {
                   key: 'unit_price',
-                  label: 'Unit Price',
+                  label: t('req.detail.unitPrice'),
                   width: '110px',
                   render: (line, i) => (
                     <input
@@ -1537,7 +1543,7 @@ export default function RequisitionDetail() {
                 },
                 {
                   key: 'uom',
-                  label: 'UOM',
+                  label: t('req.detail.uom'),
                   width: '90px',
                   render: (line, i) => (
                     <input
@@ -1567,10 +1573,10 @@ export default function RequisitionDetail() {
                       }}
                     >
                       <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
-                        Request an edit
+                        {t('req.detail.requestAnEdit')}
                       </div>
                       {hasPendingEdit && (
-                        <Badge variant="warning">Pending review — submit locked</Badge>
+                        <Badge variant="warning">{t('req.detail.pendingReviewSubmitLocked')}</Badge>
                       )}
                       {!editDraft && !hasPendingEdit && canRequestEdit && (
                         <Button
@@ -1580,7 +1586,7 @@ export default function RequisitionDetail() {
                             setEditDraft(initEditDraft())
                           }}
                         >
-                          Start editing
+                          {t('req.detail.startEditing')}
                         </Button>
                       )}
                       {editDraft && (
@@ -1591,7 +1597,7 @@ export default function RequisitionDetail() {
                             setEditDraft(null)
                           }}
                         >
-                          Cancel
+                          {t('req.detail.cancel')}
                         </Button>
                       )}
                     </div>
@@ -1599,10 +1605,10 @@ export default function RequisitionDetail() {
                     {!editDraft && (
                       <div style={{ fontSize: '13px', color: theme.textMuted }}>
                         {!canRequestEdit
-                          ? 'Only the organizer or an admin can request an edit here.'
+                          ? t('req.detail.onlyTheOrganizerOrAnAdmin')
                           : hasPendingEdit
-                            ? 'There is already a pending edit request. An admin must approve or reject it before a new one can be submitted.'
-                            : 'Click "Start editing" to propose changes to the notes, priority, delivery destination, or lines. A pre-approval edit applies immediately; a post-approval edit needs admin review first.'}
+                            ? t('req.detail.thereIsAlreadyAPendingEdit')
+                            : t('req.detail.clickStartEditingToProposeChanges')}
                       </div>
                     )}
 
@@ -1611,7 +1617,7 @@ export default function RequisitionDetail() {
                         <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
                           <div style={{ flex: '1 1 240px' }}>
                             <Input
-                              label="Notes"
+                              label={t('req.detail.notes')}
                               value={editDraft.notes}
                               onChange={(e) => {
                                 setEditDraft({ ...editDraft, notes: e.target.value })
@@ -1620,21 +1626,21 @@ export default function RequisitionDetail() {
                           </div>
                           <div style={{ flex: '1 1 160px' }}>
                             <Select
-                              label="Priority"
+                              label={t('req.detail.priority')}
                               value={editDraft.priority}
                               onChange={(e) => {
                                 setEditDraft({ ...editDraft, priority: e.target.value })
                               }}
                             >
-                              <option value="low">Low</option>
-                              <option value="high">High</option>
-                              <option value="emergency">Emergency</option>
+                              <option value="low">{t('req.detail.low')}</option>
+                              <option value="high">{t('req.detail.high')}</option>
+                              <option value="emergency">{t('req.detail.emergency')}</option>
                             </Select>
                           </div>
                           {req.purpose === 'project' && (
                             <div style={{ flex: '1 1 220px' }}>
                               <Select
-                                label="Delivery Destination"
+                                label={t('req.detail.deliveryDestination')}
                                 value={editDraft.delivery_destination}
                                 disabled={!deliveryDestinationEditable}
                                 onChange={(e) => {
@@ -1644,9 +1650,9 @@ export default function RequisitionDetail() {
                                   })
                                 }}
                               >
-                                <option value="">— Not set —</option>
-                                <option value="inventory">Delivered to inventory</option>
-                                <option value="jobsite">Delivered directly to the jobsite</option>
+                                <option value="">{t('req.detail.notSet')}</option>
+                                <option value="inventory">{t('req.detail.deliveredToInventory')}</option>
+                                <option value="jobsite">{t('req.detail.deliveredDirectlyToTheJobsite')}</option>
                               </Select>
                               {!deliveryDestinationEditable && (
                                 <div
@@ -1656,8 +1662,7 @@ export default function RequisitionDetail() {
                                     marginTop: '4px',
                                   }}
                                 >
-                                  No longer editable — buying already forked this into one or more
-                                  Purchase Orders, each with its own frozen copy of this value.
+                                  {t('req.detail.noLongerEditableBuyingAlreadyForked')}
                                 </div>
                               )}
                             </div>
@@ -1696,7 +1701,7 @@ export default function RequisitionDetail() {
                           const addedLineFields: LineItemField<EditDraft['linesAdded'][number]>[] = [
                             {
                               key: 'product',
-                              label: 'Product / Description',
+                              label: t('req.detail.productDescription'),
                               render: (al, i) => (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                   <SearchableSelect
@@ -1712,12 +1717,12 @@ export default function RequisitionDetail() {
                                       setEditDraft({ ...editDraft, linesAdded })
                                     }}
                                     options={editProductOptions}
-                                    placeholder="Search by name or SKU…"
+                                    placeholder={t('req.detail.searchByNameOrSku')}
                                     minDropdownWidth={360}
                                   />
                                   <input
                                     value={al.description}
-                                    placeholder="Description"
+                                    placeholder={t('req.detail.description')}
                                     style={inputStyle}
                                     onChange={(e) => {
                                       const linesAdded = [...editDraft.linesAdded]
@@ -1730,7 +1735,7 @@ export default function RequisitionDetail() {
                             },
                             {
                               key: 'qty',
-                              label: 'Qty',
+                              label: t('req.detail.qty'),
                               width: '90px',
                               render: (al, i) => (
                                 <input
@@ -1747,7 +1752,7 @@ export default function RequisitionDetail() {
                             },
                             {
                               key: 'uom',
-                              label: 'UOM',
+                              label: t('req.detail.uom'),
                               width: '80px',
                               render: (al, i) => (
                                 <input
@@ -1763,7 +1768,7 @@ export default function RequisitionDetail() {
                             },
                             {
                               key: 'unit_price',
-                              label: 'Unit Price',
+                              label: t('req.detail.unitPrice'),
                               width: '110px',
                               render: (al, i) => (
                                 <input
@@ -1787,7 +1792,7 @@ export default function RequisitionDetail() {
                               <div
                                 style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted, marginBottom: '8px' }}
                               >
-                                New lines
+                                {t('req.detail.newLines')}
                               </div>
                               <LineItemEditor
                                 fields={addedLineFields}
@@ -1800,8 +1805,8 @@ export default function RequisitionDetail() {
                                     linesAdded: editDraft.linesAdded.filter((_, idx) => idx !== i),
                                   })
                                 }}
-                                addLabel="+ Add line"
-                                emptyMessage="No new lines added"
+                                addLabel={t('req.detail.addLine')}
+                                emptyMessage={t('req.detail.noNewLinesAdded')}
                               />
                             </div>
                           )
@@ -1818,7 +1823,7 @@ export default function RequisitionDetail() {
                               changes.lines.added.length +
                               changes.lines.removed.length
                             if (totalChanges === 0) {
-                              addToast({ type: 'error', message: 'No changes to submit' })
+                              addToast({ type: 'error', message: t('req.detail.noChangesToSubmit') })
                               return
                             }
                             void submitEditRequest({
@@ -1829,7 +1834,7 @@ export default function RequisitionDetail() {
                             })
                           }}
                         >
-                          Submit edit request
+                          {t('req.detail.submitEditRequest')}
                         </Button>
                       </div>
                     )}
@@ -1845,7 +1850,7 @@ export default function RequisitionDetail() {
                           marginBottom: '14px',
                         }}
                       >
-                        History
+                        {t('req.detail.history')}
                       </div>
                       {(req.edit_requests ?? []).map((er) => {
                         // removed/edited may still be the pre-snapshot shapes
@@ -1925,10 +1930,10 @@ export default function RequisitionDetail() {
                                 style={{
                                   fontSize: '12px',
                                   color: theme.textMuted,
-                                  marginLeft: 'auto',
+                                  marginInlineStart: 'auto',
                                 }}
                               >
-                                {totalChanges} change{totalChanges !== 1 ? 's' : ''}
+                                {t('req.detail.changesCount', { count: totalChanges })}
                               </span>
                             </div>
 
@@ -1979,8 +1984,8 @@ export default function RequisitionDetail() {
                               ))}
                               {addedLines.map((l, i) => (
                                 <div key={i} style={{ color: theme.accent }}>
-                                  + {l.description ?? 'New line'}
-                                  {l.qty != null && ` — qty ${l.qty}`}
+                                  + {l.description ?? t('req.detail.newLine')}
+                                  {l.qty != null && ` — ${t('req.detail.qtyPrefix', { qty: l.qty })}`}
                                   {l.unit_price != null && ` @ ${l.unit_price}`}
                                   {l.uom && ` ${l.uom}`}
                                 </div>
@@ -1991,13 +1996,13 @@ export default function RequisitionDetail() {
                                   <div key={i} style={{ color: theme.danger }}>
                                     {snapshot ? (
                                       <>
-                                        − {snapshot.description || 'a line'}
-                                        {snapshot.qty != null && ` — qty ${snapshot.qty}`}
+                                        − {snapshot.description || t('req.detail.aLine')}
+                                        {snapshot.qty != null && ` — ${t('req.detail.qtyPrefix', { qty: snapshot.qty })}`}
                                         {snapshot.unit_price != null && ` @ ${snapshot.unit_price}`}
                                         {snapshot.uom && ` ${snapshot.uom}`}
                                       </>
                                     ) : (
-                                      '− 1 line removed (no detail recorded for this older request)'
+                                      t('req.detail.lineRemovedNoDetail')
                                     )}
                                   </div>
                                 )
@@ -2019,9 +2024,13 @@ export default function RequisitionDetail() {
 
                             {er.status !== 'pending' && (
                               <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                                {er.status === 'approved' ? 'Approved' : 'Rejected'} by{' '}
-                                {er.reviewed_by_email} on{' '}
-                                {er.reviewed_at?.slice(0, 16).replace('T', ' ')}
+                                {t('req.detail.reviewedBy', {
+                                  status: getRequisitionStatusLabel(
+                                    er.status === 'approved' ? 'approved' : 'rejected',
+                                  ),
+                                  email: er.reviewed_by_email,
+                                  date: er.reviewed_at?.slice(0, 16).replace('T', ' '),
+                                })}
                                 {er.review_notes && ` — "${er.review_notes}"`}
                               </div>
                             )}
@@ -2049,7 +2058,7 @@ export default function RequisitionDetail() {
                                     })
                                   }
                                 >
-                                  Approve
+                                  {t('req.detail.approve')}
                                 </Button>
                                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                   <input
@@ -2057,7 +2066,7 @@ export default function RequisitionDetail() {
                                     onChange={(e) => {
                                       setReviewNotes((p) => ({ ...p, [er.id]: e.target.value }))
                                     }}
-                                    placeholder="Rejection reason (required)"
+                                    placeholder={t('req.detail.rejectionReasonRequired')}
                                     style={{ ...inputStyle, width: '220px' }}
                                   />
                                   <Button
@@ -2075,7 +2084,7 @@ export default function RequisitionDetail() {
                                       })
                                     }
                                   >
-                                    Reject
+                                    {t('req.detail.reject')}
                                   </Button>
                                 </div>
                               </div>
@@ -2094,10 +2103,9 @@ export default function RequisitionDetail() {
           {/* ── Panel 1: draft ────────────────────────────────────────────────── */}
           {req.status === 'draft' && (
             <Card style={sectionCard}>
-              <div style={sectionTitle}>Next step: submit for inventory check</div>
+              <div style={sectionTitle}>{t('req.detail.nextStepSubmitForInventoryCheck')}</div>
               <div style={sectionHint}>
-                Once submitted, the organizer or a Store Keeper confirms how much of each line can
-                be covered from stock.
+                {t('req.detail.onceSubmittedTheOrganizerOrA')}
               </div>
               {canSubmitDraft ? (
                 <Button
@@ -2105,11 +2113,11 @@ export default function RequisitionDetail() {
                   loading={lSubmit}
                   onClick={() => void submitToInventory({ variables: { id: req.id } })}
                 >
-                  Submit for inventory check
+                  {t('req.detail.submitForInventoryCheck')}
                 </Button>
               ) : (
                 <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  Only the organizer or an admin can submit this requisition.
+                  {t('req.detail.onlyTheOrganizerOrAnAdmin2')}
                 </div>
               )}
             </Card>
@@ -2118,13 +2126,13 @@ export default function RequisitionDetail() {
           {/* ── Panel 2: inventory_check ─────────────────────────────────────── */}
           {req.status === 'inventory_check' && (
             <Card style={sectionCard}>
-              <div style={sectionTitle}>Next step: confirm stock availability</div>
+              <div style={sectionTitle}>{t('req.detail.nextStepConfirmStockAvailability')}</div>
               <div style={sectionHint}>
-                Enter the quantity to take from stock for each line — the rest will be purchased.
+                {t('req.detail.enterTheQuantityToTakeFrom')}
               </div>
               {!canConfirmInventory ? (
                 <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  Only the organizer, a Store Keeper, or an admin can confirm this.
+                  {t('req.detail.onlyTheOrganizerAStoreKeeper')}
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2163,7 +2171,7 @@ export default function RequisitionDetail() {
                               {(isOverridden ? avail?.productName : null) ??
                                 l.description ??
                                 l.product_name}{' '}
-                              — needs {fmtN(l.qty)} {l.uom}
+                              {t('req.detail.needsQty', { qty: fmtN(l.qty), uom: l.uom })}
                             </div>
                             {(isOverridden ? avail?.productNameAr : l.product_name_ar) && (
                               <div
@@ -2171,7 +2179,7 @@ export default function RequisitionDetail() {
                                 style={{
                                   fontSize: '12px',
                                   color: theme.textMuted,
-                                  textAlign: 'left',
+                                  textAlign: 'start',
                                 }}
                               >
                                 {isOverridden ? avail?.productNameAr : l.product_name_ar}
@@ -2195,14 +2203,14 @@ export default function RequisitionDetail() {
                                 fontFamily: 'inherit',
                               }}
                             >
-                              {isOverridden ? 'Change selection' : 'Wrong item? Reselect'}
+                              {isOverridden ? t('req.detail.changeSelection') : t('req.detail.wrongItemReselect')}
                             </button>
                           )}
                         </div>
                         {reselectOpenFor === l.id && (
                           <div style={{ marginBottom: '10px' }}>
                             <SearchableSelect
-                              label="Correct item"
+                              label={t('req.detail.correctItem')}
                               value={productOverride[l.id] ?? ''}
                               onChange={(productId) => {
                                 setProductOverride((prev) => ({ ...prev, [l.id]: productId }))
@@ -2215,7 +2223,7 @@ export default function RequisitionDetail() {
                                 setReselectOpenFor(null)
                               }}
                               options={productOptions}
-                              placeholder="Search by name or SKU…"
+                              placeholder={t('req.detail.searchByNameOrSku')}
                               minDropdownWidth={360}
                             />
                           </div>
@@ -2232,19 +2240,19 @@ export default function RequisitionDetail() {
                             }}
                           >
                             <span>
-                              On hand:{' '}
+                              {t('req.detail.onHand')}{' '}
                               <strong style={{ color: theme.textPrimary }}>
                                 {fmtN(avail.qtyOnHand)}
                               </strong>
                             </span>
                             <span>
-                              Reserved:{' '}
+                              {t('req.detail.reserved')}{' '}
                               <strong style={{ color: theme.textPrimary }}>
                                 {fmtN(qtyReserved)}
                               </strong>
                             </span>
                             <span>
-                              Available:{' '}
+                              {t('req.detail.availableLabel')}{' '}
                               <strong
                                 style={{ color: avail.isAvailable ? theme.success : theme.warning }}
                               >
@@ -2261,8 +2269,8 @@ export default function RequisitionDetail() {
                             }}
                           >
                             {isOverridden
-                              ? 'Checking stock for the newly selected item…'
-                              : 'Loading stock levels…'}
+                              ? t('req.detail.checkingStockForTheNewlySelected')
+                              : t('req.detail.loadingStockLevels')}
                           </div>
                         )}
                         {avail &&
@@ -2281,7 +2289,7 @@ export default function RequisitionDetail() {
                                   marginBottom: '6px',
                                 }}
                               >
-                                Source location
+                                {t('req.detail.sourceLocation')}
                               </label>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 {avail.byLocation.map((loc) => {
@@ -2307,7 +2315,7 @@ export default function RequisitionDetail() {
                                         gap: '12px',
                                         padding: '10px 14px',
                                         borderRadius: '8px',
-                                        textAlign: 'left',
+                                        textAlign: 'start',
                                         cursor: 'pointer',
                                         fontFamily: 'inherit',
                                         border: `1px solid ${selected ? theme.accent : theme.border}`,
@@ -2368,7 +2376,7 @@ export default function RequisitionDetail() {
                                           flexShrink: 0,
                                         }}
                                       >
-                                        {fmtN(loc.qtyAvailable)} avail.
+                                        {t('req.detail.availShort', { qty: fmtN(loc.qtyAvailable) })}
                                       </span>
                                     </button>
                                   )
@@ -2383,13 +2391,13 @@ export default function RequisitionDetail() {
                                 color: theme.textMuted,
                               }}
                             >
-                              No stock available at any location for this item.
+                              {t('req.detail.noStockAvailableAtAnyLocation')}
                             </div>
                           ))}
                         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                           <div style={{ width: '140px' }}>
                             <Input
-                              label="Qty from stock"
+                              label={t('req.detail.qtyFromStock')}
                               type="number"
                               min="0"
                               max={String(
@@ -2457,7 +2465,7 @@ export default function RequisitionDetail() {
                       })
                     }
                   >
-                    Confirm inventory check
+                    {t('req.detail.confirmInventoryCheck')}
                   </Button>
                 </div>
               )}
@@ -2467,14 +2475,13 @@ export default function RequisitionDetail() {
           {/* ── Panel 3: store_pricing ───────────────────────────────────────── */}
           {req.status === 'store_pricing' && (
             <Card style={sectionCard}>
-              <div style={sectionTitle}>Next step: store pricing</div>
+              <div style={sectionTitle}>{t('req.detail.nextStepStorePricing')}</div>
               <div style={sectionHint}>
-                Record what this would cost from internal stock, for reference — it doesn't set the
-                line's total.
+                {t('req.detail.recordWhatThisWouldCostFrom')}
               </div>
               {!canStorePrice ? (
                 <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  Only someone holding the Store Pricing position (or an admin) can act here.
+                  {t('req.detail.onlySomeoneHoldingTheStorePricing')}
                 </div>
               ) : (
                 (() => {
@@ -2492,8 +2499,7 @@ export default function RequisitionDetail() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {stockLines.length === 0 && (
                         <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                          No lines on this requisition are being fulfilled from stock — there's
-                          nothing to price here.
+                          {t('req.detail.noLinesOnThisRequisitionAre')}
                         </div>
                       )}
                       {stockLines.map((l) => {
@@ -2515,15 +2521,15 @@ export default function RequisitionDetail() {
                               {l.source_location_name && (
                                 <span style={{ color: theme.textMuted }}>
                                   {' '}
-                                  · from {l.source_location_name}
+                                  {t('req.detail.fromLocation', { location: l.source_location_name })}
                                   {l.source_average_cost != null &&
-                                    ` (last cost ${l.source_average_cost})`}
+                                    ` ${t('req.detail.lastCost', { cost: l.source_average_cost })}`}
                                 </span>
                               )}
                             </div>
                             <div style={{ width: '140px' }}>
                               <Input
-                                label="Store price"
+                                label={t('req.detail.storePrice')}
                                 type="number"
                                 min="0"
                                 value={storePrices[l.id] ?? String(defaultPrice)}
@@ -2557,7 +2563,7 @@ export default function RequisitionDetail() {
                           })
                         }
                       >
-                        Submit to market pricing
+                        {t('req.detail.submitToMarketPricing')}
                       </Button>
                     </div>
                   )
@@ -2569,14 +2575,13 @@ export default function RequisitionDetail() {
           {/* ── Panel 4: market_pricing ──────────────────────────────────────── */}
           {req.status === 'market_pricing' && (
             <Card style={sectionCard}>
-              <div style={sectionTitle}>Next step: market pricing</div>
+              <div style={sectionTitle}>{t('req.detail.nextStepMarketPricing')}</div>
               <div style={sectionHint}>
-                Enter the checked vendor quote per line — this becomes the line's real price and
-                currency.
+                {t('req.detail.enterTheCheckedVendorQuotePer')}
               </div>
               {!canMarketPrice ? (
                 <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  Only a Procurement Officer (or an admin) can act here.
+                  {t('req.detail.onlyAProcurementOfficerOrAn')}
                 </div>
               ) : (
                 (() => {
@@ -2602,8 +2607,7 @@ export default function RequisitionDetail() {
                       }}
                     >
                       <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                        Nothing on this requisition needs a market price — every line is covered
-                        from stock.
+                        {t('req.detail.nothingOnThisRequisitionNeedsA')}
                       </div>
                       <Button
                         variant="primary"
@@ -2612,7 +2616,7 @@ export default function RequisitionDetail() {
                           void submitMarketPricing({ variables: { id: req.id, linePrices: [] } })
                         }
                       >
-                        Continue to price verification
+                        {t('req.detail.continueToPriceVerification')}
                       </Button>
                     </div>
                   ) : (
@@ -2649,7 +2653,7 @@ export default function RequisitionDetail() {
                             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                               <div style={{ width: '140px' }}>
                                 <Input
-                                  label="Market price"
+                                  label={t('req.detail.marketPrice')}
                                   type="number"
                                   min="0"
                                   value={raw}
@@ -2659,16 +2663,16 @@ export default function RequisitionDetail() {
                                   placeholder="0.00"
                                   error={
                                     missing
-                                      ? 'Required'
+                                      ? t('req.detail.required')
                                       : invalid
-                                        ? 'Enter a valid price'
+                                        ? t('req.detail.enterAValidPrice')
                                         : undefined
                                   }
                                 />
                               </div>
                               <div style={{ width: '110px' }}>
                                 <Select
-                                  label="Currency"
+                                  label={t('req.detail.currency')}
                                   value={marketCurrency[l.id] ?? l.currency_code}
                                   onChange={(e) => {
                                     setMarketCurrency((prev) => ({
@@ -2681,7 +2685,7 @@ export default function RequisitionDetail() {
                               </div>
                               <div style={{ flex: 1, minWidth: '160px' }}>
                                 <Input
-                                  label="Vendor quote ref (optional)"
+                                  label={t('req.detail.vendorQuoteRefOptional')}
                                   value={quoteRefs[l.id] ?? ''}
                                   onChange={(e) => {
                                     setQuoteRefs((prev) => ({ ...prev, [l.id]: e.target.value }))
@@ -2702,8 +2706,7 @@ export default function RequisitionDetail() {
                           <>
                             {!allPriced && (
                               <div style={{ fontSize: '12px', color: theme.danger }}>
-                                Enter a price for every line — including free-text/service lines —
-                                before submitting.
+                                {t('req.detail.enterAPriceForEveryLine')}
                               </div>
                             )}
                             <Button
@@ -2728,7 +2731,7 @@ export default function RequisitionDetail() {
                                 })
                               }
                             >
-                              Submit to price verification
+                              {t('req.detail.submitToPriceVerification')}
                             </Button>
                           </>
                         )
@@ -2743,14 +2746,13 @@ export default function RequisitionDetail() {
           {/* ── Panel 5: price_verification ──────────────────────────────────── */}
           {req.status === 'price_verification' && (
             <Card style={sectionCard}>
-              <div style={sectionTitle}>Next step: verify prices</div>
+              <div style={sectionTitle}>{t('req.detail.nextStepVerifyPrices')}</div>
               <div style={sectionHint}>
-                Cross-check each market price and adjust if needed, then submit directly for
-                approval.
+                {t('req.detail.crossCheckEachMarketPriceAnd')}
               </div>
               {!canVerifyPrice ? (
                 <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  Only a Procurement 2nd position holder (or an admin) can act here.
+                  {t('req.detail.onlyAProcurement2ndPositionHolder')}
                 </div>
               ) : (
                 (() => {
@@ -2775,8 +2777,7 @@ export default function RequisitionDetail() {
                           }}
                         >
                           <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                            Nothing on this requisition needs price verification — every line is
-                            covered from stock.
+                            {t('req.detail.nothingOnThisRequisitionNeedsPrice')}
                           </div>
                           <Button
                             variant="primary"
@@ -2785,7 +2786,7 @@ export default function RequisitionDetail() {
                               void verifyPrices({ variables: { id: req.id, lineAdjustments: [] } })
                             }
                           >
-                            Continue to approval
+                            {t('req.detail.continueToApproval')}
                           </Button>
                         </div>
                       ) : (
@@ -2812,15 +2813,15 @@ export default function RequisitionDetail() {
                                 >
                                   {l.description || l.product_name}
                                   <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                                    Market:{' '}
+                                    {t('req.detail.marketLabel')}{' '}
                                     {l.market_price != null
                                       ? `${fmtN(l.market_price)} ${l.market_price_currency}`
-                                      : 'not set'}
+                                      : t('req.detail.notSet2')}
                                   </div>
                                 </div>
                                 <div style={{ width: '140px' }}>
                                   <Input
-                                    label="Verified price"
+                                    label={t('req.detail.verifiedPrice')}
                                     type="number"
                                     min="0"
                                     value={raw}
@@ -2833,9 +2834,9 @@ export default function RequisitionDetail() {
                                     placeholder="0.00"
                                     error={
                                       missing
-                                        ? 'Required'
+                                        ? t('req.detail.required')
                                         : invalid
-                                          ? 'Enter a valid price'
+                                          ? t('req.detail.enterAValidPrice')
                                           : undefined
                                     }
                                   />
@@ -2854,8 +2855,7 @@ export default function RequisitionDetail() {
                               <>
                                 {!allVerified && (
                                   <div style={{ fontSize: '12px', color: theme.danger }}>
-                                    Enter a verified price for every line before submitting — a
-                                    missing market price does not default to 0.
+                                    {t('req.detail.enterAVerifiedPriceForEvery')}
                                   </div>
                                 )}
                                 <Button
@@ -2880,7 +2880,7 @@ export default function RequisitionDetail() {
                                     })
                                   }
                                 >
-                                  Submit for approval
+                                  {t('req.detail.submitForApproval')}
                                 </Button>
                               </>
                             )
@@ -2909,16 +2909,16 @@ export default function RequisitionDetail() {
                             marginBottom: '10px',
                           }}
                         >
-                          Not ready to approve?
+                          {t('req.detail.notReadyToApprove')}
                         </div>
                         {renderLineFlagHint()}
                         <Textarea
-                          label="Overall reason (auto-filled from flagged lines — edit as needed)"
+                          label={t('req.detail.overallReasonAutoFilledFromFlagged')}
                           value={rejectReason}
                           onChange={(e) => {
                             setRejectReason(e.target.value)
                           }}
-                          placeholder={flagAutoReason || 'Enter reason…'}
+                          placeholder={flagAutoReason || t('req.detail.enterReason')}
                           rows={2}
                         />
                         <div
@@ -2929,7 +2929,7 @@ export default function RequisitionDetail() {
                             margin: '12px 0 6px',
                           }}
                         >
-                          Send back to
+                          {t('req.detail.sendBackTo')}
                         </div>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           <Button
@@ -2946,7 +2946,7 @@ export default function RequisitionDetail() {
                               })
                             }
                           >
-                            Reset to Draft
+                            {t('req.detail.resetToDraft')}
                           </Button>
                           <Button
                             variant="secondary"
@@ -2962,7 +2962,7 @@ export default function RequisitionDetail() {
                               })
                             }
                           >
-                            Inventory Check
+                            {t('req.detail.inventoryCheck')}
                           </Button>
                           <Button
                             variant="secondary"
@@ -2978,7 +2978,7 @@ export default function RequisitionDetail() {
                               })
                             }
                           >
-                            Store Pricing
+                            {t('req.detail.storePricing')}
                           </Button>
                           <Button
                             variant="secondary"
@@ -2994,7 +2994,7 @@ export default function RequisitionDetail() {
                               })
                             }
                           >
-                            Market Pricing
+                            {t('req.detail.marketPricing')}
                           </Button>
                         </div>
                       </div>
@@ -3008,13 +3008,13 @@ export default function RequisitionDetail() {
           {/* ── Panel 6: pending_approval ─────────────────────────────────────── */}
           {req.status === 'pending_approval' && (
             <Card style={sectionCard}>
-              <div style={sectionTitle}>Next step: approve or reject</div>
+              <div style={sectionTitle}>{t('req.detail.nextStepApproveOrReject')}</div>
               <div style={sectionHint}>
-                Rejecting sends this requisition back to an earlier stage for revision.
+                {t('req.detail.rejectingSendsThisRequisitionBackTo')}
               </div>
               {!canApprove ? (
                 <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  Only the department head, the assigned approver, or an admin can act here.
+                  {t('req.detail.onlyTheDepartmentHeadTheAssigned')}
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -3024,7 +3024,7 @@ export default function RequisitionDetail() {
                     style={{ alignSelf: 'flex-start' }}
                     onClick={() => void approve({ variables: { id: req.id } })}
                   >
-                    Approve
+                    {t('req.detail.approve')}
                   </Button>
 
                   {/* ── Reject box — mirrors PurchaseOrderDetail's pending_approval
@@ -3048,16 +3048,16 @@ export default function RequisitionDetail() {
                         marginBottom: '10px',
                       }}
                     >
-                      Not ready to approve?
+                      {t('req.detail.notReadyToApprove')}
                     </div>
                     {renderLineFlagHint()}
                     <Textarea
-                      label="Overall reason (auto-filled from flagged lines — edit as needed)"
+                      label={t('req.detail.overallReasonAutoFilledFromFlagged')}
                       value={rejectReason}
                       onChange={(e) => {
                         setRejectReason(e.target.value)
                       }}
-                      placeholder={flagAutoReason || 'Enter reason…'}
+                      placeholder={flagAutoReason || t('req.detail.enterReason')}
                       rows={2}
                     />
                     <div
@@ -3077,7 +3077,7 @@ export default function RequisitionDetail() {
                           })
                         }
                       >
-                        Reset to Draft
+                        {t('req.detail.resetToDraft')}
                       </Button>
                       <Button
                         variant="secondary"
@@ -3093,7 +3093,7 @@ export default function RequisitionDetail() {
                           })
                         }
                       >
-                        Send Back to Inventory Check
+                        {t('req.detail.sendBackToInventoryCheck')}
                       </Button>
                       <Button
                         variant="secondary"
@@ -3109,7 +3109,7 @@ export default function RequisitionDetail() {
                           })
                         }
                       >
-                        Send Back to Market Pricing
+                        {t('req.detail.sendBackToMarketPricing')}
                       </Button>
                     </div>
                   </div>
@@ -3123,8 +3123,8 @@ export default function RequisitionDetail() {
             <Card style={sectionCard}>
               <div style={sectionTitle}>
                 {req.status === 'approved'
-                  ? 'Approved — buying starts next'
-                  : 'Items Bought in progress'}
+                  ? t('req.detail.approvedBuyingStartsNext')
+                  : t('req.detail.itemsBoughtInProgress')}
               </div>
               <div
                 style={{
@@ -3133,7 +3133,7 @@ export default function RequisitionDetail() {
                   marginBottom: req.status === 'items_bought' ? '10px' : 0,
                 }}
               >
-                Recording purchases per vendor happens on the Items Bought screen.
+                {t('req.detail.recordingPurchasesPerVendorHappensOn')}
               </div>
               {req.status === 'items_bought' && (
                 <Button
@@ -3143,7 +3143,7 @@ export default function RequisitionDetail() {
                     navigate(`/procurement/requisitions/${req.id}/items-bought`)
                   }}
                 >
-                  Go to Items Bought
+                  {t('req.detail.goToItemsBought')}
                 </Button>
               )}
             </Card>
@@ -3152,13 +3152,13 @@ export default function RequisitionDetail() {
           {/* ── Children POs (once any exist) ───────────────────────────────── */}
           {showChildren && children.length > 0 && (
             <Card style={sectionCard}>
-              <div style={sectionTitle}>Purchase orders</div>
-              <div style={sectionHint}>One per vendor, forked at Finish Buying.</div>
+              <div style={sectionTitle}>{t('req.detail.purchaseOrders')}</div>
+              <div style={sectionHint}>{t('req.detail.onePerVendorForkedAtFinish')}</div>
               <Table
                 columns={[
                   {
                     key: 'po_number',
-                    header: 'PO Number',
+                    header: t('req.detail.poNumber'),
                     render: (c: ChildPO) => (
                       <span
                         style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}
@@ -3169,14 +3169,14 @@ export default function RequisitionDetail() {
                   },
                   {
                     key: 'vendor_name',
-                    header: 'Vendor',
+                    header: t('req.detail.vendor'),
                     render: (c: ChildPO) => (
                       <span style={{ fontSize: '13px' }}>{c.vendor_name ?? '—'}</span>
                     ),
                   },
                   {
                     key: 'status',
-                    header: 'Status',
+                    header: t('req.detail.status'),
                     render: (c: ChildPO) => (
                       <Badge variant={getPOStatusVariant(c.status)}>
                         {getPOStatusLabel(c.status)}
@@ -3185,7 +3185,7 @@ export default function RequisitionDetail() {
                   },
                   {
                     key: 'total_amount',
-                    header: 'Total',
+                    header: t('req.detail.total'),
                     render: (c: ChildPO) => (
                       <span style={{ fontSize: '13px' }}>
                         {fmtN(c.total_amount)} {c.currency_code}
@@ -3204,19 +3204,18 @@ export default function RequisitionDetail() {
 
           {req.status === 'sourcing' && (
             <Card style={sectionCard}>
-              <div style={sectionTitle}>Sourcing</div>
+              <div style={sectionTitle}>{t('req.detail.sourcing')}</div>
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                Waiting on every line to resolve — either its stock-covered portion issued via Store
-                Out, or its purchased portion's child PO reaching a finished state.
+                {t('req.detail.waitingOnEveryLineToResolve')}
               </div>
             </Card>
           )}
 
           {req.status === 'completed' && (
             <Card style={sectionCard}>
-              <div style={sectionTitle}>Completed</div>
+              <div style={sectionTitle}>{t('req.detail.completed')}</div>
               <div style={{ fontSize: '13px', color: theme.success }}>
-                Every line on this requisition has been resolved.
+                {t('req.detail.everyLineOnThisRequisitionHas')}
               </div>
             </Card>
           )}
@@ -3225,7 +3224,7 @@ export default function RequisitionDetail() {
             <Card style={sectionCard}>
               <div style={sectionTitle}>{getRequisitionStatusLabel(req.status)}</div>
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                This requisition is no longer active.
+                {t('req.detail.thisRequisitionIsNoLongerActive')}
               </div>
             </Card>
           )}
@@ -3252,11 +3251,11 @@ export default function RequisitionDetail() {
             }
           }
           const approvalTrail = [
-            { action: 'confirm_inventory_check', label: 'Inventory Checked By' },
-            { action: 'submit_to_market_pricing', label: 'Store Priced By' },
-            { action: 'submit_to_price_verification', label: 'Market Priced By' },
-            { action: 'submit_for_approval', label: 'Price Verified By' },
-            { action: 'approve', label: 'Approved By' },
+            { action: 'confirm_inventory_check', label: t('req.detail.inventoryCheckedBy') },
+            { action: 'submit_to_market_pricing', label: t('req.detail.storePricedBy') },
+            { action: 'submit_to_price_verification', label: t('req.detail.marketPricedBy') },
+            { action: 'submit_for_approval', label: t('req.detail.priceVerifiedBy') },
+            { action: 'approve', label: t('req.detail.approvedBy') },
           ]
             .map(({ action, label }) => {
               const entry = [...req.approval_log].reverse().find((e) => e.action === action)
@@ -3308,7 +3307,7 @@ export default function RequisitionDetail() {
                   }}
                 >
                   <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
-                    Print Requisition — {req.requisition_number}
+                    {t('req.detail.printRequisitionTitle', { number: req.requisition_number })}
                   </span>
                   <button
                     onClick={() => {
@@ -3401,14 +3400,14 @@ export default function RequisitionDetail() {
                         setShowPrintModal(false)
                       }}
                     >
-                      Cancel
+                      {t('req.detail.cancel')}
                     </Button>
                     <Button
                       variant="primary"
                       size="sm"
                       onClick={() => printIframeRef.current?.contentWindow?.print()}
                     >
-                      Print / Save as PDF
+                      {t('req.detail.printSaveAsPdf')}
                     </Button>
                   </div>
                 </div>
