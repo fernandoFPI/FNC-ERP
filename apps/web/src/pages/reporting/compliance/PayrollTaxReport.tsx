@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -30,6 +31,7 @@ interface PayrollTaxData {
 }
 
 export default function PayrollTaxReport() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`
@@ -65,7 +67,7 @@ export default function PayrollTaxReport() {
     },
     {
       key: 'employeeName',
-      header: 'Employee',
+      header: t('rep.payrollTax.employee'),
       mobilePrimary: true,
       render: (row) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{row.employeeName}</span>
@@ -73,25 +75,25 @@ export default function PayrollTaxReport() {
     },
     {
       key: 'period',
-      header: 'Period',
+      header: t('rep.payrollTax.period'),
       mobilePriority: 6,
       render: (row) => <span style={{ color: theme.textSecondary }}>{row.period}</span>,
     },
     {
       key: 'grossPay',
-      header: 'Gross Pay',
+      header: t('rep.payrollTax.grossPay'),
       mobilePriority: 4,
       render: (row) => <AmountDisplay amount={row.grossPay} currency="IQD" size="sm" />,
     },
     {
       key: 'taxableIncome',
-      header: 'Taxable Income',
+      header: t('rep.payrollTax.taxableIncome'),
       mobilePriority: 5,
       render: (row) => <AmountDisplay amount={row.taxableIncome} currency="IQD" size="sm" />,
     },
     {
       key: 'incomeTaxWithheld',
-      header: 'Income Tax',
+      header: t('rep.payrollTax.incomeTax'),
       mobilePriority: 1,
       render: (row) => (
         <span style={{ color: theme.warning }}>
@@ -101,7 +103,7 @@ export default function PayrollTaxReport() {
     },
     {
       key: 'socialSecurity',
-      header: 'Social Security',
+      header: t('rep.payrollTax.socialSecurity'),
       mobilePriority: 2,
       render: (row) => (
         <span style={{ color: theme.info }}>
@@ -111,7 +113,7 @@ export default function PayrollTaxReport() {
     },
     {
       key: 'netPay',
-      header: 'Net Pay',
+      header: t('rep.payrollTax.netPay'),
       mobilePriority: 3,
       render: (row) => (
         <span style={{ fontWeight: 500 }}>
@@ -124,8 +126,8 @@ export default function PayrollTaxReport() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Payroll Tax Report"
-        subtitle="Income tax and social security by employee"
+        title={t('rep.payrollTax.payrollTaxReport')}
+        subtitle={t('rep.payrollTax.incomeTaxAndSocialSecurityBy')}
         actions={
           <Button
             variant="ghost"
@@ -134,14 +136,14 @@ export default function PayrollTaxReport() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.payrollTax.refresh')}
           </Button>
         }
       />
 
       <Card padding="sm" style={{ marginBottom: '16px' }}>
         <FilterBar
-          search={{ value: search, onChange: setSearch, placeholder: 'Search employee…' }}
+          search={{ value: search, onChange: setSearch, placeholder: t('rep.payrollTax.searchEmployee') }}
           fromDate={fromDate}
           toDate={toDate}
           onFromDateChange={setFromDate}
@@ -155,19 +157,19 @@ export default function PayrollTaxReport() {
         <Grid cols={3} tabletCols={2} phoneCols={2} gap={12} style={{ marginBottom: '20px' }}>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Gross Pay
+              {t('rep.payrollTax.totalGrossPay')}
             </p>
             <AmountDisplay amount={totalGross} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Income Tax Withheld
+              {t('rep.payrollTax.incomeTaxWithheld')}
             </p>
             <AmountDisplay amount={totalIncomeTax} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Social Security
+              {t('rep.payrollTax.socialSecurity')}
             </p>
             <AmountDisplay amount={totalSS} currency="IQD" size="md" />
           </Card>
@@ -189,8 +191,8 @@ export default function PayrollTaxReport() {
           <Table columns={columns} data={rows} rowKey="employeeNumber" />
         ) : (
           <EmptyState
-            title="No payroll tax data"
-            message="Adjust the date range to load payroll tax records."
+            title={t('rep.payrollTax.noPayrollTaxData')}
+            message={t('rep.payrollTax.adjustTheDateRangeToLoad')}
           />
         )}
       </Card>

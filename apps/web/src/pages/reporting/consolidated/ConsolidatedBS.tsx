@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -42,6 +44,7 @@ interface BSData {
 }
 
 export default function ConsolidatedBS() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date().toISOString().slice(0, 10)
   const [asOfDate, setAsOfDate] = useState(today)
@@ -60,9 +63,9 @@ export default function ConsolidatedBS() {
 
   const rowsByType =
     d?.rows.reduce<Record<string, BSRow[]>>((acc, row) => {
-      const t = row.accountType
-      if (!acc[t]) acc[t] = []
-      acc[t].push(row)
+      const acctType = row.accountType
+      if (!acc[acctType]) acc[acctType] = []
+      acc[acctType].push(row)
       return acc
     }, {}) ?? {}
 
@@ -82,7 +85,7 @@ export default function ConsolidatedBS() {
   const flatRows: BSFlatRow[] = sections.flatMap((section) =>
     (rowsByType[section] ?? []).map((row) => ({
       ...row,
-      sectionLabel: section.replace(/_/g, ' '),
+      sectionLabel: enumLabel(section).replace(/_/g, ' '),
     })),
   )
 
@@ -91,18 +94,18 @@ export default function ConsolidatedBS() {
     header: c.name,
     mobilePriority: 1 + ci,
     render: (row) => (
-      <AmountDisplay amount={row.companies[ci]} currency={d?.currency ?? 'IQD'} size="sm" />
+      <AmountDisplay amount={row.companies[ci]} currency={d?.currency ?? t('rep.consBs.iqd')} size="sm" />
     ),
   }))
 
   const columns: Column<BSFlatRow>[] = [
     {
       key: 'account',
-      header: 'Account',
+      header: t('rep.consBs.account'),
       mobilePrimary: true,
       render: (row) => (
         <>
-          <span style={{ fontSize: '11px', color: theme.textMuted, marginRight: '8px' }}>
+          <span style={{ fontSize: '11px', color: theme.textMuted, marginInlineEnd: '8px' }}>
             {row.accountCode}
           </span>
           {row.accountName}
@@ -114,12 +117,12 @@ export default function ConsolidatedBS() {
       ? [
           {
             key: 'eliminated',
-            header: 'Elim.',
-            mobileLabel: 'Elim.',
+            header: t('rep.consBs.elim'),
+            mobileLabel: t('rep.consBs.elim'),
             mobilePriority: 1 + companyColumns.length,
             render: (row: BSFlatRow) => (
               <span style={{ color: theme.warning }}>
-                <AmountDisplay amount={row.eliminated} currency={d?.currency ?? 'IQD'} size="sm" />
+                <AmountDisplay amount={row.eliminated} currency={d?.currency ?? t('rep.consBs.iqd')} size="sm" />
               </span>
             ),
           } as Column<BSFlatRow>,
@@ -127,11 +130,11 @@ export default function ConsolidatedBS() {
       : []),
     {
       key: 'consolidated',
-      header: 'Consolidated',
+      header: t('rep.consBs.consolidated'),
       mobilePriority: 0,
       render: (row) => (
         <span style={{ fontWeight: 500 }}>
-          <AmountDisplay amount={row.consolidated} currency={d?.currency ?? 'IQD'} size="sm" />
+          <AmountDisplay amount={row.consolidated} currency={d?.currency ?? t('rep.consBs.iqd')} size="sm" />
         </span>
       ),
     },
@@ -140,8 +143,8 @@ export default function ConsolidatedBS() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Consolidated Balance Sheet"
-        subtitle="Group assets, liabilities & equity"
+        title={t('rep.consBs.consolidatedBalanceSheet')}
+        subtitle={t('rep.consBs.groupAssetsLiabilitiesEquity')}
         actions={
           <Button
             variant="ghost"
@@ -150,7 +153,7 @@ export default function ConsolidatedBS() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.consBs.refresh')}
           </Button>
         }
       />
@@ -159,7 +162,7 @@ export default function ConsolidatedBS() {
       <Card padding="sm" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: theme.textMuted }}>As of Date</span>
+            <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('rep.consBs.asOfDate')}</span>
             <input
               type="date"
               value={asOfDate}
@@ -194,15 +197,15 @@ export default function ConsolidatedBS() {
                 setShowEliminations(e.target.checked)
               }}
             />
-            Show Eliminations
+            {t('rep.consBs.showEliminations')}
           </label>
           <Button variant="primary" size="sm" onClick={handleApply}>
-            Apply
+            {t('rep.consBs.apply')}
           </Button>
           {d && (
-            <div style={{ marginLeft: 'auto' }}>
+            <div style={{ marginInlineStart: 'auto' }}>
               <Badge variant={d.isBalanced ? 'success' : 'danger'}>
-                {d.isBalanced ? 'Balanced' : 'IMBALANCED'}
+                {d.isBalanced ? t('rep.consBs.balanced') : t('rep.consBs.imbalanced')}
               </Badge>
             </div>
           )}
@@ -221,19 +224,19 @@ export default function ConsolidatedBS() {
         >
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Assets
+              {t('rep.consBs.totalAssets')}
             </p>
             <AmountDisplay amount={d.totalAssets} currency={d.currency} size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Liabilities
+              {t('rep.consBs.totalLiabilities')}
             </p>
             <AmountDisplay amount={d.totalLiabilities} currency={d.currency} size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Equity
+              {t('rep.consBs.totalEquity')}
             </p>
             <AmountDisplay amount={d.totalEquity} currency={d.currency} size="md" colored />
           </Card>
@@ -262,8 +265,8 @@ export default function ConsolidatedBS() {
           />
         ) : (
           <EmptyState
-            title="No data"
-            message="Select a date and apply to load the balance sheet."
+            title={t('rep.consBs.noData')}
+            message={t('rep.consBs.selectADateAndApplyTo')}
           />
         )}
       </Card>

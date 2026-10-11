@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -35,6 +36,7 @@ interface PLData {
 }
 
 export default function ConsolidatedPL() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date()
   const firstOfMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`
@@ -100,8 +102,8 @@ export default function ConsolidatedPL() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Consolidated P&L"
-        subtitle="Group profit & loss statement"
+        title={t('rep.consPl.consolidatedPL')}
+        subtitle={t('rep.consPl.groupProfitLossStatement')}
         actions={
           <Button
             variant="ghost"
@@ -110,7 +112,7 @@ export default function ConsolidatedPL() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.consPl.refresh')}
           </Button>
         }
       />
@@ -119,7 +121,7 @@ export default function ConsolidatedPL() {
       <Card padding="sm" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: theme.textMuted }}>From</span>
+            <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('rep.consPl.from')}</span>
             <input
               type="date"
               value={fromDate}
@@ -128,7 +130,7 @@ export default function ConsolidatedPL() {
               }}
               style={inputStyle}
             />
-            <span style={{ fontSize: '12px', color: theme.textMuted }}>To</span>
+            <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('rep.consPl.to')}</span>
             <input
               type="date"
               value={toDate}
@@ -155,7 +157,7 @@ export default function ConsolidatedPL() {
                 setShowEliminations(e.target.checked)
               }}
             />
-            Show Eliminations
+            {t('rep.consPl.showEliminations')}
           </label>
           <label
             style={{
@@ -174,16 +176,16 @@ export default function ConsolidatedPL() {
                 setShowPriorPeriod(e.target.checked)
               }}
             />
-            Compare Prior Period
+            {t('rep.consPl.comparePriorPeriod')}
           </label>
           <Button variant="primary" size="sm" onClick={handleApply}>
-            Apply
+            {t('rep.consPl.apply')}
           </Button>
           {d && (
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: '16px' }}>
-              <div style={{ textAlign: 'right' }}>
+            <div style={{ marginInlineStart: 'auto', display: 'flex', gap: '16px' }}>
+              <div style={{ textAlign: 'end' }}>
                 <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>
-                  Net Profit
+                  {t('rep.consPl.netProfit')}
                 </p>
                 <Badge variant={d.netProfit >= 0 ? 'success' : 'danger'}>
                   <AmountDisplay amount={d.netProfit} currency={d.currency} size="sm" />
@@ -193,9 +195,7 @@ export default function ConsolidatedPL() {
           )}
         </div>
         {showPriorPeriod && (
-          <div style={{ marginTop: '8px', fontSize: '11px', color: theme.textMuted }}>
-            Prior period: {priorFromDate} → {priorToDate}
-          </div>
+          <div style={{ marginTop: '8px', fontSize: '11px', color: theme.textMuted }}>{t('rep.consPl.priorPeriod', { priorFromDate, priorToDate })}</div>
         )}
       </Card>
 
@@ -211,19 +211,19 @@ export default function ConsolidatedPL() {
         >
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Revenue
+              {t('rep.consPl.totalRevenue')}
             </p>
             <AmountDisplay amount={d.totalRevenue} currency={d.currency} size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Expenses
+              {t('rep.consPl.totalExpenses')}
             </p>
             <AmountDisplay amount={d.totalExpenses} currency={d.currency} size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Net Profit
+              {t('rep.consPl.netProfit')}
             </p>
             <AmountDisplay amount={d.netProfit} currency={d.currency} size="md" colored />
           </Card>
@@ -235,7 +235,7 @@ export default function ConsolidatedPL() {
         <ConsolidatedFinancialTable
           data={d?.rows ?? []}
           companies={d?.companies ?? []}
-          currency={d?.currency ?? 'IQD'}
+          currency={d?.currency ?? t('rep.consPl.iqd')}
           showEliminations={applied.showEliminations}
           loading={loading || (showPriorPeriod && priorLoading)}
           priorData={showPriorPeriod ? prior?.rows : undefined}

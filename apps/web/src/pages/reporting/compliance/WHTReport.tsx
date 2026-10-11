@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -33,6 +35,7 @@ interface WHTData {
 }
 
 export default function WHTReport() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`
@@ -57,7 +60,7 @@ export default function WHTReport() {
   const columns: Column<WHTRow>[] = [
     {
       key: 'vendorName',
-      header: 'Vendor',
+      header: t('rep.wht.vendor'),
       mobilePrimary: true,
       render: (row) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{row.vendorName}</span>
@@ -65,7 +68,7 @@ export default function WHTReport() {
     },
     {
       key: 'taxId',
-      header: 'Tax ID',
+      header: t('rep.wht.taxId'),
       mobileSecondary: true,
       render: (row) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{row.taxId}</span>
@@ -73,29 +76,29 @@ export default function WHTReport() {
     },
     {
       key: 'whtType',
-      header: 'Type',
+      header: t('rep.wht.type'),
       mobilePriority: 4,
       render: (row) => (
         <Badge variant="info" size="sm">
-          {row.whtType}
+          {enumLabel(row.whtType)}
         </Badge>
       ),
     },
     {
       key: 'rate',
-      header: 'Rate',
+      header: t('rep.wht.rate'),
       mobilePriority: 3,
       render: (row) => <span style={{ color: theme.textSecondary }}>{row.rate}%</span>,
     },
     {
       key: 'paymentAmount',
-      header: 'Payment',
+      header: t('rep.wht.payment'),
       mobilePriority: 2,
       render: (row) => <AmountDisplay amount={row.paymentAmount} currency="IQD" size="sm" />,
     },
     {
       key: 'whtAmount',
-      header: 'WHT Amount',
+      header: t('rep.wht.whtAmount'),
       mobilePriority: 1,
       render: (row) => (
         <span style={{ fontWeight: 500, color: theme.warning }}>
@@ -105,7 +108,7 @@ export default function WHTReport() {
     },
     {
       key: 'period',
-      header: 'Period',
+      header: t('rep.wht.period'),
       mobilePriority: 5,
       render: (row) => <span style={{ color: theme.textSecondary }}>{row.period}</span>,
     },
@@ -114,8 +117,8 @@ export default function WHTReport() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Withholding Tax Report"
-        subtitle="WHT deductions by vendor and period"
+        title={t('rep.wht.withholdingTaxReport')}
+        subtitle={t('rep.wht.whtDeductionsByVendorAndPeriod')}
         actions={
           <Button
             variant="ghost"
@@ -124,14 +127,14 @@ export default function WHTReport() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.wht.refresh')}
           </Button>
         }
       />
 
       <Card padding="sm" style={{ marginBottom: '16px' }}>
         <FilterBar
-          search={{ value: search, onChange: setSearch, placeholder: 'Search vendor or tax ID…' }}
+          search={{ value: search, onChange: setSearch, placeholder: t('rep.wht.searchVendorOrTaxId') }}
           fromDate={fromDate}
           toDate={toDate}
           onFromDateChange={setFromDate}
@@ -145,13 +148,13 @@ export default function WHTReport() {
         <Grid cols={3} tabletCols={2} phoneCols={2} gap={12} style={{ marginBottom: '20px' }}>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total WHT
+              {t('rep.wht.totalWht')}
             </p>
             <AmountDisplay amount={d.totalWHT} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Vendor Count
+              {t('rep.wht.vendorCount')}
             </p>
             <p style={{ fontSize: '22px', fontWeight: 500, color: theme.textPrimary }}>
               {d.vendorCount}
@@ -159,7 +162,7 @@ export default function WHTReport() {
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Payments Subject to WHT
+              {t('rep.wht.paymentsSubjectToWht')}
             </p>
             <AmountDisplay amount={d.totalPaymentsSubjectToWHT} currency="IQD" size="md" />
           </Card>
@@ -181,8 +184,8 @@ export default function WHTReport() {
           <Table columns={columns} data={rows} />
         ) : (
           <EmptyState
-            title="No WHT data"
-            message="Adjust the date range to load withholding tax records."
+            title={t('rep.wht.noWhtData')}
+            message={t('rep.wht.adjustTheDateRangeToLoad')}
           />
         )}
       </Card>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -60,6 +61,7 @@ interface PayrollCostData {
 }
 
 export default function PayrollCostReport() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`
@@ -83,7 +85,7 @@ export default function PayrollCostReport() {
   const columns: Column<PayrollRow>[] = [
     {
       key: 'companyName',
-      header: 'Company',
+      header: t('rep.payrollCost.company'),
       mobilePrimary: true,
       render: (row) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{row.companyName}</span>
@@ -91,38 +93,38 @@ export default function PayrollCostReport() {
     },
     {
       key: 'costCenter',
-      header: 'Cost Center',
+      header: t('rep.payrollCost.costCenter'),
       mobileSecondary: true,
       render: (row) => row.costCenter,
     },
     {
       key: 'period',
-      header: 'Period',
+      header: t('rep.payrollCost.period'),
       mobilePriority: 5,
       render: (row) => row.period,
     },
     {
       key: 'headcount',
-      header: 'Headcount',
+      header: t('rep.payrollCost.headcount'),
       mobilePriority: 3,
       render: (row) => row.headcount,
     },
     {
       key: 'totalGross',
-      header: 'Total Gross',
+      header: t('rep.payrollCost.totalGross'),
       mobilePriority: 2,
       render: (row) => <AmountDisplay amount={row.totalGross} currency="IQD" size="sm" />,
     },
     {
       key: 'totalNet',
-      header: 'Total Net',
+      header: t('rep.payrollCost.totalNet'),
       mobilePriority: 4,
       render: (row) => <AmountDisplay amount={row.totalNet} currency="IQD" size="sm" />,
     },
     {
       key: 'totalIQD',
-      header: 'IQD Equiv.',
-      mobileLabel: 'IQD Equiv.',
+      header: t('rep.payrollCost.iqdEquiv'),
+      mobileLabel: t('rep.payrollCost.iqdEquiv'),
       mobilePriority: 1,
       render: (row) => <AmountDisplay amount={row.totalIQD} currency="IQD" size="sm" />,
     },
@@ -131,8 +133,8 @@ export default function PayrollCostReport() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Payroll Cost Report"
-        subtitle="Employee cost analysis by entity and cost center"
+        title={t('rep.payrollCost.payrollCostReport')}
+        subtitle={t('rep.payrollCost.employeeCostAnalysisByEntityAnd')}
         actions={
           <Button
             variant="ghost"
@@ -141,7 +143,7 @@ export default function PayrollCostReport() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.payrollCost.refresh')}
           </Button>
         }
       />
@@ -151,7 +153,7 @@ export default function PayrollCostReport() {
           search={{
             value: search,
             onChange: setSearch,
-            placeholder: 'Search company or cost center…',
+            placeholder: t('rep.payrollCost.searchCompanyOrCostCenter'),
           }}
           fromDate={fromDate}
           toDate={toDate}
@@ -167,7 +169,7 @@ export default function PayrollCostReport() {
         <Grid cols={5} tabletCols={3} phoneCols={2} gap={12} style={{ marginBottom: '20px' }}>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Headcount
+              {t('rep.payrollCost.totalHeadcount')}
             </p>
             <p style={{ fontSize: '22px', fontWeight: 500, color: theme.textPrimary }}>
               {d.totalHeadcount}
@@ -175,25 +177,25 @@ export default function PayrollCostReport() {
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Gross
+              {t('rep.payrollCost.totalGross')}
             </p>
             <AmountDisplay amount={d.totalGross} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Net
+              {t('rep.payrollCost.totalNet')}
             </p>
             <AmountDisplay amount={d.totalNet} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Employer Cost
+              {t('rep.payrollCost.employerCost')}
             </p>
             <AmountDisplay amount={d.totalEmployerCost} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Avg / Employee
+              {t('rep.payrollCost.avgEmployee')}
             </p>
             <AmountDisplay amount={d.avgCostPerEmployee} currency="IQD" size="md" />
           </Card>
@@ -211,7 +213,7 @@ export default function PayrollCostReport() {
               marginBottom: '16px',
             }}
           >
-            Monthly Payroll Cost by Entity
+            {t('rep.payrollCost.monthlyPayrollCostByEntity')}
           </h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={d.monthlyTrend}>
@@ -251,8 +253,8 @@ export default function PayrollCostReport() {
           <Table columns={columns} data={rows} />
         ) : (
           <EmptyState
-            title="No payroll data"
-            message="Adjust the date range to load payroll cost data."
+            title={t('rep.payrollCost.noPayrollData')}
+            message={t('rep.payrollCost.adjustTheDateRangeToLoad')}
           />
         )}
       </Card>

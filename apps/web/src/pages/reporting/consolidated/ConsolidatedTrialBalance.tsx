@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -38,6 +40,7 @@ interface TBData {
 }
 
 export default function ConsolidatedTrialBalance() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date().toISOString().slice(0, 10)
   const [asOfDate, setAsOfDate] = useState(today)
@@ -58,20 +61,20 @@ export default function ConsolidatedTrialBalance() {
     header: c.name,
     mobilePriority: 3 + ci,
     render: (row) => (
-      <AmountDisplay amount={row.companies[ci]} currency={d?.currency ?? 'IQD'} size="sm" />
+      <AmountDisplay amount={row.companies[ci]} currency={d?.currency ?? t('rep.consTb.iqd')} size="sm" />
     ),
   }))
 
   const columns: Column<TBRow>[] = [
     {
       key: 'accountName',
-      header: 'Account',
+      header: t('rep.consTb.account'),
       mobilePrimary: true,
       render: (row) => row.accountName,
     },
     {
       key: 'accountCode',
-      header: 'Code',
+      header: t('rep.consTb.code'),
       mobileSecondary: true,
       render: (row) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{row.accountCode}</span>
@@ -79,24 +82,24 @@ export default function ConsolidatedTrialBalance() {
     },
     {
       key: 'accountType',
-      header: 'Type',
+      header: t('rep.consTb.type'),
       mobilePriority: 2,
       render: (row) => (
         <Badge variant="neutral" size="sm">
-          {row.accountType}
+          {enumLabel(row.accountType)}
         </Badge>
       ),
     },
     ...companyColumns,
     {
       key: 'consolidated',
-      header: 'Consolidated',
+      header: t('rep.consTb.consolidated'),
       mobilePriority: 1,
       render: (row) => (
         <span style={{ fontWeight: 500 }}>
           <AmountDisplay
             amount={row.consolidated}
-            currency={d?.currency ?? 'IQD'}
+            currency={d?.currency ?? t('rep.consTb.iqd')}
             size="sm"
             colored
           />
@@ -108,8 +111,8 @@ export default function ConsolidatedTrialBalance() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Consolidated Trial Balance"
-        subtitle="Group-wide debit/credit balances"
+        title={t('rep.consTb.consolidatedTrialBalance')}
+        subtitle={t('rep.consTb.groupWideDebitCreditBalances')}
         actions={
           <Button
             variant="ghost"
@@ -118,7 +121,7 @@ export default function ConsolidatedTrialBalance() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.consTb.refresh')}
           </Button>
         }
       />
@@ -127,7 +130,7 @@ export default function ConsolidatedTrialBalance() {
       <Card padding="sm" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: theme.textMuted }}>As of Date</span>
+            <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('rep.consTb.asOfDate')}</span>
             <input
               type="date"
               value={asOfDate}
@@ -146,12 +149,12 @@ export default function ConsolidatedTrialBalance() {
             />
           </div>
           <Button variant="primary" size="sm" onClick={handleApply}>
-            Apply
+            {t('rep.consTb.apply')}
           </Button>
           {d && (
-            <div style={{ marginLeft: 'auto' }}>
+            <div style={{ marginInlineStart: 'auto' }}>
               <Badge variant={d.isBalanced ? 'success' : 'danger'}>
-                {d.isBalanced ? 'Balanced' : 'OUT OF BALANCE'}
+                {d.isBalanced ? t('rep.consTb.balanced') : t('rep.consTb.outOfBalance')}
               </Badge>
             </div>
           )}
@@ -163,13 +166,13 @@ export default function ConsolidatedTrialBalance() {
         <Grid cols={2} tabletCols={2} phoneCols={1} gap={12} style={{ marginBottom: '20px' }}>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Debits
+              {t('rep.consTb.totalDebits')}
             </p>
             <AmountDisplay amount={d.totalDebits} currency={d.currency} size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Credits
+              {t('rep.consTb.totalCredits')}
             </p>
             <AmountDisplay amount={d.totalCredits} currency={d.currency} size="md" />
           </Card>
@@ -191,7 +194,7 @@ export default function ConsolidatedTrialBalance() {
         ) : d?.rows.length ? (
           <Table columns={columns} data={d.rows} />
         ) : (
-          <EmptyState title="No data" message="Select a date and apply to load trial balance." />
+          <EmptyState title={t('rep.consTb.noData')} message={t('rep.consTb.selectADateAndApplyTo')} />
         )}
       </Card>
     </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -27,6 +28,7 @@ interface FXData {
 }
 
 export default function FXExposureReport() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date().toISOString().slice(0, 10)
   const [asOfDate, setAsOfDate] = useState(today)
@@ -42,7 +44,7 @@ export default function FXExposureReport() {
   const columns: Column<FXRow>[] = [
     {
       key: 'currency',
-      header: 'Currency',
+      header: t('rep.fxExposure.currency'),
       mobilePrimary: true,
       render: (row) => (
         <span style={{ color: theme.textPrimary, fontWeight: 600, fontSize: '14px' }}>
@@ -52,19 +54,19 @@ export default function FXExposureReport() {
     },
     {
       key: 'openAR',
-      header: 'Open AR',
+      header: t('rep.fxExposure.openAr'),
       mobilePriority: 3,
       render: (row) => <AmountDisplay amount={row.openAR} currency={row.currency} size="sm" />,
     },
     {
       key: 'openAP',
-      header: 'Open AP',
+      header: t('rep.fxExposure.openAp'),
       mobilePriority: 4,
       render: (row) => <AmountDisplay amount={row.openAP} currency={row.currency} size="sm" />,
     },
     {
       key: 'netExposure',
-      header: 'Net Exposure',
+      header: t('rep.fxExposure.netExposure'),
       mobilePriority: 1,
       render: (row) => (
         <AmountDisplay amount={row.netExposure} currency={row.currency} size="sm" colored />
@@ -72,7 +74,7 @@ export default function FXExposureReport() {
     },
     {
       key: 'fxRate',
-      header: 'FX Rate',
+      header: t('rep.fxExposure.fxRate'),
       mobilePriority: 5,
       render: (row) => (
         <span
@@ -88,7 +90,7 @@ export default function FXExposureReport() {
     },
     {
       key: 'iqdEquivalent',
-      header: 'IQD Equivalent',
+      header: t('rep.fxExposure.iqdEquivalent'),
       mobilePriority: 2,
       render: (row) => (
         <AmountDisplay amount={row.iqdEquivalent} currency="IQD" size="sm" colored />
@@ -99,8 +101,8 @@ export default function FXExposureReport() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="FX Exposure Report"
-        subtitle="Foreign currency open AR/AP positions"
+        title={t('rep.fxExposure.fxExposureReport')}
+        subtitle={t('rep.fxExposure.foreignCurrencyOpenArApPositions')}
         actions={
           <Button
             variant="ghost"
@@ -109,14 +111,14 @@ export default function FXExposureReport() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.fxExposure.refresh')}
           </Button>
         }
       />
 
       <Card padding="sm" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>As of Date</span>
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('rep.fxExposure.asOfDate')}</span>
           <input
             type="date"
             value={asOfDate}
@@ -140,11 +142,11 @@ export default function FXExposureReport() {
               setApplied(asOfDate)
             }}
           >
-            Apply
+            {t('rep.fxExposure.apply')}
           </Button>
           {d && (
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '12px', color: theme.textMuted }}>Total IQD Exposure:</span>
+            <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('rep.fxExposure.totalIqdExposure')}</span>
               <AmountDisplay amount={d.totalIQDExposure} currency="IQD" size="md" colored />
             </div>
           )}
@@ -166,8 +168,8 @@ export default function FXExposureReport() {
           <Table columns={columns} data={d.rows} rowKey="currency" />
         ) : (
           <EmptyState
-            title="No FX exposure data"
-            message="Select a date and apply to load exposure report."
+            title={t('rep.fxExposure.noFxExposureData')}
+            message={t('rep.fxExposure.selectADateAndApplyTo')}
           />
         )}
       </Card>

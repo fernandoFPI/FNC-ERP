@@ -1,25 +1,27 @@
+import i18n from '../../i18n'
+import { useTranslation } from 'react-i18next'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
 
 const REPORTING_NAV: ({ label: string; path: string } | null)[] = [
-  { label: 'Executive', path: '/reporting/executive' },
+  { get label() { return i18n.t('rep.layout.executive', { defaultValue: "Executive" }) }, path: '/reporting/executive' },
   null,
-  { label: 'Cash Flow', path: '/reporting/financial/cash-flow' },
+  { get label() { return i18n.t('rep.layout.cashFlow', { defaultValue: "Cash Flow" }) }, path: '/reporting/financial/cash-flow' },
   null,
-  { label: 'Consolidated P&L', path: '/reporting/consolidated/pl' },
-  { label: 'Consolidated BS', path: '/reporting/consolidated/bs' },
-  { label: 'Trial Balance', path: '/reporting/consolidated/trial-balance' },
+  { get label() { return i18n.t('rep.layout.consolidatedPL', { defaultValue: "Consolidated P&L" }) }, path: '/reporting/consolidated/pl' },
+  { get label() { return i18n.t('rep.layout.consolidatedBs', { defaultValue: "Consolidated BS" }) }, path: '/reporting/consolidated/bs' },
+  { get label() { return i18n.t('rep.layout.trialBalance', { defaultValue: "Trial Balance" }) }, path: '/reporting/consolidated/trial-balance' },
   null,
-  { label: 'Project Profitability', path: '/reporting/projects/profitability' },
+  { get label() { return i18n.t('rep.layout.projectProfitability', { defaultValue: "Project Profitability" }) }, path: '/reporting/projects/profitability' },
   null,
-  { label: 'Payroll Costs', path: '/reporting/payroll/costs' },
-  { label: 'Attendance', path: '/reporting/payroll/attendance' },
+  { get label() { return i18n.t('rep.layout.payrollCosts', { defaultValue: "Payroll Costs" }) }, path: '/reporting/payroll/costs' },
+  { get label() { return i18n.t('rep.layout.attendance', { defaultValue: "Attendance" }) }, path: '/reporting/payroll/attendance' },
   null,
-  { label: 'Inventory Valuation', path: '/reporting/inventory/valuation' },
+  { get label() { return i18n.t('rep.layout.inventoryValuation', { defaultValue: "Inventory Valuation" }) }, path: '/reporting/inventory/valuation' },
   null,
-  { label: 'Withholding Tax', path: '/reporting/compliance/wht' },
-  { label: 'FX Exposure', path: '/reporting/compliance/fx-exposure' },
-  { label: 'Payroll Tax', path: '/reporting/compliance/payroll-tax' },
+  { get label() { return i18n.t('rep.layout.withholdingTax', { defaultValue: "Withholding Tax" }) }, path: '/reporting/compliance/wht' },
+  { get label() { return i18n.t('rep.layout.fxExposure', { defaultValue: "FX Exposure" }) }, path: '/reporting/compliance/fx-exposure' },
+  { get label() { return i18n.t('rep.layout.payrollTax', { defaultValue: "Payroll Tax" }) }, path: '/reporting/compliance/payroll-tax' },
 ]
 
 export default function ReportingLayout() {
@@ -33,7 +35,7 @@ export default function ReportingLayout() {
         style={{
           width: '200px',
           minWidth: '200px',
-          borderRight: `0.5px solid ${theme.border}`,
+          borderInlineEnd: `0.5px solid ${theme.border}`,
           overflowY: 'auto',
           padding: '12px 0',
           flexShrink: 0,
@@ -59,7 +61,7 @@ export default function ReportingLayout() {
                   color: isActive ? theme.accent : theme.textSecondary,
                   fontWeight: isActive ? 500 : 400,
                   background: isActive ? theme.accentBg : 'transparent',
-                  borderLeft: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
+                  borderInlineStart: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                 }}

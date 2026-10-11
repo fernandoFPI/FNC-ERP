@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -42,6 +44,7 @@ interface InvData {
 }
 
 export default function InventoryValuationReport() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date().toISOString().slice(0, 10)
   const [asOfDate, setAsOfDate] = useState(today)
@@ -64,7 +67,7 @@ export default function InventoryValuationReport() {
   const columns: Column<InvRow>[] = [
     {
       key: 'productName',
-      header: 'Product',
+      header: t('rep.invVal.product'),
       mobilePrimary: true,
       render: (row) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{row.productName}</span>
@@ -72,13 +75,13 @@ export default function InventoryValuationReport() {
     },
     {
       key: 'sku',
-      header: 'SKU',
+      header: t('rep.invVal.sku'),
       mobileSecondary: true,
       render: (row) => <span style={{ color: theme.textMuted, fontSize: '12px' }}>{row.sku}</span>,
     },
     {
       key: 'totalValue',
-      header: 'Total Value',
+      header: t('rep.invVal.totalValue'),
       mobilePriority: 1,
       render: (row) => (
         <span style={{ fontWeight: 500 }}>
@@ -88,7 +91,7 @@ export default function InventoryValuationReport() {
     },
     {
       key: 'qtyOnHand',
-      header: 'Qty On Hand',
+      header: t('rep.invVal.qtyOnHand'),
       mobilePriority: 2,
       render: (row) => (
         <span style={{ color: row.qtyOnHand <= 0 ? theme.danger : theme.textSecondary }}>
@@ -98,23 +101,23 @@ export default function InventoryValuationReport() {
     },
     {
       key: 'locationName',
-      header: 'Location',
+      header: t('rep.invVal.location'),
       mobilePriority: 3,
       render: (row) => row.locationName,
     },
     {
       key: 'avgCost',
-      header: 'Last Cost',
+      header: t('rep.invVal.lastCost'),
       mobilePriority: 4,
       render: (row) => <AmountDisplay amount={row.avgCost} currency={row.currency} size="sm" />,
     },
     {
       key: 'locationType',
-      header: 'Type',
+      header: t('rep.invVal.type'),
       mobilePriority: 5,
       render: (row) => (
         <Badge variant="neutral" size="sm">
-          {row.locationType}
+          {enumLabel(row.locationType)}
         </Badge>
       ),
     },
@@ -123,8 +126,8 @@ export default function InventoryValuationReport() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Inventory Valuation"
-        subtitle="Stock on hand valuation by product and location"
+        title={t('rep.invVal.inventoryValuation')}
+        subtitle={t('rep.invVal.stockOnHandValuationByProduct')}
         actions={
           <Button
             variant="ghost"
@@ -133,7 +136,7 @@ export default function InventoryValuationReport() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.invVal.refresh')}
           </Button>
         }
       />
@@ -144,13 +147,13 @@ export default function InventoryValuationReport() {
             search={{
               value: search,
               onChange: setSearch,
-              placeholder: 'Search product, SKU or location…',
+              placeholder: t('rep.invVal.searchProductSkuOrLocation'),
             }}
             resultCount={rows.length}
             onExport={() => undefined}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: theme.textMuted }}>As of</span>
+            <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('rep.invVal.asOf')}</span>
             <input
               type="date"
               value={asOfDate}
@@ -174,7 +177,7 @@ export default function InventoryValuationReport() {
                 setApplied(asOfDate)
               }}
             >
-              Apply
+              {t('rep.invVal.apply')}
             </Button>
           </div>
         </div>
@@ -185,13 +188,13 @@ export default function InventoryValuationReport() {
         <Grid cols={4} tabletCols={2} phoneCols={2} gap={12} style={{ marginBottom: '20px' }}>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Value
+              {t('rep.invVal.totalValue')}
             </p>
             <AmountDisplay amount={d.totalValue} currency="USD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Products
+              {t('rep.invVal.totalProducts')}
             </p>
             <p style={{ fontSize: '22px', fontWeight: 500, color: theme.textPrimary }}>
               {d.totalProducts}
@@ -199,7 +202,7 @@ export default function InventoryValuationReport() {
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Locations
+              {t('rep.invVal.locations')}
             </p>
             <p style={{ fontSize: '22px', fontWeight: 500, color: theme.textPrimary }}>
               {d.totalLocations}
@@ -207,7 +210,7 @@ export default function InventoryValuationReport() {
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Low Stock Items
+              {t('rep.invVal.lowStockItems')}
             </p>
             <p
               style={{
@@ -237,8 +240,8 @@ export default function InventoryValuationReport() {
           <Table columns={columns} data={rows} />
         ) : (
           <EmptyState
-            title="No inventory data"
-            message="Select a date and apply to load inventory valuation."
+            title={t('rep.invVal.noInventoryData')}
+            message={t('rep.invVal.selectADateAndApplyTo')}
           />
         )}
       </Card>

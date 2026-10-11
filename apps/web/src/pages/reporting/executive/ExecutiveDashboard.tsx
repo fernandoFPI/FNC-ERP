@@ -1,4 +1,6 @@
-﻿import { useQuery } from '@apollo/client'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { KPITrendCard } from '../../../components/ui/KPITrendCard'
 import { Card } from '../../../components/ui/Card'
@@ -112,6 +114,7 @@ function ScatterTooltip({
   active?: boolean
   payload?: { payload: ProjectScatter }[]
 }) {
+  const { t } = useTranslation()
   if (!active || !payload?.length) return null
   const d = payload[0].payload
   return (
@@ -127,23 +130,16 @@ function ScatterTooltip({
       }}
     >
       <p style={{ color: 'var(--text-primary)', fontWeight: 600, margin: '0 0 4px' }}>{d.name}</p>
-      <p style={{ color: 'var(--text-muted)', margin: '0 0 2px' }}>
-        Client: {d.client_name || '—'}
-      </p>
-      <p style={{ color: 'var(--text-muted)', margin: '0 0 2px' }}>
-        Budget: {formatNumber(d.budget)}
-      </p>
-      <p style={{ color: 'var(--text-muted)', margin: '0 0 2px' }}>
-        Actual: {formatNumber(d.actualCost)}
-      </p>
-      <p style={{ color: d.marginPct >= 0 ? '#22c55e' : '#ef4444', margin: 0, fontWeight: 500 }}>
-        Margin: {d.marginPct.toFixed(1)}%
-      </p>
+      <p style={{ color: 'var(--text-muted)', margin: '0 0 2px' }}>{t('rep.exec.client', { value: d.client_name || '—' })}</p>
+      <p style={{ color: 'var(--text-muted)', margin: '0 0 2px' }}>{t('rep.exec.budget', { number: formatNumber(d.budget) })}</p>
+      <p style={{ color: 'var(--text-muted)', margin: '0 0 2px' }}>{t('rep.exec.actual', { number: formatNumber(d.actualCost) })}</p>
+      <p style={{ color: d.marginPct >= 0 ? '#22c55e' : '#ef4444', margin: 0, fontWeight: 500 }}>{t('rep.exec.margin', { marginPct: d.marginPct.toFixed(1) })}</p>
     </div>
   )
 }
 
 export default function ExecutiveDashboard() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const { data, loading, refetch } = useQuery<ExecutiveDashboardData>(EXECUTIVE_DASHBOARD_QUERY)
@@ -159,8 +155,8 @@ export default function ExecutiveDashboard() {
   return (
     <div style={pagePadding}>
       <PageHeader
-        title="Executive Dashboard"
-        subtitle="Consolidated group performance overview"
+        title={t('rep.exec.executiveDashboard')}
+        subtitle={t('rep.exec.consolidatedGroupPerformanceOverview')}
         actions={
           <Button
             variant="ghost"
@@ -169,7 +165,7 @@ export default function ExecutiveDashboard() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.exec.refresh')}
           </Button>
         }
       />
@@ -177,39 +173,39 @@ export default function ExecutiveDashboard() {
       {/* KPI Row */}
       <Grid cols={6} tabletCols={3} phoneCols={2} gap={14} style={{ marginBottom: '24px' }}>
         <KPITrendCard
-          label="Total Revenue"
+          label={t('rep.exec.totalRevenue')}
           value={d ? `$${(d.totalRevenue / 1000000).toFixed(2)}M` : '—'}
           trendData={d?.revenueTrend ?? []}
           delta={computeDelta(d?.revenueTrend ?? [])}
           previousValue={prevValue(d?.revenueTrend ?? [], (v) => `$${(v / 1000000).toFixed(2)}M`)}
         />
         <KPITrendCard
-          label="Total Costs"
+          label={t('rep.exec.totalCosts')}
           value={d ? `$${(d.totalCosts / 1000000).toFixed(2)}M` : '—'}
           trendData={d?.costsTrend ?? []}
           delta={computeDelta(d?.costsTrend ?? [])}
           previousValue={prevValue(d?.costsTrend ?? [], (v) => `$${(v / 1000000).toFixed(2)}M`)}
         />
         <KPITrendCard
-          label="Net Profit"
+          label={t('rep.exec.netProfit')}
           value={d ? `$${(d.netProfit / 1000000).toFixed(2)}M` : '—'}
           trendData={d?.profitTrend ?? []}
           delta={computeDelta(d?.profitTrend ?? [])}
           previousValue={prevValue(d?.profitTrend ?? [], (v) => `$${(v / 1000000).toFixed(2)}M`)}
         />
         <KPITrendCard
-          label="Active Projects"
+          label={t('rep.exec.activeProjects')}
           value={d ? String(d.activeProjects) : '—'}
           trendData={[]}
         />
         <KPITrendCard
-          label="Total Headcount"
+          label={t('rep.exec.totalHeadcount')}
           value={d ? String(d.totalHeadcount) : '—'}
           trendData={[]}
           sparkline={false}
         />
         <KPITrendCard
-          label="Open POs Value"
+          label={t('rep.exec.openPosValue')}
           value={d ? `$${(d.openPOsValue / 1000000).toFixed(2)}M` : '—'}
           trendData={[]}
           sparkline={false}
@@ -258,7 +254,7 @@ export default function ExecutiveDashboard() {
                       letterSpacing: '0.04em',
                     }}
                   >
-                    Revenue
+                    {t('rep.exec.revenue')}
                   </p>
                   <AmountDisplay amount={entity.revenueThisMonth} currency="USD" size="sm" />
                 </div>
@@ -272,7 +268,7 @@ export default function ExecutiveDashboard() {
                       letterSpacing: '0.04em',
                     }}
                   >
-                    Costs
+                    {t('rep.exec.costs')}
                   </p>
                   <AmountDisplay amount={entity.costThisMonth} currency="USD" size="sm" />
                 </div>
@@ -286,7 +282,7 @@ export default function ExecutiveDashboard() {
                       letterSpacing: '0.04em',
                     }}
                   >
-                    Staff
+                    {t('rep.exec.staff')}
                   </p>
                   <span style={{ fontSize: '14px', fontWeight: 600, color: theme.textSecondary }}>
                     {entity.headcount}
@@ -297,7 +293,7 @@ export default function ExecutiveDashboard() {
           ))
         ) : (
           <div style={{ gridColumn: '1 / -1' }}>
-            <EmptyState message="No entity data" />
+            <EmptyState message={t('rep.exec.noEntityData')} />
           </div>
         )}
       </Grid>
@@ -314,7 +310,7 @@ export default function ExecutiveDashboard() {
               marginBottom: '16px',
             }}
           >
-            Revenue by Entity (Monthly)
+            {t('rep.exec.revenueByEntityMonthly')}
           </h3>
           {loading ? (
             <div className="skeleton" style={{ height: '200px', borderRadius: '8px' }} />
@@ -344,7 +340,7 @@ export default function ExecutiveDashboard() {
               </ResponsiveContainer>
             </div>
           ) : (
-            <EmptyState message="No chart data" />
+            <EmptyState message={t('rep.exec.noChartData')} />
           )}
         </Card>
 
@@ -358,7 +354,7 @@ export default function ExecutiveDashboard() {
               marginBottom: '16px',
             }}
           >
-            Profit Trend
+            {t('rep.exec.profitTrend')}
           </h3>
           {loading ? (
             <div className="skeleton" style={{ height: '200px', borderRadius: '8px' }} />
@@ -383,13 +379,13 @@ export default function ExecutiveDashboard() {
                     stroke={theme.accent}
                     strokeWidth={2}
                     dot={false}
-                    name="Profit"
+                    name={t('rep.exec.profit')}
                   />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <EmptyState message="No trend data" />
+            <EmptyState message={t('rep.exec.noTrendData')} />
           )}
         </Card>
       </Grid>
@@ -404,7 +400,7 @@ export default function ExecutiveDashboard() {
             marginBottom: '16px',
           }}
         >
-          Project Profitability
+          {t('rep.exec.projectProfitability')}
         </h3>
         {loading ? (
           <div className="skeleton" style={{ height: '280px', borderRadius: '8px' }} />
@@ -416,10 +412,10 @@ export default function ExecutiveDashboard() {
                 <XAxis
                   type="number"
                   dataKey="x"
-                  name="Budget ($K)"
+                  name={t('rep.exec.budgetK')}
                   tick={{ fontSize: 11, fill: theme.textMuted }}
                   label={{
-                    value: 'Budget ($K)',
+                    value: t('rep.exec.budgetK'),
                     position: 'insideBottom',
                     offset: -15,
                     fontSize: 11,
@@ -429,10 +425,10 @@ export default function ExecutiveDashboard() {
                 <YAxis
                   type="number"
                   dataKey="y"
-                  name="Margin %"
+                  name={t('rep.exec.marginPct')}
                   tick={{ fontSize: 11, fill: theme.textMuted }}
                   label={{
-                    value: 'Margin %',
+                    value: t('rep.exec.marginPct'),
                     angle: -90,
                     position: 'insideLeft',
                     offset: 10,
@@ -458,7 +454,7 @@ export default function ExecutiveDashboard() {
             </ResponsiveContainer>
           </div>
         ) : (
-          <EmptyState message="No project data" />
+          <EmptyState message={t('rep.exec.noProjectData')} />
         )}
 
         {/* Legend */}
@@ -476,7 +472,7 @@ export default function ExecutiveDashboard() {
                   }}
                 />
                 <span style={{ fontSize: 11, color: theme.textMuted, textTransform: 'capitalize' }}>
-                  {status.replace('_', ' ')}
+                  {enumLabel(status).replace('_', ' ')}
                 </span>
               </div>
             ))}

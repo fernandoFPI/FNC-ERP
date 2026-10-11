@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -60,6 +62,7 @@ function marginColor(
 }
 
 export default function ProjectProfitabilityReport() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date().toISOString().slice(0, 10)
   const firstOfYear = `${new Date().getFullYear()}-01-01`
@@ -87,7 +90,7 @@ export default function ProjectProfitabilityReport() {
   const columns: Column<ProjectRow>[] = [
     {
       key: 'name',
-      header: 'Project',
+      header: t('rep.projProfit.project'),
       mobilePrimary: true,
       render: (row) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{row.name}</span>
@@ -95,53 +98,53 @@ export default function ProjectProfitabilityReport() {
     },
     {
       key: 'code',
-      header: 'Code',
+      header: t('rep.projProfit.code'),
       mobileSecondary: true,
       render: (row) => <span style={{ color: theme.textMuted, fontSize: '12px' }}>{row.code}</span>,
     },
     {
       key: 'companyName',
-      header: 'Company',
+      header: t('rep.projProfit.company'),
       mobilePriority: 8,
       render: (row) => <span style={{ color: theme.textSecondary }}>{row.companyName}</span>,
     },
     {
       key: 'projectType',
-      header: 'Type',
+      header: t('rep.projProfit.type'),
       mobilePriority: 7,
       render: (row) => (
         <Badge variant="neutral" size="sm">
-          {row.projectType}
+          {enumLabel(row.projectType)}
         </Badge>
       ),
     },
     {
       key: 'budget',
-      header: 'Budget',
+      header: t('rep.projProfit.budget'),
       mobilePriority: 5,
       render: (row) => <AmountDisplay amount={row.budget} currency="USD" size="sm" />,
     },
     {
       key: 'actualCost',
-      header: 'Actual Cost',
+      header: t('rep.projProfit.actualCost'),
       mobilePriority: 6,
       render: (row) => <AmountDisplay amount={row.actualCost} currency="USD" size="sm" />,
     },
     {
       key: 'revenue',
-      header: 'Revenue',
+      header: t('rep.projProfit.revenue'),
       mobilePriority: 4,
       render: (row) => <AmountDisplay amount={row.revenue} currency="USD" size="sm" />,
     },
     {
       key: 'margin',
-      header: 'Margin',
+      header: t('rep.projProfit.margin'),
       mobilePriority: 3,
       render: (row) => <AmountDisplay amount={row.margin} currency="USD" size="sm" colored />,
     },
     {
       key: 'marginPct',
-      header: 'Margin %',
+      header: t('rep.projProfit.margin2'),
       mobilePriority: 2,
       render: (row) => (
         <span
@@ -157,11 +160,11 @@ export default function ProjectProfitabilityReport() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('rep.projProfit.status'),
       mobilePriority: 1,
       render: (row) => (
         <Badge variant={statusVariant(row.status)} size="sm">
-          {row.status}
+          {enumLabel(row.status)}
         </Badge>
       ),
     },
@@ -184,7 +187,7 @@ export default function ProjectProfitabilityReport() {
             setExpandedId(expandedId === row.id ? null : row.id)
           }}
         >
-          {expandedId === row.id ? 'Hide' : 'Costs'}
+          {expandedId === row.id ? t('rep.projProfit.hide') : t('rep.projProfit.costs')}
         </button>
       ),
     },
@@ -193,8 +196,8 @@ export default function ProjectProfitabilityReport() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Project Profitability"
-        subtitle="Margin analysis across all projects"
+        title={t('rep.projProfit.projectProfitability')}
+        subtitle={t('rep.projProfit.marginAnalysisAcrossAllProjects')}
         actions={
           <Button
             variant="ghost"
@@ -203,25 +206,25 @@ export default function ProjectProfitabilityReport() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.projProfit.refresh')}
           </Button>
         }
       />
 
       <Card padding="sm" style={{ marginBottom: '16px' }}>
         <FilterBar
-          search={{ value: search, onChange: setSearch, placeholder: 'Search projects…' }}
+          search={{ value: search, onChange: setSearch, placeholder: t('rep.projProfit.searchProjects') }}
           filters={[
             {
               key: 'status',
-              label: 'Status',
+              label: t('rep.projProfit.status'),
               value: statusFilter,
               onChange: setStatusFilter,
               options: [
-                { value: 'active', label: 'Active' },
-                { value: 'completed', label: 'Completed' },
-                { value: 'on_hold', label: 'On Hold' },
-                { value: 'cancelled', label: 'Cancelled' },
+                { value: 'active', label: t('rep.projProfit.active') },
+                { value: 'completed', label: t('rep.projProfit.completed') },
+                { value: 'on_hold', label: t('rep.projProfit.onHold') },
+                { value: 'cancelled', label: t('rep.projProfit.cancelled') },
               ],
             },
           ]}
@@ -263,7 +266,7 @@ export default function ProjectProfitabilityReport() {
                       letterSpacing: '0.05em',
                     }}
                   >
-                    Cost Breakdown
+                    {t('rep.projProfit.costBreakdown')}
                   </p>
                   <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
                     {row.costBreakdown.map((cb) => (
@@ -282,8 +285,8 @@ export default function ProjectProfitabilityReport() {
           />
         ) : (
           <EmptyState
-            title="No projects found"
-            message="Adjust filters to load project profitability data."
+            title={t('rep.projProfit.noProjectsFound')}
+            message={t('rep.projProfit.adjustFiltersToLoadProjectProfitability')}
           />
         )}
       </Card>

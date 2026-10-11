@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -37,6 +38,7 @@ function attendanceColor(pct: number, theme: { success: string; warning: string;
 }
 
 export default function AttendanceSummaryReport() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`
@@ -61,7 +63,7 @@ export default function AttendanceSummaryReport() {
   const columns: Column<AttendanceRow>[] = [
     {
       key: 'employeeNumber',
-      header: 'Employee #',
+      header: t('rep.attSummary.employee'),
       mobilePriority: 4,
       render: (row) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{row.employeeNumber}</span>
@@ -69,7 +71,7 @@ export default function AttendanceSummaryReport() {
     },
     {
       key: 'employeeName',
-      header: 'Name',
+      header: t('rep.attSummary.name'),
       mobilePrimary: true,
       render: (row) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{row.employeeName}</span>
@@ -77,19 +79,19 @@ export default function AttendanceSummaryReport() {
     },
     {
       key: 'department',
-      header: 'Department',
+      header: t('rep.attSummary.department'),
       mobileSecondary: true,
       render: (row) => row.department,
     },
     {
       key: 'totalPresent',
-      header: 'Present',
+      header: t('rep.attSummary.present'),
       mobilePriority: 3,
       render: (row) => <span style={{ color: theme.success }}>{row.totalPresent}</span>,
     },
     {
       key: 'totalAbsent',
-      header: 'Absent',
+      header: t('rep.attSummary.absent'),
       mobilePriority: 2,
       render: (row) => (
         <span style={{ color: row.totalAbsent > 0 ? theme.danger : theme.textMuted }}>
@@ -99,20 +101,20 @@ export default function AttendanceSummaryReport() {
     },
     {
       key: 'totalLeave',
-      header: 'Leave',
+      header: t('rep.attSummary.leave'),
       mobilePriority: 5,
       render: (row) => <span style={{ color: theme.info }}>{row.totalLeave}</span>,
     },
     {
       key: 'totalOvertime',
-      header: 'Overtime',
+      header: t('rep.attSummary.overtime'),
       mobilePriority: 6,
       render: (row) => <span style={{ color: theme.warning }}>{row.totalOvertime}</span>,
     },
     {
       key: 'attendancePct',
-      header: 'Attendance %',
-      mobileLabel: 'Attendance',
+      header: t('rep.attSummary.attendance'),
+      mobileLabel: t('rep.attSummary.attendance2'),
       mobilePriority: 1,
       render: (row) => (
         <span
@@ -131,8 +133,8 @@ export default function AttendanceSummaryReport() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Attendance Summary"
-        subtitle="Employee attendance statistics by period"
+        title={t('rep.attSummary.attendanceSummary')}
+        subtitle={t('rep.attSummary.employeeAttendanceStatisticsByPeriod')}
         actions={
           <Button
             variant="ghost"
@@ -141,7 +143,7 @@ export default function AttendanceSummaryReport() {
               void refetch()
             }}
           >
-            Refresh
+            {t('rep.attSummary.refresh')}
           </Button>
         }
       />
@@ -151,7 +153,7 @@ export default function AttendanceSummaryReport() {
           search={{
             value: search,
             onChange: setSearch,
-            placeholder: 'Search employee or department…',
+            placeholder: t('rep.attSummary.searchEmployeeOrDepartment'),
           }}
           fromDate={fromDate}
           toDate={toDate}
@@ -167,7 +169,7 @@ export default function AttendanceSummaryReport() {
         <Grid cols={2} tabletCols={2} phoneCols={2} gap={12} style={{ marginBottom: '20px' }}>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Employees
+              {t('rep.attSummary.totalEmployees')}
             </p>
             <p style={{ fontSize: '22px', fontWeight: 500, color: theme.textPrimary }}>
               {d.totalEmployees}
@@ -175,7 +177,7 @@ export default function AttendanceSummaryReport() {
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Avg Attendance
+              {t('rep.attSummary.avgAttendance')}
             </p>
             <p
               style={{
@@ -205,8 +207,8 @@ export default function AttendanceSummaryReport() {
           <Table columns={columns} data={rows} rowKey="employeeNumber" />
         ) : (
           <EmptyState
-            title="No attendance data"
-            message="Adjust the date range to load attendance records."
+            title={t('rep.attSummary.noAttendanceData')}
+            message={t('rep.attSummary.adjustTheDateRangeToLoad')}
           />
         )}
       </Card>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -41,6 +42,7 @@ function Section({
   section: CashFlowSection
   theme: ReturnType<typeof useTheme>['theme']
 }) {
+  const { t } = useTranslation()
   return (
     <div style={{ marginBottom: '24px' }}>
       <div
@@ -102,9 +104,7 @@ function Section({
           background: theme.bgSurface,
         }}
       >
-        <span style={{ color: theme.textPrimary }}>
-          Net {section.label.replace('Cash Flows from ', '')}
-        </span>
+        <span style={{ color: theme.textPrimary }}>{t('rep.cashFlow.net', { label: section.label.replace('Cash Flows from ', '') })}</span>
         <span
           style={{
             color: section.total < 0 ? '#ef4444' : '#22c55e',
@@ -121,6 +121,7 @@ function Section({
 }
 
 export default function CashFlowStatement() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date()
   const firstOfYear = `${today.getFullYear()}-01-01`
@@ -142,7 +143,7 @@ export default function CashFlowStatement() {
       })
       setData(r.data)
     } catch {
-      setError('Failed to load cash flow statement')
+      setError(t('rep.cashFlow.failedToLoadCashFlowStatement'))
     } finally {
       setLoading(false)
     }
@@ -168,11 +169,11 @@ export default function CashFlowStatement() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Cash Flow Statement"
-        subtitle="Indirect method — operating, investing & financing activities"
+        title={t('rep.cashFlow.cashFlowStatement')}
+        subtitle={t('rep.cashFlow.indirectMethodOperatingInvestingFinancingAct')}
         actions={
           <Button variant="ghost" size="sm" onClick={() => void load(applied.from, applied.to)}>
-            Refresh
+            {t('rep.cashFlow.refresh')}
           </Button>
         }
       />
@@ -180,7 +181,7 @@ export default function CashFlowStatement() {
       {/* Filter Panel */}
       <Card padding="sm" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>From</span>
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('rep.cashFlow.from')}</span>
           <input
             type="date"
             value={fromDate}
@@ -189,7 +190,7 @@ export default function CashFlowStatement() {
             }}
             style={inputStyle}
           />
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>To</span>
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('rep.cashFlow.to')}</span>
           <input
             type="date"
             value={toDate}
@@ -199,16 +200,16 @@ export default function CashFlowStatement() {
             style={inputStyle}
           />
           <Button variant="primary" size="sm" onClick={handleApply}>
-            Apply
+            {t('rep.cashFlow.apply')}
           </Button>
           {s && (
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: '16px', alignItems: 'center' }}>
+            <div style={{ marginInlineStart: 'auto', display: 'flex', gap: '16px', alignItems: 'center' }}>
               {!s.validated && (
-                <Badge variant="warning">Balance mismatch — check unposted entries</Badge>
+                <Badge variant="warning">{t('rep.cashFlow.balanceMismatchCheckUnpostedEntries')}</Badge>
               )}
-              <div style={{ textAlign: 'right' }}>
+              <div style={{ textAlign: 'end' }}>
                 <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>
-                  Net Change in Cash
+                  {t('rep.cashFlow.netChangeInCash')}
                 </p>
                 <Badge variant={s.net_change_in_cash >= 0 ? 'success' : 'danger'}>
                   <AmountDisplay amount={s.net_change_in_cash} currency="IQD" size="sm" />
@@ -237,25 +238,25 @@ export default function CashFlowStatement() {
         >
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Opening Cash
+              {t('rep.cashFlow.openingCash')}
             </p>
             <AmountDisplay amount={s.opening_cash_balance} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Closing Cash
+              {t('rep.cashFlow.closingCash')}
             </p>
             <AmountDisplay amount={s.closing_cash_balance} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              From Operations
+              {t('rep.cashFlow.fromOperations')}
             </p>
             <AmountDisplay amount={data.operating.total} currency="IQD" size="md" colored />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              From Financing
+              {t('rep.cashFlow.fromFinancing')}
             </p>
             <AmountDisplay amount={data.financing.total} currency="IQD" size="md" colored />
           </Card>
@@ -266,7 +267,7 @@ export default function CashFlowStatement() {
       {loading && (
         <Card padding="md">
           <p style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'center' }}>
-            Loading...
+            {t('rep.cashFlow.loading')}
           </p>
         </Card>
       )}
@@ -287,7 +288,7 @@ export default function CashFlowStatement() {
                 marginBottom: '6px',
               }}
             >
-              <span style={{ color: theme.textSecondary }}>Opening Cash Balance</span>
+              <span style={{ color: theme.textSecondary }}>{t('rep.cashFlow.openingCashBalance')}</span>
               <span style={{ color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
                 {data.summary.opening_cash_balance.toLocaleString()}
               </span>
@@ -300,7 +301,7 @@ export default function CashFlowStatement() {
                 marginBottom: '6px',
               }}
             >
-              <span style={{ color: theme.textSecondary }}>Net Change in Cash</span>
+              <span style={{ color: theme.textSecondary }}>{t('rep.cashFlow.netChangeInCash')}</span>
               <span
                 style={{
                   color: data.summary.net_change_in_cash < 0 ? '#ef4444' : '#22c55e',
@@ -322,7 +323,7 @@ export default function CashFlowStatement() {
                 borderTop: `1px solid ${theme.border}`,
               }}
             >
-              <span style={{ color: theme.textPrimary }}>Closing Cash Balance</span>
+              <span style={{ color: theme.textPrimary }}>{t('rep.cashFlow.closingCashBalance')}</span>
               <span style={{ color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
                 {data.summary.closing_cash_balance.toLocaleString()}
               </span>
@@ -334,7 +335,7 @@ export default function CashFlowStatement() {
       {!loading && !data && !error && (
         <Card padding="md">
           <p style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'center' }}>
-            Select a date range and click Apply to generate the cash flow statement.
+            {t('rep.cashFlow.selectADateRangeAndClick')}
           </p>
         </Card>
       )}
