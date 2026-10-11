@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
@@ -47,11 +48,12 @@ export function LineItemEditor<T extends object>({
   onRemoveRow,
   removeDisabled,
   onAddRow,
-  addLabel = '+ Add Line',
-  emptyMessage = 'No lines yet',
+  addLabel,
+  emptyMessage,
   footerRow,
   addButtonDataTour,
 }: LineItemEditorProps<T>) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
 
@@ -70,7 +72,7 @@ export function LineItemEditor<T extends object>({
               fontSize: '13px',
             }}
           >
-            {emptyMessage}
+            {emptyMessage ?? t('ui.lineEditor.noLines')}
           </div>
         ) : (
           rows.map((row, idx) => (
@@ -116,7 +118,7 @@ export function LineItemEditor<T extends object>({
                     WebkitTapHighlightColor: 'transparent',
                   }}
                 >
-                  Remove line
+                  {t('ui.lineEditor.removeLine')}
                 </button>
               )}
             </div>
@@ -178,7 +180,7 @@ export function LineItemEditor<T extends object>({
               WebkitTapHighlightColor: 'transparent',
             }}
           >
-            {addLabel}
+            {addLabel ?? t('ui.lineEditor.addLine')}
           </button>
         )}
       </div>
@@ -205,7 +207,7 @@ export function LineItemEditor<T extends object>({
                   style={{
                     width: f.width,
                     padding: '7px 8px',
-                    textAlign: 'left',
+                    textAlign: 'start',
                     fontSize: '11px',
                     color: theme.textMuted,
                     fontWeight: 500,
@@ -230,7 +232,7 @@ export function LineItemEditor<T extends object>({
                     fontSize: '13px',
                   }}
                 >
-                  {emptyMessage}
+                  {emptyMessage ?? t('ui.lineEditor.noLines')}
                 </td>
               </tr>
             ) : (
@@ -303,7 +305,7 @@ export function LineItemEditor<T extends object>({
             cursor: 'pointer',
           }}
         >
-          {addLabel}
+          {addLabel ?? t('ui.lineEditor.addLine')}
         </button>
       )}
     </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React from 'react'
 import { Modal } from './Modal'
 import { Button } from './Button'
@@ -22,11 +23,12 @@ export function ConfirmDialog({
   onConfirm,
   title,
   message,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   confirmVariant,
   variant,
   loading = false,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation()
   const handleClose = onClose ?? onCancel ?? (() => undefined)
   const resolvedVariant = confirmVariant ?? (variant === 'danger' ? 'danger' : 'primary')
 
@@ -39,10 +41,10 @@ export function ConfirmDialog({
       footer={
         <>
           <Button variant="secondary" size="md" onClick={handleClose} disabled={loading}>
-            Cancel
+            {t('ui.confirm.cancel')}
           </Button>
           <Button variant={resolvedVariant} size="md" onClick={onConfirm} loading={loading}>
-            {confirmLabel}
+            {confirmLabel ?? t('ui.generic.confirm')}
           </Button>
         </>
       }

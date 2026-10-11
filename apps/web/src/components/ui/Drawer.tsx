@@ -1,3 +1,4 @@
+import { useIsRtl } from '../../i18n'
 import React, { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Card } from './Card'
@@ -23,6 +24,7 @@ export function Drawer({
   noPadding = false,
 }: DrawerProps) {
   const { theme } = useTheme()
+  const rtl = useIsRtl()
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -58,8 +60,8 @@ export function Drawer({
           animation: 'slideInRight 0.2s ease',
         }}
       >
-        <style>{`@keyframes slideInRight { from { transform:translateX(100%) } to { transform:translateX(0) } }`}</style>
-        <Card padding="none" style={{ height: '100%', borderRadius: '0', borderRight: 'none' }}>
+        <style>{`@keyframes slideInRight { from { transform:translateX(${rtl ? '-100%' : '100%'}) } to { transform:translateX(0) } }`}</style>
+        <Card padding="none" style={{ height: '100%', borderRadius: '0', borderInlineEnd: 'none' }}>
           <div
             style={{
               padding: '18px 20px',

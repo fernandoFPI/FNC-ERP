@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { Button } from './Button'
@@ -15,15 +16,16 @@ interface JsonNodeProps {
 }
 
 function JsonNode({ value, depth, defaultCollapsed }: JsonNodeProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [open, setOpen] = useState(!defaultCollapsed)
   const indent = depth * 16
 
   if (value === null) {
-    return <span style={{ color: theme.textMuted }}>null</span>
+    return <span style={{ color: theme.textMuted }}>{t('ui.json.null')}</span>
   }
   if (value === undefined) {
-    return <span style={{ color: theme.textMuted }}>undefined</span>
+    return <span style={{ color: theme.textMuted }}>{t('ui.json.undefined')}</span>
   }
   if (typeof value === 'boolean') {
     return <span style={{ color: theme.warning }}>{String(value)}</span>
@@ -115,6 +117,7 @@ function JsonNode({ value, depth, defaultCollapsed }: JsonNodeProps) {
 }
 
 export function JsonViewer({ data, collapsed = false, title }: JsonViewerProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [copied, setCopied] = useState(false)
 
@@ -150,7 +153,7 @@ export function JsonViewer({ data, collapsed = false, title }: JsonViewerProps) 
           {title ?? 'JSON'}
         </span>
         <Button onClick={handleCopy} size="sm">
-          {copied ? 'Copied!' : 'Copy'}
+          {copied ? t('ui.json.copied') : t('ui.json.copy')}
         </Button>
       </div>
       <div

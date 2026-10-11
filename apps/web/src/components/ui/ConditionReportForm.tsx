@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { tl } from '../../i18n'
 import { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { Modal } from './Modal'
@@ -37,6 +39,7 @@ interface Props {
 }
 
 export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClose }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [rating, setRating] = useState<ConditionRating>(3)
   const [checklist, setChecklist] = useState<Record<string, boolean>>(
@@ -55,11 +58,11 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
     5: theme.success,
   }
   const RATING_LABELS: Record<number, string> = {
-    1: 'Poor',
-    2: 'Fair',
-    3: 'Average',
-    4: 'Good',
-    5: 'Excellent',
+    1: t('ui.condReport.poor'),
+    2: t('ui.condReport.fair'),
+    3: t('ui.condReport.average'),
+    4: t('ui.condReport.good'),
+    5: t('ui.condReport.excellent'),
   }
 
   function captureGPS() {
@@ -95,7 +98,7 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={`Condition Report — ${assetName}`}>
+    <Modal open={open} onClose={onClose} title={t('ui.condReport.conditionReport', { assetName })}>
       <form
         onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
         style={{
@@ -117,7 +120,7 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
               fontWeight: 500,
             }}
           >
-            Overall Condition
+            {t('ui.condReport.overallCondition')}
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             {([1, 2, 3, 4, 5] as ConditionRating[]).map((r) => (
@@ -159,7 +162,7 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
               fontWeight: 500,
             }}
           >
-            Inspection Checklist
+            {t('ui.condReport.inspectionChecklist')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {DEFAULT_CHECKLIST.map((item) => (
@@ -182,7 +185,7 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
                   }}
                   style={{ accentColor: theme.accent }}
                 />
-                {item}
+                {tl('ui.condReport.checkOpts', item, item)}
               </label>
             ))}
           </div>
@@ -191,7 +194,7 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
         {/* GPS */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Button variant="ghost" size="sm" type="button" onClick={captureGPS} loading={gpsLoading}>
-            Capture GPS
+            {t('ui.condReport.captureGps')}
           </Button>
           {gps && (
             <span style={{ fontSize: '12px', color: theme.success, fontFamily: 'monospace' }}>
@@ -201,7 +204,7 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
         </div>
 
         <Input
-          label="Notes"
+          label={t('ui.condReport.notes')}
           value={notes}
           onChange={(e) => {
             setNotes(e.target.value)
@@ -210,10 +213,10 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <Button variant="ghost" type="button" onClick={onClose}>
-            Cancel
+            {t('ui.condReport.cancel')}
           </Button>
           <Button variant="primary" type="submit" loading={loading}>
-            Submit Report
+            {t('ui.condReport.submitReport')}
           </Button>
         </div>
       </form>

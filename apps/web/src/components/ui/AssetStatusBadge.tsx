@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { enumLabel } from '../../i18n'
 import { useTheme } from '../../theme/ThemeContext'
 import { Badge } from './Badge'
 
@@ -49,7 +50,7 @@ export function AssetStatusBadge({ status, maintenanceStatus }: Props) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-      <Badge variant={STATUS_VARIANT[status]}>{status.replace('_', ' ')}</Badge>
+      <Badge variant={STATUS_VARIANT[status]}>{enumLabel(status).replace('_', ' ')}</Badge>
       {maintenanceStatus &&
         maintenanceStatus !== 'ok' &&
         (maintenanceStatus === 'overdue' ? (

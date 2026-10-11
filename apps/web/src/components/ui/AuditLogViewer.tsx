@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../theme/ThemeContext'
@@ -79,45 +80,46 @@ function parseJson(raw: unknown): Record<string, unknown> | null {
 }
 
 function DiffPanel({ old: oldRaw, next: nextRaw }: { old: unknown; next: unknown }) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const oldObj = parseJson(oldRaw)
   const nextObj = parseJson(nextRaw)
   const allKeys = Array.from(new Set([...Object.keys(oldObj ?? {}), ...Object.keys(nextObj ?? {})]))
   if (allKeys.length === 0)
-    return <span style={{ color: theme.textMuted, fontSize: 12 }}>No diff data</span>
+    return <span style={{ color: theme.textMuted, fontSize: 12 }}>{t('ui.audit.noDiffData')}</span>
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
       <thead>
         <tr>
           <th
             style={{
-              textAlign: 'left' as const,
+              textAlign: 'start' as const,
               color: theme.textMuted,
               padding: '2px 8px',
               fontWeight: 500,
             }}
           >
-            Field
+            {t('ui.audit.field')}
           </th>
           <th
             style={{
-              textAlign: 'left' as const,
+              textAlign: 'start' as const,
               color: theme.danger,
               padding: '2px 8px',
               fontWeight: 500,
             }}
           >
-            Old
+            {t('ui.audit.old')}
           </th>
           <th
             style={{
-              textAlign: 'left' as const,
+              textAlign: 'start' as const,
               color: theme.success,
               padding: '2px 8px',
               fontWeight: 500,
             }}
           >
-            New
+            {t('ui.audit.new')}
           </th>
         </tr>
       </thead>
@@ -153,6 +155,7 @@ export function AuditLogViewer({
   filters: externalFilters,
   embedded = false,
 }: AuditLogViewerProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [page, setPage] = useState(1)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -182,7 +185,7 @@ export function AuditLogViewer({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const thStyle: React.CSSProperties = {
-    textAlign: 'left',
+    textAlign: 'start',
     padding: '8px 12px',
     color: theme.textMuted,
     fontSize: 12,
@@ -204,37 +207,37 @@ export function AuditLogViewer({
           }}
         >
           <Input
-            label="User ID"
+            label={t('ui.audit.userId')}
             value={localUserId}
             onChange={(e) => {
               setLocalUserId(e.target.value)
               setPage(1)
             }}
-            placeholder="Filter by user…"
+            placeholder={t('ui.audit.filterByUser')}
             style={{ width: 160 }}
           />
           <Input
-            label="Table"
+            label={t('ui.audit.table')}
             value={localTable}
             onChange={(e) => {
               setLocalTable(e.target.value)
               setPage(1)
             }}
-            placeholder="Table name…"
+            placeholder={t('ui.audit.tableName')}
             style={{ width: 140 }}
           />
           <Select
-            label="Action"
+            label={t('ui.audit.action')}
             value={localAction}
             onChange={(e) => {
               setLocalAction(e.target.value)
               setPage(1)
             }}
-            options={ACTION_OPTIONS}
+            options={ACTION_OPTIONS.map((o) => (o.value === '' ? { ...o, label: t('ui.audit.allActions') } : o))}
             style={{ width: 140 }}
           />
           <Input
-            label="From"
+            label={t('ui.audit.from')}
             type="date"
             value={localFrom}
             onChange={(e) => {
@@ -263,14 +266,14 @@ export function AuditLogViewer({
               setPage(1)
             }}
           >
-            Clear
+            {t('ui.audit.clear')}
           </Button>
         </div>
       )}
 
       {error && (
         <div style={{ color: theme.danger, fontSize: 13 }}>
-          Failed to load audit log: {error.message}
+          {t('ui.audit.failedToLoad', { message: error.message })}
         </div>
       )}
 
@@ -278,12 +281,12 @@ export function AuditLogViewer({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr style={{ background: theme.bgSurfaceHover }}>
-              <th style={thStyle}>Time</th>
-              <th style={thStyle}>User</th>
-              <th style={thStyle}>Action</th>
-              <th style={thStyle}>Table</th>
-              <th style={thStyle}>Record</th>
-              <th style={thStyle}>Company</th>
+              <th style={thStyle}>{t('ui.audit.time')}</th>
+              <th style={thStyle}>{t('ui.audit.user')}</th>
+              <th style={thStyle}>{t('ui.audit.action')}</th>
+              <th style={thStyle}>{t('ui.audit.table')}</th>
+              <th style={thStyle}>{t('ui.audit.record')}</th>
+              <th style={thStyle}>{t('ui.audit.company')}</th>
               <th style={thStyle}></th>
             </tr>
           </thead>
@@ -294,7 +297,7 @@ export function AuditLogViewer({
                   colSpan={7}
                   style={{ padding: 24, textAlign: 'center', color: theme.textMuted }}
                 >
-                  Loading…
+                  {t('ui.audit.loading')}
                 </td>
               </tr>
             )}
@@ -304,7 +307,7 @@ export function AuditLogViewer({
                   colSpan={7}
                   style={{ padding: 24, textAlign: 'center', color: theme.textMuted }}
                 >
-                  No audit entries found.
+                  {t('ui.audit.noAuditEntriesFound')}
                 </td>
               </tr>
             )}
@@ -391,7 +394,7 @@ export function AuditLogViewer({
         }}
       >
         <span style={{ color: theme.textMuted, fontSize: 13 }}>
-          {total} record{total !== 1 ? 's' : ''}
+          {t('ui.audit.recordCount', { count: total })}
         </span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Button
@@ -401,10 +404,10 @@ export function AuditLogViewer({
             disabled={page <= 1}
             size="sm"
           >
-            Prev
+            {t('ui.audit.prev')}
           </Button>
           <span style={{ color: theme.textSecondary, fontSize: 13 }}>
-            Page {page} / {totalPages}
+            {t('ui.audit.pageOf', { page, total: totalPages })}
           </span>
           <Button
             onClick={() => {
@@ -413,7 +416,7 @@ export function AuditLogViewer({
             disabled={page >= totalPages}
             size="sm"
           >
-            Next
+            {t('ui.audit.next')}
           </Button>
         </div>
       </div>

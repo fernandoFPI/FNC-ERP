@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../i18n'
 import { useTheme } from '../../theme/ThemeContext'
 import { Badge } from './Badge'
 import { Button } from './Button'
@@ -37,6 +39,7 @@ function statusVariant(s: string): BadgeVariant {
 }
 
 export function OutboxEventRow({ event, onRetry, onViewPayload }: OutboxEventRowProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
 
   return (
@@ -58,7 +61,7 @@ export function OutboxEventRow({ event, onRetry, onViewPayload }: OutboxEventRow
         {event.eventType}
       </td>
       <td style={{ padding: '10px 12px' }}>
-        <Badge variant={statusVariant(event.status)}>{event.status}</Badge>
+        <Badge variant={statusVariant(event.status)}>{enumLabel(event.status)}</Badge>
       </td>
       <td
         style={{
@@ -97,12 +100,12 @@ export function OutboxEventRow({ event, onRetry, onViewPayload }: OutboxEventRow
         <div style={{ display: 'flex', gap: 6 }}>
           {event.status === 'failed' && onRetry && (
             <Button size="sm" onClick={onRetry}>
-              Retry
+              {t('ui.outbox.retry')}
             </Button>
           )}
           {onViewPayload && (
             <Button size="sm" onClick={onViewPayload}>
-              Payload
+              {t('ui.outbox.payload')}
             </Button>
           )}
         </div>

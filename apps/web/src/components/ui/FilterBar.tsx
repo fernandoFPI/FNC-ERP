@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React, { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
@@ -49,6 +50,7 @@ export function FilterBar({
   resultCount,
   children,
 }: FilterBarProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
   const [filtersExpanded, setFiltersExpanded] = useState(false)
@@ -58,8 +60,8 @@ export function FilterBar({
   const searchOnChange = typeof search === 'object' ? search.onChange : onSearchChange
   const searchPlaceholderResolved =
     typeof search === 'object'
-      ? (search.placeholder ?? 'Search…')
-      : (searchPlaceholder ?? 'Search…')
+      ? (search.placeholder ?? t('ui.filterBar.search'))
+      : (searchPlaceholder ?? t('ui.filterBar.search'))
 
   const resolvedFrom = dateRange ? dateRange.from : (fromDate ?? '')
   const resolvedTo = dateRange ? dateRange.to : (toDate ?? '')
@@ -116,7 +118,7 @@ export function FilterBar({
                 WebkitTapHighlightColor: 'transparent',
               }}
             >
-              <span>Filters</span>
+              <span>{t('ui.filterBar.filters')}</span>
               <span>{filtersExpanded ? '▲' : '▼'}</span>
             </button>
           )}
@@ -183,7 +185,7 @@ export function FilterBar({
             )}
             {resultCount !== undefined && (
               <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                {resultCount.toLocaleString()} result{resultCount !== 1 ? 's' : ''}
+                {t('ui.filterBar.resultCount', { count: resultCount })}
               </span>
             )}
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -208,7 +210,7 @@ export function FilterBar({
                     </svg>
                   }
                 >
-                  Refresh
+                  {t('ui.filterBar.refresh')}
                 </Button>
               )}
               {onExport && (
@@ -232,7 +234,7 @@ export function FilterBar({
                     </svg>
                   }
                 >
-                  Export
+                  {t('ui.filterBar.export')}
                 </Button>
               )}
             </div>
@@ -275,7 +277,7 @@ export function FilterBar({
       {hasDateRange && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-            From
+            {t('ui.filterBar.from')}
           </span>
           <input
             type="date"
@@ -295,7 +297,7 @@ export function FilterBar({
               cursor: 'pointer',
             }}
           />
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>To</span>
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('ui.filterBar.to')}</span>
           <input
             type="date"
             value={resolvedTo}
@@ -319,7 +321,7 @@ export function FilterBar({
       <div style={{ flex: 1 }} />
       {resultCount !== undefined && (
         <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-          {resultCount.toLocaleString()} result{resultCount !== 1 ? 's' : ''}
+          {t('ui.filterBar.resultCount', { count: resultCount })}
         </span>
       )}
       {onRefresh && (
@@ -363,7 +365,7 @@ export function FilterBar({
             </svg>
           }
         >
-          Export
+          {t('ui.filterBar.export')}
         </Button>
       )}
       {children}

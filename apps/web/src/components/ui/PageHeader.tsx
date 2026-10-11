@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
@@ -24,6 +25,7 @@ export function PageHeader({
   badge,
   className = '',
 }: PageHeaderProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
   const navigate = useNavigate()
@@ -58,6 +60,7 @@ export function PageHeader({
           }}
         >
           <svg
+            className="rtl-flip"
             width="12"
             height="12"
             viewBox="0 0 24 24"
@@ -67,7 +70,7 @@ export function PageHeader({
           >
             <polyline points="15 18 9 12 15 6" />
           </svg>
-          {backLabel ?? 'Back'}
+          {backLabel ?? t('ui.generic.back')}
         </button>
       )}
 

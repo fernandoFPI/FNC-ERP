@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { SearchableSelect } from './SearchableSelect'
 import { LineItemEditor, type LineItemField } from './LineItemEditor'
@@ -33,6 +34,7 @@ export function BOMLinesEditor({
   costPreview,
   currency = 'IQD',
 }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
 
   function addLine() {
@@ -121,7 +123,7 @@ export function BOMLinesEditor({
     },
     {
       key: 'component',
-      label: 'Component',
+      label: t('ui.bomLines.component'),
       render: (line) => (
         <SearchableSelect
           value={line.component_product_id}
@@ -134,13 +136,13 @@ export function BOMLinesEditor({
             sublabel: p.sku,
             keywords: p.name_ar ?? undefined,
           }))}
-          placeholder="Select product…"
+          placeholder={t('ui.bomLines.selectProduct')}
         />
       ),
     },
     {
       key: 'qty',
-      label: 'Qty',
+      label: t('ui.bomLines.qty'),
       width: '80px',
       render: (line) => (
         <input
@@ -157,7 +159,7 @@ export function BOMLinesEditor({
     },
     {
       key: 'uom',
-      label: 'UOM',
+      label: t('ui.bomLines.uom'),
       width: '60px',
       render: (line) => (
         <input
@@ -171,7 +173,7 @@ export function BOMLinesEditor({
     },
     {
       key: 'unit_cost',
-      label: 'Unit Cost',
+      label: t('ui.bomLines.unitCost'),
       width: '100px',
       render: (line) => (
         <input
@@ -188,7 +190,7 @@ export function BOMLinesEditor({
     },
     {
       key: 'line_total',
-      label: 'Line Total',
+      label: t('ui.bomLines.lineTotal'),
       width: '100px',
       render: (line) => (
         <span style={{ fontFamily: 'monospace', fontSize: '13px', color: theme.textPrimary }}>
@@ -198,7 +200,7 @@ export function BOMLinesEditor({
     },
     {
       key: 'order',
-      label: 'Order',
+      label: t('ui.bomLines.order'),
       width: '70px',
       render: (line, idx) => (
         <span style={{ whiteSpace: 'nowrap' }}>
@@ -238,12 +240,10 @@ export function BOMLinesEditor({
         }}
       >
         <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-          BOM Components
+          {t('ui.bomLines.bomComponents')}
         </span>
         {costPreview != null && (
-          <span style={{ fontSize: '13px', color: theme.accent, fontFamily: 'monospace' }}>
-            Planned Cost: {costPreview.toLocaleString()} {currency}
-          </span>
+          <span style={{ fontSize: '13px', color: theme.accent, fontFamily: 'monospace' }}>{t('ui.bomLines.plannedCost', { costPreview: costPreview.toLocaleString(), currency })}</span>
         )}
       </div>
 
@@ -255,12 +255,12 @@ export function BOMLinesEditor({
           removeLine(lines[idx].id)
         }}
         onAddRow={addLine}
-        addLabel="+ Add Component"
-        emptyMessage="No components added yet"
+        addLabel={t('ui.bomLines.addComponent')}
+        emptyMessage={t('ui.bomLines.noComponentsAddedYet')}
         footerRow={{
           component: (
             <span style={{ fontSize: '13px', color: theme.textSecondary, fontWeight: 600 }}>
-              Total Planned Cost
+              {t('ui.bomLines.totalPlannedCost')}
             </span>
           ),
           line_total: (

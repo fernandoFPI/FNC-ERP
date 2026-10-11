@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
 
@@ -13,10 +14,11 @@ interface SearchInputProps {
 export function SearchInput({
   value,
   onChange,
-  placeholder = 'Search...',
+  placeholder,
   className = '',
   style,
 }: SearchInputProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
 
@@ -32,7 +34,7 @@ export function SearchInput({
         fill="none"
         stroke={theme.textMuted}
         strokeWidth="2"
-        style={{ position: 'absolute', left: '10px', pointerEvents: 'none', flexShrink: 0 }}
+        style={{ position: 'absolute', insetInlineStart: '10px', pointerEvents: 'none', flexShrink: 0 }}
       >
         <circle cx="11" cy="11" r="8" />
         <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -42,11 +44,13 @@ export function SearchInput({
         inputMode="search"
         value={value}
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange?.(e.target.value)}
-        placeholder={placeholder}
+        placeholder={placeholder ?? t('ui.searchInput.search')}
         style={{
           minHeight: isPhone ? '44px' : '34px',
           height: isPhone ? 'auto' : '34px',
-          padding: isPhone ? '10px 12px 10px 32px' : '0 12px 0 32px',
+          paddingBlock: isPhone ? '10px' : '0',
+          paddingInlineEnd: '12px',
+          paddingInlineStart: '32px',
           fontSize: isPhone ? '16px' : '13px',
           background: theme.bgSurface,
           border: `1px solid ${theme.borderInput}`,

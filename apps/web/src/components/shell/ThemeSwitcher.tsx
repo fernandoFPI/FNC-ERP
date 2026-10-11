@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useRef, useEffect } from 'react'
 import { Card } from '../ui/Card'
 import { useTheme } from '../../theme/ThemeContext'
@@ -16,6 +17,7 @@ const PREVIEWS: Record<ThemeKey, ThemePreview> = {
 }
 
 export function ThemeSwitcher() {
+  const { t } = useTranslation()
   const { theme, themeKey, setTheme } = useTheme()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -38,7 +40,7 @@ export function ThemeSwitcher() {
         onClick={() => {
           setOpen((v) => !v)
         }}
-        aria-label="Switch theme"
+        aria-label={t('shell.theme.switchTheme')}
         style={{
           width: '34px',
           height: '34px',
@@ -107,7 +109,7 @@ export function ThemeSwitcher() {
                 marginBottom: '8px',
               }}
             >
-              Theme
+              {t('shell.theme.theme')}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {themeKeys.map((key) => {

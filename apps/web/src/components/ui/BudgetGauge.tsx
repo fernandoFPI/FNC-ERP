@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { AmountDisplay } from './AmountDisplay'
 
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function BudgetGauge({ budget, spent, committed = 0, currency = 'IQD' }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const total = budget || 1
   const spentPct = Math.min((spent / total) * 100, 100)
@@ -28,7 +30,7 @@ export function BudgetGauge({ budget, spent, committed = 0, currency = 'IQD' }: 
           fontSize: '12px',
         }}
       >
-        <span style={{ color: theme.textSecondary }}>Budget consumption</span>
+        <span style={{ color: theme.textSecondary }}>{t('ui.budget.budgetConsumption')}</span>
         <span style={{ color: overBudget ? theme.danger : theme.textPrimary, fontWeight: 600 }}>
           {spentPct.toFixed(1)}%
         </span>
@@ -48,7 +50,7 @@ export function BudgetGauge({ budget, spent, committed = 0, currency = 'IQD' }: 
           <div
             style={{
               position: 'absolute',
-              left: 0,
+              insetInlineStart: 0,
               top: 0,
               width: `${committedPct}%`,
               height: '100%',
@@ -61,7 +63,7 @@ export function BudgetGauge({ budget, spent, committed = 0, currency = 'IQD' }: 
         <div
           style={{
             position: 'absolute',
-            left: 0,
+            insetInlineStart: 0,
             top: 0,
             width: `${spentPct}%`,
             height: '100%',
@@ -82,15 +84,15 @@ export function BudgetGauge({ budget, spent, committed = 0, currency = 'IQD' }: 
         }}
       >
         <span>
-          Spent: <AmountDisplay amount={spent} currency={currency} size="sm" />
+          {t('ui.budget.spent')} <AmountDisplay amount={spent} currency={currency} size="sm" />
         </span>
         {committed > 0 && (
           <span style={{ color: committedColor }}>
-            Committed: <AmountDisplay amount={committed} currency={currency} size="sm" />
+            {t('ui.budget.committed')} <AmountDisplay amount={committed} currency={currency} size="sm" />
           </span>
         )}
         <span>
-          Budget: <AmountDisplay amount={budget} currency={currency} size="sm" />
+          {t('ui.budget.budget')} <AmountDisplay amount={budget} currency={currency} size="sm" />
         </span>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { useIsRtl } from '../../i18n'
 import React from 'react'
 import { createPortal } from 'react-dom'
 import { useToastStore } from '../../store/toastStore'
@@ -7,6 +8,7 @@ import { useBreakpoint } from '../../hooks/useBreakpoint'
 export function Toast() {
   const { toasts, removeToast } = useToastStore()
   const { theme } = useTheme()
+  const rtl = useIsRtl()
   const { isPhone } = useBreakpoint()
 
   const variantColors = {
@@ -21,12 +23,12 @@ export function Toast() {
   const positionStyle: React.CSSProperties = isPhone
     ? {
         top: 'calc(52px + env(safe-area-inset-top, 0px) + 8px)',
-        left: '12px',
-        right: '12px',
+        insetInlineStart: '12px',
+        insetInlineEnd: '12px',
       }
     : {
         bottom: '20px',
-        right: '20px',
+        insetInlineEnd: '20px',
       }
 
   return createPortal(
@@ -46,6 +48,10 @@ export function Toast() {
           from { opacity:0; transform:translateX(20px) }
           to { opacity:1; transform:translateX(0) }
         }
+        @keyframes slideInLeft {
+          from { opacity:0; transform:translateX(-20px) }
+          to { opacity:1; transform:translateX(0) }
+        }
       `}</style>
       {toasts.map((toast) => {
         const s = variantColors[toast.variant]
@@ -61,7 +67,7 @@ export function Toast() {
               backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
               WebkitBackdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
               boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-              animation: 'slideInRight 0.2s ease',
+              animation: `${rtl ? 'slideInLeft' : 'slideInRight'} 0.2s ease`,
               pointerEvents: 'auto',
               display: 'flex',
               flexDirection: hasActions ? 'column' : 'row',
@@ -116,7 +122,7 @@ export function Toast() {
                     ×
                   </button>
                 </div>
-                <div style={{ display: 'flex', gap: '6px', paddingLeft: '16px' }}>
+                <div style={{ display: 'flex', gap: '6px', paddingInlineStart: '16px' }}>
                   {toast.actions.map((action, i) => (
                     <button
                       key={i}

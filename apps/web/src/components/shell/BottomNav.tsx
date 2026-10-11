@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
 import { useNotificationStore } from '../../store/notificationStore'
@@ -44,20 +45,22 @@ const ICONS: Record<string, (color: string) => JSX.Element> = {
 
 interface BottomNavItem {
   label: string
+  labelKey: string
   icon: string
   path: string
 }
 
 const NAV_ITEMS: BottomNavItem[] = [
-  { label: 'Home', icon: 'home', path: '/dashboard' },
-  { label: 'Projects', icon: 'briefcase', path: '/projects' },
-  { label: 'PO', icon: 'shopping-cart', path: '/procurement/purchase-orders' },
-  { label: 'Notifs', icon: 'bell', path: '/notifications' },
+  { label: 'Home', labelKey: 'shell.home', icon: 'home', path: '/dashboard' },
+  { label: 'Projects', labelKey: 'nav.Projects', icon: 'briefcase', path: '/projects' },
+  { label: 'PO', labelKey: 'shell.po', icon: 'shopping-cart', path: '/procurement/purchase-orders' },
+  { label: 'Notifs', labelKey: 'shell.notifs', icon: 'bell', path: '/notifications' },
 ]
 
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function BottomNav() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
@@ -148,7 +151,7 @@ export function BottomNav() {
                 letterSpacing: '0.02em',
               }}
             >
-              {item.label}
+              {t(item.labelKey, { defaultValue: item.label })}
             </span>
           </button>
         )
@@ -173,7 +176,7 @@ export function BottomNav() {
         }}
       >
         {ICONS.grid?.(theme.textMuted)}
-        <span style={{ fontSize: '10px', fontWeight: 400 }}>More</span>
+        <span style={{ fontSize: '10px', fontWeight: 400 }}>{t('shell.more')}</span>
       </button>
     </nav>
   )

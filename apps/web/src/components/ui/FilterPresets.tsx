@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useRef, useEffect } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import type { FilterPreset } from '../../hooks/useFilterPresets'
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [open, setOpen] = useState(false)
   const [saveName, setSaveName] = useState('')
@@ -47,7 +49,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
         onClick={() => {
           setOpen((o) => !o)
         }}
-        title="Saved filter presets"
+        title={t('ui.presets.savedFilterPresets')}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -75,7 +77,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
         >
           <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
         </svg>
-        Presets
+        {t('ui.presets.presetsBtn')}
         {presets.length > 0 && (
           <span
             style={{
@@ -98,7 +100,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
           style={{
             position: 'absolute',
             top: 'calc(100% + 6px)',
-            right: 0,
+            insetInlineEnd: 0,
             zIndex: 300,
             width: '256px',
             background: theme.bgSurface,
@@ -128,7 +130,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                     style={{
                       flex: 1,
                       padding: '9px 12px',
-                      textAlign: 'left',
+                      textAlign: 'start',
                       background: 'none',
                       border: 'none',
                       cursor: 'pointer',
@@ -152,7 +154,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                       e.stopPropagation()
                       onDelete(preset.id)
                     }}
-                    title="Delete preset"
+                    title={t('ui.presets.deletePreset')}
                     style={{
                       padding: '8px 10px',
                       background: 'none',
@@ -195,7 +197,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                 fontStyle: 'italic',
               }}
             >
-              No saved presets
+              {t('ui.presets.noSavedPresets')}
             </div>
           )}
 
@@ -217,7 +219,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                 marginBottom: '6px',
               }}
             >
-              Save current filters
+              {t('ui.presets.saveCurrentFilters')}
             </div>
             <div style={{ display: 'flex', gap: '6px' }}>
               <input
@@ -230,7 +232,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                   if (e.key === 'Enter') handleSave()
                   else if (e.key === 'Escape') setOpen(false)
                 }}
-                placeholder="Name this preset…"
+                placeholder={t('ui.presets.nameThisPreset')}
                 maxLength={50}
                 style={{
                   flex: 1,
@@ -260,7 +262,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                   fontFamily: 'inherit',
                 }}
               >
-                Save
+                {t('ui.presets.save')}
               </button>
             </div>
           </div>

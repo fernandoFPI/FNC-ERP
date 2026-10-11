@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Drawer } from '../ui/Drawer'
@@ -156,6 +157,7 @@ function SectionDivider({ label, count }: { label: string; count?: number }) {
 }
 
 export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { notifications, unreadCount, markAsRead, markAllAsRead, appendNotifications } =
@@ -208,7 +210,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
   const read = notifications.filter((n) => n.isRead)
 
   return (
-    <Drawer open={open} onClose={onClose} title="Notifications" width="380px" noPadding>
+    <Drawer open={open} onClose={onClose} title={t('shell.notifDrawer.notifications')} width="380px" noPadding>
       {/* Sub-header: unread count + mark all */}
       <div
         style={{
@@ -234,7 +236,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                 }}
               />
               <span style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: 500 }}>
-                {unreadCount} unread
+                {t('shell.notifDrawer.unread', { count: unreadCount })}
               </span>
             </div>
             <button
@@ -249,11 +251,11 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                 padding: '4px 0',
               }}
             >
-              Mark all as read
+              {t('shell.notifDrawer.markAllAsRead')}
             </button>
           </>
         ) : (
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>You're all caught up</span>
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('shell.notifDrawer.youReAllCaughtUp')}</span>
         )}
       </div>
 
@@ -306,10 +308,10 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                   marginBottom: '4px',
                 }}
               >
-                No notifications
+                {t('shell.notifDrawer.noNotifications')}
               </div>
               <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                You're all caught up — check back later.
+                {t('shell.notifDrawer.youReAllCaughtUpCheck')}
               </div>
             </div>
           </div>
@@ -317,7 +319,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
           <>
             {unread.length > 0 && (
               <>
-                <SectionDivider label="Unread" count={unread.length} />
+                <SectionDivider label={t('shell.notifDrawer.unread')} count={unread.length} />
                 {unread.map((n) => (
                   <NotificationItem
                     key={n.id}
@@ -330,7 +332,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
             )}
             {read.length > 0 && (
               <>
-                <SectionDivider label="Earlier" />
+                <SectionDivider label={t('shell.notifDrawer.earlier')} />
                 {read.map((n) => (
                   <NotificationItem
                     key={n.id}
@@ -368,7 +370,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
               cursor: 'pointer',
             }}
           >
-            Load more
+            {t('shell.notifDrawer.loadMore')}
           </button>
         </div>
       )}

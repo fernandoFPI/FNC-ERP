@@ -185,7 +185,7 @@ export function MaintenanceCalendar({ events, onEventClick }: Props) {
                             border: 'none',
                             padding: '4px 0',
                             cursor: 'pointer',
-                            textAlign: 'left',
+                            textAlign: 'start',
                             WebkitTapHighlightColor: 'transparent',
                           }}
                         >
@@ -288,7 +288,7 @@ export function MaintenanceCalendar({ events, onEventClick }: Props) {
                         fontSize: '10px',
                         marginBottom: '1px',
                         cursor: 'pointer',
-                        textAlign: 'left',
+                        textAlign: 'start',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',

@@ -1,9 +1,11 @@
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../theme/ThemeContext'
 
 export function ImpersonationBanner() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { exitImpersonation } = useAuth()
@@ -39,10 +41,10 @@ export function ImpersonationBanner() {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
         <span style={{ fontSize: '15px' }}>🕵️</span>
-        <span style={{ fontWeight: 700, color: theme.warning }}>Viewing as {displayName}</span>
+        <span style={{ fontWeight: 700, color: theme.warning }}>{t('shell.impersonation.viewingAs', { name: displayName })}</span>
         <span style={{ color: theme.textMuted }}>—</span>
         <span style={{ color: theme.textSecondary }}>
-          Actions are logged under this user, not you
+          {t('shell.impersonation.actionsAreLoggedUnderThisUser')}
         </span>
       </div>
 
@@ -64,7 +66,7 @@ export function ImpersonationBanner() {
           flexShrink: 0,
         }}
       >
-        Exit impersonation
+        {t('shell.impersonation.exitImpersonation')}
       </button>
     </div>
   )

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTheme } from '../../theme/ThemeContext'
@@ -29,13 +30,14 @@ export function SearchableSelect({
   value,
   onChange,
   options,
-  placeholder = 'Search…',
+  placeholder,
   label,
   error,
   required,
   disabled,
   minDropdownWidth = 260,
 }: Props) {
+  const { t } = useTranslation()
   const { theme, themeKey } = useTheme()
   const isDark = themeKey === 'black'
 
@@ -279,7 +281,7 @@ export function SearchableSelect({
               flex: 1,
             }}
           >
-            {placeholder}
+            {placeholder ?? t('ui.select.search')}
           </span>
         )}
         <svg
@@ -289,7 +291,7 @@ export function SearchableSelect({
           fill="none"
           style={{
             flexShrink: 0,
-            marginLeft: '6px',
+            marginInlineStart: '6px',
             transform: open ? 'rotate(180deg)' : 'none',
             transition: 'transform 0.15s',
           }}
@@ -340,7 +342,7 @@ export function SearchableSelect({
                   strokeWidth="2"
                   style={{
                     position: 'absolute',
-                    left: '8px',
+                    insetInlineStart: '8px',
                     top: '50%',
                     transform: 'translateY(-50%)',
                     pointerEvents: 'none',
@@ -356,10 +358,12 @@ export function SearchableSelect({
                     setQuery(e.target.value)
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder="Search…"
+                  placeholder={t('ui.select.search')}
                   style={{
                     width: '100%',
-                    padding: '6px 8px 6px 28px',
+                    paddingBlock: '6px',
+                    paddingInlineEnd: '8px',
+                    paddingInlineStart: '28px',
                     fontSize: '13px',
                     border: `1px solid ${theme.border}`,
                     borderRadius: '6px',
@@ -383,7 +387,7 @@ export function SearchableSelect({
                     textAlign: 'center',
                   }}
                 >
-                  No results
+                  {t('ui.select.noResults')}
                 </div>
               ) : (
                 filtered.map((opt, idx) => {

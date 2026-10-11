@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 
@@ -18,6 +19,7 @@ interface TimelineProps {
 }
 
 export function Timeline({ events, loading = false }: TimelineProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
 
   const dotColors: Record<string, string> = {
@@ -75,7 +77,7 @@ export function Timeline({ events, loading = false }: TimelineProps) {
       <p
         style={{ color: theme.textMuted, fontSize: '13px', textAlign: 'center', padding: '24px 0' }}
       >
-        No activity yet
+        {t('ui.timeline.noActivityYet')}
       </p>
     )
   }

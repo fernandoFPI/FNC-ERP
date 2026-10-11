@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../i18n'
 import { useState, useEffect } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { Badge } from './Badge'
@@ -47,6 +49,7 @@ function injectPulseKeyframes() {
 }
 
 export function DLQEntryRow({ entry, onRetry, onDismiss, onViewDetail }: DLQEntryRowProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [errorExpanded, setErrorExpanded] = useState(false)
 
@@ -80,10 +83,10 @@ export function DLQEntryRow({ entry, onRetry, onDismiss, onViewDetail }: DLQEntr
           <span
             style={{ animation: 'fnc-pulse 1.8s ease-in-out infinite', display: 'inline-flex' }}
           >
-            <Badge variant="danger">{entry.priority}</Badge>
+            <Badge variant="danger">{enumLabel(entry.priority)}</Badge>
           </span>
         ) : (
-          <Badge variant={priorityVariant(entry.priority)}>{entry.priority}</Badge>
+          <Badge variant={priorityVariant(entry.priority)}>{enumLabel(entry.priority)}</Badge>
         )}
       </td>
       <td style={{ padding: '10px 12px', color: theme.textSecondary, fontSize: 13 }}>
@@ -115,7 +118,7 @@ export function DLQEntryRow({ entry, onRetry, onDismiss, onViewDetail }: DLQEntr
               cursor: 'pointer',
               color: theme.accent,
               fontSize: 11,
-              marginLeft: 4,
+              marginInlineStart: 4,
               padding: 0,
             }}
           >
@@ -129,13 +132,13 @@ export function DLQEntryRow({ entry, onRetry, onDismiss, onViewDetail }: DLQEntr
       <td style={{ padding: '10px 12px' }}>
         <div style={{ display: 'flex', gap: 6 }}>
           <Button size="sm" onClick={onRetry}>
-            Retry
+            {t('ui.dlq.retry')}
           </Button>
           <Button size="sm" onClick={onDismiss}>
-            Dismiss
+            {t('ui.dlq.dismiss')}
           </Button>
           <Button size="sm" onClick={onViewDetail}>
-            Detail
+            {t('ui.dlq.detail')}
           </Button>
         </div>
       </td>

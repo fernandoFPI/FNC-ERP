@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../theme/ThemeContext'
@@ -12,6 +13,7 @@ interface PayslipViewerProps {
 }
 
 export function PayslipViewer({ payrollLineId }: PayslipViewerProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
 
   const { data, loading } = useQuery<PayslipQuery, PayslipQueryVariables>(PAYSLIP_QUERY, {
@@ -49,30 +51,30 @@ export function PayslipViewer({ payrollLineId }: PayslipViewerProps) {
   const netPay: number = parseFloat(line.net_salary)
 
   const earnings = [
-    { name: 'Base salary', amount: parseFloat(line.base_salary ?? '0') },
+    { name: t('ui.payslip.baseSalary'), amount: parseFloat(line.base_salary ?? '0') },
     line.housing_allowance && parseFloat(line.housing_allowance) > 0
-      ? { name: 'Housing allowance', amount: parseFloat(line.housing_allowance) }
+      ? { name: t('ui.payslip.housingAllowance'), amount: parseFloat(line.housing_allowance) }
       : null,
     line.transport_allowance && parseFloat(line.transport_allowance) > 0
-      ? { name: 'Transport allowance', amount: parseFloat(line.transport_allowance) }
+      ? { name: t('ui.payslip.transportAllowance'), amount: parseFloat(line.transport_allowance) }
       : null,
     line.other_allowances && parseFloat(line.other_allowances) > 0
-      ? { name: 'Other allowances', amount: parseFloat(line.other_allowances) }
+      ? { name: t('ui.payslip.otherAllowances'), amount: parseFloat(line.other_allowances) }
       : null,
     line.overtime_pay && parseFloat(line.overtime_pay) > 0
-      ? { name: `Overtime (${line.overtime_hours}h)`, amount: parseFloat(line.overtime_pay) }
+      ? { name: t('ui.payslip.overtimeHours', { hours: line.overtime_hours }), amount: parseFloat(line.overtime_pay) }
       : null,
   ].filter(Boolean) as { name: string; amount: number }[]
 
   const deductions = [
     line.income_tax && parseFloat(line.income_tax) > 0
-      ? { name: 'Income tax', amount: parseFloat(line.income_tax) }
+      ? { name: t('ui.payslip.incomeTax'), amount: parseFloat(line.income_tax) }
       : null,
     line.social_security && parseFloat(line.social_security) > 0
-      ? { name: 'Social security', amount: parseFloat(line.social_security) }
+      ? { name: t('ui.payslip.socialSecurity'), amount: parseFloat(line.social_security) }
       : null,
     line.other_deductions && parseFloat(line.other_deductions) > 0
-      ? { name: 'Other deductions', amount: parseFloat(line.other_deductions) }
+      ? { name: t('ui.payslip.otherDeductions'), amount: parseFloat(line.other_deductions) }
       : null,
   ].filter(Boolean) as { name: string; amount: number }[]
 
@@ -96,8 +98,8 @@ export function PayslipViewer({ payrollLineId }: PayslipViewerProps) {
             {line.employee_number ?? ''}
           </div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '13px', color: theme.textSecondary }}>Working days</div>
+        <div style={{ textAlign: 'end' }}>
+          <div style={{ fontSize: '13px', color: theme.textSecondary }}>{t('ui.payslip.workingDays')}</div>
           <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
             {line.working_days ?? '—'}
           </div>
@@ -108,11 +110,11 @@ export function PayslipViewer({ payrollLineId }: PayslipViewerProps) {
         {/* Attendance summary */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
           {[
-            { label: 'Days present', value: line.working_days ?? '—' },
-            { label: 'Days absent', value: line.absent_days ?? '—' },
-            { label: 'Leave days', value: line.leave_days ?? '—' },
+            { label: t('ui.payslip.daysPresent'), value: line.working_days ?? '—' },
+            { label: t('ui.payslip.daysAbsent'), value: line.absent_days ?? '—' },
+            { label: t('ui.payslip.leaveDays'), value: line.leave_days ?? '—' },
             {
-              label: 'OT hours',
+              label: t('ui.payslip.otHours'),
               value: line.overtime_hours ? `${parseFloat(line.overtime_hours).toFixed(1)}h` : '—',
             },
           ].map(({ label, value }) => (
@@ -163,7 +165,7 @@ export function PayslipViewer({ payrollLineId }: PayslipViewerProps) {
                 marginBottom: '8px',
               }}
             >
-              Earnings
+              {t('ui.payslip.earnings')}
             </div>
             {earnings.map((e, i) => (
               <div
@@ -194,7 +196,7 @@ export function PayslipViewer({ payrollLineId }: PayslipViewerProps) {
                 marginBottom: '8px',
               }}
             >
-              Deductions
+              {t('ui.payslip.deductions')}
             </div>
             {deductions.map((d, i) => (
               <div
@@ -219,18 +221,18 @@ export function PayslipViewer({ payrollLineId }: PayslipViewerProps) {
         {/* Totals */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
           <PayrollSummaryCard
-            label="Gross pay"
+            label={t('ui.payslip.grossPay')}
             amount={grossPay}
             currency={currency}
             variant="highlight"
           />
           <PayrollSummaryCard
-            label="Total deductions"
+            label={t('ui.payslip.totalDeductions')}
             amount={totalDeductions}
             currency={currency}
             variant="deduction"
           />
-          <PayrollSummaryCard label="Net pay" amount={netPay} currency={currency} variant="net" />
+          <PayrollSummaryCard label={t('ui.payslip.netPay')} amount={netPay} currency={currency} variant="net" />
         </div>
 
         {/* Actions */}
@@ -242,7 +244,7 @@ export function PayslipViewer({ payrollLineId }: PayslipViewerProps) {
               window.print()
             }}
           >
-            Print
+            {t('ui.payslip.print')}
           </Button>
         </div>
       </div>

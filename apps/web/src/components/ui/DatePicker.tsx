@@ -1,3 +1,4 @@
+import i18n, { isRtl } from '../../i18n'
 import React, { useState, useRef, useEffect } from 'react'
 import { Card } from './Card'
 import { useTheme } from '../../theme/ThemeContext'
@@ -14,8 +15,20 @@ interface DatePickerProps {
   className?: string
 }
 
-const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const EN_DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+const EN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// English keeps the compact labels; other languages use the platform's localized names.
+function localizedMonths(): string[] {
+  if (!isRtl(i18n.resolvedLanguage)) return EN_MONTHS
+  const f = new Intl.DateTimeFormat(i18n.resolvedLanguage, { month: 'short' })
+  return Array.from({ length: 12 }, (_, m) => f.format(new Date(2024, m, 1)))
+}
+function localizedDays(): string[] {
+  if (!isRtl(i18n.resolvedLanguage)) return EN_DAYS
+  const f = new Intl.DateTimeFormat(i18n.resolvedLanguage, { weekday: 'narrow' })
+  return Array.from({ length: 7 }, (_, d) => f.format(new Date(2024, 0, 7 + d)))
+}
 
 export function DatePicker({
   value,
@@ -112,7 +125,7 @@ export function DatePicker({
           fill="none"
           stroke={theme.textMuted}
           strokeWidth="2"
-          style={{ position: 'absolute', right: '10px', pointerEvents: 'none' }}
+          style={{ position: 'absolute', insetInlineEnd: '10px', pointerEvents: 'none' }}
         >
           <rect x="3" y="4" width="18" height="18" rx="2" />
           <line x1="16" y1="2" x2="16" y2="6" />
@@ -122,7 +135,7 @@ export function DatePicker({
       </div>
       {error && <span style={{ fontSize: '11px', color: theme.danger }}>{error}</span>}
       {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 600 }}>
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', insetInlineStart: 0, zIndex: 600 }}>
           <Card padding="sm" rimHighlight style={{ width: '240px' }}>
             <div
               style={{
@@ -150,7 +163,7 @@ export function DatePicker({
                 ‹
               </button>
               <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                {MONTHS[viewDate.month]} {viewDate.year}
+                {localizedMonths()[viewDate.month]} {viewDate.year}
               </span>
               <button
                 onClick={() => {
@@ -171,7 +184,7 @@ export function DatePicker({
               </button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
-              {DAYS.map((d) => (
+              {localizedDays().map((d) => (
                 <div
                   key={d}
                   style={{

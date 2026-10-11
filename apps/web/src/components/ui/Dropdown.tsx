@@ -46,7 +46,7 @@ export function Dropdown({ trigger, items, align = 'left', className = '' }: Dro
           style={{
             position: 'absolute',
             top: 'calc(100% + 6px)',
-            [align === 'right' ? 'right' : 'left']: 0,
+            [align === 'right' ? 'insetInlineEnd' : 'insetInlineStart']: 0,
             zIndex: 500,
             minWidth: '160px',
           }}
@@ -72,7 +72,7 @@ export function Dropdown({ trigger, items, align = 'left', className = '' }: Dro
                     border: 'none',
                     borderRadius: '6px',
                     cursor: 'pointer',
-                    textAlign: 'left',
+                    textAlign: 'start',
                     fontFamily: 'inherit',
                   }}
                   onMouseEnter={(e) => {

@@ -75,7 +75,7 @@ export function Input({
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         {prefix && (
           <span
-            style={{ position: 'absolute', left: '10px', color: theme.textMuted, fontSize: '13px' }}
+            style={{ position: 'absolute', insetInlineStart: '10px', color: theme.textMuted, fontSize: '13px' }}
           >
             {prefix}
           </span>
@@ -106,7 +106,9 @@ export function Input({
             width: '100%',
             minHeight: isPhone ? '44px' : '36px',
             height: isPhone ? 'auto' : '36px',
-            padding: `${isPhone ? '10px' : '0'} ${suffix ? '36px' : '12px'} ${isPhone ? '10px' : '0'} ${prefix ? '32px' : '12px'}`,
+            paddingBlock: isPhone ? '10px' : '0',
+            paddingInlineEnd: suffix ? '36px' : '12px',
+            paddingInlineStart: prefix ? '32px' : '12px',
             fontSize: isPhone ? '16px' : '13px',
             background: theme.bgSurface,
             border: `1px solid ${error ? theme.dangerBorder : theme.borderInput}`,
@@ -127,7 +129,7 @@ export function Input({
           <span
             style={{
               position: 'absolute',
-              right: '10px',
+              insetInlineEnd: '10px',
               color: theme.textMuted,
               fontSize: '13px',
             }}

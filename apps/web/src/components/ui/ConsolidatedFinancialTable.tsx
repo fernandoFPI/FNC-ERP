@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { Button } from './Button'
 import { formatNumber } from '../../lib/format'
@@ -69,6 +70,7 @@ export function ConsolidatedFinancialTable({
   loading = false,
   priorData,
 }: ConsolidatedFinancialTableProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const grouped = groupByType(data)
   const priorByCode = priorData ? new Map(priorData.map((r) => [r.accountCode, r])) : undefined
@@ -84,7 +86,7 @@ export function ConsolidatedFinancialTable({
 
   const thStyle: React.CSSProperties = {
     padding: '9px 14px',
-    textAlign: 'right',
+    textAlign: 'end',
     color: theme.textMuted,
     fontSize: 12,
     fontWeight: 600,
@@ -95,7 +97,7 @@ export function ConsolidatedFinancialTable({
 
   const tdStyle: React.CSSProperties = {
     padding: '8px 14px',
-    textAlign: 'right',
+    textAlign: 'end',
     color: theme.textSecondary,
     fontSize: 13,
     borderBottom: `1px solid ${theme.tableBorder}`,
@@ -127,7 +129,7 @@ export function ConsolidatedFinancialTable({
             exportCsv(data, companies, currency, showEliminations)
           }}
         >
-          Export CSV
+          {t('fin.consTable.exportCsv')}
         </Button>
       </div>
 
@@ -138,7 +140,7 @@ export function ConsolidatedFinancialTable({
               <th
                 style={{
                   ...thStyle,
-                  textAlign: 'left',
+                  textAlign: 'start',
                   position: 'sticky',
                   left: 0,
                   zIndex: 2,
@@ -146,7 +148,7 @@ export function ConsolidatedFinancialTable({
                   background: theme.bgSurfaceHover,
                 }}
               >
-                Account
+                {t('fin.consTable.account')}
               </th>
               {companies.map((c) => (
                 <th key={c.id} style={thStyle}>
@@ -154,10 +156,10 @@ export function ConsolidatedFinancialTable({
                 </th>
               ))}
               {showEliminations && (
-                <th style={{ ...thStyle, color: theme.danger }}>Eliminations</th>
+                <th style={{ ...thStyle, color: theme.danger }}>{t('fin.consTable.eliminations')}</th>
               )}
-              <th style={{ ...thStyle, color: theme.accent }}>Consolidated ({currency})</th>
-              {priorByCode && <th style={{ ...thStyle, color: theme.textMuted }}>vs Prior</th>}
+              <th style={{ ...thStyle, color: theme.accent }}>{t('fin.consTable.consolidated', { currency })}</th>
+              {priorByCode && <th style={{ ...thStyle, color: theme.textMuted }}>{t('fin.consTable.vsPrior')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -167,7 +169,7 @@ export function ConsolidatedFinancialTable({
                   colSpan={companies.length + (showEliminations ? 3 : 2) + (priorByCode ? 1 : 0)}
                   style={{ ...tdStyle, textAlign: 'center', padding: 28 }}
                 >
-                  Loading…
+                  {t('fin.consTable.loading')}
                 </td>
               </tr>
             ) : data.length === 0 ? (
@@ -176,7 +178,7 @@ export function ConsolidatedFinancialTable({
                   colSpan={companies.length + (showEliminations ? 3 : 2) + (priorByCode ? 1 : 0)}
                   style={{ ...tdStyle, textAlign: 'center', padding: 28 }}
                 >
-                  No data available.
+                  {t('fin.consTable.noDataAvailable')}
                 </td>
               </tr>
             ) : (
@@ -227,14 +229,14 @@ export function ConsolidatedFinancialTable({
                       <td
                         style={{
                           ...tdStyle,
-                          textAlign: 'left',
+                          textAlign: 'start',
                           position: 'sticky',
                           left: 0,
                           background: 'inherit',
                           zIndex: 1,
                         }}
                       >
-                        <span style={{ color: theme.textMuted, fontSize: 11, marginRight: 6 }}>
+                        <span style={{ color: theme.textMuted, fontSize: 11, marginInlineEnd: 6 }}>
                           {row.accountCode}
                         </span>
                         <span style={{ color: theme.textPrimary }}>{row.accountName}</span>
@@ -279,14 +281,12 @@ export function ConsolidatedFinancialTable({
                     <td
                       style={{
                         ...subtotalStyle,
-                        textAlign: 'left',
+                        textAlign: 'start',
                         position: 'sticky',
                         left: 0,
                         zIndex: 1,
                       }}
-                    >
-                      Total {type}
-                    </td>
+                    >{t('fin.consTable.total', { type })}</td>
                     {companies.map((c) => (
                       <td key={c.id} style={subtotalStyle}>
                         {formatAmt(typeTotal.companies[c.id] ?? 0)}
@@ -310,7 +310,7 @@ export function ConsolidatedFinancialTable({
                 <td
                   style={{
                     ...subtotalStyle,
-                    textAlign: 'left',
+                    textAlign: 'start',
                     background: theme.accentBg,
                     color: theme.accent,
                     position: 'sticky',
@@ -319,7 +319,7 @@ export function ConsolidatedFinancialTable({
                     borderTop: `2px solid ${theme.accentBorder}`,
                   }}
                 >
-                  GRAND TOTAL
+                  {t('fin.consTable.grandTotal')}
                 </td>
                 {companies.map((c) => (
                   <td

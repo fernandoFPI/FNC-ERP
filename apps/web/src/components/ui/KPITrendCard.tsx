@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 
@@ -21,6 +22,7 @@ export function KPITrendCard({
   sparkline = true,
 }: KPITrendCardProps) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
 
   const deltaColor =
     delta?.direction === 'up'
@@ -73,7 +75,7 @@ export function KPITrendCard({
           </span>
         )}
         {previousValue && (
-          <span style={{ color: theme.textMuted, fontSize: 11 }}>vs {previousValue}</span>
+          <span style={{ color: theme.textMuted, fontSize: 11 }}>{t('ui.kpi.vs', { value: previousValue })}</span>
         )}
       </div>
 

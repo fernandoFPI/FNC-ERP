@@ -1,8 +1,10 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { EntitySwitcher } from './EntitySwitcher'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { LanguageSwitcher } from './LanguageSwitcher'
+import { navLabel } from '../../i18n'
 import { NotificationsDrawer } from './NotificationsDrawer'
 import { useTheme } from '../../theme/ThemeContext'
 import { useAuthStore } from '../../store/authStore'
@@ -97,9 +99,9 @@ const SEGMENT_LABELS: Record<string, string> = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function segmentLabel(seg: string): string {
-  if (SEGMENT_LABELS[seg]) return SEGMENT_LABELS[seg]
+  if (SEGMENT_LABELS[seg]) return navLabel(SEGMENT_LABELS[seg])
   if (UUID_RE.test(seg)) return `#${seg.slice(0, 8)}`
-  return seg.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  return navLabel(seg.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
 }
 
 function buildCrumbs(pathname: string) {
@@ -119,6 +121,7 @@ interface TopbarProps {
 }
 
 export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
   const location = useLocation()
@@ -204,7 +207,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
         {compact && (
           <button
             onClick={onMenuToggle}
-            aria-label="Open menu"
+            aria-label={t('shell.openMenu')}
             style={{
               width: '36px',
               height: '36px',
@@ -309,8 +312,8 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
         {/* Search — hidden on phone to save space */}
         {!isPhone && (
           <button
-            aria-label="Search"
-            title="Search (Ctrl+K)"
+            aria-label={t('shell.search')}
+            title={t('shell.searchTitle')}
             onClick={() =>
               window.dispatchEvent(new CustomEvent('fnc:open-search', { detail: { prefill: '' } }))
             }
@@ -341,7 +344,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <span style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>Search</span>
+            <span style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{t('shell.search')}</span>
             <kbd
               style={{
                 fontSize: '10px',
@@ -372,7 +375,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
               onClick={() => {
                 setNotifOpen(true)
               }}
-              aria-label="Notifications"
+              aria-label={t('shell.notifications')}
               style={{
                 width: '34px',
                 height: '34px',
@@ -448,7 +451,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
               {user?.profilePicture ? (
                 <img
                   src={user.profilePicture}
-                  alt="avatar"
+                  alt={t('shell.avatar')}
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
               ) : (
@@ -545,8 +548,8 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                   </div>
                   <div style={{ padding: '4px' }}>
                     {[
-                      { label: 'Profile', path: '/settings/profile' },
-                      { label: 'Settings', path: '/settings' },
+                      { label: navLabel('Profile'), path: '/settings/profile' },
+                      { label: navLabel('Settings'), path: '/settings' },
                     ].map((item) => (
                       <button
                         key={item.path}
@@ -599,7 +602,7 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                         e.currentTarget.style.background = 'none'
                       }}
                     >
-                      Sign out
+                      {t('shell.signOut')}
                     </button>
                   </div>
                 </div>

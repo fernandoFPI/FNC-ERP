@@ -35,10 +35,9 @@ export function Card({
     fullWidthOnMobile && isPhone
       ? {
           borderRadius: 0,
-          marginLeft: '-12px',
-          marginRight: '-12px',
-          borderLeft: 'none',
-          borderRight: 'none',
+          marginInline: '-12px',
+          borderInlineStart: 'none',
+          borderInlineEnd: 'none',
         }
       : {}
 
@@ -66,8 +65,8 @@ export function Card({
           style={{
             position: 'absolute',
             top: 0,
-            left: 0,
-            right: 0,
+            insetInlineStart: 0,
+            insetInlineEnd: 0,
             height: '0.5px',
             background: theme.topRim,
           }}

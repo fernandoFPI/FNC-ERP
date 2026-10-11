@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React, { useRef, useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { api } from '../../lib/axios'
@@ -68,6 +69,7 @@ export function FileAttachments({
   category = 'attachment',
   readonly = false,
 }: FileAttachmentsProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const fileRef = useRef<HTMLInputElement>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -96,7 +98,7 @@ export function FileAttachments({
   async function handleUpload(file: File) {
     const MAX = 52_428_800 // 50 MB
     if (file.size > MAX) {
-      setError('File too large (max 50 MB)')
+      setError(t('ui.files.tooLarge'))
       return
     }
     setError(null)
@@ -138,7 +140,7 @@ export function FileAttachments({
       } = await api.get<{ downloadUrl: string }>(`/files/${fileId}/download-url`)
       window.open(downloadUrl, '_blank')
     } catch {
-      setError('Download failed')
+      setError(t('ui.files.downloadFailed'))
     }
   }
 
@@ -147,7 +149,7 @@ export function FileAttachments({
       await api.delete(`/${entityType}/${entityId}/attachments/${attachmentId}`)
       setAttachments((prev) => prev.filter((a) => a.id !== attachmentId))
     } catch {
-      setError('Delete failed')
+      setError(t('ui.files.deleteFailed'))
     }
   }
 
@@ -173,7 +175,7 @@ export function FileAttachments({
           <Spinner size="md" />
         </div>
       ) : attachments.length === 0 && readonly ? (
-        <p style={{ color: theme.textMuted, fontSize: '13px' }}>No attachments</p>
+        <p style={{ color: theme.textMuted, fontSize: '13px' }}>{t('ui.files.noAttachments')}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {attachments.map((a) => (
@@ -304,15 +306,15 @@ export function FileAttachments({
               >
                 <Spinner size="md" />
                 <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0 }}>
-                  Uploading… {uploadProgress}%
+                  {t('ui.files.uploadingPct', { pct: uploadProgress })}
                 </p>
               </div>
             ) : (
               <>
                 <p style={{ fontSize: '13px', color: theme.textSecondary, margin: '0 0 4px' }}>
-                  Drop file here or <span style={{ color: theme.accent }}>browse</span>
+                  {t('ui.files.dropHere')} <span style={{ color: theme.accent }}>{t('ui.files.browse')}</span>
                 </p>
-                <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>Max 50 MB</p>
+                <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>{t('ui.files.max50Mb')}</p>
               </>
             )}
           </div>

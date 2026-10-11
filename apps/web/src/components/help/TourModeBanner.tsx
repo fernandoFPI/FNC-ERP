@@ -1,7 +1,9 @@
+import { useTranslation } from 'react-i18next'
 import { useTourStore } from '../../store/tourStore'
 import { useTheme } from '../../theme/ThemeContext'
 
 export function TourModeBanner() {
+  const { t } = useTranslation()
   const { isActive, tourTitle, currentStep, totalSteps, deactivate } = useTourStore()
   const { theme } = useTheme()
 
@@ -37,7 +39,7 @@ export function TourModeBanner() {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
         <span style={{ fontSize: '15px' }}>🎓</span>
-        <span style={{ fontWeight: 700, color: accent }}>Tour Mode</span>
+        <span style={{ fontWeight: 700, color: accent }}>{t('help.tour.tourMode')}</span>
         <span style={{ color: border }}>—</span>
         <span style={{ color: text }}>{tourTitle}</span>
       </div>
@@ -45,7 +47,7 @@ export function TourModeBanner() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
         {totalSteps > 0 && (
           <span style={{ fontSize: '12px', color: muted }}>
-            Step {currentStep + 1} of {totalSteps}
+            {t('help.tour.step', { current: currentStep + 1, total: totalSteps })}
           </span>
         )}
         <span
@@ -59,7 +61,7 @@ export function TourModeBanner() {
             fontWeight: 600,
           }}
         >
-          Nothing is saved
+          {t('help.tour.nothingIsSaved')}
         </span>
         <button
           onClick={deactivate}
@@ -81,7 +83,7 @@ export function TourModeBanner() {
             e.currentTarget.style.background = `${accent}15`
           }}
         >
-          Exit Tour
+          {t('help.tour.exitTour')}
         </button>
       </div>
     </div>

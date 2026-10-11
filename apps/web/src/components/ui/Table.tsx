@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React, { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
@@ -106,7 +107,7 @@ export function Table<T extends object>({
   columns,
   data,
   loading = false,
-  emptyMessage = 'No data',
+  emptyMessage,
   onRowClick,
   rowKey,
   stickyHeader = false,
@@ -119,6 +120,7 @@ export function Table<T extends object>({
   renderExpanded,
   getSectionHeader,
 }: TableProps<T>) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone, isTablet } = useBreakpoint()
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
@@ -137,7 +139,7 @@ export function Table<T extends object>({
             fontSize: '13px',
           }}
         >
-          {emptyMessage}
+          {emptyMessage ?? t('ui.generic.noData')}
         </div>
       )
     }
@@ -289,7 +291,7 @@ export function Table<T extends object>({
                           style={{
                             fontSize: '13px',
                             color: theme.textSecondary,
-                            textAlign: 'right',
+                            textAlign: 'end',
                             minWidth: 0,
                           }}
                         >
@@ -312,12 +314,12 @@ export function Table<T extends object>({
                           fontSize: '12px',
                           fontWeight: 600,
                           color: theme.accent,
-                          textAlign: 'left',
+                          textAlign: 'start',
                           cursor: 'pointer',
                           WebkitTapHighlightColor: 'transparent',
                         }}
                       >
-                        {isExpanded ? 'Show less' : `+${hiddenCount} more`}
+                        {isExpanded ? t('ui.generic.showLess') : t('ui.generic.moreCount', { count: hiddenCount })}
                       </button>
                     )}
                   </div>
@@ -415,7 +417,7 @@ export function Table<T extends object>({
                 style={{
                   width: col.width,
                   padding: '10px 14px',
-                  textAlign: 'left',
+                  textAlign: 'start',
                   fontSize: '10px',
                   fontWeight: 600,
                   textTransform: 'uppercase',
@@ -425,7 +427,7 @@ export function Table<T extends object>({
                   whiteSpace: 'nowrap',
                   background: theme.bgSurface,
                   position: stickyFirstColumn && i === 0 ? 'sticky' : undefined,
-                  left: stickyFirstColumn && i === 0 ? 0 : undefined,
+                  insetInlineStart: stickyFirstColumn && i === 0 ? 0 : undefined,
                   zIndex: stickyFirstColumn && i === 0 ? 2 : undefined,
                 }}
               >
@@ -450,7 +452,7 @@ export function Table<T extends object>({
                   fontSize: '13px',
                 }}
               >
-                {emptyMessage}
+                {emptyMessage ?? t('ui.generic.noData')}
               </td>
             </tr>
           ) : (
@@ -508,7 +510,7 @@ export function Table<T extends object>({
                           color: theme.textSecondary,
                           whiteSpace: 'nowrap',
                           position: stickyFirstColumn && ci === 0 ? 'sticky' : undefined,
-                          left: stickyFirstColumn && ci === 0 ? 0 : undefined,
+                          insetInlineStart: stickyFirstColumn && ci === 0 ? 0 : undefined,
                           background: stickyFirstColumn && ci === 0 ? theme.bgSurface : undefined,
                         }}
                       >

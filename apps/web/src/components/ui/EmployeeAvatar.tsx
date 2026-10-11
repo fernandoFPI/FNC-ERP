@@ -75,7 +75,7 @@ export function EmployeeAvatar({
         style={{
           position: 'absolute',
           bottom: 0,
-          right: 0,
+          insetInlineEnd: 0,
           width: DOT[size],
           height: DOT[size],
           borderRadius: '50%',

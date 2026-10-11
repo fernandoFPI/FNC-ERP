@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 
@@ -11,7 +12,7 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({
-  title = 'Nothing here',
+  title,
   message,
   action,
   children,
@@ -19,6 +20,7 @@ export function EmptyState({
   className = '',
 }: EmptyStateProps) {
   const { theme } = useTheme()
+  const { t } = useTranslation()
 
   return (
     <div
@@ -69,7 +71,7 @@ export function EmptyState({
             marginBottom: '4px',
           }}
         >
-          {title}
+          {title ?? t('ui.generic.nothingHere')}
         </p>
         {message && <p style={{ fontSize: '13px', color: theme.textMuted }}>{message}</p>}
       </div>

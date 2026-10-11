@@ -1,3 +1,6 @@
+import { tl } from '../../i18n'
+import i18n from '../../i18n'
+import { Trans, useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { Button } from './Button'
@@ -45,23 +48,23 @@ type Step = 0 | 1 | 2 | 3
 const METHOD_OPTIONS: { value: BillingMethod; label: string; description: string }[] = [
   {
     value: 'fixed',
-    label: 'Fixed Price',
-    description: 'Invoice a fixed amount for the entire project or a phase',
+    get label() { return i18n.t('fin.invBuilder.fixedPrice', { defaultValue: "Fixed Price" }) },
+    get description() { return i18n.t('fin.invBuilder.invoiceAFixedAmountForThe', { defaultValue: "Invoice a fixed amount for the entire project or a phase" }) },
   },
   {
     value: 'milestone',
-    label: 'Milestone',
-    description: 'Bill upon reaching specific project milestones',
+    get label() { return i18n.t('fin.invBuilder.milestone', { defaultValue: "Milestone" }) },
+    get description() { return i18n.t('fin.invBuilder.billUponReachingSpecificProjectMilestones', { defaultValue: "Bill upon reaching specific project milestones" }) },
   },
   {
     value: 'time_material',
-    label: 'Time & Material',
-    description: 'Bill based on recorded hours and materials used',
+    get label() { return i18n.t('fin.invBuilder.timeMaterial', { defaultValue: "Time & Material" }) },
+    get description() { return i18n.t('fin.invBuilder.billBasedOnRecordedHoursAnd', { defaultValue: "Bill based on recorded hours and materials used" }) },
   },
   {
     value: 'percentage',
-    label: 'Percentage of Contract',
-    description: 'Invoice a percentage of the total contract value',
+    get label() { return i18n.t('fin.invBuilder.percentageOfContract', { defaultValue: "Percentage of Contract" }) },
+    get description() { return i18n.t('fin.invBuilder.invoiceAPercentageOfTheTotal', { defaultValue: "Invoice a percentage of the total contract value" }) },
   },
 ]
 
@@ -74,6 +77,7 @@ export function InvoiceBuilder({
   onConfirm,
   onClose,
 }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [step, setStep] = useState<Step>(0)
   const [method, setMethod] = useState<BillingMethod>('fixed')
@@ -134,7 +138,7 @@ export function InvoiceBuilder({
       return [
         {
           id: 'pct-line',
-          description: `${percentage}% of contract value`,
+          description: t('fin.invBuilder.ofContractValue', { percentage }),
           quantity: 1,
           unit_price: (contractAmount * percentage) / 100,
           tax_pct: 0,
@@ -146,7 +150,7 @@ export function InvoiceBuilder({
         .filter((m) => selectedMilestoneIds.includes(m.id))
         .map((m) => ({
           id: m.id,
-          description: `Milestone: ${m.name}`,
+          description: t('fin.invBuilder.milestone2', { name: m.name }),
           quantity: 1,
           unit_price: m.amount,
           tax_pct: 0,
@@ -184,7 +188,7 @@ export function InvoiceBuilder({
       })
       handleClose()
     } catch (err) {
-      const msg = (err as { message?: string })?.message ?? 'Failed to create invoice'
+      const msg = (err as { message?: string } | null | undefined)?.message ?? t('fin.invBuilder.failedToCreateInvoice')
       setError(msg)
     } finally {
       setLoading(false)
@@ -216,7 +220,7 @@ export function InvoiceBuilder({
     <Modal
       open={open}
       onClose={handleClose}
-      title={`Invoice Builder — ${projectName}`}
+      title={t('fin.invBuilder.invoiceBuilder', { projectName })}
       size="xl"
       closeOnBackdrop={false}
     >
@@ -246,8 +250,8 @@ export function InvoiceBuilder({
                   transition: 'all 0.15s',
                 }}
               >
-                <span style={{ marginRight: '4px' }}>{isPast ? '✓' : i + 1}.</span>
-                {label}
+                <span style={{ marginInlineEnd: '4px' }}>{isPast ? '✓' : i + 1}.</span>
+                {tl('fin.invBuilder.stepOpts', label, label)}
               </div>
             )
           })}
@@ -265,7 +269,7 @@ export function InvoiceBuilder({
                     setMethod(opt.value)
                   }}
                   style={{
-                    textAlign: 'left',
+                    textAlign: 'start',
                     padding: '16px',
                     borderRadius: '8px',
                     border: `2px solid ${method === opt.value ? theme.accent : theme.border}`,
@@ -296,7 +300,7 @@ export function InvoiceBuilder({
               {method === 'percentage' && (
                 <div>
                   <Input
-                    label={`Percentage of contract (${currency} ${contractAmount.toLocaleString()})`}
+                    label={t('fin.invBuilder.percentageOfContract2', { currency, contractAmount: contractAmount.toLocaleString() })}
                     type="number"
                     min="1"
                     max="100"
@@ -313,10 +317,7 @@ export function InvoiceBuilder({
                       color: theme.accent,
                       fontFamily: 'monospace',
                     }}
-                  >
-                    Invoice amount: {((contractAmount * percentage) / 100).toLocaleString()}{' '}
-                    {currency}
-                  </div>
+                  >{t('fin.invBuilder.invoiceAmount', { value: ((contractAmount * percentage) / 100).toLocaleString(), currency })}</div>
                 </div>
               )}
 
@@ -330,7 +331,7 @@ export function InvoiceBuilder({
                       fontWeight: 500,
                     }}
                   >
-                    Select milestones to invoice
+                    {t('fin.invBuilder.selectMilestonesToInvoice')}
                   </div>
                   {milestones.map((m) => (
                     <label
@@ -361,16 +362,14 @@ export function InvoiceBuilder({
                         >
                           {m.name}
                         </div>
-                        <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                          Status: {m.status}
-                        </div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.invBuilder.status', { status: m.status })}</div>
                       </div>
                       <AmountDisplay amount={m.amount} currency={currency} />
                     </label>
                   ))}
                   {milestones.length === 0 && (
                     <div style={{ color: theme.textMuted, fontSize: '13px' }}>
-                      No milestones defined for this project
+                      {t('fin.invBuilder.noMilestonesDefinedForThisProject')}
                     </div>
                   )}
                 </div>
@@ -381,12 +380,12 @@ export function InvoiceBuilder({
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: theme.bgSurfaceHover }}>
-                        {['Description', 'Qty', 'Unit Price', 'Tax %', 'Total', ''].map((h) => (
+                        {[t('fin.invBuilder.description'), t('fin.invBuilder.qty2'), t('fin.invBuilder.unitPrice'), t('fin.invBuilder.tax2'), t('fin.invBuilder.total'), ''].map((h) => (
                           <th
                             key={h}
                             style={{
                               padding: '6px 8px',
-                              textAlign: 'left',
+                              textAlign: 'start',
                               fontSize: '11px',
                               color: theme.textMuted,
                               fontWeight: 600,
@@ -407,7 +406,7 @@ export function InvoiceBuilder({
                               onChange={(e) => {
                                 updateLine(line.id, { description: e.target.value })
                               }}
-                              placeholder="Description"
+                              placeholder={t('fin.invBuilder.description')}
                               style={{ ...inputStyle, width: '200px' }}
                             />
                           </td>
@@ -489,7 +488,7 @@ export function InvoiceBuilder({
                     </tbody>
                   </table>
                   <Button variant="ghost" size="sm" onClick={addLine} style={{ marginTop: '8px' }}>
-                    + Add Line
+                    {t('fin.invBuilder.addLine')}
                   </Button>
                 </div>
               )}
@@ -503,7 +502,7 @@ export function InvoiceBuilder({
                 style={{ background: theme.bgSurfaceHover, borderRadius: '8px', padding: '16px' }}
               >
                 <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '8px' }}>
-                  Billing Method
+                  {t('fin.invBuilder.billingMethod')}
                 </div>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
                   {METHOD_OPTIONS.find((m) => m.value === method)?.label}
@@ -519,7 +518,7 @@ export function InvoiceBuilder({
                     marginBottom: '8px',
                   }}
                 >
-                  Line Items
+                  {t('fin.invBuilder.lineItems')}
                 </div>
                 {previewLines.map((line) => (
                   <div
@@ -534,10 +533,7 @@ export function InvoiceBuilder({
                   >
                     <div>
                       <div style={{ color: theme.textPrimary }}>{line.description}</div>
-                      <div style={{ color: theme.textMuted, fontSize: '11px' }}>
-                        Qty: {line.quantity} × {line.unit_price.toLocaleString()}
-                        {(line.tax_pct ?? 0) > 0 ? ` + ${line.tax_pct}% tax` : ''}
-                      </div>
+                      <div style={{ color: theme.textMuted, fontSize: '11px' }}>{t('fin.invBuilder.qty', { quantity: line.quantity, unit_price: line.unit_price.toLocaleString(), value: (line.tax_pct ?? 0) > 0 ? ` + ${line.tax_pct}% tax` : '' })}</div>
                     </div>
                     <AmountDisplay amount={line.quantity * line.unit_price} currency={currency} />
                   </div>
@@ -561,7 +557,7 @@ export function InvoiceBuilder({
                       color: theme.textSecondary,
                     }}
                   >
-                    <span>Subtotal</span>
+                    <span>{t('fin.invBuilder.subtotal')}</span>
                     <AmountDisplay amount={subtotal} currency={currency} />
                   </div>
                   {tax > 0 && (
@@ -573,7 +569,7 @@ export function InvoiceBuilder({
                         color: theme.textSecondary,
                       }}
                     >
-                      <span>Tax</span>
+                      <span>{t('fin.invBuilder.tax')}</span>
                       <AmountDisplay amount={tax} currency={currency} />
                     </div>
                   )}
@@ -585,7 +581,7 @@ export function InvoiceBuilder({
                       color: theme.textSecondary,
                     }}
                   >
-                    <span>Gross Total</span>
+                    <span>{t('fin.invBuilder.grossTotal')}</span>
                     <AmountDisplay amount={grossTotal} currency={currency} />
                   </div>
                   {discountValue > 0 && (
@@ -597,7 +593,7 @@ export function InvoiceBuilder({
                         color: theme.danger,
                       }}
                     >
-                      <span>Discount{discountPct > 0 ? ` (${discountPct}%)` : ''}</span>
+                      <span>{t('fin.invBuilder.discount2', { value: discountPct > 0 ? ` (${discountPct}%)` : '' })}</span>
                       <span style={{ fontFamily: 'monospace' }}>
                         − {discountValue.toLocaleString()} {currency}
                       </span>
@@ -614,7 +610,7 @@ export function InvoiceBuilder({
                       paddingTop: '6px',
                     }}
                   >
-                    <span>Net Payable</span>
+                    <span>{t('fin.invBuilder.netPayable')}</span>
                     <AmountDisplay amount={total} currency={currency} />
                   </div>
                   {whtApplies && whtAmount > 0 && (
@@ -626,10 +622,7 @@ export function InvoiceBuilder({
                         color: whtScenario === 'client_withholds' ? '#2563eb' : '#d97706',
                       }}
                     >
-                      <span>
-                        WHT ({(whtRate * 100).toFixed(1)}%) —{' '}
-                        {whtScenario === 'client_withholds' ? 'client withholds' : 'FNC pays'}
-                      </span>
+                      <span>{t('fin.invBuilder.wht', { value: (whtRate * 100).toFixed(1), value2: whtScenario === 'client_withholds' ? t('fin.invBuilder.clientWithholds') : t('fin.invBuilder.fncPays') })}</span>
                       <span style={{ fontFamily: 'monospace' }}>
                         {whtAmount.toLocaleString()} {currency}
                       </span>
@@ -657,11 +650,11 @@ export function InvoiceBuilder({
                     letterSpacing: '0.05em',
                   }}
                 >
-                  Discount (optional)
+                  {t('fin.invBuilder.discountOptional')}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <Input
-                    label="Discount %"
+                    label={t('fin.invBuilder.discount')}
                     type="number"
                     min="0"
                     max="100"
@@ -673,7 +666,7 @@ export function InvoiceBuilder({
                     placeholder="0"
                   />
                   <Input
-                    label={`Flat discount (${currency})`}
+                    label={t('fin.invBuilder.flatDiscount', { currency })}
                     type="number"
                     min="0"
                     step="0.01"
@@ -705,7 +698,7 @@ export function InvoiceBuilder({
                     letterSpacing: '0.05em',
                   }}
                 >
-                  Withholding Tax (WHT)
+                  {t('fin.invBuilder.withholdingTaxWht')}
                 </div>
                 <label
                   style={{
@@ -726,12 +719,12 @@ export function InvoiceBuilder({
                     }}
                     style={{ width: '15px', height: '15px' }}
                   />
-                  Apply WHT to this invoice
+                  {t('fin.invBuilder.applyWhtToThisInvoice')}
                 </label>
                 {whtApplies && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     <Select
-                      label="WHT scenario"
+                      label={t('fin.invBuilder.whtScenario')}
                       value={whtScenario}
                       onChange={(e) => {
                         setWhtScenario(e.target.value as 'client_withholds' | 'fnc_pays')
@@ -739,13 +732,13 @@ export function InvoiceBuilder({
                       options={[
                         {
                           value: 'client_withholds',
-                          label: 'Client withholds & pays tax authority',
+                          label: t('fin.invBuilder.clientWithholdsPaysTaxAuthority'),
                         },
-                        { value: 'fnc_pays', label: 'Client pays full — FNC remits annually' },
+                        { value: 'fnc_pays', label: t('fin.invBuilder.clientPaysFullFncRemitsAnnually') },
                       ]}
                     />
                     <Input
-                      label="WHT rate (%)"
+                      label={t('fin.invBuilder.whtRate')}
                       type="number"
                       min="0"
                       max="100"
@@ -761,7 +754,7 @@ export function InvoiceBuilder({
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <Input
-                  label="Due Date"
+                  label={t('fin.invBuilder.dueDate')}
                   type="date"
                   value={dueDate}
                   onChange={(e) => {
@@ -769,7 +762,7 @@ export function InvoiceBuilder({
                   }}
                 />
                 <Input
-                  label="Notes"
+                  label={t('fin.invBuilder.notes')}
                   value={notes}
                   onChange={(e) => {
                     setNotes(e.target.value)
@@ -791,11 +784,9 @@ export function InvoiceBuilder({
                   marginBottom: '8px',
                 }}
               >
-                Ready to create invoice
+                {t('fin.invBuilder.readyToCreateInvoice')}
               </div>
-              <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '8px' }}>
-                Invoice for <strong style={{ color: theme.accent }}>{projectName}</strong>
-              </div>
+              <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '8px' }}><Trans i18nKey="fin.invBuilder.invoiceFor" values={{ projectName }} components={[<strong style={{ color: theme.accent }} />]} /></div>
               <div
                 style={{
                   fontSize: '20px',
@@ -808,9 +799,7 @@ export function InvoiceBuilder({
                 {total.toLocaleString()} {currency}
               </div>
               {discountValue > 0 && (
-                <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '20px' }}>
-                  after {discountValue.toLocaleString()} {currency} discount
-                </div>
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '20px' }}>{t('fin.invBuilder.afterDiscount', { discountValue: discountValue.toLocaleString(), currency })}</div>
               )}
               {error && (
                 <div
@@ -823,14 +812,14 @@ export function InvoiceBuilder({
                     borderRadius: '8px',
                     fontSize: '12px',
                     color: theme.danger,
-                    textAlign: 'left',
+                    textAlign: 'start',
                   }}
                 >
                   {error}
                 </div>
               )}
               <Button variant="primary" size="lg" onClick={(...args: Parameters<typeof handleConfirm>) => void handleConfirm(...args)} loading={loading}>
-                Create Invoice
+                {t('fin.invBuilder.createInvoice')}
               </Button>
             </div>
           )}
@@ -856,7 +845,7 @@ export function InvoiceBuilder({
                   }
             }
           >
-            {step === 0 ? 'Cancel' : '← Back'}
+            {step === 0 ? t('fin.invBuilder.cancel') : t('fin.invBuilder.back')}
           </Button>
           {step < 3 && (
             <Button
@@ -866,7 +855,7 @@ export function InvoiceBuilder({
                 setStep((s) => (s + 1) as Step)
               }}
             >
-              {step === 2 ? 'Proceed →' : 'Next →'}
+              {step === 2 ? t('fin.invBuilder.proceed') : t('fin.invBuilder.next')}
             </Button>
           )}
         </div>

@@ -1,3 +1,5 @@
+import i18n from '../i18n'
+
 export function formatDate(date: string | Date, format?: string): string {
   const fmt = format ?? 'DD/MM/YYYY'
   const d = typeof date === 'string' ? new Date(date) : date
@@ -36,18 +38,18 @@ export function formatRelativeTime(date: string | Date): string {
   const diffMin = Math.floor(diffMs / 60000)
   const diffHr = Math.floor(diffMin / 60)
   const diffDay = Math.floor(diffHr / 24)
-  if (diffMin < 1) return 'just now'
-  if (diffMin < 60) return `${diffMin} min ago`
-  if (diffHr < 24) return `${diffHr} hr ago`
-  if (diffDay === 1) return 'Yesterday'
-  if (diffDay < 7) return `${diffDay} days ago`
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  if (diffMin < 1) return i18n.t('time.justNow')
+  if (diffMin < 60) return i18n.t('time.minAgo', { count: diffMin })
+  if (diffHr < 24) return i18n.t('time.hrAgo', { count: diffHr })
+  if (diffDay === 1) return i18n.t('time.yesterday')
+  if (diffDay < 7) return i18n.t('time.daysAgo', { count: diffDay })
+  return d.toLocaleDateString(i18n.resolvedLanguage?.startsWith('ar') ? 'ar' : 'en-GB', { day: 'numeric', month: 'short' })
 }
 
 export function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400)
   const hours = Math.floor((seconds % 86400) / 3600)
-  if (days > 0) return `${days}d ${hours}h`
+  if (days > 0) return i18n.t('time.uptimeDaysHours', { days, hours })
   const mins = Math.floor((seconds % 3600) / 60)
-  return `${hours}h ${mins}m`
+  return i18n.t('time.uptimeHoursMins', { hours, mins })
 }

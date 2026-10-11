@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { Badge } from './Badge'
 import { formatUptime } from '../../lib/format'
@@ -40,7 +41,7 @@ function PulseDot({ color }: { color: string }) {
           background: color,
           position: 'absolute',
           top: 0,
-          left: 0,
+          insetInlineStart: 0,
         }}
       />
       <span
@@ -53,7 +54,7 @@ function PulseDot({ color }: { color: string }) {
           opacity: 0.4,
           position: 'absolute',
           top: 0,
-          left: 0,
+          insetInlineStart: 0,
           animation: 'pulse-ring 1.5s ease-out infinite',
         }}
       />
@@ -69,6 +70,7 @@ export function SystemHealthCard({
   uptime,
   lastChecked,
 }: SystemHealthCardProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
 
   const statusColor =
@@ -120,8 +122,8 @@ export function SystemHealthCard({
       {/* Latency */}
       {latencyMs !== undefined && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: theme.textMuted, fontSize: 12 }}>Latency:</span>
-          <span style={{ color: latencyColor, fontWeight: 600, fontSize: 13 }}>{latencyMs} ms</span>
+          <span style={{ color: theme.textMuted, fontSize: 12 }}>{t('ui.health.latency')}</span>
+          <span style={{ color: latencyColor, fontWeight: 600, fontSize: 13 }}>{t('ui.health.ms', { value: latencyMs })}</span>
         </div>
       )}
 
@@ -157,10 +159,10 @@ export function SystemHealthCard({
       >
         {uptime !== undefined && (
           <span>
-            Uptime: <span style={{ color: theme.textSecondary }}>{formatUptime(uptime)}</span>
+            {t('ui.health.uptimeLabel')} <span style={{ color: theme.textSecondary }}>{formatUptime(uptime)}</span>
           </span>
         )}
-        {lastChecked && <span>Checked {formatRelativeTime(lastChecked)}</span>}
+        {lastChecked && <span>{t('ui.health.checked', { when: formatRelativeTime(lastChecked) })}</span>}
       </div>
 
       {/* suppress unused import warning */}

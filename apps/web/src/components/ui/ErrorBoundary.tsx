@@ -1,3 +1,4 @@
+import i18n from '../../i18n'
 import React from 'react'
 import { Card } from './Card'
 
@@ -59,12 +60,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
       return (
         <Card padding="md" style={{ margin: '24px' }}>
           <p style={{ color: 'var(--danger)', fontWeight: 600, marginBottom: '8px' }}>
-            {chunkError ? 'A new version was deployed' : 'Something went wrong'}
+            {chunkError ? i18n.t('misc.newDeployed') : i18n.t('misc.somethingWrong')}
           </p>
           <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
             {chunkError
-              ? 'This page was updated since you opened the app. Reload to get the latest version.'
-              : (this.state.error?.message ?? 'An unexpected error occurred.')}
+              ? i18n.t('misc.pageUpdated')
+              : (this.state.error?.message ?? i18n.t('misc.unexpectedError'))}
           </p>
           <button
             onClick={() => {
@@ -86,7 +87,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               fontFamily: 'inherit',
             }}
           >
-            {chunkError ? 'Reload page' : 'Retry'}
+            {chunkError ? i18n.t('misc.reloadPage') : i18n.t('misc.retry')}
           </button>
         </Card>
       )

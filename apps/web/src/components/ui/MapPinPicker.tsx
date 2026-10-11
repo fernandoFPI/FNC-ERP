@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useRef, useState } from 'react'
 import type * as Leaflet from 'leaflet'
 import { useTheme } from '../../theme/ThemeContext'
@@ -54,6 +55,7 @@ function loadLeaflet(): Promise<void> {
 }
 
 export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Leaflet.Map | null>(null)
@@ -162,15 +164,15 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
     <Modal
       open={open}
       onClose={onClose}
-      title="Drop a pin"
+      title={t('ui.map.dropAPin')}
       size="lg"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t('ui.map.cancel')}
           </Button>
           <Button variant="primary" onClick={handleConfirm} disabled={!pin}>
-            {pin ? `Use (${pin.lat}, ${pin.lng})` : 'Click map to place pin'}
+            {pin ? `Use (${pin.lat}, ${pin.lng})` : t('ui.map.clickMapToPlacePin')}
           </Button>
         </>
       }
@@ -178,7 +180,7 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {!leafletReady && (
           <div style={{ textAlign: 'center', color: theme.textMuted, padding: '20px' }}>
-            Loading map…
+            {t('ui.map.loadingMap')}
           </div>
         )}
         {/* Map container — always rendered so the ref is stable */}
@@ -194,8 +196,7 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
           }}
         />
         <div style={{ fontSize: '12px', color: theme.textMuted }}>
-          Click anywhere on the map to place a pin. Drag the pin to adjust. You can also use the
-          search box built into OpenStreetMap tiles.
+          {t('ui.map.clickAnywhereOnTheMapTo')}
         </div>
         {pin && (
           <div
@@ -209,7 +210,7 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
               border: `1px solid ${theme.border}`,
             }}
           >
-            Lat: {pin.lat} · Lng: {pin.lng}
+            {t('ui.map.latLng', { lat: pin.lat, lng: pin.lng })}
           </div>
         )}
       </div>

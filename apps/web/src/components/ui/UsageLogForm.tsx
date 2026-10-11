@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { Modal } from './Modal'
@@ -32,6 +33,7 @@ export function UsageLogForm({
   onSubmit,
   onClose,
 }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [form, setForm] = useState<Omit<UsageLogEntry, 'asset_id'>>({
     usage_date: new Date().toISOString().slice(0, 10),
@@ -57,13 +59,13 @@ export function UsageLogForm({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={`Log Usage — ${assetName}`}>
+    <Modal open={open} onClose={onClose} title={t('ui.usageLog.logUsage', { assetName })}>
       <form
         onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
         style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
       >
         <Input
-          label="Date"
+          label={t('ui.usageLog.date')}
           type="date"
           value={form.usage_date}
           onChange={(e) => {
@@ -73,7 +75,7 @@ export function UsageLogForm({
         />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <Input
-            label="Hours Used"
+            label={t('ui.usageLog.hoursUsed')}
             type="number"
             step="0.5"
             min="0"
@@ -84,7 +86,7 @@ export function UsageLogForm({
             required
           />
           <Input
-            label="Mileage (km)"
+            label={t('ui.usageLog.mileageKm')}
             type="number"
             step="1"
             min="0"
@@ -108,14 +110,11 @@ export function UsageLogForm({
               fontSize: '13px',
               color: theme.warning,
             }}
-          >
-            ⚠ Maintenance will be due at {maintenanceDueHours}h. Current: {currentHours}h →
-            projected: {projectedHours}h
-          </div>
+          >{t('ui.usageLog.maintenanceWillBeDueAtH', { maintenanceDueHours, currentHours, projectedHours })}</div>
         )}
 
         <Input
-          label="Operator Name"
+          label={t('ui.usageLog.operatorName')}
           value={form.operator_name}
           onChange={(e) => {
             setForm((f) => ({ ...f, operator_name: e.target.value }))
@@ -123,7 +122,7 @@ export function UsageLogForm({
           required
         />
         <Input
-          label="Notes"
+          label={t('ui.usageLog.notes')}
           value={form.notes ?? ''}
           onChange={(e) => {
             setForm((f) => ({ ...f, notes: e.target.value }))
@@ -132,10 +131,10 @@ export function UsageLogForm({
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <Button variant="ghost" type="button" onClick={onClose}>
-            Cancel
+            {t('ui.usageLog.cancel')}
           </Button>
           <Button variant="primary" type="submit" loading={loading}>
-            Save Log
+            {t('ui.usageLog.saveLog')}
           </Button>
         </div>
       </form>

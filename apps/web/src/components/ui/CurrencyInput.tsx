@@ -84,7 +84,9 @@ export function CurrencyInput({
           style={{
             minHeight: isPhone ? '44px' : '36px',
             height: isPhone ? 'auto' : '36px',
-            padding: isPhone ? '10px 50px 10px 12px' : '0 50px 0 12px',
+            paddingBlock: isPhone ? '10px' : '0',
+            paddingInlineEnd: '50px',
+            paddingInlineStart: '12px',
             fontSize: isPhone ? '16px' : '13px',
             background: theme.bgSurface,
             border: `1px solid ${error ? theme.dangerBorder : theme.borderInput}`,
@@ -99,7 +101,7 @@ export function CurrencyInput({
         <span
           style={{
             position: 'absolute',
-            right: '12px',
+            insetInlineEnd: '12px',
             fontSize: '11px',
             fontWeight: 600,
             color: theme.textMuted,

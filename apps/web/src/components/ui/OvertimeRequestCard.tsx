@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { enumLabel } from '../../i18n'
 import { useTheme } from '../../theme/ThemeContext'
 import { Badge } from './Badge'
 import { Button } from './Button'
@@ -69,7 +70,7 @@ export function OvertimeRequestCard({
             <div style={{ fontSize: '12px', color: theme.textMuted }}>{request.workDate}</div>
           </div>
         </div>
-        <Badge variant={statusVariant}>{request.status}</Badge>
+        <Badge variant={statusVariant}>{enumLabel(request.status)}</Badge>
       </div>
 
       {/* Hours row */}

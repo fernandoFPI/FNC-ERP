@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { navLabel } from '../../i18n'
 import { useTheme } from '../../theme/ThemeContext'
 import { api } from '../../lib/axios'
 import { NAV_SECTIONS } from '../shell/Sidebar'
@@ -121,6 +123,7 @@ function saveRecent(item: SearchItem) {
 }
 
 export function SearchPalette({ open, prefill, onClose }: Props) {
+  const { t, i18n: i18nInstance } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { canAny, isSystemLevel } = usePermission()
@@ -143,7 +146,9 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
     const seen = new Set<string>()
     const items: SearchItem[] = []
     for (const p of NAV_PAGES) {
-      if (!p.label.toLowerCase().includes(q)) continue
+      // Match either the English source label or the translated one, so English
+      // queries keep working while the UI is in Arabic.
+      if (!p.label.toLowerCase().includes(q) && !navLabel(p.label).toLowerCase().includes(q)) continue
       if (seen.has(p.path)) continue
       if (p.factoryOnly && !isFactoryCompany) continue
       if (p.permKeys && p.permKeys.length > 0 && !isSystemLevel && !canAny(p.permKeys)) continue
@@ -151,15 +156,15 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
       items.push({
         id: `page:${p.path}`,
         type: 'page',
-        title: p.label,
-        subtitle: p.section,
+        title: navLabel(p.label),
+        subtitle: navLabel(p.section),
         meta: '',
         status: '',
         url: p.path,
       })
     }
-    return items.length > 0 ? { type: 'page', label: 'Go to', items } : null
-  }, [query, canAny, isSystemLevel, isFactoryCompany])
+    return items.length > 0 ? { type: 'page', label: t('search.goTo'), items } : null
+  }, [query, canAny, isSystemLevel, isFactoryCompany, i18nInstance.resolvedLanguage])
 
   const displayGroups = pageGroup ? [pageGroup, ...groups] : groups
 
@@ -318,7 +323,7 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
             onChange={(e) => {
               setQuery(e.target.value)
             }}
-            placeholder="Search purchase orders, projects, employees…"
+            placeholder={t('search.placeholder')}
             style={{
               flex: 1,
               background: 'none',
@@ -362,7 +367,7 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
                   letterSpacing: '0.08em',
                 }}
               >
-                Recent
+                {t('search.recent')}
               </div>
               {recents.map((r) => {
                 const tc = TYPE_CONFIG[r.type]
@@ -458,7 +463,7 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
                     letterSpacing: '0.08em',
                   }}
                 >
-                  {group.label}
+                  {group.type === 'page' ? group.label : t(`search.group.${group.label}`, { defaultValue: group.label })}
                 </div>
                 {group.items.map((item) => {
                   const idx = flatIdx++
@@ -579,12 +584,12 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
           {query.length < 2 && !showRecents && (
             <div style={{ padding: '32px 16px', textAlign: 'center' }}>
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                Type at least 2 characters to search
+                {t('search.minChars')}
               </div>
               <div
                 style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px', opacity: 0.6 }}
               >
-                Purchase orders · Projects · Employees · Vendors · Invoices · Rentals
+                {t('search.scopes')}
               </div>
             </div>
           )}
@@ -593,7 +598,7 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
           {showNoResults && (
             <div style={{ padding: '32px 16px', textAlign: 'center' }}>
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                No results for "{query}"
+                {t('search.noResults', { query })}
               </div>
             </div>
           )}
@@ -610,9 +615,9 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
           }}
         >
           {[
-            { key: '↑↓', label: 'navigate' },
-            { key: 'Enter', label: 'open' },
-            { key: 'Esc', label: 'close' },
+            { key: '↑↓', label: t('search.navigate') },
+            { key: 'Enter', label: t('search.open') },
+            { key: 'Esc', label: t('search.close') },
           ].map(({ key, label }) => (
             <span
               key={key}

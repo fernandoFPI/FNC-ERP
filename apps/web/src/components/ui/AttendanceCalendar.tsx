@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import i18n, { useIsRtl } from '../../i18n'
 import React, { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 
@@ -31,6 +33,9 @@ interface AttendanceCalendarProps {
 }
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+// Weekday header in the active language (2024-01-01 was a Monday).
+const weekdayLabel = (i: number) =>
+  new Intl.DateTimeFormat(i18n.resolvedLanguage ?? 'en', { weekday: 'short' }).format(new Date(2024, 0, 1 + i))
 
 function getDaysInMonth(year: number, month: number): Date[] {
   const first = new Date(year, month, 1)
@@ -53,6 +58,8 @@ export function AttendanceCalendar({
   loading = false,
   onMonthChange,
 }: AttendanceCalendarProps) {
+  const { t } = useTranslation()
+  const rtl = useIsRtl()
   const { theme } = useTheme()
   const [hoverDate, setHoverDate] = useState<string | null>(null)
 
@@ -62,7 +69,7 @@ export function AttendanceCalendar({
     byDate[d.date] = d
   })
 
-  const monthLabel = month.toLocaleString('default', { month: 'long', year: 'numeric' })
+  const monthLabel = month.toLocaleString(i18n.resolvedLanguage?.startsWith('ar') ? 'ar' : 'default', { month: 'long', year: 'numeric' })
 
   function prevMonth() {
     onMonthChange?.(new Date(month.getFullYear(), month.getMonth() - 1, 1))
@@ -105,7 +112,7 @@ export function AttendanceCalendar({
             padding: '4px 8px',
           }}
         >
-          ‹
+          {rtl ? '›' : '‹'}
         </button>
         <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '15px' }}>
           {monthLabel}
@@ -121,7 +128,7 @@ export function AttendanceCalendar({
             padding: '4px 8px',
           }}
         >
-          ›
+          {rtl ? '‹' : '›'}
         </button>
       </div>
 
@@ -134,7 +141,7 @@ export function AttendanceCalendar({
           marginBottom: '4px',
         }}
       >
-        {DAY_LABELS.map((d) => (
+        {DAY_LABELS.map((d, i) => (
           <div
             key={d}
             style={{
@@ -147,7 +154,7 @@ export function AttendanceCalendar({
               padding: '4px 0',
             }}
           >
-            {d}
+            {weekdayLabel(i)}
           </div>
         ))}
       </div>
@@ -168,19 +175,19 @@ export function AttendanceCalendar({
           if (summary) {
             if (summary.isWeekend) {
               dotColor = theme.textMuted
-              dotTitle = 'Weekend'
+              dotTitle = t('ui.attCalendar.weekend')
             } else if (summary.isLeave) {
               dotColor = theme.info
-              dotTitle = summary.leaveTypeName ?? 'Leave'
+              dotTitle = summary.leaveTypeName ?? t('ui.attCalendar.leave')
             } else if (summary.isAbsent) {
               dotColor = theme.danger
-              dotTitle = 'Absent'
+              dotTitle = t('ui.attCalendar.absent')
             } else if (summary.hasOvertime) {
               dotColor = theme.warning
-              dotTitle = `${summary.hoursWorked?.toFixed(1)} hrs (OT)`
+              dotTitle = t('ui.attCalendar.hrsOt', { hours: summary.hoursWorked?.toFixed(1) })
             } else {
               dotColor = theme.success
-              dotTitle = `${summary.hoursWorked?.toFixed(1)} hrs`
+              dotTitle = t('ui.attCalendar.hrs', { hours: summary.hoursWorked?.toFixed(1) })
             }
           }
 
@@ -265,11 +272,11 @@ export function AttendanceCalendar({
       {/* Legend */}
       <div style={{ display: 'flex', gap: '16px', marginTop: '12px', flexWrap: 'wrap' }}>
         {[
-          { color: theme.success, label: 'Present' },
-          { color: theme.warning, label: 'Overtime' },
-          { color: theme.danger, label: 'Absent' },
-          { color: theme.info, label: 'On leave' },
-          { color: theme.textMuted, label: 'Weekend' },
+          { color: theme.success, label: t('ui.attCalendar.present') },
+          { color: theme.warning, label: t('ui.attCalendar.overtime') },
+          { color: theme.danger, label: t('ui.attCalendar.absent') },
+          { color: theme.info, label: t('ui.attCalendar.onLeave') },
+          { color: theme.textMuted, label: t('ui.attCalendar.weekend') },
         ].map(({ color, label }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />

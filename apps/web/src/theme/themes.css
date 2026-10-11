@@ -24,6 +24,11 @@ html[dir='rtl'] {
   font-family: 'Noto Sans Arabic', -apple-system, 'Segoe UI', Tahoma, sans-serif;
 }
 
+/* Directional icons (back chevrons, arrows) mirror in right-to-left layouts. */
+html[dir='rtl'] .rtl-flip {
+  transform: scaleX(-1);
+}
+
 body {
   background: var(--bg-canvas);
   color: var(--text-primary);

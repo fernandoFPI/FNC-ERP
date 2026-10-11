@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../i18n'
 import React from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 
@@ -18,6 +20,7 @@ export function SalaryBreakdown({
   currency,
   payType = 'monthly',
 }: SalaryBreakdownProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
 
   const totalAllowances = allowances.reduce((s, a) => s + a.amount, 0)
@@ -61,12 +64,12 @@ export function SalaryBreakdown({
       {/* Legend */}
       <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
         {[
-          { label: 'Base pay', color: theme.accent, value: basePay },
+          { label: t('ui.salaryBreakdown.basePay'), color: theme.accent, value: basePay },
           ...(totalAllowances > 0
-            ? [{ label: 'Allowances', color: theme.success, value: totalAllowances }]
+            ? [{ label: t('ui.salaryBreakdown.allowances'), color: theme.success, value: totalAllowances }]
             : []),
           ...(totalDeductions > 0
-            ? [{ label: 'Deductions', color: theme.danger, value: -totalDeductions }]
+            ? [{ label: t('ui.salaryBreakdown.deductions'), color: theme.danger, value: -totalDeductions }]
             : []),
         ].map(({ label, color, value }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -90,9 +93,9 @@ export function SalaryBreakdown({
       {/* Summary */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
         {[
-          { label: 'Gross', value: gross, color: theme.textPrimary },
-          { label: 'Deductions', value: totalDeductions, color: theme.danger },
-          { label: 'Net pay', value: net, color: theme.accent },
+          { label: t('ui.salaryBreakdown.gross'), value: gross, color: theme.textPrimary },
+          { label: t('ui.salaryBreakdown.deductions'), value: totalDeductions, color: theme.danger },
+          { label: t('ui.salaryBreakdown.netPay'), value: net, color: theme.accent },
         ].map(({ label, value, color }) => (
           <div
             key={label}
@@ -144,7 +147,7 @@ export function SalaryBreakdown({
               marginBottom: '6px',
             }}
           >
-            Allowances
+            {t('ui.salaryBreakdown.allowances')}
           </div>
           {allowances.map((a, i) => (
             <div
@@ -178,7 +181,7 @@ export function SalaryBreakdown({
               marginBottom: '6px',
             }}
           >
-            Deductions
+            {t('ui.salaryBreakdown.deductions')}
           </div>
           {deductions.map((d, i) => (
             <div
@@ -201,8 +204,8 @@ export function SalaryBreakdown({
       )}
 
       <div style={{ fontSize: '11px', color: theme.textMuted }}>
-        Pay type: <span style={{ color: theme.textSecondary }}>{payType}</span>
-        {' · '}OT rate: <span style={{ color: theme.textSecondary }}>{overtimeMultiplier}×</span>
+        {t('ui.salaryBreakdown.payType')} <span style={{ color: theme.textSecondary }}>{enumLabel(payType)}</span>
+        {' · '}{t('ui.salaryBreakdown.otRate')} <span style={{ color: theme.textSecondary }}>{overtimeMultiplier}×</span>
       </div>
     </div>
   )

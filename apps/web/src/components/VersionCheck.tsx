@@ -1,3 +1,4 @@
+import i18n from '../i18n'
 import { useEffect, useRef } from 'react'
 import { useToastStore } from '../store/toastStore'
 
@@ -40,10 +41,10 @@ export function VersionCheck() {
           triggeredRef.current = true
           addToast({
             type: 'info',
-            message: "A new version is available — it'll load next time this tab is in the background, or click to refresh now.",
+            message: i18n.t('misc.newVersion'),
             actions: [
               {
-                label: 'Refresh now',
+                label: i18n.t('misc.refreshNow'),
                 variant: 'primary',
                 onClick: () => {
                   window.location.reload()

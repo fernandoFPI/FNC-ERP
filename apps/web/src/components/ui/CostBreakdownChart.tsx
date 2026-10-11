@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 
 export interface CostSegment {
@@ -14,6 +15,7 @@ interface Props {
 const PALETTE_KEYS = ['accent', 'success', 'warning', 'danger', 'info'] as const
 
 export function CostBreakdownChart({ segments, currency = 'IQD' }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const total = segments.reduce((s, c) => s + c.amount, 0) || 1
 
@@ -76,7 +78,7 @@ export function CostBreakdownChart({ segments, currency = 'IQD' }: Props) {
 
         {/* center label */}
         <text x={cx} y={cy - 6} textAnchor="middle" fontSize="11" fill={theme.textMuted}>
-          Total
+          {t('ui.costChart.total')}
         </text>
         <text
           x={cx}

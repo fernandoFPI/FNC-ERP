@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 interface SpinnerProps {
   size?: 'sm' | 'md' | 'lg'
   className?: string
@@ -6,6 +7,7 @@ interface SpinnerProps {
 const sizes = { sm: 14, md: 20, lg: 28 }
 
 export function Spinner({ size = 'md', className = '' }: SpinnerProps) {
+  const { t } = useTranslation()
   const px = sizes[size]
   return (
     <svg
@@ -15,7 +17,7 @@ export function Spinner({ size = 'md', className = '' }: SpinnerProps) {
       fill="none"
       className={`no-theme-transition${className ? ` ${className}` : ''}`}
       style={{ animation: 'spin 0.8s linear infinite' }}
-      aria-label="Loading"
+      aria-label={t('ui.spinner.loading')}
     >
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       <circle

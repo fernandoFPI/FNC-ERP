@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
@@ -35,6 +36,7 @@ export function Select({
   className = '',
   style,
 }: SelectProps) {
+  const { t } = useTranslation()
   const { theme, themeKey } = useTheme()
   const { isPhone } = useBreakpoint()
   const isDark = themeKey === 'black'
@@ -58,7 +60,7 @@ export function Select({
           value={value ?? ''}
           onChange={handleChange}
           options={ssOptions}
-          placeholder={placeholder ?? 'Select…'}
+          placeholder={placeholder ?? t('ui.generic.select')}
           disabled={disabled}
           required={required}
         />

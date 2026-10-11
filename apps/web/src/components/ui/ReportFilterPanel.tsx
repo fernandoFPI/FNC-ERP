@@ -1,3 +1,5 @@
+import { tl } from '../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState, useRef } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { Select } from './Select'
@@ -63,6 +65,7 @@ export function ReportFilterPanel({
   autoRefresh = false,
   onAutoRefreshToggle,
 }: ReportFilterPanelProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [exportOpen, setExportOpen] = useState(false)
   const [localFrom, setLocalFrom] = useState(fromDate ?? '')
@@ -71,12 +74,12 @@ export function ReportFilterPanel({
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   const companyOptions = [
-    { value: '', label: 'All Companies' },
+    { value: '', label: t('ui.reportFilter.allCompanies') },
     ...(companies ?? []).map((c) => ({ value: c.id, label: c.name })),
   ]
 
   const costCenterOptions = [
-    { value: '', label: 'All Cost Centers' },
+    { value: '', label: t('ui.reportFilter.allCostCenters') },
     ...(costCenters ?? []).map((cc) => ({ value: cc.id, label: cc.name })),
   ]
 
@@ -105,7 +108,7 @@ export function ReportFilterPanel({
       {/* Company selector */}
       {companies && companies.length > 0 && (
         <Select
-          label="Company"
+          label={t('ui.reportFilter.company')}
           value={selectedCompanyId ?? ''}
           onChange={(e) => onCompanyChange?.(e.target.value)}
           options={companyOptions}
@@ -116,7 +119,7 @@ export function ReportFilterPanel({
       {/* Cost center */}
       {costCenters && costCenters.length > 0 && (
         <Select
-          label="Cost Center"
+          label={t('ui.reportFilter.costCenter')}
           value={selectedCostCenterId ?? ''}
           onChange={(e) => onCostCenterChange?.(e.target.value)}
           options={costCenterOptions}
@@ -128,7 +131,7 @@ export function ReportFilterPanel({
       {type === 'date_range' && (
         <>
           <Input
-            label="From"
+            label={t('ui.reportFilter.from')}
             type="date"
             value={localFrom}
             onChange={(e) => {
@@ -152,7 +155,7 @@ export function ReportFilterPanel({
 
       {type === 'single_date' && (
         <Input
-          label="As of Date"
+          label={t('ui.reportFilter.asOfDate')}
           type="date"
           value={asOfDate ?? ''}
           onChange={(e) => onAsOfDateChange?.(e.target.value)}
@@ -162,12 +165,12 @@ export function ReportFilterPanel({
 
       {type === 'period_select' && (
         <Select
-          label="Period"
+          label={t('ui.reportFilter.period')}
           value={localPeriod}
           onChange={(e) => {
             setLocalPeriod(e.target.value)
           }}
-          options={PERIODS}
+          options={PERIODS.map((o) => ({ ...o, label: tl('ui.reportFilter.periodOpts', o.value, o.label) }))}
           style={{ width: 160 }}
         />
       )}
@@ -178,21 +181,21 @@ export function ReportFilterPanel({
       {/* Auto-refresh toggle */}
       {onAutoRefreshToggle !== undefined && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 4 }}>
-          <Checkbox checked={autoRefresh} onChange={onAutoRefreshToggle} label="Auto-refresh" />
+          <Checkbox checked={autoRefresh} onChange={onAutoRefreshToggle} label={t('ui.reportFilter.autoRefresh')} />
         </div>
       )}
 
       {/* Last run */}
       {lastRun && (
         <span style={{ color: theme.textMuted, fontSize: 12, paddingBottom: 6 }}>
-          Last run: {formatRelativeTime(lastRun)}
+          {t('ui.reportFilter.lastRun', { when: formatRelativeTime(lastRun) })}
         </span>
       )}
 
       {/* Print */}
       {onPrint && (
         <Button onClick={onPrint} size="sm">
-          Print
+          {t('ui.reportFilter.print')}
         </Button>
       )}
 
@@ -205,13 +208,13 @@ export function ReportFilterPanel({
             }}
             size="sm"
           >
-            Export ▾
+            {t('ui.reportFilter.export')}
           </Button>
           {exportOpen && (
             <div
               style={{
                 position: 'absolute',
-                right: 0,
+                insetInlineEnd: 0,
                 top: '100%',
                 marginTop: 4,
                 background: theme.bgSurface,
@@ -232,7 +235,7 @@ export function ReportFilterPanel({
                   style={{
                     display: 'block',
                     width: '100%',
-                    textAlign: 'left',
+                    textAlign: 'start',
                     padding: '8px 14px',
                     background: 'none',
                     border: 'none',

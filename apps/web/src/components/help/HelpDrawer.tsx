@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { useIsRtl } from '../../i18n'
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
@@ -11,7 +13,9 @@ interface Props {
 }
 
 export function HelpDrawer({ open, onClose }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
+  const rtl = useIsRtl()
   const location = useLocation()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
@@ -76,21 +80,21 @@ export function HelpDrawer({ open, onClose }: Props) {
       {/* Drawer panel */}
       <div
         role="dialog"
-        aria-label="Help & Guides"
+        aria-label={t('help.drawer.helpGuides')}
         style={{
           position: 'fixed',
           top: 0,
-          right: 0,
+          insetInlineEnd: 0,
           width: drawerWidth,
           height: '100dvh',
           zIndex: 60,
           background: theme.bgSurface,
-          borderLeft: `1px solid ${theme.border}`,
+          borderInlineStart: `1px solid ${theme.border}`,
           display: 'flex',
           flexDirection: 'column',
-          transform: open ? 'translateX(0)' : `translateX(${drawerWidth}px)`,
+          transform: open ? 'translateX(0)' : `translateX(${rtl ? -drawerWidth : drawerWidth}px)`,
           transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)',
-          boxShadow: open ? '-8px 0 32px rgba(0,0,0,0.18)' : 'none',
+          boxShadow: open ? `${rtl ? '' : '-'}8px 0 32px rgba(0,0,0,0.18)` : 'none',
         }}
       >
         {/* Header */}
@@ -107,12 +111,12 @@ export function HelpDrawer({ open, onClose }: Props) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '18px' }}>❓</span>
             <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
-              Help & Guides
+              {t('help.drawer.helpGuides')}
             </span>
           </div>
           <button
             onClick={onClose}
-            aria-label="Close help"
+            aria-label={t('help.drawer.closeHelp')}
             style={{
               background: 'none',
               border: 'none',
@@ -157,7 +161,7 @@ export function HelpDrawer({ open, onClose }: Props) {
               strokeWidth="2"
               style={{
                 position: 'absolute',
-                left: '10px',
+                insetInlineStart: '10px',
                 top: '50%',
                 transform: 'translateY(-50%)',
                 color: theme.textSecondary,
@@ -173,7 +177,7 @@ export function HelpDrawer({ open, onClose }: Props) {
               onChange={(e) => {
                 setSearch(e.target.value)
               }}
-              placeholder="Search guides…"
+              placeholder={t('help.drawer.searchGuides')}
               style={{
                 width: '100%',
                 padding: '8px 12px 8px 32px',
@@ -193,7 +197,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                 }}
                 style={{
                   position: 'absolute',
-                  right: '8px',
+                  insetInlineEnd: '8px',
                   top: '50%',
                   transform: 'translateY(-50%)',
                   background: 'none',
@@ -233,7 +237,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                     marginTop: '24px',
                   }}
                 >
-                  No guides found for "{search}"
+                  {t('help.drawer.noGuides', { query: search })}
                 </p>
               ) : (
                 filtered.map((topic) => (
@@ -251,7 +255,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                       padding: '10px 12px',
                       marginBottom: '8px',
                       cursor: 'pointer',
-                      textAlign: 'left',
+                      textAlign: 'start',
                       display: 'flex',
                       alignItems: 'flex-start',
                       gap: '10px',
@@ -312,7 +316,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                             marginTop: '2px',
                           }}
                         >
-                          ← Back to current page
+                          {t('help.drawer.backToCurrentPage')}
                         </button>
                       )}
                     </div>
@@ -359,7 +363,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                       >
                         <polygon points="5 3 19 12 5 21 5 3" />
                       </svg>
-                      Start guided tour — {tours[displayTopic.tourKey].title}
+                      {t('help.drawer.startTour', { title: tours[displayTopic.tourKey].title })}
                     </button>
                   )}
 
@@ -375,7 +379,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                         marginBottom: '12px',
                       }}
                     >
-                      How to use
+                      {t('help.drawer.howToUse')}
                     </div>
                     {displayTopic.steps.map((step, i) => (
                       <div key={i} style={{ display: 'flex', gap: '12px', marginBottom: '14px' }}>
@@ -441,7 +445,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                           marginBottom: '8px',
                         }}
                       >
-                        💡 Tips
+                        {t('help.drawer.tips')}
                       </div>
                       {displayTopic.tips.map((tip, i) => (
                         <div
@@ -474,7 +478,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                 <div style={{ padding: '24px 16px 8px', textAlign: 'center' }}>
                   <div style={{ fontSize: '32px', marginBottom: '8px' }}>❓</div>
                   <div style={{ fontSize: '13px', color: theme.textSecondary }}>
-                    Browse topics below or search for a guide above.
+                    {t('help.drawer.browseTopicsBelowOrSearchFor')}
                   </div>
                 </div>
               )}
@@ -506,7 +510,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                       textTransform: 'uppercase',
                     }}
                   >
-                    Browse all topics
+                    {t('help.drawer.browseAllTopics')}
                   </span>
                   <svg
                     width="14"
@@ -534,7 +538,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                           fontWeight: 600,
                           color: theme.textSecondary,
                           marginBottom: '6px',
-                          paddingLeft: '2px',
+                          paddingInlineStart: '2px',
                         }}
                       >
                         {group.label}
@@ -555,7 +559,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                               borderRadius: '6px',
                               padding: '7px 10px',
                               cursor: 'pointer',
-                              textAlign: 'left',
+                              textAlign: 'start',
                               display: 'flex',
                               alignItems: 'center',
                               gap: '8px',
@@ -581,7 +585,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                             {topic.tourKey && (
                               <span
                                 style={{
-                                  marginLeft: 'auto',
+                                  marginInlineStart: 'auto',
                                   fontSize: '10px',
                                   padding: '2px 6px',
                                   borderRadius: '4px',
@@ -591,7 +595,7 @@ export function HelpDrawer({ open, onClose }: Props) {
                                   flexShrink: 0,
                                 }}
                               >
-                                tour
+                                {t('help.drawer.tour')}
                               </span>
                             )}
                           </button>

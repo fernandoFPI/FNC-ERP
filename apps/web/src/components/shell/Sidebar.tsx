@@ -8,7 +8,8 @@ import { usePermission } from '../../hooks/usePermission'
 import { useCompanyStore } from '../../store/companyStore'
 import { useAuthStore } from '../../store/authStore'
 import { getInitials } from '../../lib/userDisplay'
-import { useIsRtl } from '../../i18n'
+import { useTranslation } from 'react-i18next'
+import { navLabel, useIsRtl } from '../../i18n'
 
 export interface NavChild {
   label: string
@@ -1061,6 +1062,7 @@ export function Sidebar({
 }: SidebarProps) {
   const { theme } = useTheme()
   const rtl = useIsRtl()
+  const { t } = useTranslation()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const clearAuth = useAuthStore((s) => s.clearAuth)
@@ -1160,7 +1162,7 @@ export function Sidebar({
 
     const itemContent = (
       <div
-        title={effectiveCollapsed ? item.label : undefined}
+        title={effectiveCollapsed ? navLabel(item.label) : undefined}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1214,7 +1216,7 @@ export function Sidebar({
                 flex: 1,
               }}
             >
-              {item.label}
+              {navLabel(item.label)}
             </span>
             {badgeCount !== undefined && (
               <span
@@ -1301,7 +1303,7 @@ export function Sidebar({
                       if (!isChildActive) e.currentTarget.style.background = 'transparent'
                     }}
                   >
-                    <span>{child.label}</span>
+                    <span>{navLabel(child.label)}</span>
                     {childBadge !== undefined && (
                       <span
                         style={{
@@ -1357,7 +1359,7 @@ export function Sidebar({
           </span>
           <button
             onClick={onClose}
-            aria-label="Close sidebar"
+            aria-label={t('shell.closeSidebar')}
             style={{
               background: theme.bgSurface,
               border: `1px solid ${theme.border}`,
@@ -1394,8 +1396,8 @@ export function Sidebar({
         >
           <button
             onClick={onToggle}
-            aria-label="Expand sidebar"
-            title="Expand sidebar"
+            aria-label={t('shell.expandSidebar')}
+            title={t('shell.expandSidebar')}
             style={{
               background: theme.bgSurface,
               border: `1px solid ${theme.border}`,
@@ -1528,7 +1530,7 @@ export function Sidebar({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {section.section}
+                  {navLabel(section.section)}
                 </div>
               )}
               {visibleItems.map(renderNavItem)}
@@ -1637,7 +1639,7 @@ export function Sidebar({
               <span style={{ display: 'flex', flexShrink: 0 }}>
                 <Icon name="users" />
               </span>
-              <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Profile</span>
+              <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>{navLabel('Profile')}</span>
             </div>
           </NavLink>
         )}
@@ -1678,7 +1680,7 @@ export function Sidebar({
                 <Icon name="shield" />
               </span>
               {!effectiveCollapsed && (
-                <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Admin</span>
+                <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>{navLabel('Admin')}</span>
               )}
             </div>
           </NavLink>
@@ -1721,7 +1723,7 @@ export function Sidebar({
               <Icon name="settings" />
             </span>
             {!effectiveCollapsed && (
-              <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Settings</span>
+              <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>{navLabel('Settings')}</span>
             )}
           </div>
         </NavLink>
@@ -1753,7 +1755,7 @@ export function Sidebar({
             <Icon name="help-circle" />
           </span>
           {!effectiveCollapsed && (
-            <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Help</span>
+            <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>{t('shell.help')}</span>
           )}
         </button>
 
@@ -1780,7 +1782,7 @@ export function Sidebar({
             <span style={{ display: 'flex', flexShrink: 0 }}>
               <Icon name="log-out" />
             </span>
-            <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Sign out</span>
+            <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>{t('shell.signOut')}</span>
           </button>
         )}
       </div>

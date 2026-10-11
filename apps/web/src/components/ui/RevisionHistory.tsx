@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 // Shared revision-history timeline — one consistent look across modules
 // (contracts now; eng-docs / client-docs / bids can adopt it later). Feed it a
 // normalized list of revisions and it renders a current badge + supersede trail.
@@ -14,15 +15,16 @@ export interface RevisionItem {
 export function RevisionHistory({
   revisions,
   th,
-  emptyText = 'No revisions yet.',
+  emptyText,
 }: {
   revisions: RevisionItem[]
   th: Record<string, string>
   emptyText?: string
 }) {
+  const { t } = useTranslation()
   if (!revisions.length) {
     return (
-      <div style={{ fontSize: '13px', color: th.textMuted, padding: '12px 0' }}>{emptyText}</div>
+      <div style={{ fontSize: '13px', color: th.textMuted, padding: '12px 0' }}>{emptyText ?? t('ui.revision.empty')}</div>
     )
   }
   const sorted = [...revisions].sort((a, b) => Number(b.revision) - Number(a.revision))
@@ -59,7 +61,7 @@ export function RevisionHistory({
             <div style={{ paddingBottom: isLast ? 0 : '14px', minWidth: 0, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '12px', fontWeight: 700, color: th.textPrimary }}>
-                  Rev {r.revision}
+                  {t('ui.revision.rev', { n: r.revision })}
                 </span>
                 {r.current && (
                   <span
@@ -75,7 +77,7 @@ export function RevisionHistory({
                       border: '1px solid #bbf7d0',
                     }}
                   >
-                    Current
+                    {t('ui.revision.current')}
                   </span>
                 )}
                 {r.date && (
