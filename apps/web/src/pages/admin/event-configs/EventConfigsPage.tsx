@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -49,6 +50,7 @@ function priorityVariant(
 }
 
 export default function EventConfigsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -59,7 +61,7 @@ export default function EventConfigsPage() {
 
   const [updateConfig, { loading: updating }] = useMutation(UPDATE_EVENT_CONFIG, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Event config updated' })
+      addToast({ type: 'success', message: t('admin.events.eventConfigUpdated') })
       setEditingType(null)
       setEditState(null)
       void refetch()
@@ -103,7 +105,7 @@ export default function EventConfigsPage() {
   const columns: Column<EventConfig>[] = [
     {
       key: 'eventType',
-      header: 'Event Type',
+      header: t('admin.events.eventType'),
       mobilePrimary: true,
       render: (cfg) => (
         <span
@@ -120,7 +122,7 @@ export default function EventConfigsPage() {
     },
     {
       key: 'service',
-      header: 'Service',
+      header: t('admin.events.service'),
       mobileSecondary: true,
       render: (cfg) => (
         <Badge variant="neutral" size="sm">
@@ -130,7 +132,7 @@ export default function EventConfigsPage() {
     },
     {
       key: 'dlqPriority',
-      header: 'DLQ Priority',
+      header: t('admin.events.dlqPriority'),
       mobilePriority: 1,
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
@@ -154,7 +156,7 @@ export default function EventConfigsPage() {
     },
     {
       key: 'alertOnDlq',
-      header: 'Alert',
+      header: t('admin.events.alert'),
       mobilePriority: 2,
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
@@ -167,13 +169,13 @@ export default function EventConfigsPage() {
           />
         ) : (
           <Badge variant={cfg.alertOnDlq ? 'success' : 'neutral'} size="sm">
-            {cfg.alertOnDlq ? 'Yes' : 'No'}
+            {cfg.alertOnDlq ? t('admin.events.yes') : 'No'}
           </Badge>
         ),
     },
     {
       key: 'maxAttempts',
-      header: 'Max Attempts',
+      header: t('admin.events.maxAttempts'),
       mobilePriority: 3,
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
@@ -191,7 +193,7 @@ export default function EventConfigsPage() {
     },
     {
       key: 'initialRetryDelaySeconds',
-      header: 'Initial Delay',
+      header: t('admin.events.initialDelay'),
       mobilePriority: 4,
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
@@ -209,7 +211,7 @@ export default function EventConfigsPage() {
     },
     {
       key: 'backoffMultiplier',
-      header: 'Backoff',
+      header: t('admin.events.backoff'),
       mobilePriority: 5,
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
@@ -228,7 +230,7 @@ export default function EventConfigsPage() {
     },
     {
       key: 'maxRetryDelaySeconds',
-      header: 'Max Delay',
+      header: t('admin.events.maxDelay'),
       mobilePriority: 6,
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
@@ -247,7 +249,7 @@ export default function EventConfigsPage() {
     {
       key: 'actions',
       header: '',
-      mobileLabel: 'Actions',
+      mobileLabel: t('admin.events.actions'),
       mobilePriority: 7,
       render: (cfg) => {
         const isEditing = editingType === cfg.eventType
@@ -261,7 +263,7 @@ export default function EventConfigsPage() {
               }}
               loading={updating}
             >
-              Save
+              {t('admin.events.save')}
             </Button>
             <Button
               variant="ghost"
@@ -272,7 +274,7 @@ export default function EventConfigsPage() {
               }}
               disabled={updating}
             >
-              Cancel
+              {t('admin.events.cancel')}
             </Button>
           </div>
         ) : (
@@ -283,7 +285,7 @@ export default function EventConfigsPage() {
               startEdit(cfg)
             }}
           >
-            Edit
+            {t('admin.events.edit')}
           </Button>
         )
       },
@@ -293,8 +295,8 @@ export default function EventConfigsPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Event Configs"
-        subtitle="Configure retry policies and DLQ settings per event type"
+        title={t('admin.events.eventConfigs')}
+        subtitle={t('admin.events.configureRetryPoliciesAndDlqSettings')}
         actions={
           <Button
             variant="ghost"
@@ -303,7 +305,7 @@ export default function EventConfigsPage() {
               void refetch()
             }}
           >
-            Refresh
+            {t('admin.events.refresh')}
           </Button>
         }
       />
@@ -314,7 +316,7 @@ export default function EventConfigsPage() {
           data={configs}
           rowKey="eventType"
           loading={loading && configs.length === 0}
-          emptyMessage="No event configurations found."
+          emptyMessage={t('admin.events.noEventConfigurationsFound')}
           getRowStyle={(cfg) =>
             editingType === cfg.eventType ? { background: theme.accentBg } : {}
           }

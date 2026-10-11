@@ -1,3 +1,5 @@
+import i18n, { tl } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -70,62 +72,62 @@ const NOTIF_ROWS: {
 }[] = [
   {
     key: 'email_project_updates',
-    label: 'Project Updates',
-    description: 'Stage changes and milestone completions',
+    get label() { return i18n.t('settings.notifPrefs.projectUpdates', { defaultValue: "Project Updates" }) },
+    get description() { return i18n.t('settings.notifPrefs.stageChangesAndMilestoneCompletions', { defaultValue: "Stage changes and milestone completions" }) },
     channel: 'Email',
   },
   {
     key: 'email_invoice_alerts',
-    label: 'Invoice Alerts',
-    description: 'Overdue invoices and payment receipts',
+    get label() { return i18n.t('settings.notifPrefs.invoiceAlerts', { defaultValue: "Invoice Alerts" }) },
+    get description() { return i18n.t('settings.notifPrefs.overdueInvoicesAndPaymentReceipts', { defaultValue: "Overdue invoices and payment receipts" }) },
     channel: 'Email',
   },
   {
     key: 'email_payroll_reminders',
-    label: 'Payroll Reminders',
-    description: 'Payroll run and approval reminders',
+    get label() { return i18n.t('settings.notifPrefs.payrollReminders', { defaultValue: "Payroll Reminders" }) },
+    get description() { return i18n.t('settings.notifPrefs.payrollRunAndApprovalReminders', { defaultValue: "Payroll run and approval reminders" }) },
     channel: 'Email',
   },
   {
     key: 'email_maintenance_alerts',
-    label: 'Maintenance Alerts',
-    description: 'Equipment maintenance due notifications',
+    get label() { return i18n.t('settings.notifPrefs.maintenanceAlerts', { defaultValue: "Maintenance Alerts" }) },
+    get description() { return i18n.t('settings.notifPrefs.equipmentMaintenanceDueNotifications', { defaultValue: "Equipment maintenance due notifications" }) },
     channel: 'Email',
   },
   {
     key: 'email_fx_alerts',
-    label: 'FX Rate Alerts',
-    description: 'Significant exchange rate movements',
+    get label() { return i18n.t('settings.notifPrefs.fxRateAlerts', { defaultValue: "FX Rate Alerts" }) },
+    get description() { return i18n.t('settings.notifPrefs.significantExchangeRateMovements', { defaultValue: "Significant exchange rate movements" }) },
     channel: 'Email',
   },
   {
     key: 'in_app_all',
-    label: 'In-App Notifications',
-    description: 'Show all notifications inside the app',
+    get label() { return i18n.t('settings.notifPrefs.inAppNotifications', { defaultValue: "In-App Notifications" }) },
+    get description() { return i18n.t('settings.notifPrefs.showAllNotificationsInsideTheApp', { defaultValue: "Show all notifications inside the app" }) },
     channel: 'In-App',
   },
   {
     key: 'admin_outbox_failures',
-    label: 'Outbox Failures',
-    description: 'Alert when events fail all retry attempts and land in DLQ',
+    get label() { return i18n.t('settings.notifPrefs.outboxFailures', { defaultValue: "Outbox Failures" }) },
+    get description() { return i18n.t('settings.notifPrefs.alertWhenEventsFailAllRetry', { defaultValue: "Alert when events fail all retry attempts and land in DLQ" }) },
     channel: 'Admin',
   },
   {
     key: 'admin_dlq_alerts',
-    label: 'DLQ Alerts',
-    description: 'Receive alerts when DLQ entries need manual review',
+    get label() { return i18n.t('settings.notifPrefs.dlqAlerts', { defaultValue: "DLQ Alerts" }) },
+    get description() { return i18n.t('settings.notifPrefs.receiveAlertsWhenDlqEntriesNeed', { defaultValue: "Receive alerts when DLQ entries need manual review" }) },
     channel: 'Admin',
   },
   {
     key: 'admin_system_health',
-    label: 'System Health',
-    description: 'Alert when a service health check goes critical',
+    get label() { return i18n.t('settings.notifPrefs.systemHealth', { defaultValue: "System Health" }) },
+    get description() { return i18n.t('settings.notifPrefs.alertWhenAServiceHealthCheck', { defaultValue: "Alert when a service health check goes critical" }) },
     channel: 'Admin',
   },
   {
     key: 'admin_requisition_approval',
-    label: 'Requisition Approvals',
-    description: 'Get pinged when a requisition reaches pending approval',
+    get label() { return i18n.t('settings.notifPrefs.requisitionApprovals', { defaultValue: "Requisition Approvals" }) },
+    get description() { return i18n.t('settings.notifPrefs.getPingedWhenARequisitionReaches', { defaultValue: "Get pinged when a requisition reaches pending approval" }) },
     channel: 'Admin',
   },
 ]
@@ -138,49 +140,50 @@ const SYSADMIN_ROWS: {
 }[] = [
   {
     key: 'outbox_dlq_critical_inApp',
-    label: 'DLQ Critical — In-App',
-    description: 'In-app alert for critical-priority DLQ events',
+    get label() { return i18n.t('settings.notifPrefs.dlqCriticalInApp', { defaultValue: "DLQ Critical — In-App" }) },
+    get description() { return i18n.t('settings.notifPrefs.inAppAlertForCriticalPriority', { defaultValue: "In-app alert for critical-priority DLQ events" }) },
     channel: 'In-App',
   },
   {
     key: 'outbox_dlq_critical_email',
-    label: 'DLQ Critical — Email',
-    description: 'Email alert for critical-priority DLQ events',
+    get label() { return i18n.t('settings.notifPrefs.dlqCriticalEmail', { defaultValue: "DLQ Critical — Email" }) },
+    get description() { return i18n.t('settings.notifPrefs.emailAlertForCriticalPriorityDlq', { defaultValue: "Email alert for critical-priority DLQ events" }) },
     channel: 'Email',
   },
   {
     key: 'outbox_dlq_high_inApp',
-    label: 'DLQ High — In-App',
-    description: 'In-app alert for high-priority DLQ events',
+    get label() { return i18n.t('settings.notifPrefs.dlqHighInApp', { defaultValue: "DLQ High — In-App" }) },
+    get description() { return i18n.t('settings.notifPrefs.inAppAlertForHighPriority', { defaultValue: "In-app alert for high-priority DLQ events" }) },
     channel: 'In-App',
   },
   {
     key: 'outbox_dlq_high_email',
-    label: 'DLQ High — Email',
-    description: 'Email alert for high-priority DLQ events',
+    get label() { return i18n.t('settings.notifPrefs.dlqHighEmail', { defaultValue: "DLQ High — Email" }) },
+    get description() { return i18n.t('settings.notifPrefs.emailAlertForHighPriorityDlq', { defaultValue: "Email alert for high-priority DLQ events" }) },
     channel: 'Email',
   },
   {
     key: 'system_health_degraded_inApp',
-    label: 'Service Degraded — In-App',
-    description: 'In-app alert when any service enters degraded state',
+    get label() { return i18n.t('settings.notifPrefs.serviceDegradedInApp', { defaultValue: "Service Degraded — In-App" }) },
+    get description() { return i18n.t('settings.notifPrefs.inAppAlertWhenAnyService', { defaultValue: "In-app alert when any service enters degraded state" }) },
     channel: 'In-App',
   },
   {
     key: 'system_health_degraded_email',
-    label: 'Service Degraded — Email',
-    description: 'Email alert when any service enters degraded state',
+    get label() { return i18n.t('settings.notifPrefs.serviceDegradedEmail', { defaultValue: "Service Degraded — Email" }) },
+    get description() { return i18n.t('settings.notifPrefs.emailAlertWhenAnyServiceEnters', { defaultValue: "Email alert when any service enters degraded state" }) },
     channel: 'Email',
   },
   {
     key: 'new_user_invitation_accepted_inApp',
-    label: 'Invitation Accepted — In-App',
-    description: 'In-app alert when a user accepts an invitation',
+    get label() { return i18n.t('settings.notifPrefs.invitationAcceptedInApp', { defaultValue: "Invitation Accepted — In-App" }) },
+    get description() { return i18n.t('settings.notifPrefs.inAppAlertWhenAUser', { defaultValue: "In-app alert when a user accepts an invitation" }) },
     channel: 'In-App',
   },
 ]
 
 export default function NotificationPreferencesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const { isSystemLevel, can } = usePermission()
@@ -194,7 +197,7 @@ export default function NotificationPreferencesPage() {
 
   const [updatePreferences, { loading: saving }] = useMutation(UPDATE_PREFERENCES, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Notification preferences saved' })
+      addToast({ type: 'success', message: t('settings.notifPrefs.notificationPreferencesSaved') })
       setDirty(false)
     },
     onError: (e) => {
@@ -280,12 +283,12 @@ export default function NotificationPreferencesPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Notifications"
-        subtitle="Control which notifications you receive and how"
+        title={t('settings.notifPrefs.notifications')}
+        subtitle={t('settings.notifPrefs.controlWhichNotificationsYouReceiveAnd')}
         actions={
           dirty ? (
             <Button variant="primary" size="sm" onClick={handleSave} loading={saving}>
-              Save Changes
+              {t('settings.notifPrefs.saveChanges')}
             </Button>
           ) : undefined
         }
@@ -307,10 +310,10 @@ export default function NotificationPreferencesPage() {
                 }}
               >
                 <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                  {channel}
+                  {tl('settings.notifPrefs.channelOpts', channel, channel)}
                 </h3>
                 <Badge variant={channel === 'Admin Alerts' ? 'warning' : 'neutral'} size="sm">
-                  {channel === 'Admin Alerts' ? 'Admin only' : `${rows.length} types`}
+                  {channel === 'Admin Alerts' ? t('settings.notifPrefs.adminOnly') : t('settings.notifPrefs.typesCount', { count: rows.length })}
                 </Badge>
               </div>
               {rows.map((row, i) => (
@@ -344,7 +347,7 @@ export default function NotificationPreferencesPage() {
               >
                 <div style={{ flex: 1, height: '1px', background: theme.border }} />
                 <Badge variant="danger" size="sm">
-                  System Admin Only
+                  {t('settings.notifPrefs.systemAdminOnly')}
                 </Badge>
                 <div style={{ flex: 1, height: '1px', background: theme.border }} />
               </div>
@@ -364,10 +367,10 @@ export default function NotificationPreferencesPage() {
                   }}
                 >
                   <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                    Platform Operations
+                    {t('settings.notifPrefs.platformOperations')}
                   </h3>
                   <Badge variant="danger" size="sm">
-                    System admin only
+                    {t('settings.notifPrefs.systemAdminOnly2')}
                   </Badge>
                 </div>
                 {SYSADMIN_ROWS.map((row, i) => (
@@ -395,7 +398,7 @@ export default function NotificationPreferencesPage() {
                           {row.label}
                         </p>
                         <Badge variant={row.channel === 'Email' ? 'info' : 'neutral'} size="sm">
-                          {row.channel}
+                          {tl('settings.notifPrefs.channelOpts', row.channel, row.channel)}
                         </Badge>
                       </div>
                       <p style={{ fontSize: '12px', color: theme.textMuted }}>{row.description}</p>

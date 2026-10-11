@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery, useMutation, useSubscription } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -47,6 +48,7 @@ interface UsersData {
 }
 
 export default function UsersPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
@@ -88,7 +90,7 @@ export default function UsersPage() {
 
   const [deactivateUser] = useMutation<DeactivateUserMutation, DeactivateUserMutationVariables>(DEACTIVATE_USER, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'User deactivated' })
+      addToast({ type: 'success', message: t('admin.users.userDeactivated') })
       void refetch()
     },
     onError: (e) => {
@@ -98,7 +100,7 @@ export default function UsersPage() {
 
   const [inviteUser, { loading: inviting }] = useMutation<InviteUserMutation, InviteUserMutationVariables>(INVITE_USER, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Invitation sent' })
+      addToast({ type: 'success', message: t('admin.users.invitationSent') })
       setShowInviteModal(false)
       setInviteForm({ email: '', companyIds: [], role: '' })
       void refetch()
@@ -110,7 +112,7 @@ export default function UsersPage() {
 
   const [createUser, { loading: creating }] = useMutation<CreateUserMutation, CreateUserMutationVariables>(CREATE_USER, {
     onCompleted: (res) => {
-      addToast({ type: 'success', message: 'User created' })
+      addToast({ type: 'success', message: t('admin.users.userCreated') })
       setShowCreateModal(false)
       setCreateForm({ email: '', password: '', companyId: '', role: '' })
       navigate(`/admin/users/${res.createUser.id}`)
@@ -125,7 +127,7 @@ export default function UsersPage() {
   const columns: Column<UserItem>[] = [
     {
       key: 'email',
-      header: 'Email',
+      header: t('admin.users.email'),
       mobilePrimary: true,
       render: (user) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{user.email}</span>
@@ -133,7 +135,7 @@ export default function UsersPage() {
     },
     {
       key: 'companies',
-      header: 'Companies',
+      header: t('admin.users.companies'),
       mobileSecondary: true,
       render: (user) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -143,27 +145,27 @@ export default function UsersPage() {
     },
     {
       key: 'isActive',
-      header: 'Status',
+      header: t('admin.users.status'),
       mobilePriority: 1,
       render: (user) => (
         <Badge variant={user.isActive ? 'success' : 'neutral'} size="sm">
-          {user.isActive ? 'Active' : 'Inactive'}
+          {user.isActive ? t('admin.users.active') : t('admin.users.inactive')}
         </Badge>
       ),
     },
     {
       key: 'lastLogin',
-      header: 'Last Login',
+      header: t('admin.users.lastLogin'),
       mobilePriority: 2,
       render: (user) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
-          {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
+          {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : t('admin.users.never')}
         </span>
       ),
     },
     {
       key: 'activeSessions',
-      header: 'Sessions',
+      header: t('admin.users.sessions'),
       mobilePriority: 3,
       render: (user) => (
         <span style={{ color: user.activeSessions > 0 ? theme.accent : theme.textMuted }}>
@@ -173,11 +175,11 @@ export default function UsersPage() {
     },
     {
       key: 'mfaEnabled',
-      header: 'MFA',
+      header: t('admin.users.mfa'),
       mobilePriority: 4,
       render: (user) => (
         <Badge variant={user.mfaEnabled ? 'success' : 'warning'} size="sm">
-          {user.mfaEnabled ? 'On' : 'Off'}
+          {user.mfaEnabled ? 'On' : t('admin.users.off')}
         </Badge>
       ),
     },
@@ -199,7 +201,7 @@ export default function UsersPage() {
                 setConfirmDeactivateUser({ id: user.id, email: user.email })
               }}
             >
-              Deactivate
+              {t('admin.users.deactivate')}
             </Button>
           </div>
         ) : null,
@@ -209,8 +211,8 @@ export default function UsersPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Users"
-        subtitle={`${data?.users.total ?? 0} total users`}
+        title={t('admin.users.users')}
+        subtitle={t('admin.users.totalUsers', { count: data?.users.total ?? 0 })}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button
@@ -220,7 +222,7 @@ export default function UsersPage() {
                 setShowInviteModal(true)
               }}
             >
-              Invite user
+              {t('admin.users.inviteUser')}
             </Button>
             <Button
               variant="primary"
@@ -229,7 +231,7 @@ export default function UsersPage() {
                 setShowCreateModal(true)
               }}
             >
-              Create user
+              {t('admin.users.createUser')}
             </Button>
           </div>
         }
@@ -237,16 +239,16 @@ export default function UsersPage() {
 
       <Card padding="sm" style={{ marginBottom: '16px' }}>
         <FilterBar
-          search={{ value: search, onChange: setSearch, placeholder: 'Search email…' }}
+          search={{ value: search, onChange: setSearch, placeholder: t('admin.users.searchEmail') }}
           filters={[
             {
               key: 'isActive',
-              label: 'Status',
+              label: t('admin.users.status'),
               value: isActive,
               onChange: setIsActive,
               options: [
-                { value: 'true', label: 'Active' },
-                { value: 'false', label: 'Inactive' },
+                { value: 'true', label: t('admin.users.active') },
+                { value: 'false', label: t('admin.users.inactive') },
               ],
             },
           ]}
@@ -260,7 +262,7 @@ export default function UsersPage() {
           data={users}
           rowKey="id"
           loading={loading}
-          emptyMessage="No users found"
+          emptyMessage={t('admin.users.noUsersFound')}
           onRowClick={(user) => {
             navigate(`/admin/users/${user.id}`)
           }}
@@ -271,7 +273,7 @@ export default function UsersPage() {
       {showInviteModal && (
         <Modal
           open={showInviteModal}
-          title="Invite User"
+          title={t('admin.users.inviteUser2')}
           onClose={() => {
             setShowInviteModal(false)
           }}
@@ -286,7 +288,7 @@ export default function UsersPage() {
                   marginBottom: '4px',
                 }}
               >
-                Email *
+                {t('admin.users.email2')}
               </label>
               <input
                 type="email"
@@ -294,7 +296,7 @@ export default function UsersPage() {
                 onChange={(e) => {
                   setInviteForm({ ...inviteForm, email: e.target.value })
                 }}
-                placeholder="user@company.com"
+                placeholder={t('admin.users.userCompanyCom')}
                 style={{
                   width: '100%',
                   padding: '8px',
@@ -315,7 +317,7 @@ export default function UsersPage() {
                   marginBottom: '4px',
                 }}
               >
-                Companies * <span style={{ color: theme.textMuted }}>(select one or more)</span>
+                {t('admin.users.companiesRequired')} <span style={{ color: theme.textMuted }}>{t('admin.users.selectOneOrMore')}</span>
               </label>
               <div
                 style={{
@@ -362,31 +364,31 @@ export default function UsersPage() {
             </div>
             <div>
               <SearchableSelect
-                label="Role *"
+                label={t('admin.users.role')}
                 value={inviteForm.role}
                 onChange={(v) => {
                   setInviteForm({ ...inviteForm, role: v })
                 }}
-                placeholder="Select role…"
+                placeholder={t('admin.users.selectRole')}
                 options={[
                   {
                     value: 'user',
-                    label: 'User — no default access, permissions granted individually',
+                    label: t('admin.users.userNoDefaultAccessPermissionsGranted'),
                   },
                   {
                     value: 'module_admin',
-                    label: 'Module Admin — full access to assigned modules',
+                    label: t('admin.users.moduleAdminFullAccessToAssigned'),
                   },
-                  { value: 'company_admin', label: 'Company Admin — full company access' },
-                  { value: 'system_admin', label: 'System Admin — bypasses all permission gates' },
+                  { value: 'company_admin', label: t('admin.users.companyAdminFullCompanyAccess') },
+                  { value: 'system_admin', label: t('admin.users.systemAdminBypassesAllPermissionGates') },
                 ]}
               />
               <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                Applied to every selected company.
+                {t('admin.users.appliedToEverySelectedCompany')}
               </div>
             </div>
             <div style={{ fontSize: '12px', color: theme.textMuted }}>
-              An email will be sent to the address with a secure invitation link valid for 24 hours.
+              {t('admin.users.anEmailWillBeSentTo')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <Button
@@ -395,7 +397,7 @@ export default function UsersPage() {
                   setShowInviteModal(false)
                 }}
               >
-                Cancel
+                {t('admin.users.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -417,7 +419,7 @@ export default function UsersPage() {
                   })
                 }
               >
-                Send invitation
+                {t('admin.users.sendInvitation')}
               </Button>
             </div>
           </div>
@@ -428,7 +430,7 @@ export default function UsersPage() {
       {showCreateModal && (
         <Modal
           open={showCreateModal}
-          title="Create User"
+          title={t('admin.users.createUser2')}
           onClose={() => {
             setShowCreateModal(false)
           }}
@@ -443,7 +445,7 @@ export default function UsersPage() {
                   marginBottom: '4px',
                 }}
               >
-                Email *
+                {t('admin.users.email2')}
               </label>
               <input
                 type="email"
@@ -451,7 +453,7 @@ export default function UsersPage() {
                 onChange={(e) => {
                   setCreateForm({ ...createForm, email: e.target.value })
                 }}
-                placeholder="user@company.com"
+                placeholder={t('admin.users.userCompanyCom')}
                 style={{
                   width: '100%',
                   padding: '8px',
@@ -472,7 +474,7 @@ export default function UsersPage() {
                   marginBottom: '4px',
                 }}
               >
-                Password *
+                {t('admin.users.password')}
               </label>
               <input
                 type="password"
@@ -480,7 +482,7 @@ export default function UsersPage() {
                 onChange={(e) => {
                   setCreateForm({ ...createForm, password: e.target.value })
                 }}
-                placeholder="Min 12 chars"
+                placeholder={t('admin.users.min12Chars')}
                 style={{
                   width: '100%',
                   padding: '8px',
@@ -494,34 +496,34 @@ export default function UsersPage() {
             </div>
             <div>
               <SearchableSelect
-                label="Company"
+                label={t('admin.users.company')}
                 value={createForm.companyId}
                 onChange={(v) => {
                   setCreateForm({ ...createForm, companyId: v })
                 }}
-                placeholder="Select company (optional)…"
+                placeholder={t('admin.users.selectCompanyOptional')}
                 options={companies.map((c) => ({ value: c.id, label: c.name }))}
               />
             </div>
             <div>
               <SearchableSelect
-                label="Role"
+                label={t('admin.users.role2')}
                 value={createForm.role}
                 onChange={(v) => {
                   setCreateForm({ ...createForm, role: v })
                 }}
-                placeholder="Select role (optional)…"
+                placeholder={t('admin.users.selectRoleOptional')}
                 options={[
                   {
                     value: 'user',
-                    label: 'User — no default access, permissions granted individually',
+                    label: t('admin.users.userNoDefaultAccessPermissionsGranted'),
                   },
                   {
                     value: 'module_admin',
-                    label: 'Module Admin — full access to assigned modules',
+                    label: t('admin.users.moduleAdminFullAccessToAssigned'),
                   },
-                  { value: 'company_admin', label: 'Company Admin — full company access' },
-                  { value: 'system_admin', label: 'System Admin — bypasses all permission gates' },
+                  { value: 'company_admin', label: t('admin.users.companyAdminFullCompanyAccess') },
+                  { value: 'system_admin', label: t('admin.users.systemAdminBypassesAllPermissionGates') },
                 ]}
               />
             </div>
@@ -532,7 +534,7 @@ export default function UsersPage() {
                   setShowCreateModal(false)
                 }}
               >
-                Cancel
+                {t('admin.users.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -551,7 +553,7 @@ export default function UsersPage() {
                   })
                 }
               >
-                Create user
+                {t('admin.users.createUser')}
               </Button>
             </div>
           </div>
@@ -568,9 +570,9 @@ export default function UsersPage() {
             void deactivateUser({ variables: { userId: confirmDeactivateUser.id } })
           setConfirmDeactivateUser(null)
         }}
-        title="Deactivate User"
-        message={`Are you sure you want to deactivate ${confirmDeactivateUser?.email ?? ''}? They will lose access immediately.`}
-        confirmLabel="Deactivate"
+        title={t('admin.users.deactivateUser')}
+        message={t('admin.users.deactivateConfirm', { email: confirmDeactivateUser?.email ?? '' })}
+        confirmLabel={t('admin.users.deactivate')}
         confirmVariant="danger"
       />
     </div>

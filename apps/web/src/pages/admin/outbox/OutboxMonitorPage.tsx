@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useSubscription } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -73,6 +74,7 @@ function statusVariant(
 }
 
 export default function OutboxMonitorPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -123,7 +125,7 @@ export default function OutboxMonitorPage() {
 
   const [retryEvent, { loading: retrying }] = useMutation(RETRY_OUTBOX_EVENT, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Event queued for retry' })
+      addToast({ type: 'success', message: t('admin.outbox.eventQueuedForRetry') })
       void refetchEvents()
     },
     onError: (e) => {
@@ -133,7 +135,7 @@ export default function OutboxMonitorPage() {
 
   const [resetStuck, { loading: resetting }] = useMutation(RESET_STUCK_EVENTS, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Stuck events reset' })
+      addToast({ type: 'success', message: t('admin.outbox.stuckEventsReset') })
       setConfirmReset(false)
       void refetchMonitor()
       void refetchEvents()
@@ -150,7 +152,7 @@ export default function OutboxMonitorPage() {
   const columns: Column<OutboxEvent>[] = [
     {
       key: 'service',
-      header: 'Service',
+      header: t('admin.outbox.service'),
       mobileSecondary: true,
       render: (ev) => (
         <Badge variant="neutral" size="sm">
@@ -160,7 +162,7 @@ export default function OutboxMonitorPage() {
     },
     {
       key: 'eventType',
-      header: 'Event Type',
+      header: t('admin.outbox.eventType'),
       mobilePrimary: true,
       render: (ev) => (
         <span
@@ -176,7 +178,7 @@ export default function OutboxMonitorPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('admin.outbox.status'),
       mobilePriority: 1,
       render: (ev) => (
         <Badge variant={statusVariant(ev.status)} size="sm">
@@ -186,7 +188,7 @@ export default function OutboxMonitorPage() {
     },
     {
       key: 'attempts',
-      header: 'Attempts',
+      header: t('admin.outbox.attempts'),
       mobilePriority: 2,
       render: (ev) => (
         <span style={{ color: ev.attempts >= ev.maxAttempts ? theme.danger : theme.textSecondary }}>
@@ -196,7 +198,7 @@ export default function OutboxMonitorPage() {
     },
     {
       key: 'nextRetryAt',
-      header: 'Next Retry',
+      header: t('admin.outbox.nextRetry'),
       mobilePriority: 3,
       render: (ev) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -206,7 +208,7 @@ export default function OutboxMonitorPage() {
     },
     {
       key: 'createdAt',
-      header: 'Created',
+      header: t('admin.outbox.created'),
       mobilePriority: 4,
       render: (ev) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -217,7 +219,7 @@ export default function OutboxMonitorPage() {
     {
       key: 'actions',
       header: '',
-      mobileLabel: 'Actions',
+      mobileLabel: t('admin.outbox.actions'),
       mobilePriority: 5,
       render: (ev) => (
         <div style={{ display: 'flex', gap: '6px' }}>
@@ -228,7 +230,7 @@ export default function OutboxMonitorPage() {
               onClick={() => void retryEvent({ variables: { eventId: ev.id } })}
               loading={retrying}
             >
-              Retry
+              {t('admin.outbox.retry')}
             </Button>
           )}
           <button
@@ -244,7 +246,7 @@ export default function OutboxMonitorPage() {
               setDetailEvent(ev)
             }}
           >
-            Details
+            {t('admin.outbox.details')}
           </button>
         </div>
       ),
@@ -254,20 +256,20 @@ export default function OutboxMonitorPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Outbox Monitor"
-        subtitle="Event processing health and queue status"
+        title={t('admin.outbox.outboxMonitor')}
+        subtitle={t('admin.outbox.eventProcessingHealthAndQueueStatus')}
         actions={
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {lastRefreshed && (
               <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                Updated {formatRelativeTime(lastRefreshed.toISOString())}
+                {t('admin.outbox.updatedWhen', { when: formatRelativeTime(lastRefreshed.toISOString()) })}
               </span>
             )}
             <div
               onClick={() => {
                 setAutoRefresh((a) => !a)
               }}
-              title={autoRefresh ? 'Auto-refresh ON (30s)' : 'Auto-refresh OFF'}
+              title={autoRefresh ? t('admin.outbox.autoRefreshOn30s') : t('admin.outbox.autoRefreshOff')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -291,7 +293,7 @@ export default function OutboxMonitorPage() {
                   display: 'inline-block',
                 }}
               />
-              {autoRefresh ? 'Live' : 'Paused'}
+              {autoRefresh ? t('admin.outbox.live') : t('admin.outbox.paused')}
             </div>
             {monitor && monitor.counts.stuck > 0 && (
               <Button
@@ -301,7 +303,7 @@ export default function OutboxMonitorPage() {
                   setConfirmReset(true)
                 }}
               >
-                Reset {monitor.counts.stuck} Stuck
+                {t('admin.outbox.resetStuck', { count: monitor.counts.stuck })}
               </Button>
             )}
             <Button
@@ -312,7 +314,7 @@ export default function OutboxMonitorPage() {
                 void refetchEvents()
               }}
             >
-              Refresh
+              {t('admin.outbox.refresh')}
             </Button>
           </div>
         }
@@ -335,27 +337,27 @@ export default function OutboxMonitorPage() {
         >
           {[
             {
-              label: 'Health',
+              label: t('admin.outbox.health'),
               value: monitor.health,
               color: monitor.health === 'healthy' ? theme.success : theme.danger,
             },
             {
-              label: 'Pending',
+              label: t('admin.outbox.pending'),
               value: monitor.counts.pending,
               color: monitor.counts.pending > 100 ? theme.warning : theme.textPrimary,
             },
             {
-              label: 'Failed',
+              label: t('admin.outbox.failed'),
               value: monitor.counts.failed,
               color: monitor.counts.failed > 0 ? theme.danger : theme.textPrimary,
             },
             {
-              label: 'DLQ',
+              label: t('admin.outbox.dlq'),
               value: monitor.counts.dlq,
               color: monitor.counts.dlq > 0 ? theme.danger : theme.textPrimary,
             },
             {
-              label: 'Stuck',
+              label: t('admin.outbox.stuck'),
               value: monitor.counts.stuck,
               color: monitor.counts.stuck > 0 ? theme.danger : theme.textPrimary,
             },
@@ -376,28 +378,28 @@ export default function OutboxMonitorPage() {
           filters={[
             {
               key: 'status',
-              label: 'Status',
+              label: t('admin.outbox.status'),
               value: statusFilter,
               onChange: setStatusFilter,
               options: [
-                { value: 'pending', label: 'Pending' },
-                { value: 'processing', label: 'Processing' },
-                { value: 'failed', label: 'Failed' },
-                { value: 'stuck', label: 'Stuck' },
-                { value: 'delivered', label: 'Delivered' },
+                { value: 'pending', label: t('admin.outbox.pending') },
+                { value: 'processing', label: t('admin.outbox.processing') },
+                { value: 'failed', label: t('admin.outbox.failed') },
+                { value: 'stuck', label: t('admin.outbox.stuck') },
+                { value: 'delivered', label: t('admin.outbox.delivered') },
               ],
             },
             {
               key: 'service',
-              label: 'Service',
+              label: t('admin.outbox.service'),
               value: serviceFilter,
               onChange: setServiceFilter,
               options: [
-                { value: 'auth', label: 'Auth' },
-                { value: 'finance', label: 'Finance' },
+                { value: 'auth', label: t('admin.outbox.auth') },
+                { value: 'finance', label: t('admin.outbox.finance') },
                 { value: 'hr', label: 'HR' },
-                { value: 'projects', label: 'Projects' },
-                { value: 'inventory', label: 'Inventory' },
+                { value: 'projects', label: t('admin.outbox.projects') },
+                { value: 'inventory', label: t('admin.outbox.inventory') },
               ],
             },
           ]}
@@ -414,7 +416,7 @@ export default function OutboxMonitorPage() {
           data={events}
           rowKey="id"
           loading={eventsLoading && events.length === 0}
-          emptyMessage="No outbox events match the current filters."
+          emptyMessage={t('admin.outbox.noOutboxEventsMatchTheCurrent')}
         />
       </Card>
 
@@ -423,7 +425,7 @@ export default function OutboxMonitorPage() {
         onClose={() => {
           setDetailEvent(null)
         }}
-        title={detailEvent?.eventType ?? 'Event Details'}
+        title={detailEvent?.eventType ?? t('admin.outbox.eventDetails')}
         size="md"
       >
         {detailEvent && (
@@ -438,7 +440,7 @@ export default function OutboxMonitorPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Last Error
+                  {t('admin.outbox.lastError')}
                 </p>
                 <pre
                   style={{
@@ -464,7 +466,7 @@ export default function OutboxMonitorPage() {
                   marginBottom: '4px',
                 }}
               >
-                Payload
+                {t('admin.outbox.payload')}
               </p>
               <pre
                 style={{
@@ -503,9 +505,9 @@ export default function OutboxMonitorPage() {
         onConfirm={() => {
           void resetStuck()
         }}
-        title="Reset Stuck Events"
-        message={`Reset ${monitor?.counts.stuck ?? 0} stuck events back to pending? They will be retried.`}
-        confirmLabel="Reset"
+        title={t('admin.outbox.resetStuckEvents')}
+        message={t('admin.outbox.resetStuckConfirm', { count: monitor?.counts.stuck ?? 0 })}
+        confirmLabel={t('admin.outbox.reset')}
         confirmVariant="primary"
         loading={resetting}
       />

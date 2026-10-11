@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -85,7 +86,7 @@ function downloadDataUri(dataUri: string, filenameBase: string) {
 
 function downloadButtonStyle(theme: ReturnType<typeof useTheme>['theme']) {
   return {
-    marginLeft: '8px',
+    marginInlineStart: '8px',
     background: 'none',
     border: 'none',
     color: theme.textSecondary,
@@ -96,6 +97,7 @@ function downloadButtonStyle(theme: ReturnType<typeof useTheme>['theme']) {
 }
 
 export default function CompanyDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -140,20 +142,20 @@ export default function CompanyDetail() {
   const users: CompanyUser[] = usersData?.companyUsers ?? []
   const branches: Branch[] = branchesData?.companyBranches ?? []
 
-  if (loading) return <div style={{ padding: '48px', color: theme.textMuted }}>Loading…</div>
+  if (loading) return <div style={{ padding: '48px', color: theme.textMuted }}>{t('admin.companyDetail.loading')}</div>
   if (!company)
-    return <div style={{ padding: '48px', color: theme.textMuted }}>Company not found.</div>
+    return <div style={{ padding: '48px', color: theme.textMuted }}>{t('admin.companyDetail.companyNotFound')}</div>
 
   const userColumns: Column<CompanyUser>[] = [
     {
       key: 'email',
-      header: 'Email',
+      header: t('admin.companyDetail.email'),
       mobilePrimary: true,
       render: (u) => <span style={{ color: theme.textPrimary }}>{u.email}</span>,
     },
     {
       key: 'lastLoginAt',
-      header: 'Last login',
+      header: t('admin.companyDetail.lastLogin'),
       mobileSecondary: true,
       render: (u) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -163,17 +165,17 @@ export default function CompanyDetail() {
     },
     {
       key: 'isActive',
-      header: 'Status',
+      header: t('admin.companyDetail.status'),
       mobilePriority: 1,
       render: (u) => (
         <Badge variant={u.isActive ? 'success' : 'neutral'}>
-          {u.isActive ? 'Active' : 'Inactive'}
+          {u.isActive ? t('admin.companyDetail.active') : t('admin.companyDetail.inactive')}
         </Badge>
       ),
     },
     {
       key: 'roles',
-      header: 'Roles',
+      header: t('admin.companyDetail.roles'),
       mobilePriority: 2,
       render: (u) => (
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -189,22 +191,22 @@ export default function CompanyDetail() {
   ]
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'overview', label: 'Overview' },
+    { key: 'overview', label: t('admin.companyDetail.overview') },
     { key: 'branches', label: `Branches (${branches.length})` },
     { key: 'users', label: `Users (${users.length})` },
-    { key: 'configuration', label: 'Configuration' },
-    { key: 'interco', label: 'Inter-company' },
+    { key: 'configuration', label: t('admin.companyDetail.configuration') },
+    { key: 'interco', label: t('admin.companyDetail.interCompany') },
   ]
 
   function handleStampUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      addToast({ type: 'error', message: 'Please select an image file' })
+      addToast({ type: 'error', message: t('admin.companyDetail.pleaseSelectAnImageFile') })
       return
     }
     if (file.size > 500 * 1024) {
-      addToast({ type: 'error', message: 'Stamp image must be under 500 KB' })
+      addToast({ type: 'error', message: t('admin.companyDetail.stampImageMustBeUnder500') })
       return
     }
     const reader = new FileReader()
@@ -212,7 +214,7 @@ export default function CompanyDetail() {
       const base64 = ev.target?.result as string
       void updateCompanyMutation({ variables: { id: id ?? '', input: { stamp_image: base64 } } })
         .then(() => {
-          addToast({ type: 'success', message: 'Stamp updated' })
+          addToast({ type: 'success', message: t('admin.companyDetail.stampUpdated') })
           void refetch()
         })
         .catch((err: unknown) => {
@@ -226,7 +228,7 @@ export default function CompanyDetail() {
   function saveLetterheadBase64(base64: string) {
     void updateCompanyMutation({ variables: { id: id ?? '', input: { letterhead_image: base64 } } })
       .then(() => {
-        addToast({ type: 'success', message: 'Letterhead updated' })
+        addToast({ type: 'success', message: t('admin.companyDetail.letterheadUpdated') })
         void refetch()
       })
       .catch((err: unknown) => {
@@ -238,16 +240,16 @@ export default function CompanyDetail() {
     const isPdf = file.type === 'application/pdf'
     const isImage = file.type === 'image/png' || file.type === 'image/jpeg'
     if (!isPdf && !isImage) {
-      addToast({ type: 'error', message: 'Please select a PDF, PNG, or JPG file' })
+      addToast({ type: 'error', message: t('admin.companyDetail.pleaseSelectAPdfPngOr') })
       return
     }
     if (file.size > 10 * 1024 * 1024) {
-      addToast({ type: 'error', message: 'File must be under 10 MB' })
+      addToast({ type: 'error', message: t('admin.companyDetail.fileMustBeUnder10Mb') })
       return
     }
     if (isPdf) {
       try {
-        addToast({ type: 'info', message: 'Converting PDF to image…' })
+        addToast({ type: 'info', message: t('admin.companyDetail.convertingPdfToImage') })
         const pdfjs = await import('pdfjs-dist')
         pdfjs.GlobalWorkerOptions.workerSrc = new URL(
           'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -283,7 +285,7 @@ export default function CompanyDetail() {
     await handlePdfOrImageUpload(file, (b64) => {
       void updateCompanyMutation({ variables: { id: id ?? '', input: { pv_template_image: b64 } } })
         .then(() => {
-          addToast({ type: 'success', message: 'Payment Voucher template updated' })
+          addToast({ type: 'success', message: t('admin.companyDetail.paymentVoucherTemplateUpdated') })
           void refetch()
         })
         .catch((err: unknown) => {
@@ -299,7 +301,7 @@ export default function CompanyDetail() {
     await handlePdfOrImageUpload(file, (b64) => {
       void updateCompanyMutation({ variables: { id: id ?? '', input: { journal_template_image: b64 } } })
         .then(() => {
-          addToast({ type: 'success', message: 'General Journal template updated' })
+          addToast({ type: 'success', message: t('admin.companyDetail.generalJournalTemplateUpdated') })
           void refetch()
         })
         .catch((err: unknown) => {
@@ -317,17 +319,17 @@ export default function CompanyDetail() {
     const isImage = file.type === 'image/png' || file.type === 'image/jpeg'
 
     if (!isPdf && !isImage) {
-      addToast({ type: 'error', message: 'Please select a PDF, PNG, or JPG file' })
+      addToast({ type: 'error', message: t('admin.companyDetail.pleaseSelectAPdfPngOr') })
       return
     }
     if (file.size > 10 * 1024 * 1024) {
-      addToast({ type: 'error', message: 'File must be under 10 MB' })
+      addToast({ type: 'error', message: t('admin.companyDetail.fileMustBeUnder10Mb') })
       return
     }
 
     if (isPdf) {
       try {
-        addToast({ type: 'info', message: 'Converting PDF to image…' })
+        addToast({ type: 'info', message: t('admin.companyDetail.convertingPdfToImage') })
         const pdfjs = await import('pdfjs-dist')
         pdfjs.GlobalWorkerOptions.workerSrc = new URL(
           'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -384,10 +386,10 @@ export default function CompanyDetail() {
       }
       if (branchModal.editing) {
         await updateBranch({ variables: { id: branchModal.editing.id, input } })
-        addToast({ type: 'success', message: 'Branch updated' })
+        addToast({ type: 'success', message: t('admin.companyDetail.branchUpdated') })
       } else {
         await createBranch({ variables: { companyId: id ?? '', input } })
-        addToast({ type: 'success', message: 'Branch created' })
+        addToast({ type: 'success', message: t('admin.companyDetail.branchCreated') })
       }
       setBranchModal({ open: false, editing: null })
       void refetchBranches()
@@ -399,7 +401,7 @@ export default function CompanyDetail() {
   async function handleDeleteBranch(branchId: string) {
     try {
       await deleteBranch({ variables: { id: branchId } })
-      addToast({ type: 'success', message: 'Branch deleted' })
+      addToast({ type: 'success', message: t('admin.companyDetail.branchDeleted') })
       void refetchBranches()
     } catch (e: unknown) {
       addToast({ type: 'error', message: (e as Error).message })
@@ -415,9 +417,9 @@ export default function CompanyDetail() {
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <Badge variant={company.isActive ? 'success' : 'neutral'}>
-              {company.isActive ? 'Active' : 'Inactive'}
+              {company.isActive ? t('admin.companyDetail.active') : t('admin.companyDetail.inactive')}
             </Badge>
-            {!company.setupCompleted && <Badge variant="warning">Setup incomplete</Badge>}
+            {!company.setupCompleted && <Badge variant="warning">{t('admin.companyDetail.setupIncomplete')}</Badge>}
           </div>
         }
       />
@@ -472,15 +474,15 @@ export default function CompanyDetail() {
                 marginBottom: '12px',
               }}
             >
-              Identity
+              {t('admin.companyDetail.identity')}
             </div>
             {[
-              ['Legal name', company.legalName],
-              ['Country', company.countryCode],
-              ['City', company.city],
-              ['Currency', company.currencyCode],
-              ['VAT number', company.vatNumber],
-              ['Reg. number', company.registrationNumber],
+              [t('admin.companyDetail.fLegalName'), company.legalName],
+              [t('admin.companyDetail.fCountry'), company.countryCode],
+              [t('admin.companyDetail.fCity'), company.city],
+              [t('admin.companyDetail.fCurrency'), company.currencyCode],
+              [t('admin.companyDetail.fVat'), company.vatNumber],
+              [t('admin.companyDetail.fReg'), company.registrationNumber],
             ].map(([k, v]) => (
               <div
                 key={k}
@@ -507,7 +509,7 @@ export default function CompanyDetail() {
                 marginBottom: '12px',
               }}
             >
-              Company Stamp
+              {t('admin.companyDetail.companyStamp')}
             </div>
             {company.stampImage ? (
               <div
@@ -521,7 +523,7 @@ export default function CompanyDetail() {
               >
                 <img
                   src={company.stampImage}
-                  alt="Company stamp"
+                  alt={t('admin.companyDetail.companyStamp2')}
                   style={{
                     maxHeight: '100px',
                     maxWidth: '220px',
@@ -532,7 +534,7 @@ export default function CompanyDetail() {
               </div>
             ) : (
               <div style={{ marginBottom: '12px', fontSize: '13px', color: theme.textMuted }}>
-                No stamp uploaded yet.
+                {t('admin.companyDetail.noStampUploadedYet')}
               </div>
             )}
             <label
@@ -549,7 +551,7 @@ export default function CompanyDetail() {
                 background: theme.bgSurface,
               }}
             >
-              {company.stampImage ? 'Change stamp' : 'Upload stamp'}
+              {company.stampImage ? t('admin.companyDetail.changeStamp') : t('admin.companyDetail.uploadStamp')}
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/gif"
@@ -564,13 +566,13 @@ export default function CompanyDetail() {
                   downloadDataUri(company.stampImage as string, `${company.name}-stamp`)
                 }}
               >
-                Download
+                {t('admin.companyDetail.download')}
               </button>
             )}
             {company.stampImage && (
               <button
                 style={{
-                  marginLeft: '8px',
+                  marginInlineStart: '8px',
                   background: 'none',
                   border: 'none',
                   color: theme.textMuted,
@@ -582,16 +584,16 @@ export default function CompanyDetail() {
                   void updateCompanyMutation({
                     variables: { id: id ?? '', input: { stamp_image: null } },
                   }).then(() => {
-                    addToast({ type: 'success', message: 'Stamp removed' })
+                    addToast({ type: 'success', message: t('admin.companyDetail.stampRemoved') })
                     void refetch()
                   })
                 }
               >
-                Remove
+                {t('admin.companyDetail.remove')}
               </button>
             )}
             <div style={{ marginTop: '8px', fontSize: '11px', color: theme.textMuted }}>
-              PNG / JPG, max 500 KB. Appears on invoice PDFs.
+              {t('admin.companyDetail.pngJpgMax500KbAppears')}
             </div>
           </Card>
           <Card style={{ padding: '20px' }}>
@@ -604,7 +606,7 @@ export default function CompanyDetail() {
                 marginBottom: '12px',
               }}
             >
-              Invoice Letterhead
+              {t('admin.companyDetail.invoiceLetterhead')}
             </div>
             <div
               style={{
@@ -614,8 +616,7 @@ export default function CompanyDetail() {
                 lineHeight: 1.5,
               }}
             >
-              When set, this image is used as the full-page background of invoice PDFs instead of
-              the default company header. Upload a PNG/JPG version of your letterhead template.
+              {t('admin.companyDetail.whenSetThisImageIsUsed')}
             </div>
             {company.letterheadImage ? (
               <div
@@ -629,7 +630,7 @@ export default function CompanyDetail() {
               >
                 <img
                   src={company.letterheadImage}
-                  alt="Letterhead preview"
+                  alt={t('admin.companyDetail.letterheadPreview')}
                   style={{
                     maxHeight: '140px',
                     maxWidth: '280px',
@@ -640,7 +641,7 @@ export default function CompanyDetail() {
               </div>
             ) : (
               <div style={{ marginBottom: '12px', fontSize: '13px', color: theme.textMuted }}>
-                No letterhead uploaded yet.
+                {t('admin.companyDetail.noLetterheadUploadedYet')}
               </div>
             )}
             <label
@@ -657,7 +658,7 @@ export default function CompanyDetail() {
                 background: theme.bgSurface,
               }}
             >
-              {company.letterheadImage ? 'Change letterhead' : 'Upload letterhead'}
+              {company.letterheadImage ? t('admin.companyDetail.changeLetterhead') : t('admin.companyDetail.uploadLetterhead')}
               <input
                 type="file"
                 accept="image/png,image/jpeg,application/pdf"
@@ -674,13 +675,13 @@ export default function CompanyDetail() {
                   downloadDataUri(company.letterheadImage as string, `${company.name}-letterhead`)
                 }}
               >
-                Download
+                {t('admin.companyDetail.download')}
               </button>
             )}
             {company.letterheadImage && (
               <button
                 style={{
-                  marginLeft: '8px',
+                  marginInlineStart: '8px',
                   background: 'none',
                   border: 'none',
                   color: theme.textMuted,
@@ -692,17 +693,16 @@ export default function CompanyDetail() {
                   void updateCompanyMutation({
                     variables: { id: id ?? '', input: { letterhead_image: null } },
                   }).then(() => {
-                    addToast({ type: 'success', message: 'Letterhead removed' })
+                    addToast({ type: 'success', message: t('admin.companyDetail.letterheadRemoved') })
                     void refetch()
                   })
                 }
               >
-                Remove
+                {t('admin.companyDetail.remove')}
               </button>
             )}
             <div style={{ marginTop: '8px', fontSize: '11px', color: theme.textMuted }}>
-              PDF, PNG, or JPG — max 10 MB. PDF page 1 is auto-converted to an image. Must be A4
-              proportions. Leave space in the middle for invoice content.
+              {t('admin.companyDetail.pdfPngOrJpgMax10')}
             </div>
           </Card>
 
@@ -716,7 +716,7 @@ export default function CompanyDetail() {
                 marginBottom: '12px',
               }}
             >
-              Payment Voucher Template
+              {t('admin.companyDetail.paymentVoucherTemplate')}
             </div>
             <div
               style={{
@@ -726,8 +726,7 @@ export default function CompanyDetail() {
                 lineHeight: 1.5,
               }}
             >
-              The blank FNC payment voucher form (PDF or image). Used as print background so data
-              values are overlaid on the pre-printed form fields.
+              {t('admin.companyDetail.theBlankFncPaymentVoucherForm')}
             </div>
             {company.pvTemplateImage ? (
               <div
@@ -741,7 +740,7 @@ export default function CompanyDetail() {
               >
                 <img
                   src={company.pvTemplateImage}
-                  alt="PV template preview"
+                  alt={t('admin.companyDetail.pvTemplatePreview')}
                   style={{
                     maxHeight: '140px',
                     maxWidth: '280px',
@@ -752,7 +751,7 @@ export default function CompanyDetail() {
               </div>
             ) : (
               <div style={{ marginBottom: '12px', fontSize: '13px', color: theme.textMuted }}>
-                No template uploaded yet.
+                {t('admin.companyDetail.noTemplateUploadedYet')}
               </div>
             )}
             <label
@@ -769,7 +768,7 @@ export default function CompanyDetail() {
                 background: theme.bgSurface,
               }}
             >
-              {company.pvTemplateImage ? 'Change template' : 'Upload template'}
+              {company.pvTemplateImage ? t('admin.companyDetail.changeTemplate') : t('admin.companyDetail.uploadTemplate')}
               <input
                 type="file"
                 accept="image/png,image/jpeg,application/pdf"
@@ -786,13 +785,13 @@ export default function CompanyDetail() {
                   downloadDataUri(company.pvTemplateImage as string, `${company.name}-pv-template`)
                 }}
               >
-                Download
+                {t('admin.companyDetail.download')}
               </button>
             )}
             {company.pvTemplateImage && (
               <button
                 style={{
-                  marginLeft: '8px',
+                  marginInlineStart: '8px',
                   background: 'none',
                   border: 'none',
                   color: theme.textMuted,
@@ -804,16 +803,16 @@ export default function CompanyDetail() {
                   void updateCompanyMutation({
                     variables: { id: id ?? '', input: { pv_template_image: null } },
                   }).then(() => {
-                    addToast({ type: 'success', message: 'PV template removed' })
+                    addToast({ type: 'success', message: t('admin.companyDetail.pvTemplateRemoved') })
                     void refetch()
                   })
                 }
               >
-                Remove
+                {t('admin.companyDetail.remove')}
               </button>
             )}
             <div style={{ marginTop: '8px', fontSize: '11px', color: theme.textMuted }}>
-              PDF, PNG, or JPG — max 10 MB. Must be the A4 portrait FNC payment voucher blank form.
+              {t('admin.companyDetail.pdfPngOrJpgMax102')}
             </div>
           </Card>
 
@@ -827,7 +826,7 @@ export default function CompanyDetail() {
                 marginBottom: '12px',
               }}
             >
-              General Journal Template
+              {t('admin.companyDetail.generalJournalTemplate')}
             </div>
             <div
               style={{
@@ -837,8 +836,7 @@ export default function CompanyDetail() {
                 lineHeight: 1.5,
               }}
             >
-              The blank FNC general journal form (PDF or image). Used as print background so data
-              values are overlaid on the pre-printed form fields.
+              {t('admin.companyDetail.theBlankFncGeneralJournalForm')}
             </div>
             {company.journalTemplateImage ? (
               <div
@@ -852,7 +850,7 @@ export default function CompanyDetail() {
               >
                 <img
                   src={company.journalTemplateImage}
-                  alt="Journal template preview"
+                  alt={t('admin.companyDetail.journalTemplatePreview')}
                   style={{
                     maxHeight: '140px',
                     maxWidth: '280px',
@@ -863,7 +861,7 @@ export default function CompanyDetail() {
               </div>
             ) : (
               <div style={{ marginBottom: '12px', fontSize: '13px', color: theme.textMuted }}>
-                No template uploaded yet.
+                {t('admin.companyDetail.noTemplateUploadedYet')}
               </div>
             )}
             <label
@@ -880,7 +878,7 @@ export default function CompanyDetail() {
                 background: theme.bgSurface,
               }}
             >
-              {company.journalTemplateImage ? 'Change template' : 'Upload template'}
+              {company.journalTemplateImage ? t('admin.companyDetail.changeTemplate') : t('admin.companyDetail.uploadTemplate')}
               <input
                 type="file"
                 accept="image/png,image/jpeg,application/pdf"
@@ -900,13 +898,13 @@ export default function CompanyDetail() {
                   )
                 }}
               >
-                Download
+                {t('admin.companyDetail.download')}
               </button>
             )}
             {company.journalTemplateImage && (
               <button
                 style={{
-                  marginLeft: '8px',
+                  marginInlineStart: '8px',
                   background: 'none',
                   border: 'none',
                   color: theme.textMuted,
@@ -918,16 +916,16 @@ export default function CompanyDetail() {
                   void updateCompanyMutation({
                     variables: { id: id ?? '', input: { journal_template_image: null } },
                   }).then(() => {
-                    addToast({ type: 'success', message: 'Journal template removed' })
+                    addToast({ type: 'success', message: t('admin.companyDetail.journalTemplateRemoved') })
                     void refetch()
                   })
                 }
               >
-                Remove
+                {t('admin.companyDetail.remove')}
               </button>
             )}
             <div style={{ marginTop: '8px', fontSize: '11px', color: theme.textMuted }}>
-              PDF, PNG, or JPG — max 10 MB. Must be the A4 portrait FNC general journal blank form.
+              {t('admin.companyDetail.pdfPngOrJpgMax103')}
             </div>
           </Card>
         </div>
@@ -938,12 +936,12 @@ export default function CompanyDetail() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
             <Button variant="primary" size="sm" onClick={openCreate}>
-              Add Branch
+              {t('admin.companyDetail.addBranch')}
             </Button>
           </div>
           {branches.length === 0 ? (
             <Card style={{ padding: '40px', textAlign: 'center' }}>
-              <div style={{ fontSize: '13px', color: theme.textMuted }}>No branches added yet.</div>
+              <div style={{ fontSize: '13px', color: theme.textMuted }}>{t('admin.companyDetail.noBranchesAddedYet')}</div>
             </Card>
           ) : (
             <div
@@ -974,7 +972,7 @@ export default function CompanyDetail() {
                       )}
                     </div>
                     <Badge variant={b.isActive ? 'success' : 'neutral'}>
-                      {b.isActive ? 'Active' : 'Inactive'}
+                      {b.isActive ? t('admin.companyDetail.active') : t('admin.companyDetail.inactive')}
                     </Badge>
                   </div>
                   {b.address && (
@@ -1006,10 +1004,10 @@ export default function CompanyDetail() {
                         openEdit(b)
                       }}
                     >
-                      Edit
+                      {t('admin.companyDetail.edit')}
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => void handleDeleteBranch(b.id)}>
-                      Delete
+                      {t('admin.companyDetail.delete')}
                     </Button>
                   </div>
                 </Card>
@@ -1030,7 +1028,7 @@ export default function CompanyDetail() {
                 setShowAssignRoleModal(true)
               }}
             >
-              Assign role
+              {t('admin.companyDetail.assignRole')}
             </Button>
           </div>
           <Card>
@@ -1038,7 +1036,7 @@ export default function CompanyDetail() {
               columns={userColumns}
               data={users}
               rowKey="id"
-              emptyMessage="No users in this company."
+              emptyMessage={t('admin.companyDetail.noUsersInThisCompany')}
               onRowClick={(u) => {
                 navigate(`/admin/users/${u.id}`)
               }}
@@ -1058,10 +1056,10 @@ export default function CompanyDetail() {
       {activeTab === 'interco' && (
         <Card style={{ padding: '24px' }}>
           <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '8px' }}>
-            Transfer pricing method
+            {t('admin.companyDetail.transferPricingMethod')}
           </div>
           <div style={{ fontSize: '15px', color: theme.textPrimary }}>
-            {company.intercoTransferPricingMethod?.replace(/_/g, ' ') ?? 'Not configured'}
+            {company.intercoTransferPricingMethod?.replace(/_/g, ' ') ?? t('admin.companyDetail.notConfigured')}
           </div>
         </Card>
       )}
@@ -1070,18 +1068,18 @@ export default function CompanyDetail() {
       {branchModal.open && (
         <Modal
           open={branchModal.open}
-          title={branchModal.editing ? 'Edit Branch' : 'Add Branch'}
+          title={branchModal.editing ? t('admin.companyDetail.editBranch') : t('admin.companyDetail.addBranch')}
           onClose={() => {
             setBranchModal({ open: false, editing: null })
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '380px' }}>
             {[
-              { label: 'Branch name *', key: 'name', placeholder: 'e.g. Baghdad Office' },
-              { label: 'Address', key: 'address', placeholder: 'Street address' },
-              { label: 'City', key: 'city', placeholder: 'City' },
-              { label: 'Country code', key: 'countryCode', placeholder: 'IQ' },
-              { label: 'Phone', key: 'phone', placeholder: '+964 ...' },
+              { label: t('admin.companyDetail.branchName'), key: 'name', placeholder: t('admin.companyDetail.eGBaghdadOffice') },
+              { label: t('admin.companyDetail.address'), key: 'address', placeholder: t('admin.companyDetail.streetAddress') },
+              { label: t('admin.companyDetail.city'), key: 'city', placeholder: t('admin.companyDetail.city') },
+              { label: t('admin.companyDetail.countryCode'), key: 'countryCode', placeholder: 'IQ' },
+              { label: t('admin.companyDetail.phone'), key: 'phone', placeholder: '+964 ...' },
             ].map(({ label, key, placeholder }) => (
               <div key={key}>
                 <label
@@ -1121,7 +1119,7 @@ export default function CompanyDetail() {
                   setBranchForm({ ...branchForm, isActive: e.target.checked })
                 }}
               />
-              Active
+              {t('admin.companyDetail.active')}
             </label>
             <div>
               <label
@@ -1132,7 +1130,7 @@ export default function CompanyDetail() {
                   marginBottom: '4px',
                 }}
               >
-                Procurement buyer
+                {t('admin.companyDetail.procurementBuyer')}
               </label>
               <div
                 style={{
@@ -1144,7 +1142,7 @@ export default function CompanyDetail() {
                   background: theme.bgSurface,
                 }}
               >
-                Buyers are now managed on the PO Positions page, scoped per branch.{' '}
+                {t('admin.companyDetail.buyersNote')}{' '}
                 <button
                   type="button"
                   onClick={() => {
@@ -1160,7 +1158,7 @@ export default function CompanyDetail() {
                     textDecoration: 'underline',
                   }}
                 >
-                  Open PO Positions
+                  {t('admin.companyDetail.openPoPositions')}
                 </button>
               </div>
             </div>
@@ -1173,7 +1171,7 @@ export default function CompanyDetail() {
                   setBranchModal({ open: false, editing: null })
                 }}
               >
-                Cancel
+                {t('admin.companyDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1181,7 +1179,7 @@ export default function CompanyDetail() {
                 disabled={!branchForm.name}
                 onClick={() => void saveBranch()}
               >
-                {branchModal.editing ? 'Save changes' : 'Add Branch'}
+                {branchModal.editing ? t('admin.companyDetail.saveChanges') : t('admin.companyDetail.addBranch')}
               </Button>
             </div>
           </div>
@@ -1192,16 +1190,16 @@ export default function CompanyDetail() {
       {showAssignRoleModal && (
         <Modal
           open={showAssignRoleModal}
-          title="Assign Role"
+          title={t('admin.companyDetail.assignRole2')}
           onClose={() => {
             setShowAssignRoleModal(false)
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '360px' }}>
             {[
-              { label: 'User ID', key: 'userId', placeholder: 'User UUID' },
-              { label: 'Role', key: 'role', placeholder: 'e.g. admin, viewer' },
-              { label: 'Module', key: 'module', placeholder: 'e.g. procurement, finance' },
+              { label: t('admin.companyDetail.userId'), key: 'userId', placeholder: t('admin.companyDetail.userUuid') },
+              { label: t('admin.companyDetail.role'), key: 'role', placeholder: t('admin.companyDetail.eGAdminViewer') },
+              { label: t('admin.companyDetail.module'), key: 'module', placeholder: t('admin.companyDetail.eGProcurementFinance') },
             ].map(({ label, key, placeholder }) => (
               <div key={key}>
                 <label
@@ -1231,7 +1229,7 @@ export default function CompanyDetail() {
                   setShowAssignRoleModal(false)
                 }}
               >
-                Cancel
+                {t('admin.companyDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1250,7 +1248,7 @@ export default function CompanyDetail() {
                   })
                 }
               >
-                Assign
+                {t('admin.companyDetail.assign')}
               </Button>
             </div>
           </div>

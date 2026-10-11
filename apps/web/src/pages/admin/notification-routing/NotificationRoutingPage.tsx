@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -17,6 +18,7 @@ interface RouteEntry {
 }
 
 export default function NotificationRoutingPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [routes, setRoutes] = useState<RouteEntry[]>([])
@@ -32,7 +34,7 @@ export default function NotificationRoutingPage() {
         setRoutes(r.data.routes)
       })
       .catch(() => {
-        addToast({ type: 'error', message: 'Failed to load notification routing' })
+        addToast({ type: 'error', message: t('admin.routing.failedToLoadNotificationRouting') })
       })
       .finally(() => {
         setLoading(false)
@@ -59,11 +61,11 @@ export default function NotificationRoutingPage() {
     setSaving(true)
     try {
       await api.put('/admin/notification-routing', { updates })
-      addToast({ type: 'success', message: 'Notification routing saved' })
+      addToast({ type: 'success', message: t('admin.routing.notificationRoutingSaved') })
       setEdits({})
       load()
     } catch {
-      addToast({ type: 'error', message: 'Failed to save routing config' })
+      addToast({ type: 'error', message: t('admin.routing.failedToSaveRoutingConfig') })
     } finally {
       setSaving(false)
     }
@@ -72,8 +74,8 @@ export default function NotificationRoutingPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '820px' }}>
       <PageHeader
-        title="Notification Routing"
-        subtitle="Control which system events send emails — changes take effect within 5 minutes"
+        title={t('admin.routing.notificationRouting')}
+        subtitle={t('admin.routing.controlWhichSystemEventsSendEmails')}
       />
 
       {loading ? (
@@ -137,12 +139,12 @@ export default function NotificationRoutingPage() {
                         </span>
                         {changed && (
                           <Badge variant="warning" size="sm">
-                            Unsaved
+                            {t('admin.routing.unsaved')}
                           </Badge>
                         )}
                         {!route.configured && !changed && (
                           <Badge variant="neutral" size="sm">
-                            Default on
+                            {t('admin.routing.defaultOn')}
                           </Badge>
                         )}
                       </div>
@@ -166,7 +168,7 @@ export default function NotificationRoutingPage() {
                         letterSpacing: '0.05em',
                       }}
                     >
-                      {enabled ? 'Email on' : 'Email off'}
+                      {enabled ? t('admin.routing.emailOn') : t('admin.routing.emailOff')}
                     </span>
                   </div>
                 </Card>
@@ -184,7 +186,7 @@ export default function NotificationRoutingPage() {
                   setEdits({})
                 }}
               >
-                Discard changes
+                {t('admin.routing.discardChanges')}
               </Button>
             )}
             <Button
@@ -193,7 +195,7 @@ export default function NotificationRoutingPage() {
               disabled={!hasChanges}
               onClick={() => void handleSave()}
             >
-              Save changes
+              {t('admin.routing.saveChanges')}
             </Button>
           </div>
 
@@ -208,10 +210,7 @@ export default function NotificationRoutingPage() {
               color: theme.textMuted,
             }}
           >
-            <strong>Security emails</strong> (password reset, new device login, MFA setup, user
-            invitations) are always sent and cannot be disabled here. Disabling an email here only
-            suppresses the outgoing message — the event is still processed and in-app notifications
-            are still created.
+            <Trans i18nKey="admin.routing.securityNote" components={{ strong: <strong /> }} />
           </div>
         </>
       )}

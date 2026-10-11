@@ -1,3 +1,6 @@
+import { tl } from '../../../i18n'
+import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import QRCode from 'react-qr-code'
@@ -52,11 +55,11 @@ interface SessionsData {
 }
 
 const TABS = [
-  { key: 'personal', label: 'Personal Info' },
-  { key: 'profile', label: 'Account' },
-  { key: 'password', label: 'Password' },
-  { key: 'mfa', label: 'Two-Factor Auth' },
-  { key: 'sessions', label: 'Sessions' },
+  { key: 'personal', get label() { return i18n.t('settings.profile.personalInfo', { defaultValue: "Personal Info" }) } },
+  { key: 'profile', get label() { return i18n.t('settings.profile.account', { defaultValue: "Account" }) } },
+  { key: 'password', get label() { return i18n.t('settings.profile.password', { defaultValue: "Password" }) } },
+  { key: 'mfa', get label() { return i18n.t('settings.profile.twoFactorAuth', { defaultValue: "Two-Factor Auth" }) } },
+  { key: 'sessions', get label() { return i18n.t('settings.profile.sessions', { defaultValue: "Sessions" }) } },
 ]
 
 const TAB_PATH: Record<string, string> = {
@@ -77,6 +80,7 @@ interface PersonalProfile {
 }
 
 export default function ProfilePage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const { pathname } = useLocation()
@@ -120,7 +124,7 @@ export default function ProfilePage() {
         if (r.data.profilePicture) setAvatarPreview(r.data.profilePicture)
       })
       .catch(() => {
-        addToast({ type: 'error', message: 'Failed to load profile' })
+        addToast({ type: 'error', message: t('settings.profile.failedToLoadProfile') })
       })
       .finally(() => {
         setPersonalLoading(false)
@@ -129,7 +133,7 @@ export default function ProfilePage() {
 
   async function savePersonal() {
     if (!personalForm.firstName.trim() || !personalForm.lastName.trim()) {
-      addToast({ type: 'error', message: 'First and last name are required' })
+      addToast({ type: 'error', message: t('settings.profile.firstAndLastNameAreRequired') })
       return
     }
     setPersonalSaving(true)
@@ -150,9 +154,9 @@ export default function ProfilePage() {
       }
       setPersonal(data)
       setUser({ firstName: data.firstName ?? undefined, lastName: data.lastName ?? undefined })
-      addToast({ type: 'success', message: 'Profile updated' })
+      addToast({ type: 'success', message: t('settings.profile.profileUpdated') })
     } catch {
-      addToast({ type: 'error', message: 'Failed to update profile' })
+      addToast({ type: 'error', message: t('settings.profile.failedToUpdateProfile') })
     } finally {
       setPersonalSaving(false)
     }
@@ -190,7 +194,7 @@ export default function ProfilePage() {
 
   const [updatePassword, { loading: changingPwd }] = useMutation<UpdatePasswordMutation, UpdatePasswordMutationVariables>(UPDATE_PASSWORD, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Password updated' })
+      addToast({ type: 'success', message: t('settings.profile.passwordUpdated') })
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPwd('')
@@ -213,7 +217,7 @@ export default function ProfilePage() {
 
   const [confirmMFA, { loading: confirmingMFA }] = useMutation<ConfirmMfaMutation, ConfirmMfaMutationVariables>(CONFIRM_MFA, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'MFA enabled successfully' })
+      addToast({ type: 'success', message: t('settings.profile.mfaEnabledSuccessfully') })
       setSetupPhase('idle')
       setTotpCode('')
       setMfaSecret('')
@@ -227,7 +231,7 @@ export default function ProfilePage() {
 
   const [disableMFA, { loading: disablingMFA }] = useMutation<DisableMfaMutation, DisableMfaMutationVariables>(DISABLE_MFA, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'MFA disabled' })
+      addToast({ type: 'success', message: t('settings.profile.mfaDisabled') })
       setDisablePwd('')
       void refetchProfile()
     },
@@ -238,7 +242,7 @@ export default function ProfilePage() {
 
   const [revokeSession, { loading: revokingSession }] = useMutation<RevokeMySessionMutation, RevokeMySessionMutationVariables>(REVOKE_MY_SESSION, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Session revoked' })
+      addToast({ type: 'success', message: t('settings.profile.sessionRevoked') })
       setRevokeSessionId(null)
       void refetchSessions()
     },
@@ -250,7 +254,7 @@ export default function ProfilePage() {
 
   const [revokeAllSessions, { loading: revokingAll }] = useMutation<RevokeAllMySessionsMutation, RevokeAllMySessionsMutationVariables>(REVOKE_ALL_MY_SESSIONS, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'All other sessions revoked' })
+      addToast({ type: 'success', message: t('settings.profile.allOtherSessionsRevoked') })
       setConfirmRevokeAll(false)
       void refetchSessions()
     },
@@ -265,11 +269,11 @@ export default function ProfilePage() {
 
   function handlePasswordChange() {
     if (newPassword !== confirmPwd) {
-      addToast({ type: 'error', message: 'Passwords do not match' })
+      addToast({ type: 'error', message: t('settings.profile.passwordsDoNotMatch') })
       return
     }
     if (newPassword.length < 8) {
-      addToast({ type: 'error', message: 'Password must be at least 8 characters' })
+      addToast({ type: 'error', message: t('settings.profile.passwordMustBeAtLeast8') })
       return
     }
     void updatePassword({ variables: { currentPassword, newPassword } })
@@ -277,7 +281,7 @@ export default function ProfilePage() {
 
   return (
     <div style={{ padding: '24px' }}>
-      <PageHeader title="My Profile" subtitle="Manage your account settings" />
+      <PageHeader title={t('settings.profile.myProfile')} subtitle={t('settings.profile.manageYourAccountSettings')} />
 
       <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
 
@@ -311,7 +315,7 @@ export default function ProfilePage() {
                     {avatarPreview ? (
                       <img
                         src={avatarPreview}
-                        alt="avatar"
+                        alt={t('settings.profile.avatar')}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                     ) : (
@@ -342,10 +346,10 @@ export default function ProfilePage() {
                         fontWeight: 500,
                       }}
                     >
-                      Change photo
+                      {t('settings.profile.changePhoto')}
                     </button>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                      JPG, PNG or WebP · max 5 MB
+                      {t('settings.profile.jpgPngOrWebpMax5')}
                     </div>
                   </div>
                 </div>
@@ -353,29 +357,29 @@ export default function ProfilePage() {
                 {/* Name */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <Input
-                    label="First Name *"
+                    label={t('settings.profile.firstName')}
                     value={personalForm.firstName}
                     onChange={(e) => {
                       setPersonalForm((f) => ({ ...f, firstName: e.target.value }))
                     }}
-                    placeholder="First name"
+                    placeholder={t('settings.profile.firstName2')}
                   />
                   <Input
-                    label="Last Name *"
+                    label={t('settings.profile.lastName')}
                     value={personalForm.lastName}
                     onChange={(e) => {
                       setPersonalForm((f) => ({ ...f, lastName: e.target.value }))
                     }}
-                    placeholder="Last name"
+                    placeholder={t('settings.profile.lastName2')}
                   />
                 </div>
                 <Input
-                  label="Job Title"
+                  label={t('settings.profile.jobTitle')}
                   value={personalForm.jobTitle}
                   onChange={(e) => {
                     setPersonalForm((f) => ({ ...f, jobTitle: e.target.value }))
                   }}
-                  placeholder="e.g. Project Manager"
+                  placeholder={t('settings.profile.eGProjectManager')}
                 />
 
                 {/* Email (read-only) */}
@@ -389,7 +393,7 @@ export default function ProfilePage() {
                       marginBottom: '6px',
                     }}
                   >
-                    Email
+                    {t('settings.profile.email')}
                   </label>
                   <div
                     style={{
@@ -406,7 +410,7 @@ export default function ProfilePage() {
                 </div>
 
                 <Input
-                  label="Phone Number"
+                  label={t('settings.profile.phoneNumber')}
                   type="tel"
                   value={personalForm.phone}
                   onChange={(e) => {
@@ -415,7 +419,7 @@ export default function ProfilePage() {
                   placeholder="+964 770 000 0000"
                 />
                 <Input
-                  label="Emergency Contact Phone"
+                  label={t('settings.profile.emergencyContactPhone')}
                   type="tel"
                   value={personalForm.emergencyPhone}
                   onChange={(e) => {
@@ -433,7 +437,7 @@ export default function ProfilePage() {
                   }}
                   disabled={!personalForm.firstName.trim() || !personalForm.lastName.trim()}
                 >
-                  Save Changes
+                  {t('settings.profile.saveChanges')}
                 </Button>
               </div>
             )}
@@ -453,21 +457,21 @@ export default function ProfilePage() {
                   fontSize: '13px',
                 }}
               >
-                <dt style={{ color: theme.textMuted }}>Email</dt>
+                <dt style={{ color: theme.textMuted }}>{t('settings.profile.email')}</dt>
                 <dd style={{ color: theme.textPrimary, fontWeight: 500, margin: 0 }}>
                   {profile.email}
                 </dd>
-                <dt style={{ color: theme.textMuted }}>Two-Factor Auth</dt>
+                <dt style={{ color: theme.textMuted }}>{t('settings.profile.twoFactorAuth')}</dt>
                 <dd style={{ margin: 0 }}>
                   <Badge variant={profile.mfaEnabled ? 'success' : 'warning'} dot>
-                    {profile.mfaEnabled ? 'Enabled' : 'Not Enabled'}
+                    {profile.mfaEnabled ? t('settings.profile.enabled') : t('settings.profile.notEnabled')}
                   </Badge>
                 </dd>
-                <dt style={{ color: theme.textMuted }}>Last Login</dt>
+                <dt style={{ color: theme.textMuted }}>{t('settings.profile.lastLogin')}</dt>
                 <dd style={{ color: theme.textMuted, margin: 0, fontSize: '12px' }}>
-                  {profile.lastLogin ? new Date(profile.lastLogin).toLocaleString() : 'Never'}
+                  {profile.lastLogin ? new Date(profile.lastLogin).toLocaleString() : t('settings.profile.never')}
                 </dd>
-                <dt style={{ color: theme.textMuted }}>Member Since</dt>
+                <dt style={{ color: theme.textMuted }}>{t('settings.profile.memberSince')}</dt>
                 <dd style={{ color: theme.textMuted, margin: 0, fontSize: '12px' }}>
                   {new Date(profile.createdAt).toLocaleDateString()}
                 </dd>
@@ -486,37 +490,37 @@ export default function ProfilePage() {
                 marginBottom: '20px',
               }}
             >
-              Change Password
+              {t('settings.profile.changePassword')}
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <Input
-                label="Current Password"
+                label={t('settings.profile.currentPassword')}
                 type="password"
                 value={currentPassword}
                 onChange={(e) => {
                   setCurrentPassword(e.target.value)
                 }}
-                placeholder="Enter current password"
+                placeholder={t('settings.profile.enterCurrentPassword')}
               />
               <Input
-                label="New Password"
+                label={t('settings.profile.newPassword')}
                 type="password"
                 value={newPassword}
                 onChange={(e) => {
                   setNewPassword(e.target.value)
                 }}
-                placeholder="At least 8 characters"
+                placeholder={t('settings.profile.atLeast8Characters')}
               />
               <Input
-                label="Confirm New Password"
+                label={t('settings.profile.confirmNewPassword')}
                 type="password"
                 value={confirmPwd}
                 onChange={(e) => {
                   setConfirmPwd(e.target.value)
                 }}
-                placeholder="Repeat new password"
+                placeholder={t('settings.profile.repeatNewPassword')}
                 error={
-                  confirmPwd && newPassword !== confirmPwd ? 'Passwords do not match' : undefined
+                  confirmPwd && newPassword !== confirmPwd ? t('settings.profile.passwordsDoNotMatch') : undefined
                 }
               />
               <Button
@@ -526,7 +530,7 @@ export default function ProfilePage() {
                 loading={changingPwd}
                 disabled={!currentPassword || !newPassword || !confirmPwd}
               >
-                Update Password
+                {t('settings.profile.updatePassword')}
               </Button>
             </div>
           </Card>
@@ -542,22 +546,21 @@ export default function ProfilePage() {
                 marginBottom: '16px',
               }}
             >
-              Two-Factor Authentication
+              {t('settings.profile.twoFactorAuthentication')}
             </h3>
             {profile?.mfaEnabled ? (
               <div>
                 <div style={{ marginBottom: '16px' }}>
                   <Badge variant="success" dot>
-                    MFA Enabled
+                    {t('settings.profile.mfaEnabled')}
                   </Badge>
                 </div>
                 <p style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '16px' }}>
-                  Your account is protected with an authenticator app. To disable, enter your
-                  password below.
+                  {t('settings.profile.yourAccountIsProtectedWithAn')}
                 </p>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <Input
-                    placeholder="Current password"
+                    placeholder={t('settings.profile.currentPassword2')}
                     type="password"
                     value={disablePwd}
                     onChange={(e) => {
@@ -571,15 +574,14 @@ export default function ProfilePage() {
                     loading={disablingMFA}
                     disabled={!disablePwd}
                   >
-                    Disable MFA
+                    {t('settings.profile.disableMfa')}
                   </Button>
                 </div>
               </div>
             ) : setupPhase === 'idle' ? (
               <div>
                 <p style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '16px' }}>
-                  Add an extra layer of security with a time-based one-time password (TOTP)
-                  authenticator app.
+                  {t('settings.profile.addAnExtraLayerOfSecurity')}
                 </p>
                 <Button
                   variant="primary"
@@ -590,14 +592,13 @@ export default function ProfilePage() {
                   }}
                   loading={enablingMFA}
                 >
-                  Enable Two-Factor Auth
+                  {t('settings.profile.enableTwoFactorAuth')}
                 </Button>
               </div>
             ) : setupPhase === 'confirm' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <p style={{ fontSize: '13px', color: theme.textSecondary }}>
-                  Scan this QR code with your authenticator app (Google Authenticator, Authy,
-                  1Password, etc.):
+                  {t('settings.profile.scanThisQrCodeWithYour')}
                 </p>
                 {mfaOtpauthUrl && (
                   <div
@@ -615,7 +616,7 @@ export default function ProfilePage() {
                 )}
                 <details style={{ fontSize: '12px', color: theme.textMuted }}>
                   <summary style={{ cursor: 'pointer', userSelect: 'none' }}>
-                    Can't scan? Enter the code manually
+                    {t('settings.profile.canTScanEnterTheCode')}
                   </summary>
                   <div
                     style={{
@@ -635,7 +636,7 @@ export default function ProfilePage() {
                   </div>
                 </details>
                 <Input
-                  label="Enter 6-digit code from your app"
+                  label={t('settings.profile.enter6DigitCodeFromYour')}
                   value={totpCode}
                   onChange={(e) => {
                     setTotpCode(e.target.value.slice(0, 6))
@@ -650,7 +651,7 @@ export default function ProfilePage() {
                     loading={confirmingMFA}
                     disabled={totpCode.length !== 6}
                   >
-                    Verify & Enable
+                    {t('settings.profile.verifyEnable')}
                   </Button>
                   <Button
                     variant="ghost"
@@ -663,7 +664,7 @@ export default function ProfilePage() {
                     }}
                     disabled={confirmingMFA}
                   >
-                    Cancel
+                    {t('settings.profile.cancel')}
                   </Button>
                 </div>
               </div>
@@ -683,7 +684,7 @@ export default function ProfilePage() {
               }}
             >
               <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                Active Sessions
+                {t('settings.profile.activeSessions')}
               </h3>
               {sessions.filter((s) => !s.isCurrent).length > 0 && (
                 <Button
@@ -693,7 +694,7 @@ export default function ProfilePage() {
                     setConfirmRevokeAll(true)
                   }}
                 >
-                  Revoke Other Sessions
+                  {t('settings.profile.revokeOtherSessions')}
                 </Button>
               )}
             </div>
@@ -712,7 +713,7 @@ export default function ProfilePage() {
                             key={h}
                             style={{
                               padding: '10px 14px',
-                              textAlign: 'left',
+                              textAlign: 'start',
                               fontSize: '10px',
                               fontWeight: 600,
                               color: theme.textMuted,
@@ -722,7 +723,7 @@ export default function ProfilePage() {
                               whiteSpace: 'nowrap',
                             }}
                           >
-                            {h}
+                            {h ? tl('settings.profile.sessionCols', h, h) : ''}
                           </th>
                         ),
                       )}
@@ -743,9 +744,9 @@ export default function ProfilePage() {
                         <td style={{ padding: '12px 14px', color: theme.textPrimary }}>
                           {s.deviceName}
                           {s.isCurrent && (
-                            <span style={{ marginLeft: '8px' }}>
+                            <span style={{ marginInlineStart: '8px' }}>
                               <Badge variant="accent" size="sm">
-                                Current
+                                {t('settings.profile.current')}
                               </Badge>
                             </span>
                           )}
@@ -785,7 +786,7 @@ export default function ProfilePage() {
                               }}
                               loading={revokingSession && revokeSessionId === s.id}
                             >
-                              Revoke
+                              {t('settings.profile.revoke')}
                             </Button>
                           )}
                         </td>
@@ -795,7 +796,7 @@ export default function ProfilePage() {
                 </table>
               </div>
             ) : (
-              <EmptyState title="No sessions" />
+              <EmptyState title={t('settings.profile.noSessions')} />
             )}
           </Card>
         )}
@@ -809,9 +810,9 @@ export default function ProfilePage() {
         onConfirm={() => {
           if (revokeSessionId) void revokeSession({ variables: { sessionId: revokeSessionId } })
         }}
-        title="Revoke Session"
-        message="Revoke this session? You will be logged out on that device."
-        confirmLabel="Revoke"
+        title={t('settings.profile.revokeSession')}
+        message={t('settings.profile.revokeThisSessionYouWillBe')}
+        confirmLabel={t('settings.profile.revoke')}
         confirmVariant="danger"
         loading={revokingSession}
       />
@@ -824,9 +825,9 @@ export default function ProfilePage() {
         onConfirm={() => {
           void revokeAllSessions()
         }}
-        title="Revoke Other Sessions"
-        message="Log out all other devices? Your current session will not be affected."
-        confirmLabel="Revoke All Others"
+        title={t('settings.profile.revokeOtherSessions')}
+        message={t('settings.profile.logOutAllOtherDevicesYour')}
+        confirmLabel={t('settings.profile.revokeAllOthers')}
         confirmVariant="danger"
         loading={revokingAll}
       />

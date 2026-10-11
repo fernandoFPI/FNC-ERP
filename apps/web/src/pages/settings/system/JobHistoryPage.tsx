@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -104,6 +105,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function JobHistoryPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -125,7 +127,7 @@ export default function JobHistoryPage() {
         setSummaries((r.data as unknown as { summaries: JobSummary[] }).summaries)
       })
       .catch(() => {
-        addToast({ type: 'error', message: 'Failed to load job summary' })
+        addToast({ type: 'error', message: t('settings.jobs.failedToLoadJobSummary') })
       })
       .finally(() => {
         setLoadingSummary(false)
@@ -147,7 +149,7 @@ export default function JobHistoryPage() {
         setTotal(d.total)
       })
       .catch(() => {
-        addToast({ type: 'error', message: 'Failed to load job runs' })
+        addToast({ type: 'error', message: t('settings.jobs.failedToLoadJobRuns') })
       })
       .finally(() => {
         setLoadingRuns(false)
@@ -181,7 +183,7 @@ export default function JobHistoryPage() {
   const columns: Column<JobRun>[] = [
     {
       key: 'job_name',
-      header: 'Job',
+      header: t('settings.jobs.job'),
       mobilePrimary: true,
       render: (run) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500, whiteSpace: 'nowrap' }}>
@@ -191,13 +193,13 @@ export default function JobHistoryPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('settings.jobs.status'),
       mobileSecondary: true,
       render: (run) => <StatusBadge status={run.status} />,
     },
     {
       key: 'started_at',
-      header: 'Started',
+      header: t('settings.jobs.started'),
       mobilePriority: 1,
       render: (run) => (
         <span style={{ color: theme.textMuted, whiteSpace: 'nowrap' }}>
@@ -207,7 +209,7 @@ export default function JobHistoryPage() {
     },
     {
       key: 'duration_ms',
-      header: 'Duration',
+      header: t('settings.jobs.duration'),
       mobilePriority: 2,
       render: (run) => (
         <span
@@ -223,7 +225,7 @@ export default function JobHistoryPage() {
     },
     {
       key: 'details',
-      header: 'Details',
+      header: t('settings.jobs.details'),
       mobilePriority: 3,
       render: (run) =>
         run.error_msg ? (
@@ -243,8 +245,8 @@ export default function JobHistoryPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '1000px' }}>
       <PageHeader
-        title="Job History"
-        subtitle="Background job execution history — auto-refreshes every 30 seconds"
+        title={t('settings.jobs.jobHistory')}
+        subtitle={t('settings.jobs.backgroundJobExecutionHistoryAutoRefreshes')}
       />
 
       {/* ── Summary Cards ── */}
@@ -277,7 +279,7 @@ export default function JobHistoryPage() {
                 key={s.job_name}
                 style={{
                   padding: '12px 14px',
-                  borderLeft: `3px solid ${
+                  borderInlineStart: `3px solid ${
                     s.last_status === 'success'
                       ? theme.success
                       : s.last_status === 'partial'
@@ -322,7 +324,7 @@ export default function JobHistoryPage() {
                   {s.last_status ? (
                     <StatusBadge status={s.last_status} />
                   ) : (
-                    <span style={{ fontSize: '11px', color: theme.textMuted }}>Never ran</span>
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('settings.jobs.neverRan')}</span>
                   )}
                   <span style={{ fontSize: '11px', color: theme.textMuted }}>
                     {fmtRelative(s.last_run_at)}
@@ -331,10 +333,10 @@ export default function JobHistoryPage() {
                 {(s.success_7d > 0 || hasFails) && (
                   <div style={{ display: 'flex', gap: '8px', marginTop: '6px', fontSize: '10px' }}>
                     {s.success_7d > 0 && (
-                      <span style={{ color: theme.success }}>✓ {s.success_7d} this week</span>
+                      <span style={{ color: theme.success }}>{t('settings.jobs.successWeek', { count: s.success_7d })}</span>
                     )}
                     {hasFails && (
-                      <span style={{ color: theme.danger }}>✗ {s.failed_7d} failed</span>
+                      <span style={{ color: theme.danger }}>{t('settings.jobs.failedWeek', { count: s.failed_7d })}</span>
                     )}
                   </div>
                 )}
@@ -367,7 +369,7 @@ export default function JobHistoryPage() {
               minWidth: '200px',
             }}
           >
-            <option value="">All jobs</option>
+            <option value="">{t('settings.jobs.allJobs')}</option>
             {uniqueJobs.map((j) => (
               <option key={j} value={j}>
                 {JOB_LABELS[j] ?? j}
@@ -393,11 +395,11 @@ export default function JobHistoryPage() {
               cursor: 'pointer',
             }}
           >
-            <option value="">All statuses</option>
-            <option value="running">Running</option>
-            <option value="success">Success</option>
-            <option value="partial">Partial</option>
-            <option value="failed">Failed</option>
+            <option value="">{t('settings.jobs.allStatuses')}</option>
+            <option value="running">{t('settings.jobs.running')}</option>
+            <option value="success">{t('settings.jobs.success')}</option>
+            <option value="partial">{t('settings.jobs.partial')}</option>
+            <option value="failed">{t('settings.jobs.failed')}</option>
           </select>
 
           {(filterJob || filterStatus) && (
@@ -418,19 +420,19 @@ export default function JobHistoryPage() {
                 cursor: 'pointer',
               }}
             >
-              Clear filters
+              {t('settings.jobs.clearFilters')}
             </button>
           )}
 
           <span
             style={{
-              marginLeft: 'auto',
+              marginInlineStart: 'auto',
               fontSize: '12px',
               color: theme.textMuted,
               lineHeight: '34px',
             }}
           >
-            {total.toLocaleString()} run{total !== 1 ? 's' : ''}
+            {t('settings.jobs.runCount', { count: total })}
           </span>
         </div>
 
@@ -441,7 +443,7 @@ export default function JobHistoryPage() {
             data={runs}
             rowKey="id"
             loading={loadingRuns}
-            emptyMessage="No job runs found"
+            emptyMessage={t('settings.jobs.noJobRunsFound')}
           />
         </Card>
 
@@ -463,10 +465,10 @@ export default function JobHistoryPage() {
                 cursor: page === 0 ? 'not-allowed' : 'pointer',
               }}
             >
-              Previous
+              {t('settings.jobs.previous')}
             </button>
             <span style={{ lineHeight: '32px', fontSize: '13px', color: theme.textMuted }}>
-              Page {page + 1} of {totalPages}
+              {t('settings.jobs.pageOf', { page: page + 1, total: totalPages })}
             </span>
             <button
               disabled={page >= totalPages - 1}
@@ -483,7 +485,7 @@ export default function JobHistoryPage() {
                 cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer',
               }}
             >
-              Next
+              {t('settings.jobs.next')}
             </button>
           </div>
         )}

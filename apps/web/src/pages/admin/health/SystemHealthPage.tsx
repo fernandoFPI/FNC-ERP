@@ -1,4 +1,6 @@
-﻿import { useQuery } from '@apollo/client'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useQuery } from '@apollo/client'
 import { useState, useEffect } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -55,6 +57,7 @@ function formatUptime(seconds: number): string {
 }
 
 export default function SystemHealthPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { data, loading, refetch } = useQuery<HealthData>(SYSTEM_HEALTH_QUERY, {
     pollInterval: 10000,
@@ -81,12 +84,12 @@ export default function SystemHealthPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="System Health"
-        subtitle="Service status and infrastructure checks"
+        title={t('admin.health.systemHealth')}
+        subtitle={t('admin.health.serviceStatusAndInfrastructureChecks')}
         status={
           !loading && services.length > 0 ? (
             <Badge variant={allHealthy ? 'success' : 'danger'} dot>
-              {allHealthy ? 'All Systems Operational' : 'Issues Detected'}
+              {allHealthy ? t('admin.health.allSystemsOperational') : t('admin.health.issuesDetected')}
             </Badge>
           ) : undefined
         }
@@ -111,7 +114,7 @@ export default function SystemHealthPage() {
                   animation: 'pulse 2s infinite',
                 }}
               />
-              {secondsAgo === 0 ? 'Just updated' : `${secondsAgo}s ago`}
+              {secondsAgo === 0 ? t('admin.health.justUpdated') : t('admin.health.secondsAgo', { count: secondsAgo })}
             </span>
             <Button
               variant="ghost"
@@ -120,7 +123,7 @@ export default function SystemHealthPage() {
                 void refetch()
               }}
             >
-              Refresh
+              {t('admin.health.refresh')}
             </Button>
           </div>
         }
@@ -168,10 +171,10 @@ export default function SystemHealthPage() {
                     {svc.service}
                   </p>
                   <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                    Updated {new Date(svc.lastChecked).toLocaleTimeString()}
+                    {t('admin.health.updatedAt', { time: new Date(svc.lastChecked).toLocaleTimeString() })}
                   </p>
                 </div>
-                <Badge variant={statusVariant(svc.status)}>{svc.status}</Badge>
+                <Badge variant={statusVariant(svc.status)}>{enumLabel(svc.status)}</Badge>
               </div>
 
               <div
@@ -184,7 +187,7 @@ export default function SystemHealthPage() {
               >
                 <div>
                   <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>
-                    Latency
+                    {t('admin.health.latency')}
                   </p>
                   <p
                     style={{
@@ -193,12 +196,12 @@ export default function SystemHealthPage() {
                       color: svc.latencyMs > 200 ? theme.warning : theme.success,
                     }}
                   >
-                    {svc.latencyMs}ms
+                    {t('admin.health.ms', { value: svc.latencyMs })}
                   </p>
                 </div>
                 <div>
                   <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>
-                    Uptime
+                    {t('admin.health.uptime')}
                   </p>
                   <p style={{ fontSize: '16px', fontWeight: 500, color: theme.textPrimary }}>
                     {formatUptime(svc.uptime)}
@@ -239,7 +242,7 @@ export default function SystemHealthPage() {
       {!loading && services.length === 0 && (
         <Card padding="md">
           <p style={{ color: theme.textMuted, textAlign: 'center', fontSize: '13px' }}>
-            No health data available. Ensure the gateway health endpoint is running.
+            {t('admin.health.noHealthDataAvailableEnsureThe')}
           </p>
         </Card>
       )}

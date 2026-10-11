@@ -1,4 +1,5 @@
-﻿import { useState, useEffect } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useApolloClient } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -78,6 +79,7 @@ function statusVariant(
 }
 
 export default function DLQPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const apolloClient = useApolloClient()
@@ -115,7 +117,7 @@ export default function DLQPage() {
 
   const [retryEntry, { loading: retrying }] = useMutation(RETRY_DLQ_ENTRY, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Entry queued for retry' })
+      addToast({ type: 'success', message: t('admin.dlq.entryQueuedForRetry') })
       setRetryTarget(null)
       setNotes('')
       void refetch()
@@ -128,7 +130,7 @@ export default function DLQPage() {
 
   const [dismissEntry, { loading: dismissing }] = useMutation(DISMISS_DLQ_ENTRY, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Entry dismissed' })
+      addToast({ type: 'success', message: t('admin.dlq.entryDismissed') })
       setDismissTarget(null)
       setNotes('')
       void refetch()
@@ -176,11 +178,11 @@ export default function DLQPage() {
           apolloClient.mutate({ mutation: RETRY_DLQ_ENTRY, variables: { dlqId: id } }),
         ),
       )
-      addToast({ type: 'success', message: `${selectedIds.size} event(s) queued for retry` })
+      addToast({ type: 'success', message: t('admin.dlq.queuedForRetry', { count: selectedIds.size }) })
       setSelectedIds(new Set())
       void refetch()
     } catch {
-      addToast({ type: 'error', message: 'Bulk retry failed' })
+      addToast({ type: 'error', message: t('admin.dlq.bulkRetryFailed') })
     } finally {
       setBulkActionLoading(false)
     }
@@ -204,7 +206,7 @@ export default function DLQPage() {
       setBulkDismissNotes('')
       void refetch()
     } catch {
-      addToast({ type: 'error', message: 'Bulk dismiss failed' })
+      addToast({ type: 'error', message: t('admin.dlq.bulkDismissFailed') })
     } finally {
       setBulkActionLoading(false)
     }
@@ -240,7 +242,7 @@ export default function DLQPage() {
     },
     {
       key: 'eventType',
-      header: 'Event Type',
+      header: t('admin.dlq.eventType'),
       mobilePrimary: true,
       render: (item) => (
         <span
@@ -256,7 +258,7 @@ export default function DLQPage() {
     },
     {
       key: 'service',
-      header: 'Service',
+      header: t('admin.dlq.service'),
       mobileSecondary: true,
       render: (item) => (
         <Badge variant="neutral" size="sm">
@@ -266,7 +268,7 @@ export default function DLQPage() {
     },
     {
       key: 'priority',
-      header: 'Priority',
+      header: t('admin.dlq.priority'),
       mobilePriority: 1,
       render: (item) =>
         item.priority === 'critical' ? (
@@ -274,7 +276,7 @@ export default function DLQPage() {
             style={{ animation: 'fnc-pulse 1.8s ease-in-out infinite', display: 'inline-flex' }}
           >
             <Badge variant="danger" size="sm">
-              critical
+              {t('admin.dlq.critical')}
             </Badge>
           </span>
         ) : (
@@ -285,7 +287,7 @@ export default function DLQPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('admin.dlq.status'),
       mobilePriority: 2,
       render: (item) => (
         <Badge variant={statusVariant(item.status)} size="sm">
@@ -295,7 +297,7 @@ export default function DLQPage() {
     },
     {
       key: 'totalAttempts',
-      header: 'Attempts',
+      header: t('admin.dlq.attempts'),
       mobilePriority: 3,
       render: (item) => (
         <span style={{ color: theme.danger, fontWeight: 500 }}>{item.totalAttempts}</span>
@@ -303,7 +305,7 @@ export default function DLQPage() {
     },
     {
       key: 'createdAt',
-      header: 'Created',
+      header: t('admin.dlq.created'),
       mobilePriority: 4,
       render: (item) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -314,7 +316,7 @@ export default function DLQPage() {
     {
       key: 'actions',
       header: '',
-      mobileLabel: 'Actions',
+      mobileLabel: t('admin.dlq.actions'),
       mobilePriority: 5,
       render: (item) => (
         <div style={{ display: 'flex', gap: '6px' }}>
@@ -328,7 +330,7 @@ export default function DLQPage() {
                   setNotes('')
                 }}
               >
-                Retry
+                {t('admin.dlq.retry')}
               </Button>
               <Button
                 variant="danger"
@@ -338,7 +340,7 @@ export default function DLQPage() {
                   setNotes('')
                 }}
               >
-                Dismiss
+                {t('admin.dlq.dismiss')}
               </Button>
             </>
           )}
@@ -355,7 +357,7 @@ export default function DLQPage() {
               setDetailItem(item)
             }}
           >
-            Details
+            {t('admin.dlq.details')}
           </button>
         </div>
       ),
@@ -365,8 +367,8 @@ export default function DLQPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Dead Letter Queue"
-        subtitle="Events that exhausted all retry attempts"
+        title={t('admin.dlq.deadLetterQueue')}
+        subtitle={t('admin.dlq.eventsThatExhaustedAllRetryAttempts')}
         actions={
           <Button
             variant="ghost"
@@ -375,7 +377,7 @@ export default function DLQPage() {
               void refetch()
             }}
           >
-            Refresh
+            {t('admin.dlq.refresh')}
           </Button>
         }
       />
@@ -385,26 +387,26 @@ export default function DLQPage() {
           filters={[
             {
               key: 'status',
-              label: 'Status',
+              label: t('admin.dlq.status'),
               value: statusFilter,
               onChange: setStatusFilter,
               options: [
-                { value: 'pending_review', label: 'Pending Review' },
-                { value: 'retrying', label: 'Retrying' },
-                { value: 'dismissed', label: 'Dismissed' },
-                { value: 'resolved', label: 'Resolved' },
+                { value: 'pending_review', label: t('admin.dlq.pendingReview') },
+                { value: 'retrying', label: t('admin.dlq.retrying') },
+                { value: 'dismissed', label: t('admin.dlq.dismissed') },
+                { value: 'resolved', label: t('admin.dlq.resolved') },
               ],
             },
             {
               key: 'priority',
-              label: 'Priority',
+              label: t('admin.dlq.priority'),
               value: priorityFilter,
               onChange: setPriorityFilter,
               options: [
-                { value: 'critical', label: 'Critical' },
-                { value: 'high', label: 'High' },
-                { value: 'medium', label: 'Medium' },
-                { value: 'low', label: 'Low' },
+                { value: 'critical', label: t('admin.dlq.critical2') },
+                { value: 'high', label: t('admin.dlq.high') },
+                { value: 'medium', label: t('admin.dlq.medium') },
+                { value: 'low', label: t('admin.dlq.low') },
               ],
             },
           ]}
@@ -430,7 +432,7 @@ export default function DLQPage() {
           }}
         >
           <span style={{ fontSize: '12px', color: theme.accent, fontWeight: 500 }}>
-            {selectedIds.size} selected
+            {t('admin.dlq.selectedCount', { count: selectedIds.size })}
           </span>
           <Button
             variant="secondary"
@@ -440,7 +442,7 @@ export default function DLQPage() {
               setConfirmRetryOpen(true)
             }}
           >
-            Retry selected
+            {t('admin.dlq.retrySelected')}
           </Button>
           <Button
             variant="danger"
@@ -449,11 +451,11 @@ export default function DLQPage() {
               setBulkDismissOpen(true)
             }}
           >
-            Dismiss selected
+            {t('admin.dlq.dismissSelected')}
           </Button>
           <button
             style={{
-              marginLeft: 'auto',
+              marginInlineStart: 'auto',
               background: 'none',
               border: 'none',
               color: theme.textMuted,
@@ -464,7 +466,7 @@ export default function DLQPage() {
               setSelectedIds(new Set())
             }}
           >
-            Clear selection
+            {t('admin.dlq.clearSelection')}
           </button>
         </div>
       )}
@@ -475,7 +477,7 @@ export default function DLQPage() {
           data={sortedItems}
           rowKey="id"
           loading={loading && sortedItems.length === 0}
-          emptyMessage="No events in the dead letter queue."
+          emptyMessage={t('admin.dlq.noEventsInTheDeadLetter')}
           getRowStyle={(item) =>
             selectedIds.has(item.id) ? { background: `${theme.accent}22` } : {}
           }
@@ -509,7 +511,7 @@ export default function DLQPage() {
                     marginBottom: '6px',
                   }}
                 >
-                  Last Error
+                  {t('admin.dlq.lastError')}
                 </p>
                 <pre
                   style={{
@@ -535,7 +537,7 @@ export default function DLQPage() {
                     marginBottom: '6px',
                   }}
                 >
-                  Error History ({detailItem.errorHistory.length} attempts)
+                  {t('admin.dlq.errorHistory', { count: detailItem.errorHistory.length })}
                 </p>
                 <div
                   style={{
@@ -548,7 +550,7 @@ export default function DLQPage() {
                 >
                   {detailItem.errorHistory.map((eh) => (
                     <div key={eh.attempt} style={{ fontSize: '11px', color: theme.textMuted }}>
-                      <span style={{ color: theme.danger, marginRight: '6px' }}>#{eh.attempt}</span>
+                      <span style={{ color: theme.danger, marginInlineEnd: '6px' }}>#{eh.attempt}</span>
                       {new Date(eh.at).toLocaleString()} — {eh.error}
                     </div>
                   ))}
@@ -565,7 +567,7 @@ export default function DLQPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Review Notes
+                  {t('admin.dlq.reviewNotes')}
                 </p>
                 <p style={{ fontSize: '12px', color: theme.textSecondary }}>
                   {detailItem.reviewNotes} — {detailItem.reviewedBy}
@@ -594,7 +596,7 @@ export default function DLQPage() {
               }}
               disabled={retrying}
             >
-              Cancel
+              {t('admin.dlq.cancel')}
             </Button>
             <Button
               variant="primary"
@@ -605,18 +607,18 @@ export default function DLQPage() {
               }}
               loading={retrying}
             >
-              Retry
+              {t('admin.dlq.retry')}
             </Button>
           </>
         }
       >
         <Textarea
-          label="Notes (optional)"
+          label={t('admin.dlq.notesOptional')}
           value={notes}
           onChange={(e) => {
             setNotes(e.target.value)
           }}
-          placeholder="Why are you retrying this event?"
+          placeholder={t('admin.dlq.whyAreYouRetryingThisEvent')}
           rows={3}
         />
       </Modal>
@@ -639,7 +641,7 @@ export default function DLQPage() {
               }}
               disabled={dismissing}
             >
-              Cancel
+              {t('admin.dlq.cancel')}
             </Button>
             <Button
               variant="danger"
@@ -650,18 +652,18 @@ export default function DLQPage() {
               loading={dismissing}
               disabled={notes.trim().length < 10}
             >
-              Dismiss
+              {t('admin.dlq.dismiss')}
             </Button>
           </>
         }
       >
         <Textarea
-          label="Reason (required)"
+          label={t('admin.dlq.reasonRequired')}
           value={notes}
           onChange={(e) => {
             setNotes(e.target.value)
           }}
-          placeholder="Explain why this event is being dismissed…"
+          placeholder={t('admin.dlq.explainWhyThisEventIsBeing')}
           rows={3}
         />
         <div style={{ marginTop: '4px' }}>
@@ -672,8 +674,8 @@ export default function DLQPage() {
             }}
           >
             {notes.trim().length < 10
-              ? `${10 - notes.trim().length} more characters required`
-              : `${notes.trim().length} characters`}
+              ? t('admin.dlq.moreCharsRequired', { count: 10 - notes.trim().length })
+              : t('admin.dlq.charsCount', { count: notes.trim().length })}
           </span>
         </div>
       </Modal>
@@ -695,7 +697,7 @@ export default function DLQPage() {
                 setBulkDismissOpen(false)
               }}
             >
-              Cancel
+              {t('admin.dlq.cancel')}
             </Button>
             <Button
               variant="danger"
@@ -706,22 +708,22 @@ export default function DLQPage() {
                 void handleBulkDismiss()
               }}
             >
-              Dismiss all {selectedIds.size}
+              {t('admin.dlq.dismissAll', { count: selectedIds.size })}
             </Button>
           </div>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ fontSize: '12px', color: theme.textSecondary }}>
-            These notes will be applied to all {selectedIds.size} selected events.
+            {t('admin.dlq.notesApplied', { count: selectedIds.size })}
           </div>
           <Textarea
-            label="Dismiss reason"
+            label={t('admin.dlq.dismissReason')}
             value={bulkDismissNotes}
             onChange={(e) => {
               setBulkDismissNotes(e.target.value)
             }}
-            placeholder="Explain why these events are being dismissed..."
+            placeholder={t('admin.dlq.explainWhyTheseEventsAreBeing')}
             rows={3}
           />
           <div
@@ -731,8 +733,8 @@ export default function DLQPage() {
             }}
           >
             {bulkDismissNotes.trim().length < 10
-              ? `${10 - bulkDismissNotes.trim().length} more characters required`
-              : `${bulkDismissNotes.trim().length} characters`}
+              ? t('admin.dlq.moreCharsRequired', { count: 10 - bulkDismissNotes.trim().length })
+              : t('admin.dlq.charsCount', { count: bulkDismissNotes.trim().length })}
           </div>
         </div>
       </Modal>
@@ -746,9 +748,9 @@ export default function DLQPage() {
           setConfirmRetryOpen(false)
           void handleBulkRetry()
         }}
-        title="Retry Events"
-        message={`Re-queue ${selectedIds.size} event(s) for immediate retry?`}
-        confirmLabel="Retry"
+        title={t('admin.dlq.retryEvents')}
+        message={t('admin.dlq.requeueConfirm', { count: selectedIds.size })}
+        confirmLabel={t('admin.dlq.retry')}
         confirmVariant="primary"
         loading={bulkActionLoading}
       />

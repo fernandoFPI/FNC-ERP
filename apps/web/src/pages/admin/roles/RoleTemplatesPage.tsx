@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
@@ -32,6 +33,7 @@ interface RoleTemplate {
 const emptyForm = { name: '', description: '' }
 
 export default function RoleTemplatesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -51,7 +53,7 @@ export default function RoleTemplatesPage() {
 
   const [createTemplate, { loading: creating }] = useMutation(CREATE_ROLE_TEMPLATE, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Template created' })
+      addToast({ type: 'success', message: t('admin.roles.templateCreated') })
       closeDrawer()
       void refetch()
     },
@@ -62,7 +64,7 @@ export default function RoleTemplatesPage() {
 
   const [updateTemplate, { loading: updating }] = useMutation(UPDATE_ROLE_TEMPLATE, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Template updated' })
+      addToast({ type: 'success', message: t('admin.roles.templateUpdated') })
       closeDrawer()
       void refetch()
     },
@@ -73,7 +75,7 @@ export default function RoleTemplatesPage() {
 
   const [deleteTemplate, { loading: deleting }] = useMutation(DELETE_ROLE_TEMPLATE, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Template deleted' })
+      addToast({ type: 'success', message: t('admin.roles.templateDeleted') })
       setDeleteId(null)
       void refetch()
     },
@@ -90,15 +92,15 @@ export default function RoleTemplatesPage() {
     setDrawerOpen(true)
   }
 
-  function openEdit(t: RoleTemplate) {
-    if (t.isSystem) {
-      addToast({ type: 'error', message: 'System templates cannot be edited' })
+  function openEdit(tpl: RoleTemplate) {
+    if (tpl.isSystem) {
+      addToast({ type: 'error', message: t('admin.roles.systemTemplatesCannotBeEdited') })
       return
     }
-    setEditingId(t.id)
-    setForm({ name: t.name, description: t.description ?? '' })
+    setEditingId(tpl.id)
+    setForm({ name: tpl.name, description: tpl.description ?? '' })
     const perms: Record<string, AccessLevel> = {}
-    for (const p of t.permissions) {
+    for (const p of tpl.permissions) {
       perms[p.key] = p.accessLevel as AccessLevel
     }
     setPendingPerms(perms)
@@ -142,42 +144,42 @@ export default function RoleTemplatesPage() {
     }
   }
 
-  const permCount = (t: RoleTemplate) =>
-    t.permissions.filter((p) => p.accessLevel !== 'none').length
+  const permCount = (tpl: RoleTemplate) =>
+    tpl.permissions.filter((p) => p.accessLevel !== 'none').length
 
   const columns: Column<RoleTemplate>[] = [
     {
       key: 'name',
-      header: 'Name',
+      header: t('admin.roles.name'),
       mobilePrimary: true,
-      render: (t) => <span style={{ fontWeight: 500, color: theme.textPrimary }}>{t.name}</span>,
+      render: (tpl) => <span style={{ fontWeight: 500, color: theme.textPrimary }}>{tpl.name}</span>,
     },
     {
       key: 'description',
-      header: 'Description',
+      header: t('admin.roles.description'),
       mobileSecondary: true,
-      render: (t) => <span style={{ color: theme.textSecondary }}>{t.description ?? '—'}</span>,
+      render: (tpl) => <span style={{ color: theme.textSecondary }}>{tpl.description ?? '—'}</span>,
     },
     {
       key: 'isSystem',
-      header: 'Type',
+      header: t('admin.roles.type'),
       mobilePriority: 1,
-      render: (t) => (
-        <Badge variant={t.isSystem ? 'accent' : 'neutral'} size="sm">
-          {t.isSystem ? 'System' : 'Custom'}
+      render: (tpl) => (
+        <Badge variant={tpl.isSystem ? 'accent' : 'neutral'} size="sm">
+          {tpl.isSystem ? t('admin.roles.system') : t('admin.roles.custom')}
         </Badge>
       ),
     },
     {
       key: 'permissions',
-      header: 'Permissions',
+      header: t('admin.roles.permissions'),
       mobilePriority: 2,
-      render: (t) => (
+      render: (tpl) => (
         <>
           <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
-            {permCount(t)}
+            {permCount(tpl)}
           </span>
-          <span style={{ color: theme.textMuted, fontSize: '11px' }}> permissions</span>
+          <span style={{ color: theme.textMuted, fontSize: '11px' }}> {t('admin.roles.permissions2')}</span>
         </>
       ),
     },
@@ -185,27 +187,27 @@ export default function RoleTemplatesPage() {
       key: 'actions',
       header: '',
       mobilePriority: 3,
-      render: (t) => (
+      render: (tpl) => (
         <div style={{ display: 'flex', gap: '6px' }}>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
-              openEdit(t)
+              openEdit(tpl)
             }}
-            disabled={t.isSystem}
+            disabled={tpl.isSystem}
           >
-            Edit
+            {t('admin.roles.edit')}
           </Button>
           <Button
             variant="danger"
             size="sm"
             onClick={() => {
-              setDeleteId(t.id)
+              setDeleteId(tpl.id)
             }}
-            disabled={t.isSystem}
+            disabled={tpl.isSystem}
           >
-            Delete
+            {t('admin.roles.delete')}
           </Button>
         </div>
       ),
@@ -215,11 +217,11 @@ export default function RoleTemplatesPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
-        title="Role Templates"
+        title={t('admin.roles.roleTemplates')}
         subtitle={`${templates.length} templates`}
         actions={
           <Button variant="primary" size="sm" onClick={openCreate}>
-            New Template
+            {t('admin.roles.newTemplate')}
           </Button>
         }
       />
@@ -230,35 +232,35 @@ export default function RoleTemplatesPage() {
           data={templates}
           rowKey="id"
           loading={loading}
-          emptyMessage="No templates — create a role template to quickly apply permission sets to users."
+          emptyMessage={t('admin.roles.noTemplatesCreateARoleTemplate')}
         />
       </Card>
 
       <Drawer
         open={drawerOpen}
         onClose={closeDrawer}
-        title={editingId ? 'Edit Template' : 'New Role Template'}
+        title={editingId ? t('admin.roles.editTemplate') : t('admin.roles.newRoleTemplate')}
         width="640px"
       >
         <div
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '80px' }}
         >
           <Input
-            label="Template name"
+            label={t('admin.roles.templateName')}
             value={form.name}
             onChange={(e) => {
               setForm((f) => ({ ...f, name: e.target.value }))
             }}
-            placeholder="e.g. Finance Viewer"
+            placeholder={t('admin.roles.eGFinanceViewer')}
             required
           />
           <Input
-            label="Description"
+            label={t('admin.roles.description')}
             value={form.description}
             onChange={(e) => {
               setForm((f) => ({ ...f, description: e.target.value }))
             }}
-            placeholder="Optional description of this role"
+            placeholder={t('admin.roles.optionalDescriptionOfThisRole')}
           />
 
           <div>
@@ -272,7 +274,7 @@ export default function RoleTemplatesPage() {
                 letterSpacing: '0.05em',
               }}
             >
-              Permissions
+              {t('admin.roles.permissions')}
             </p>
             <PermissionTree value={pendingPerms} onChange={setPendingPerms} />
           </div>
@@ -281,7 +283,7 @@ export default function RoleTemplatesPage() {
             style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '8px' }}
           >
             <Button variant="secondary" onClick={closeDrawer}>
-              Cancel
+              {t('admin.roles.cancel')}
             </Button>
             <Button
               variant="primary"
@@ -289,7 +291,7 @@ export default function RoleTemplatesPage() {
               disabled={!form.name.trim()}
               onClick={handleSave}
             >
-              {editingId ? 'Save changes' : 'Create template'}
+              {editingId ? t('admin.roles.saveChanges') : t('admin.roles.createTemplate')}
             </Button>
           </div>
         </div>
@@ -303,9 +305,9 @@ export default function RoleTemplatesPage() {
         onConfirm={() => {
           if (deleteId) void deleteTemplate({ variables: { id: deleteId } })
         }}
-        title="Delete Template"
-        message="Delete this role template? Users who have had it applied keep their existing permissions."
-        confirmLabel="Delete"
+        title={t('admin.roles.deleteTemplate')}
+        message={t('admin.roles.deleteThisRoleTemplateUsersWho')}
+        confirmLabel={t('admin.roles.delete')}
         confirmVariant="danger"
         loading={deleting}
       />

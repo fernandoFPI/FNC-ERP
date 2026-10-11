@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -47,6 +48,7 @@ function actionVariant(
 }
 
 export default function AuditLogPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const today = new Date().toISOString().slice(0, 10)
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
@@ -81,7 +83,7 @@ export default function AuditLogPage() {
   const columns: Column<AuditItem>[] = [
     {
       key: 'userEmail',
-      header: 'User',
+      header: t('admin.audit.user'),
       mobilePrimary: true,
       render: (item) => (
         <span style={{ color: theme.textSecondary, fontSize: '12px' }}>{item.userEmail}</span>
@@ -89,7 +91,7 @@ export default function AuditLogPage() {
     },
     {
       key: 'createdAt',
-      header: 'Time',
+      header: t('admin.audit.time'),
       mobileSecondary: true,
       render: (item) => (
         <span style={{ color: theme.textMuted, fontSize: '11px', whiteSpace: 'nowrap' }}>
@@ -99,7 +101,7 @@ export default function AuditLogPage() {
     },
     {
       key: 'action',
-      header: 'Action',
+      header: t('admin.audit.action'),
       mobilePriority: 1,
       render: (item) => (
         <Badge variant={actionVariant(item.action)} size="sm">
@@ -109,7 +111,7 @@ export default function AuditLogPage() {
     },
     {
       key: 'tableName',
-      header: 'Table',
+      header: t('admin.audit.table'),
       mobilePriority: 2,
       render: (item) => (
         <span
@@ -125,7 +127,7 @@ export default function AuditLogPage() {
     },
     {
       key: 'recordId',
-      header: 'Record ID',
+      header: t('admin.audit.recordId'),
       mobilePriority: 3,
       render: (item) => (
         <span
@@ -141,7 +143,7 @@ export default function AuditLogPage() {
     },
     {
       key: 'companyName',
-      header: 'Company',
+      header: t('admin.audit.company'),
       mobilePriority: 4,
       render: (item) => <span style={{ color: theme.textSecondary }}>{item.companyName}</span>,
     },
@@ -183,7 +185,7 @@ export default function AuditLogPage() {
               setExpandedId(expandedId === item.id ? null : item.id)
             }}
           >
-            {expandedId === item.id ? 'Hide' : 'Diff'}
+            {expandedId === item.id ? t('admin.audit.hide') : t('admin.audit.diff')}
           </button>
         ),
     },
@@ -192,7 +194,7 @@ export default function AuditLogPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Audit Log"
+        title={t('admin.audit.auditLog')}
         subtitle={`${data?.auditLog.total ?? 0} records`}
         actions={
           <Button
@@ -202,7 +204,7 @@ export default function AuditLogPage() {
               void refetch()
             }}
           >
-            Refresh
+            {t('admin.audit.refresh')}
           </Button>
         }
       />
@@ -212,23 +214,23 @@ export default function AuditLogPage() {
           search={{
             value: search,
             onChange: setSearch,
-            placeholder: 'Search email, table, or record ID…',
+            placeholder: t('admin.audit.searchEmailTableOrRecordId'),
           }}
           filters={[
             {
               key: 'action',
-              label: 'Action',
+              label: t('admin.audit.action'),
               value: actionFilter,
               onChange: setActionFilter,
               options: [
-                { value: 'create', label: 'Create' },
-                { value: 'update', label: 'Update' },
-                { value: 'delete', label: 'Delete' },
-                { value: 'login', label: 'Login' },
-                { value: 'logout', label: 'Logout' },
-                { value: 'AUTO_STORE_PRICING', label: 'Store Pricing Auto-Fill' },
-                { value: 'CATALOG_NEW_PRODUCT_FROM_PO', label: 'Catalog: New Product' },
-                { value: 'CATALOG_LINK_EXISTING_PRODUCT_FROM_PO', label: 'Catalog: Linked Existing' },
+                { value: 'create', label: t('admin.audit.create') },
+                { value: 'update', label: t('admin.audit.update') },
+                { value: 'delete', label: t('admin.audit.delete') },
+                { value: 'login', label: t('admin.audit.login') },
+                { value: 'logout', label: t('admin.audit.logout') },
+                { value: 'AUTO_STORE_PRICING', label: t('admin.audit.storePricingAutoFill') },
+                { value: 'CATALOG_NEW_PRODUCT_FROM_PO', label: t('admin.audit.catalogNewProduct') },
+                { value: 'CATALOG_LINK_EXISTING_PRODUCT_FROM_PO', label: t('admin.audit.catalogLinkedExisting') },
               ],
             },
           ]}
@@ -279,7 +281,7 @@ export default function AuditLogPage() {
                           marginBottom: '4px',
                         }}
                       >
-                        Before
+                        {t('admin.audit.before')}
                       </p>
                       <pre
                         style={{
@@ -313,7 +315,7 @@ export default function AuditLogPage() {
                           marginBottom: '4px',
                         }}
                       >
-                        After
+                        {t('admin.audit.after')}
                       </p>
                       <pre
                         style={{
@@ -342,7 +344,7 @@ export default function AuditLogPage() {
             }
           />
         ) : (
-          <EmptyState title="No audit records" message="Adjust filters to search the audit log." />
+          <EmptyState title={t('admin.audit.noAuditRecords')} message={t('admin.audit.adjustFiltersToSearchTheAudit')} />
         )}
       </Card>
     </div>

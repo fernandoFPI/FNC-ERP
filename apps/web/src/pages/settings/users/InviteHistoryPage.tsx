@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -36,6 +37,7 @@ const STATUS_BADGE: Record<string, 'warning' | 'success' | 'neutral'> = {
 }
 
 export default function InviteHistoryPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { data, loading } = useQuery<UserInvitationsData>(USER_INVITATIONS_QUERY)
   const invites = data?.userInvitations ?? []
@@ -43,13 +45,13 @@ export default function InviteHistoryPage() {
   const columns: Column<InviteRecord>[] = [
     {
       key: 'email',
-      header: 'Email',
+      header: t('settings.invites.email'),
       mobilePrimary: true,
       render: (inv) => <span style={{ color: theme.textPrimary }}>{inv.email}</span>,
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('settings.invites.status'),
       mobileSecondary: true,
       render: (inv) => (
         <Badge variant={STATUS_BADGE[inv.status] ?? 'neutral'} size="sm">
@@ -59,7 +61,7 @@ export default function InviteHistoryPage() {
     },
     {
       key: 'companies',
-      header: 'Companies',
+      header: t('settings.invites.companies'),
       mobilePriority: 1,
       render: (inv) =>
         inv.companies.length === 0 ? (
@@ -76,7 +78,7 @@ export default function InviteHistoryPage() {
     },
     {
       key: 'invitedByEmail',
-      header: 'Invited By',
+      header: t('settings.invites.invitedBy'),
       mobilePriority: 2,
       render: (inv) => (
         <span style={{ color: theme.textSecondary }}>{inv.invitedByEmail ?? '—'}</span>
@@ -84,7 +86,7 @@ export default function InviteHistoryPage() {
     },
     {
       key: 'createdAt',
-      header: 'Sent',
+      header: t('settings.invites.sent'),
       mobilePriority: 3,
       render: (inv) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -94,7 +96,7 @@ export default function InviteHistoryPage() {
     },
     {
       key: 'acceptedAt',
-      header: 'Accepted',
+      header: t('settings.invites.accepted'),
       mobilePriority: 4,
       render: (inv) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -106,12 +108,12 @@ export default function InviteHistoryPage() {
 
   return (
     <div style={{ padding: '24px' }}>
-      <PageHeader title="Invite History" subtitle="All user invitations sent from this platform" />
+      <PageHeader title={t('settings.invites.inviteHistory')} subtitle={t('settings.invites.allUserInvitationsSentFromThis')} />
 
       <Card padding="none">
         <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}` }}>
           <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-            Invitations
+            {t('settings.invites.invitations')}
           </h3>
         </div>
 
@@ -120,7 +122,7 @@ export default function InviteHistoryPage() {
           data={invites}
           rowKey="id"
           loading={loading}
-          emptyMessage="No invitations sent. Invite users from the Users page."
+          emptyMessage={t('settings.invites.noInvitationsSentInviteUsersFrom')}
         />
       </Card>
     </div>

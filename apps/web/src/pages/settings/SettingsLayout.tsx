@@ -1,4 +1,6 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { navLabel } from '../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { useAuthStore } from '../../store/authStore'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
@@ -114,6 +116,7 @@ function isItemActive(item: NavItem, pathname: string): boolean {
 
 export default function SettingsLayout() {
   const { theme } = useTheme()
+  useTranslation() // re-render when the language changes
   const { isMobile } = useBreakpoint()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
@@ -152,7 +155,7 @@ export default function SettingsLayout() {
                     cursor: 'pointer',
                   }}
                 >
-                  {item.label}
+                  {navLabel(item.label)}
                 </div>
               </NavLink>
             )
@@ -172,7 +175,7 @@ export default function SettingsLayout() {
         style={{
           width: '200px',
           minWidth: '200px',
-          borderRight: `0.5px solid ${theme.border}`,
+          borderInlineEnd: `0.5px solid ${theme.border}`,
           overflowY: 'auto',
           padding: '16px 0',
           flexShrink: 0,
@@ -180,7 +183,7 @@ export default function SettingsLayout() {
         }}
       >
         {groups.map((group) => (
-          <div key={group.group} style={{ marginBottom: '20px' }}>
+          <div key={navLabel(group.group)} style={{ marginBottom: '20px' }}>
             <div
               style={{
                 padding: '4px 16px 6px',
@@ -191,7 +194,7 @@ export default function SettingsLayout() {
                 letterSpacing: '0.08em',
               }}
             >
-              {group.group}
+              {navLabel(group.group)}
             </div>
             {group.items.map((item) => {
               const active = isItemActive(item, location.pathname)
@@ -208,7 +211,7 @@ export default function SettingsLayout() {
                       color: active ? theme.accent : theme.textSecondary,
                       fontWeight: active ? 500 : 400,
                       background: active ? theme.accentBg : 'transparent',
-                      borderLeft: active ? `2px solid ${theme.accent}` : '2px solid transparent',
+                      borderInlineStart: active ? `2px solid ${theme.accent}` : '2px solid transparent',
                       cursor: 'pointer',
                       whiteSpace: 'nowrap',
                       transition: 'background 0.12s ease',
@@ -220,7 +223,7 @@ export default function SettingsLayout() {
                       if (!active) e.currentTarget.style.background = 'transparent'
                     }}
                   >
-                    {item.label}
+                    {navLabel(item.label)}
                   </div>
                 </NavLink>
               )

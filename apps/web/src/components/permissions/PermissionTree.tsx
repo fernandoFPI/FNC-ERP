@@ -1,5 +1,7 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
+import { tl } from '../../i18n'
 import { PERMISSION_REGISTRY } from '../../lib/permissionRegistry'
 import type { AccessLevel } from '../../lib/permissionRegistry'
 
@@ -117,7 +119,7 @@ function SubmoduleSection({
                   opacity: isEnabled ? 1 : 0.6,
                 }}
               >
-                {LEVEL_LABELS[level]}
+                {tl('perm.tree.level', level, LEVEL_LABELS[level])}
               </span>
             </div>
           )
@@ -146,6 +148,7 @@ function ModuleRow({
   theme,
   moduleKey,
 }: ModuleRowProps) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(true)
 
   const allPermKeys = submodules.flatMap((s) => s.permissions.map((p) => p.key))
@@ -173,7 +176,7 @@ function ModuleRow({
           background: theme.bgSurface,
           border: 'none',
           cursor: 'pointer',
-          textAlign: 'left',
+          textAlign: 'start',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -191,7 +194,7 @@ function ModuleRow({
                 fontWeight: 600,
               }}
             >
-              {enabledCount} active
+              {t('perm.tree.activeCount', { count: enabledCount })}
             </span>
           )}
         </div>

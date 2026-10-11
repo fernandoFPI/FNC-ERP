@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useTheme } from '../../../../theme/ThemeContext'
@@ -50,6 +51,7 @@ const MODULE_FALLBACK: Record<string, string> = {
 const moduleName = (m: ModuleGate) => m.label ?? MODULE_FALLBACK[m.moduleKey] ?? m.moduleKey
 
 export default function LifecycleSettingsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -114,7 +116,7 @@ export default function LifecycleSettingsPage() {
     setSavingKey(`gate:${moduleKey}`)
     try {
       await saveModule({ variables: { moduleKey, minPhaseKey } })
-      addToast({ type: 'success', message: `Tab now appears from "${phaseLabel(minPhaseKey)}"` })
+      addToast({ type: 'success', message: t('settings.lifecycle.tabAppearsFrom', { phase: phaseLabel(minPhaseKey) }) })
       await refetch()
     } catch (e: unknown) {
       addToast({ type: 'error', message: (e as Error).message })
@@ -129,7 +131,7 @@ export default function LifecycleSettingsPage() {
     setSavingKey(`label:${moduleKey}`)
     try {
       await saveModule({ variables: { moduleKey, label } })
-      addToast({ type: 'success', message: `Tab renamed to "${label}"` })
+      addToast({ type: 'success', message: t('settings.lifecycle.tabRenamed', { label }) })
       await refetch()
     } catch (e: unknown) {
       addToast({ type: 'error', message: (e as Error).message })
@@ -144,7 +146,7 @@ export default function LifecycleSettingsPage() {
       await saveSimpleMode({ variables: { enabled: simpleModeEdit } })
       addToast({
         type: 'success',
-        message: `Simple bid mode ${simpleModeEdit ? 'enabled' : 'disabled'}`,
+        message: simpleModeEdit ? t('settings.lifecycle.simpleBidOn') : t('settings.lifecycle.simpleBidOff'),
       })
       await refetch()
     } catch (e: unknown) {
@@ -160,7 +162,7 @@ export default function LifecycleSettingsPage() {
       await saveHideRisk({ variables: { hidden: hideRiskEdit } })
       addToast({
         type: 'success',
-        message: `Risk Register tab ${hideRiskEdit ? 'hidden' : 'shown'}`,
+        message: hideRiskEdit ? t('settings.lifecycle.riskHidden') : t('settings.lifecycle.riskShown'),
       })
       await refetch()
     } catch (e: unknown) {
@@ -198,13 +200,13 @@ export default function LifecycleSettingsPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '900px' }}>
       <PageHeader
-        title="Project Lifecycle"
-        subtitle="Rename phases and tabs, and control which tab appears from which phase. Phase order is fixed; everything else is yours to configure."
+        title={t('settings.lifecycle.projectLifecycle')}
+        subtitle={t('settings.lifecycle.renamePhasesAndTabsAndControl')}
       />
 
       {loading && phases.length === 0 && (
         <div style={{ color: th.textMuted, fontSize: '13px', padding: '20px 0' }}>
-          Loading lifecycle configuration…
+          {t('settings.lifecycle.loadingLifecycleConfiguration')}
         </div>
       )}
 
@@ -213,11 +215,10 @@ export default function LifecycleSettingsPage() {
         <div
           style={{ fontSize: '14px', fontWeight: 700, color: th.textPrimary, marginBottom: '4px' }}
         >
-          Phases
+          {t('settings.lifecycle.phases')}
         </div>
         <div style={{ fontSize: '12px', color: th.textMuted, marginBottom: '14px' }}>
-          The six phases are fixed (they map to contract events). You can rename them and mark a
-          phase optional (skippable, e.g. a design gate some tenders don't need).
+          {t('settings.lifecycle.theSixPhasesAreFixedThey')}
         </div>
         <div
           style={{
@@ -227,7 +228,7 @@ export default function LifecycleSettingsPage() {
             paddingTop: 0,
           }}
         >
-          {['#', 'Label', 'Optional', ''].map((h, i) => (
+          {[t('settings.lifecycle.hNum'), t('settings.lifecycle.hLabel'), t('settings.lifecycle.hOptional'), ''].map((h, i) => (
             <div key={i} style={headCell}>
               {h}
             </div>
@@ -277,7 +278,7 @@ export default function LifecycleSettingsPage() {
                     }))
                   }}
                 />
-                Skippable
+                {t('settings.lifecycle.skippable')}
               </label>
               <Button
                 size="sm"
@@ -285,7 +286,7 @@ export default function LifecycleSettingsPage() {
                 disabled={!dirty || savingKey === `phase:${p.key}`}
                 onClick={() => void commitPhase(p)}
               >
-                {savingKey === `phase:${p.key}` ? 'Saving…' : 'Save'}
+                {savingKey === `phase:${p.key}` ? t('settings.lifecycle.saving') : t('settings.lifecycle.save')}
               </Button>
             </div>
           )
@@ -297,11 +298,10 @@ export default function LifecycleSettingsPage() {
         <div
           style={{ fontSize: '14px', fontWeight: 700, color: th.textPrimary, marginBottom: '4px' }}
         >
-          Project Tabs
+          {t('settings.lifecycle.projectTabs')}
         </div>
         <div style={{ fontSize: '12px', color: th.textMuted, marginBottom: '14px' }}>
-          Rename any tab and choose which phase it first appears in. Changes take effect on the next
-          project page load — no code change needed.
+          {t('settings.lifecycle.renameAnyTabAndChooseWhich')}
         </div>
         <div
           style={{
@@ -311,7 +311,7 @@ export default function LifecycleSettingsPage() {
             paddingTop: 0,
           }}
         >
-          {['Tab name', 'Appears from phase', ''].map((h, i) => (
+          {[t('settings.lifecycle.hTabName'), t('settings.lifecycle.hAppearsFrom'), ''].map((h, i) => (
             <div key={i} style={headCell}>
               {h}
             </div>
@@ -347,7 +347,7 @@ export default function LifecycleSettingsPage() {
                 disabled={!labelDirty || savingKey === `label:${m.moduleKey}`}
                 onClick={() => void commitModuleLabel(m.moduleKey)}
               >
-                {savingKey === `label:${m.moduleKey}` ? '…' : 'Save'}
+                {savingKey === `label:${m.moduleKey}` ? '…' : t('settings.lifecycle.save')}
               </Button>
             </div>
           )
@@ -359,13 +359,10 @@ export default function LifecycleSettingsPage() {
         <div
           style={{ fontSize: '14px', fontWeight: 700, color: th.textPrimary, marginBottom: '4px' }}
         >
-          Bidding Display Mode
+          {t('settings.lifecycle.biddingDisplayMode')}
         </div>
         <div style={{ fontSize: '12px', color: th.textMuted, marginBottom: '14px' }}>
-          By default, Technical Bid and Commercial Bid show the full detailed tracking (deliverables
-          table, cost items, quotations, approval workflow). Turning this on replaces both with a
-          single ZIP upload zone per section instead — a simpler interim view. Nothing already
-          entered is deleted when you switch either way.
+          {t('settings.lifecycle.byDefaultTechnicalBidAndCommercial')}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <label
@@ -385,7 +382,7 @@ export default function LifecycleSettingsPage() {
                 setSimpleModeEdit(e.target.checked)
               }}
             />
-            Simple bid mode (ZIP upload only)
+            {t('settings.lifecycle.simpleBidModeZipUploadOnly')}
           </label>
           <Button
             size="sm"
@@ -393,7 +390,7 @@ export default function LifecycleSettingsPage() {
             disabled={simpleModeEdit === bidSimpleModeEnabled || savingKey === 'simpleMode'}
             onClick={() => void commitSimpleMode()}
           >
-            {savingKey === 'simpleMode' ? 'Saving…' : 'Save'}
+            {savingKey === 'simpleMode' ? t('settings.lifecycle.saving') : t('settings.lifecycle.save')}
           </Button>
         </div>
       </Card>
@@ -403,11 +400,10 @@ export default function LifecycleSettingsPage() {
         <div
           style={{ fontSize: '14px', fontWeight: 700, color: th.textPrimary, marginBottom: '4px' }}
         >
-          Risk Register
+          {t('settings.lifecycle.riskRegister')}
         </div>
         <div style={{ fontSize: '12px', color: th.textMuted, marginBottom: '14px' }}>
-          Hides the Risk Register tab from every project. Nothing already logged is deleted — turn
-          this back off to see it again.
+          {t('settings.lifecycle.hidesTheRiskRegisterTabFrom')}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <label
@@ -427,7 +423,7 @@ export default function LifecycleSettingsPage() {
                 setHideRiskEdit(e.target.checked)
               }}
             />
-            Hide Risk Register tab
+            {t('settings.lifecycle.hideRiskRegisterTab')}
           </label>
           <Button
             size="sm"
@@ -435,7 +431,7 @@ export default function LifecycleSettingsPage() {
             disabled={hideRiskEdit === hideRiskRegister || savingKey === 'hideRisk'}
             onClick={() => void commitHideRisk()}
           >
-            {savingKey === 'hideRisk' ? 'Saving…' : 'Save'}
+            {savingKey === 'hideRisk' ? t('settings.lifecycle.saving') : t('settings.lifecycle.save')}
           </Button>
         </div>
       </Card>

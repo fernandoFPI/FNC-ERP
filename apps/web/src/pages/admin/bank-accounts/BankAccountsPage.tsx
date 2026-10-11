@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { Trans, useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   BANK_ACCOUNTS_QUERY,
@@ -51,6 +52,7 @@ const EMPTY_FORM = {
 }
 
 export default function BankAccountsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -113,10 +115,10 @@ export default function BankAccountsPage() {
       }
       if (modal.editing) {
         await updateAccount({ variables: { id: modal.editing.id, input } })
-        addToast({ type: 'success', message: 'Bank account updated' })
+        addToast({ type: 'success', message: t('admin.bank.bankAccountUpdated') })
       } else {
         await createAccount({ variables: { input } })
-        addToast({ type: 'success', message: 'Bank account created' })
+        addToast({ type: 'success', message: t('admin.bank.bankAccountCreated') })
       }
       setModal({ open: false, editing: null })
       void refetch()
@@ -129,7 +131,7 @@ export default function BankAccountsPage() {
     if (!confirmDelete) return
     try {
       await deleteAccount({ variables: { id: confirmDelete.id } })
-      addToast({ type: 'success', message: 'Bank account deleted' })
+      addToast({ type: 'success', message: t('admin.bank.bankAccountDeleted') })
       setConfirmDelete(null)
       void refetch()
     } catch (e: unknown) {
@@ -150,11 +152,11 @@ export default function BankAccountsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
       <PageHeader
-        title="Bank Accounts"
-        subtitle="Universal bank accounts available for selection on invoices"
+        title={t('admin.bank.bankAccounts')}
+        subtitle={t('admin.bank.universalBankAccountsAvailableForSelection')}
         actions={
           <Button variant="primary" size="sm" onClick={openCreate}>
-            Add Bank Account
+            {t('admin.bank.addBankAccount')}
           </Button>
         }
       />
@@ -168,7 +170,7 @@ export default function BankAccountsPage() {
       ) : accounts.length === 0 ? (
         <Card style={{ padding: '48px', textAlign: 'center' }}>
           <div style={{ fontSize: '13px', color: theme.textMuted }}>
-            No bank accounts yet. Add one to select on invoices.
+            {t('admin.bank.noBankAccountsYetAddOne')}
           </div>
         </Card>
       ) : (
@@ -192,18 +194,18 @@ export default function BankAccountsPage() {
                     </span>
                     <Badge variant="neutral">{a.currencyCode}</Badge>
                     <Badge variant={a.isActive ? 'success' : 'neutral'}>
-                      {a.isActive ? 'Active' : 'Inactive'}
+                      {a.isActive ? t('admin.bank.active') : t('admin.bank.inactive')}
                     </Badge>
                   </div>
                   <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                      <span style={{ color: theme.textSecondary, fontWeight: 500 }}>Bank: </span>
+                      <span style={{ color: theme.textSecondary, fontWeight: 500 }}>{t('admin.bank.bank')} </span>
                       {a.bankName}
                     </span>
                     {a.accountNumber && (
                       <span style={{ fontSize: '12px', color: theme.textMuted }}>
                         <span style={{ color: theme.textSecondary, fontWeight: 500 }}>
-                          Account:{' '}
+                          {t('admin.bank.account')}{' '}
                         </span>
                         {a.accountNumber}
                       </span>
@@ -223,20 +225,20 @@ export default function BankAccountsPage() {
                             fontFamily: 'inherit',
                           }}
                         >
-                          IBAN:{' '}
+                          {t('admin.bank.iban')}{' '}
                         </span>
                         {a.iban}
                       </span>
                     )}
                     {a.swift && (
                       <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                        <span style={{ color: theme.textSecondary, fontWeight: 500 }}>SWIFT: </span>
+                        <span style={{ color: theme.textSecondary, fontWeight: 500 }}>{t('admin.bank.swift')} </span>
                         {a.swift}
                       </span>
                     )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', marginLeft: '16px' }}>
+                <div style={{ display: 'flex', gap: '8px', marginInlineStart: '16px' }}>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -244,7 +246,7 @@ export default function BankAccountsPage() {
                       openEdit(a)
                     }}
                   >
-                    Edit
+                    {t('admin.bank.edit')}
                   </Button>
                   <Button
                     variant="ghost"
@@ -253,7 +255,7 @@ export default function BankAccountsPage() {
                       setConfirmDelete(a)
                     }}
                   >
-                    Delete
+                    {t('admin.bank.delete')}
                   </Button>
                 </div>
               </div>
@@ -266,7 +268,7 @@ export default function BankAccountsPage() {
       {modal.open && (
         <Modal
           open={modal.open}
-          title={modal.editing ? 'Edit Bank Account' : 'Add Bank Account'}
+          title={modal.editing ? t('admin.bank.editBankAccount') : t('admin.bank.addBankAccount')}
           onClose={() => {
             setModal({ open: false, editing: null })
           }}
@@ -296,14 +298,14 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Account name *
+                  {t('admin.bank.accountName')}
                 </label>
                 <input
                   value={form.accountName}
                   onChange={(e) => {
                     setForm({ ...form, accountName: e.target.value })
                   }}
-                  placeholder="e.g. FNC-USD"
+                  placeholder={t('admin.bank.eGFncUsd')}
                   style={iStyle}
                 />
               </div>
@@ -316,14 +318,14 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Beneficiary name
+                  {t('admin.bank.beneficiaryName')}
                 </label>
                 <input
                   value={form.beneficiaryName}
                   onChange={(e) => {
                     setForm({ ...form, beneficiaryName: e.target.value })
                   }}
-                  placeholder="e.g. FIRST NATIONAL COMPANY P.F.BU.SYSTEM LTD"
+                  placeholder={t('admin.bank.eGFirstNationalCompanyP')}
                   style={iStyle}
                 />
               </div>
@@ -336,14 +338,14 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Bank name *
+                  {t('admin.bank.bankName')}
                 </label>
                 <input
                   value={form.bankName}
                   onChange={(e) => {
                     setForm({ ...form, bankName: e.target.value })
                   }}
-                  placeholder="e.g. TBI Bank"
+                  placeholder={t('admin.bank.eGTbiBank')}
                   style={iStyle}
                 />
               </div>
@@ -356,14 +358,14 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Account number
+                  {t('admin.bank.accountNumber')}
                 </label>
                 <input
                   value={form.accountNumber}
                   onChange={(e) => {
                     setForm({ ...form, accountNumber: e.target.value })
                   }}
-                  placeholder="0003-002130-002 USD"
+                  placeholder={t('admin.bank.0003002130002Usd')}
                   style={iStyle}
                 />
               </div>
@@ -376,7 +378,7 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Branch code
+                  {t('admin.bank.branchCode')}
                 </label>
                 <input
                   value={form.branchCode}
@@ -396,14 +398,14 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  IBAN
+                  {t('admin.bank.iban2')}
                 </label>
                 <input
                   value={form.iban}
                   onChange={(e) => {
                     setForm({ ...form, iban: e.target.value })
                   }}
-                  placeholder="IQ21TRIQ..."
+                  placeholder={t('admin.bank.iq21triq')}
                   style={{ ...iStyle, fontFamily: 'monospace' }}
                 />
               </div>
@@ -416,20 +418,20 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  SWIFT / BIC
+                  {t('admin.bank.swiftBic')}
                 </label>
                 <input
                   value={form.swift}
                   onChange={(e) => {
                     setForm({ ...form, swift: e.target.value })
                   }}
-                  placeholder="TRIQIQBAXXX"
+                  placeholder={t('admin.bank.triqiqbaxxx')}
                   style={iStyle}
                 />
               </div>
               <div>
                 <SearchableSelect
-                  label="Currency"
+                  label={t('admin.bank.currency')}
                   value={form.currencyCode}
                   onChange={(v) => {
                     setForm({ ...form, currencyCode: v })
@@ -452,14 +454,14 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Bank address
+                  {t('admin.bank.bankAddress')}
                 </label>
                 <textarea
                   value={form.bankAddress}
                   onChange={(e) => {
                     setForm({ ...form, bankAddress: e.target.value })
                   }}
-                  placeholder="Zagros Road, Erbil-Iraq"
+                  placeholder={t('admin.bank.zagrosRoadErbilIraq')}
                   rows={2}
                   style={{ ...iStyle, resize: 'vertical' }}
                 />
@@ -479,7 +481,7 @@ export default function BankAccountsPage() {
                     marginBottom: '10px',
                   }}
                 >
-                  Intermediary Bank (optional)
+                  {t('admin.bank.intermediaryBankOptional')}
                 </div>
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
@@ -491,14 +493,14 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Intermediary bank name
+                  {t('admin.bank.intermediaryBankName')}
                 </label>
                 <input
                   value={form.intermediaryBankName}
                   onChange={(e) => {
                     setForm({ ...form, intermediaryBankName: e.target.value })
                   }}
-                  placeholder="e.g. JP MORGAN CHASE BANK, NEW YORK"
+                  placeholder={t('admin.bank.eGJpMorganChaseBank')}
                   style={iStyle}
                 />
               </div>
@@ -511,14 +513,14 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Intermediary SWIFT
+                  {t('admin.bank.intermediarySwift')}
                 </label>
                 <input
                   value={form.intermediarySwift}
                   onChange={(e) => {
                     setForm({ ...form, intermediarySwift: e.target.value })
                   }}
-                  placeholder="CHASUS33XXX"
+                  placeholder={t('admin.bank.chasus33xxx')}
                   style={iStyle}
                 />
               </div>
@@ -531,14 +533,14 @@ export default function BankAccountsPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Intermediary country
+                  {t('admin.bank.intermediaryCountry')}
                 </label>
                 <input
                   value={form.intermediaryCountry}
                   onChange={(e) => {
                     setForm({ ...form, intermediaryCountry: e.target.value })
                   }}
-                  placeholder="USA"
+                  placeholder={t('admin.bank.usa')}
                   style={iStyle}
                 />
               </div>
@@ -560,7 +562,7 @@ export default function BankAccountsPage() {
                       setForm({ ...form, isActive: e.target.checked })
                     }}
                   />
-                  Active
+                  {t('admin.bank.active')}
                 </label>
               </div>
             </div>
@@ -573,7 +575,7 @@ export default function BankAccountsPage() {
                   setModal({ open: false, editing: null })
                 }}
               >
-                Cancel
+                {t('admin.bank.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -581,7 +583,7 @@ export default function BankAccountsPage() {
                 disabled={!form.accountName || !form.bankName}
                 onClick={() => void save()}
               >
-                {modal.editing ? 'Save changes' : 'Add Account'}
+                {modal.editing ? t('admin.bank.saveChanges') : t('admin.bank.addAccount')}
               </Button>
             </div>
           </div>
@@ -592,15 +594,18 @@ export default function BankAccountsPage() {
       {confirmDelete && (
         <Modal
           open={!!confirmDelete}
-          title="Delete Bank Account"
+          title={t('admin.bank.deleteBankAccount')}
           onClose={() => {
             setConfirmDelete(null)
           }}
         >
           <div style={{ minWidth: '340px' }}>
             <p style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '20px' }}>
-              Delete <strong>{confirmDelete.accountName}</strong>? This cannot be undone. Invoices
-              that reference this account will lose the link.
+              <Trans
+                i18nKey="admin.bank.deleteConfirm"
+                values={{ name: confirmDelete.accountName }}
+                components={{ strong: <strong /> }}
+              />
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <Button
@@ -609,14 +614,14 @@ export default function BankAccountsPage() {
                   setConfirmDelete(null)
                 }}
               >
-                Cancel
+                {t('admin.bank.cancel')}
               </Button>
               <Button
                 variant="danger"
                 loading={deleting}
                 onClick={() => void confirmDeleteAccount()}
               >
-                Delete
+                {t('admin.bank.delete')}
               </Button>
             </div>
           </div>

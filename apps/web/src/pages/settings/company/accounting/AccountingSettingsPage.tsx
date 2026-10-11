@@ -1,38 +1,41 @@
+import i18n from '../../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../../../theme/ThemeContext'
 import { PageHeader } from '../../../../components/ui/PageHeader'
 import { Card } from '../../../../components/ui/Card'
 import { Badge } from '../../../../components/ui/Badge'
 
 const GL_ACCOUNTS = [
-  { label: 'Accounts Receivable', code: '1100', description: 'Default AR control account' },
-  { label: 'Accounts Payable', code: '2100', description: 'Default AP control account' },
-  { label: 'WHT Recoverable', code: '1310', description: 'Client-withheld tax recoverable' },
+  { get label() { return i18n.t('settings.accounting.accountsReceivable', { defaultValue: "Accounts Receivable" }) }, code: '1100', get description() { return i18n.t('settings.accounting.defaultArControlAccount', { defaultValue: "Default AR control account" }) } },
+  { get label() { return i18n.t('settings.accounting.accountsPayable', { defaultValue: "Accounts Payable" }) }, code: '2100', get description() { return i18n.t('settings.accounting.defaultApControlAccount', { defaultValue: "Default AP control account" }) } },
+  { get label() { return i18n.t('settings.accounting.whtRecoverable', { defaultValue: "WHT Recoverable" }) }, code: '1310', get description() { return i18n.t('settings.accounting.clientWithheldTaxRecoverable', { defaultValue: "Client-withheld tax recoverable" }) } },
   {
-    label: 'WHT Payable',
+    get label() { return i18n.t('settings.accounting.whtPayable', { defaultValue: "WHT Payable" }) },
     code: '2310',
-    description: 'WHT withheld from vendors, payable to tax authority',
+    get description() { return i18n.t('settings.accounting.whtWithheldFromVendorsPayableTo', { defaultValue: "WHT withheld from vendors, payable to tax authority" }) },
   },
   {
-    label: 'Payroll Expense',
+    get label() { return i18n.t('settings.accounting.payrollExpense', { defaultValue: "Payroll Expense" }) },
     code: '5100',
-    description: 'Default salaries and wages expense account',
+    get description() { return i18n.t('settings.accounting.defaultSalariesAndWagesExpenseAccount', { defaultValue: "Default salaries and wages expense account" }) },
   },
   {
-    label: 'Social Security Payable',
+    get label() { return i18n.t('settings.accounting.socialSecurityPayable', { defaultValue: "Social Security Payable" }) },
     code: '2320',
-    description: 'Employee and employer SS contributions payable',
+    get description() { return i18n.t('settings.accounting.employeeAndEmployerSsContributionsPayable', { defaultValue: "Employee and employer SS contributions payable" }) },
   },
-  { label: 'Income Tax Payable', code: '2330', description: 'Corporate income tax payable' },
+  { get label() { return i18n.t('settings.accounting.incomeTaxPayable', { defaultValue: "Income Tax Payable" }) }, code: '2330', get description() { return i18n.t('settings.accounting.corporateIncomeTaxPayable', { defaultValue: "Corporate income tax payable" }) } },
 ]
 
 export default function AccountingSettingsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
 
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Accounting"
-        subtitle="Default GL account mappings for automated journal entries"
+        title={t('settings.accounting.accounting')}
+        subtitle={t('settings.accounting.defaultGlAccountMappingsForAutomated')}
       />
 
       <Card padding="none" style={{ marginBottom: '16px' }}>
@@ -46,10 +49,10 @@ export default function AccountingSettingsPage() {
           }}
         >
           <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-            Default Account Mapping
+            {t('settings.accounting.defaultAccountMapping')}
           </h3>
           <Badge variant="info" size="sm">
-            Auto-configured
+            {t('settings.accounting.autoConfigured')}
           </Badge>
         </div>
         {GL_ACCOUNTS.map((acct, i) => (
@@ -96,8 +99,7 @@ export default function AccountingSettingsPage() {
           color: theme.textMuted,
         }}
       >
-        Account codes are assigned automatically per company during provisioning. To change default
-        account mappings, update the chart of accounts in Finance → Accounts.
+        {t('settings.accounting.accountCodesAreAssignedAutomaticallyPer')}
       </div>
     </div>
   )

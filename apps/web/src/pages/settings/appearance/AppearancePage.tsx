@@ -1,4 +1,6 @@
-﻿import { useQuery, useMutation } from '@apollo/client'
+﻿import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useQuery, useMutation } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -22,26 +24,27 @@ interface PreferencesData {
 const THEMES: { key: ThemeKey; label: string; description: string; preview: string }[] = [
   {
     key: 'light-flat',
-    label: 'Light Flat',
-    description: 'Clean white, maximum readability',
+    get label() { return i18n.t('settings.appearance.lightFlat', { defaultValue: "Light Flat" }) },
+    get description() { return i18n.t('settings.appearance.cleanWhiteMaximumReadability', { defaultValue: "Clean white, maximum readability" }) },
     preview: '#f4f6f8',
   },
-  { key: 'black', label: 'Black', description: 'Pure black, maximum contrast', preview: '#1c1e21' },
+  { key: 'black', get label() { return i18n.t('settings.appearance.black', { defaultValue: "Black" }) }, get description() { return i18n.t('settings.appearance.pureBlackMaximumContrast', { defaultValue: "Pure black, maximum contrast" }) }, preview: '#1c1e21' },
 ]
 
 const DATE_FORMATS = [
-  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY (US)' },
-  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY (EU)' },
-  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD (ISO)' },
+  { value: 'MM/DD/YYYY', get label() { return i18n.t('settings.appearance.mmDdYyyyUs', { defaultValue: "MM/DD/YYYY (US)" }) } },
+  { value: 'DD/MM/YYYY', get label() { return i18n.t('settings.appearance.ddMmYyyyEu', { defaultValue: "DD/MM/YYYY (EU)" }) } },
+  { value: 'YYYY-MM-DD', get label() { return i18n.t('settings.appearance.yyyyMmDdIso', { defaultValue: "YYYY-MM-DD (ISO)" }) } },
 ]
 
 const NUMBER_FORMATS = [
-  { value: 'en-US', label: '1,234.56 (US)' },
-  { value: 'de-DE', label: '1.234,56 (EU)' },
-  { value: 'ar-IQ', label: '١٬٢٣٤٫٥٦ (Arabic)' },
+  { value: 'en-US', get label() { return i18n.t('settings.appearance.123456Us', { defaultValue: "1,234.56 (US)" }) } },
+  { value: 'de-DE', get label() { return i18n.t('settings.appearance.123456Eu', { defaultValue: "1.234,56 (EU)" }) } },
+  { value: 'ar-IQ', get label() { return i18n.t('settings.appearance.arabic', { defaultValue: "١٬٢٣٤٫٥٦ (Arabic)" }) } },
 ]
 
 export default function AppearancePage() {
+  const { t } = useTranslation()
   const { theme, themeKey, setTheme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -49,7 +52,7 @@ export default function AppearancePage() {
 
   const [updatePreferences, { loading: updating }] = useMutation(UPDATE_PREFERENCES, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Preferences saved' })
+      addToast({ type: 'success', message: t('settings.appearance.preferencesSaved') })
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -78,7 +81,7 @@ export default function AppearancePage() {
 
   return (
     <div style={{ padding: '24px' }}>
-      <PageHeader title="Appearance" subtitle="Customize the interface theme and formatting" />
+      <PageHeader title={t('settings.appearance.appearance')} subtitle={t('settings.appearance.customizeTheInterfaceThemeAndFormatting')} />
 
       {/* Theme Cards */}
       <Card padding="md" style={{ marginBottom: '20px' }}>
@@ -90,7 +93,7 @@ export default function AppearancePage() {
             marginBottom: '16px',
           }}
         >
-          Theme
+          {t('settings.appearance.theme')}
         </h3>
         <div
           style={{
@@ -99,13 +102,13 @@ export default function AppearancePage() {
             gap: '12px',
           }}
         >
-          {THEMES.map((t) => {
-            const isActive = themeKey === t.key
+          {THEMES.map((th) => {
+            const isActive = themeKey === th.key
             return (
               <div
-                key={t.key}
+                key={th.key}
                 onClick={() => {
-                  handleThemeChange(t.key)
+                  handleThemeChange(th.key)
                 }}
                 style={{
                   padding: '16px',
@@ -127,7 +130,7 @@ export default function AppearancePage() {
                     width: '100%',
                     height: '48px',
                     borderRadius: '8px',
-                    background: t.preview,
+                    background: th.preview,
                     border: `1px solid ${theme.border}`,
                     marginBottom: '10px',
                   }}
@@ -137,13 +140,13 @@ export default function AppearancePage() {
                 >
                   <div>
                     <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                      {t.label}
+                      {th.label}
                     </p>
-                    <p style={{ fontSize: '11px', color: theme.textMuted }}>{t.description}</p>
+                    <p style={{ fontSize: '11px', color: theme.textMuted }}>{th.description}</p>
                   </div>
                   {isActive && (
                     <Badge variant="accent" size="sm">
-                      Active
+                      {t('settings.appearance.active')}
                     </Badge>
                   )}
                 </div>
@@ -163,7 +166,7 @@ export default function AppearancePage() {
             marginBottom: '16px',
           }}
         >
-          Formats
+          {t('settings.appearance.formats')}
         </h3>
         {loading ? (
           <div className="skeleton" style={{ height: '80px', borderRadius: '8px' }} />
@@ -177,7 +180,7 @@ export default function AppearancePage() {
             }}
           >
             <Select
-              label="Date Format"
+              label={t('settings.appearance.dateFormat')}
               value={prefs?.dateFormat ?? 'MM/DD/YYYY'}
               onChange={(e) => {
                 handleFormatChange('dateFormat', e.target.value)
@@ -185,7 +188,7 @@ export default function AppearancePage() {
               options={DATE_FORMATS}
             />
             <Select
-              label="Number Format"
+              label={t('settings.appearance.numberFormat')}
               value={prefs?.numberFormat ?? 'en-US'}
               onChange={(e) => {
                 handleFormatChange('numberFormat', e.target.value)
@@ -195,7 +198,7 @@ export default function AppearancePage() {
           </div>
         )}
         {updating && (
-          <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '12px' }}>Saving…</p>
+          <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '12px' }}>{t('settings.appearance.saving')}</p>
         )}
       </Card>
     </div>

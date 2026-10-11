@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import { COMPANIES_QUERY, CREATE_COMPANY } from '../../../graphql/admin'
@@ -24,6 +25,7 @@ interface Company {
 }
 
 export default function CompaniesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -49,7 +51,7 @@ export default function CompaniesPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
-        title="Companies"
+        title={t('admin.companies.companies')}
         subtitle={`${companies.length} compan${companies.length !== 1 ? 'ies' : 'y'}`}
         actions={
           <Button
@@ -59,13 +61,13 @@ export default function CompaniesPage() {
               setShowCreateModal(true)
             }}
           >
-            New company
+            {t('admin.companies.newCompany')}
           </Button>
         }
       />
 
       {loading && (
-        <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted }}>Loading…</div>
+        <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted }}>{t('admin.companies.loading')}</div>
       )}
 
       <div
@@ -97,7 +99,7 @@ export default function CompaniesPage() {
                   {c.name}
                 </div>
                 <Badge variant={c.isActive ? 'success' : 'neutral'}>
-                  {c.isActive ? 'Active' : 'Inactive'}
+                  {c.isActive ? t('admin.companies.active') : t('admin.companies.inactive')}
                 </Badge>
               </div>
               {c.legalName && c.legalName !== c.name && (
@@ -115,7 +117,7 @@ export default function CompaniesPage() {
                 {c.city && <div style={{ fontSize: '11px', color: theme.textMuted }}>{c.city}</div>}
               </div>
               <div style={{ marginTop: '10px' }}>
-                {!c.setupCompleted && <Badge variant="warning">Setup incomplete</Badge>}
+                {!c.setupCompleted && <Badge variant="warning">{t('admin.companies.setupIncomplete')}</Badge>}
               </div>
             </Card>
           </div>
@@ -125,7 +127,7 @@ export default function CompaniesPage() {
       {showCreateModal && (
         <Modal
           open={showCreateModal}
-          title="New Company"
+          title={t('admin.companies.newCompany2')}
           onClose={() => {
             setShowCreateModal(false)
           }}
@@ -140,14 +142,14 @@ export default function CompaniesPage() {
                   marginBottom: '4px',
                 }}
               >
-                Company name *
+                {t('admin.companies.companyName')}
               </label>
               <input
                 value={form.name}
                 onChange={(e) => {
                   setForm({ ...form, name: e.target.value })
                 }}
-                placeholder="e.g. Farage Printing Industries"
+                placeholder={t('admin.companies.eGFaragePrintingIndustries')}
                 style={{
                   width: '100%',
                   padding: '8px',
@@ -168,14 +170,14 @@ export default function CompaniesPage() {
                   marginBottom: '4px',
                 }}
               >
-                Legal name
+                {t('admin.companies.legalName')}
               </label>
               <input
                 value={form.legalName}
                 onChange={(e) => {
                   setForm({ ...form, legalName: e.target.value })
                 }}
-                placeholder="Optional — defaults to company name"
+                placeholder={t('admin.companies.optionalDefaultsToCompanyName')}
                 style={{
                   width: '100%',
                   padding: '8px',
@@ -203,14 +205,14 @@ export default function CompaniesPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Currency *
+                  {t('admin.companies.currency')}
                 </label>
                 <input
                   value={form.currencyCode}
                   onChange={(e) => {
                     setForm({ ...form, currencyCode: e.target.value.toUpperCase() })
                   }}
-                  placeholder="USD"
+                  placeholder={t('admin.companies.usd')}
                   maxLength={3}
                   style={{
                     width: '100%',
@@ -232,7 +234,7 @@ export default function CompaniesPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Country code
+                  {t('admin.companies.countryCode')}
                 </label>
                 <input
                   value={form.countryCode}
@@ -260,7 +262,7 @@ export default function CompaniesPage() {
                   setShowCreateModal(false)
                 }}
               >
-                Cancel
+                {t('admin.companies.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -279,7 +281,7 @@ export default function CompaniesPage() {
                   })
                 }
               >
-                Create
+                {t('admin.companies.create')}
               </Button>
             </div>
           </div>

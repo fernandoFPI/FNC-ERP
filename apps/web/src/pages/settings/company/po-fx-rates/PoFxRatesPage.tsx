@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../../theme/ThemeContext'
 import { PageHeader } from '../../../../components/ui/PageHeader'
@@ -15,6 +16,7 @@ interface PoFxRate {
 }
 
 export default function PoFxRatesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [rates, setRates] = useState<PoFxRate[]>([])
@@ -37,7 +39,7 @@ export default function PoFxRatesPage() {
         setBaseCurrency(r.data.base_currency)
       })
       .catch(() => {
-        addToast({ type: 'error', message: 'Failed to load PO exchange rates' })
+        addToast({ type: 'error', message: t('settings.fxrates.failedToLoadPoExchangeRates') })
       })
       .finally(() => {
         setLoading(false)
@@ -52,19 +54,19 @@ export default function PoFxRatesPage() {
     const raw = edits[currencyCode]
     const rate = parseFloat(raw)
     if (!raw || isNaN(rate) || rate <= 0) {
-      addToast({ type: 'error', message: 'Enter a positive rate' })
+      addToast({ type: 'error', message: t('settings.fxrates.enterAPositiveRate') })
       return
     }
     setSaving(currencyCode)
     try {
       await api.put(`/admin/po-fx-rates/${currencyCode}`, { rate_to_base: rate })
-      addToast({ type: 'success', message: `${currencyCode} rate saved` })
+      addToast({ type: 'success', message: t('settings.fxrates.rateSaved', { code: currencyCode }) })
       const next = { ...edits }
       Reflect.deleteProperty(next, currencyCode)
       setEdits(next)
       load()
     } catch {
-      addToast({ type: 'error', message: 'Failed to save rate' })
+      addToast({ type: 'error', message: t('settings.fxrates.failedToSaveRate') })
     } finally {
       setSaving(null)
     }
@@ -74,10 +76,10 @@ export default function PoFxRatesPage() {
     setSettingDefault(currencyCode)
     try {
       await api.patch(`/admin/po-fx-rates/${currencyCode}/default`)
-      addToast({ type: 'success', message: `${currencyCode} is now the default PO currency` })
+      addToast({ type: 'success', message: t('settings.fxrates.nowDefault', { code: currencyCode }) })
       load()
     } catch {
-      addToast({ type: 'error', message: 'Failed to set default' })
+      addToast({ type: 'error', message: t('settings.fxrates.failedToSetDefault') })
     } finally {
       setSettingDefault(null)
     }
@@ -87,10 +89,10 @@ export default function PoFxRatesPage() {
     setDeleting(currencyCode)
     try {
       await api.delete(`/admin/po-fx-rates/${currencyCode}`)
-      addToast({ type: 'success', message: `${currencyCode} rate removed` })
+      addToast({ type: 'success', message: t('settings.fxrates.rateRemoved', { code: currencyCode }) })
       load()
     } catch {
-      addToast({ type: 'error', message: 'Failed to remove rate' })
+      addToast({ type: 'error', message: t('settings.fxrates.failedToRemoveRate') })
     } finally {
       setDeleting(null)
     }
@@ -100,33 +102,33 @@ export default function PoFxRatesPage() {
     const code = newCurrency.trim().toUpperCase()
     const rate = parseFloat(newRate)
     if (code.length !== 3) {
-      addToast({ type: 'error', message: 'Currency code must be 3 letters (e.g. USD)' })
+      addToast({ type: 'error', message: t('settings.fxrates.currencyCodeMustBe3Letters') })
       return
     }
     if (code === baseCurrency) {
       addToast({
         type: 'error',
-        message: `${code} is the base currency already — no rate needed`,
+        message: t('settings.fxrates.isBase', { code }),
       })
       return
     }
     if (rates.some((r) => r.currency_code === code)) {
-      addToast({ type: 'error', message: `${code} already has a rate — edit it below` })
+      addToast({ type: 'error', message: t('settings.fxrates.alreadyHasRate', { code }) })
       return
     }
     if (!newRate || isNaN(rate) || rate <= 0) {
-      addToast({ type: 'error', message: 'Enter a positive rate' })
+      addToast({ type: 'error', message: t('settings.fxrates.enterAPositiveRate') })
       return
     }
     setAdding(true)
     try {
       await api.put(`/admin/po-fx-rates/${code}`, { rate_to_base: rate })
-      addToast({ type: 'success', message: `${code} rate added` })
+      addToast({ type: 'success', message: t('settings.fxrates.rateAdded', { code }) })
       setNewCurrency('')
       setNewRate('')
       load()
     } catch {
-      addToast({ type: 'error', message: 'Failed to add rate' })
+      addToast({ type: 'error', message: t('settings.fxrates.failedToAddRate') })
     } finally {
       setAdding(false)
     }
@@ -135,8 +137,8 @@ export default function PoFxRatesPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '720px' }}>
       <PageHeader
-        title="PO Exchange Rates"
-        subtitle={`Rates used to convert PO lines priced in another currency into the company's base currency (${baseCurrency})`}
+        title={t('settings.fxrates.poExchangeRates')}
+        subtitle={t('settings.fxrates.subtitleRates', { base: baseCurrency })}
       />
 
       <div
@@ -151,10 +153,7 @@ export default function PoFxRatesPage() {
           marginBottom: '16px',
         }}
       >
-        Each rate applies to every PO going forward until you change it here — it is not looked
-        up per-date automatically. A PO line priced in {baseCurrency} never needs a rate (it's
-        already 1:1). Changing a rate here only affects lines priced after the change; existing
-        PO lines keep the rate that was in effect when they were priced.
+        {t('settings.fxrates.introNote', { base: baseCurrency })}
       </div>
 
       {loading ? (
@@ -167,8 +166,7 @@ export default function PoFxRatesPage() {
         <Card padding="none" style={{ marginBottom: '16px' }}>
           {rates.length === 0 ? (
             <div style={{ padding: '20px', fontSize: '13px', color: theme.textMuted }}>
-              No exchange rates configured yet. Every PO line is currently assumed to already be
-              in {baseCurrency}.
+              {t('settings.fxrates.noRates', { base: baseCurrency })}
             </div>
           ) : (
             rates.map((r, i) => {
@@ -199,7 +197,7 @@ export default function PoFxRatesPage() {
                     {r.currency_code}
                     {r.is_default && (
                       <span
-                        title="Default currency for new POs"
+                        title={t('settings.fxrates.defaultCurrencyForNewPos')}
                         style={{ fontSize: '13px', lineHeight: 1 }}
                       >
                         ⭐
@@ -228,8 +226,8 @@ export default function PoFxRatesPage() {
                   />
                   <div style={{ fontSize: '12px', color: theme.textMuted }}>{baseCurrency}</div>
                   {r.updated_at && (
-                    <div style={{ fontSize: '11px', color: theme.textMuted, marginLeft: 'auto' }}>
-                      Updated {new Date(r.updated_at).toLocaleDateString()}
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginInlineStart: 'auto' }}>
+                      {t('settings.fxrates.updatedOn', { date: new Date(r.updated_at).toLocaleDateString() })}
                     </div>
                   )}
                   {!r.is_default && (
@@ -239,7 +237,7 @@ export default function PoFxRatesPage() {
                       loading={settingDefault === r.currency_code}
                       onClick={() => void handleSetDefault(r.currency_code)}
                     >
-                      Set as default
+                      {t('settings.fxrates.setAsDefault')}
                     </Button>
                   )}
                   <Button
@@ -249,7 +247,7 @@ export default function PoFxRatesPage() {
                     loading={saving === r.currency_code}
                     onClick={() => void handleSave(r.currency_code)}
                   >
-                    Save
+                    {t('settings.fxrates.save')}
                   </Button>
                   <Button
                     variant="ghost"
@@ -257,7 +255,7 @@ export default function PoFxRatesPage() {
                     loading={deleting === r.currency_code}
                     onClick={() => void handleDelete(r.currency_code)}
                   >
-                    Remove
+                    {t('settings.fxrates.remove')}
                   </Button>
                 </div>
               )
@@ -268,12 +266,12 @@ export default function PoFxRatesPage() {
 
       <Card style={{ padding: '16px 20px' }}>
         <div style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary, marginBottom: '10px' }}>
-          Add a currency
+          {t('settings.fxrates.addACurrency')}
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
           <Input
-            label="Currency Code"
-            placeholder="USD"
+            label={t('settings.fxrates.currencyCode')}
+            placeholder={t('settings.fxrates.usd')}
             maxLength={3}
             value={newCurrency}
             onChange={(e) => {
@@ -282,7 +280,7 @@ export default function PoFxRatesPage() {
             style={{ width: '110px' }}
           />
           <Input
-            label={`Rate to ${baseCurrency}`}
+            label={t('settings.fxrates.rateTo', { base: baseCurrency })}
             type="number"
             min={0}
             step="0.0001"
@@ -294,7 +292,7 @@ export default function PoFxRatesPage() {
             style={{ width: '160px' }}
           />
           <Button variant="primary" loading={adding} onClick={() => void handleAdd()}>
-            Add Rate
+            {t('settings.fxrates.addRate')}
           </Button>
         </div>
       </Card>

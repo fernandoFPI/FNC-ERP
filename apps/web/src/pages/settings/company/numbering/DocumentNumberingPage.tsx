@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../../theme/ThemeContext'
 import { PageHeader } from '../../../../components/ui/PageHeader'
@@ -25,6 +26,7 @@ type SequenceEdits = Partial<
 >
 
 export default function DocumentNumberingPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [sequences, setSequences] = useState<SequenceEntry[]>([])
@@ -40,7 +42,7 @@ export default function DocumentNumberingPage() {
         setSequences(r.data.sequences)
       })
       .catch(() => {
-        addToast({ type: 'error', message: 'Failed to load document sequences' })
+        addToast({ type: 'error', message: t('settings.numbering.failedToLoadDocumentSequences') })
       })
       .finally(() => {
         setLoading(false)
@@ -85,7 +87,7 @@ export default function DocumentNumberingPage() {
   async function handleSave(seq: SequenceEntry) {
     const e = edits[seq.doc_type]
     if (!e || Object.keys(e).length === 0) {
-      addToast({ type: 'info', message: 'No changes to save' })
+      addToast({ type: 'info', message: t('settings.numbering.noChangesToSave') })
       return
     }
     setSaving(seq.doc_type)
@@ -98,13 +100,13 @@ export default function DocumentNumberingPage() {
         separator: getField(seq.doc_type, 'separator', seq.separator),
       }
       await api.put(`/admin/document-sequences/${seq.doc_type}`, payload)
-      addToast({ type: 'success', message: `${seq.label} sequence saved` })
+      addToast({ type: 'success', message: t('settings.numbering.sequenceSaved', { label: seq.label }) })
       const newEdits = { ...edits }
       Reflect.deleteProperty(newEdits, seq.doc_type)
       setEdits(newEdits)
       load()
     } catch {
-      addToast({ type: 'error', message: 'Failed to save sequence' })
+      addToast({ type: 'error', message: t('settings.numbering.failedToSaveSequence') })
     } finally {
       setSaving(null)
     }
@@ -130,8 +132,8 @@ export default function DocumentNumberingPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '860px' }}>
       <PageHeader
-        title="Document Numbering"
-        subtitle="Configure prefix, format, and starting number for each document type"
+        title={t('settings.numbering.documentNumbering')}
+        subtitle={t('settings.numbering.configurePrefixFormatAndStartingNumber')}
       />
 
       {loading ? (
@@ -161,16 +163,16 @@ export default function DocumentNumberingPage() {
                   </span>
                   {seq.configured ? (
                     <Badge variant="success" size="sm">
-                      Configured
+                      {t('settings.numbering.configured')}
                     </Badge>
                   ) : (
                     <Badge variant="neutral" size="sm">
-                      Default
+                      {t('settings.numbering.default')}
                     </Badge>
                   )}
                   <span
                     style={{
-                      marginLeft: 'auto',
+                      marginInlineStart: 'auto',
                       fontFamily: 'monospace',
                       fontSize: '15px',
                       fontWeight: 700,
@@ -196,7 +198,7 @@ export default function DocumentNumberingPage() {
                 >
                   {/* Prefix */}
                   <div>
-                    <label style={labelStyle}>Prefix</label>
+                    <label style={labelStyle}>{t('settings.numbering.prefix')}</label>
                     <input
                       style={inputStyle}
                       value={getField(seq.doc_type, 'prefix', seq.prefix)}
@@ -210,7 +212,7 @@ export default function DocumentNumberingPage() {
 
                   {/* Separator */}
                   <div>
-                    <label style={labelStyle}>Separator</label>
+                    <label style={labelStyle}>{t('settings.numbering.separator')}</label>
                     <input
                       style={inputStyle}
                       value={getField(seq.doc_type, 'separator', seq.separator)}
@@ -224,7 +226,7 @@ export default function DocumentNumberingPage() {
 
                   {/* Pad length */}
                   <div>
-                    <label style={labelStyle}>Pad digits</label>
+                    <label style={labelStyle}>{t('settings.numbering.padDigits')}</label>
                     <input
                       style={inputStyle}
                       type="number"
@@ -239,7 +241,7 @@ export default function DocumentNumberingPage() {
 
                   {/* Next number */}
                   <div>
-                    <label style={labelStyle}>Next number</label>
+                    <label style={labelStyle}>{t('settings.numbering.nextNumber')}</label>
                     <input
                       style={inputStyle}
                       type="number"
@@ -271,7 +273,7 @@ export default function DocumentNumberingPage() {
                         }}
                         style={{ accentColor: theme.accent }}
                       />
-                      Include year
+                      {t('settings.numbering.includeYear')}
                     </label>
                     <div style={{ display: 'flex', gap: '6px' }}>
                       {hasEdits && (
@@ -284,7 +286,7 @@ export default function DocumentNumberingPage() {
                             setEdits(next)
                           }}
                         >
-                          Reset
+                          {t('settings.numbering.reset')}
                         </Button>
                       )}
                       <Button
@@ -294,7 +296,7 @@ export default function DocumentNumberingPage() {
                         disabled={!hasEdits}
                         onClick={() => void handleSave(seq)}
                       >
-                        Save
+                        {t('settings.numbering.save')}
                       </Button>
                     </div>
                   </div>
@@ -302,7 +304,7 @@ export default function DocumentNumberingPage() {
 
                 {seq.updated_at && (
                   <div style={{ marginTop: '8px', fontSize: '11px', color: theme.textMuted }}>
-                    Last updated {new Date(seq.updated_at).toLocaleDateString()}
+                    {t('settings.numbering.lastUpdated', { date: new Date(seq.updated_at).toLocaleDateString() })}
                   </div>
                 )}
               </Card>
@@ -322,9 +324,7 @@ export default function DocumentNumberingPage() {
           color: theme.textMuted,
         }}
       >
-        <strong>Next number</strong> is the number that will be used on the <em>next</em> document
-        created. Changing it does not affect existing documents. If no sequence is configured,
-        numbers fall back to a timestamp-based format.
+        <Trans i18nKey="settings.numbering.nextNote" components={{ strong: <strong />, em: <em /> }} />
       </div>
     </div>
   )

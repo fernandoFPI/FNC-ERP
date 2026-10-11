@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useRef, useState } from 'react'
 import axios from 'axios'
 import { api } from '../../../lib/axios'
@@ -26,6 +27,7 @@ interface ImportStats {
 }
 
 export default function WorkflowImportPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const user = useAuthStore((s) => s.user)
 
@@ -118,8 +120,8 @@ export default function WorkflowImportPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
       <PageHeader
-        title="Workflow Import"
-        subtitle="Upload workflow.sql to import historical projects, purchase orders, and invoices from the legacy system"
+        title={t('settings.wfImport.workflowImport')}
+        subtitle={t('settings.wfImport.uploadWorkflowSqlToImportHistorical')}
       />
 
       <Card style={{ marginTop: '20px', padding: '24px' }}>
@@ -134,7 +136,7 @@ export default function WorkflowImportPage() {
               marginBottom: '6px',
             }}
           >
-            SQL Dump File (.sql)
+            {t('settings.wfImport.sqlDumpFileSql')}
           </label>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <input
@@ -163,17 +165,16 @@ export default function WorkflowImportPage() {
                 fontWeight: 500,
               }}
             >
-              Choose File
+              {t('settings.wfImport.chooseFile')}
             </button>
             <span style={{ fontSize: '13px', color: file ? theme.textPrimary : theme.textMuted }}>
               {file
                 ? `${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`
-                : 'No file selected'}
+                : t('settings.wfImport.noFileSelected')}
             </span>
           </div>
           <p style={{ marginTop: '6px', fontSize: '11px', color: theme.textMuted }}>
-            Expected: MySQL/MariaDB dump from workflow_fnc_v3.1 containing tables: projects, po,
-            po_items, invoices, invoice_items
+            {t('settings.wfImport.expectedMysqlMariadbDumpFromWorkflow')}
           </p>
         </div>
 
@@ -190,13 +191,13 @@ export default function WorkflowImportPage() {
             lineHeight: '1.7',
           }}
         >
-          <strong style={{ color: theme.textPrimary }}>What gets imported:</strong>
+          <strong style={{ color: theme.textPrimary }}>{t('settings.wfImport.whatGetsImported')}</strong>
           <br />
-          Projects → <code>projects</code> table &nbsp;·&nbsp; POs + items →{' '}
-          <code>purchase_orders</code> + <code>po_lines</code>
+          Projects → <code>{t('settings.wfImport.projects')}</code> table &nbsp;·&nbsp; POs + items →{' '}
+          <code>{t('settings.wfImport.purchaseOrders')}</code> + <code>{t('settings.wfImport.poLines')}</code>
           <br />
-          Invoices → <code>project_contracts</code> + <code>project_invoices</code> +{' '}
-          <code>project_invoice_lines</code>
+          Invoices → <code>{t('settings.wfImport.projectContracts')}</code> + <code>{t('settings.wfImport.projectInvoices')}</code> +{' '}
+          <code>{t('settings.wfImport.projectInvoiceLines')}</code>
           <br />
           Existing records (same code / po_number / invoice_number) are skipped silently. This
           import can be re-run safely.
@@ -211,11 +212,11 @@ export default function WorkflowImportPage() {
             loading={status === 'loading'}
             disabled={!file || status === 'loading'}
           >
-            {status === 'loading' ? 'Importing… (may take a few minutes)' : 'Run Import'}
+            {status === 'loading' ? t('settings.wfImport.importingMayTakeAFewMinutes') : t('settings.wfImport.runImport')}
           </Button>
           {(status === 'done' || status === 'error') && (
             <Button variant="ghost" onClick={reset}>
-              Reset
+              {t('settings.wfImport.reset')}
             </Button>
           )}
         </div>
@@ -249,7 +250,7 @@ export default function WorkflowImportPage() {
                 marginBottom: '8px',
               }}
             >
-              Import Complete
+              {t('settings.wfImport.importComplete')}
             </div>
             {result.projects === 0 &&
               result.pos === 0 &&
@@ -266,8 +267,7 @@ export default function WorkflowImportPage() {
                     color: theme.textSecondary,
                   }}
                 >
-                  All records already exist from a previous run — no duplicates created. The
-                  database is up to date.
+                  {t('settings.wfImport.allRecordsAlreadyExistFromA')}
                 </div>
               )}
 
@@ -282,7 +282,7 @@ export default function WorkflowImportPage() {
                 marginBottom: '8px',
               }}
             >
-              Parsed from file
+              {t('settings.wfImport.parsedFromFile')}
             </div>
             <div
               style={{
@@ -310,7 +310,7 @@ export default function WorkflowImportPage() {
                 marginBottom: '8px',
               }}
             >
-              Inserted into database
+              {t('settings.wfImport.insertedIntoDatabase')}
             </div>
             <div
               style={{

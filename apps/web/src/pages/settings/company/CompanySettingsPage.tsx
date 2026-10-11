@@ -1,4 +1,5 @@
-﻿import { useState, useEffect } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -43,6 +44,7 @@ const DEFAULT_THRESHOLDS: FXAlertThresholds = {
 type Tab = 'profile' | 'fx_thresholds' | 'configuration' | 'interco' | 'branding'
 
 export default function CompanySettingsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const companyId = useAuthStore((s) => s.user?.companyId)
@@ -63,7 +65,7 @@ export default function CompanySettingsPage() {
 
   const [updatePreferences, { loading: saving }] = useMutation<UpdatePreferencesMutation, UpdatePreferencesMutationVariables>(UPDATE_PREFERENCES, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Settings saved' })
+      addToast({ type: 'success', message: t('settings.company.settingsSaved') })
       setDirty(false)
     },
     onError: (e) => {
@@ -74,7 +76,7 @@ export default function CompanySettingsPage() {
 
   const [updateConfig, { loading: savingConfig }] = useMutation<UpdateCompanyConfigurationMutation, UpdateCompanyConfigurationMutationVariables>(UPDATE_COMPANY_CONFIGURATION, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Branding settings saved' })
+      addToast({ type: 'success', message: t('settings.company.brandingSettingsSaved') })
     },
     onError: (e) => {
       addToast({ type: 'error', message: e.message })
@@ -107,7 +109,7 @@ export default function CompanySettingsPage() {
     setDirty(true)
     // Cross-field validation
     if (next.warn_rate_hours >= next.critical_rate_hours && next.critical_rate_hours > 0) {
-      setFxValidationError('Warn threshold must be less than critical threshold')
+      setFxValidationError(t('settings.company.warnLtCritical'))
     } else {
       setFxValidationError(null)
     }
@@ -116,7 +118,7 @@ export default function CompanySettingsPage() {
   function handleSaveFX() {
     if (fxValidationError) return
     if (thresholds.warn_rate_hours >= thresholds.critical_rate_hours) {
-      setFxValidationError('Warn threshold must be less than critical threshold')
+      setFxValidationError(t('settings.company.warnLtCritical'))
       return
     }
     const prefs = data?.myPreferences
@@ -141,11 +143,11 @@ export default function CompanySettingsPage() {
   }
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'profile', label: 'Profile' },
-    { key: 'fx_thresholds', label: 'FX Thresholds' },
-    { key: 'configuration', label: 'Configuration' },
-    { key: 'interco', label: 'Inter-company' },
-    { key: 'branding', label: 'Branding & Email' },
+    { key: 'profile', label: t('settings.company.profile') },
+    { key: 'fx_thresholds', label: t('settings.company.fxThresholds') },
+    { key: 'configuration', label: t('settings.company.configuration') },
+    { key: 'interco', label: t('settings.company.interCompany') },
+    { key: 'branding', label: t('settings.company.brandingEmail') },
   ]
 
   const FX_PAIRS: {
@@ -156,39 +158,39 @@ export default function CompanySettingsPage() {
   }[] = [
     {
       key: 'usd_iqd_alert_pct',
-      label: 'USD/IQD Alert Threshold',
-      description: 'Alert when rate moves more than this %',
+      label: t('settings.company.usdIqdAlertThreshold'),
+      description: t('settings.company.alertWhenRateMovesMoreThan'),
       suffix: '%',
     },
     {
       key: 'eur_iqd_alert_pct',
-      label: 'EUR/IQD Alert Threshold',
-      description: 'Alert when rate moves more than this %',
+      label: t('settings.company.eurIqdAlertThreshold'),
+      description: t('settings.company.alertWhenRateMovesMoreThan'),
       suffix: '%',
     },
     {
       key: 'gbp_iqd_alert_pct',
-      label: 'GBP/IQD Alert Threshold',
-      description: 'Alert when rate moves more than this %',
+      label: t('settings.company.gbpIqdAlertThreshold'),
+      description: t('settings.company.alertWhenRateMovesMoreThan'),
       suffix: '%',
     },
     {
       key: 'warn_rate_hours',
-      label: 'Warn after (hours)',
-      description: 'Emit a warning alert when rate is stale this long',
+      label: t('settings.company.warnAfterHours'),
+      description: t('settings.company.emitAWarningAlertWhenRate'),
       suffix: 'hrs',
     },
     {
       key: 'critical_rate_hours',
-      label: 'Critical after (hours)',
-      description: 'Escalate to critical when rate is stale this long',
+      label: t('settings.company.criticalAfterHours'),
+      description: t('settings.company.escalateToCriticalWhenRateIs'),
       suffix: 'hrs',
     },
   ]
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
-      <PageHeader title="Company Settings" subtitle="Group-level and company configuration" />
+      <PageHeader title={t('settings.company.companySettings')} subtitle={t('settings.company.groupLevelAndCompanyConfiguration')} />
 
       <div
         style={{
@@ -227,7 +229,7 @@ export default function CompanySettingsPage() {
         <Card style={{ padding: '20px' }}>
           {!company ? (
             <div style={{ color: theme.textMuted, fontSize: '13px' }}>
-              Company information not available.
+              {t('settings.company.companyInformationNotAvailable')}
             </div>
           ) : (
             <div
@@ -238,15 +240,15 @@ export default function CompanySettingsPage() {
               }}
             >
               {[
-                ['Company name', company.name],
-                ['Legal name', company.legalName],
-                ['Country', company.countryCode],
-                ['City', company.city],
-                ['Currency', company.currencyCode],
-                ['Phone', company.phone],
-                ['Email', company.email],
-                ['VAT number', company.vatNumber],
-                ['Registration number', company.registrationNumber],
+                [t('settings.company.fName'), company.name],
+                [t('settings.company.fLegal'), company.legalName],
+                [t('settings.company.fCountry'), company.countryCode],
+                [t('settings.company.fCity'), company.city],
+                [t('settings.company.fCurrency'), company.currencyCode],
+                [t('settings.company.fPhone'), company.phone],
+                [t('settings.company.fEmail'), company.email],
+                [t('settings.company.fVat'), company.vatNumber],
+                [t('settings.company.fReg'), company.registrationNumber],
               ].map(([k, v]) => (
                 <div key={k}>
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
@@ -264,15 +266,14 @@ export default function CompanySettingsPage() {
         <Card style={{ padding: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
             <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-              FX Rate Alert Thresholds
+              {t('settings.company.fxRateAlertThresholds')}
             </div>
             <Badge variant="info" size="sm">
-              Admin Only
+              {t('settings.company.adminOnly')}
             </Badge>
           </div>
           <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '20px' }}>
-            Percentages are the minimum change that triggers an alert. Warn threshold must be less
-            than critical threshold.
+            {t('settings.company.percentagesAreTheMinimumChangeThat')}
           </p>
           <div
             style={{
@@ -325,7 +326,7 @@ export default function CompanySettingsPage() {
               disabled={!dirty || !!fxValidationError}
               onClick={handleSaveFX}
             >
-              Save thresholds
+              {t('settings.company.saveThresholds')}
             </Button>
           </div>
         </Card>
@@ -336,7 +337,7 @@ export default function CompanySettingsPage() {
           companyId={companyId}
           initialValues={company?.configuration ?? {}}
           onSaved={() => {
-            addToast({ type: 'success', message: 'Configuration saved' })
+            addToast({ type: 'success', message: t('settings.company.configurationSaved') })
           }}
         />
       )}
@@ -351,17 +352,16 @@ export default function CompanySettingsPage() {
               marginBottom: '12px',
             }}
           >
-            Inter-company Transfer Pricing
+            {t('settings.company.interCompanyTransferPricing')}
           </div>
           <div style={{ fontSize: '13px', color: theme.textMuted }}>
-            Method:{' '}
+            {t('settings.company.methodLabel')}{' '}
             <span style={{ color: theme.textPrimary }}>
-              {company?.intercoTransferPricingMethod?.replace(/_/g, ' ') ?? 'Not configured'}
+              {company?.intercoTransferPricingMethod?.replace(/_/g, ' ') ?? t('settings.company.notConfigured')}
             </span>
           </div>
           <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '12px' }}>
-            Inter-company settings are managed by your system administrator. Contact them to change
-            the transfer pricing method.
+            {t('settings.company.interCompanySettingsAreManagedBy')}
           </div>
         </Card>
       )}
@@ -376,7 +376,7 @@ export default function CompanySettingsPage() {
               marginBottom: '16px',
             }}
           >
-            Email Branding
+            {t('settings.company.emailBranding')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
@@ -388,14 +388,14 @@ export default function CompanySettingsPage() {
                   marginBottom: '4px',
                 }}
               >
-                From address
+                {t('settings.company.fromAddress')}
               </label>
               <input
                 value={emailFrom}
                 onChange={(e) => {
                   setEmailFrom(e.target.value)
                 }}
-                placeholder="noreply@company.com"
+                placeholder={t('settings.company.noreplyCompanyCom')}
                 style={{
                   width: '100%',
                   padding: '8px',
@@ -416,7 +416,7 @@ export default function CompanySettingsPage() {
                   marginBottom: '4px',
                 }}
               >
-                Email signature
+                {t('settings.company.emailSignature')}
               </label>
               <textarea
                 value={emailSig}
@@ -453,7 +453,7 @@ export default function CompanySettingsPage() {
                   })
                 }
               >
-                Save branding
+                {t('settings.company.saveBranding')}
               </Button>
             </div>
           </div>

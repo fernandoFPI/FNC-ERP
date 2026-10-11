@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
+import i18n, { navLabel } from '../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { useAuthStore } from '../../store/authStore'
 import { useToastStore } from '../../store/toastStore'
@@ -18,6 +20,7 @@ const ADMIN_NAV = [
 
 export default function AdminLayout() {
   const { theme } = useTheme()
+  useTranslation() // re-render when the language changes
   const { isMobile } = useBreakpoint()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
@@ -27,7 +30,7 @@ export default function AdminLayout() {
 
   useEffect(() => {
     if (user && !isAdmin) {
-      addToast({ type: 'error', message: 'Access denied: system administrator only' })
+      addToast({ type: 'error', message: i18n.t('misc.adminOnlyDenied') })
     }
   }, [user, isAdmin, addToast])
 
@@ -66,7 +69,7 @@ export default function AdminLayout() {
                     cursor: 'pointer',
                   }}
                 >
-                  {item.label}
+                  {navLabel(item.label)}
                 </div>
               </NavLink>
             )
@@ -85,7 +88,7 @@ export default function AdminLayout() {
         style={{
           width: '180px',
           minWidth: '180px',
-          borderRight: `0.5px solid ${theme.border}`,
+          borderInlineEnd: `0.5px solid ${theme.border}`,
           overflowY: 'auto',
           padding: '12px 0',
           flexShrink: 0,
@@ -107,12 +110,12 @@ export default function AdminLayout() {
                   color: isActive ? theme.accent : theme.textSecondary,
                   fontWeight: isActive ? 500 : 400,
                   background: isActive ? theme.accentBg : 'transparent',
-                  borderLeft: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
+                  borderInlineStart: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                 }}
               >
-                {item.label}
+                {navLabel(item.label)}
               </div>
             </NavLink>
           )

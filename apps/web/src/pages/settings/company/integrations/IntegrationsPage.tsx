@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../../theme/ThemeContext'
 import { PageHeader } from '../../../../components/ui/PageHeader'
@@ -59,6 +60,7 @@ function ConfigField({
   type?: string
   placeholder?: string
 }) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [editing, setEditing] = useState(false)
 
@@ -75,12 +77,12 @@ function ConfigField({
         <label style={{ fontSize: '12px', color: theme.textMuted }}>{label}</label>
         {entry?.source === 'db' && (
           <Badge variant="success" size="sm">
-            DB
+            {t('settings.integrations.db')}
           </Badge>
         )}
         {entry?.source === 'env' && (
           <Badge variant="neutral" size="sm">
-            env
+            {t('settings.integrations.env')}
           </Badge>
         )}
       </div>
@@ -129,7 +131,7 @@ function ConfigField({
               whiteSpace: 'nowrap',
             }}
           >
-            Change
+            {t('settings.integrations.change')}
           </button>
         )}
         {isSensitive && editing && (
@@ -151,7 +153,7 @@ function ConfigField({
               cursor: 'pointer',
             }}
           >
-            Cancel
+            {t('settings.integrations.cancel')}
           </button>
         )}
         {hasDbValue && (
@@ -165,6 +167,7 @@ function ConfigField({
 }
 
 export default function IntegrationsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [entries, setEntries] = useState<ConfigEntry[]>([])
@@ -181,7 +184,7 @@ export default function IntegrationsPage() {
         setEntries(r.data.entries)
       })
       .catch(() => {
-        addToast({ type: 'error', message: 'Failed to load system configuration' })
+        addToast({ type: 'error', message: t('settings.integrations.failedToLoadSystemConfiguration') })
       })
       .finally(() => {
         setLoading(false)
@@ -211,10 +214,10 @@ export default function IntegrationsPage() {
     setTestingEmail(true)
     try {
       const res = await api.post<{ ok: boolean; sentTo: string }>('/admin/system-config/test-email')
-      addToast({ type: 'success', message: `Test email sent to ${res.data.sentTo}` })
+      addToast({ type: 'success', message: t('settings.integrations.testEmailSent', { to: res.data.sentTo }) })
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } }).response?.data?.message
-      addToast({ type: 'error', message: msg ?? 'Email test failed — check your settings' })
+      addToast({ type: 'error', message: msg ?? t('settings.integrations.emailTestFailed') })
     } finally {
       setTestingEmail(false)
     }
@@ -223,17 +226,17 @@ export default function IntegrationsPage() {
   async function handleSave() {
     const updates = Object.entries(edits).map(([key, value]) => ({ key, value }))
     if (updates.length === 0) {
-      addToast({ type: 'info', message: 'No changes to save' })
+      addToast({ type: 'info', message: t('settings.integrations.noChangesToSave') })
       return
     }
     setSaving(true)
     try {
       await api.put('/admin/system-config', { updates })
-      addToast({ type: 'success', message: 'Configuration saved' })
+      addToast({ type: 'success', message: t('settings.integrations.configurationSaved') })
       setEdits({})
       load()
     } catch {
-      addToast({ type: 'error', message: 'Failed to save configuration' })
+      addToast({ type: 'error', message: t('settings.integrations.failedToSaveConfiguration') })
     } finally {
       setSaving(false)
     }
@@ -253,8 +256,8 @@ export default function IntegrationsPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '820px' }}>
       <PageHeader
-        title="Integrations & System Configuration"
-        subtitle="Configure external services — changes take effect immediately without server restart"
+        title={t('settings.integrations.integrationsSystemConfiguration')}
+        subtitle={t('settings.integrations.configureExternalServicesChangesTakeEffect')}
       />
 
       {loading ? (
@@ -266,40 +269,38 @@ export default function IntegrationsPage() {
       ) : (
         <div style={{ marginTop: '20px' }}>
           {/* ── Email (Microsoft Graph API) ─────────────────────── */}
-          <Section title="Email (Microsoft Graph API)">
+          <Section title={t('settings.integrations.emailMicrosoftGraphApi')}>
             <p style={{ fontSize: '12px', color: theme.textMuted, margin: '-4px 0 4px' }}>
-              Requires an Azure AD app registration with an application-level{' '}
-              <code>Mail.Send</code> permission (admin-consented). The client secret and tenant ID
-              come from that app registration.
+              <Trans i18nKey="settings.integrations.azureNote" components={{ code: <code /> }} />
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <ConfigField
-                label="Tenant ID"
+                label={t('settings.integrations.tenantId')}
                 {...fieldProps('msgraph.tenant_id', 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')}
               />
               <ConfigField
-                label="Client ID"
+                label={t('settings.integrations.clientId')}
                 {...fieldProps('msgraph.client_id', 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')}
               />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <ConfigField
-                label="Client Secret"
+                label={t('settings.integrations.clientSecret')}
                 {...fieldProps('msgraph.client_secret', '••••••••')}
               />
               <ConfigField
-                label="Sender Mailbox"
+                label={t('settings.integrations.senderMailbox')}
                 {...fieldProps('msgraph.sender_address', 'noreply@example.com')}
               />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-              <ConfigField label="From Name" {...fieldProps('email.from_name', 'FNC Group')} />
+              <ConfigField label={t('settings.integrations.fromName')} {...fieldProps('email.from_name', 'FNC Group')} />
               <ConfigField
-                label="From Address"
+                label={t('settings.integrations.fromAddress')}
                 {...fieldProps('email.from_address', 'noreply@example.com')}
               />
               <ConfigField
-                label="Reply-To (optional)"
+                label={t('settings.integrations.replyToOptional')}
                 {...fieldProps('email.reply_to', 'support@example.com')}
               />
             </div>
@@ -310,69 +311,68 @@ export default function IntegrationsPage() {
                 loading={testingEmail}
                 onClick={() => void handleTestEmail()}
               >
-                Send Test Email
+                {t('settings.integrations.sendTestEmail')}
               </Button>
             </div>
           </Section>
 
           {/* ── App URL ──────────────────────────────────────── */}
-          <Section title="Application">
+          <Section title={t('settings.integrations.application')}>
             <ConfigField
-              label="Public App Base URL"
+              label={t('settings.integrations.publicAppBaseUrl')}
               {...fieldProps('app.base_url', 'https://erp.yourcompany.com')}
             />
             <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0 }}>
-              Used to generate QR codes on invoice PDFs and links in outgoing emails.
+              {t('settings.integrations.usedToGenerateQrCodesOn')}
             </p>
           </Section>
 
           {/* ── FX Rate API ───────────────────────────────────── */}
-          <Section title="FX Rate API">
+          <Section title={t('settings.integrations.fxRateApi')}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <ConfigField
-                label="ExchangeRate-API Key (primary)"
+                label={t('settings.integrations.exchangerateApiKeyPrimary')}
                 {...fieldProps(
                   'fx.exchange_rate_api_key',
-                  'Your API key from exchangerate-api.com',
+                  t('settings.integrations.exchangeApiKeyPh'),
                 )}
               />
               <ConfigField
-                label="Open Exchange Rates App ID (fallback)"
+                label={t('settings.integrations.openExchangeRatesAppIdFallback')}
                 {...fieldProps(
                   'fx.open_exchange_rates_app_id',
-                  'Your App ID from openexchangerates.org',
+                  t('settings.integrations.oxrAppIdPh'),
                 )}
               />
             </div>
             <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0 }}>
-              Used by the daily FX sync job. The primary key is tried first; the fallback is used if
-              the primary fails.
+              {t('settings.integrations.usedByTheDailyFxSync')}
             </p>
           </Section>
 
           {/* ── B2 Storage ────────────────────────────────────── */}
-          <Section title="File Storage (Backblaze B2)">
+          <Section title={t('settings.integrations.fileStorageBackblazeB2')}>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
               <ConfigField
-                label="B2 Endpoint URL"
+                label={t('settings.integrations.b2EndpointUrl')}
                 {...fieldProps('storage.b2_endpoint', 'https://s3.us-west-004.backblazeb2.com')}
               />
-              <ConfigField label="Region" {...fieldProps('storage.b2_region', 'us-west-004')} />
+              <ConfigField label={t('settings.integrations.region')} {...fieldProps('storage.b2_region', 'us-west-004')} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <ConfigField label="B2 Key ID" {...fieldProps('storage.b2_key_id')} />
+              <ConfigField label={t('settings.integrations.b2KeyId')} {...fieldProps('storage.b2_key_id')} />
               <ConfigField
-                label="B2 Application Key (secret)"
+                label={t('settings.integrations.b2ApplicationKeySecret')}
                 {...fieldProps('storage.b2_application_key')}
               />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <ConfigField
-                label="Bucket Name"
+                label={t('settings.integrations.bucketName')}
                 {...fieldProps('storage.b2_bucket_name', 'fnc-erp-prod')}
               />
               <ConfigField
-                label="Public CDN URL (optional)"
+                label={t('settings.integrations.publicCdnUrlOptional')}
                 {...fieldProps('storage.b2_bucket_public_url', 'https://cdn.example.com')}
               />
             </div>
@@ -395,7 +395,7 @@ export default function IntegrationsPage() {
                   setEdits({})
                 }}
               >
-                Discard changes
+                {t('settings.integrations.discardChanges')}
               </Button>
             )}
             <Button
@@ -404,7 +404,7 @@ export default function IntegrationsPage() {
               onClick={() => void handleSave()}
               disabled={!hasChanges}
             >
-              Save configuration
+              {t('settings.integrations.saveConfiguration')}
             </Button>
           </div>
 
@@ -420,11 +420,7 @@ export default function IntegrationsPage() {
               color: theme.textMuted,
             }}
           >
-            <strong>DB</strong> badge = value stored in database (overrides .env).&nbsp;
-            <strong>env</strong> badge = read from the server environment file.&nbsp; Changes saved
-            here take effect within 5 minutes for background workers (FX sync, email).
-            Infrastructure settings (DATABASE_URL, JWT_SECRET, service ports) are intentionally not
-            configurable here.
+            <Trans i18nKey="settings.integrations.badgeNote" components={{ strong: <strong /> }} />
           </div>
         </div>
       )}

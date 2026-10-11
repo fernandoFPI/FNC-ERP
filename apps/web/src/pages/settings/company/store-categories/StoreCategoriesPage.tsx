@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../../theme/ThemeContext'
 import { PageHeader } from '../../../../components/ui/PageHeader'
@@ -18,6 +19,7 @@ interface StoreCategory {
 }
 
 export default function StoreCategoriesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [categories, setCategories] = useState<StoreCategory[]>([])
@@ -37,7 +39,7 @@ export default function StoreCategoriesPage() {
         setCategories(r.data.categories)
       })
       .catch(() => {
-        addToast({ type: 'error', message: 'Failed to load store categories' })
+        addToast({ type: 'error', message: t('settings.storecats.failedToLoadStoreCategories') })
       })
       .finally(() => {
         setLoading(false)
@@ -52,11 +54,11 @@ export default function StoreCategoriesPage() {
     const name = newName.trim()
     const prefix = newPrefix.trim().toUpperCase()
     if (name.length < 2) {
-      addToast({ type: 'error', message: 'Enter a category name (at least 2 characters)' })
+      addToast({ type: 'error', message: t('settings.storecats.enterACategoryNameAtLeast') })
       return
     }
     if (!/^[A-Z0-9]{2,10}$/.test(prefix)) {
-      addToast({ type: 'error', message: 'Prefix must be 2-10 letters/digits, no spaces' })
+      addToast({ type: 'error', message: t('settings.storecats.prefixMustBe210Letters') })
       return
     }
     setAdding(true)
@@ -69,7 +71,7 @@ export default function StoreCategoriesPage() {
     } catch (err) {
       const message =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        'Failed to add category'
+        t('settings.storecats.failedAdd')
       addToast({ type: 'error', message })
     } finally {
       setAdding(false)
@@ -86,7 +88,7 @@ export default function StoreCategoriesPage() {
       })
       load()
     } catch {
-      addToast({ type: 'error', message: 'Failed to update category' })
+      addToast({ type: 'error', message: t('settings.storecats.failedToUpdateCategory') })
     } finally {
       setTogglingId(null)
     }
@@ -95,8 +97,8 @@ export default function StoreCategoriesPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '720px' }}>
       <PageHeader
-        title="Store Categories"
-        subtitle="The Store / Sub-category list shown when creating a raw-material product — each one has its own SKU prefix and numbering sequence"
+        title={t('settings.storecats.storeCategories')}
+        subtitle={t('settings.storecats.theStoreSubCategoryListShown')}
       />
 
       <div
@@ -111,10 +113,7 @@ export default function StoreCategoriesPage() {
           marginBottom: '16px',
         }}
       >
-        Deactivating a category only hides it from the picker for new products — existing products
-        keep it and nothing about them changes. Names and prefixes can't be edited once created
-        (it would silently disconnect existing products from their category, or make their SKUs
-        inconsistent) — deactivate a mistake and add a corrected one instead.
+        {t('settings.storecats.deactivatingACategoryOnlyHidesIt')}
       </div>
 
       {loading ? (
@@ -127,7 +126,7 @@ export default function StoreCategoriesPage() {
         <Card padding="none" style={{ marginBottom: '16px' }}>
           {categories.length === 0 ? (
             <div style={{ padding: '20px', fontSize: '13px', color: theme.textMuted }}>
-              No store categories configured yet.
+              {t('settings.storecats.noStoreCategoriesConfiguredYet')}
             </div>
           ) : (
             categories.map((c, i) => (
@@ -156,14 +155,14 @@ export default function StoreCategoriesPage() {
                 >
                   {c.sku_prefix}-###
                 </div>
-                {!c.is_active && <Badge variant="neutral">Inactive</Badge>}
+                {!c.is_active && <Badge variant="neutral">{t('settings.storecats.inactive')}</Badge>}
                 <Button
                   variant="ghost"
                   size="sm"
                   loading={togglingId === c.id}
                   onClick={() => void handleToggle(c)}
                 >
-                  {c.is_active ? 'Deactivate' : 'Reactivate'}
+                  {c.is_active ? t('settings.storecats.deactivate') : t('settings.storecats.reactivate')}
                 </Button>
               </div>
             ))
@@ -173,12 +172,12 @@ export default function StoreCategoriesPage() {
 
       <Card style={{ padding: '16px 20px' }}>
         <div style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary, marginBottom: '10px' }}>
-          Add a category
+          {t('settings.storecats.addACategory')}
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <Input
-            label="Name"
-            placeholder="e.g. Hardware Store"
+            label={t('settings.storecats.name')}
+            placeholder={t('settings.storecats.eGHardwareStore')}
             value={newName}
             onChange={(e) => {
               setNewName(e.target.value)
@@ -186,7 +185,7 @@ export default function StoreCategoriesPage() {
             style={{ width: '240px' }}
           />
           <Input
-            label="SKU Prefix"
+            label={t('settings.storecats.skuPrefix')}
             placeholder="HW"
             maxLength={10}
             value={newPrefix}
@@ -196,7 +195,7 @@ export default function StoreCategoriesPage() {
             style={{ width: '120px' }}
           />
           <Button variant="primary" loading={adding} onClick={() => void handleAdd()}>
-            Add Category
+            {t('settings.storecats.addCategory')}
           </Button>
         </div>
       </Card>

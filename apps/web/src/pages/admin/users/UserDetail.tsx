@@ -1,4 +1,6 @@
-﻿import { useState, lazy, Suspense } from 'react'
+﻿import i18n, { enumLabel } from '../../../i18n'
+import { Trans, useTranslation } from 'react-i18next'
+import { useState, lazy, Suspense } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useSubscription } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -37,23 +39,23 @@ import {
 } from '../../../graphql/admin'
 
 const ROLE_OPTIONS = [
-  { value: 'system_admin', label: 'System Admin' },
-  { value: 'company_admin', label: 'Company Admin' },
-  { value: 'module_admin', label: 'Module Admin' },
-  { value: 'user', label: 'User' },
+  { value: 'system_admin', get label() { return i18n.t('admin.userDetail.systemAdmin', { defaultValue: "System Admin" }) } },
+  { value: 'company_admin', get label() { return i18n.t('admin.userDetail.companyAdmin', { defaultValue: "Company Admin" }) } },
+  { value: 'module_admin', get label() { return i18n.t('admin.userDetail.moduleAdmin', { defaultValue: "Module Admin" }) } },
+  { value: 'user', get label() { return i18n.t('admin.userDetail.user', { defaultValue: "User" }) } },
 ]
 
 const MODULE_OPTIONS = [
-  { value: '', label: '— None (company-level role) —' },
-  { value: 'procurement', label: 'Procurement' },
-  { value: 'finance', label: 'Finance' },
-  { value: 'hr', label: 'HR' },
-  { value: 'projects', label: 'Projects' },
-  { value: 'manufacturing', label: 'Manufacturing' },
-  { value: 'rental', label: 'Rental' },
-  { value: 'reporting', label: 'Reporting' },
-  { value: 'inventory', label: 'Inventory' },
-  { value: 'interco', label: 'Interco' },
+  { value: '', get label() { return i18n.t('admin.userDetail.noneCompanyLevelRole', { defaultValue: "— None (company-level role) —" }) } },
+  { value: 'procurement', get label() { return i18n.t('admin.userDetail.procurement', { defaultValue: "Procurement" }) } },
+  { value: 'finance', get label() { return i18n.t('admin.userDetail.finance', { defaultValue: "Finance" }) } },
+  { value: 'hr', get label() { return i18n.t('admin.userDetail.hr', { defaultValue: "HR" }) } },
+  { value: 'projects', get label() { return i18n.t('admin.userDetail.projects', { defaultValue: "Projects" }) } },
+  { value: 'manufacturing', get label() { return i18n.t('admin.userDetail.manufacturing', { defaultValue: "Manufacturing" }) } },
+  { value: 'rental', get label() { return i18n.t('admin.userDetail.rental', { defaultValue: "Rental" }) } },
+  { value: 'reporting', get label() { return i18n.t('admin.userDetail.reporting', { defaultValue: "Reporting" }) } },
+  { value: 'inventory', get label() { return i18n.t('admin.userDetail.inventory', { defaultValue: "Inventory" }) } },
+  { value: 'interco', get label() { return i18n.t('admin.userDetail.interco', { defaultValue: "Interco" }) } },
 ]
 
 interface UserRole {
@@ -96,14 +98,15 @@ interface UserSessionsData {
 }
 
 const TABS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'roles', label: 'Roles' },
-  { key: 'permissions', label: 'Permissions' },
-  { key: 'sessions', label: 'Sessions' },
-  { key: 'activity', label: 'Activity' },
+  { key: 'overview', get label() { return i18n.t('admin.userDetail.overview', { defaultValue: "Overview" }) } },
+  { key: 'roles', get label() { return i18n.t('admin.userDetail.roles', { defaultValue: "Roles" }) } },
+  { key: 'permissions', get label() { return i18n.t('admin.userDetail.permissions', { defaultValue: "Permissions" }) } },
+  { key: 'sessions', get label() { return i18n.t('admin.userDetail.sessions', { defaultValue: "Sessions" }) } },
+  { key: 'activity', get label() { return i18n.t('admin.userDetail.activity', { defaultValue: "Activity" }) } },
 ]
 
 export default function UserDetail() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { id } = useParams<{ id: string }>()
   const addToast = useToastStore((s) => s.addToast)
@@ -165,7 +168,7 @@ export default function UserDetail() {
   const [unlockUser, { loading: unlocking }] = useMutation(UNLOCK_USER, {
     variables: { userId: id },
     onCompleted: () => {
-      addToast({ type: 'success', message: 'User unlocked' })
+      addToast({ type: 'success', message: t('admin.userDetail.userUnlocked') })
       setConfirmUnlock(false)
       void refetchUser()
     },
@@ -178,7 +181,7 @@ export default function UserDetail() {
   const [resetMFA, { loading: resettingMFA }] = useMutation(RESET_USER_MFA, {
     variables: { userId: id },
     onCompleted: () => {
-      addToast({ type: 'success', message: 'MFA reset' })
+      addToast({ type: 'success', message: t('admin.userDetail.mfaReset') })
       setConfirmResetMFA(false)
       void refetchUser()
     },
@@ -190,7 +193,7 @@ export default function UserDetail() {
 
   const [revokeSession, { loading: revokingSession }] = useMutation(REVOKE_USER_SESSION, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Session revoked' })
+      addToast({ type: 'success', message: t('admin.userDetail.sessionRevoked') })
       setRevokeSessionId(null)
       void refetchSessions()
     },
@@ -203,7 +206,7 @@ export default function UserDetail() {
   const [revokeAllSessions, { loading: revokingAll }] = useMutation(REVOKE_ALL_USER_SESSIONS, {
     variables: { userId: id },
     onCompleted: () => {
-      addToast({ type: 'success', message: 'All sessions revoked' })
+      addToast({ type: 'success', message: t('admin.userDetail.allSessionsRevoked') })
       setConfirmRevokeAll(false)
       void refetchSessions()
     },
@@ -215,7 +218,7 @@ export default function UserDetail() {
 
   const [removeRole, { loading: removingRole }] = useMutation(REMOVE_USER_ROLE, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Role removed' })
+      addToast({ type: 'success', message: t('admin.userDetail.roleRemoved') })
       setRemoveRoleId(null)
       void refetchUser()
     },
@@ -227,7 +230,7 @@ export default function UserDetail() {
 
   const [updateRole, { loading: updatingRole }] = useMutation(UPDATE_USER_ROLE, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Role updated' })
+      addToast({ type: 'success', message: t('admin.userDetail.roleUpdated') })
       setEditingRole(null)
       void refetchUser()
     },
@@ -239,7 +242,7 @@ export default function UserDetail() {
   const [deactivateUser, { loading: deactivating }] = useMutation(DEACTIVATE_USER, {
     variables: { userId: id },
     onCompleted: () => {
-      addToast({ type: 'success', message: 'User deactivated' })
+      addToast({ type: 'success', message: t('admin.userDetail.userDeactivated') })
       void refetchUser()
     },
     onError: (e) => {
@@ -250,7 +253,7 @@ export default function UserDetail() {
   const [activateUser, { loading: activating }] = useMutation(ACTIVATE_USER, {
     variables: { userId: id },
     onCompleted: () => {
-      addToast({ type: 'success', message: 'User activated' })
+      addToast({ type: 'success', message: t('admin.userDetail.userActivated') })
       void refetchUser()
     },
     onError: (e) => {
@@ -260,7 +263,7 @@ export default function UserDetail() {
 
   const [setUserPassword, { loading: settingPassword }] = useMutation(ADMIN_SET_USER_PASSWORD, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Password updated. All sessions have been revoked.' })
+      addToast({ type: 'success', message: t('admin.userDetail.passwordUpdatedAllSessionsHaveBeen') })
       setShowSetPasswordModal(false)
       setPasswordForm({ newPassword: '', confirmPassword: '' })
       setPasswordError('')
@@ -299,7 +302,7 @@ export default function UserDetail() {
     if (failed.length === 0) {
       addToast({
         type: 'success',
-        message: succeeded.length > 1 ? `Assigned ${succeeded.length} module admin roles` : 'Role assigned',
+        message: succeeded.length > 1 ? t('admin.userDetail.assignedRoles', { count: succeeded.length }) : t('admin.userDetail.roleAssigned'),
       })
       setShowAddRoleModal(false)
       setRoleForm({ companyId: '', role: '', module: '', modules: [] })
@@ -311,8 +314,8 @@ export default function UserDetail() {
         type: 'error',
         message:
           succeeded.length > 0
-            ? `Some modules failed to save (${failedLabels}) — the rest were assigned. Try again to retry just the failed ones.`
-            : `Could not assign the role: ${failedLabels}`,
+            ? t('admin.userDetail.someModulesFailed', { labels: failedLabels })
+            : t('admin.userDetail.couldNotAssign', { labels: failedLabels }),
       })
     }
     if (succeeded.length > 0) void refetchUser()
@@ -328,13 +331,13 @@ export default function UserDetail() {
   const roleColumns: Column<UserRole>[] = [
     {
       key: 'companyName',
-      header: 'Company',
+      header: t('admin.userDetail.company'),
       mobilePrimary: true,
       render: (role) => role.companyName,
     },
     {
       key: 'module',
-      header: 'Module',
+      header: t('admin.userDetail.module'),
       mobileSecondary: true,
       render: (role) => (
         <Badge variant="neutral" size="sm">
@@ -344,19 +347,19 @@ export default function UserDetail() {
     },
     {
       key: 'role',
-      header: 'Role',
+      header: t('admin.userDetail.role'),
       mobilePriority: 1,
       render: (role) => (
-        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{role.role}</span>
+        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{enumLabel(role.role)}</span>
       ),
     },
     {
       key: 'isActive',
-      header: 'Status',
+      header: t('admin.userDetail.status'),
       mobilePriority: 2,
       render: (role) => (
         <Badge variant={role.isActive ? 'success' : 'neutral'} size="sm">
-          {role.isActive ? 'Active' : 'Inactive'}
+          {role.isActive ? t('admin.userDetail.active') : t('admin.userDetail.inactive')}
         </Badge>
       ),
     },
@@ -376,7 +379,7 @@ export default function UserDetail() {
                 setEditingRole(role)
               }}
             >
-              Edit
+              {t('admin.userDetail.edit')}
             </Button>
             <Button
               variant="ghost"
@@ -390,7 +393,7 @@ export default function UserDetail() {
                 })
               }
             >
-              {role.isActive ? 'Disable' : 'Enable'}
+              {role.isActive ? t('admin.userDetail.disable') : t('admin.userDetail.enable')}
             </Button>
             <Button
               variant="danger"
@@ -399,7 +402,7 @@ export default function UserDetail() {
                 setRemoveRoleId(role.id)
               }}
             >
-              Remove
+              {t('admin.userDetail.remove')}
             </Button>
           </div>
         ),
@@ -409,15 +412,15 @@ export default function UserDetail() {
   const sessionColumns: Column<UserSession>[] = [
     {
       key: 'deviceName',
-      header: 'Device',
+      header: t('admin.userDetail.device'),
       mobilePrimary: true,
       render: (s) => (
         <span style={{ color: theme.textPrimary }}>
           {s.deviceName}
           {s.isCurrent && (
-            <span style={{ marginLeft: '8px' }}>
+            <span style={{ marginInlineStart: '8px' }}>
               <Badge variant="accent" size="sm">
-                Current
+                {t('admin.userDetail.current')}
               </Badge>
             </span>
           )}
@@ -426,7 +429,7 @@ export default function UserDetail() {
     },
     {
       key: 'platform',
-      header: 'Platform',
+      header: t('admin.userDetail.platform'),
       mobileSecondary: true,
       render: (s) => s.platform,
     },
@@ -450,7 +453,7 @@ export default function UserDetail() {
     },
     {
       key: 'createdAt',
-      header: 'Created',
+      header: t('admin.userDetail.created'),
       mobilePriority: 2,
       render: (s) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -460,7 +463,7 @@ export default function UserDetail() {
     },
     {
       key: 'expiresAt',
-      header: 'Expires',
+      header: t('admin.userDetail.expires'),
       mobilePriority: 3,
       render: (s) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -482,7 +485,7 @@ export default function UserDetail() {
             }}
             loading={revokingSession && revokeSessionId === s.id}
           >
-            Revoke
+            {t('admin.userDetail.revoke')}
           </Button>
         ) : null,
     },
@@ -503,7 +506,7 @@ export default function UserDetail() {
   if (!user) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: theme.textMuted }}>User not found.</p>
+        <p style={{ color: theme.textMuted }}>{t('admin.userDetail.userNotFound')}</p>
       </div>
     )
   }
@@ -516,7 +519,7 @@ export default function UserDetail() {
         backLabel="Users"
         status={
           <Badge variant={user.isActive ? 'success' : 'neutral'}>
-            {user.isActive ? 'Active' : 'Inactive'}
+            {user.isActive ? t('admin.userDetail.active') : t('admin.userDetail.inactive')}
           </Badge>
         }
         actions={
@@ -530,7 +533,7 @@ export default function UserDetail() {
                 }}
                 loading={unlocking}
               >
-                Unlock
+                {t('admin.userDetail.unlock')}
               </Button>
             )}
             {user.mfaEnabled && (
@@ -542,7 +545,7 @@ export default function UserDetail() {
                 }}
                 loading={resettingMFA}
               >
-                Reset MFA
+                {t('admin.userDetail.resetMfa')}
               </Button>
             )}
             <Button
@@ -554,7 +557,7 @@ export default function UserDetail() {
                 setShowSetPasswordModal(true)
               }}
             >
-              Set Password
+              {t('admin.userDetail.setPassword')}
             </Button>
             {user.isActive ? (
               <Button
@@ -565,7 +568,7 @@ export default function UserDetail() {
                   setConfirmDeactivate(true)
                 }}
               >
-                Deactivate
+                {t('admin.userDetail.deactivate')}
               </Button>
             ) : (
               <Button
@@ -574,7 +577,7 @@ export default function UserDetail() {
                 loading={activating}
                 onClick={() => void activateUser()}
               >
-                Activate
+                {t('admin.userDetail.activate')}
               </Button>
             )}
           </div>
@@ -603,7 +606,7 @@ export default function UserDetail() {
                   marginBottom: '12px',
                 }}
               >
-                Account Info
+                {t('admin.userDetail.accountInfo')}
               </p>
               <dl
                 style={{
@@ -613,25 +616,25 @@ export default function UserDetail() {
                   fontSize: '13px',
                 }}
               >
-                <dt style={{ color: theme.textMuted }}>Email</dt>
+                <dt style={{ color: theme.textMuted }}>{t('admin.userDetail.email')}</dt>
                 <dd style={{ color: theme.textPrimary, margin: 0 }}>{user.email}</dd>
-                <dt style={{ color: theme.textMuted }}>Status</dt>
+                <dt style={{ color: theme.textMuted }}>{t('admin.userDetail.status')}</dt>
                 <dd style={{ margin: 0 }}>
                   <Badge variant={user.isActive ? 'success' : 'neutral'} size="sm">
-                    {user.isActive ? 'Active' : 'Inactive'}
+                    {user.isActive ? t('admin.userDetail.active') : t('admin.userDetail.inactive')}
                   </Badge>
                 </dd>
-                <dt style={{ color: theme.textMuted }}>MFA</dt>
+                <dt style={{ color: theme.textMuted }}>{t('admin.userDetail.mfa')}</dt>
                 <dd style={{ margin: 0 }}>
                   <Badge variant={user.mfaEnabled ? 'success' : 'warning'} size="sm">
-                    {user.mfaEnabled ? 'Enabled' : 'Disabled'}
+                    {user.mfaEnabled ? t('admin.userDetail.enabled') : t('admin.userDetail.disabled')}
                   </Badge>
                 </dd>
-                <dt style={{ color: theme.textMuted }}>Last Login</dt>
+                <dt style={{ color: theme.textMuted }}>{t('admin.userDetail.lastLogin')}</dt>
                 <dd style={{ color: theme.textMuted, margin: 0, fontSize: '12px' }}>
-                  {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Never'}
+                  {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : t('admin.userDetail.never')}
                 </dd>
-                <dt style={{ color: theme.textMuted }}>Created</dt>
+                <dt style={{ color: theme.textMuted }}>{t('admin.userDetail.created')}</dt>
                 <dd style={{ color: theme.textMuted, margin: 0, fontSize: '12px' }}>
                   {new Date(user.createdAt).toLocaleDateString()}
                 </dd>
@@ -648,7 +651,7 @@ export default function UserDetail() {
                   marginBottom: '12px',
                 }}
               >
-                Security
+                {t('admin.userDetail.security')}
               </p>
               <dl
                 style={{
@@ -658,7 +661,7 @@ export default function UserDetail() {
                   fontSize: '13px',
                 }}
               >
-                <dt style={{ color: theme.textMuted }}>Failed Logins</dt>
+                <dt style={{ color: theme.textMuted }}>{t('admin.userDetail.failedLogins')}</dt>
                 <dd
                   style={{
                     color: user.failedLoginAttempts > 0 ? theme.danger : theme.textMuted,
@@ -667,7 +670,7 @@ export default function UserDetail() {
                 >
                   {user.failedLoginAttempts}
                 </dd>
-                <dt style={{ color: theme.textMuted }}>Locked Until</dt>
+                <dt style={{ color: theme.textMuted }}>{t('admin.userDetail.lockedUntil')}</dt>
                 <dd
                   style={{
                     color: isLocked ? theme.danger : theme.textMuted,
@@ -702,14 +705,14 @@ export default function UserDetail() {
                     setShowAddRoleModal(true)
                   }}
                 >
-                  Add role
+                  {t('admin.userDetail.addRole')}
                 </Button>
               </div>
             )}
             {user.roles.length ? (
               <Table columns={roleColumns} data={user.roles} rowKey="id" />
             ) : (
-              <EmptyState title="No roles" message="This user has no assigned roles." />
+              <EmptyState title={t('admin.userDetail.noRoles')} message={t('admin.userDetail.thisUserHasNoAssignedRoles')} />
             )}
           </Card>
         )}
@@ -717,7 +720,7 @@ export default function UserDetail() {
         {activeTab === 'permissions' && (
           <Card padding="none">
             <Suspense
-              fallback={<div style={{ padding: '20px', color: theme.textMuted }}>Loading…</div>}
+              fallback={<div style={{ padding: '20px', color: theme.textMuted }}>{t('admin.userDetail.loading')}</div>}
             >
               <UserRolesTab userId={user.id} />
             </Suspense>
@@ -736,7 +739,7 @@ export default function UserDetail() {
               }}
             >
               <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                Active Sessions
+                {t('admin.userDetail.activeSessions')}
               </h3>
               {sessions.length > 0 && (
                 <Button
@@ -747,7 +750,7 @@ export default function UserDetail() {
                   }}
                   loading={revokingAll}
                 >
-                  Revoke All
+                  {t('admin.userDetail.revokeAll')}
                 </Button>
               )}
             </div>
@@ -758,7 +761,7 @@ export default function UserDetail() {
             ) : sessions.length ? (
               <Table columns={sessionColumns} data={sessions} rowKey="id" />
             ) : (
-              <EmptyState title="No sessions" message="This user has no active sessions." />
+              <EmptyState title={t('admin.userDetail.noSessions')} message={t('admin.userDetail.thisUserHasNoActiveSessions')} />
             )}
           </Card>
         )}
@@ -766,7 +769,7 @@ export default function UserDetail() {
         {activeTab === 'activity' && (
           <Card padding="md">
             <p style={{ color: theme.textMuted, fontSize: '13px' }}>
-              Activity log will be shown here. Use the Audit Log page to filter by user.
+              {t('admin.userDetail.activityLogWillBeShownHere')}
             </p>
           </Card>
         )}
@@ -780,9 +783,9 @@ export default function UserDetail() {
         onConfirm={() => {
           void unlockUser()
         }}
-        title="Unlock User"
-        message={`Unlock ${user.email}? This will clear their failed login attempts and lock.`}
-        confirmLabel="Unlock"
+        title={t('admin.userDetail.unlockUser')}
+        message={t('admin.userDetail.unlockConfirm', { email: user.email })}
+        confirmLabel={t('admin.userDetail.unlock')}
         confirmVariant="primary"
         loading={unlocking}
       />
@@ -795,9 +798,9 @@ export default function UserDetail() {
         onConfirm={() => {
           void resetMFA()
         }}
-        title="Reset MFA"
-        message={`Reset MFA for ${user.email}? They will need to re-enroll on next login.`}
-        confirmLabel="Reset MFA"
+        title={t('admin.userDetail.resetMfa')}
+        message={t('admin.userDetail.resetMfaConfirm', { email: user.email })}
+        confirmLabel={t('admin.userDetail.resetMfa')}
         confirmVariant="danger"
         loading={resettingMFA}
       />
@@ -811,9 +814,9 @@ export default function UserDetail() {
           void deactivateUser()
           setConfirmDeactivate(false)
         }}
-        title="Deactivate User"
-        message={`Deactivate ${user.email}? They will lose access immediately.`}
-        confirmLabel="Deactivate"
+        title={t('admin.userDetail.deactivateUser')}
+        message={t('admin.userDetail.deactivateConfirm', { email: user.email })}
+        confirmLabel={t('admin.userDetail.deactivate')}
         confirmVariant="danger"
         loading={deactivating}
       />
@@ -826,9 +829,9 @@ export default function UserDetail() {
         onConfirm={() => {
           void revokeAllSessions()
         }}
-        title="Revoke All Sessions"
-        message={`Revoke all sessions for ${user.email}? They will be logged out from all devices.`}
-        confirmLabel="Revoke All"
+        title={t('admin.userDetail.revokeAllSessions')}
+        message={t('admin.userDetail.revokeAllConfirm', { email: user.email })}
+        confirmLabel={t('admin.userDetail.revokeAll')}
         confirmVariant="danger"
         loading={revokingAll}
       />
@@ -841,9 +844,9 @@ export default function UserDetail() {
         onConfirm={() => {
           if (revokeSessionId) void revokeSession({ variables: { sessionId: revokeSessionId } })
         }}
-        title="Revoke Session"
-        message="Revoke this session? The user will be logged out on that device."
-        confirmLabel="Revoke"
+        title={t('admin.userDetail.revokeSession')}
+        message={t('admin.userDetail.revokeThisSessionTheUserWill')}
+        confirmLabel={t('admin.userDetail.revoke')}
         confirmVariant="danger"
         loading={revokingSession}
       />
@@ -856,9 +859,9 @@ export default function UserDetail() {
         onConfirm={() => {
           if (removeRoleId) void removeRole({ variables: { roleId: removeRoleId } })
         }}
-        title="Remove Role"
-        message="Remove this role from the user?"
-        confirmLabel="Remove"
+        title={t('admin.userDetail.removeRole')}
+        message={t('admin.userDetail.removeThisRoleFromTheUser')}
+        confirmLabel={t('admin.userDetail.remove')}
         confirmVariant="danger"
         loading={removingRole}
       />
@@ -866,16 +869,18 @@ export default function UserDetail() {
       {showSetPasswordModal && (
         <Modal
           open={showSetPasswordModal}
-          title="Set Password"
+          title={t('admin.userDetail.setPassword')}
           onClose={() => {
             setShowSetPasswordModal(false)
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '360px' }}>
             <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
-              Set a new password for{' '}
-              <strong style={{ color: theme.textPrimary }}>{user.email}</strong>. All active
-              sessions will be revoked.
+              <Trans
+                i18nKey="admin.userDetail.setPasswordFor"
+                values={{ email: user.email }}
+                components={{ strong: <strong style={{ color: theme.textPrimary }} /> }}
+              />
             </p>
             <div>
               <label
@@ -886,7 +891,7 @@ export default function UserDetail() {
                   marginBottom: '4px',
                 }}
               >
-                New Password *
+                {t('admin.userDetail.newPassword')}
               </label>
               <input
                 type="password"
@@ -916,7 +921,7 @@ export default function UserDetail() {
                   marginBottom: '4px',
                 }}
               >
-                Confirm Password *
+                {t('admin.userDetail.confirmPassword')}
               </label>
               <input
                 type="password"
@@ -947,7 +952,7 @@ export default function UserDetail() {
                   setShowSetPasswordModal(false)
                 }}
               >
-                Cancel
+                {t('admin.userDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -955,7 +960,7 @@ export default function UserDetail() {
                 disabled={!passwordForm.newPassword || !passwordForm.confirmPassword}
                 onClick={() => {
                   if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-                    setPasswordError('Passwords do not match')
+                    setPasswordError(t('admin.userDetail.passwordsMismatch'))
                     return
                   }
                   void setUserPassword({
@@ -963,7 +968,7 @@ export default function UserDetail() {
                   })
                 }}
               >
-                Set Password
+                {t('admin.userDetail.setPassword')}
               </Button>
             </div>
           </div>
@@ -973,7 +978,7 @@ export default function UserDetail() {
       {showAddRoleModal && (
         <Modal
           open={showAddRoleModal}
-          title="Add Role"
+          title={t('admin.userDetail.addRole2')}
           onClose={() => {
             setShowAddRoleModal(false)
           }}
@@ -988,7 +993,7 @@ export default function UserDetail() {
                   marginBottom: '4px',
                 }}
               >
-                Company *
+                {t('admin.userDetail.company2')}
               </label>
               <SearchableSelect
                 value={roleForm.companyId}
@@ -996,7 +1001,7 @@ export default function UserDetail() {
                   setRoleForm({ ...roleForm, companyId: v })
                 }}
                 options={companyOptions}
-                placeholder="Select company…"
+                placeholder={t('admin.userDetail.selectCompany')}
               />
             </div>
             <div>
@@ -1008,7 +1013,7 @@ export default function UserDetail() {
                   marginBottom: '4px',
                 }}
               >
-                Role *
+                {t('admin.userDetail.role2')}
               </label>
               <SearchableSelect
                 value={roleForm.role}
@@ -1016,7 +1021,7 @@ export default function UserDetail() {
                   setRoleForm({ ...roleForm, role: v, module: '', modules: [] })
                 }}
                 options={ROLE_OPTIONS}
-                placeholder="Select role…"
+                placeholder={t('admin.userDetail.selectRole')}
               />
             </div>
             <div>
@@ -1028,7 +1033,7 @@ export default function UserDetail() {
                   marginBottom: '4px',
                 }}
               >
-                Module{roleForm.role === 'module_admin' ? 's *' : ' (optional)'}
+                {roleForm.role === 'module_admin' ? t('admin.userDetail.modulesRequired') : t('admin.userDetail.moduleOptional')}
               </label>
               {roleForm.role === 'module_admin' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1055,7 +1060,7 @@ export default function UserDetail() {
                     setRoleForm({ ...roleForm, module: v })
                   }}
                   options={MODULE_OPTIONS}
-                  placeholder="Select module…"
+                  placeholder={t('admin.userDetail.selectModule')}
                 />
               )}
             </div>
@@ -1066,7 +1071,7 @@ export default function UserDetail() {
                   setShowAddRoleModal(false)
                 }}
               >
-                Cancel
+                {t('admin.userDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1078,7 +1083,7 @@ export default function UserDetail() {
                 }
                 onClick={() => void handleAddRole()}
               >
-                Add role
+                {t('admin.userDetail.addRole')}
               </Button>
             </div>
           </div>
@@ -1088,7 +1093,7 @@ export default function UserDetail() {
       {editingRole && (
         <Modal
           open={!!editingRole}
-          title="Edit Role"
+          title={t('admin.userDetail.editRole')}
           onClose={() => {
             setEditingRole(null)
           }}
@@ -1103,7 +1108,7 @@ export default function UserDetail() {
                   marginBottom: '4px',
                 }}
               >
-                Company
+                {t('admin.userDetail.company')}
               </label>
               <div style={{ fontSize: '13px', color: theme.textPrimary, padding: '8px 0' }}>
                 {editingRole.companyName}
@@ -1118,7 +1123,7 @@ export default function UserDetail() {
                   marginBottom: '4px',
                 }}
               >
-                Role *
+                {t('admin.userDetail.role2')}
               </label>
               <SearchableSelect
                 value={editRoleForm.role}
@@ -1130,7 +1135,7 @@ export default function UserDetail() {
                   })
                 }}
                 options={ROLE_OPTIONS}
-                placeholder="Select role…"
+                placeholder={t('admin.userDetail.selectRole')}
               />
             </div>
             <div>
@@ -1142,7 +1147,7 @@ export default function UserDetail() {
                   marginBottom: '4px',
                 }}
               >
-                Module{editRoleForm.role === 'module_admin' ? ' *' : ' (optional)'}
+                {editRoleForm.role === 'module_admin' ? t('admin.userDetail.moduleRequired') : t('admin.userDetail.moduleOptional')}
               </label>
               <SearchableSelect
                 value={editRoleForm.module}
@@ -1150,7 +1155,7 @@ export default function UserDetail() {
                   setEditRoleForm({ ...editRoleForm, module: v })
                 }}
                 options={MODULE_OPTIONS}
-                placeholder="Select module…"
+                placeholder={t('admin.userDetail.selectModule')}
               />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -1160,7 +1165,7 @@ export default function UserDetail() {
                   setEditingRole(null)
                 }}
               >
-                Cancel
+                {t('admin.userDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1178,7 +1183,7 @@ export default function UserDetail() {
                   })
                 }
               >
-                Save
+                {t('admin.userDetail.save')}
               </Button>
             </div>
           </div>

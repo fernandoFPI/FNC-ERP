@@ -1,3 +1,5 @@
+import { tl } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useRef, useState } from 'react'
 import { useQuery } from '@apollo/client'
 import axios from 'axios'
@@ -39,6 +41,7 @@ interface ImportResult {
 }
 
 export default function InventoryImportPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const user = useAuthStore((s) => s.user)
 
@@ -87,7 +90,7 @@ export default function InventoryImportPage() {
       setResult(data)
       setStatus('done')
     } catch (err) {
-      let msg = 'Import failed'
+      let msg = t('settings.invImport.importFailed')
       if (axios.isAxiosError(err)) {
         const body = err.response?.data as { error?: { message?: string } } | undefined
         msg = body?.error?.message ?? err.message
@@ -108,19 +111,19 @@ export default function InventoryImportPage() {
   const errorColumns: Column<ImportRowError>[] = [
     {
       key: 'sku',
-      header: 'SKU',
+      header: t('settings.invImport.sku'),
       mobilePrimary: true,
       render: (e) => <span style={{ fontFamily: 'monospace', color: theme.accent }}>{e.sku}</span>,
     },
     {
       key: 'name',
-      header: 'Name',
+      header: t('settings.invImport.name'),
       mobileSecondary: true,
       render: (e) => <span style={{ color: theme.textPrimary }}>{e.name}</span>,
     },
     {
       key: 'message',
-      header: 'Error',
+      header: t('settings.invImport.error'),
       mobilePriority: 1,
       render: (e) => <span style={{ color: '#dc2626' }}>{e.message}</span>,
     },
@@ -129,8 +132,8 @@ export default function InventoryImportPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '860px', margin: '0 auto' }}>
       <PageHeader
-        title="Inventory Import"
-        subtitle="Upload a store inventory Excel file to create or update products and stock balances"
+        title={t('settings.invImport.inventoryImport')}
+        subtitle={t('settings.invImport.uploadAStoreInventoryExcelFile')}
       />
 
       <Card style={{ marginTop: '20px', padding: '24px' }}>
@@ -145,7 +148,7 @@ export default function InventoryImportPage() {
               marginBottom: '6px',
             }}
           >
-            Excel File (.xlsx)
+            {t('settings.invImport.excelFileXlsx')}
           </label>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <input
@@ -174,28 +177,27 @@ export default function InventoryImportPage() {
                 fontWeight: 500,
               }}
             >
-              Choose File
+              {t('settings.invImport.chooseFile')}
             </button>
             <span style={{ fontSize: '13px', color: file ? theme.textPrimary : theme.textMuted }}>
-              {file ? file.name : 'No file selected'}
+              {file ? file.name : t('settings.invImport.noFileSelected')}
             </span>
           </div>
           <p style={{ marginTop: '6px', fontSize: '11px', color: theme.textMuted }}>
-            Expected format: multi-sheet workbook, one sheet per store (Arabic or English tab
-            names both work for known warehouses)
+            {t('settings.invImport.expectedFormatMultiSheetWorkbookOne')}
           </p>
         </div>
 
         {/* Location selector */}
         <div style={{ marginBottom: '24px', maxWidth: '340px' }}>
           <Select
-            label="Target Stock Location"
+            label={t('settings.invImport.targetStockLocation')}
             value={locationId}
             onChange={(e) => {
               setLocationId(e.target.value)
             }}
           >
-            <option value="">— Select location —</option>
+            <option value="">{t('settings.invImport.selectLocation')}</option>
             {locations.map((loc) => (
               <option key={loc.id} value={loc.id}>
                 {loc.name} ({loc.code})
@@ -214,11 +216,11 @@ export default function InventoryImportPage() {
             loading={status === 'loading'}
             disabled={!file || !locationId || status === 'loading'}
           >
-            {status === 'loading' ? 'Importing…' : 'Run Import'}
+            {status === 'loading' ? t('settings.invImport.importing') : t('settings.invImport.runImport')}
           </Button>
           {(status === 'done' || status === 'error') && (
             <Button variant="ghost" onClick={reset}>
-              Reset
+              {t('settings.invImport.reset')}
             </Button>
           )}
         </div>
@@ -253,7 +255,7 @@ export default function InventoryImportPage() {
               marginBottom: '16px',
             }}
           >
-            Import Complete
+            {t('settings.invImport.importComplete')}
           </div>
 
           {/* Summary KPIs */}
@@ -294,7 +296,7 @@ export default function InventoryImportPage() {
                     letterSpacing: '0.06em',
                   }}
                 >
-                  {label}
+                  {tl('settings.invImport.statOpts', label, label)}
                 </div>
                 <div
                   style={{
@@ -323,9 +325,9 @@ export default function InventoryImportPage() {
               }}
             >
               <div style={{ fontWeight: 600, fontSize: '13px', color: '#92400e', marginBottom: '6px' }}>
-                Skipped sheets ({result.skippedSheets.length})
+                {t('settings.invImport.skippedSheets', { count: result.skippedSheets.length })}
               </div>
-              <ul style={{ margin: 0, paddingLeft: '18px' }}>
+              <ul style={{ margin: 0, paddingInlineStart: '18px' }}>
                 {result.skippedSheets.map((s) => (
                   <li key={s.sheet} style={{ fontSize: '12px', color: '#92400e' }}>
                     <strong>{s.sheet}</strong> — {s.reason}
@@ -341,7 +343,7 @@ export default function InventoryImportPage() {
               <div
                 style={{ fontWeight: 600, fontSize: '13px', color: '#991b1b', marginBottom: '8px' }}
               >
-                Failed rows ({result.errors.length})
+                {t('settings.invImport.failedRows', { count: result.errors.length })}
               </div>
               <div
                 style={{
@@ -353,7 +355,7 @@ export default function InventoryImportPage() {
                 <Table
                   columns={errorColumns}
                   data={result.errors}
-                  emptyMessage="No failed rows"
+                  emptyMessage={t('settings.invImport.noFailedRows')}
                   maxHeight="60vh"
                   stickyHeader
                 />

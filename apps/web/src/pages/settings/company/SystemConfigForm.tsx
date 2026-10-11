@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useMutation } from '@apollo/client'
 import { UPDATE_COMPANY_CONFIGURATION } from '../../../graphql/admin'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -27,6 +28,7 @@ interface Props {
 }
 
 export function SystemConfigForm({ companyId, initialValues, onSaved }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [values, setValues] = useState<SystemConfig>(initialValues)
   const [saved, setSaved] = useState(false)
@@ -117,7 +119,7 @@ export function SystemConfigForm({ companyId, initialValues, onSaved }: Props) {
 
   return (
     <Card style={{ padding: '24px' }}>
-      {section('Fiscal year')}
+      {section(t('settings.sysconfig.fiscalYear'))}
       <div
         style={{
           display: 'grid',
@@ -125,11 +127,11 @@ export function SystemConfigForm({ companyId, initialValues, onSaved }: Props) {
           gap: '12px',
         }}
       >
-        {numField('Start month (1–12)', 'fiscalYearStartMonth', '1')}
-        {numField('Start day', 'fiscalYearStartDay', '1')}
+        {numField(t('settings.sysconfig.startMonth'), 'fiscalYearStartMonth', '1')}
+        {numField(t('settings.sysconfig.startDay'), 'fiscalYearStartDay', '1')}
       </div>
 
-      {section('Currency defaults')}
+      {section(t('settings.sysconfig.currencyDefaults'))}
       <div
         style={{
           display: 'grid',
@@ -137,12 +139,12 @@ export function SystemConfigForm({ companyId, initialValues, onSaved }: Props) {
           gap: '12px',
         }}
       >
-        {textField('Default currency', 'defaultCurrency', 'USD')}
-        {textField('Default PO currency', 'defaultPOCurrency', 'USD')}
-        {numField('Default payment terms (days)', 'defaultPaymentTermsDays', '30')}
+        {textField(t('settings.sysconfig.defaultCurrency'), 'defaultCurrency', 'USD')}
+        {textField(t('settings.sysconfig.defaultPoCurrency'), 'defaultPOCurrency', 'USD')}
+        {numField(t('settings.sysconfig.defaultTerms'), 'defaultPaymentTermsDays', '30')}
       </div>
 
-      {section('Iraq tax configuration')}
+      {section(t('settings.sysconfig.iraqTax'))}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
         <input
           type="checkbox"
@@ -153,7 +155,7 @@ export function SystemConfigForm({ companyId, initialValues, onSaved }: Props) {
           }}
         />
         <label htmlFor="income-tax" style={{ fontSize: '13px', color: theme.textPrimary }}>
-          Income tax enabled
+          {t('settings.sysconfig.incomeTaxEnabled')}
         </label>
       </div>
       <div
@@ -163,11 +165,11 @@ export function SystemConfigForm({ companyId, initialValues, onSaved }: Props) {
           gap: '12px',
         }}
       >
-        {numField('Employee social security rate (%)', 'socialSecurityRate', '5')}
-        {numField('Employer social security rate (%)', 'employerSocialSecurityRate', '12')}
+        {numField(t('settings.sysconfig.empSs'), 'socialSecurityRate', '5')}
+        {numField(t('settings.sysconfig.erSs'), 'employerSocialSecurityRate', '12')}
       </div>
 
-      {section('WHT default')}
+      {section(t('settings.sysconfig.whtDefault'))}
       <div
         style={{
           display: 'grid',
@@ -175,12 +177,12 @@ export function SystemConfigForm({ companyId, initialValues, onSaved }: Props) {
           gap: '12px',
         }}
       >
-        {numField('Default WHT rate (%)', 'defaultWHTRate', '3')}
+        {numField(t('settings.sysconfig.whtRate'), 'defaultWHTRate', '3')}
       </div>
 
-      {section('Email configuration')}
+      {section(t('settings.sysconfig.emailConfig'))}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {textField('From address', 'companyEmailFrom', 'noreply@company.com')}
+        {textField(t('settings.sysconfig.fromAddress'), 'companyEmailFrom', 'noreply@company.com')}
         <div>
           <label
             style={{
@@ -190,7 +192,7 @@ export function SystemConfigForm({ companyId, initialValues, onSaved }: Props) {
               marginBottom: '4px',
             }}
           >
-            Email signature
+            {t('settings.sysconfig.emailSignature')}
           </label>
           <textarea
             value={values.companyEmailSignature ?? ''}
@@ -198,7 +200,7 @@ export function SystemConfigForm({ companyId, initialValues, onSaved }: Props) {
               set('companyEmailSignature', e.target.value)
             }}
             rows={3}
-            placeholder="Appended to all outgoing emails"
+            placeholder={t('settings.sysconfig.appendedToAllOutgoingEmails')}
             style={{
               width: '100%',
               padding: '8px',
@@ -215,14 +217,14 @@ export function SystemConfigForm({ companyId, initialValues, onSaved }: Props) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
         {saved && (
-          <span style={{ fontSize: '12px', color: theme.accent, alignSelf: 'center' }}>Saved.</span>
+          <span style={{ fontSize: '12px', color: theme.accent, alignSelf: 'center' }}>{t('settings.sysconfig.saved')}</span>
         )}
         <Button
           variant="primary"
           loading={loading}
           onClick={() => void updateConfig({ variables: { companyId, input: values } })}
         >
-          Save configuration
+          {t('settings.sysconfig.saveConfiguration')}
         </Button>
       </div>
     </Card>
