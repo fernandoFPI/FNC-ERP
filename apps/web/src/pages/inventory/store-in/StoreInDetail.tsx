@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client'
@@ -124,6 +126,7 @@ const fmtAmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export default function StoreInDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -201,7 +204,7 @@ export default function StoreInDetail() {
     ConfirmReceiptMutationVariables
   >(CONFIRM_RECEIPT, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Receipt confirmed — inventory updated' })
+      addToast({ type: 'success', message: t('inv.storeInDetail.receiptConfirmedInventoryUpdated') })
       setConfirmOpen(false)
       void refetch()
     },
@@ -215,7 +218,7 @@ export default function StoreInDetail() {
     CancelReceiptMutationVariables
   >(CANCEL_RECEIPT, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Draft receipt cancelled' })
+      addToast({ type: 'success', message: t('inv.storeInDetail.draftReceiptCancelled') })
       setCancelOpen(false)
       navigate('/inventory/store-in')
     },
@@ -229,7 +232,7 @@ export default function StoreInDetail() {
     ReverseReceiptMutationVariables
   >(REVERSE_RECEIPT, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Receipt reversed — stock and PO quantities rolled back' })
+      addToast({ type: 'success', message: t('inv.storeInDetail.receiptReversedStockAndPoQuantities') })
       setReverseOpen(false)
       setReverseReason('')
       void refetch()
@@ -240,15 +243,15 @@ export default function StoreInDetail() {
   })
 
   if (loading && !receipt)
-    return <div style={{ padding: '48px', color: theme.textMuted }}>Loading…</div>
+    return <div style={{ padding: '48px', color: theme.textMuted }}>{t('inv.storeInDetail.loading')}</div>
   if (error)
     return (
       <div style={{ padding: '48px', color: '#991b1b' }}>
-        Couldn't load this Store In record: {error.message}
+        {t('inv.storeInDetail.couldntLoad', { message: error.message })}
       </div>
     )
   if (!receipt)
-    return <div style={{ padding: '48px', color: theme.textMuted }}>Store In record not found.</div>
+    return <div style={{ padding: '48px', color: theme.textMuted }}>{t('inv.storeInDetail.storeInRecordNotFound')}</div>
   // Nested function declarations below don't retain the null-check
   // narrowing above (TS resets narrowing at function boundaries), so
   // capture receipt in a variable whose declared type is already non-null.
@@ -283,7 +286,7 @@ export default function StoreInDetail() {
       variables: {
         receiptId: loadedReceipt.id,
         fileId,
-        label: kind === 'vendor_receipt' ? 'Vendor Receipt' : 'Materials Received',
+        label: kind === 'vendor_receipt' ? t('inv.storeInDetail.vendorReceipt') : t('inv.storeInDetail.materialsReceived'),
       },
     })
   }
@@ -296,7 +299,7 @@ export default function StoreInDetail() {
         await uploadOneFile(file, kind)
       }
     } catch (err) {
-      addToast({ type: 'error', message: apiErrMsg(err, 'Photo upload failed') })
+      addToast({ type: 'error', message: apiErrMsg(err, t('inv.storeInDetail.photoUploadFailed')) })
     } finally {
       // Always refetch, even after a mid-batch failure — files uploaded
       // before the one that failed are already attached server-side and
@@ -325,7 +328,7 @@ export default function StoreInDetail() {
     try {
       const { data: dlData } = await getDownloadUrl({ variables: { fileId: photo.fileId } })
       const url = dlData?.fileDownloadUrl.downloadUrl
-      if (!url) throw new Error('No download URL')
+      if (!url) throw new Error(t('inv.storeInDetail.noDownloadUrl'))
       const a = document.createElement('a')
       a.href = url
       a.download = photo.originalFilename
@@ -334,7 +337,7 @@ export default function StoreInDetail() {
       a.click()
       document.body.removeChild(a)
     } catch (err) {
-      addToast({ type: 'error', message: apiErrMsg(err, 'Download failed') })
+      addToast({ type: 'error', message: apiErrMsg(err, t('inv.storeInDetail.downloadFailed')) })
     }
   }
 
@@ -345,7 +348,7 @@ export default function StoreInDetail() {
       })
       await refetch()
     } catch (err) {
-      addToast({ type: 'error', message: apiErrMsg(err, 'Remove failed') })
+      addToast({ type: 'error', message: apiErrMsg(err, t('inv.storeInDetail.removeFailed')) })
     }
   }
 
@@ -419,7 +422,7 @@ export default function StoreInDetail() {
                   {p.originalFilename}
                 </span>
                 <Button variant="ghost" size="sm" onClick={() => void handleDownload(p)}>
-                  Download
+                  {t('inv.storeInDetail.download')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -428,7 +431,7 @@ export default function StoreInDetail() {
                   disabled={detaching}
                   onClick={() => void handleRemovePhoto(p)}
                 >
-                  Remove
+                  {t('inv.storeInDetail.remove')}
                 </Button>
               </div>
             ))}
@@ -444,7 +447,7 @@ export default function StoreInDetail() {
               openCamera(kind)
             }}
           >
-            📷 Take Photo
+            {t('inv.storeInDetail.takePhoto')}
           </Button>
           <Button
             type="button"
@@ -455,11 +458,11 @@ export default function StoreInDetail() {
               openGallery(kind)
             }}
           >
-            + Add Photo / PDF
+            {t('inv.storeInDetail.addPhotoPdf')}
           </Button>
         </div>
         <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-          {hint} Or drag &amp; drop files onto this section.
+          {t('inv.storeInDetail.dragDropHint', { hint })}
         </div>
       </div>
     )
@@ -487,7 +490,7 @@ export default function StoreInDetail() {
   const columns: Column<ReceiptLine>[] = [
     {
       key: 'product',
-      header: 'Item',
+      header: t('inv.storeInDetail.item'),
       render: (l) => (
         <div>
           <div style={{ color: theme.textPrimary, fontWeight: 500 }}>
@@ -495,7 +498,7 @@ export default function StoreInDetail() {
           </div>
           {catalogNameDiffers(l) && (
             <div style={{ fontSize: '11px', color: theme.warning }}>
-              Catalog item: {l.product_name}
+              {t('inv.storeInDetail.catalogItem', { name: l.product_name })}
             </div>
           )}
           {l.sku && <div style={{ fontSize: '11px', color: theme.textMuted }}>{l.sku}</div>}
@@ -504,7 +507,7 @@ export default function StoreInDetail() {
     },
     {
       key: 'qty',
-      header: 'Qty',
+      header: t('inv.storeInDetail.qty'),
       render: (l) => (
         <span style={{ fontVariantNumeric: 'tabular-nums' }}>
           {l.qty_received} {l.uom ?? ''}
@@ -513,7 +516,7 @@ export default function StoreInDetail() {
     },
     {
       key: 'unitPrice',
-      header: 'Unit Price',
+      header: t('inv.storeInDetail.unitPrice'),
       render: (l) => (
         <span style={{ fontVariantNumeric: 'tabular-nums' }}>
           {fmtAmt(parseFloat(l.unit_price ?? '0'))} {l.currency_code ?? baseCcy}
@@ -522,7 +525,7 @@ export default function StoreInDetail() {
     },
     {
       key: 'total',
-      header: 'Total',
+      header: t('inv.storeInDetail.total'),
       render: (l) => (
         <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
           {fmtAmt(lineTotalNative(l))} {l.currency_code ?? baseCcy}
@@ -535,18 +538,18 @@ export default function StoreInDetail() {
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1100px' }}>
       <PageHeader
         title={receipt.receipt_number ?? receipt.id.slice(0, 8)}
-        subtitle={`${receipt.po_number ? `PO ${receipt.po_number}` : 'No linked PO'} • ${receipt.receipt_date?.slice(0, 10) ?? '—'}`}
+        subtitle={`${receipt.po_number ? t('inv.storeInDetail.subtitlePo', { number: receipt.po_number }) : t('inv.storeInDetail.noLinkedPo')} • ${receipt.receipt_date?.slice(0, 10) ?? '—'}`}
         backPath="/inventory/store-in"
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <Badge variant={STATUS_VARIANT[receipt.status] ?? 'neutral'}>{receipt.status}</Badge>
+            <Badge variant={STATUS_VARIANT[receipt.status] ?? 'neutral'}>{enumLabel(receipt.status)}</Badge>
             <Button
               variant="secondary"
               onClick={() => {
                 setShowPrintModal(true)
               }}
             >
-              Print
+              {t('inv.storeInDetail.print')}
             </Button>
             {receipt.status === 'confirmed' && canReverse && (
               <Button
@@ -555,7 +558,7 @@ export default function StoreInDetail() {
                   setReverseOpen(true)
                 }}
               >
-                Reverse Receipt
+                {t('inv.storeInDetail.reverseReceipt')}
               </Button>
             )}
           </div>
@@ -573,7 +576,7 @@ export default function StoreInDetail() {
         >
           <div>
             <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-              Received From
+              {t('inv.storeInDetail.receivedFrom')}
             </div>
             <div style={{ fontSize: '13px', color: theme.textPrimary }}>
               {receipt.received_from_name ?? '—'}
@@ -581,7 +584,7 @@ export default function StoreInDetail() {
           </div>
           <div>
             <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-              Received By
+              {t('inv.storeInDetail.receivedBy')}
             </div>
             <div style={{ fontSize: '13px', color: theme.textPrimary }}>
               {receipt.received_by_name ?? receipt.received_by_email ?? '—'}
@@ -590,14 +593,14 @@ export default function StoreInDetail() {
           {receipt.po_number && (
             <div>
               <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                Linked PO
+                {t('inv.storeInDetail.linkedPo')}
               </div>
               <div style={{ fontSize: '13px', color: theme.textPrimary }}>{receipt.po_number}</div>
             </div>
           )}
           <div>
             <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-              Total Cost
+              {t('inv.storeInDetail.totalCost')}
             </div>
             <div style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: 600 }}>
               {fmtAmt(totalCost)} {baseCcy}
@@ -631,7 +634,7 @@ export default function StoreInDetail() {
               marginBottom: '20px',
             }}
           >
-            <strong>Reversed</strong>
+            <strong>{t('inv.storeInDetail.reversed')}</strong>
             {receipt.reversed_at && ` on ${receipt.reversed_at.slice(0, 10)}`}
             {receipt.reversed_by_email && ` by ${receipt.reversed_by_email}`}
             {receipt.reversal_reason && ` — ${receipt.reversal_reason}`}
@@ -642,20 +645,20 @@ export default function StoreInDetail() {
           columns={columns}
           data={receipt.lines}
           rowKey="po_line_id"
-          emptyMessage="No items."
+          emptyMessage={t('inv.storeInDetail.noItems')}
         />
       </Card>
 
       {isDraft && (
         <Card style={{ marginTop: '20px', padding: '20px' }}>
           <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
-            Required Photos
+            {t('inv.storeInDetail.requiredPhotos')}
           </div>
           <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '16px' }}>
-            This receipt is still a draft — nothing has been added to inventory yet.{' '}
+            {t('inv.storeInDetail.draftNotice')}{' '}
             {hasBuyerReceipt
-              ? 'The buyer already attached a vendor receipt below. Attach the materials photo, then confirm to update stock and the linked PO.'
-              : 'Attach both photos below, then confirm to update stock and the linked PO.'}
+              ? t('inv.storeInDetail.theBuyerAlreadyAttachedAVendor')
+              : t('inv.storeInDetail.attachBothPhotosBelowThenConfirm')}
           </div>
           {receipt.po_id && (
             <div style={{ marginBottom: '16px' }}>
@@ -663,22 +666,22 @@ export default function StoreInDetail() {
                 entityType="purchase_order"
                 entityId={receipt.po_id}
                 readOnly
-                title="Buyer's Receipt"
-                description="Uploaded by the buyer during Items Bought — check this against what's physically arriving before confirming."
+                title={t('inv.storeInDetail.buyerSReceipt')}
+                description={t('inv.storeInDetail.uploadedByTheBuyerDuringItems')}
                 recordLabel="this purchase"
               />
             </div>
           )}
           {renderPhotoSection(
             'vendor_receipt',
-            'Vendor Receipt (fallback)',
-            "Only needed if the buyer didn't already attach one above.",
+            t('inv.storeInDetail.vendorReceiptFallback'),
+            t('inv.storeInDetail.vendorReceiptFallbackHint'),
             hasBuyerReceipt,
           )}
           {renderPhotoSection(
             'materials',
-            'Materials Received',
-            'Photo of the delivered goods, packaging labels, or delivery location.',
+            t('inv.storeInDetail.materialsReceivedLabel'),
+            t('inv.storeInDetail.materialsReceivedHint'),
           )}
           <div
             style={{
@@ -696,7 +699,7 @@ export default function StoreInDetail() {
                 setCancelOpen(true)
               }}
             >
-              Cancel Receipt
+              {t('inv.storeInDetail.cancelReceipt')}
             </Button>
             <Button
               variant="primary"
@@ -705,16 +708,16 @@ export default function StoreInDetail() {
                 setConfirmOpen(true)
               }}
             >
-              Confirm Receipt
+              {t('inv.storeInDetail.confirmReceipt')}
             </Button>
           </div>
           {!canConfirm && (
             <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px' }}>
               {hasMaterialsPhoto
-                ? 'Attach a vendor receipt before confirming — the buyer usually does this during Items Bought.'
+                ? t('inv.storeInDetail.attachAVendorReceiptBeforeConfirming')
                 : !(hasDocPhoto || hasBuyerReceipt)
-                  ? 'Attach a materials photo and a vendor receipt before confirming.'
-                  : 'Attach a materials photo before confirming.'}
+                  ? t('inv.storeInDetail.attachAMaterialsPhotoAndA')
+                  : t('inv.storeInDetail.attachAMaterialsPhotoBeforeConfirming')}
             </div>
           )}
         </Card>
@@ -753,9 +756,9 @@ export default function StoreInDetail() {
         onConfirm={() => {
           void confirmReceipt({ variables: { id: receipt.id } })
         }}
-        title="Confirm Receipt"
-        message="Confirming will add these items to inventory and update the linked PO. This cannot be undone."
-        confirmLabel="Confirm"
+        title={t('inv.storeInDetail.confirmReceipt')}
+        message={t('inv.storeInDetail.confirmingWillAddTheseItemsTo')}
+        confirmLabel={t('inv.storeInDetail.confirm')}
         confirmVariant="primary"
         loading={confirming}
       />
@@ -768,9 +771,9 @@ export default function StoreInDetail() {
         onConfirm={() => {
           void cancelReceipt({ variables: { id: receipt.id } })
         }}
-        title="Cancel Receipt"
-        message="Are you sure you want to cancel this draft receipt? Nothing has been added to inventory yet, so this simply discards it."
-        confirmLabel="Cancel Receipt"
+        title={t('inv.storeInDetail.cancelReceipt')}
+        message={t('inv.storeInDetail.areYouSureYouWantTo')}
+        confirmLabel={t('inv.storeInDetail.cancelReceipt')}
         confirmVariant="danger"
         loading={cancelling}
       />
@@ -790,20 +793,17 @@ export default function StoreInDetail() {
         >
           <Card style={{ padding: '24px', width: '440px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              Reverse Receipt
+              {t('inv.storeInDetail.reverseReceipt')}
             </h3>
             <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
-              This undoes the stock this receipt already added, the quantities on the linked PO, and
-              (where unambiguous) the product cost it set. It's blocked automatically if any of that
-              stock has already moved on, if the PO's been invoiced, or if it's already covered by a
-              vendor return. This cannot be undone — a fresh receipt would need to be recorded instead.
+              {t('inv.storeInDetail.thisUndoesTheStockThisReceipt')}
             </p>
             <textarea
               value={reverseReason}
               onChange={(e) => {
                 setReverseReason(e.target.value)
               }}
-              placeholder="Why is this receipt being reversed?"
+              placeholder={t('inv.storeInDetail.whyIsThisReceiptBeingReversed')}
               style={{
                 width: '100%',
                 height: '80px',
@@ -828,7 +828,7 @@ export default function StoreInDetail() {
                   setReverseReason('')
                 }}
               >
-                Cancel
+                {t('inv.storeInDetail.cancel')}
               </Button>
               <Button
                 variant="danger"
@@ -837,7 +837,7 @@ export default function StoreInDetail() {
                   void reverseReceipt({ variables: { id: receipt.id, reason: reverseReason } })
                 }}
               >
-                Reverse Receipt
+                {t('inv.storeInDetail.reverseReceipt')}
               </Button>
             </div>
           </Card>
@@ -888,7 +888,7 @@ export default function StoreInDetail() {
               }}
             >
               <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
-                Print Store In — {receipt.receipt_number}
+                {t('inv.storeInDetail.printTitle', { number: receipt.receipt_number })}
               </span>
               <button
                 onClick={() => {
@@ -935,7 +935,7 @@ export default function StoreInDetail() {
                   })),
                 })}
                 style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-                title={`Store In ${receipt.receipt_number}`}
+                title={t('inv.storeInDetail.iframeTitle', { number: receipt.receipt_number })}
               />
             </div>
 
@@ -956,14 +956,14 @@ export default function StoreInDetail() {
                   setShowPrintModal(false)
                 }}
               >
-                Cancel
+                {t('inv.storeInDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
                 size="sm"
                 onClick={() => printIframeRef.current?.contentWindow?.print()}
               >
-                Print / Save as PDF
+                {t('inv.storeInDetail.printSaveAsPdf')}
               </Button>
             </div>
           </div>

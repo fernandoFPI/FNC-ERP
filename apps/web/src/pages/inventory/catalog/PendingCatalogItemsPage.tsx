@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -61,6 +62,7 @@ interface CompanyOption {
 }
 
 export default function PendingCatalogItemsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
@@ -179,7 +181,7 @@ export default function PendingCatalogItemsPage() {
           companyId: targetCompanyId && targetCompanyId !== activeCompanyId ? targetCompanyId : undefined,
         },
       })
-      addToast({ type: 'success', message: 'Product added to catalog' })
+      addToast({ type: 'success', message: t('inv.catalog.productAddedToCatalog') })
       closeExpanded()
       void refetch()
       // So the very next pending item for the same thing (e.g. another PO's
@@ -201,7 +203,7 @@ export default function PendingCatalogItemsPage() {
           companyId: targetCompanyId && targetCompanyId !== activeCompanyId ? targetCompanyId : undefined,
         },
       })
-      addToast({ type: 'success', message: 'Linked to existing product' })
+      addToast({ type: 'success', message: t('inv.catalog.linkedToExistingProduct') })
       closeExpanded()
       void refetch()
     } catch (e: unknown) {
@@ -213,8 +215,8 @@ export default function PendingCatalogItemsPage() {
     return (
       <div style={{ padding: '24px' }}>
         <PageHeader
-          title="New Items to Catalog"
-          subtitle="Items received with no matching catalog product"
+          title={t('inv.catalog.newItemsToCatalog')}
+          subtitle={t('inv.catalog.itemsReceivedWithNoMatchingCatalog')}
         />
       </div>
     )
@@ -224,8 +226,8 @@ export default function PendingCatalogItemsPage() {
     return (
       <div style={{ padding: '24px', margin: '0 auto', maxWidth: '680px' }}>
         <PageHeader
-          title="New Items to Catalog"
-          subtitle="Items received with no matching catalog product"
+          title={t('inv.catalog.newItemsToCatalog')}
+          subtitle={t('inv.catalog.itemsReceivedWithNoMatchingCatalog')}
         />
         <Card
           style={{
@@ -253,11 +255,10 @@ export default function PendingCatalogItemsPage() {
             🔒
           </div>
           <div style={{ fontSize: '16px', fontWeight: 600, color: theme.textPrimary }}>
-            Store Keeper Position Required
+            {t('inv.catalog.storeKeeperPositionRequired')}
           </div>
           <div style={{ fontSize: '13px', color: theme.textMuted, maxWidth: '380px' }}>
-            Cataloging new items requires the company-wide Store Keeper position. Contact your
-            administrator to be assigned this position.
+            {t('inv.catalog.catalogingNewItemsRequiresTheCompany')}
           </div>
         </Card>
       </div>
@@ -267,8 +268,8 @@ export default function PendingCatalogItemsPage() {
   return (
     <div data-tour="pending-catalog-page" style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto' }}>
       <PageHeader
-        title="New Items to Catalog"
-        subtitle={`${items.length} item${items.length === 1 ? '' : 's'} awaiting cataloging`}
+        title={t('inv.catalog.newItemsToCatalog')}
+        subtitle={t('inv.catalog.awaitingCataloging', { count: items.length })}
         actions={
           <Button
             variant="ghost"
@@ -277,7 +278,7 @@ export default function PendingCatalogItemsPage() {
               void refetch()
             }}
           >
-            Refresh
+            {t('inv.catalog.refresh')}
           </Button>
         }
       />
@@ -295,8 +296,8 @@ export default function PendingCatalogItemsPage() {
       ) : items.length === 0 ? (
         <Card style={{ marginTop: '20px' }}>
           <EmptyState
-            title="Nothing to catalog"
-            message="Every received item is already linked to a catalog product."
+            title={t('inv.catalog.nothingToCatalog')}
+            message={t('inv.catalog.everyReceivedItemIsAlreadyLinked')}
           />
         </Card>
       ) : (
@@ -347,10 +348,10 @@ export default function PendingCatalogItemsPage() {
                       )}
                       <Badge variant="neutral" size="sm">
                         {item.source === 'direct_delivery'
-                          ? 'Direct to Jobsite'
+                          ? t('inv.catalog.directToJobsite')
                           : item.source === 'stock_issuance'
-                            ? 'Issued from Stock'
-                            : 'Store In'}
+                            ? t('inv.catalog.issuedFromStock')
+                            : t('inv.catalog.storeIn')}
                       </Badge>
                       <span>{formatDate(item.created_at)}</span>
                     </div>
@@ -358,10 +359,10 @@ export default function PendingCatalogItemsPage() {
                   {!isExpanded && (
                     <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                       <Button variant="secondary" size="sm" onClick={() => { openLink(item); }}>
-                        Link Existing
+                        {t('inv.catalog.linkExisting')}
                       </Button>
                       <Button variant="primary" size="sm" onClick={() => { openNew(item); }}>
-                        Catalog as New
+                        {t('inv.catalog.catalogAsNew')}
                       </Button>
                     </div>
                   )}
@@ -380,7 +381,7 @@ export default function PendingCatalogItemsPage() {
                   >
                     {companies.length > 1 && (
                       <Select
-                        label="Catalog company"
+                        label={t('inv.catalog.catalogCompany')}
                         value={targetCompanyId}
                         onChange={(e) => { setTargetCompanyId(e.target.value); }}
                       >
@@ -399,15 +400,15 @@ export default function PendingCatalogItemsPage() {
                       }}
                     >
                       <Input
-                        label="Name"
+                        label={t('inv.catalog.name')}
                         value={newForm.name}
                         onChange={(e) => { setNewForm((f) => ({ ...f, name: e.target.value })); }}
                       />
                       <Input
-                        label="Name (Arabic)"
+                        label={t('inv.catalog.nameArabic')}
                         value={newForm.name_ar}
                         onChange={(e) => { setNewForm((f) => ({ ...f, name_ar: e.target.value })); }}
-                        placeholder="Optional"
+                        placeholder={t('inv.catalog.optional')}
                       />
                     </div>
                     <div
@@ -418,7 +419,7 @@ export default function PendingCatalogItemsPage() {
                       }}
                     >
                       <Select
-                        label="Category"
+                        label={t('inv.catalog.category')}
                         value={newForm.category}
                         onChange={(e) => {
                           const val = e.target.value
@@ -429,21 +430,21 @@ export default function PendingCatalogItemsPage() {
                           }))
                         }}
                       >
-                        <option value="">— None —</option>
-                        <option value="raw_material">Raw Material</option>
-                        <option value="finished_goods">Finished Goods</option>
-                        <option value="consumable">Consumable</option>
-                        <option value="service">Service</option>
+                        <option value="">{t('inv.catalog.none')}</option>
+                        <option value="raw_material">{t('inv.catalog.rawMaterial')}</option>
+                        <option value="finished_goods">{t('inv.catalog.finishedGoods')}</option>
+                        <option value="consumable">{t('inv.catalog.consumable')}</option>
+                        <option value="service">{t('inv.catalog.service')}</option>
                       </Select>
                       {newForm.category === 'raw_material' && (
                         <Select
-                          label="Store / Sub-category"
+                          label={t('inv.catalog.storeSubCategory')}
                           value={newForm.sub_category}
                           onChange={(e) =>
                             { setNewForm((f) => ({ ...f, sub_category: e.target.value })); }
                           }
                         >
-                          <option value="">— Generic SKU —</option>
+                          <option value="">{t('inv.catalog.genericSku')}</option>
                           {storeCategories.map((c) => (
                             <option key={c.id} value={c.name}>
                               {c.name}
@@ -452,15 +453,15 @@ export default function PendingCatalogItemsPage() {
                         </Select>
                       )}
                       <Input
-                        label="UOM"
+                        label={t('inv.catalog.uom')}
                         value={newForm.uom}
                         onChange={(e) => { setNewForm((f) => ({ ...f, uom: e.target.value })); }}
                       />
                       <Input
-                        label="SKU"
+                        label={t('inv.catalog.sku')}
                         value={newForm.sku}
                         onChange={(e) => { setNewForm((f) => ({ ...f, sku: e.target.value })); }}
-                        placeholder="Auto-generated"
+                        placeholder={t('inv.catalog.autoGenerated')}
                       />
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -470,10 +471,10 @@ export default function PendingCatalogItemsPage() {
                         disabled={!newForm.name.trim()}
                         onClick={() => void handleCreate(item)}
                       >
-                        Add to Inventory
+                        {t('inv.catalog.addToInventory')}
                       </Button>
                       <Button variant="ghost" onClick={closeExpanded}>
-                        Cancel
+                        {t('inv.catalog.cancel')}
                       </Button>
                     </div>
                   </div>
@@ -492,7 +493,7 @@ export default function PendingCatalogItemsPage() {
                   >
                     {companies.length > 1 && (
                       <Select
-                        label="Catalog company"
+                        label={t('inv.catalog.catalogCompany')}
                         value={targetCompanyId}
                         onChange={(e) => {
                           setTargetCompanyId(e.target.value)
@@ -509,7 +510,7 @@ export default function PendingCatalogItemsPage() {
                     <SearchableSelect
                       value={linkProductId}
                       onChange={setLinkProductId}
-                      placeholder="Search by name or SKU…"
+                      placeholder={t('inv.catalog.searchByNameOrSku')}
                       options={products.map((p) => ({
                         value: p.id,
                         label: p.name,
@@ -525,10 +526,10 @@ export default function PendingCatalogItemsPage() {
                         disabled={!linkProductId}
                         onClick={() => void handleLink(item)}
                       >
-                        Link Product
+                        {t('inv.catalog.linkProduct')}
                       </Button>
                       <Button variant="ghost" onClick={closeExpanded}>
-                        Cancel
+                        {t('inv.catalog.cancel')}
                       </Button>
                     </div>
                   </div>

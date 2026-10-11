@@ -1,4 +1,6 @@
-﻿import { useParams, useNavigate } from 'react-router-dom'
+﻿import { enumLabel, tl } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { PRODUCT_QUERY } from '../../../graphql/inventory'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -50,6 +52,7 @@ const COST_SOURCE_LABEL: Record<string, string> = {
 }
 
 export default function ProductDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -80,19 +83,19 @@ export default function ProductDetail() {
   const balanceColumns: Column<ProductBalance>[] = [
     {
       key: 'location_name',
-      header: 'Location',
+      header: t('inv.productDetail.location'),
       render: (b) => (
         <span style={{ color: theme.textPrimary }}>{b.location_name ?? b.location_id}</span>
       ),
     },
     {
       key: 'location_type',
-      header: 'Type',
-      render: (b) => (b.location_type ? <Badge variant="neutral">{b.location_type}</Badge> : null),
+      header: t('inv.productDetail.type'),
+      render: (b) => (b.location_type ? <Badge variant="neutral">{enumLabel(b.location_type)}</Badge> : null),
     },
     {
       key: 'qty_on_hand',
-      header: 'On Hand',
+      header: t('inv.productDetail.onHand'),
       render: (b) => (
         <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>
           {parseFloat(b.qty_on_hand).toLocaleString()}
@@ -101,7 +104,7 @@ export default function ProductDetail() {
     },
     {
       key: 'qty_reserved',
-      header: 'Reserved',
+      header: t('inv.productDetail.reserved'),
       render: (b) => (
         <span style={{ fontFamily: 'monospace', color: theme.warning }}>
           {parseFloat(b.qty_reserved).toLocaleString()}
@@ -110,7 +113,7 @@ export default function ProductDetail() {
     },
     {
       key: 'available',
-      header: 'Available',
+      header: t('inv.productDetail.available'),
       render: (b) => (
         <span style={{ fontFamily: 'monospace', color: theme.success }}>
           {parseFloat(b.available).toLocaleString()}
@@ -119,12 +122,12 @@ export default function ProductDetail() {
     },
     {
       key: 'average_cost',
-      header: 'Last Cost',
+      header: t('inv.productDetail.lastCost'),
       render: (b) => <AmountDisplay amount={parseFloat(b.average_cost)} currency={b.last_cost_currency} />,
     },
     {
       key: 'total_value',
-      header: 'Total Value',
+      header: t('inv.productDetail.totalValue'),
       render: (b) => <AmountDisplay amount={parseFloat(b.total_value)} currency={b.last_cost_currency} />,
     },
   ]
@@ -132,7 +135,7 @@ export default function ProductDetail() {
   const costHistoryColumns: Column<ProductCostHistoryEntry>[] = [
     {
       key: 'changed_at',
-      header: 'Date/Time',
+      header: t('inv.productDetail.dateTime'),
       render: (h) => (
         <span style={{ fontSize: '13px', color: theme.textSecondary }}>
           {new Date(h.changed_at).toLocaleString()}
@@ -141,7 +144,7 @@ export default function ProductDetail() {
     },
     {
       key: 'change',
-      header: 'Change',
+      header: t('inv.productDetail.change'),
       render: (h) => (
         <span style={{ fontFamily: 'monospace', fontSize: '13px' }}>
           {h.old_cost != null ? (
@@ -160,16 +163,17 @@ export default function ProductDetail() {
     },
     {
       key: 'source',
-      header: 'Changed By',
+      header: t('inv.productDetail.changedBy'),
       render: (h) => (
         <span style={{ fontSize: '13px', color: theme.textPrimary }}>
-          {h.source_label || COST_SOURCE_LABEL[h.source_type] || h.source_type}
+          {h.source_label ||
+            tl('inv.productDetail.costSourceOpts', h.source_type, COST_SOURCE_LABEL[h.source_type] ?? h.source_type)}
         </span>
       ),
     },
     {
       key: 'changed_by_name',
-      header: 'User',
+      header: t('inv.productDetail.user'),
       render: (h) => (
         <span style={{ fontSize: '13px', color: theme.textMuted }}>
           {h.changed_by_name ?? '—'}
@@ -179,9 +183,9 @@ export default function ProductDetail() {
   ]
 
   if (loading && !product)
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('inv.productDetail.loading')}</div>
   if (!product)
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Product not found</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('inv.productDetail.productNotFound')}</div>
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
@@ -191,7 +195,7 @@ export default function ProductDetail() {
         backPath="/inventory/products"
         status={
           <Badge variant={product.is_active ? 'success' : 'neutral'}>
-            {product.is_active ? 'Active' : 'Inactive'}
+            {product.is_active ? t('inv.productDetail.active') : t('inv.productDetail.inactive')}
           </Badge>
         }
         actions={
@@ -203,7 +207,7 @@ export default function ProductDetail() {
                 navigate(`/inventory/products/${id}/edit`)
               }}
             >
-              Edit
+              {t('inv.productDetail.edit')}
             </Button>
             <Button
               variant="ghost"
@@ -212,7 +216,7 @@ export default function ProductDetail() {
                 navigate(`/inventory/moves?productId=${id}`)
               }}
             >
-              View Moves
+              {t('inv.productDetail.viewMoves')}
             </Button>
           </div>
         }
@@ -231,7 +235,7 @@ export default function ProductDetail() {
           ['Category', product.category ?? '—'],
           ...(product.sub_category ? [['Store', product.sub_category] as [string, string]] : []),
           ['UOM', product.uom],
-          ['Valuation', VALUATION_METHOD_LABEL],
+          ['Valuation', t('inv.productDetail.valuationLastCost')],
           [
             'Cost',
             `${parseFloat(product.standard_cost ?? '0').toLocaleString()} ${product.cost_currency ?? ''}`.trim(),
@@ -264,7 +268,7 @@ export default function ProductDetail() {
                 letterSpacing: '0.06em',
               }}
             >
-              {label}
+              {tl('inv.productDetail.fieldOpts', label, label)}
             </div>
             <div
               style={{
@@ -306,7 +310,7 @@ export default function ProductDetail() {
             color: theme.textPrimary,
           }}
         >
-          Stock by Location
+          {t('inv.productDetail.stockByLocation')}
         </div>
         <Table columns={balanceColumns} data={balances} rowKey="location_id" />
       </Card>
@@ -320,13 +324,13 @@ export default function ProductDetail() {
             color: theme.textPrimary,
           }}
         >
-          Cost History
+          {t('inv.productDetail.costHistory')}
         </div>
         <Table
           columns={costHistoryColumns}
           data={costHistory}
           rowKey="id"
-          emptyMessage="No cost changes recorded yet."
+          emptyMessage={t('inv.productDetail.noCostChangesRecordedYet')}
         />
       </Card>
     </div>

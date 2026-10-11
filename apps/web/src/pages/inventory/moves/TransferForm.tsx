@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@apollo/client'
 import { CREATE_TRANSFER, STOCK_LOCATIONS_QUERY, PRODUCTS_QUERY } from '../../../graphql/inventory'
@@ -21,6 +22,7 @@ interface TransferLine {
 const emptyLine = (): TransferLine => ({ product_id: '', qty: '1', unit_cost: '0' })
 
 export default function TransferForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
@@ -43,7 +45,7 @@ export default function TransferForm() {
   const lineFields: LineItemField<TransferLine>[] = [
     {
       key: 'product_id',
-      label: 'Product',
+      label: t('inv.transfer.product'),
       render: (line, i) => (
         <Select
           value={line.product_id}
@@ -54,7 +56,7 @@ export default function TransferForm() {
           }}
           required
         >
-          <option value="">Select product…</option>
+          <option value="">{t('inv.transfer.selectProduct')}</option>
           {products.filter((v): v is NonNullable<typeof v> => v !== null).map((p) => (
             <option key={p.id} value={p.id}>
               {p.sku} — {p.name}
@@ -66,14 +68,14 @@ export default function TransferForm() {
     },
     {
       key: 'qty',
-      label: 'Qty',
+      label: t('inv.transfer.qty'),
       width: '100px',
       render: (line, i) => (
         <Input
           type="number"
           min="0"
           step="0.01"
-          placeholder="Qty"
+          placeholder={t('inv.transfer.qty')}
           value={line.qty}
           onChange={(e) => {
             setLines((p) => p.map((l, idx) => (idx === i ? { ...l, qty: e.target.value } : l)))
@@ -83,14 +85,14 @@ export default function TransferForm() {
     },
     {
       key: 'unit_cost',
-      label: 'Unit Cost',
+      label: t('inv.transfer.unitCost'),
       width: '100px',
       render: (line, i) => (
         <Input
           type="number"
           min="0"
           step="0.01"
-          placeholder="Cost"
+          placeholder={t('inv.transfer.cost')}
           value={line.unit_cost}
           onChange={(e) => {
             setLines((p) =>
@@ -105,11 +107,11 @@ export default function TransferForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.from_location_id || !form.to_location_id) {
-      addToast({ type: 'error', message: 'Select both locations' })
+      addToast({ type: 'error', message: t('inv.transfer.selectBothLocations') })
       return
     }
     if (form.from_location_id === form.to_location_id) {
-      addToast({ type: 'error', message: 'Source and destination must differ' })
+      addToast({ type: 'error', message: t('inv.transfer.sourceAndDestinationMustDiffer') })
       return
     }
     try {
@@ -130,7 +132,7 @@ export default function TransferForm() {
           },
         },
       })
-      addToast({ type: 'success', message: 'Transfer created' })
+      addToast({ type: 'success', message: t('inv.transfer.transferCreated') })
       navigate('/inventory/moves')
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -140,8 +142,8 @@ export default function TransferForm() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1000px' }}>
       <PageHeader
-        title="Manual Transfer"
-        subtitle="Move stock between locations"
+        title={t('inv.transfer.manualTransfer')}
+        subtitle={t('inv.transfer.moveStockBetweenLocations')}
         backPath="/inventory/moves"
       />
 
@@ -163,14 +165,14 @@ export default function TransferForm() {
             }}
           >
             <Select
-              label="From Location"
+              label={t('inv.transfer.fromLocation')}
               value={form.from_location_id}
               onChange={(e) => {
                 setForm((f) => ({ ...f, from_location_id: e.target.value }))
               }}
               required
             >
-              <option value="">Select…</option>
+              <option value="">{t('inv.transfer.select')}</option>
               {locations.map((l: { id: string; name: string }) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
@@ -178,14 +180,14 @@ export default function TransferForm() {
               ))}
             </Select>
             <Select
-              label="To Location"
+              label={t('inv.transfer.toLocation')}
               value={form.to_location_id}
               onChange={(e) => {
                 setForm((f) => ({ ...f, to_location_id: e.target.value }))
               }}
               required
             >
-              <option value="">Select…</option>
+              <option value="">{t('inv.transfer.select')}</option>
               {locations.map((l: { id: string; name: string }) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
@@ -201,7 +203,7 @@ export default function TransferForm() {
             }}
           >
             <Input
-              label="Transfer Date"
+              label={t('inv.transfer.transferDate')}
               type="date"
               value={form.move_date}
               onChange={(e) => {
@@ -210,12 +212,12 @@ export default function TransferForm() {
               required
             />
             <Input
-              label="Reference"
+              label={t('inv.transfer.reference')}
               value={form.reference}
               onChange={(e) => {
                 setForm((f) => ({ ...f, reference: e.target.value }))
               }}
-              placeholder="Optional"
+              placeholder={t('inv.transfer.optional')}
             />
           </div>
         </Card>
@@ -229,7 +231,7 @@ export default function TransferForm() {
               color: theme.textPrimary,
             }}
           >
-            Lines
+            {t('inv.transfer.lines')}
           </div>
           <div style={{ padding: '12px' }}>
             <LineItemEditor
@@ -242,7 +244,7 @@ export default function TransferForm() {
               onAddRow={() => {
                 setLines((p) => [...p, emptyLine()])
               }}
-              addLabel="+ Add Line"
+              addLabel={t('inv.transfer.addLine')}
             />
           </div>
         </Card>
@@ -257,10 +259,10 @@ export default function TransferForm() {
               navigate('/inventory/moves')
             }}
           >
-            Cancel
+            {t('inv.transfer.cancel')}
           </Button>
           <Button variant="primary" type="submit" loading={loading}>
-            Create Transfer
+            {t('inv.transfer.createTransfer')}
           </Button>
         </div>
       </form>

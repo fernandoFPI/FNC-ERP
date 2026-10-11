@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { tl } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { STOCK_LOTS_QUERY } from '../../../graphql/inventory'
@@ -39,6 +41,7 @@ const EXPIRY_OPTIONS = [
 ]
 
 export default function LotsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [params] = useSearchParams()
@@ -70,7 +73,7 @@ export default function LotsPage() {
   const columns: Column<StockLot>[] = [
     {
       key: 'lot_number',
-      header: 'Lot number',
+      header: t('inv.lots.lotNumber'),
       render: (l) => (
         <span style={{ fontFamily: 'monospace', color: theme.accent, fontWeight: 600 }}>
           {l.lot_number}
@@ -79,14 +82,14 @@ export default function LotsPage() {
     },
     {
       key: 'product_name',
-      header: 'Product',
+      header: t('inv.lots.product'),
       render: (l) => (
         <span style={{ color: theme.textPrimary }}>{l.product_name ?? l.product_id}</span>
       ),
     },
     {
       key: 'current_qty',
-      header: 'Qty on hand',
+      header: t('inv.lots.qtyOnHand'),
       render: (l) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
           {l.current_qty ? parseFloat(l.current_qty).toLocaleString() : '—'}
@@ -95,7 +98,7 @@ export default function LotsPage() {
     },
     {
       key: 'current_location_name',
-      header: 'Location',
+      header: t('inv.lots.location'),
       render: (l) => (
         <span style={{ color: theme.textMuted, fontSize: '13px' }}>
           {l.current_location_name ?? '—'}
@@ -104,7 +107,7 @@ export default function LotsPage() {
     },
     {
       key: 'expiry_date',
-      header: 'Expiry date',
+      header: t('inv.lots.expiryDate'),
       render: (l) => {
         if (!l.expiry_date) return <span style={{ color: theme.textMuted }}>—</span>
         const status = expiryStatus(l.expiry_date)
@@ -114,7 +117,7 @@ export default function LotsPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{l.expiry_date}</span>
             <Badge variant={variant}>
-              {status === 'expiring' ? 'Expiring soon' : status === 'expired' ? 'Expired' : 'OK'}
+              {status === 'expiring' ? t('inv.lots.expiringSoon') : status === 'expired' ? t('inv.lots.expired') : 'OK'}
             </Badge>
           </div>
         )
@@ -122,7 +125,7 @@ export default function LotsPage() {
     },
     {
       key: 'created_at',
-      header: 'Created',
+      header: t('inv.lots.created'),
       render: (l) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
           {new Date(l.created_at).toLocaleDateString()}
@@ -133,7 +136,7 @@ export default function LotsPage() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
-      <PageHeader title="Lots" subtitle={`${filtered.length} lots tracked`} />
+      <PageHeader title={t('inv.lots.lots')} subtitle={t('inv.lots.lotsTracked', { count: filtered.length })} />
 
       <Card style={{ marginTop: '20px' }}>
         <div style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}` }}>
@@ -141,13 +144,13 @@ export default function LotsPage() {
             search={{
               value: search,
               onChange: setSearch,
-              placeholder: 'Search lot number or product…',
+              placeholder: t('inv.lots.searchLotNumberOrProduct'),
             }}
             filters={[
               {
                 key: 'expiry',
-                label: 'Expiry',
-                options: EXPIRY_OPTIONS,
+                label: t('inv.lots.expiry'),
+                options: EXPIRY_OPTIONS.map((o) => ({ ...o, label: tl('inv.lots.expiryOpts', o.value, o.label) })),
                 value: expiryFilter,
                 onChange: setExpiryFilter,
               },
@@ -159,11 +162,11 @@ export default function LotsPage() {
 
         {!loading && filtered.length === 0 ? (
           <EmptyState
-            title="No lots found"
+            title={t('inv.lots.noLotsFound')}
             message={
               search || expiryFilter
-                ? 'Try adjusting your filters.'
-                : 'Lots are created automatically when stock is received with a lot number.'
+                ? t('inv.lots.tryAdjustingYourFilters')
+                : t('inv.lots.lotsAreCreatedAutomaticallyWhenStock')
             }
           />
         ) : (

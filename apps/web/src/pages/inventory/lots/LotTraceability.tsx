@@ -1,4 +1,6 @@
-﻿import { useParams, useNavigate } from 'react-router-dom'
+﻿import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { STOCK_LOT_QUERY } from '../../../graphql/inventory'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -36,24 +38,28 @@ interface StockLotDetail {
 }
 
 function expiryBadge(expiryDate?: string) {
+  const { t } = useTranslation()
   if (!expiryDate) return null
   const diff = new Date(expiryDate).getTime() - Date.now()
   const days = diff / 86_400_000
-  if (days < 0) return <Badge variant="danger">Expired</Badge>
-  if (days <= 30) return <Badge variant="warning">Expiring soon</Badge>
-  return <Badge variant="success">OK</Badge>
+  if (days < 0) return <Badge variant="danger">{t('inv.lotTrace.expired')}</Badge>
+  if (days <= 30) return <Badge variant="warning">{t('inv.lotTrace.expiringSoon')}</Badge>
+  return <Badge variant="success">{t('inv.lotTrace.ok')}</Badge>
 }
 
 function moveToEvent(move: LotMove): TimelineEvent {
   const isIn = move.direction === 'in' || !move.from_location_name
   const locationDesc = isIn
-    ? `Received into ${move.to_location_name ?? '—'}`
-    : `Moved from ${move.from_location_name ?? '—'} → ${move.to_location_name ?? '—'}`
+    ? i18n.t('inv.lotTrace.receivedInto', { location: move.to_location_name ?? '—' })
+    : i18n.t('inv.lotTrace.movedFromTo', {
+        from: move.from_location_name ?? '—',
+        to: move.to_location_name ?? '—',
+      })
 
   return {
     id: move.id,
-    title: `${isIn ? '↓ In' : '↑ Out'} · ${parseFloat(move.qty).toLocaleString()} units`,
-    description: `${locationDesc}${move.reference ? ` · Ref: ${move.reference}` : ''} · ${move.source_type}`,
+    title: `${isIn ? i18n.t('inv.lotTrace.arrowIn') : i18n.t('inv.lotTrace.arrowOut')} · ${i18n.t('inv.lotTrace.unitsQty', { qty: parseFloat(move.qty).toLocaleString() })}`,
+    description: `${locationDesc}${move.reference ? ` · ${i18n.t('inv.lotTrace.refLabel', { ref: move.reference })}` : ''} · ${move.source_type}`,
     user: move.moved_by_email ?? undefined,
     timestamp: move.move_date,
     variant: isIn ? 'success' : 'default',
@@ -61,6 +67,7 @@ function moveToEvent(move: LotMove): TimelineEvent {
 }
 
 export default function LotTraceability() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -76,10 +83,10 @@ export default function LotTraceability() {
   const events: TimelineEvent[] = moves.map(moveToEvent)
 
   if (loading && !lot) {
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('inv.lotTrace.loading')}</div>
   }
   if (!lot) {
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Lot not found</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('inv.lotTrace.lotNotFound')}</div>
   }
 
   const currentQty = lot.current_qty ? parseFloat(lot.current_qty) : 0
@@ -92,7 +99,7 @@ export default function LotTraceability() {
           lot.product_name ? `${lot.product_name}${lot.sku ? ` · ${lot.sku}` : ''}` : lot.product_id
         }
         backPath="/inventory/lots"
-        backLabel="Lots"
+        backLabel={t('inv.lotTrace.backToLots')}
         actions={
           lot.product_id ? (
             <button
@@ -110,7 +117,7 @@ export default function LotTraceability() {
                 fontFamily: 'inherit',
               }}
             >
-              View product
+              {t('inv.lotTrace.viewProduct')}
             </button>
           ) : undefined
         }
@@ -127,10 +134,10 @@ export default function LotTraceability() {
         }}
       >
         {[
-          { label: 'Current qty', value: currentQty.toLocaleString(), highlight: currentQty === 0 },
-          { label: 'Current location', value: lot.current_location_name ?? '—', highlight: false },
+          { label: t('inv.lotTrace.currentQty'), value: currentQty.toLocaleString(), highlight: currentQty === 0 },
+          { label: t('inv.lotTrace.currentLocation'), value: lot.current_location_name ?? '—', highlight: false },
           {
-            label: 'Created',
+            label: t('inv.lotTrace.created'),
             value: new Date(lot.created_at).toLocaleDateString(),
             highlight: false,
           },
@@ -183,7 +190,7 @@ export default function LotTraceability() {
             gap: '12px',
           }}
         >
-          <span style={{ fontSize: '13px', color: theme.textMuted }}>Expiry date</span>
+          <span style={{ fontSize: '13px', color: theme.textMuted }}>{t('inv.lotTrace.expiryDate')}</span>
           <span style={{ fontSize: '14px', color: theme.textSecondary, fontFamily: 'monospace' }}>
             {lot.expiry_date}
           </span>
@@ -202,11 +209,11 @@ export default function LotTraceability() {
             fontSize: '14px',
           }}
         >
-          Movement history
+          {t('inv.lotTrace.movementHistory')}
           <span
-            style={{ fontSize: '12px', fontWeight: 400, color: theme.textMuted, marginLeft: '8px' }}
+            style={{ fontSize: '12px', fontWeight: 400, color: theme.textMuted, marginInlineStart: '8px' }}
           >
-            {events.length} move{events.length !== 1 ? 's' : ''}
+            {t('inv.lotTrace.movesCount', { count: events.length })}
           </span>
         </div>
         <div style={{ padding: '16px' }}>

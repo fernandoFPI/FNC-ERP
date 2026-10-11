@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -104,6 +105,7 @@ const fmtAmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export default function MaterialReturnsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -226,7 +228,7 @@ export default function MaterialReturnsPage() {
     ...locations.map((l) => ({ value: l.id, label: l.name })),
     // Plain <Select> (unlike SearchableSelect elsewhere in this file) has no
     // sublabel slot, so the distinction is baked into the label text itself.
-    ...centralWarehouseLocations.map((l) => ({ value: l.id, label: `${l.name} (Central warehouse)` })),
+    ...centralWarehouseLocations.map((l) => ({ value: l.id, label: t('inv.matReturns.centralWarehouseSuffix', { name: l.name }) })),
   ]
 
   const [createReturn, { loading: creating }] = useMutation<CreateMaterialReturnMutation, CreateMaterialReturnMutationVariables>(CREATE_MATERIAL_RETURN)
@@ -310,7 +312,7 @@ export default function MaterialReturnsPage() {
         })
         succeeded.push(g.poNumber ?? poId)
       } catch (e: unknown) {
-        failed.push({ poNumber: g.poNumber ?? poId, error: e instanceof Error ? e.message : 'Failed to create material return' })
+        failed.push({ poNumber: g.poNumber ?? poId, error: e instanceof Error ? e.message : t('inv.matReturns.failedToCreate') })
       }
     }
 
@@ -319,16 +321,19 @@ export default function MaterialReturnsPage() {
         type: 'success',
         message:
           groups.size > 1
-            ? `Created ${groups.size} material returns across ${succeeded.join(', ')} with ${pendingCount} item(s) total`
-            : `Material return created with ${pendingCount} item(s)`,
+            ? t('inv.matReturns.createdMany', { count: groups.size, pos: succeeded.join(', '), items: pendingCount })
+            : t('inv.matReturns.createdOne', { items: pendingCount }),
       })
       resetModal()
     } else if (succeeded.length === 0) {
-      addToast({ type: 'error', message: `Failed to create material return: ${failed.map((f) => `${f.poNumber} (${f.error})`).join('; ')}` })
+      addToast({ type: 'error', message: t('inv.matReturns.failedAll', { errors: failed.map((f) => `${f.poNumber} (${f.error})`).join('; ') }) })
     } else {
       addToast({
         type: 'error',
-        message: `Created returns for ${succeeded.join(', ')}, but failed for ${failed.map((f) => `${f.poNumber} (${f.error})`).join('; ')}`,
+        message: t('inv.matReturns.partialFail', {
+          ok: succeeded.join(', '),
+          errors: failed.map((f) => `${f.poNumber} (${f.error})`).join('; '),
+        }),
       })
       resetModal()
     }
@@ -349,21 +354,21 @@ export default function MaterialReturnsPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
       <PageHeader
-        title="Material Returns"
-        subtitle="Bring unused material — issued from stock or delivered direct to a jobsite — back into inventory"
+        title={t('inv.matReturns.materialReturns')}
+        subtitle={t('inv.matReturns.bringUnusedMaterialIssuedFromStock')}
         actions={
           <Button variant="primary" onClick={() => { setShowModal(true); }}>
-            + New Material Return
+            {t('inv.matReturns.newMaterialReturn')}
           </Button>
         }
       />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }}>
-        <KPICard label="Returns Recorded" value={returns.length} subtitle="all time" icon={IconArrow} iconColor="info" />
+        <KPICard label={t('inv.matReturns.returnsRecorded')} value={returns.length} subtitle={t('inv.matReturns.allTime')} icon={IconArrow} iconColor="info" />
         <KPICard
-          label="Value Returned"
+          label={t('inv.matReturns.valueReturned')}
           value={fmtAmt(totalValue)}
-          subtitle="IQD, net back to stock"
+          subtitle={t('inv.matReturns.iqdNetBackToStock')}
           icon={IconArrow}
           iconColor="success"
         />
@@ -372,29 +377,29 @@ export default function MaterialReturnsPage() {
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '340px' }}>
           <SearchableSelect
-            label="Purchase Order"
+            label={t('inv.matReturns.purchaseOrder')}
             value={poFilter}
             onChange={(val) => { setPoFilter(val); }}
             options={poOptions}
-            placeholder="All Purchase Orders"
+            placeholder={t('inv.matReturns.allPurchaseOrders')}
           />
         </div>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '340px' }}>
           <SearchableSelect
-            label="Project"
+            label={t('inv.matReturns.project')}
             value={projectFilter}
             onChange={(val) => { setProjectFilter(val); }}
             options={projectOptions}
-            placeholder="All Projects"
+            placeholder={t('inv.matReturns.allProjects')}
           />
         </div>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '340px' }}>
           <SearchableSelect
-            label="Item"
+            label={t('inv.matReturns.item')}
             value={productFilter}
             onChange={(val) => { setProductFilter(val); }}
             options={productOptions}
-            placeholder="All Items"
+            placeholder={t('inv.matReturns.allItems')}
           />
         </div>
         {(poFilter || projectFilter || productFilter) && (
@@ -407,7 +412,7 @@ export default function MaterialReturnsPage() {
               setProductFilter('')
             }}
           >
-            Clear filters
+            {t('inv.matReturns.clearFilters')}
           </Button>
         )}
       </div>
@@ -429,11 +434,11 @@ export default function MaterialReturnsPage() {
         </div>
       ) : returns.length === 0 ? (
         <EmptyState
-          title="No material returns yet"
-          message="Record unused material — issued from stock or delivered direct to a jobsite — coming back into inventory."
+          title={t('inv.matReturns.noMaterialReturnsYet')}
+          message={t('inv.matReturns.recordUnusedMaterialIssuedFromStock')}
           action={
             <Button variant="primary" size="sm" onClick={() => { setShowModal(true); }}>
-              + New Material Return
+              {t('inv.matReturns.newMaterialReturn')}
             </Button>
           }
           icon={IconArrow}
@@ -512,19 +517,19 @@ export default function MaterialReturnsPage() {
                             <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
                               {l.productName ?? l.productId}
                             </span>
-                            {l.sku && <span style={{ color: theme.textMuted, marginLeft: '6px' }}>{l.sku}</span>}
-                            <span style={{ color: theme.textMuted, marginLeft: '8px' }}>
+                            {l.sku && <span style={{ color: theme.textMuted, marginInlineStart: '6px' }}>{l.sku}</span>}
+                            <span style={{ color: theme.textMuted, marginInlineStart: '8px' }}>
                               → {l.toLocationName ?? 'location'}
                             </span>
                             <span
                               style={{
                                 color: theme.textMuted,
-                                marginLeft: '8px',
+                                marginInlineStart: '8px',
                                 fontSize: '11px',
                                 fontStyle: 'italic',
                               }}
                             >
-                              ({l.poLineId ? 'direct delivery' : 'Store Out'})
+                              ({l.poLineId ? t('inv.matReturns.directDelivery') : t('inv.matReturns.storeOut')})
                             </span>
                           </div>
                           <div style={{ fontVariantNumeric: 'tabular-nums', color: theme.textPrimary }}>
@@ -534,7 +539,7 @@ export default function MaterialReturnsPage() {
                       ))}
                     </div>
                     <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                      {r.createdByName ? `Recorded by ${r.createdByName}` : ''}
+                      {r.createdByName ? t('inv.matReturns.recordedBy', { name: r.createdByName }) : ''}
                     </span>
                   </div>
                 )}
@@ -549,13 +554,13 @@ export default function MaterialReturnsPage() {
         open={showModal}
         onClose={resetModal}
         closeOnBackdrop={false}
-        title="New Material Return"
-        description="Pick a purchase order, or search by item to find every returnable instance of it — then choose how much is coming back and where it's going."
+        title={t('inv.matReturns.newMaterialReturn2')}
+        description={t('inv.matReturns.pickAPurchaseOrderOrSearch')}
         size="lg"
         footer={
           <>
             <Button variant="ghost" size="md" onClick={resetModal}>
-              Cancel
+              {t('inv.matReturns.cancel')}
             </Button>
             <Button
               variant="primary"
@@ -564,8 +569,9 @@ export default function MaterialReturnsPage() {
               loading={creating}
               onClick={() => void handleCreate()}
             >
-              Create Return
-              {pendingCount > 0 ? ` (${pendingCount} item${pendingCount > 1 ? 's' : ''})` : ''}
+              {pendingCount > 0
+                ? t('inv.matReturns.createReturnWithItems', { count: pendingCount })
+                : t('inv.matReturns.createReturnPlain')}
             </Button>
           </>
         }
@@ -573,33 +579,33 @@ export default function MaterialReturnsPage() {
         <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: '180px' }}>
             <SearchableSelect
-              label="Narrow by project (optional)"
+              label={t('inv.matReturns.narrowByProjectOptional')}
               value={formProjectFilter}
               onChange={(val) => {
                 setFormProjectFilter(val)
                 clearFormPoSelection()
               }}
               options={projectOptions}
-              placeholder="Any project…"
+              placeholder={t('inv.matReturns.anyProject')}
             />
           </div>
           <div style={{ flex: 1, minWidth: '180px' }}>
             <SearchableSelect
-              label="Narrow by item (optional)"
+              label={t('inv.matReturns.narrowByItemOptional')}
               value={formProductFilter}
               onChange={(val) => {
                 setFormProductFilter(val)
                 clearFormPoSelection()
               }}
               options={productOptions}
-              placeholder="Any item…"
+              placeholder={t('inv.matReturns.anyItem')}
             />
           </div>
         </div>
 
         <div style={{ marginBottom: '14px' }}>
           <SearchableSelect
-            label={formProductFilter ? 'Purchase Order (optional — item search already narrows results)' : 'Purchase Order'}
+            label={formProductFilter ? t('inv.matReturns.purchaseOrderOptionalItemSearchAlready') : t('inv.matReturns.purchaseOrder')}
             value={formPoId}
             onChange={(val) => {
               setFormPoId(val)
@@ -607,7 +613,7 @@ export default function MaterialReturnsPage() {
               setReturnLocation({})
             }}
             options={modalPoOptions}
-            placeholder="Search purchase order…"
+            placeholder={t('inv.matReturns.searchPurchaseOrder')}
           />
         </div>
 
@@ -623,15 +629,15 @@ export default function MaterialReturnsPage() {
                 marginBottom: '10px',
               }}
             >
-              Returnable Items
+              {t('inv.matReturns.returnableItems')}
             </p>
             {loadingReturnable ? (
-              <div style={{ fontSize: '13px', color: theme.textMuted }}>Loading…</div>
+              <div style={{ fontSize: '13px', color: theme.textMuted }}>{t('inv.matReturns.loading')}</div>
             ) : returnableIssueLines.length === 0 && returnableDirectLines.length === 0 ? (
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
                 {formPoId
-                  ? 'No returnable items — this PO has no issued Store Out lines and no direct-to-jobsite deliveries with anything still outstanding.'
-                  : 'No returnable items — this item has nothing outstanding on any purchase order (either never ordered, or already fully returned).'}
+                  ? t('inv.matReturns.noReturnableItemsThisPoHas')
+                  : t('inv.matReturns.noReturnableItemsThisItemHas')}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -661,8 +667,15 @@ export default function MaterialReturnsPage() {
                       )}
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>
-                      Store Out {l.issueNumber} — issued {l.qtyIssued} {l.uom}, {l.qtyReturnable} still returnable
-                      {l.fromLocationName ? ` (was consumed from ${l.fromLocationName})` : ''}
+                      {t('inv.matReturns.storeOutLine', {
+                        number: l.issueNumber,
+                        issued: l.qtyIssued,
+                        uom: l.uom,
+                        returnable: l.qtyReturnable,
+                      })}
+                      {l.fromLocationName
+                        ? t('inv.matReturns.wasConsumedFrom', { location: l.fromLocationName })
+                        : ''}
                     </div>
                     <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                       <div style={{ width: '120px' }}>
@@ -696,7 +709,7 @@ export default function MaterialReturnsPage() {
                             { setReturnLocation((prev) => ({ ...prev, [l.issueLineId]: e.target.value })); }
                           }
                           options={locationOptions}
-                          placeholder="Return to…"
+                          placeholder={t('inv.matReturns.returnTo')}
                         />
                       </div>
                     </div>
@@ -728,9 +741,14 @@ export default function MaterialReturnsPage() {
                       )}
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>
-                      Delivered direct to jobsite — received {l.qtyReceived} {l.uom}, {l.qtyReturnable} still
-                      returnable
-                      {l.qtyVendorReturned > 0 ? ` (${l.qtyVendorReturned} already sent back to vendor)` : ''}
+                      {t('inv.matReturns.directJobsiteLine', {
+                        received: l.qtyReceived,
+                        uom: l.uom,
+                        returnable: l.qtyReturnable,
+                      })}
+                      {l.qtyVendorReturned > 0
+                        ? t('inv.matReturns.alreadySentBack', { qty: l.qtyVendorReturned })
+                        : ''}
                     </div>
                     <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                       <div style={{ width: '120px' }}>
@@ -764,7 +782,7 @@ export default function MaterialReturnsPage() {
                             { setReturnLocation((prev) => ({ ...prev, [l.poLineId]: e.target.value })); }
                           }
                           options={locationOptions}
-                          placeholder="Return to…"
+                          placeholder={t('inv.matReturns.returnTo')}
                         />
                       </div>
                     </div>
@@ -773,19 +791,19 @@ export default function MaterialReturnsPage() {
               </div>
             )}
             {pendingCount > 0 && (
-              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '10px', textAlign: 'right' }}>
-                Total: <strong style={{ color: theme.textPrimary }}>{fmtAmt(pendingTotal)} IQD</strong>
+              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '10px', textAlign: 'end' }}>
+                {t('inv.matReturns.totalLabel')} <strong style={{ color: theme.textPrimary }}>{fmtAmt(pendingTotal)} IQD</strong>
               </div>
             )}
           </div>
         )}
 
         <Textarea
-          label="Notes"
+          label={t('inv.matReturns.notes')}
           value={formNotes}
           onChange={(e) => { setFormNotes(e.target.value); }}
           rows={2}
-          placeholder="Optional notes…"
+          placeholder={t('inv.matReturns.optionalNotes')}
         />
       </Modal>
     </div>

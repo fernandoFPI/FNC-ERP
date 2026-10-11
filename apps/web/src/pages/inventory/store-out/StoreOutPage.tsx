@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -87,6 +89,7 @@ const fmtAmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export default function StoreOutPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
@@ -248,7 +251,7 @@ export default function StoreOutPage() {
     keywords: p.name_ar ?? undefined,
   }))
   const locationOptions = [
-    { value: '', label: 'Default warehouse' },
+    { value: '', label: t('inv.storeOut.defaultWarehouse') },
     ...locations.map((l) => ({ value: l.id, label: l.code ? `${l.name} (${l.code})` : l.name })),
   ]
   // Searchable regardless of whether a project is picked first: scoped to
@@ -256,7 +259,7 @@ export default function StoreOutPage() {
   // one here then fills in Project below instead (see its onChange), rather
   // than requiring Project to be picked first just to narrow this list.
   const poOptions = [
-    { value: '', label: 'No PO link' },
+    { value: '', label: t('inv.storeOut.noPoLink') },
     ...(formProjectId ? projectPOs : allPOs).map((po) => ({
       value: po.id,
       label: po.vendor_name || po.po_number,
@@ -275,16 +278,16 @@ export default function StoreOutPage() {
     label: r.requisition_number,
   }))
   const statusFilterOptions = [
-    { value: 'draft', label: 'Draft' },
-    { value: 'issued', label: 'Issued' },
-    { value: 'cancelled', label: 'Cancelled' },
+    { value: 'draft', label: t('inv.storeOut.draft') },
+    { value: 'issued', label: t('inv.storeOut.issued') },
+    { value: 'cancelled', label: t('inv.storeOut.cancelled') },
   ]
 
   // Mutations
   const [createIssue, { loading: creating }] = useMutation<CreateMaterialIssueMutation, CreateMaterialIssueMutationVariables>(CREATE_MATERIAL_ISSUE)
   const [addLine, { loading: addingLine }] = useMutation<AddMaterialIssueLineMutation, AddMaterialIssueLineMutationVariables>(ADD_MATERIAL_ISSUE_LINE, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Item added' })
+      addToast({ type: 'success', message: t('inv.storeOut.itemAdded') })
       setDraftProductId('')
       setDraftQty('')
       setDraftUnit('')
@@ -303,7 +306,7 @@ export default function StoreOutPage() {
   })
   const [issueMI, { loading: issuing }] = useMutation<IssueMaterialIssueMutation, IssueMaterialIssueMutationVariables>(ISSUE_MATERIAL_ISSUE, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Store-out issued — cost committed to project' })
+      addToast({ type: 'success', message: t('inv.storeOut.storeOutIssuedCostCommittedTo') })
       setConfirmIssue(null)
       void refetch()
     },
@@ -314,7 +317,7 @@ export default function StoreOutPage() {
   })
   const [cancelMI, { loading: cancelling }] = useMutation<CancelMaterialIssueMutation, CancelMaterialIssueMutationVariables>(CANCEL_MATERIAL_ISSUE, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Store-out cancelled' })
+      addToast({ type: 'success', message: t('inv.storeOut.storeOutCancelled') })
       setConfirmCancel(null)
       void refetch()
     },
@@ -388,7 +391,7 @@ export default function StoreOutPage() {
         },
       })
       const issueId: string | undefined = res.data?.createMaterialIssue.id
-      if (!issueId) throw new Error('No issue ID returned')
+      if (!issueId) throw new Error(t('inv.storeOut.noIssueId'))
       for (const line of pendingLines) {
         await addLine({
           variables: {
@@ -404,14 +407,14 @@ export default function StoreOutPage() {
       }
       addToast({
         type: 'success',
-        message: `Store-out created with ${pendingLines.length} item(s)`,
+        message: t('inv.storeOut.createdWithItems', { count: pendingLines.length }),
       })
       resetModal()
       void refetch()
     } catch (e: unknown) {
       addToast({
         type: 'error',
-        message: e instanceof Error ? e.message : 'Failed to create store-out',
+        message: e instanceof Error ? e.message : t('inv.storeOut.failedToCreateStoreOut'),
       })
     }
   }
@@ -436,7 +439,7 @@ export default function StoreOutPage() {
     return [
       {
         key: 'productName',
-        header: 'Item',
+        header: t('inv.storeOut.item'),
         render: (row) => (
           <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
             {row.productName ?? row.productId}
@@ -445,7 +448,7 @@ export default function StoreOutPage() {
       },
       {
         key: 'qtyIssued',
-        header: 'Qty',
+        header: t('inv.storeOut.qty'),
         width: '80px',
         render: (row) => (
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{row.qtyIssued}</span>
@@ -463,7 +466,7 @@ export default function StoreOutPage() {
                     e.stopPropagation()
                     void deleteLine({ variables: { id: row.id, issueId } })
                   }}
-                  title="Remove"
+                  title={t('inv.storeOut.remove')}
                   style={{
                     background: 'none',
                     border: 'none',
@@ -496,7 +499,7 @@ export default function StoreOutPage() {
   const pendingColumns: Column<PendingLine>[] = [
     {
       key: 'productName',
-      header: 'Item',
+      header: t('inv.storeOut.item'),
       render: (row) => (
         <div>
           <div style={{ color: theme.textPrimary, fontWeight: 500 }}>{row.productName}</div>
@@ -506,13 +509,13 @@ export default function StoreOutPage() {
     },
     {
       key: 'qty',
-      header: 'Qty',
+      header: t('inv.storeOut.qty'),
       width: '70px',
       render: (row) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{row.qty}</span>,
     },
     {
       key: 'unitCost',
-      header: 'Unit Cost',
+      header: t('inv.storeOut.unitCost'),
       width: '110px',
       render: (row) => (
         <span style={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -522,7 +525,7 @@ export default function StoreOutPage() {
     },
     {
       key: '_total',
-      header: 'Total',
+      header: t('inv.storeOut.total'),
       width: '110px',
       render: (row) => (
         <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
@@ -539,7 +542,7 @@ export default function StoreOutPage() {
           onClick={() => {
             setPendingLines((prev) => prev.filter((l) => l.key !== row.key))
           }}
-          title="Remove"
+          title={t('inv.storeOut.remove')}
           style={{
             background: 'none',
             border: 'none',
@@ -592,8 +595,8 @@ export default function StoreOutPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
       <PageHeader
-        title="Store Out"
-        subtitle="Record inventory items issued to projects"
+        title={t('inv.storeOut.storeOut')}
+        subtitle={t('inv.storeOut.recordInventoryItemsIssuedToProjects')}
         actions={
           <Button
             variant="primary"
@@ -601,7 +604,7 @@ export default function StoreOutPage() {
               setShowModal(true)
             }}
           >
-            + New Store Out
+            {t('inv.storeOut.newStoreOut')}
           </Button>
         }
       />
@@ -616,16 +619,16 @@ export default function StoreOutPage() {
         }}
       >
         <KPICard
-          label="Draft"
+          label={t('inv.storeOut.draft')}
           value={draftCount}
-          subtitle="pending issue"
+          subtitle={t('inv.storeOut.pendingIssue')}
           icon={IconBox}
           iconColor="warning"
         />
         <KPICard
-          label="Issued"
+          label={t('inv.storeOut.issued')}
           value={issuedCount}
-          subtitle="cost committed"
+          subtitle={t('inv.storeOut.costCommitted')}
           icon={IconCheck}
           iconColor="success"
         />
@@ -643,10 +646,10 @@ export default function StoreOutPage() {
       >
         <div style={{ minWidth: '160px' }}>
           <Select
-            label="Status"
+            label={t('inv.storeOut.status')}
             value={statusFilter}
             options={statusFilterOptions}
-            placeholder="All Statuses"
+            placeholder={t('inv.storeOut.allStatuses')}
             onChange={(e) => {
               setStatusFilter(e.target.value)
             }}
@@ -654,10 +657,10 @@ export default function StoreOutPage() {
         </div>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '320px' }}>
           <Select
-            label="Project"
+            label={t('inv.storeOut.project')}
             value={projectFilter}
             options={projectOptions}
-            placeholder="All Projects"
+            placeholder={t('inv.storeOut.allProjects')}
             onChange={(e) => {
               setProjectFilter(e.target.value)
             }}
@@ -665,27 +668,27 @@ export default function StoreOutPage() {
         </div>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '320px' }}>
           <SearchableSelect
-            label="Purchase Order"
+            label={t('inv.storeOut.purchaseOrder')}
             value={poFilter}
             onChange={setPoFilter}
             options={poFilterOptions}
-            placeholder="All Purchase Orders"
+            placeholder={t('inv.storeOut.allPurchaseOrders')}
           />
         </div>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '320px' }}>
           <SearchableSelect
-            label="Requisition"
+            label={t('inv.storeOut.requisition')}
             value={requisitionFilter}
             onChange={setRequisitionFilter}
             options={requisitionFilterOptions}
-            placeholder="All Requisitions"
+            placeholder={t('inv.storeOut.allRequisitions')}
           />
         </div>
         <div style={{ minWidth: '200px', flex: 1, maxWidth: '260px' }}>
           <Input
-            label="Store In / Receipt #"
+            label={t('inv.storeOut.storeInReceipt')}
             value={receiptNumberFilter}
-            placeholder="e.g. GRN-2026-0012"
+            placeholder={t('inv.storeOut.eGGrn20260012')}
             onChange={(e) => {
               setReceiptNumberFilter(e.target.value)
             }}
@@ -693,9 +696,9 @@ export default function StoreOutPage() {
         </div>
         <div style={{ minWidth: '200px', flex: 1, maxWidth: '260px' }}>
           <Input
-            label="Item name or SKU"
+            label={t('inv.storeOut.itemNameOrSku')}
             value={itemSearch}
-            placeholder="e.g. Bolt 25* 4.8mm or GEN-048"
+            placeholder={t('inv.storeOut.eGBolt2548mm')}
             onChange={(e) => {
               setItemSearch(e.target.value)
             }}
@@ -714,7 +717,7 @@ export default function StoreOutPage() {
               setItemSearch('')
             }}
           >
-            Clear filters
+            {t('inv.storeOut.clearFilters')}
           </Button>
         )}
       </div>
@@ -737,11 +740,11 @@ export default function StoreOutPage() {
         </div>
       ) : visibleIssues.length === 0 ? (
         <EmptyState
-          title={hasActiveFilters ? 'No matching store-outs' : 'No store-outs yet'}
+          title={hasActiveFilters ? t('inv.storeOut.noMatchingStoreOuts') : t('inv.storeOut.noStoreOutsYet')}
           message={
             hasActiveFilters
-              ? 'Nothing matches these filters — try clearing them or adjusting the item search.'
-              : 'Create a store-out to record inventory items issued to a project.'
+              ? t('inv.storeOut.nothingMatchesTheseFiltersTryClearing')
+              : t('inv.storeOut.createAStoreOutToRecord')
           }
           action={
             hasActiveFilters ? undefined : (
@@ -752,7 +755,7 @@ export default function StoreOutPage() {
                   setShowModal(true)
                 }}
               >
-                + New Store Out
+                {t('inv.storeOut.newStoreOut')}
               </Button>
             )
           }
@@ -838,11 +841,11 @@ export default function StoreOutPage() {
                   <div style={{ fontSize: '12px', color: theme.textMuted }}>
                     {si.poNumber ? (
                       <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>
-                        PO: {si.poNumber}
+                        {t('inv.storeOut.poPrefix', { number: si.poNumber })}
                       </span>
                     ) : si.requisitionNumber ? (
                       <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>
-                        REQ: {si.requisitionNumber}
+                        {t('inv.storeOut.reqPrefix', { number: si.requisitionNumber })}
                       </span>
                     ) : (
                       (si.notes?.slice(0, 35) ?? '—')
@@ -859,10 +862,10 @@ export default function StoreOutPage() {
                       color: theme.textPrimary,
                     }}
                   >
-                    {si.lines.length} item{si.lines.length === 1 ? '' : 's'}
+                    {t('inv.storeOut.itemsCount', { count: si.lines.length })}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Badge variant={STATUS_VARIANT[si.status] ?? 'neutral'}>{si.status}</Badge>
+                    <Badge variant={STATUS_VARIANT[si.status] ?? 'neutral'}>{enumLabel(si.status)}</Badge>
                     <svg
                       width="13"
                       height="13"
@@ -891,8 +894,8 @@ export default function StoreOutPage() {
                       rowKey="id"
                       emptyMessage={
                         si.poId ?? si.requisitionId
-                          ? 'No items on this store-out.'
-                          : 'No items yet — add one below.'
+                          ? t('inv.storeOut.noItemsOnThisStoreOut')
+                          : t('inv.storeOut.noItemsYetAddOneBelow')
                       }
                     />
 
@@ -920,7 +923,7 @@ export default function StoreOutPage() {
                             marginBottom: '12px',
                           }}
                         >
-                          Add Item
+                          {t('inv.storeOut.addItem')}
                         </p>
                         <div
                           style={{
@@ -931,7 +934,7 @@ export default function StoreOutPage() {
                           }}
                         >
                           <SearchableSelect
-                            label="Item"
+                            label={t('inv.storeOut.item')}
                             value={draftProductId}
                             onChange={(val) => {
                               setDraftProductId(val)
@@ -940,11 +943,11 @@ export default function StoreOutPage() {
                                 setDraftUnit(String(prod.average_cost))
                             }}
                             options={productOptions}
-                            placeholder="Search name or SKU…"
+                            placeholder={t('inv.storeOut.searchNameOrSku')}
                             minDropdownWidth={420}
                           />
                           <Select
-                            label="From Location"
+                            label={t('inv.storeOut.fromLocation')}
                             value={draftFromLocationId}
                             onChange={(e) => {
                               setDraftFromLocationId(e.target.value)
@@ -952,7 +955,7 @@ export default function StoreOutPage() {
                             options={locationOptions}
                           />
                           <Input
-                            label="Qty"
+                            label={t('inv.storeOut.qty')}
                             type="number"
                             value={draftQty}
                             onChange={(e) => {
@@ -963,7 +966,7 @@ export default function StoreOutPage() {
                             placeholder="0"
                           />
                           <Input
-                            label="Unit Cost (IQD)"
+                            label={t('inv.storeOut.unitCostIqd')}
                             type="number"
                             value={draftUnit}
                             onChange={(e) => {
@@ -989,7 +992,7 @@ export default function StoreOutPage() {
                               })
                             }
                           >
-                            Add
+                            {t('inv.storeOut.add')}
                           </Button>
                         </div>
                       </div>
@@ -1004,7 +1007,7 @@ export default function StoreOutPage() {
                       }}
                     >
                       <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                        {si.issuedByName ? `Issued by ${si.issuedByName}` : ''}
+                        {si.issuedByName ? t('inv.storeOut.issuedBy', { name: si.issuedByName }) : ''}
                       </span>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <Button
@@ -1014,7 +1017,7 @@ export default function StoreOutPage() {
                             navigate(`/inventory/store-out/${si.id}`)
                           }}
                         >
-                          View / Print
+                          {t('inv.storeOut.viewPrint')}
                         </Button>
                         {si.projectCode && (
                           <Button
@@ -1024,7 +1027,7 @@ export default function StoreOutPage() {
                               navigate(`/projects/${si.id}?tab=procurement`)
                             }}
                           >
-                            View Project
+                            {t('inv.storeOut.viewProject')}
                           </Button>
                         )}
                         {isDraft && si.lines.length > 0 && (
@@ -1035,7 +1038,7 @@ export default function StoreOutPage() {
                               setConfirmIssue(si.id)
                             }}
                           >
-                            Issue Store Out
+                            {t('inv.storeOut.issueStoreOut')}
                           </Button>
                         )}
                         {(isDraft || si.status === 'issued') && (
@@ -1046,7 +1049,7 @@ export default function StoreOutPage() {
                               setConfirmCancel(si.id)
                             }}
                           >
-                            Cancel
+                            {t('inv.storeOut.cancel')}
                           </Button>
                         )}
                       </div>
@@ -1064,13 +1067,13 @@ export default function StoreOutPage() {
         open={showModal}
         onClose={resetModal}
         closeOnBackdrop={false}
-        title="New Store Out"
-        description="Record inventory items being issued to a project."
+        title={t('inv.storeOut.newStoreOut2')}
+        description={t('inv.storeOut.recordInventoryItemsBeingIssuedTo')}
         size="lg"
         footer={
           <>
             <Button variant="ghost" size="md" onClick={resetModal}>
-              Cancel
+              {t('inv.storeOut.cancel')}
             </Button>
             <Button
               variant="primary"
@@ -1079,10 +1082,9 @@ export default function StoreOutPage() {
               loading={creating}
               onClick={() => void handleCreate()}
             >
-              Create
               {pendingLines.length > 0
-                ? ` (${pendingLines.length} item${pendingLines.length > 1 ? 's' : ''})`
-                : ''}
+                ? t('inv.storeOut.createWithItems', { count: pendingLines.length })
+                : t('inv.storeOut.createPlain')}
             </Button>
           </>
         }
@@ -1097,7 +1099,7 @@ export default function StoreOutPage() {
           }}
         >
           <Input
-            label="Issue Date"
+            label={t('inv.storeOut.issueDate')}
             required
             type="date"
             value={formDate}
@@ -1106,17 +1108,17 @@ export default function StoreOutPage() {
             }}
           />
           <SearchableSelect
-            label="Project (optional)"
+            label={t('inv.storeOut.projectOptional')}
             value={formProjectId}
             onChange={(val) => {
               setFormProjectId(val)
               setFormPoId('')
             }}
             options={projectOptions}
-            placeholder="No project"
+            placeholder={t('inv.storeOut.noProject')}
           />
           <SearchableSelect
-            label="Link to PO (optional)"
+            label={t('inv.storeOut.linkToPoOptional')}
             value={formPoId}
             onChange={(val) => {
               setFormPoId(val)
@@ -1129,18 +1131,18 @@ export default function StoreOutPage() {
               }
             }}
             options={poOptions}
-            placeholder="Search PO…"
+            placeholder={t('inv.storeOut.searchPo')}
           />
         </div>
 
         <Textarea
-          label="Notes"
+          label={t('inv.storeOut.notes')}
           value={formNotes}
           onChange={(e) => {
             setFormNotes(e.target.value)
           }}
           rows={2}
-          placeholder="Optional notes…"
+          placeholder={t('inv.storeOut.optionalNotes')}
         />
 
         {/* Items section */}
@@ -1162,7 +1164,7 @@ export default function StoreOutPage() {
                 letterSpacing: '0.06em',
               }}
             >
-              Items to Issue
+              {t('inv.storeOut.itemsToIssue')}
             </p>
             {pendingLines.length > 0 && (
               <span
@@ -1172,7 +1174,7 @@ export default function StoreOutPage() {
                   fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                Subtotal: <strong>{fmtAmt(pendingTotal)} IQD</strong>
+                {t('inv.storeOut.subtotalLabel')} <strong>{fmtAmt(pendingTotal)} IQD</strong>
               </span>
             )}
           </div>
@@ -1184,8 +1186,7 @@ export default function StoreOutPage() {
               style={{ marginBottom: '12px' }}
               onClick={autoFillFromPO}
             >
-              + Add {autoFillCandidates.length} received item
-              {autoFillCandidates.length > 1 ? 's' : ''} from this PO
+              {t('inv.storeOut.addReceivedItems', { count: autoFillCandidates.length })}
             </Button>
           )}
 
@@ -1214,7 +1215,7 @@ export default function StoreOutPage() {
           >
             {pendingLines.length === 0 && (
               <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
-                Add the items being issued from inventory.
+                {t('inv.storeOut.addTheItemsBeingIssuedFrom')}
               </p>
             )}
             <div
@@ -1226,7 +1227,7 @@ export default function StoreOutPage() {
               }}
             >
               <SearchableSelect
-                label="Item"
+                label={t('inv.storeOut.item')}
                 value={newProductId}
                 onChange={(val) => {
                   setNewProductId(val)
@@ -1234,11 +1235,11 @@ export default function StoreOutPage() {
                   if (prod?.average_cost != null) setNewUnit(String(prod.average_cost))
                 }}
                 options={productOptions}
-                placeholder="Search name or SKU…"
+                placeholder={t('inv.storeOut.searchNameOrSku')}
                 minDropdownWidth={420}
               />
               <Select
-                label="From Location"
+                label={t('inv.storeOut.fromLocation')}
                 value={newFromLocationId}
                 onChange={(e) => {
                   setNewFromLocationId(e.target.value)
@@ -1246,7 +1247,7 @@ export default function StoreOutPage() {
                 options={locationOptions}
               />
               <Input
-                label="Qty"
+                label={t('inv.storeOut.qty')}
                 type="number"
                 value={newQty}
                 onChange={(e) => {
@@ -1257,7 +1258,7 @@ export default function StoreOutPage() {
                 placeholder="0"
               />
               <Input
-                label="Unit Cost (IQD)"
+                label={t('inv.storeOut.unitCostIqd')}
                 type="number"
                 value={newUnit}
                 onChange={(e) => {
@@ -1273,7 +1274,7 @@ export default function StoreOutPage() {
                 disabled={!newProductId || !newQty || !newUnit}
                 onClick={addPendingLine}
               >
-                + Add
+                {t('inv.storeOut.add2')}
               </Button>
             </div>
           </div>
@@ -1284,10 +1285,10 @@ export default function StoreOutPage() {
                 fontSize: '11px',
                 color: theme.textMuted,
                 marginTop: '8px',
-                textAlign: 'right',
+                textAlign: 'end',
               }}
             >
-              Add at least one item before creating
+              {t('inv.storeOut.addAtLeastOneItemBefore')}
             </p>
           )}
         </div>
@@ -1302,9 +1303,9 @@ export default function StoreOutPage() {
         onConfirm={() => {
           if (confirmIssue) void issueMI({ variables: { id: confirmIssue } })
         }}
-        title="Issue Store Out"
-        message="Issuing this store-out will commit the cost to the project. This cannot be undone."
-        confirmLabel="Issue"
+        title={t('inv.storeOut.issueStoreOut')}
+        message={t('inv.storeOut.issuingThisStoreOutWillCommit')}
+        confirmLabel={t('inv.storeOut.issue')}
         confirmVariant="primary"
         loading={issuing}
       />
@@ -1318,9 +1319,9 @@ export default function StoreOutPage() {
         onConfirm={() => {
           if (confirmCancel) void cancelMI({ variables: { id: confirmCancel } })
         }}
-        title="Cancel Store Out"
-        message="Are you sure you want to cancel this store-out? This will remove any committed cost from the project."
-        confirmLabel="Cancel Store Out"
+        title={t('inv.storeOut.cancelStoreOut')}
+        message={t('inv.storeOut.areYouSureYouWantTo')}
+        confirmLabel={t('inv.storeOut.cancelStoreOut')}
         confirmVariant="danger"
         loading={cancelling}
       />

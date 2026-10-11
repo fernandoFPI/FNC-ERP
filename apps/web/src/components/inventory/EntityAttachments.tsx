@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from 'react-i18next'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client'
 import {
@@ -40,13 +41,13 @@ export function EntityAttachments({
   entityType,
   entityId,
   recordLabel = 'this record',
-  title = 'Signed Documents',
+  title,
   description,
-  uploadButtonLabel = 'Upload signed copy',
+  uploadButtonLabel,
   category = 'attachment',
   readOnly = false,
   groupBy,
-  emptyMessage = 'No signed documents uploaded yet',
+  emptyMessage,
 }: {
   entityType: string
   entityId: string
@@ -72,6 +73,12 @@ export function EntityAttachments({
   groupBy?: { match: string; title: string; description?: string }[]
   emptyMessage?: string
 }) {
+  const { t } = useTranslation()
+  const titleText = title ?? t('attach.signedDocuments')
+  const uploadButtonText = uploadButtonLabel ?? t('attach.uploadSignedCopy')
+  const emptyText = emptyMessage ?? t('attach.noSignedDocumentsYet')
+  // Callers pass an English noun phrase ("this PO"); translate it when a key exists.
+  const recordText = t(`attach.record.${recordLabel}`, { defaultValue: recordLabel })
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const accessToken = useAuthStore((s) => s.accessToken)
@@ -183,7 +190,7 @@ export function EntityAttachments({
           category,
         },
       })
-      if (!urlData) throw new Error('Failed to request upload URL')
+      if (!urlData) throw new Error(t('attach.failedToRequestUploadUrl'))
       const { fileId } = urlData.requestUploadUrl
 
       const apiBase = import.meta.env.VITE_API_URL
@@ -199,7 +206,7 @@ export function EntityAttachments({
         const errJson = (await proxyRes.json().catch(() => ({}))) as {
           error?: { message?: string }
         }
-        throw new Error(errJson.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
+        throw new Error(errJson.error?.message ?? t('attach.uploadFailed', { reason: proxyRes.statusText }))
       }
 
       await attachFile({
@@ -211,7 +218,7 @@ export function EntityAttachments({
         },
       })
 
-      addToast({ type: 'success', message: 'Signed document uploaded' })
+      addToast({ type: 'success', message: t('attach.signedDocumentUploaded') })
       setUploadModalOpen(false)
       setPendingFile(null)
       void refetch()
@@ -236,7 +243,7 @@ export function EntityAttachments({
     setPreviewLoading(true)
     try {
       const url = await fetchDownloadUrlWithRetry(att.file.id, 'inline')
-      if (!url) throw new Error('Could not load this file')
+      if (!url) throw new Error(t('attach.couldNotLoadFile'))
       setPreviewUrl(url)
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -250,7 +257,7 @@ export function EntityAttachments({
     try {
       const { data: dlData } = await getDownloadUrl({ variables: { fileId } })
       const url = dlData?.fileDownloadUrl.downloadUrl
-      if (!url) throw new Error('No download URL')
+      if (!url) throw new Error(t('attach.noDownloadUrl'))
       const a = document.createElement('a')
       a.href = url
       a.download = filename
@@ -280,9 +287,9 @@ export function EntityAttachments({
         },
       })
       if (res.data?.detachFile) {
-        addToast({ type: 'success', message: 'Document removed' })
+        addToast({ type: 'success', message: t('attach.documentRemoved') })
       } else {
-        addToast({ type: 'error', message: 'Document was already removed' })
+        addToast({ type: 'error', message: t('attach.documentWasAlreadyRemoved') })
       }
       setDeleteTarget(null)
       void refetch()
@@ -373,7 +380,7 @@ export function EntityAttachments({
         <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
           {isPreviewable(att.file.mimeType) && (
             <Button variant="ghost" size="sm" onClick={() => void handlePreview(att)}>
-              Preview
+              {t('attach.preview')}
             </Button>
           )}
           <Button
@@ -381,7 +388,7 @@ export function EntityAttachments({
             size="sm"
             onClick={() => void handleDownload(att.file.id, att.file.originalFilename)}
           >
-            Download
+            {t('attach.download')}
           </Button>
           {!readOnly && (
             <Button
@@ -392,7 +399,7 @@ export function EntityAttachments({
                 setDeleteTarget(att)
               }}
             >
-              Remove
+              {t('attach.remove')}
             </Button>
           )}
         </div>
@@ -424,16 +431,16 @@ export function EntityAttachments({
         >
           <div>
             <div style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>
-              {title} ({attachments.length})
+              {titleText} ({attachments.length})
             </div>
             <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
               {description ??
-                `Print ${recordLabel}, get it signed, then upload a photo or scan of the signed copy here.`}
+                t('attach.printHint', { record: recordText })}
             </div>
           </div>
           {!readOnly && (
             <Button variant="primary" size="sm" onClick={openFilePicker}>
-              {uploadButtonLabel}
+              {uploadButtonText}
             </Button>
           )}
         </div>
@@ -447,7 +454,7 @@ export function EntityAttachments({
               fontSize: '13px',
             }}
           >
-            Loading…
+            {t('attach.loading')}
           </div>
         )}
 
@@ -460,7 +467,7 @@ export function EntityAttachments({
               fontSize: '13px',
             }}
           >
-            {emptyMessage}
+            {emptyText}
           </div>
         )}
 
@@ -504,7 +511,7 @@ export function EntityAttachments({
           setUploadModalOpen(false)
           setPendingFile(null)
         }}
-        title="Upload signed document"
+        title={t('attach.uploadSignedDocument')}
         size="sm"
         footer={
           <>
@@ -515,10 +522,10 @@ export function EntityAttachments({
                 setPendingFile(null)
               }}
             >
-              Cancel
+              {t('attach.cancel')}
             </Button>
             <Button variant="primary" onClick={(...args: Parameters<typeof handleUpload>) => void handleUpload(...args)} loading={uploading}>
-              Upload
+              {t('attach.upload')}
             </Button>
           </>
         }
@@ -540,12 +547,12 @@ export function EntityAttachments({
             </div>
           )}
           <Input
-            label="Label (optional)"
+            label={t('attach.labelOptional')}
             value={uploadLabel}
             onChange={(e) => {
               setUploadLabel(e.target.value)
             }}
-            placeholder="e.g. Signed by site foreman"
+            placeholder={t('attach.eGSignedBySiteForeman')}
           />
         </div>
       </Modal>
@@ -556,7 +563,7 @@ export function EntityAttachments({
         onClose={() => {
           setDeleteTarget(null)
         }}
-        title="Remove document"
+        title={t('attach.removeDocument')}
         size="sm"
         footer={
           <>
@@ -566,17 +573,24 @@ export function EntityAttachments({
                 setDeleteTarget(null)
               }}
             >
-              Cancel
+              {t('attach.cancel')}
             </Button>
             <Button variant="danger" onClick={(...args: Parameters<typeof handleDetach>) => void handleDetach(...args)} loading={detaching}>
-              Remove
+              {t('attach.remove')}
             </Button>
           </>
         }
       >
         <p style={{ margin: 0, color: theme.textPrimary, fontSize: '13px' }}>
-          Remove <strong>{deleteTarget?.label ?? deleteTarget?.file.originalFilename}</strong> from{' '}
-          {recordLabel}? The file will be detached but not permanently deleted.
+          <Trans
+            i18nKey="attach.removeConfirm"
+            values={{
+              name: deleteTarget?.label ?? deleteTarget?.file.originalFilename ?? '',
+              record: recordText,
+            }}
+            components={{ strong: <strong /> }}
+            defaults="Remove <strong>{{name}}</strong> from {{record}}? The file will be detached but not permanently deleted."
+          />
         </p>
       </Modal>
 
@@ -592,7 +606,7 @@ export function EntityAttachments({
       >
         {previewLoading && (
           <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
-            Loading…
+            {t('attach.loading')}
           </div>
         )}
         {!previewLoading && previewUrl && previewTarget && (

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -59,6 +61,7 @@ const fmtAmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 
 export default function StoreInPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
@@ -158,10 +161,10 @@ export default function StoreInPage() {
     if (failed === 0) {
       addToast({
         type: 'success',
-        message: `${succeeded} draft receipt${succeeded !== 1 ? 's' : ''} cancelled`,
+        message: t('inv.storeIn.draftsCancelled', { count: succeeded }),
       })
     } else {
-      addToast({ type: 'warning', message: `${succeeded} cancelled, ${failed} failed` })
+      addToast({ type: 'warning', message: t('inv.storeIn.cancelledPartial', { succeeded, failed }) })
     }
   }
 
@@ -205,7 +208,7 @@ export default function StoreInPage() {
     ...(isAdmin ? [checkboxCol] : []),
     {
       key: 'receipt_number',
-      header: 'Receipt #',
+      header: t('inv.storeIn.receipt'),
       render: (r) => (
         <span style={{ fontWeight: 600, color: theme.textPrimary }}>
           {r.receipt_number ?? r.id.slice(0, 8)}
@@ -214,22 +217,22 @@ export default function StoreInPage() {
     },
     {
       key: 'po_number',
-      header: 'Purchase Order',
+      header: t('inv.storeIn.purchaseOrder'),
       render: (r) => <span>{r.po_number ?? '—'}</span>,
     },
     {
       key: 'received_from_name',
-      header: 'Received From',
+      header: t('inv.storeIn.receivedFrom'),
       render: (r) => <span>{r.received_from_name ?? '—'}</span>,
     },
     {
       key: 'items',
-      header: 'Items',
+      header: t('inv.storeIn.items'),
       render: (r) => <span>{r.lines.length}</span>,
     },
     {
       key: 'total',
-      header: 'Total',
+      header: t('inv.storeIn.total'),
       render: (r) => (
         <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
           {fmtAmt(r.lines.reduce((s, l) => s + lineTotal(l), 0))} {r.base_currency_code ?? 'IQD'}
@@ -238,26 +241,26 @@ export default function StoreInPage() {
     },
     {
       key: 'received_by_name',
-      header: 'Received By',
+      header: t('inv.storeIn.receivedBy'),
       render: (r) => <span>{r.received_by_name ?? r.received_by_email ?? '—'}</span>,
     },
     {
       key: 'receipt_date',
-      header: 'Date',
+      header: t('inv.storeIn.date'),
       render: (r) => <span style={{ color: theme.textMuted }}>{r.receipt_date?.slice(0, 10) ?? '—'}</span>,
     },
     {
       key: 'status',
-      header: 'Status',
-      render: (r) => <Badge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>{r.status}</Badge>,
+      header: t('inv.storeIn.status'),
+      render: (r) => <Badge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>{enumLabel(r.status)}</Badge>,
     },
   ]
 
   return (
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
-        title="Store In"
-        subtitle="Goods received against purchase orders — created automatically when a receipt is recorded"
+        title={t('inv.storeIn.storeIn')}
+        subtitle={t('inv.storeIn.goodsReceivedAgainstPurchaseOrdersCreated')}
         actions={
           <Button
             variant="primary"
@@ -267,7 +270,7 @@ export default function StoreInPage() {
               setPickerOpen(true)
             }}
           >
-            Create Manually
+            {t('inv.storeIn.createManually')}
           </Button>
         }
       />
@@ -284,7 +287,7 @@ export default function StoreInPage() {
             color: '#991b1b',
           }}
         >
-          Couldn't load Store In records: {error.message}
+          {t('inv.storeIn.couldntLoad', { message: error.message })}
         </div>
       )}
 
@@ -296,11 +299,11 @@ export default function StoreInPage() {
           marginTop: '20px',
         }}
       >
-        <KPICard label="Draft" value={draftCount} subtitle="not yet confirmed" iconColor="warning" />
+        <KPICard label={t('inv.storeIn.draft')} value={draftCount} subtitle={t('inv.storeIn.notYetConfirmed')} iconColor="warning" />
         <KPICard
-          label="Confirmed"
+          label={t('inv.storeIn.confirmed')}
           value={confirmedCount}
-          subtitle="inventory updated"
+          subtitle={t('inv.storeIn.inventoryUpdated')}
           iconColor="success"
         />
       </div>
@@ -318,7 +321,7 @@ export default function StoreInPage() {
         >
           <input
             type="text"
-            placeholder="Search by receipt #, PO #, item name/SKU, received from, or received by…"
+            placeholder={t('inv.storeIn.searchByReceiptPoItemName')}
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -337,16 +340,16 @@ export default function StoreInPage() {
           />
           <div style={{ minWidth: '160px' }}>
             <Select
-              label="Status"
+              label={t('inv.storeIn.status')}
               value={statusFilter}
               onChange={(e) => {
                 setStatusFilter(e.target.value)
               }}
             >
-              <option value="">All statuses</option>
-              <option value="draft">Draft</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="">{t('inv.storeIn.allStatuses')}</option>
+              <option value="draft">{t('inv.storeIn.draft')}</option>
+              <option value="confirmed">{t('inv.storeIn.confirmed')}</option>
+              <option value="cancelled">{t('inv.storeIn.cancelled')}</option>
             </Select>
           </div>
         </div>
@@ -364,7 +367,7 @@ export default function StoreInPage() {
             }}
           >
             <span style={{ fontSize: '13px', fontWeight: 600, color: theme.accent }}>
-              {selectedIds.size} selected
+              {t('inv.storeIn.selectedCount', { count: selectedIds.size })}
             </span>
             <div style={{ width: '1px', height: '18px', background: theme.accentBorder }} />
             <button
@@ -386,13 +389,13 @@ export default function StoreInPage() {
               }}
             >
               {bulkCancelling
-                ? 'Cancelling…'
+                ? t('inv.storeIn.cancelling')
                 : `Cancel ${selectedIds.size} draft${selectedIds.size !== 1 ? 's' : ''}`}
             </button>
             <button
               onClick={clearSelection}
               style={{
-                marginLeft: 'auto',
+                marginInlineStart: 'auto',
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
@@ -401,7 +404,7 @@ export default function StoreInPage() {
                 textDecoration: 'underline',
               }}
             >
-              Clear
+              {t('inv.storeIn.clear')}
             </button>
           </div>
         )}
@@ -413,7 +416,7 @@ export default function StoreInPage() {
           rowKey="id"
           maxHeight="70vh"
           stickyHeader
-          emptyMessage="No Store In records yet — these are created automatically when a receipt is recorded against a purchase order."
+          emptyMessage={t('inv.storeIn.noStoreInRecordsYetThese')}
           onRowClick={(r) => {
             navigate(`/inventory/store-in/${r.id}`)
           }}
@@ -425,7 +428,7 @@ export default function StoreInPage() {
         onClose={() => {
           setPickerOpen(false)
         }}
-        title="Create Store In"
+        title={t('inv.storeIn.createStoreIn')}
         size="sm"
         footer={
           <>
@@ -435,7 +438,7 @@ export default function StoreInPage() {
                 setPickerOpen(false)
               }}
             >
-              Cancel
+              {t('inv.storeIn.cancel')}
             </Button>
             <Button
               variant="primary"
@@ -444,25 +447,24 @@ export default function StoreInPage() {
                 navigate(`/procurement/purchase-orders/${pickerPoId}/receive`)
               }}
             >
-              Continue
+              {t('inv.storeIn.continue')}
             </Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div style={{ fontSize: '12px', color: theme.textMuted }}>
-            Store In records are created by recording a receipt against a purchase order — pick
-            the PO below to open its receiving form.
+            {t('inv.storeIn.storeInRecordsAreCreatedBy')}
           </div>
           <Select
-            label="Project (optional, narrows the PO list)"
+            label={t('inv.storeIn.projectOptionalNarrowsThePoList')}
             value={pickerProjectId}
             onChange={(e) => {
               setPickerProjectId(e.target.value)
               setPickerPoId('')
             }}
           >
-            <option value="">All projects</option>
+            <option value="">{t('inv.storeIn.allProjects')}</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.code} — {p.name}
@@ -470,7 +472,7 @@ export default function StoreInPage() {
             ))}
           </Select>
           <SearchableSelect
-            label="Purchase Order"
+            label={t('inv.storeIn.purchaseOrder')}
             value={pickerPoId}
             onChange={(v) => {
               setPickerPoId(v)
@@ -480,13 +482,11 @@ export default function StoreInPage() {
               label: po.po_number,
               sublabel: po.vendor_name ?? undefined,
             }))}
-            placeholder={posLoading ? 'Loading…' : 'Search PO number or vendor…'}
+            placeholder={posLoading ? t('inv.storeIn.loading') : t('inv.storeIn.searchPoNumberOrVendor')}
           />
           {!posLoading && receivablePOs.length === 0 && (
             <div style={{ fontSize: '12px', color: theme.textMuted }}>
-              No purchase orders with anything left to receive{pickerProjectId ? ' for this project' : ''}.
-              A PO must be approved (or further along) and still have outstanding quantity — one
-              that's already fully received or fully covered from stock won't show up here.
+              {t('inv.storeIn.noReceivablePos', { context: pickerProjectId ? 'project' : undefined })}
             </div>
           )}
         </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -32,6 +33,7 @@ interface UserPOPosition {
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 
 export default function StockAdjustmentForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
@@ -115,15 +117,15 @@ export default function StockAdjustmentForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!productId) {
-      addToast({ type: 'error', message: 'Select a product' })
+      addToast({ type: 'error', message: t('inv.adjust.selectAProduct') })
       return
     }
     if (!locationId) {
-      addToast({ type: 'error', message: 'Select a location' })
+      addToast({ type: 'error', message: t('inv.adjust.selectALocation') })
       return
     }
     if (newQty === '' || isNaN(parsedNewQty) || parsedNewQty < 0) {
-      addToast({ type: 'error', message: 'Enter a valid quantity (0 or more)' })
+      addToast({ type: 'error', message: t('inv.adjust.enterAValidQuantity0Or') })
       return
     }
 
@@ -143,7 +145,7 @@ export default function StockAdjustmentForm() {
           },
         },
       })
-      addToast({ type: 'success', message: 'Stock adjusted successfully' })
+      addToast({ type: 'success', message: t('inv.adjust.stockAdjustedSuccessfully') })
       navigate('/inventory/balances')
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -154,8 +156,8 @@ export default function StockAdjustmentForm() {
     return (
       <div style={{ padding: '24px', margin: '0 auto', maxWidth: '680px' }}>
         <PageHeader
-          title="Stock Adjustment"
-          subtitle="Set the actual on-hand quantity for a product at a location"
+          title={t('inv.adjust.stockAdjustment')}
+          subtitle={t('inv.adjust.setTheActualOnHandQuantity')}
           backPath="/inventory/balances"
         />
       </div>
@@ -166,8 +168,8 @@ export default function StockAdjustmentForm() {
     return (
       <div style={{ padding: '24px', margin: '0 auto', maxWidth: '680px' }}>
         <PageHeader
-          title="Stock Adjustment"
-          subtitle="Set the actual on-hand quantity for a product at a location"
+          title={t('inv.adjust.stockAdjustment')}
+          subtitle={t('inv.adjust.setTheActualOnHandQuantity')}
           backPath="/inventory/balances"
         />
         <Card
@@ -196,12 +198,10 @@ export default function StockAdjustmentForm() {
             🔒
           </div>
           <div style={{ fontSize: '16px', fontWeight: 600, color: theme.textPrimary }}>
-            Store Keeper Position Required
+            {t('inv.adjust.storeKeeperPositionRequired')}
           </div>
           <div style={{ fontSize: '13px', color: theme.textMuted, maxWidth: '380px' }}>
-            Creating stock adjustments requires the company-wide Store Keeper position. Contact
-            your administrator to be assigned this position if you need to adjust inventory
-            quantities.
+            {t('inv.adjust.creatingStockAdjustmentsRequiresTheCompany')}
           </div>
           <Button
             variant="ghost"
@@ -210,7 +210,7 @@ export default function StockAdjustmentForm() {
             }}
             style={{ marginTop: '4px' }}
           >
-            Back to Stock Balances
+            {t('inv.adjust.backToStockBalances')}
           </Button>
         </Card>
       </div>
@@ -220,8 +220,8 @@ export default function StockAdjustmentForm() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '680px' }}>
       <PageHeader
-        title="Stock Adjustment"
-        subtitle="Set the actual on-hand quantity for a product at a location"
+        title={t('inv.adjust.stockAdjustment')}
+        subtitle={t('inv.adjust.setTheActualOnHandQuantity')}
         backPath="/inventory/balances"
       />
 
@@ -238,7 +238,7 @@ export default function StockAdjustmentForm() {
           {/* Product + Location */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <SearchableSelect
-              label="Product"
+              label={t('inv.adjust.product')}
               value={productId}
               onChange={(value) => {
                 setProductId(value)
@@ -250,19 +250,19 @@ export default function StockAdjustmentForm() {
                 sublabel: p.sku,
                 keywords: p.name_ar ?? undefined,
               }))}
-              placeholder="Search product…"
+              placeholder={t('inv.adjust.searchProduct')}
               required
             />
 
             <Select
-              label="Location"
+              label={t('inv.adjust.location')}
               value={locationId}
               onChange={(e) => {
                 setLocationId(e.target.value)
               }}
               required
             >
-              <option value="">Select location…</option>
+              <option value="">{t('inv.adjust.selectLocation')}</option>
               {warehouses.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name} ({l.code})
@@ -286,7 +286,7 @@ export default function StockAdjustmentForm() {
             >
               <div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                  Current qty on hand
+                  {t('inv.adjust.currentQtyOnHand')}
                 </div>
                 <div style={{ fontWeight: 600, color: theme.textPrimary }}>
                   {currentQty.toFixed(4)} {selectedProduct?.uom ?? ''}
@@ -294,7 +294,7 @@ export default function StockAdjustmentForm() {
               </div>
               <div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                  Last cost
+                  {t('inv.adjust.lastCost')}
                 </div>
                 <div style={{ fontWeight: 600, color: theme.textPrimary }}>
                   {currentCost.toFixed(4)} {currentBalance?.last_cost_currency ?? ''}
@@ -303,7 +303,7 @@ export default function StockAdjustmentForm() {
               {diff !== null && diff !== 0 && (
                 <div>
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                    Adjustment
+                    {t('inv.adjust.adjustment')}
                   </div>
                   <div
                     style={{
@@ -322,7 +322,7 @@ export default function StockAdjustmentForm() {
           {/* New qty + cost + currency + date */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
             <Input
-              label={`New qty${selectedProduct ? ` (${selectedProduct.uom})` : ''}`}
+              label={`${t('inv.adjust.newQty')}${selectedProduct ? ` (${selectedProduct.uom})` : ''}`}
               type="number"
               min="0"
               step="0.0001"
@@ -334,7 +334,7 @@ export default function StockAdjustmentForm() {
               required
             />
             <Input
-              label="Unit cost (optional)"
+              label={t('inv.adjust.unitCostOptional')}
               type="number"
               min="0"
               step="0.0001"
@@ -345,13 +345,13 @@ export default function StockAdjustmentForm() {
               placeholder={currentCost > 0 ? currentCost.toFixed(4) : '0.0000'}
             />
             <Select
-              label="Cost Currency"
+              label={t('inv.adjust.costCurrency')}
               value={effectiveCostCurrency}
               onChange={(e) => {
                 setCostCurrencyOverride(e.target.value)
               }}
             >
-              <option value="">— Not set —</option>
+              <option value="">{t('inv.adjust.notSet')}</option>
               {CURRENCIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -359,7 +359,7 @@ export default function StockAdjustmentForm() {
               ))}
             </Select>
             <Input
-              label="Adjustment date"
+              label={t('inv.adjust.adjustmentDate')}
               type="date"
               value={adjustmentDate}
               onChange={(e) => {
@@ -370,12 +370,12 @@ export default function StockAdjustmentForm() {
           </div>
 
           <Textarea
-            label="Reason / notes"
+            label={t('inv.adjust.reasonNotes')}
             value={notes}
             onChange={(e) => {
               setNotes(e.target.value)
             }}
-            placeholder="e.g. Physical count on 2026-06-15 — correcting system discrepancy"
+            placeholder={t('inv.adjust.eGPhysicalCountOn2026')}
             rows={3}
           />
 
@@ -391,10 +391,12 @@ export default function StockAdjustmentForm() {
                 color: theme.textSecondary,
               }}
             >
-              Quantity is unchanged — this will only correct the recorded cost for this product at
-              this location, from {currentCost.toFixed(4)} {currentBalance?.last_cost_currency ?? ''} to{' '}
-              {parsedUnitCost.toFixed(4)} {effectiveCostCurrency}. Future receipts will keep
-              updating it automatically from there.
+              {t('inv.adjust.costOnlyNote', {
+                from: currentCost.toFixed(4),
+                fromCurrency: currentBalance?.last_cost_currency ?? '',
+                to: parsedUnitCost.toFixed(4),
+                toCurrency: effectiveCostCurrency,
+              })}
             </div>
           )}
 
@@ -410,7 +412,7 @@ export default function StockAdjustmentForm() {
                 color: '#991b1b',
               }}
             >
-              This will zero out stock for this product at this location.
+              {t('inv.adjust.thisWillZeroOutStockFor')}
             </div>
           )}
 
@@ -422,7 +424,7 @@ export default function StockAdjustmentForm() {
                 navigate('/inventory/balances')
               }}
             >
-              Cancel
+              {t('inv.adjust.cancel')}
             </Button>
             <Button
               type="submit"
@@ -431,12 +433,12 @@ export default function StockAdjustmentForm() {
               disabled={diff === 0 && !isCostOnlyCorrection}
             >
               {diff === null
-                ? 'Apply adjustment'
+                ? t('inv.adjust.applyAdjustment')
                 : diff === 0
                   ? isCostOnlyCorrection
-                    ? 'Update cost only'
-                    : 'No change'
-                  : `Apply adjustment (${diff > 0 ? '+' : ''}${diff.toFixed(4)})`}
+                    ? t('inv.adjust.updateCostOnly')
+                    : t('inv.adjust.noChange')
+                  : t('inv.adjust.applyAdjustment', { diff: `${diff > 0 ? '+' : ''}${diff.toFixed(4)}` })}
             </Button>
           </div>
         </Card>

@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { enumLabel, tl } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { STOCK_MOVES_QUERY } from '../../../graphql/inventory'
@@ -58,6 +60,7 @@ const SOURCE_OPTIONS = [
 ]
 
 export default function StockMovesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [params] = useSearchParams()
@@ -92,7 +95,7 @@ export default function StockMovesPage() {
   const columns: Column<StockMove>[] = [
     {
       key: 'move_date',
-      header: 'Date',
+      header: t('inv.moves.date'),
       render: (m) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
           {formatMoveDate(m.move_date)}
@@ -101,7 +104,7 @@ export default function StockMovesPage() {
     },
     {
       key: 'sku',
-      header: 'Product',
+      header: t('inv.moves.product'),
       render: (m) => (
         <div>
           <span style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '12px' }}>
@@ -115,7 +118,7 @@ export default function StockMovesPage() {
     },
     {
       key: 'from_location_name',
-      header: 'From',
+      header: t('inv.moves.from'),
       render: (m) => (
         <span style={{ color: theme.textMuted, fontSize: '13px' }}>
           {m.from_location_name ?? '—'}
@@ -133,7 +136,7 @@ export default function StockMovesPage() {
     },
     {
       key: 'qty',
-      header: 'Qty',
+      header: t('inv.moves.qty'),
       render: (m) => (
         <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>
           {parseFloat(m.qty).toLocaleString()}
@@ -142,7 +145,7 @@ export default function StockMovesPage() {
     },
     {
       key: 'total_cost',
-      header: 'Cost',
+      header: t('inv.moves.cost'),
       render: (m) =>
         m.total_cost ? (
           <AmountDisplay amount={parseFloat(m.total_cost)} currency="IQD" />
@@ -152,8 +155,8 @@ export default function StockMovesPage() {
     },
     {
       key: 'source_type',
-      header: 'Source',
-      render: (m) => <Badge variant="neutral">{m.source_type}</Badge>,
+      header: t('inv.moves.source'),
+      render: (m) => <Badge variant="neutral">{enumLabel(m.source_type)}</Badge>,
     },
     {
       key: 'moved_by_email',
@@ -161,13 +164,13 @@ export default function StockMovesPage() {
       tabletHide: true,
       render: (m) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
-          {m.moved_by_email ?? 'System'}
+          {m.moved_by_email ?? t('inv.moves.systemActor')}
         </span>
       ),
     },
     {
       key: 'lot_number',
-      header: 'Lot',
+      header: t('inv.moves.lot'),
       tabletHide: true,
       render: (m) =>
         m.lot_number ? (
@@ -180,7 +183,7 @@ export default function StockMovesPage() {
     },
     {
       key: 'reference',
-      header: 'Reason / Notes',
+      header: t('inv.moves.reasonNotes'),
       render: (m) =>
         m.reference ? (
           <span
@@ -207,7 +210,7 @@ export default function StockMovesPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1500px' }}>
       <PageHeader
-        title="Stock Moves"
+        title={t('inv.moves.stockMoves')}
         subtitle={`${filtered.length} movements`}
         actions={
           <Button
@@ -217,7 +220,7 @@ export default function StockMovesPage() {
               navigate('/inventory/moves/transfer')
             }}
           >
-            Manual Transfer
+            {t('inv.moves.manualTransfer')}
           </Button>
         }
       />
@@ -229,9 +232,9 @@ export default function StockMovesPage() {
           filters={[
             {
               key: 'source',
-              label: 'Source',
+              label: t('inv.moves.source'),
               value: sourceFilter,
-              options: SOURCE_OPTIONS,
+              options: SOURCE_OPTIONS.map((o) => ({ ...o, label: tl('inv.moves.sourceOpts', o.value, o.label) })),
               onChange: setSourceFilter,
             },
           ]}

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
@@ -51,6 +53,7 @@ const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger
 }
 
 export default function StoreOutDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
@@ -66,13 +69,13 @@ export default function StoreOutDetail() {
   const mi: MI | undefined = data?.materialIssue ?? undefined
 
   if (loading && !mi)
-    return <div style={{ padding: '48px', color: theme.textMuted }}>Loading…</div>
-  if (!mi) return <div style={{ padding: '48px', color: theme.textMuted }}>Store Out not found.</div>
+    return <div style={{ padding: '48px', color: theme.textMuted }}>{t('inv.storeOutDetail.loading')}</div>
+  if (!mi) return <div style={{ padding: '48px', color: theme.textMuted }}>{t('inv.storeOutDetail.storeOutNotFound')}</div>
 
   const columns: Column<MILine>[] = [
     {
       key: 'product',
-      header: 'Item',
+      header: t('inv.storeOutDetail.item'),
       render: (l) => (
         <div>
           <div style={{ color: theme.textPrimary, fontWeight: 500 }}>{l.productName ?? '—'}</div>
@@ -82,7 +85,7 @@ export default function StoreOutDetail() {
     },
     {
       key: 'route',
-      header: 'From → To',
+      header: t('inv.storeOutDetail.fromTo'),
       render: (l) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
           {l.fromLocationName ?? '—'} → {l.toLocationName ?? '—'}
@@ -91,7 +94,7 @@ export default function StoreOutDetail() {
     },
     {
       key: 'qty',
-      header: 'Qty',
+      header: t('inv.storeOutDetail.qty'),
       render: (l) => (
         <span style={{ fontVariantNumeric: 'tabular-nums' }}>
           {l.qtyIssued} {l.uom ?? ''}
@@ -104,18 +107,18 @@ export default function StoreOutDetail() {
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1100px' }}>
       <PageHeader
         title={mi.issueNumber}
-        subtitle={`${mi.projectCode ? `${mi.projectCode} — ${mi.projectName ?? ''}` : 'No project'} • ${mi.issueDate.slice(0, 10)}`}
+        subtitle={`${mi.projectCode ? `${mi.projectCode} — ${mi.projectName ?? ''}` : t('inv.storeOutDetail.noProject')} • ${mi.issueDate.slice(0, 10)}`}
         backPath="/inventory/store-out"
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <Badge variant={STATUS_VARIANT[mi.status] ?? 'neutral'}>{mi.status}</Badge>
+            <Badge variant={STATUS_VARIANT[mi.status] ?? 'neutral'}>{enumLabel(mi.status)}</Badge>
             <Button
               variant="secondary"
               onClick={() => {
                 setShowPrintModal(true)
               }}
             >
-              Print
+              {t('inv.storeOutDetail.print')}
             </Button>
           </div>
         }
@@ -132,7 +135,7 @@ export default function StoreOutDetail() {
         >
           <div>
             <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-              Issued By
+              {t('inv.storeOutDetail.issuedBy')}
             </div>
             <div style={{ fontSize: '13px', color: theme.textPrimary }}>
               {mi.issuedByName ?? '—'}
@@ -141,7 +144,7 @@ export default function StoreOutDetail() {
           {mi.poNumber && (
             <div>
               <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                Linked PO
+                {t('inv.storeOutDetail.linkedPo')}
               </div>
               <div style={{ fontSize: '13px', color: theme.textPrimary }}>{mi.poNumber}</div>
             </div>
@@ -163,7 +166,7 @@ export default function StoreOutDetail() {
           </div>
         )}
 
-        <Table<MILine> columns={columns} data={mi.lines} rowKey="id" emptyMessage="No items." />
+        <Table<MILine> columns={columns} data={mi.lines} rowKey="id" emptyMessage={t('inv.storeOutDetail.noItems')} />
       </Card>
 
       <div style={{ marginTop: '20px' }}>
@@ -214,7 +217,7 @@ export default function StoreOutDetail() {
               }}
             >
               <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
-                Print Store Out — {mi.issueNumber}
+                {t('inv.storeOutDetail.printTitle', { number: mi.issueNumber })}
               </span>
               <button
                 onClick={() => {
@@ -261,7 +264,7 @@ export default function StoreOutDetail() {
                   })),
                 })}
                 style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-                title={`Store Out ${mi.issueNumber}`}
+                title={t('inv.storeOutDetail.iframeTitle', { number: mi.issueNumber })}
               />
             </div>
 
@@ -282,14 +285,14 @@ export default function StoreOutDetail() {
                   setShowPrintModal(false)
                 }}
               >
-                Cancel
+                {t('inv.storeOutDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
                 size="sm"
                 onClick={() => printIframeRef.current?.contentWindow?.print()}
               >
-                Print / Save as PDF
+                {t('inv.storeOutDetail.printSaveAsPdf')}
               </Button>
             </div>
           </div>

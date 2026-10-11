@@ -1,4 +1,6 @@
-﻿import { useState, useMemo } from 'react'
+﻿import { tl } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
@@ -49,6 +51,7 @@ const CATEGORY_OPTIONS = [
 ]
 
 export default function ProductsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
@@ -111,7 +114,7 @@ export default function ProductsPage() {
   const columns: Column<Product>[] = [
     {
       key: 'sku',
-      header: 'SKU',
+      header: t('inv.products.sku'),
       render: (p) => (
         <span style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}>
           {p.sku}
@@ -120,15 +123,15 @@ export default function ProductsPage() {
     },
     {
       key: 'name',
-      header: 'Name',
+      header: t('inv.products.name'),
       render: (p) => (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ color: theme.textPrimary }}>{p.name}</span>
-            {bomProductIds.has(p.id) && <Badge variant="accent">BOM</Badge>}
+            {bomProductIds.has(p.id) && <Badge variant="accent">{t('inv.products.bom')}</Badge>}
           </div>
           {p.name_ar && (
-            <div style={{ color: theme.textMuted, fontSize: '11px', direction: 'rtl', textAlign: 'left' }}>
+            <div style={{ color: theme.textMuted, fontSize: '11px', direction: 'rtl', textAlign: 'start' }}>
               {p.name_ar}
             </div>
           )}
@@ -142,15 +145,15 @@ export default function ProductsPage() {
         </div>
       ),
     },
-    { key: 'uom', header: 'UOM', render: (p) => <Badge variant="neutral">{p.uom}</Badge> },
+    { key: 'uom', header: t('inv.products.uom'), render: (p) => <Badge variant="neutral">{p.uom}</Badge> },
     {
       key: 'valuation_method',
-      header: 'Valuation',
-      render: () => <Badge variant="info">Last Recorded Cost</Badge>,
+      header: t('inv.products.valuation'),
+      render: () => <Badge variant="info">{t('inv.products.lastRecordedCost')}</Badge>,
     },
     {
       key: 'qty_on_hand',
-      header: 'On Hand',
+      header: t('inv.products.onHand'),
       render: (p) => {
         const qty = parseFloat(p.qty_on_hand ?? '0')
         const reorder = p.reorder_point ? parseFloat(p.reorder_point) : null
@@ -166,14 +169,14 @@ export default function ProductsPage() {
             >
               {qty.toLocaleString()}
             </span>
-            {isLow && <Badge variant="danger">Low</Badge>}
+            {isLow && <Badge variant="danger">{t('inv.products.low')}</Badge>}
           </div>
         )
       },
     },
     {
       key: 'average_cost',
-      header: 'Last Cost',
+      header: t('inv.products.lastCost'),
       render: (p) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
@@ -182,17 +185,17 @@ export default function ProductsPage() {
           {p.cost_currency ? (
             <span style={{ fontSize: '11px', color: theme.textMuted }}>{p.cost_currency}</span>
           ) : (
-            <Badge variant="warning">Currency not set</Badge>
+            <Badge variant="warning">{t('inv.products.currencyNotSet')}</Badge>
           )}
         </div>
       ),
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('inv.products.status'),
       render: (p) => (
         <Badge variant={p.is_active ? 'success' : 'neutral'}>
-          {p.is_active ? 'Active' : 'Inactive'}
+          {p.is_active ? t('inv.products.active') : t('inv.products.inactive')}
         </Badge>
       ),
     },
@@ -201,7 +204,7 @@ export default function ProductsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
       <PageHeader
-        title="Products"
+        title={t('inv.products.products')}
         subtitle={`${filtered.length} products`}
         actions={
           <Button
@@ -211,7 +214,7 @@ export default function ProductsPage() {
               navigate('/inventory/products/new')
             }}
           >
-            New Product
+            {t('inv.products.newProduct')}
           </Button>
         }
       />
@@ -244,14 +247,14 @@ export default function ProductsPage() {
             <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
           <span style={{ fontSize: '13px', fontWeight: 600, color: '#991b1b' }}>
-            {lowStockCount} product{lowStockCount !== 1 ? 's' : ''} below reorder point
+            {t('inv.products.lowStock', { count: lowStockCount })}
           </span>
           <button
             onClick={() => {
               setShowLowStock(true)
             }}
             style={{
-              marginLeft: 'auto',
+              marginInlineStart: 'auto',
               padding: '5px 12px',
               borderRadius: '6px',
               border: '1px solid #dc2626',
@@ -262,7 +265,7 @@ export default function ProductsPage() {
               cursor: 'pointer',
             }}
           >
-            Show only
+            {t('inv.products.showOnly')}
           </button>
         </div>
       )}
@@ -274,9 +277,9 @@ export default function ProductsPage() {
           filters={[
             {
               key: 'category',
-              label: 'Category',
+              label: t('inv.products.category'),
               value: categoryFilter,
-              options: CATEGORY_OPTIONS,
+              options: CATEGORY_OPTIONS.map((o) => ({ ...o, label: tl('inv.products.categoryOpts', o.value, o.label) })),
               onChange: (v) => {
                 setCategoryFilter(v)
                 if (v !== 'raw_material') setSubCategoryFilter('')
@@ -286,7 +289,7 @@ export default function ProductsPage() {
               ? [
                   {
                     key: 'sub_category',
-                    label: 'Store',
+                    label: t('inv.products.store'),
                     value: subCategoryFilter,
                     options: subCategoryOptions,
                     onChange: setSubCategoryFilter,
@@ -311,7 +314,7 @@ export default function ProductsPage() {
               padding: '4px 10px',
             }}
           >
-            Low Stock Only
+            {t('inv.products.lowStockOnly')}
           </button>
           <button
             onClick={() => {
@@ -339,7 +342,7 @@ export default function ProductsPage() {
                 background: showHasBom ? theme.accent : theme.textMuted,
               }}
             />
-            Manufactured Only
+            {t('inv.products.manufacturedOnly')}
           </button>
           <FilterPresets
             presets={presets}

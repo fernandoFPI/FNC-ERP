@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { STOCK_SNAPSHOT_QUERY } from '../../../graphql/inventory'
@@ -31,6 +33,7 @@ interface SnapshotRow {
 }
 
 export default function StockBalancesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
@@ -63,7 +66,7 @@ export default function StockBalancesPage() {
   const columns: Column<SnapshotRow>[] = [
     {
       key: 'sku',
-      header: 'SKU',
+      header: t('inv.balances.sku'),
       render: (r) => (
         <button
           onClick={() => {
@@ -84,7 +87,7 @@ export default function StockBalancesPage() {
     },
     {
       key: 'product_name',
-      header: 'Product',
+      header: t('inv.balances.product'),
       render: (r) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div
@@ -96,23 +99,23 @@ export default function StockBalancesPage() {
           >
             {r.product_name}
           </div>
-          {r.is_low_stock && <Badge variant="danger">Low Stock</Badge>}
+          {r.is_low_stock && <Badge variant="danger">{t('inv.balances.lowStock')}</Badge>}
         </div>
       ),
     },
     {
       key: 'location_name',
-      header: 'Location',
+      header: t('inv.balances.location'),
       render: (r) => <span style={{ color: theme.textSecondary }}>{r.location_name}</span>,
     },
     {
       key: 'location_type',
-      header: 'Type',
-      render: (r) => <Badge variant="neutral">{r.location_type.replace('_', ' ')}</Badge>,
+      header: t('inv.balances.type'),
+      render: (r) => <Badge variant="neutral">{enumLabel(r.location_type).replace('_', ' ')}</Badge>,
     },
     {
       key: 'qty_on_hand',
-      header: 'On Hand',
+      header: t('inv.balances.onHand'),
       render: (r) => (
         <span
           style={{
@@ -127,7 +130,7 @@ export default function StockBalancesPage() {
     },
     {
       key: 'qty_reserved',
-      header: 'Reserved',
+      header: t('inv.balances.reserved'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', color: theme.warning }}>
           {parseFloat(r.qty_reserved).toLocaleString()}
@@ -136,7 +139,7 @@ export default function StockBalancesPage() {
     },
     {
       key: 'available',
-      header: 'Available',
+      header: t('inv.balances.available'),
       render: (r) => (
         <span
           style={{
@@ -151,12 +154,12 @@ export default function StockBalancesPage() {
     },
     {
       key: 'average_cost',
-      header: 'Last Cost',
+      header: t('inv.balances.lastCost'),
       render: (r) => <AmountDisplay amount={parseFloat(r.average_cost)} currency="IQD" />,
     },
     {
       key: 'total_value',
-      header: 'Total Value',
+      header: t('inv.balances.totalValue'),
       render: (r) => <AmountDisplay amount={parseFloat(r.total_value)} currency="IQD" />,
     },
   ]
@@ -164,8 +167,8 @@ export default function StockBalancesPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1600px' }}>
       <PageHeader
-        title="Stock Balances"
-        subtitle="Current inventory snapshot"
+        title={t('inv.balances.stockBalances')}
+        subtitle={t('inv.balances.currentInventorySnapshot')}
         actions={
           <Button
             variant="primary"
@@ -174,7 +177,7 @@ export default function StockBalancesPage() {
               navigate('/inventory/adjust')
             }}
           >
-            Adjust Stock
+            {t('inv.balances.adjustStock')}
           </Button>
         }
       />
@@ -189,21 +192,21 @@ export default function StockBalancesPage() {
         }}
       >
         <KPICard
-          title="Total Inventory Value"
+          title={t('inv.balances.totalInventoryValue')}
           value={totalValue.toLocaleString()}
-          subtitle="IQD"
+          subtitle={t('inv.balances.iqd')}
           iconColor="success"
         />
         <KPICard
-          title="Total SKUs"
+          title={t('inv.balances.totalSkus')}
           value={new Set(rows.map((r) => r.product_id)).size}
-          subtitle="products"
+          subtitle={t('inv.balances.products')}
           iconColor="info"
         />
         <KPICard
-          title="Low Stock Alerts"
+          title={t('inv.balances.lowStockAlerts')}
           value={lowStockCount}
-          subtitle="products below reorder point"
+          subtitle={t('inv.balances.productsBelowReorderPoint')}
           iconColor="danger"
         />
       </div>
@@ -236,10 +239,10 @@ export default function StockBalancesPage() {
           </svg>
           <div>
             <div style={{ fontSize: '13px', fontWeight: 600, color: '#991b1b' }}>
-              {lowStockCount} product{lowStockCount !== 1 ? 's' : ''} below reorder point
+              {t('inv.balances.lowStock', { count: lowStockCount })}
             </div>
             <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '2px' }}>
-              Inventory users have been notified. Review and reorder as needed.
+              {t('inv.balances.inventoryUsersHaveBeenNotifiedReview')}
             </div>
           </div>
           <button
@@ -247,7 +250,7 @@ export default function StockBalancesPage() {
               setShowLowOnly(true)
             }}
             style={{
-              marginLeft: 'auto',
+              marginInlineStart: 'auto',
               padding: '5px 12px',
               borderRadius: '6px',
               border: '1px solid #dc2626',
@@ -258,7 +261,7 @@ export default function StockBalancesPage() {
               cursor: 'pointer',
             }}
           >
-            Show only
+            {t('inv.balances.showOnly')}
           </button>
         </div>
       )}
@@ -284,7 +287,7 @@ export default function StockBalancesPage() {
               padding: '4px 10px',
             }}
           >
-            Low Stock Only
+            {t('inv.balances.lowStockOnly')}
           </button>
         </FilterBar>
         <Table

@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { tl } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -37,6 +39,7 @@ const TYPE_OPTIONS = [
 ]
 
 export default function LocationsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [search, setSearch] = useState('')
@@ -67,7 +70,7 @@ export default function LocationsPage() {
   const columns: Column<StockLocation>[] = [
     {
       key: 'name',
-      header: 'Location Name',
+      header: t('inv.locations.locationName'),
       render: (l) => (
         <div>
           <div style={{ color: theme.textPrimary }}>{l.name}</div>
@@ -79,7 +82,7 @@ export default function LocationsPage() {
     },
     {
       key: 'code',
-      header: 'Code',
+      header: t('inv.locations.code'),
       render: (l) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary, fontSize: '12px' }}>
           {l.code ?? '—'}
@@ -88,7 +91,7 @@ export default function LocationsPage() {
     },
     {
       key: 'type',
-      header: 'Type',
+      header: t('inv.locations.type'),
       render: (l) => (
         <Badge
           variant={
@@ -101,17 +104,17 @@ export default function LocationsPage() {
     },
     {
       key: 'address',
-      header: 'Address',
+      header: t('inv.locations.address'),
       render: (l) => (
         <span style={{ color: theme.textMuted, fontSize: '13px' }}>{l.address ?? '—'}</span>
       ),
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('inv.locations.status'),
       render: (l) => (
         <Badge variant={l.is_active ? 'success' : 'neutral'}>
-          {l.is_active ? 'Active' : 'Inactive'}
+          {l.is_active ? t('inv.locations.active') : t('inv.locations.inactive')}
         </Badge>
       ),
     },
@@ -132,7 +135,7 @@ export default function LocationsPage() {
         },
         refetchQueries: [{ query: STOCK_LOCATIONS_QUERY, variables: {} }],
       })
-      addToast({ type: 'success', message: 'Location created' })
+      addToast({ type: 'success', message: t('inv.locations.locationCreated') })
       setShowForm(false)
       setForm({ name: '', code: '', type: 'internal', parent_id: '', address: '' })
     } catch (err) {
@@ -143,7 +146,7 @@ export default function LocationsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
-        title="Stock Locations"
+        title={t('inv.locations.stockLocations')}
         subtitle={`${filtered.length} locations`}
         actions={
           <Button
@@ -153,7 +156,7 @@ export default function LocationsPage() {
               setShowForm(true)
             }}
           >
-            New Location
+            {t('inv.locations.newLocation')}
           </Button>
         }
       />
@@ -165,9 +168,9 @@ export default function LocationsPage() {
           filters={[
             {
               key: 'type',
-              label: 'Type',
+              label: t('inv.locations.type'),
               value: typeFilter,
-              options: TYPE_OPTIONS,
+              options: TYPE_OPTIONS.map((o) => ({ ...o, label: tl('inv.locations.typeOpts', o.value, o.label) })),
               onChange: setTypeFilter,
             },
           ]}
@@ -182,7 +185,7 @@ export default function LocationsPage() {
         onClose={() => {
           setShowForm(false)
         }}
-        title="New Stock Location"
+        title={t('inv.locations.newStockLocation')}
       >
         <form
           onSubmit={(...args: Parameters<typeof handleCreate>) => void handleCreate(...args)}
@@ -196,7 +199,7 @@ export default function LocationsPage() {
             }}
           >
             <Input
-              label="Name"
+              label={t('inv.locations.name')}
               value={form.name}
               onChange={(e) => {
                 setForm((f) => ({ ...f, name: e.target.value }))
@@ -204,35 +207,35 @@ export default function LocationsPage() {
               required
             />
             <Input
-              label="Code"
+              label={t('inv.locations.code')}
               value={form.code}
               onChange={(e) => {
                 setForm((f) => ({ ...f, code: e.target.value }))
               }}
-              placeholder="Optional"
+              placeholder={t('inv.locations.optional')}
             />
           </div>
           <Select
-            label="Type"
+            label={t('inv.locations.type')}
             value={form.type}
             onChange={(e) => {
               setForm((f) => ({ ...f, type: e.target.value }))
             }}
           >
-            <option value="warehouse">Warehouse</option>
-            <option value="site">Site</option>
-            <option value="transit">Transit</option>
-            <option value="virtual_in">Virtual In</option>
-            <option value="virtual_out">Virtual Out</option>
+            <option value="warehouse">{t('inv.locations.warehouse')}</option>
+            <option value="site">{t('inv.locations.site')}</option>
+            <option value="transit">{t('inv.locations.transit')}</option>
+            <option value="virtual_in">{t('inv.locations.virtualIn')}</option>
+            <option value="virtual_out">{t('inv.locations.virtualOut')}</option>
           </Select>
           <Select
-            label="Parent Location"
+            label={t('inv.locations.parentLocation')}
             value={form.parent_id}
             onChange={(e) => {
               setForm((f) => ({ ...f, parent_id: e.target.value }))
             }}
           >
-            <option value="">None</option>
+            <option value="">{t('inv.locations.none')}</option>
             {locations.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name}
@@ -240,7 +243,7 @@ export default function LocationsPage() {
             ))}
           </Select>
           <Input
-            label="Address"
+            label={t('inv.locations.address')}
             value={form.address}
             onChange={(e) => {
               setForm((f) => ({ ...f, address: e.target.value }))
@@ -254,10 +257,10 @@ export default function LocationsPage() {
                 setShowForm(false)
               }}
             >
-              Cancel
+              {t('inv.locations.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={creating}>
-              Create
+              {t('inv.locations.create')}
             </Button>
           </div>
         </form>
