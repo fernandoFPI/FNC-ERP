@@ -129,3 +129,37 @@ Don't re-derive, check these first.
     and only the displayed label is translated (`PanelTabs` `labels` prop). Arabic plurals need all six
     forms (`_zero _one _two _few _many _other`). Run `node` key-parity check (en vs ar) after adding
     keys. Backend strings (approval_log `action`, error messages) are still English.
+    Tests: `apps/web/src/test-setup.ts` imports `./i18n`; without it `useTranslation()` renders raw key paths
+    (`req.form.newRequisition`) in any test whose component tree doesn't happen to import the i18n module.
+    Module-level label maps (status/priority/purpose) can't call the `t` hook: keep the English map as the
+    `defaultValue` and translate at the use site with `i18n.t(key, { defaultValue })`. Never put a `t()` result in a
+    `useMemo`/`useCallback` without `t` in its deps, or it keeps the old language after a switch. Text that is
+    saved to the database (e.g. auto-filled rejection reasons) stays English on purpose.
+    **Six traps found while bulk-translating (Finance, Projects, HR):**
+    (a) *Never compare a value that came from `t()` against an English literal.* A nested ternary had its branches
+    translated while later code did `execStatus === 'On Schedule'` (colour/health flag in `ProjectDetail`), and
+    Finance label/value tuples did `k === 'Original Amount'`. In English everything still works, in Arabic the
+    comparison silently goes false. Keep a stable key (`execKey = 'onSchedule'`) for logic and translate only at
+    display, or compare against `t(...)` of the same key. Spot it: grep `(===|!==) '[A-Z]` in converted files.
+    (b) *Codemods must not extract non-prose strings.* Hex colours (`text: '#1d4ed8'`), MIME types
+    (`'image/svg+xml'`), document-type codes (`CAL`, `DRG`, `OTH`) and currency codes (`USD`) were turned into
+    translation getters. They need no translation and a translated one corrupts the value. Grep
+    `defaultValue: "#` and `defaultValue: "[a-z]+/` after any bulk run.
+    (c) *Don't match translations on alnum-normalised English.* `Planned` and `Planned %`, `Start` and `▶ Start`,
+    `Drawing #` and `+ Drawing`, `Advance` and `Advance #` all normalise to the same string, so one variant's Arabic
+    (with its `+`/`*`/`:`/`%`) leaked into the other (33 Finance and 22 Settings/Admin keys were wrong, e.g. FX `Rate`
+    showed "النسبة %", expense-claim `Advance` showed "رقم السلفة"). Match the exact English string first; the
+    loose match is only a fallback and its collisions must be audited.
+    (d) *A key slug that equals a CLDR plural word* (`hdr_other`) is read as the `_other` form of `hdr`, which fails
+    the six-form Arabic parity test; `tlh()` now suffixes such slugs with `Text`.
+    (e) *Raw enum values rendered as text bypass every codemod.* `<Badge>{claim.status}</Badge>`, `{r.purpose}`,
+    `{p.punch_type}` and `status={req.status}` show the DB value (`approved`, `in_progress`, `full_time`) in English
+    even in the Arabic UI, because there is no string literal to extract (57 sites across Finance, Inventory, Projects,
+    HR…). Render them with `enumLabel(value)` (`src/i18n`): English returns the raw value unchanged, other languages read
+    `enum.<value>`, unknown values fall back to the raw value, so it is always safe to wrap. Add new values to the
+    `enum.*` group in both locale files. Never use the label for logic. Spot new ones by grepping for JSX children
+    like `>{x.status}<` / `{r.type}` / `{p.punch_type}` that are not wrapped in `t(`/`enumLabel(`.
+    (f) *A guard that matches on message text silently disappears in another language.* `PayrollRunForm` blocked
+    "a posted run overlaps" with `overlapWarning.includes('Cannot')`; in Arabic the run could be created over a
+    posted one. State the *kind* (`'posted' | 'overlap'`) and derive both the message and the guard from it
+    (regression test `payroll.i18n.test.tsx`, runs in en and ar).
