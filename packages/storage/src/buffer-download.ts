@@ -16,8 +16,8 @@ export async function downloadBuffer(fileKey: string): Promise<Buffer> {
     return fs.readFileSync(path.join(devUploadsDir(), fileKey))
   }
 
-  const command = new GetObjectCommand({ Bucket: getBucket(), Key: fileKey })
-  const response = await getB2Client().send(command)
+  const command = new GetObjectCommand({ Bucket: await getBucket(), Key: fileKey })
+  const response = await (await getB2Client()).send(command)
   if (!response.Body) throw new Error(`No body returned for file key: ${fileKey}`)
   const bytes = await response.Body.transformToByteArray()
   return Buffer.from(bytes)

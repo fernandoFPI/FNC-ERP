@@ -25,6 +25,7 @@
     "@aws-sdk/client-s3": "^3.1058.0",
     "@aws-sdk/s3-request-presigner": "^3.1058.0",
     "@fnc-erp/config": "workspace:*",
+    "@fnc-erp/db": "workspace:*",
     "@fnc-erp/logger": "workspace:*"
   },
   "devDependencies": {

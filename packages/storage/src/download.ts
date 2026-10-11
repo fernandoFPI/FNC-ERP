@@ -30,12 +30,12 @@ export async function generateDownloadUrl(
   const ttl = parseInt(process.env['PRESIGNED_URL_TTL_SECONDS'] ?? '900')
 
   const command = new GetObjectCommand({
-    Bucket: getBucket(),
+    Bucket: await getBucket(),
     Key: fileKey,
     ResponseContentDisposition: `${disposition}; filename="${originalFilename}"`,
   })
 
-  const downloadUrl = await getSignedUrl(getB2Client(), command, { expiresIn: ttl })
+  const downloadUrl = await getSignedUrl(await getB2Client(), command, { expiresIn: ttl })
 
   return { downloadUrl, expiresInSeconds: ttl, filename: originalFilename }
 }

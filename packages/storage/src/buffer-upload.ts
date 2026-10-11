@@ -26,7 +26,7 @@ export async function uploadBuffer(
   }
 
   const command = new PutObjectCommand({
-    Bucket: getBucket(),
+    Bucket: await getBucket(),
     Key: fileKey,
     Body: buffer,
     ContentType: contentType,
@@ -34,7 +34,7 @@ export async function uploadBuffer(
   })
 
   try {
-    await getB2Client().send(command)
+    await (await getB2Client()).send(command)
     logger.info({ fileKey, bytes: buffer.length }, 'buffer uploaded to B2')
   } catch (err) {
     logger.error({ err, fileKey }, 'failed to upload buffer to B2')

@@ -480,6 +480,9 @@ importers:
       '@fnc-erp/config':
         specifier: workspace:*
         version: link:../config
+      '@fnc-erp/db':
+        specifier: workspace:*
+        version: link:../db
       '@fnc-erp/logger':
         specifier: workspace:*
         version: link:../logger

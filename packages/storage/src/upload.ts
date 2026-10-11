@@ -38,7 +38,7 @@ export async function generateUploadUrl(req: UploadUrlRequest): Promise<UploadUr
   const ttl = parseInt(process.env['PRESIGNED_URL_TTL_SECONDS'] ?? '900')
 
   const command = new PutObjectCommand({
-    Bucket: getBucket(),
+    Bucket: await getBucket(),
     Key: fileKey,
     ContentType: req.mimeType,
     ContentLength: req.sizeBytes,
@@ -51,7 +51,7 @@ export async function generateUploadUrl(req: UploadUrlRequest): Promise<UploadUr
     },
   })
 
-  const uploadUrl = await getSignedUrl(getB2Client(), command, { expiresIn: ttl })
+  const uploadUrl = await getSignedUrl(await getB2Client(), command, { expiresIn: ttl })
 
   return { uploadUrl, fileKey, fileId, expiresInSeconds: ttl }
 }
