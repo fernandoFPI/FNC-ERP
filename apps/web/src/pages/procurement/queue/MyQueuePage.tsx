@@ -556,6 +556,29 @@ export default function MyQueuePage() {
                   ? t('queue.clearAFilterToSeeThe')
                   : t('queue.noRequisitionsPurchaseOrdersOrApprovals')}
               </div>
+              {anyFilter && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('')
+                    setKindFilter('')
+                    setActionFilter('')
+                    setQuick('')
+                  }}
+                  style={{
+                    marginTop: '10px',
+                    border: 'none',
+                    background: 'none',
+                    color: theme.accent,
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {t('queue.clearFilters')}
+                </button>
+              )}
             </div>
           ) : (
             <Table

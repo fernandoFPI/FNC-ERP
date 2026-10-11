@@ -1084,28 +1084,55 @@ export default function RequisitionsPage() {
           )}
 
           <div style={{ marginTop: '14px', flex: 1 }}>
-            <Table
-              columns={columns}
-              data={pageRows}
-              loading={loading}
-              rowKey="id"
-              emptyMessage={
-                anyFilter ? t('req.list.noRequisitionsMatchTheseFilters') : t('req.list.noRequisitionsYet')
-              }
-              onRowClick={(r) => {
-                if (r.__kind) {
-                  openFull(r)
-                  return
-                }
-                setPreviewId(r.id)
-              }}
-              getRowStyle={(r) => {
-                const base = r.priority === 'emergency' ? { borderInlineStart: '3px solid #dc2626' } : {}
-                return r.id === previewId || selectedIds.has(r.id)
-                  ? { ...base, background: theme.accentBg }
-                  : base
-              }}
-            />
+            {!loading && anyFilter && filtered.length === 0 ? (
+              // A quick-filter KPI tile or "only mine" toggle can be active
+              // without appearing in any of the visible toolbar pills, so an
+              // empty result here previously looked like a dead end — this
+              // always gives a one-click way out regardless of which filter
+              // (visible or not) is the actual cause.
+              <div style={{ padding: '56px 16px', textAlign: 'center' }}>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>
+                  {t('req.list.noRequisitionsMatchTheseFilters')}
+                </div>
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  style={{
+                    marginTop: '10px',
+                    border: 'none',
+                    background: 'none',
+                    color: theme.accent,
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {t('req.list.clearAllFilters')}
+                </button>
+              </div>
+            ) : (
+              <Table
+                columns={columns}
+                data={pageRows}
+                loading={loading}
+                rowKey="id"
+                emptyMessage={t('req.list.noRequisitionsYet')}
+                onRowClick={(r) => {
+                  if (r.__kind) {
+                    openFull(r)
+                    return
+                  }
+                  setPreviewId(r.id)
+                }}
+                getRowStyle={(r) => {
+                  const base = r.priority === 'emergency' ? { borderInlineStart: '3px solid #dc2626' } : {}
+                  return r.id === previewId || selectedIds.has(r.id)
+                    ? { ...base, background: theme.accentBg }
+                    : base
+                }}
+              />
+            )}
           </div>
           <Pagination
             page={safePage}

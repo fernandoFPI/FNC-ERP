@@ -984,23 +984,50 @@ export default function PurchaseOrdersPage() {
           )}
 
           <div style={{ marginTop: '14px', flex: 1 }}>
-            <Table
-              columns={columns}
-              data={pageRows}
-              loading={loading}
-              rowKey="id"
-              emptyMessage={
-                anyFilter ? t('po.list.emptyFiltered') : t('po.list.empty')
-              }
-              onRowClick={(o) => {
-                setPreviewId(o.id)
-              }}
-              getRowStyle={(o) => {
-                const base = o.priority === 'emergency' ? { borderInlineStart: '3px solid #dc2626' } : {}
-                if (o.id === previewId) return { ...base, background: theme.accentBg }
-                return selectedIds.has(o.id) ? { ...base, background: theme.accentBg } : base
-              }}
-            />
+            {!loading && anyFilter && filtered.length === 0 ? (
+              // A quick-filter KPI tile or "only mine" toggle can be active
+              // without appearing in any of the visible toolbar pills, so an
+              // empty result here previously looked like a dead end — this
+              // always gives a one-click way out regardless of which filter
+              // (visible or not) is the actual cause.
+              <div style={{ padding: '56px 16px', textAlign: 'center' }}>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>
+                  {t('po.list.emptyFiltered')}
+                </div>
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  style={{
+                    marginTop: '10px',
+                    border: 'none',
+                    background: 'none',
+                    color: theme.accent,
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {t('po.list.filter.clearAll')}
+                </button>
+              </div>
+            ) : (
+              <Table
+                columns={columns}
+                data={pageRows}
+                loading={loading}
+                rowKey="id"
+                emptyMessage={t('po.list.empty')}
+                onRowClick={(o) => {
+                  setPreviewId(o.id)
+                }}
+                getRowStyle={(o) => {
+                  const base = o.priority === 'emergency' ? { borderInlineStart: '3px solid #dc2626' } : {}
+                  if (o.id === previewId) return { ...base, background: theme.accentBg }
+                  return selectedIds.has(o.id) ? { ...base, background: theme.accentBg } : base
+                }}
+              />
+            )}
           </div>
           <Pagination
             page={safePage}
