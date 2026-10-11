@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { Trans, useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { SHIFT_CONFIGS_QUERY, CREATE_SHIFT_CONFIG, UPDATE_SHIFT_CONFIG } from '../../../graphql/hr'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -40,6 +41,7 @@ function calcRegularHours(start: string, end: string, breakMin: number): number 
 }
 
 export default function ShiftConfigsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [modalOpen, setModalOpen] = useState(false)
@@ -84,10 +86,10 @@ export default function ShiftConfigsPage() {
     try {
       if (editId) {
         await updateShift({ variables: { id: editId, input } })
-        addToast({ type: 'success', message: 'Shift updated' })
+        addToast({ type: 'success', message: t('hr.shifts.shiftUpdated') })
       } else {
         await createShift({ variables: { input } })
-        addToast({ type: 'success', message: 'Shift created' })
+        addToast({ type: 'success', message: t('hr.shifts.shiftCreated') })
       }
       setModalOpen(false)
       void refetch()
@@ -99,12 +101,12 @@ export default function ShiftConfigsPage() {
   const columns: Column<ShiftConfig>[] = [
     {
       key: 'name',
-      header: 'Name',
+      header: t('hr.shifts.name'),
       render: (s) => <span style={{ fontWeight: 500, color: theme.textPrimary }}>{s.name}</span>,
     },
     {
       key: 'start_time',
-      header: 'Start',
+      header: t('hr.shifts.start'),
       render: (s) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
           {s.start_time ?? '—'}
@@ -113,7 +115,7 @@ export default function ShiftConfigsPage() {
     },
     {
       key: 'end_time',
-      header: 'End',
+      header: t('hr.shifts.end'),
       render: (s) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
           {s.end_time ?? '—'}
@@ -122,16 +124,14 @@ export default function ShiftConfigsPage() {
     },
     {
       key: 'break_minutes',
-      header: 'Break',
+      header: t('hr.shifts.break'),
       render: (s) => (
-        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
-          {s.break_minutes ?? 0} min
-        </span>
+        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>{t('hr.shifts.min', { value: s.break_minutes ?? 0 })}</span>
       ),
     },
     {
       key: 'overtime_threshold_hours',
-      header: 'OT threshold',
+      header: t('hr.shifts.otThreshold'),
       render: (s) => (
         <span style={{ fontFamily: 'monospace', color: theme.warning }}>
           {s.overtime_threshold_hours ?? '—'}h
@@ -140,10 +140,10 @@ export default function ShiftConfigsPage() {
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('hr.shifts.status'),
       render: (s) => (
         <Badge variant={s.is_active ? 'success' : 'neutral'}>
-          {s.is_active ? 'Active' : 'Inactive'}
+          {s.is_active ? t('hr.shifts.active') : t('hr.shifts.inactive')}
         </Badge>
       ),
     },
@@ -158,7 +158,7 @@ export default function ShiftConfigsPage() {
             openEdit(s)
           }}
         >
-          Edit
+          {t('hr.shifts.edit')}
         </Button>
       ),
     },
@@ -167,11 +167,11 @@ export default function ShiftConfigsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
-        title="Shift Configurations"
+        title={t('hr.shifts.shiftConfigurations')}
         subtitle={`${shifts.length} shifts`}
         actions={
           <Button variant="primary" size="sm" onClick={openCreate}>
-            New Shift
+            {t('hr.shifts.newShift')}
           </Button>
         }
       />
@@ -185,7 +185,7 @@ export default function ShiftConfigsPage() {
         onClose={() => {
           setModalOpen(false)
         }}
-        title={editId ? 'Edit Shift' : 'New Shift'}
+        title={editId ? t('hr.shifts.editShift') : t('hr.shifts.newShift')}
         size="md"
         footer={
           <>
@@ -195,23 +195,23 @@ export default function ShiftConfigsPage() {
                 setModalOpen(false)
               }}
             >
-              Cancel
+              {t('hr.shifts.cancel')}
             </Button>
             <Button variant="primary" onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)} loading={creating || updating}>
-              Save
+              {t('hr.shifts.save')}
             </Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <Input
-            label="Name"
+            label={t('hr.shifts.name')}
             value={form.name}
             onChange={(e) => {
               setForm((f) => ({ ...f, name: e.target.value }))
             }}
             required
-            placeholder="e.g. Standard Office"
+            placeholder={t('hr.shifts.eGStandardOffice')}
           />
 
           <div
@@ -222,7 +222,7 @@ export default function ShiftConfigsPage() {
             }}
           >
             <Input
-              label="Start time"
+              label={t('hr.shifts.startTime')}
               type="time"
               value={form.start_time}
               onChange={(e) => {
@@ -230,7 +230,7 @@ export default function ShiftConfigsPage() {
               }}
             />
             <Input
-              label="End time"
+              label={t('hr.shifts.endTime')}
               type="time"
               value={form.end_time}
               onChange={(e) => {
@@ -238,7 +238,7 @@ export default function ShiftConfigsPage() {
               }}
             />
             <Input
-              label="Break (min)"
+              label={t('hr.shifts.breakMin')}
               type="number"
               min="0"
               value={String(form.break_minutes)}
@@ -262,25 +262,27 @@ export default function ShiftConfigsPage() {
               color: theme.textSecondary,
             }}
           >
-            A{' '}
-            {Math.round(
-              (() => {
-                const [sh, sm] = form.start_time.split(':').map(Number)
-                const [eh, em] = form.end_time.split(':').map(Number)
-                let d = eh * 60 + em - (sh * 60 + sm)
-                if (d <= 0) d += 1440
-                return d / 60
-              })(),
-            )}
-            h shift with {form.break_minutes} min break ={' '}
-            <strong>
-              {calcRegularHours(form.start_time, form.end_time, form.break_minutes).toFixed(1)}{' '}
-              regular hours
-            </strong>
+            <Trans
+              i18nKey="hr.shifts.shiftSummary"
+              values={{
+                hours: Math.round(
+                  (() => {
+                    const [sh, sm] = form.start_time.split(':').map(Number)
+                    const [eh, em] = form.end_time.split(':').map(Number)
+                    let d = eh * 60 + em - (sh * 60 + sm)
+                    if (d <= 0) d += 1440
+                    return d / 60
+                  })(),
+                ),
+                breakMinutes: form.break_minutes,
+                regular: calcRegularHours(form.start_time, form.end_time, form.break_minutes).toFixed(1),
+              }}
+              components={[<strong key="regular" />]}
+            />
           </div>
 
           <Input
-            label="OT threshold (hrs)"
+            label={t('hr.shifts.otThresholdHrs')}
             type="number"
             step="0.5"
             value={String(form.overtime_threshold_hours)}
@@ -289,7 +291,7 @@ export default function ShiftConfigsPage() {
             }}
           />
           <div style={{ fontSize: '11px', color: theme.textMuted }}>
-            Iraq Labour Law minimum OT multiplier: 1.5×
+            {t('hr.shifts.iraqLabourLawMinimumOtMultiplier')}
           </div>
         </div>
       </Modal>

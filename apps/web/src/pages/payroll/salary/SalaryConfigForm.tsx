@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -31,6 +32,7 @@ const emptyForm = {
 }
 
 export default function SalaryConfigForm() {
+  const { t } = useTranslation()
   const { id: employeeId } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -99,7 +101,7 @@ export default function SalaryConfigForm() {
           },
         },
       })
-      addToast({ type: 'success', message: `Salary updated effective ${form.effective_from}` })
+      addToast({ type: 'success', message: t('payroll.salary.salaryUpdatedEffective', { effective_from: form.effective_from }) })
       navigate(`/hr/employees/${employeeId}`)
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -109,7 +111,7 @@ export default function SalaryConfigForm() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '900px' }}>
       <PageHeader
-        title={`Update Salary${emp ? ` — ${emp.first_name} ${emp.last_name}` : ''}`}
+        title={emp ? t('payroll.salary.updateSalaryFor', { name: `${emp.first_name} ${emp.last_name}` }) : t('payroll.salary.updateSalary')}
         backPath={`/hr/employees/${employeeId}`}
       />
 
@@ -117,7 +119,7 @@ export default function SalaryConfigForm() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
           <Card style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
-              Base Salary
+              {t('payroll.salary.baseSalary')}
             </div>
             <div
               style={{
@@ -127,7 +129,7 @@ export default function SalaryConfigForm() {
               }}
             >
               <Input
-                label="Base salary"
+                label={t('payroll.salary.baseSalary2')}
                 type="number"
                 min="0"
                 value={form.base_salary}
@@ -135,13 +137,13 @@ export default function SalaryConfigForm() {
                 required
               />
               <Select
-                label="Currency"
+                label={t('payroll.salary.currency')}
                 value={form.currency_code}
                 onChange={field('currency_code')}
                 options={CURRENCIES}
               />
               <Input
-                label="Effective from"
+                label={t('payroll.salary.effectiveFrom')}
                 type="date"
                 value={form.effective_from}
                 onChange={field('effective_from')}
@@ -152,7 +154,7 @@ export default function SalaryConfigForm() {
 
           <Card style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
-              Allowances
+              {t('payroll.salary.allowances')}
             </div>
             <div
               style={{
@@ -162,21 +164,21 @@ export default function SalaryConfigForm() {
               }}
             >
               <Input
-                label="Housing allowance"
+                label={t('payroll.salary.housingAllowance')}
                 type="number"
                 min="0"
                 value={form.housing_allowance}
                 onChange={field('housing_allowance')}
               />
               <Input
-                label="Transport allowance"
+                label={t('payroll.salary.transportAllowance')}
                 type="number"
                 min="0"
                 value={form.transport_allowance}
                 onChange={field('transport_allowance')}
               />
               <Input
-                label="Other allowances"
+                label={t('payroll.salary.otherAllowances')}
                 type="number"
                 min="0"
                 value={form.other_allowances}
@@ -187,7 +189,7 @@ export default function SalaryConfigForm() {
 
           <Card style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
-              Deductions (%)
+              {t('payroll.salary.deductions')}
             </div>
             <div
               style={{
@@ -197,7 +199,7 @@ export default function SalaryConfigForm() {
               }}
             >
               <Input
-                label="Income tax %"
+                label={t('payroll.salary.incomeTax')}
                 type="number"
                 min="0"
                 max="100"
@@ -206,7 +208,7 @@ export default function SalaryConfigForm() {
                 onChange={field('income_tax_pct')}
               />
               <Input
-                label="Social security %"
+                label={t('payroll.salary.socialSecurity')}
                 type="number"
                 min="0"
                 max="100"
@@ -219,18 +221,18 @@ export default function SalaryConfigForm() {
 
           <Card style={{ padding: '20px', background: theme.bgSurface }}>
             <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}>
-              Estimated net pay
+              {t('payroll.salary.estimatedNetPay')}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {[
-                { label: 'Gross pay', value: gross, bold: false },
-                { label: `Income tax (${form.income_tax_pct}%)`, value: -taxAmount, bold: false },
+                { label: t('payroll.salary.grossPay'), value: gross, bold: false },
+                { label: t('payroll.salary.incomeTax2', { income_tax_pct: form.income_tax_pct }), value: -taxAmount, bold: false },
                 {
-                  label: `Social security (${form.social_security_pct}%)`,
+                  label: t('payroll.salary.socialSecurity2', { social_security_pct: form.social_security_pct }),
                   value: -ssAmount,
                   bold: false,
                 },
-                { label: 'Net pay', value: net, bold: true },
+                { label: t('payroll.salary.netPay'), value: net, bold: true },
               ].map(({ label, value, bold }) => (
                 <div
                   key={label}
@@ -265,10 +267,10 @@ export default function SalaryConfigForm() {
                 navigate(`/hr/employees/${employeeId}`)
               }}
             >
-              Cancel
+              {t('payroll.salary.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={loading}>
-              Update salary
+              {t('payroll.salary.updateSalary')}
             </Button>
           </div>
         </div>

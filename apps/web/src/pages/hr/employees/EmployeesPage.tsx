@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { EMPLOYEES_QUERY, DEPARTMENTS_QUERY } from '../../../graphql/hr'
@@ -45,6 +47,7 @@ function downloadCSV(rows: string[][], filename: string) {
 }
 
 export default function EmployeesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
@@ -86,7 +89,7 @@ export default function EmployeesPage() {
   const columns: Column<Employee>[] = [
     {
       key: 'first_name',
-      header: 'Employee',
+      header: t('hr.employees.employee'),
       render: (e) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <EmployeeAvatar
@@ -108,7 +111,7 @@ export default function EmployeesPage() {
     },
     {
       key: 'employee_number',
-      header: 'Number',
+      header: t('hr.employees.number'),
       render: (e) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.accent }}>
           {e.employee_number ?? '—'}
@@ -117,7 +120,7 @@ export default function EmployeesPage() {
     },
     {
       key: 'department_name',
-      header: 'Department',
+      header: t('hr.employees.department'),
       render: (e) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
           {e.department_name ?? '—'}
@@ -126,14 +129,14 @@ export default function EmployeesPage() {
     },
     {
       key: 'employment_type',
-      header: 'Type',
-      render: (e) => <Badge variant="neutral">{(e.employment_type ?? '').replace('_', ' ')}</Badge>,
+      header: t('hr.employees.type'),
+      render: (e) => <Badge variant="neutral">{enumLabel(e.employment_type).replace('_', ' ')}</Badge>,
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('hr.employees.status'),
       render: (e) => (
-        <Badge variant={e.status === 'active' ? 'success' : 'neutral'}>{e.status}</Badge>
+        <Badge variant={e.status === 'active' ? 'success' : 'neutral'}>{enumLabel(e.status)}</Badge>
       ),
     },
   ]
@@ -141,7 +144,7 @@ export default function EmployeesPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1500px' }}>
       <PageHeader
-        title="Employees"
+        title={t('hr.employees.employees')}
         subtitle={`${filtered.length} employees`}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -175,7 +178,7 @@ export default function EmployeesPage() {
                 )
               }}
             >
-              Export CSV
+              {t('hr.employees.exportCsv')}
             </Button>
             <PermissionGate permission="hr.employees.edit" minLevel="edit">
               <Button
@@ -186,7 +189,7 @@ export default function EmployeesPage() {
                   navigate('/hr/employees/new')
                 }}
               >
-                New Employee
+                {t('hr.employees.newEmployee')}
               </Button>
             </PermissionGate>
           </div>
@@ -201,7 +204,7 @@ export default function EmployeesPage() {
             filters={[
               {
                 key: 'dept',
-                label: 'Department',
+                label: t('hr.employees.department'),
                 value: deptFilter,
                 options: deptOptions,
                 onChange: setDeptFilter,
@@ -224,7 +227,7 @@ export default function EmployeesPage() {
                 padding: '4px 10px',
               }}
             >
-              {showInactive ? 'Hide inactive' : 'Show inactive'}
+              {showInactive ? t('hr.employees.hideInactive') : t('hr.employees.showInactive')}
             </button>
             <FilterPresets
               presets={presets}

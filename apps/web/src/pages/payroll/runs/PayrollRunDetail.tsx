@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import i18n, { enumLabel } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -29,11 +31,11 @@ import { useToastStore } from '../../../store/toastStore'
 import type { ApprovePayrollRunMutation, ApprovePayrollRunMutationVariables, CancelPayrollRunMutation, CancelPayrollRunMutationVariables, PayrollRunQuery, PayrollRunQueryVariables, PayslipsQuery, PayslipsQueryVariables, PostPayrollRunMutation, PostPayrollRunMutationVariables, ProcessPayrollRunMutation, ProcessPayrollRunMutationVariables } from '../../../graphql/generated'
 
 const RUN_STEPS = [
-  { key: 'draft', label: 'Draft' },
-  { key: 'processing', label: 'Processing' },
-  { key: 'review', label: 'Review' },
-  { key: 'approved', label: 'Approved' },
-  { key: 'posted', label: 'Posted' },
+  { key: 'draft', get label() { return i18n.t('payroll.runDetail.draft', { defaultValue: "Draft" }) } },
+  { key: 'processing', get label() { return i18n.t('payroll.runDetail.processing', { defaultValue: "Processing" }) } },
+  { key: 'review', get label() { return i18n.t('payroll.runDetail.review', { defaultValue: "Review" }) } },
+  { key: 'approved', get label() { return i18n.t('payroll.runDetail.approved', { defaultValue: "Approved" }) } },
+  { key: 'posted', get label() { return i18n.t('payroll.runDetail.posted', { defaultValue: "Posted" }) } },
 ]
 
 interface PayrollLine {
@@ -50,6 +52,7 @@ interface PayrollLine {
 }
 
 export default function PayrollRunDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
@@ -89,8 +92,8 @@ export default function PayrollRunDetail() {
   }
 
   if (loading && !run)
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
-  if (!run) return <div style={{ padding: '24px', color: theme.textMuted }}>Run not found</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('payroll.runDetail.loading')}</div>
+  if (!run) return <div style={{ padding: '24px', color: theme.textMuted }}>{t('payroll.runDetail.runNotFound')}</div>
 
   const statusVariant = (
     {
@@ -106,14 +109,14 @@ export default function PayrollRunDetail() {
   const lineColumns: Column<PayrollLine>[] = [
     {
       key: 'employee_name',
-      header: 'Employee',
+      header: t('payroll.runDetail.employee'),
       render: (l) => (
         <span style={{ fontWeight: 500, color: theme.textPrimary }}>{l.employee_name ?? '—'}</span>
       ),
     },
     {
       key: 'working_days',
-      header: 'Days',
+      header: t('payroll.runDetail.days'),
       render: (l) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
           {l.working_days ?? '—'}
@@ -122,7 +125,7 @@ export default function PayrollRunDetail() {
     },
     {
       key: 'overtime_hours',
-      header: 'OT hrs',
+      header: t('payroll.runDetail.otHrs'),
       render: (l) => (
         <span style={{ fontFamily: 'monospace', color: theme.warning }}>
           {l.overtime_hours ?? 0}h
@@ -131,20 +134,20 @@ export default function PayrollRunDetail() {
     },
     {
       key: 'gross_salary',
-      header: 'Gross',
+      header: t('payroll.runDetail.gross'),
       render: (l) =>
         l.gross_salary ? (
-          <AmountDisplay amount={parseFloat(l.gross_salary)} currency={l.currency_code ?? 'IQD'} />
+          <AmountDisplay amount={parseFloat(l.gross_salary)} currency={l.currency_code ?? t('payroll.runDetail.iqd')} />
         ) : (
           <span style={{ color: theme.textMuted }}>—</span>
         ),
     },
     {
       key: 'net_salary',
-      header: 'Net',
+      header: t('payroll.runDetail.net'),
       render: (l) =>
         l.net_salary ? (
-          <AmountDisplay amount={parseFloat(l.net_salary)} currency={l.currency_code ?? 'IQD'} />
+          <AmountDisplay amount={parseFloat(l.net_salary)} currency={l.currency_code ?? t('payroll.runDetail.iqd')} />
         ) : (
           <span style={{ color: theme.textMuted }}>—</span>
         ),
@@ -159,7 +162,7 @@ export default function PayrollRunDetail() {
         title={run.period_name}
         subtitle={`${run.start_date?.slice(0, 10) ?? ''} – ${run.end_date?.slice(0, 10) ?? ''}`}
         backPath="/payroll/runs"
-        status={<Badge variant={statusVariant}>{run.status}</Badge>}
+        status={<Badge variant={statusVariant}>{enumLabel(run.status)}</Badge>}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             {run.status === 'draft' && (
@@ -169,17 +172,17 @@ export default function PayrollRunDetail() {
                 onClick={() =>
                   void doAction(
                     () => processRun({ variables: { id: id ?? '' } }),
-                    'Payroll processed — ready for review',
+                    t('payroll.runDetail.payrollProcessedReadyForReview'),
                   )
                 }
                 loading={processing}
               >
-                Process
+                {t('payroll.runDetail.process')}
               </Button>
             )}
             {run.status === 'processing' && (
               <Button variant="secondary" size="sm" loading={true}>
-                Processing…
+                {t('payroll.runDetail.processing2')}
               </Button>
             )}
             {run.status === 'review' && (
@@ -187,10 +190,10 @@ export default function PayrollRunDetail() {
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => void doAction(() => approveRun({ variables: { id: id ?? '' } }), 'Run approved')}
+                  onClick={() => void doAction(() => approveRun({ variables: { id: id ?? '' } }), t('payroll.runDetail.runApproved'))}
                   loading={approving}
                 >
-                  Approve
+                  {t('payroll.runDetail.approve')}
                 </Button>
               </PermissionGate>
             )}
@@ -204,7 +207,7 @@ export default function PayrollRunDetail() {
                   }}
                   loading={posting}
                 >
-                  Post
+                  {t('payroll.runDetail.post')}
                 </Button>
               </PermissionGate>
             )}
@@ -216,7 +219,7 @@ export default function PayrollRunDetail() {
                   setCancelConfirmOpen(true)
                 }}
               >
-                Cancel
+                {t('payroll.runDetail.cancel')}
               </Button>
             )}
           </div>
@@ -238,18 +241,18 @@ export default function PayrollRunDetail() {
       >
         {[
           {
-            label: 'Total gross',
+            label: t('payroll.runDetail.totalGross'),
             value: run.total_gross ? parseFloat(run.total_gross).toLocaleString() : '—',
           },
           {
-            label: 'Total deductions',
+            label: t('payroll.runDetail.totalDeductions'),
             value: run.total_deductions ? parseFloat(run.total_deductions).toLocaleString() : '—',
           },
           {
-            label: 'Total net',
+            label: t('payroll.runDetail.totalNet'),
             value: run.total_net ? parseFloat(run.total_net).toLocaleString() : '—',
           },
-          { label: 'Payslips', value: lines.length },
+          { label: t('payroll.runDetail.payslips'), value: lines.length },
         ].map(({ label, value }) => (
           <div
             key={label}
@@ -295,7 +298,7 @@ export default function PayrollRunDetail() {
             color: theme.textPrimary,
           }}
         >
-          Payroll Lines
+          {t('payroll.runDetail.payrollLines')}
         </div>
         <Table
           columns={lineColumns}
@@ -312,7 +315,7 @@ export default function PayrollRunDetail() {
       {timeline.length > 0 && (
         <Card style={{ padding: '20px' }}>
           <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}>
-            Activity
+            {t('payroll.runDetail.activity')}
           </div>
           <Timeline events={timeline} />
         </Card>
@@ -324,7 +327,7 @@ export default function PayrollRunDetail() {
         onClose={() => {
           setSelectedLineId(null)
         }}
-        title="Payslip"
+        title={t('payroll.runDetail.payslip')}
         width="580px"
       >
         {selectedLineId && <PayslipViewer payrollLineId={selectedLineId} employeeId="" />}
@@ -337,11 +340,11 @@ export default function PayrollRunDetail() {
         }}
         onConfirm={() => {
           setPostConfirmOpen(false)
-          void doAction(() => postRun({ variables: { id: id ?? '' } }), 'Payroll run posted')
+          void doAction(() => postRun({ variables: { id: id ?? '' } }), t('payroll.runDetail.payrollRunPosted'))
         }}
-        title="Post Payroll Run"
-        message="This will post the payroll run and lock all payslips. This cannot be undone."
-        confirmLabel="Post"
+        title={t('payroll.runDetail.postPayrollRun')}
+        message={t('payroll.runDetail.thisWillPostThePayrollRun')}
+        confirmLabel={t('payroll.runDetail.post')}
         confirmVariant="danger"
         loading={posting}
       />
@@ -352,11 +355,11 @@ export default function PayrollRunDetail() {
         }}
         onConfirm={() => {
           setCancelConfirmOpen(false)
-          void doAction(() => cancelRun({ variables: { id: id ?? '' } }), 'Run cancelled')
+          void doAction(() => cancelRun({ variables: { id: id ?? '' } }), t('payroll.runDetail.runCancelled'))
         }}
-        title="Cancel Run"
-        message="Are you sure you want to cancel this payroll run?"
-        confirmLabel="Cancel run"
+        title={t('payroll.runDetail.cancelRun')}
+        message={t('payroll.runDetail.areYouSureYouWantTo')}
+        confirmLabel={t('payroll.runDetail.cancelRun2')}
         confirmVariant="danger"
         loading={cancelling}
       />

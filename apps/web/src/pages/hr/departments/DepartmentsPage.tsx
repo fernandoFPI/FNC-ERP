@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { DEPARTMENTS_QUERY, CREATE_DEPARTMENT, UPDATE_DEPARTMENT } from '../../../graphql/hr'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -22,6 +23,7 @@ interface Department {
 const emptyForm = () => ({ name: '' })
 
 export default function DepartmentsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [modalOpen, setModalOpen] = useState(false)
@@ -52,10 +54,10 @@ export default function DepartmentsPage() {
     try {
       if (editId) {
         await updateDept({ variables: { id: editId, input } })
-        addToast({ type: 'success', message: 'Department updated' })
+        addToast({ type: 'success', message: t('hr.departments.departmentUpdated') })
       } else {
         await createDept({ variables: { input } })
-        addToast({ type: 'success', message: 'Department created' })
+        addToast({ type: 'success', message: t('hr.departments.departmentCreated') })
       }
       setModalOpen(false)
       void refetch()
@@ -67,15 +69,15 @@ export default function DepartmentsPage() {
   const columns: Column<Department>[] = [
     {
       key: 'name',
-      header: 'Name',
+      header: t('hr.departments.name'),
       render: (d) => <span style={{ fontWeight: 500, color: theme.textPrimary }}>{d.name}</span>,
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('hr.departments.status'),
       render: (d) => (
         <Badge variant={d.is_active ? 'success' : 'neutral'}>
-          {d.is_active ? 'Active' : 'Inactive'}
+          {d.is_active ? t('hr.departments.active') : t('hr.departments.inactive')}
         </Badge>
       ),
     },
@@ -90,7 +92,7 @@ export default function DepartmentsPage() {
             openEdit(d)
           }}
         >
-          Edit
+          {t('hr.departments.edit')}
         </Button>
       ),
     },
@@ -99,11 +101,11 @@ export default function DepartmentsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
-        title="Departments"
+        title={t('hr.departments.departments')}
         subtitle={`${departments.length} departments`}
         actions={
           <Button variant="primary" size="sm" onClick={openCreate}>
-            New Department
+            {t('hr.departments.newDepartment')}
           </Button>
         }
       />
@@ -117,7 +119,7 @@ export default function DepartmentsPage() {
         onClose={() => {
           setModalOpen(false)
         }}
-        title={editId ? 'Edit Department' : 'New Department'}
+        title={editId ? t('hr.departments.editDepartment') : t('hr.departments.newDepartment')}
         size="sm"
         footer={
           <>
@@ -127,17 +129,17 @@ export default function DepartmentsPage() {
                 setModalOpen(false)
               }}
             >
-              Cancel
+              {t('hr.departments.cancel')}
             </Button>
             <Button variant="primary" onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)} loading={creating || updating}>
-              Save
+              {t('hr.departments.save')}
             </Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <Input
-            label="Name"
+            label={t('hr.departments.name')}
             value={form.name}
             onChange={(e) => {
               setForm((f) => ({ ...f, name: e.target.value }))

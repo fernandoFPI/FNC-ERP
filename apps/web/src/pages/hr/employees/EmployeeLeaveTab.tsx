@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -51,6 +53,7 @@ function statusVariant(s: string): 'success' | 'danger' | 'neutral' | 'warning' 
 }
 
 export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [modalOpen, setModalOpen] = useState(false)
@@ -99,7 +102,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
           },
         },
       })
-      addToast({ type: 'success', message: 'Leave request created' })
+      addToast({ type: 'success', message: t('hr.empLeave.leaveRequestCreated') })
       setModalOpen(false)
       setForm(emptyForm)
       void refetchRequests()
@@ -112,12 +115,12 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
   const columns: Column<LeaveRequest>[] = [
     {
       key: 'leave_type_name',
-      header: 'Type',
+      header: t('hr.empLeave.type'),
       render: (r) => <span style={{ color: theme.textPrimary }}>{r.leave_type_name ?? '—'}</span>,
     },
     {
       key: 'start_date',
-      header: 'From',
+      header: t('hr.empLeave.from'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textSecondary }}>
           {r.start_date.slice(0, 10)}
@@ -135,19 +138,19 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
     },
     {
       key: 'total_days',
-      header: 'Days',
+      header: t('hr.empLeave.days'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>{r.total_days}</span>
       ),
     },
     {
       key: 'status',
-      header: 'Status',
-      render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge>,
+      header: t('hr.empLeave.status'),
+      render: (r) => <Badge variant={statusVariant(r.status)}>{enumLabel(r.status)}</Badge>,
     },
     {
       key: 'reviewed_at',
-      header: 'Updated',
+      header: t('hr.empLeave.updated'),
       render: (r) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
           {r.reviewed_at?.slice(0, 10) ?? '—'}
@@ -199,8 +202,8 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
                 </div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
                   {unlimited
-                    ? `${b.days_used} days used (unlimited)`
-                    : `of ${b.days_allocated} remaining`}
+                    ? t('hr.empLeave.daysUsedUnlimited', { days_used: b.days_used })
+                    : t('hr.empLeave.ofRemaining', { days_allocated: b.days_allocated })}
                 </div>
                 {!unlimited && (
                   <div
@@ -241,7 +244,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
           }}
         >
           <span style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>
-            Leave requests
+            {t('hr.empLeave.leaveRequests')}
           </span>
           <Button
             variant="primary"
@@ -250,7 +253,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
               setModalOpen(true)
             }}
           >
-            New request
+            {t('hr.empLeave.newRequest')}
           </Button>
         </div>
         <Table columns={columns} data={requests} loading={loading} rowKey="id" />
@@ -261,7 +264,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
         onClose={() => {
           setModalOpen(false)
         }}
-        title="New Leave Request"
+        title={t('hr.empLeave.newLeaveRequest')}
         size="sm"
         footer={
           <>
@@ -271,7 +274,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
                 setModalOpen(false)
               }}
             >
-              Cancel
+              {t('hr.empLeave.cancel')}
             </Button>
             <Button
               variant="primary"
@@ -279,14 +282,14 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
               loading={creating}
               disabled={!form.leave_type_id || !form.start_date || !form.end_date}
             >
-              Submit
+              {t('hr.empLeave.submit')}
             </Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <Select
-            label="Leave type"
+            label={t('hr.empLeave.leaveType')}
             value={form.leave_type_id}
             onChange={(e) => {
               setForm((f) => ({ ...f, leave_type_id: e.target.value }))
@@ -296,23 +299,21 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
               value: lt.id,
               label: lt.name,
             }))}
-            placeholder="Select type…"
+            placeholder={t('hr.empLeave.selectType')}
           />
           {form.leave_type_id &&
             (() => {
               const bal = balances.find((b) => b.leave_type_id === form.leave_type_id)
               return bal?.days_remaining != null ? (
                 <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                  Balance:{' '}
-                  <span style={{ color: theme.accent, fontWeight: 600 }}>
-                    {bal.days_remaining} days remaining
-                  </span>
+                  {t('hr.empLeave.balance')}{' '}
+                  <span style={{ color: theme.accent, fontWeight: 600 }}>{t('hr.empLeave.daysRemaining', { days_remaining: bal.days_remaining })}</span>
                 </div>
               ) : null
             })()}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <Input
-              label="Start date"
+              label={t('hr.empLeave.startDate')}
               type="date"
               value={form.start_date}
               onChange={(e) => {
@@ -321,7 +322,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
               required
             />
             <Input
-              label="End date"
+              label={t('hr.empLeave.endDate')}
               type="date"
               value={form.end_date}
               onChange={(e) => {
@@ -332,14 +333,12 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
           </div>
           {days > 0 && (
             <div style={{ fontSize: '12px', color: theme.textMuted }}>
-              Duration:{' '}
-              <span style={{ color: theme.textPrimary, fontWeight: 600 }}>
-                {days} day{days !== 1 ? 's' : ''}
-              </span>
+              {t('hr.empLeave.duration')}{' '}
+              <span style={{ color: theme.textPrimary, fontWeight: 600 }}>{t('hr.empLeave.day', { count: days })}</span>
             </div>
           )}
           <Textarea
-            label="Reason (optional)"
+            label={t('hr.empLeave.reasonOptional')}
             value={form.reason}
             onChange={(e) => {
               setForm((f) => ({ ...f, reason: e.target.value }))

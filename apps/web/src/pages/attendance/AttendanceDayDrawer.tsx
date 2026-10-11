@@ -1,4 +1,6 @@
-﻿import { useTheme } from '../../theme/ThemeContext'
+﻿import { useTranslation } from 'react-i18next'
+import i18n, { enumLabel } from '../../i18n'
+import { useTheme } from '../../theme/ThemeContext'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
 import { Drawer } from '../../components/ui/Drawer'
 import { Modal } from '../../components/ui/Modal'
@@ -38,6 +40,7 @@ interface Props {
 }
 
 export function AttendanceDayDrawer({ open, onClose, date, punches, loading, dayMeta }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
 
@@ -49,16 +52,16 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
   const columns: Column<Punch>[] = [
     {
       key: 'punch_type',
-      header: 'Type',
+      header: t('att.day.type'),
       render: (p) => (
         <Badge variant={p.punch_type === 'in' ? 'success' : 'info'}>
-          {p.punch_type === 'in' ? '▶ In' : '■ Out'}
+          {p.punch_type === 'in' ? t('att.day.in') : t('att.day.out')}
         </Badge>
       ),
     },
     {
       key: 'punched_at',
-      header: 'Time',
+      header: t('att.day.time'),
       render: (p) => (
         <span style={{ fontFamily: 'monospace', fontSize: '13px', color: theme.textPrimary }}>
           {p.punched_at.slice(11, 19)}
@@ -67,7 +70,7 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
     },
     {
       key: 'work_location_id',
-      header: 'Location',
+      header: t('att.day.location'),
       render: (p) => (
         <span style={{ fontSize: '12px', color: theme.textMuted }}>
           {p.work_location_id ?? '—'}
@@ -76,7 +79,7 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
     },
     {
       key: 'distance_from_zone',
-      header: 'Dist.',
+      header: t('att.day.dist'),
       render: (p) =>
         p.distance_from_zone != null ? (
           <span
@@ -94,17 +97,17 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
     },
     {
       key: 'is_valid',
-      header: 'Valid',
+      header: t('att.day.valid'),
       render: (p) => (
         <Badge variant={p.is_valid ? 'success' : 'danger'}>
-          {p.is_valid ? 'Valid' : 'Invalid'}
+          {p.is_valid ? t('att.day.valid') : t('att.day.invalid')}
         </Badge>
       ),
     },
   ]
 
   const title = date
-    ? new Date(date + 'T12:00:00').toLocaleDateString('en-GB', {
+    ? new Date(date + 'T12:00:00').toLocaleDateString(i18n.resolvedLanguage?.startsWith('ar') ? 'ar' : 'en-GB', {
         weekday: 'long',
         day: 'numeric',
         month: 'long',
@@ -124,11 +127,11 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
         }}
       >
         {[
-          { label: 'Hours', value: `${hours.toFixed(1)}h`, color: theme.textPrimary },
-          { label: 'Sessions', value: String(sessions), color: theme.textPrimary },
-          { label: 'Valid', value: String(validCount), color: theme.success },
+          { label: t('att.day.hours'), value: `${hours.toFixed(1)}h`, color: theme.textPrimary },
+          { label: t('att.day.sessions'), value: String(sessions), color: theme.textPrimary },
+          { label: t('att.day.valid'), value: String(validCount), color: theme.success },
           {
-            label: 'Invalid',
+            label: t('att.day.invalid'),
             value: String(invalid.length),
             color: invalid.length > 0 ? theme.danger : theme.textMuted,
           },
@@ -176,7 +179,7 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
                 color: '#b45309',
               }}
             >
-              ⏱ Overtime
+              {t('att.day.overtime')}
             </span>
           )}
           {dayMeta.isAbsent && (
@@ -191,7 +194,7 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
                 color: '#b91c1c',
               }}
             >
-              Absent
+              {t('att.day.absent')}
             </span>
           )}
           {dayMeta.leaveTypeName && (
@@ -205,9 +208,7 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
                 fontWeight: 600,
                 color: '#1d4ed8',
               }}
-            >
-              Leave · {dayMeta.leaveTypeName}
-            </span>
+            >{t('att.day.leave', { leaveTypeName: dayMeta.leaveTypeName })}</span>
           )}
         </div>
       )}
@@ -223,14 +224,14 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
           marginBottom: '8px',
         }}
       >
-        Punch Log
+        {t('att.day.punchLog')}
       </div>
       <Table
         columns={columns}
         data={punches}
         loading={loading}
         rowKey="id"
-        emptyMessage="No punches recorded for this day"
+        emptyMessage={t('att.day.noPunchesRecordedForThisDay')}
       />
 
       {/* Invalid detail */}
@@ -246,7 +247,7 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
               marginBottom: '8px',
             }}
           >
-            Invalid Punches
+            {t('att.day.invalidPunches')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {invalid.map((p) => (
@@ -265,7 +266,7 @@ export function AttendanceDayDrawer({ open, onClose, date, punches, loading, day
                     justifyContent: 'space-between',
                   }}
                 >
-                  <Badge variant={p.punch_type === 'in' ? 'success' : 'info'}>{p.punch_type}</Badge>
+                  <Badge variant={p.punch_type === 'in' ? 'success' : 'info'}>{enumLabel(p.punch_type)}</Badge>
                   <span
                     style={{
                       fontFamily: 'monospace',

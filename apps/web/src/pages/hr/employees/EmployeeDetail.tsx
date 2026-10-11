@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -35,15 +37,16 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import type { AssignShiftMutation, AssignShiftMutationVariables, CompanyUsersQuery, CompanyUsersQueryVariables, EmployeeCurrentShiftQuery, EmployeeCurrentShiftQueryVariables, EmployeeQuery, EmployeeQueryVariables, EmployeeSalaryConfigQuery, EmployeeSalaryConfigQueryVariables, LinkEmployeeUserMutation, LinkEmployeeUserMutationVariables, ShiftConfigsQuery, ShiftConfigsQueryVariables, TerminateEmployeeMutation, TerminateEmployeeMutationVariables, UnassignShiftMutation, UnassignShiftMutationVariables } from '../../../graphql/generated'
 
 const TABS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'salary', label: 'Salary' },
-  { key: 'attendance', label: 'Attendance' },
-  { key: 'leave', label: 'Leave' },
-  { key: 'documents', label: 'Documents' },
-  { key: 'activity', label: 'Activity' },
+  { key: 'overview', get label() { return i18n.t('hr.empDetail.overview', { defaultValue: "Overview" }) } },
+  { key: 'salary', get label() { return i18n.t('hr.empDetail.salary', { defaultValue: "Salary" }) } },
+  { key: 'attendance', get label() { return i18n.t('hr.empDetail.attendance', { defaultValue: "Attendance" }) } },
+  { key: 'leave', get label() { return i18n.t('hr.empDetail.leave', { defaultValue: "Leave" }) } },
+  { key: 'documents', get label() { return i18n.t('hr.empDetail.documents', { defaultValue: "Documents" }) } },
+  { key: 'activity', get label() { return i18n.t('hr.empDetail.activity', { defaultValue: "Activity" }) } },
 ]
 
 export default function EmployeeDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -96,7 +99,7 @@ export default function EmployeeDetail() {
     if (!terminationDate || !terminationReason) return
     try {
       await terminateEmployee({ variables: { id: id ?? '', terminationDate, reason: terminationReason } })
-      addToast({ type: 'success', message: 'Employee terminated' })
+      addToast({ type: 'success', message: t('hr.empDetail.employeeTerminated') })
       setTerminateOpen(false)
       void refetch()
     } catch (err) {
@@ -110,7 +113,7 @@ export default function EmployeeDetail() {
       await linkEmployeeUser({ variables: { employee_id: id ?? '', user_id: targetUserId || null } })
       addToast({
         type: 'success',
-        message: targetUserId ? 'User linked to employee' : 'User unlinked from employee',
+        message: targetUserId ? t('hr.empDetail.userLinkedToEmployee') : t('hr.empDetail.userUnlinkedFromEmployee'),
       })
       setLinkUserOpen(false)
       void refetch()
@@ -129,7 +132,7 @@ export default function EmployeeDetail() {
           effective_from: shiftEffectiveFrom,
         },
       })
-      addToast({ type: 'success', message: 'Shift assigned' })
+      addToast({ type: 'success', message: t('hr.empDetail.shiftAssigned') })
       setShiftModalOpen(false)
       void refetchShift()
     } catch (err) {
@@ -140,7 +143,7 @@ export default function EmployeeDetail() {
   async function handleUnassignShift() {
     try {
       await unassignShift({ variables: { employee_id: id ?? '' } })
-      addToast({ type: 'success', message: 'Shift removed' })
+      addToast({ type: 'success', message: t('hr.empDetail.shiftRemoved') })
       void refetchShift()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -148,8 +151,8 @@ export default function EmployeeDetail() {
   }
 
   if (loading && !emp)
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
-  if (!emp) return <div style={{ padding: '24px', color: theme.textMuted }}>Employee not found</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('hr.empDetail.loading')}</div>
+  if (!emp) return <div style={{ padding: '24px', color: theme.textMuted }}>{t('hr.empDetail.employeeNotFound')}</div>
 
   const basePay = sc ? parseFloat(sc.base_salary) : 0
   const salaryAllowances = sc
@@ -157,7 +160,7 @@ export default function EmployeeDetail() {
         ...(sc.housing_allowance && parseFloat(sc.housing_allowance) > 0
           ? [
               {
-                name: 'Housing allowance',
+                name: t('hr.empDetail.housingAllowance'),
                 amount: parseFloat(sc.housing_allowance),
                 currency: sc.currency_code,
               },
@@ -166,7 +169,7 @@ export default function EmployeeDetail() {
         ...(sc.transport_allowance && parseFloat(sc.transport_allowance) > 0
           ? [
               {
-                name: 'Transport allowance',
+                name: t('hr.empDetail.transportAllowance'),
                 amount: parseFloat(sc.transport_allowance),
                 currency: sc.currency_code,
               },
@@ -175,7 +178,7 @@ export default function EmployeeDetail() {
         ...(sc.other_allowances && parseFloat(sc.other_allowances) > 0
           ? [
               {
-                name: 'Other allowances',
+                name: t('hr.empDetail.otherAllowances'),
                 amount: parseFloat(sc.other_allowances),
                 currency: sc.currency_code,
               },
@@ -188,7 +191,7 @@ export default function EmployeeDetail() {
         ...(sc.income_tax_pct && parseFloat(sc.income_tax_pct) > 0
           ? [
               {
-                name: `Income tax (${sc.income_tax_pct}%)`,
+                name: t('hr.empDetail.incomeTaxPct', { pct: sc.income_tax_pct }),
                 amount: (basePay * parseFloat(sc.income_tax_pct)) / 100,
                 type: 'tax',
               },
@@ -197,7 +200,7 @@ export default function EmployeeDetail() {
         ...(sc.social_security_pct && parseFloat(sc.social_security_pct) > 0
           ? [
               {
-                name: `Social security (${sc.social_security_pct}%)`,
+                name: t('hr.empDetail.socialSecurityPct', { pct: sc.social_security_pct }),
                 amount: (basePay * parseFloat(sc.social_security_pct)) / 100,
                 type: 'social',
               },
@@ -224,10 +227,10 @@ export default function EmployeeDetail() {
             status={
               <Badge variant={emp.status === 'active' ? 'success' : 'neutral'}>
                 {emp.status === 'active'
-                  ? 'Active'
+                  ? t('hr.empDetail.active')
                   : emp.status === 'terminated'
-                    ? 'Terminated'
-                    : 'Inactive'}
+                    ? t('hr.empDetail.terminated')
+                    : t('hr.empDetail.inactive')}
               </Badge>
             }
             actions={
@@ -239,7 +242,7 @@ export default function EmployeeDetail() {
                     navigate(`/hr/employees/${id}/edit`)
                   }}
                 >
-                  Edit
+                  {t('hr.empDetail.edit')}
                 </Button>
                 <PermissionGate permission="hr.employees.delete" minLevel="approve">
                   {emp.status === 'active' && (
@@ -250,7 +253,7 @@ export default function EmployeeDetail() {
                         setTerminateOpen(true)
                       }}
                     >
-                      Terminate
+                      {t('hr.empDetail.terminate')}
                     </Button>
                   )}
                 </PermissionGate>
@@ -270,10 +273,10 @@ export default function EmployeeDetail() {
         }}
       >
         {[
-          { label: 'Hire date', value: emp.hire_date ?? '—' },
-          { label: 'Contract', value: emp.employment_type?.replace(/_/g, ' ') ?? '—' },
-          { label: 'Department', value: emp.department_name ?? '—' },
-          { label: 'Location', value: emp.work_location_id ?? '—' },
+          { label: t('hr.empDetail.hireDate'), value: emp.hire_date ?? '—' },
+          { label: t('hr.empDetail.contract'), value: emp.employment_type?.replace(/_/g, ' ') ?? '—' },
+          { label: t('hr.empDetail.department'), value: emp.department_name ?? '—' },
+          { label: t('hr.empDetail.location'), value: emp.work_location_id ?? '—' },
         ].map(({ label, value }) => (
           <div
             key={label}
@@ -322,12 +325,12 @@ export default function EmployeeDetail() {
                 }}
               >
                 {[
-                  ['Job title', emp.job_title],
-                  ['Email', emp.email],
-                  ['Phone', emp.phone],
-                  ['National ID', emp.national_id],
-                  ['Nationality', emp.nationality],
-                  ['Gender', emp.gender],
+                  [t('hr.empDetail.jobTitle'), emp.job_title],
+                  [t('hr.empDetail.email'), emp.email],
+                  [t('hr.empDetail.phone'), emp.phone],
+                  [t('hr.empDetail.nationalId'), emp.national_id],
+                  [t('hr.empDetail.nationality'), emp.nationality],
+                  [t('hr.empDetail.gender'), emp.gender],
                 ].map(([label, value]) => (
                   <div
                     key={label}
@@ -353,7 +356,7 @@ export default function EmployeeDetail() {
               >
                 <div>
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-                    System user account
+                    {t('hr.empDetail.systemUserAccount')}
                   </div>
                   <div
                     style={{
@@ -362,7 +365,7 @@ export default function EmployeeDetail() {
                     }}
                   >
                     {emp.linked_user_email ??
-                      (emp.user_id ? emp.user_id : 'Not linked to any user account')}
+                      (emp.user_id ? emp.user_id : t('hr.empDetail.notLinkedToUser'))}
                   </div>
                 </div>
                 <PermissionGate permission="hr.employees.edit" minLevel="edit">
@@ -374,7 +377,7 @@ export default function EmployeeDetail() {
                       setLinkUserOpen(true)
                     }}
                   >
-                    {emp.user_id ? 'Change' : 'Link user'}
+                    {emp.user_id ? t('hr.empDetail.change') : t('hr.empDetail.linkUser')}
                   </Button>
                 </PermissionGate>
               </div>
@@ -383,13 +386,13 @@ export default function EmployeeDetail() {
             {emp.advance_control_account_id && (
               <Card style={{ padding: '16px' }}>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-                  Advance control account
+                  {t('hr.empDetail.advanceControlAccount')}
                 </div>
                 <div style={{ fontSize: '13px', color: theme.textPrimary }}>
                   {emp.advance_control_account_code} · {emp.advance_control_account_name}
                 </div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                  Auto-created — tracks this employee's cash advances in the GL
+                  {t('hr.empDetail.autoCreatedTracksThisEmployeeS')}
                 </div>
               </Card>
             )}
@@ -401,26 +404,19 @@ export default function EmployeeDetail() {
               >
                 <div>
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-                    Assigned shift
+                    {t('hr.empDetail.assignedShift')}
                   </div>
                   {currentShift ? (
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
                         {currentShift.shift_name}
                       </div>
-                      <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                        {currentShift.start_time} – {currentShift.end_time} ·{' '}
-                        {currentShift.break_minutes} min break · OT after{' '}
-                        {currentShift.overtime_threshold_hours}h
-                      </div>
-                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                        From {currentShift.effective_from}
-                        {currentShift.effective_to ? ` to ${currentShift.effective_to}` : ''}
-                      </div>
+                      <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>{t('hr.empDetail.minBreakOtAfterH', { start_time: currentShift.start_time, end_time: currentShift.end_time, break_minutes: currentShift.break_minutes, overtime_threshold_hours: currentShift.overtime_threshold_hours })}</div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>{t('hr.empDetail.from', { effective_from: currentShift.effective_from, value: currentShift.effective_to ? ` to ${currentShift.effective_to}` : '' })}</div>
                     </div>
                   ) : (
                     <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                      No shift assigned
+                      {t('hr.empDetail.noShiftAssigned')}
                     </div>
                   )}
                 </div>
@@ -434,7 +430,7 @@ export default function EmployeeDetail() {
                         loading={unassigning}
                         onClick={(...args: Parameters<typeof handleUnassignShift>) => void handleUnassignShift(...args)}
                       >
-                        Remove
+                        {t('hr.empDetail.remove')}
                       </Button>
                     )}
                     <Button
@@ -445,7 +441,7 @@ export default function EmployeeDetail() {
                         setShiftModalOpen(true)
                       }}
                     >
-                      {currentShift ? 'Change' : 'Assign shift'}
+                      {currentShift ? t('hr.empDetail.change') : t('hr.empDetail.assignShift')}
                     </Button>
                   </div>
                 </PermissionGate>
@@ -466,7 +462,7 @@ export default function EmployeeDetail() {
                 marginBottom: '16px',
               }}
             >
-              <div style={{ fontWeight: 600, color: theme.textPrimary }}>Current salary config</div>
+              <div style={{ fontWeight: 600, color: theme.textPrimary }}>{t('hr.empDetail.currentSalaryConfig')}</div>
               <PermissionGate permission="hr.employees.manage_salary" minLevel="edit">
                 <Button
                   variant="secondary"
@@ -475,7 +471,7 @@ export default function EmployeeDetail() {
                     navigate(`/hr/employees/${id}/salary`)
                   }}
                 >
-                  Update salary
+                  {t('hr.empDetail.updateSalary')}
                 </Button>
               </PermissionGate>
             </div>
@@ -496,7 +492,7 @@ export default function EmployeeDetail() {
                   padding: '24px 0',
                 }}
               >
-                No salary configured yet.{' '}
+                {t('hr.empDetail.noSalaryConfiguredYet')}{' '}
                 <PermissionGate permission="hr.employees.manage_salary" minLevel="edit">
                   <button
                     onClick={() => {
@@ -511,7 +507,7 @@ export default function EmployeeDetail() {
                       fontSize: '13px',
                     }}
                   >
-                    Set up salary →
+                    {t('hr.empDetail.setUpSalary')}
                   </button>
                 </PermissionGate>
               </div>
@@ -543,7 +539,7 @@ export default function EmployeeDetail() {
         onClose={() => {
           setShiftModalOpen(false)
         }}
-        title="Assign shift"
+        title={t('hr.empDetail.assignShift')}
         size="sm"
         footer={
           <>
@@ -553,7 +549,7 @@ export default function EmployeeDetail() {
                 setShiftModalOpen(false)
               }}
             >
-              Cancel
+              {t('hr.empDetail.cancel')}
             </Button>
             <Button
               variant="primary"
@@ -561,7 +557,7 @@ export default function EmployeeDetail() {
               loading={assigning}
               disabled={!selectedShiftId}
             >
-              Assign
+              {t('hr.empDetail.assign')}
             </Button>
           </>
         }
@@ -569,12 +565,12 @@ export default function EmployeeDetail() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
             <SearchableSelect
-              label="Shift"
+              label={t('hr.empDetail.shift')}
               value={selectedShiftId}
               onChange={(v) => {
                 setSelectedShiftId(v)
               }}
-              placeholder="— Select a shift —"
+              placeholder={t('hr.empDetail.selectAShift')}
               options={(allShiftsData?.shiftConfigs ?? []).filter((v): v is NonNullable<typeof v> => v !== null)
                 .filter((s) => s.is_active)
                 .map((s) => ({
@@ -584,7 +580,7 @@ export default function EmployeeDetail() {
             />
           </div>
           <Input
-            label="Effective from"
+            label={t('hr.empDetail.effectiveFrom')}
             type="date"
             value={shiftEffectiveFrom}
             onChange={(e) => {
@@ -600,7 +596,7 @@ export default function EmployeeDetail() {
         onClose={() => {
           setLinkUserOpen(false)
         }}
-        title="Link system user"
+        title={t('hr.empDetail.linkSystemUser')}
         size="sm"
         footer={
           <>
@@ -610,7 +606,7 @@ export default function EmployeeDetail() {
                 setLinkUserOpen(false)
               }}
             >
-              Cancel
+              {t('hr.empDetail.cancel')}
             </Button>
             {emp.user_id && (
               <Button
@@ -622,7 +618,7 @@ export default function EmployeeDetail() {
                 }}
                 loading={linking}
               >
-                Unlink
+                {t('hr.empDetail.unlink')}
               </Button>
             )}
             <Button
@@ -633,24 +629,23 @@ export default function EmployeeDetail() {
               loading={linking}
               disabled={!selectedUserId}
             >
-              Link
+              {t('hr.empDetail.link')}
             </Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <p style={{ margin: 0, fontSize: '13px', color: theme.textSecondary }}>
-            Linking a user allows them to log in and see their own HR data (payslips, leave,
-            attendance).
+            {t('hr.empDetail.linkingAUserAllowsThemTo')}
           </p>
           <div>
             <SearchableSelect
-              label="System user"
+              label={t('hr.empDetail.systemUser')}
               value={selectedUserId}
               onChange={(v) => {
                 setSelectedUserId(v)
               }}
-              placeholder="— Select a user —"
+              placeholder={t('hr.empDetail.selectAUser')}
               options={(usersData?.companyUsers ?? []).map((u: { id: string; email: string }) => ({
                 value: u.id,
                 label: u.email,
@@ -666,7 +661,7 @@ export default function EmployeeDetail() {
         onClose={() => {
           setTerminateOpen(false)
         }}
-        title="Terminate Employee"
+        title={t('hr.empDetail.terminateEmployee')}
         size="sm"
         footer={
           <>
@@ -676,7 +671,7 @@ export default function EmployeeDetail() {
                 setTerminateOpen(false)
               }}
             >
-              Cancel
+              {t('hr.empDetail.cancel')}
             </Button>
             <Button
               variant="danger"
@@ -684,18 +679,15 @@ export default function EmployeeDetail() {
               loading={terminating}
               disabled={!terminationDate || !terminationReason}
             >
-              Terminate
+              {t('hr.empDetail.terminate')}
             </Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <p style={{ fontSize: '13px', color: theme.textSecondary, margin: 0 }}>
-            This will deactivate {emp.first_name} {emp.last_name}'s account. This action can be
-            reversed by an admin.
-          </p>
+          <p style={{ fontSize: '13px', color: theme.textSecondary, margin: 0 }}>{t('hr.empDetail.thisWillDeactivateSAccountThis', { first_name: emp.first_name, last_name: emp.last_name })}</p>
           <Input
-            label="Termination date"
+            label={t('hr.empDetail.terminationDate')}
             type="date"
             value={terminationDate}
             onChange={(e) => {
@@ -705,12 +697,12 @@ export default function EmployeeDetail() {
             required
           />
           <Textarea
-            label="Reason"
+            label={t('hr.empDetail.reason')}
             value={terminationReason}
             onChange={(e) => {
               setTerminationReason(e.target.value)
             }}
-            placeholder="Reason for termination…"
+            placeholder={t('hr.empDetail.reasonForTermination')}
             required
             rows={3}
           />

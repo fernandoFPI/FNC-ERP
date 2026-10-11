@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import {
   ATTENDANCE_CALENDAR_QUERY,
@@ -17,6 +18,7 @@ import { AttendanceDayDrawer } from './AttendanceDayDrawer'
 import type { AttendanceCalendarQuery, AttendanceCalendarQueryVariables, AttendanceLogsQuery, AttendanceLogsQueryVariables, AttendanceSummaryQuery, AttendanceSummaryQueryVariables } from '../../graphql/generated'
 
 export default function AttendancePage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const { isPhone } = useBreakpoint()
@@ -79,7 +81,7 @@ export default function AttendancePage() {
       }}
     >
       <PageHeader
-        title="Attendance"
+        title={t('att.page.attendance')}
         subtitle={calMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
       />
 
@@ -87,15 +89,15 @@ export default function AttendancePage() {
       {summary && (
         <Grid cols={5} tabletCols={3} phoneCols={2} gap={8} style={{ marginBottom: '20px' }}>
           {[
-            { label: 'Present', value: summary.days_present, color: theme.success },
-            { label: 'Absent', value: summary.days_absent, color: theme.danger },
-            { label: 'Total hours', value: `${summary.total_hours?.toFixed(1)}h` },
+            { label: t('att.page.present'), value: summary.days_present, color: theme.success },
+            { label: t('att.page.absent'), value: summary.days_absent, color: theme.danger },
+            { label: t('att.page.totalHours'), value: `${summary.total_hours?.toFixed(1)}h` },
             {
-              label: 'OT hours',
+              label: t('att.page.otHours'),
               value: `${summary.overtime_hours?.toFixed(1)}h`,
               color: theme.warning,
             },
-            { label: 'Leave days', value: summary.leave_days, color: theme.info },
+            { label: t('att.page.leaveDays'), value: summary.leave_days, color: theme.info },
           ].map(({ label, value, color }) => (
             <div
               key={label}

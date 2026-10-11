@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { MY_PAYSLIPS_QUERY } from '../../../graphql/payroll'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -22,6 +23,7 @@ interface PayslipLine {
 }
 
 export default function PayslipsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const user = useAuthStore((s) => s.user)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -32,29 +34,29 @@ export default function PayslipsPage() {
   const columns: Column<PayslipLine>[] = [
     {
       key: 'employee_name',
-      header: 'Name',
+      header: t('payroll.payslips.name'),
       render: (l) => (
         <span style={{ fontWeight: 500, color: theme.textPrimary }}>{l.employee_name ?? '—'}</span>
       ),
     },
     {
       key: 'gross_salary',
-      header: 'Gross',
+      header: t('payroll.payslips.gross'),
       render: (l) =>
         l.gross_salary ? (
-          <AmountDisplay amount={parseFloat(l.gross_salary)} currency={l.currency_code ?? 'IQD'} />
+          <AmountDisplay amount={parseFloat(l.gross_salary)} currency={l.currency_code ?? t('payroll.payslips.iqd')} />
         ) : (
           <span style={{ color: theme.textMuted }}>—</span>
         ),
     },
     {
       key: 'net_salary',
-      header: 'Net',
+      header: t('payroll.payslips.net'),
       render: (l) =>
         l.net_salary ? (
           <AmountDisplay
             amount={parseFloat(l.net_salary)}
-            currency={l.currency_code ?? 'IQD'}
+            currency={l.currency_code ?? t('payroll.payslips.iqd')}
             colored
           />
         ) : (
@@ -72,7 +74,7 @@ export default function PayslipsPage() {
             setSelectedId(l.id)
           }}
         >
-          View
+          {t('payroll.payslips.view')}
         </Button>
       ),
     },
@@ -80,7 +82,7 @@ export default function PayslipsPage() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
-      <PageHeader title="My Payslips" subtitle={user?.email ?? ''} />
+      <PageHeader title={t('payroll.payslips.myPayslips')} subtitle={user?.email ?? ''} />
 
       <Card style={{ marginTop: '20px' }}>
         <Table columns={columns} data={lines} loading={loading} rowKey="id" />
@@ -91,7 +93,7 @@ export default function PayslipsPage() {
         onClose={() => {
           setSelectedId(null)
         }}
-        title="Payslip"
+        title={t('payroll.payslips.payslip')}
         size="lg"
       >
         {selectedId && <PayslipViewer payrollLineId={selectedId} employeeId="" />}

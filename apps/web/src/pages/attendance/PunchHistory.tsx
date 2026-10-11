@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import i18n, { enumLabel } from '../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { ATTENDANCE_LOGS_QUERY } from '../../graphql/hr'
 import { useTheme } from '../../theme/ThemeContext'
@@ -29,11 +31,12 @@ interface PunchLog {
 }
 
 const VALID_OPTIONS = [
-  { value: 'true', label: 'Valid' },
-  { value: 'false', label: 'Invalid' },
+  { value: 'true', get label() { return i18n.t('att.punch.valid', { defaultValue: "Valid" }) } },
+  { value: 'false', get label() { return i18n.t('att.punch.invalid', { defaultValue: "Invalid" }) } },
 ]
 
 export default function PunchHistory() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [search, setSearch] = useState('')
   const [fromDate, setFromDate] = useState(() => {
@@ -79,14 +82,14 @@ export default function PunchHistory() {
   const columns: Column<PunchLog>[] = [
     {
       key: 'employee_name',
-      header: 'Employee',
+      header: t('att.punch.employee'),
       render: (l) => (
         <span style={{ fontWeight: 500, color: theme.textPrimary }}>{l.employee_name ?? '—'}</span>
       ),
     },
     {
       key: 'punched_at',
-      header: 'Date',
+      header: t('att.punch.date'),
       render: (l) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textSecondary }}>
           {l.punched_at.slice(0, 10)}
@@ -95,14 +98,14 @@ export default function PunchHistory() {
     },
     {
       key: 'punch_type',
-      header: 'Type',
+      header: t('att.punch.type'),
       render: (l) => (
-        <Badge variant={l.punch_type === 'in' ? 'success' : 'info'}>{l.punch_type}</Badge>
+        <Badge variant={l.punch_type === 'in' ? 'success' : 'info'}>{enumLabel(l.punch_type)}</Badge>
       ),
     },
     {
       key: 'punched_at',
-      header: 'Time',
+      header: t('att.punch.time'),
       render: (l) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textSecondary }}>
           {l.punched_at.slice(11, 19)}
@@ -111,7 +114,7 @@ export default function PunchHistory() {
     },
     {
       key: 'work_location_id',
-      header: 'Location',
+      header: t('att.punch.location'),
       render: (l) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
           {l.work_location_id ?? '—'}
@@ -120,7 +123,7 @@ export default function PunchHistory() {
     },
     {
       key: 'distance_from_zone',
-      header: 'Distance',
+      header: t('att.punch.distance'),
       render: (l) => {
         if (l.distance_from_zone == null) return <span style={{ color: theme.textMuted }}>—</span>
         const inside = l.distance_from_zone <= 0
@@ -139,10 +142,10 @@ export default function PunchHistory() {
     },
     {
       key: 'is_valid',
-      header: 'Valid',
+      header: t('att.punch.valid'),
       render: (l) => (
         <Badge variant={l.is_valid ? 'success' : 'danger'}>
-          {l.is_valid ? 'Valid' : 'Invalid'}
+          {l.is_valid ? t('att.punch.valid') : t('att.punch.invalid')}
         </Badge>
       ),
     },
@@ -150,7 +153,7 @@ export default function PunchHistory() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1500px' }}>
-      <PageHeader title="Punch History" subtitle="All employee attendance logs" />
+      <PageHeader title={t('att.punch.punchHistory')} subtitle={t('att.punch.allEmployeeAttendanceLogs')} />
 
       <div
         style={{
@@ -161,10 +164,10 @@ export default function PunchHistory() {
         }}
       >
         {[
-          { label: 'Total punches', value: total },
-          { label: 'Valid punches', value: valid, color: theme.success },
+          { label: t('att.punch.totalPunches'), value: total },
+          { label: t('att.punch.validPunches'), value: valid, color: theme.success },
           {
-            label: 'Rejection rate',
+            label: t('att.punch.rejectionRate'),
             value: `${rejectionRate}%`,
             color: rejectionRate > 10 ? theme.danger : theme.textPrimary,
           },
@@ -211,7 +214,7 @@ export default function PunchHistory() {
             filters={[
               {
                 key: 'valid',
-                label: 'Validity',
+                label: t('att.punch.validity'),
                 value: validFilter,
                 options: VALID_OPTIONS,
                 onChange: setValidFilter,

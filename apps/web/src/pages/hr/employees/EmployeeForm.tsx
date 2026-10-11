@@ -1,4 +1,6 @@
-﻿import { useState, useEffect } from 'react'
+﻿import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useLazyQuery } from '@apollo/client'
 import {
@@ -19,18 +21,18 @@ import { useToastStore } from '../../../store/toastStore'
 import type { CreateEmployeeMutation, CreateEmployeeMutationVariables, DepartmentsQuery, DepartmentsQueryVariables, EmployeeQuery, EmployeeQueryVariables, FindEmployeeAcrossCompaniesQuery, FindEmployeeAcrossCompaniesQueryVariables, UpdateEmployeeMutation, UpdateEmployeeMutationVariables, WorkLocationsQuery, WorkLocationsQueryVariables } from '../../../graphql/generated'
 
 const EMPLOYMENT_TYPE_OPTIONS = [
-  { value: 'full_time', label: 'Full time' },
-  { value: 'part_time', label: 'Part time' },
-  { value: 'contract', label: 'Contract' },
-  { value: 'intern', label: 'Intern' },
-  { value: 'daily', label: 'Daily' },
-  { value: 'expat', label: 'Expat' },
-  { value: 'contractor', label: 'Contractor' },
+  { value: 'full_time', get label() { return i18n.t('hr.empForm.fullTime', { defaultValue: "Full time" }) } },
+  { value: 'part_time', get label() { return i18n.t('hr.empForm.partTime', { defaultValue: "Part time" }) } },
+  { value: 'contract', get label() { return i18n.t('hr.empForm.contract', { defaultValue: "Contract" }) } },
+  { value: 'intern', get label() { return i18n.t('hr.empForm.intern', { defaultValue: "Intern" }) } },
+  { value: 'daily', get label() { return i18n.t('hr.empForm.daily', { defaultValue: "Daily" }) } },
+  { value: 'expat', get label() { return i18n.t('hr.empForm.expat', { defaultValue: "Expat" }) } },
+  { value: 'contractor', get label() { return i18n.t('hr.empForm.contractor', { defaultValue: "Contractor" }) } },
 ]
 const GENDER_OPTIONS = [
-  { value: 'male', label: 'Male' },
-  { value: 'female', label: 'Female' },
-  { value: 'other', label: 'Other' },
+  { value: 'male', get label() { return i18n.t('hr.empForm.male', { defaultValue: "Male" }) } },
+  { value: 'female', get label() { return i18n.t('hr.empForm.female', { defaultValue: "Female" }) } },
+  { value: 'other', get label() { return i18n.t('hr.empForm.other', { defaultValue: "Other" }) } },
 ]
 
 const emptyForm = {
@@ -71,6 +73,7 @@ function SectionHeader({ title }: { title: string }) {
 }
 
 export default function EmployeeForm() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const isEdit = Boolean(id)
   const navigate = useNavigate()
@@ -169,17 +172,17 @@ export default function EmployeeForm() {
     }))
     setLinkedUserId(match.user_id ?? null)
     setMatchApplied(true)
-    addToast({ type: 'success', message: `Pre-filled from ${match.companyName}` })
+    addToast({ type: 'success', message: t('hr.empForm.preFilledFrom', { companyName: match.companyName }) })
   }
 
   function validate(): boolean {
     const errs: Record<string, string> = {}
-    if (!form.first_name) errs.first_name = 'Required'
-    if (!form.last_name) errs.last_name = 'Required'
-    if (!form.hire_date) errs.hire_date = 'Required'
-    if (new Date(form.hire_date) > new Date()) errs.hire_date = 'Cannot be in the future'
+    if (!form.first_name) errs.first_name = t('hr.empForm.required')
+    if (!form.last_name) errs.last_name = t('hr.empForm.required')
+    if (!form.hire_date) errs.hire_date = t('hr.empForm.required')
+    if (new Date(form.hire_date) > new Date()) errs.hire_date = t('hr.empForm.cannotBeInTheFuture')
     if (['full_time', 'expat'].includes(form.employment_type) && !form.national_id) {
-      errs.national_id = 'Required for this contract type'
+      errs.national_id = t('hr.empForm.requiredForThisContractType')
     }
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -209,11 +212,11 @@ export default function EmployeeForm() {
     try {
       if (isEdit && id) {
         await updateEmployee({ variables: { id, input } })
-        addToast({ type: 'success', message: 'Employee updated' })
+        addToast({ type: 'success', message: t('hr.empForm.employeeUpdated') })
         navigate(`/hr/employees/${id}`)
       } else {
         const res = await createEmployee({ variables: { input } })
-        addToast({ type: 'success', message: 'Employee created' })
+        addToast({ type: 'success', message: t('hr.empForm.employeeCreated') })
         if (res.data?.createEmployee) {
           navigate(`/hr/employees/${res.data.createEmployee.id}`)
         } else {
@@ -230,7 +233,7 @@ export default function EmployeeForm() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1000px' }}>
       <PageHeader
-        title={isEdit ? 'Edit Employee' : 'New Employee'}
+        title={isEdit ? t('hr.empForm.editEmployee') : t('hr.empForm.newEmployee')}
         backPath={isEdit ? `/hr/employees/${id}` : '/hr/employees'}
       />
 
@@ -240,22 +243,21 @@ export default function EmployeeForm() {
             <Card
               style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}
             >
-              <SectionHeader title="Add existing person (optional)" />
+              <SectionHeader title={t('hr.empForm.addExistingPersonOptional')} />
               <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0 }}>
-                Already an employee in one of your other companies? Look them up by email to
-                pre-fill their details instead of retyping everything.
+                {t('hr.empForm.alreadyAnEmployeeInOneOf')}
               </p>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                 <div style={{ flex: 1 }}>
                   <Input
-                    label="Email"
+                    label={t('hr.empForm.email')}
                     type="email"
                     value={searchEmail}
                     onChange={(e) => {
                       setSearchEmail(e.target.value)
                       setMatchApplied(false)
                     }}
-                    placeholder="person@example.com"
+                    placeholder={t('hr.empForm.personExampleCom')}
                   />
                 </div>
                 <Button
@@ -265,7 +267,7 @@ export default function EmployeeForm() {
                   disabled={!searchEmail.trim()}
                   onClick={handleSearchMatch}
                 >
-                  Search
+                  {t('hr.empForm.search')}
                 </Button>
               </div>
               {matchData !== undefined && (
@@ -284,16 +286,10 @@ export default function EmployeeForm() {
                   {match ? (
                     <>
                       <div>
-                        <div style={{ fontSize: '12px', fontWeight: 600, color: theme.accent }}>
-                          Found: {match.first_name} {match.last_name}
-                          {match.job_title ? ` — ${match.job_title}` : ''}
-                        </div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: theme.accent }}>{t('hr.empForm.found', { first_name: match.first_name, last_name: match.last_name, value: match.job_title ? ` — ${match.job_title}` : '' })}</div>
                         <div
                           style={{ fontSize: '11px', color: theme.textSecondary, marginTop: '2px' }}
-                        >
-                          Already an employee in {match.companyName}
-                          {match.user_id ? ' — will link their existing account once you save' : ''}
-                        </div>
+                        >{t('hr.empForm.alreadyAnEmployeeIn', { companyName: match.companyName, value: match.user_id ? t('hr.empForm.willLinkTheirExistingAccountOnce') : '' })}</div>
                       </div>
                       <Button
                         type="button"
@@ -302,12 +298,12 @@ export default function EmployeeForm() {
                         onClick={applyMatch}
                         disabled={matchApplied}
                       >
-                        {matchApplied ? 'Applied' : 'Use this info'}
+                        {matchApplied ? t('hr.empForm.applied') : t('hr.empForm.useThisInfo')}
                       </Button>
                     </>
                   ) : (
                     <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                      No match found in your other companies — fill in the form below as usual.
+                      {t('hr.empForm.noMatchFoundInYourOther')}
                     </div>
                   )}
                 </div>
@@ -319,7 +315,7 @@ export default function EmployeeForm() {
             <Card
               style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}
             >
-              <SectionHeader title="Personal information" />
+              <SectionHeader title={t('hr.empForm.personalInformation')} />
               <div
                 style={{
                   display: 'grid',
@@ -328,42 +324,42 @@ export default function EmployeeForm() {
                 }}
               >
                 <Input
-                  label="First name"
+                  label={t('hr.empForm.firstName')}
                   value={form.first_name}
                   onChange={field('first_name')}
                   required
                   error={errors.first_name}
                 />
                 <Input
-                  label="Last name"
+                  label={t('hr.empForm.lastName')}
                   value={form.last_name}
                   onChange={field('last_name')}
                   required
                   error={errors.last_name}
                 />
                 <Input
-                  label="National ID"
+                  label={t('hr.empForm.nationalId')}
                   value={form.national_id}
                   onChange={field('national_id')}
                   error={errors.national_id}
                 />
                 <Input
-                  label="Passport number"
+                  label={t('hr.empForm.passportNumber')}
                   value={form.passport_number}
                   onChange={field('passport_number')}
                 />
                 <Input
-                  label="Date of birth"
+                  label={t('hr.empForm.dateOfBirth')}
                   type="date"
                   value={form.date_of_birth}
                   onChange={field('date_of_birth')}
                 />
                 <Select
-                  label="Gender"
+                  label={t('hr.empForm.gender')}
                   value={form.gender}
                   onChange={field('gender')}
                   options={GENDER_OPTIONS}
-                  placeholder="Select…"
+                  placeholder={t('hr.empForm.select')}
                 />
               </div>
             </Card>
@@ -373,7 +369,7 @@ export default function EmployeeForm() {
             <Card
               style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}
             >
-              <SectionHeader title="Employment" />
+              <SectionHeader title={t('hr.empForm.employment')} />
               <div
                 style={{
                   display: 'grid',
@@ -382,13 +378,13 @@ export default function EmployeeForm() {
                 }}
               >
                 <Input
-                  label="Employee number"
+                  label={t('hr.empForm.employeeNumber')}
                   value={form.employee_number}
                   onChange={field('employee_number')}
-                  placeholder="EMP-FNC-001"
+                  placeholder={t('hr.empForm.empFnc001')}
                 />
                 <Input
-                  label="Hire date"
+                  label={t('hr.empForm.hireDate')}
                   type="date"
                   value={form.hire_date}
                   onChange={field('hire_date')}
@@ -396,27 +392,27 @@ export default function EmployeeForm() {
                   error={errors.hire_date}
                 />
                 <Select
-                  label="Employment type"
+                  label={t('hr.empForm.employmentType')}
                   value={form.employment_type}
                   onChange={field('employment_type')}
                   options={EMPLOYMENT_TYPE_OPTIONS}
                 />
-                <Input label="Job title" value={form.job_title} onChange={field('job_title')} />
+                <Input label={t('hr.empForm.jobTitle')} value={form.job_title} onChange={field('job_title')} />
                 <Select
-                  label="Department"
+                  label={t('hr.empForm.department')}
                   value={form.department_id}
                   onChange={field('department_id')}
-                  placeholder="Select…"
+                  placeholder={t('hr.empForm.select')}
                   options={departments.filter((v): v is NonNullable<typeof v> => v !== null).map((d) => ({
                     value: d.id,
                     label: d.name,
                   }))}
                 />
                 <Select
-                  label="Work location"
+                  label={t('hr.empForm.workLocation')}
                   value={form.work_location_id}
                   onChange={field('work_location_id')}
-                  placeholder="Select…"
+                  placeholder={t('hr.empForm.select')}
                   options={locations.filter((v): v is NonNullable<typeof v> => v !== null).map((l) => ({
                     value: l.id,
                     label: l.name,
@@ -430,7 +426,7 @@ export default function EmployeeForm() {
             <Card
               style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}
             >
-              <SectionHeader title="Contact" />
+              <SectionHeader title={t('hr.empForm.contact')} />
               <div
                 style={{
                   display: 'grid',
@@ -438,8 +434,8 @@ export default function EmployeeForm() {
                   gap: '14px',
                 }}
               >
-                <Input label="Email" type="email" value={form.email} onChange={field('email')} />
-                <Input label="Phone" value={form.phone} onChange={field('phone')} />
+                <Input label={t('hr.empForm.email')} type="email" value={form.email} onChange={field('email')} />
+                <Input label={t('hr.empForm.phone')} value={form.phone} onChange={field('phone')} />
               </div>
             </Card>
           </div>
@@ -452,10 +448,10 @@ export default function EmployeeForm() {
                 navigate(-1)
               }}
             >
-              Cancel
+              {t('hr.empForm.cancel')}
             </Button>
             <Button data-tour="save-employee-btn" variant="primary" type="submit" loading={loading}>
-              {isEdit ? 'Save changes' : 'Create employee'}
+              {isEdit ? t('hr.empForm.saveChanges') : t('hr.empForm.createEmployee')}
             </Button>
           </div>
         </div>

@@ -1,14 +1,15 @@
+import i18n from '../../i18n'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
 
 const TABS = [
-  { label: 'Employees', path: '/hr/employees' },
-  { label: 'Departments', path: '/hr/departments' },
-  { label: 'Work Locations', path: '/hr/locations' },
-  { label: 'Shift Configs', path: '/hr/shifts' },
-  { label: 'Leave Types', path: '/hr/leave/types' },
-  { label: 'Leave Requests', path: '/hr/leave' },
-  { label: 'Overtime', path: '/hr/overtime' },
+  { get label() { return i18n.t('hr.layout.employees', { defaultValue: "Employees" }) }, path: '/hr/employees' },
+  { get label() { return i18n.t('hr.layout.departments', { defaultValue: "Departments" }) }, path: '/hr/departments' },
+  { get label() { return i18n.t('hr.layout.workLocations', { defaultValue: "Work Locations" }) }, path: '/hr/locations' },
+  { get label() { return i18n.t('hr.layout.shiftConfigs', { defaultValue: "Shift Configs" }) }, path: '/hr/shifts' },
+  { get label() { return i18n.t('hr.layout.leaveTypes', { defaultValue: "Leave Types" }) }, path: '/hr/leave/types' },
+  { get label() { return i18n.t('hr.layout.leaveRequests', { defaultValue: "Leave Requests" }) }, path: '/hr/leave' },
+  { get label() { return i18n.t('hr.layout.overtime', { defaultValue: "Overtime" }) }, path: '/hr/overtime' },
 ]
 
 export default function HRLayout() {

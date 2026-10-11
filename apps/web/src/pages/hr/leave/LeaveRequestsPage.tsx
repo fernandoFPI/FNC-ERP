@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import i18n, { enumLabel } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -42,15 +44,16 @@ interface LeaveRequest {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'pending', label: 'Pending' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
-  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'pending', get label() { return i18n.t('hr.leaveList.pending', { defaultValue: "Pending" }) } },
+  { value: 'approved', get label() { return i18n.t('hr.leaveList.approved', { defaultValue: "Approved" }) } },
+  { value: 'rejected', get label() { return i18n.t('hr.leaveList.rejected', { defaultValue: "Rejected" }) } },
+  { value: 'cancelled', get label() { return i18n.t('hr.leaveList.cancelled', { defaultValue: "Cancelled" }) } },
 ]
 
 const emptyForm = { leave_type_id: '', start_date: '', end_date: '', reason: '' }
 
 export default function LeaveRequestsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const { isPhone } = useBreakpoint()
@@ -111,7 +114,7 @@ export default function LeaveRequestsPage() {
           },
         },
       })
-      addToast({ type: 'success', message: 'Leave request submitted' })
+      addToast({ type: 'success', message: t('hr.leaveList.leaveRequestSubmitted') })
       setModalOpen(false)
       setForm(emptyForm)
       void refetch()
@@ -132,7 +135,7 @@ export default function LeaveRequestsPage() {
   const columns: Column<LeaveRequest>[] = [
     {
       key: 'employee_name',
-      header: 'Employee',
+      header: t('hr.leaveList.employee'),
       mobilePrimary: true,
       render: (r) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{r.employee_name ?? '—'}</span>
@@ -140,13 +143,13 @@ export default function LeaveRequestsPage() {
     },
     {
       key: 'leave_type_name',
-      header: 'Type',
+      header: t('hr.leaveList.type'),
       mobileSecondary: true,
       render: (r) => <span style={{ color: theme.textSecondary }}>{r.leave_type_name ?? '—'}</span>,
     },
     {
       key: 'start_date',
-      header: 'From',
+      header: t('hr.leaveList.from'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textSecondary }}>
           {r.start_date}
@@ -165,20 +168,20 @@ export default function LeaveRequestsPage() {
     },
     {
       key: 'total_days',
-      header: 'Days',
+      header: t('hr.leaveList.days'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>{r.total_days}</span>
       ),
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('hr.leaveList.status'),
       mobileAction: true,
-      render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge>,
+      render: (r) => <Badge variant={statusVariant(r.status)}>{enumLabel(r.status)}</Badge>,
     },
     {
       key: 'reviewed_at',
-      header: 'Updated',
+      header: t('hr.leaveList.updated'),
       mobileHide: true,
       render: (r) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -198,7 +201,7 @@ export default function LeaveRequestsPage() {
       }}
     >
       <PageHeader
-        title="Leave Requests"
+        title={t('hr.leaveList.leaveRequests')}
         subtitle={`${requests.length} requests`}
         actions={
           <Button
@@ -209,7 +212,7 @@ export default function LeaveRequestsPage() {
               setModalOpen(true)
             }}
           >
-            Request Leave
+            {t('hr.leaveList.requestLeave')}
           </Button>
         }
       />
@@ -220,7 +223,7 @@ export default function LeaveRequestsPage() {
             filters={[
               {
                 key: 'status',
-                label: 'Status',
+                label: t('hr.leaveList.status'),
                 value: statusFilter,
                 options: STATUS_OPTIONS,
                 onChange: setStatusFilter,
@@ -264,7 +267,7 @@ export default function LeaveRequestsPage() {
         onClose={() => {
           setModalOpen(false)
         }}
-        title="Request Leave"
+        title={t('hr.leaveList.requestLeave')}
         size="sm"
         bottomSheet={isPhone}
         footer={
@@ -283,7 +286,7 @@ export default function LeaveRequestsPage() {
                   setModalOpen(false)
                 }}
               >
-                Cancel
+                {t('hr.leaveList.cancel')}
               </Button>
             )}
             <Button
@@ -293,14 +296,14 @@ export default function LeaveRequestsPage() {
               loading={creating}
               disabled={!form.leave_type_id || !form.start_date || !form.end_date}
             >
-              Submit Request
+              {t('hr.leaveList.submitRequest')}
             </Button>
           </div>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <Select
-            label="Leave type"
+            label={t('hr.leaveList.leaveType')}
             value={form.leave_type_id}
             onChange={(e) => {
               setForm((f) => ({ ...f, leave_type_id: e.target.value }))
@@ -310,7 +313,7 @@ export default function LeaveRequestsPage() {
               value: lt.id,
               label: lt.name,
             }))}
-            placeholder="Select type…"
+            placeholder={t('hr.leaveList.selectType')}
           />
           {form.leave_type_id &&
             balances.length > 0 &&
@@ -321,8 +324,8 @@ export default function LeaveRequestsPage() {
               )
               return bal?.days_remaining != null ? (
                 <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                  Balance:{' '}
-                  <span style={{ color: theme.accent }}>{bal.days_remaining} days remaining</span>
+                  {t('hr.leaveList.balance')}{' '}
+                  <span style={{ color: theme.accent }}>{t('hr.leaveList.daysRemaining', { days_remaining: bal.days_remaining })}</span>
                 </div>
               ) : null
             })()}
@@ -334,7 +337,7 @@ export default function LeaveRequestsPage() {
             }}
           >
             <Input
-              label="Start date"
+              label={t('hr.leaveList.startDate')}
               type="date"
               value={form.start_date}
               onChange={(e) => {
@@ -343,7 +346,7 @@ export default function LeaveRequestsPage() {
               required
             />
             <Input
-              label="End date"
+              label={t('hr.leaveList.endDate')}
               type="date"
               value={form.end_date}
               onChange={(e) => {
@@ -354,14 +357,12 @@ export default function LeaveRequestsPage() {
           </div>
           {days > 0 && (
             <div style={{ fontSize: '12px', color: theme.textMuted }}>
-              Duration:{' '}
-              <span style={{ color: theme.textPrimary, fontWeight: 600 }}>
-                {days} day{days !== 1 ? 's' : ''}
-              </span>
+              {t('hr.leaveList.duration')}{' '}
+              <span style={{ color: theme.textPrimary, fontWeight: 600 }}>{t('hr.leaveList.day', { count: days })}</span>
             </div>
           )}
           <Textarea
-            label="Reason (optional)"
+            label={t('hr.leaveList.reasonOptional')}
             value={form.reason}
             onChange={(e) => {
               setForm((f) => ({ ...f, reason: e.target.value }))

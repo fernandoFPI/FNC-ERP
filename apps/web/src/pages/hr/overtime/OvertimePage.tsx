@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import i18n, { enumLabel } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   OVERTIME_REQUESTS_QUERY,
@@ -34,12 +36,13 @@ interface OTRequest {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'pending', label: 'Pending' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
+  { value: 'pending', get label() { return i18n.t('hr.overtime.pending', { defaultValue: "Pending" }) } },
+  { value: 'approved', get label() { return i18n.t('hr.overtime.approved', { defaultValue: "Approved" }) } },
+  { value: 'rejected', get label() { return i18n.t('hr.overtime.rejected', { defaultValue: "Rejected" }) } },
 ]
 
 export default function OvertimePage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [historyStatusFilter, setHistoryStatusFilter] = useState('')
@@ -72,7 +75,7 @@ export default function OvertimePage() {
   async function handleApprove(id: string) {
     try {
       await approveOT({ variables: { id } })
-      addToast({ type: 'success', message: 'Approved' })
+      addToast({ type: 'success', message: t('hr.overtime.approved') })
       void refetchPending()
       void refetchHistory()
     } catch (err) {
@@ -83,7 +86,7 @@ export default function OvertimePage() {
   async function handleReject(id: string, notes: string) {
     try {
       await rejectOT({ variables: { id, reviewNotes: notes } })
-      addToast({ type: 'warning', message: 'Rejected' })
+      addToast({ type: 'warning', message: t('hr.overtime.rejected') })
       void refetchPending()
       void refetchHistory()
     } catch (err) {
@@ -95,7 +98,7 @@ export default function OvertimePage() {
     const ids = pendingRequests.map((r) => r.id)
     try {
       await bulkApprove({ variables: { ids } })
-      addToast({ type: 'success', message: `${ids.length} requests approved` })
+      addToast({ type: 'success', message: t('hr.overtime.requestsApproved', { length: ids.length }) })
       setBulkConfirmOpen(false)
       void refetchPending()
       void refetchHistory()
@@ -107,14 +110,14 @@ export default function OvertimePage() {
   const historyColumns: Column<OTRequest>[] = [
     {
       key: 'employee_name',
-      header: 'Employee',
+      header: t('hr.overtime.employee'),
       render: (r) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{r.employee_name}</span>
       ),
     },
     {
       key: 'work_date',
-      header: 'Date',
+      header: t('hr.overtime.date'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textSecondary }}>
           {r.work_date}
@@ -123,21 +126,21 @@ export default function OvertimePage() {
     },
     {
       key: 'overtime_hours',
-      header: 'OT hours',
+      header: t('hr.overtime.otHours'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', color: theme.warning }}>{r.overtime_hours}h</span>
       ),
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('hr.overtime.status'),
       render: (r) => (
-        <Badge variant={r.status === 'approved' ? 'success' : 'danger'}>{r.status}</Badge>
+        <Badge variant={r.status === 'approved' ? 'success' : 'danger'}>{enumLabel(r.status)}</Badge>
       ),
     },
     {
       key: 'reviewed_by_email',
-      header: 'Reviewed by',
+      header: t('hr.overtime.reviewedBy'),
       render: (r) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
           {r.reviewed_by_email ?? '—'}
@@ -148,7 +151,7 @@ export default function OvertimePage() {
 
   return (
     <div style={{ padding: '24px' }}>
-      <PageHeader title="Overtime" subtitle="Approve pending overtime requests" />
+      <PageHeader title={t('hr.overtime.overtime')} subtitle={t('hr.overtime.approvePendingOvertimeRequests')} />
 
       <div
         style={{
@@ -169,7 +172,7 @@ export default function OvertimePage() {
             }}
           >
             <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-              Pending approvals{' '}
+              {t('hr.overtime.pendingApprovals')}{' '}
               <span style={{ color: theme.textMuted, fontWeight: 400 }}>
                 ({pendingRequests.length})
               </span>
@@ -182,12 +185,12 @@ export default function OvertimePage() {
                   setBulkConfirmOpen(true)
                 }}
               >
-                Approve all
+                {t('hr.overtime.approveAll')}
               </Button>
             )}
           </div>
           {pendingRequests.length === 0 ? (
-            <EmptyState title="All caught up" message="No pending overtime requests." />
+            <EmptyState title={t('hr.overtime.allCaughtUp')} message={t('hr.overtime.noPendingOvertimeRequests')} />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {pendingRequests.map((r) => (
@@ -222,7 +225,7 @@ export default function OvertimePage() {
               marginBottom: '12px',
             }}
           >
-            History
+            {t('hr.overtime.history')}
           </div>
           <Card>
             <div style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}` }}>
@@ -230,7 +233,7 @@ export default function OvertimePage() {
                 filters={[
                   {
                     key: 'status',
-                    label: 'Status',
+                    label: t('hr.overtime.status'),
                     value: historyStatusFilter,
                     options: STATUS_OPTIONS,
                     onChange: setHistoryStatusFilter,
@@ -263,9 +266,9 @@ export default function OvertimePage() {
           setBulkConfirmOpen(false)
         }}
         onConfirm={(...args: Parameters<typeof handleBulkApprove>) => void handleBulkApprove(...args)}
-        title="Approve all pending requests"
-        message={`This will approve all ${pendingRequests.length} pending overtime requests. Continue?`}
-        confirmLabel="Approve all"
+        title={t('hr.overtime.approveAllPendingRequests')}
+        message={t('hr.overtime.thisWillApproveAllPendingOvertime', { length: pendingRequests.length })}
+        confirmLabel={t('hr.overtime.approveAll')}
         loading={bulkApproving}
       />
     </div>

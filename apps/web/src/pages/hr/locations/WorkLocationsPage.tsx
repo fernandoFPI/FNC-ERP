@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   WORK_LOCATIONS_QUERY,
@@ -32,6 +33,7 @@ interface WorkLocation {
 const emptyForm = { name: '', address: '', latitude: '', longitude: '', geofence_radius_m: '' }
 
 export default function WorkLocationsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [modalOpen, setModalOpen] = useState(false)
@@ -72,11 +74,11 @@ export default function WorkLocationsPage() {
     const hasLng = form.longitude.trim() !== ''
     const hasRadius = form.geofence_radius_m.trim() !== ''
     if ((hasLat || hasLng) && !hasRadius) {
-      setGeoError('Radius is required when coordinates are set')
+      setGeoError(t('hr.locations.radiusIsRequiredWhenCoordinatesAre'))
       return false
     }
     if (hasRadius && (!hasLat || !hasLng)) {
-      setGeoError('Coordinates are required when radius is set')
+      setGeoError(t('hr.locations.coordinatesAreRequiredWhenRadiusIs'))
       return false
     }
     setGeoError('')
@@ -95,10 +97,10 @@ export default function WorkLocationsPage() {
     try {
       if (editId) {
         await updateLoc({ variables: { id: editId, input } })
-        addToast({ type: 'success', message: 'Location updated' })
+        addToast({ type: 'success', message: t('hr.locations.locationUpdated') })
       } else {
         await createLoc({ variables: { input } })
-        addToast({ type: 'success', message: 'Location created' })
+        addToast({ type: 'success', message: t('hr.locations.locationCreated') })
       }
       setModalOpen(false)
       void refetch()
@@ -110,34 +112,32 @@ export default function WorkLocationsPage() {
   const columns: Column<WorkLocation>[] = [
     {
       key: 'name',
-      header: 'Name',
+      header: t('hr.locations.name'),
       render: (l) => <span style={{ fontWeight: 500, color: theme.textPrimary }}>{l.name}</span>,
     },
     {
       key: 'address',
-      header: 'Address',
+      header: t('hr.locations.address'),
       render: (l) => (
         <span style={{ fontSize: '12px', color: theme.textSecondary }}>{l.address ?? '—'}</span>
       ),
     },
     {
       key: 'geofence_radius_m',
-      header: 'Geofence',
+      header: t('hr.locations.geofence'),
       render: (l) =>
         l.geofence_radius_m ? (
-          <span style={{ color: theme.textSecondary, fontSize: '12px' }}>
-            {l.geofence_radius_m}m radius
-          </span>
+          <span style={{ color: theme.textSecondary, fontSize: '12px' }}>{t('hr.locations.mRadius', { geofence_radius_m: l.geofence_radius_m })}</span>
         ) : (
-          <span style={{ color: theme.textMuted, fontSize: '12px' }}>Not set</span>
+          <span style={{ color: theme.textMuted, fontSize: '12px' }}>{t('hr.locations.notSet')}</span>
         ),
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('hr.locations.status'),
       render: (l) => (
         <Badge variant={l.is_active ? 'success' : 'neutral'}>
-          {l.is_active ? 'Active' : 'Inactive'}
+          {l.is_active ? t('hr.locations.active') : t('hr.locations.inactive')}
         </Badge>
       ),
     },
@@ -152,7 +152,7 @@ export default function WorkLocationsPage() {
             openEdit(l)
           }}
         >
-          Edit
+          {t('hr.locations.edit')}
         </Button>
       ),
     },
@@ -161,11 +161,11 @@ export default function WorkLocationsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
-        title="Work Locations"
+        title={t('hr.locations.workLocations')}
         subtitle={`${locations.length} locations`}
         actions={
           <Button variant="primary" size="sm" onClick={openCreate}>
-            New Location
+            {t('hr.locations.newLocation')}
           </Button>
         }
       />
@@ -196,7 +196,7 @@ export default function WorkLocationsPage() {
         onClose={() => {
           setModalOpen(false)
         }}
-        title={editId ? 'Edit Location' : 'New Location'}
+        title={editId ? t('hr.locations.editLocation') : t('hr.locations.newLocation')}
         size="md"
         footer={
           <>
@@ -206,17 +206,17 @@ export default function WorkLocationsPage() {
                 setModalOpen(false)
               }}
             >
-              Cancel
+              {t('hr.locations.cancel')}
             </Button>
             <Button variant="primary" onClick={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)} loading={creating || updating}>
-              Save
+              {t('hr.locations.save')}
             </Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <Input
-            label="Name"
+            label={t('hr.locations.name')}
             value={form.name}
             onChange={(e) => {
               setForm((f) => ({ ...f, name: e.target.value }))
@@ -224,7 +224,7 @@ export default function WorkLocationsPage() {
             required
           />
           <Textarea
-            label="Address"
+            label={t('hr.locations.address')}
             value={form.address}
             onChange={(e) => {
               setForm((f) => ({ ...f, address: e.target.value }))
@@ -240,7 +240,7 @@ export default function WorkLocationsPage() {
                 marginBottom: '10px',
               }}
             >
-              Geofence (optional)
+              {t('hr.locations.geofenceOptional')}
             </div>
             <div
               style={{
@@ -250,7 +250,7 @@ export default function WorkLocationsPage() {
               }}
             >
               <Input
-                label="Latitude"
+                label={t('hr.locations.latitude')}
                 type="number"
                 step="0.000001"
                 value={form.latitude}
@@ -259,7 +259,7 @@ export default function WorkLocationsPage() {
                 }}
               />
               <Input
-                label="Longitude"
+                label={t('hr.locations.longitude')}
                 type="number"
                 step="0.000001"
                 value={form.longitude}
@@ -268,7 +268,7 @@ export default function WorkLocationsPage() {
                 }}
               />
               <Input
-                label="Radius (m)"
+                label={t('hr.locations.radiusM')}
                 type="number"
                 min="1"
                 value={form.geofence_radius_m}
@@ -297,7 +297,7 @@ export default function WorkLocationsPage() {
                 fontWeight: 500,
               }}
             >
-              📍 Drop pin on map
+              {t('hr.locations.dropPinOnMap')}
             </button>
             {geoError && (
               <div style={{ fontSize: '12px', color: theme.danger, marginTop: '6px' }}>

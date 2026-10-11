@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@apollo/client'
 import { CREATE_PAYROLL_RUN, PAYROLL_RUNS_QUERY } from '../../../graphql/payroll'
@@ -13,11 +14,20 @@ import type { CreatePayrollRunMutation, CreatePayrollRunMutationVariables, Payro
 const emptyForm = { period_name: '', start_date: '', end_date: '' }
 
 export default function PayrollRunForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [form, setForm] = useState(emptyForm)
-  const [overlapWarning, setOverlapWarning] = useState('')
+  // Logic keys off the kind, never off the (translated) warning text.
+  const [overlapKind, setOverlapKind] = useState<'' | 'posted' | 'overlap'>('')
+  const overlapBlocked = overlapKind === 'posted'
+  const overlapWarning =
+    overlapKind === 'posted'
+      ? t('payroll.runForm.aPostedPayrollRunExistsFor')
+      : overlapKind === 'overlap'
+        ? t('payroll.runForm.warningAnOverlappingPayrollRunExists')
+        : ''
 
   const { data: runsData } = useQuery<PayrollRunsQuery, PayrollRunsQueryVariables>(PAYROLL_RUNS_QUERY, { variables: {} })
   const [createRun, { loading }] = useMutation<CreatePayrollRunMutation, CreatePayrollRunMutationVariables>(CREATE_PAYROLL_RUN)
@@ -42,19 +52,15 @@ export default function PayrollRunForm() {
     )
     if (overlapping) {
       const isPosted = (overlapping as { status: string }).status === 'posted'
-      setOverlapWarning(
-        isPosted
-          ? 'A posted payroll run exists for this period. Cannot create a new one.'
-          : 'Warning: an overlapping payroll run exists for this period.',
-      )
+      setOverlapKind(isPosted ? 'posted' : 'overlap')
     } else {
-      setOverlapWarning('')
+      setOverlapKind('')
     }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (overlapWarning.includes('Cannot')) return
+    if (overlapBlocked) return
     const periodLabel = form.start_date
       ? new Date(form.start_date).toLocaleString('default', { month: 'long', year: 'numeric' })
       : ''
@@ -63,7 +69,7 @@ export default function PayrollRunForm() {
       const res = await createRun({
         variables: { input: { period_name, start_date: form.start_date, end_date: form.end_date } },
       })
-      addToast({ type: 'success', message: 'Payroll run created' })
+      addToast({ type: 'success', message: t('payroll.runForm.payrollRunCreated') })
       navigate(
         `/payroll/runs/${(res.data as { createPayrollRun: { id: string } }).createPayrollRun.id}`,
       )
@@ -74,7 +80,7 @@ export default function PayrollRunForm() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '900px' }}>
-      <PageHeader title="New Payroll Run" backPath="/payroll/runs" />
+      <PageHeader title={t('payroll.runForm.newPayrollRun')} backPath="/payroll/runs" />
 
       <form onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
         <Card
@@ -87,10 +93,10 @@ export default function PayrollRunForm() {
           }}
         >
           <Input
-            label="Run name"
+            label={t('payroll.runForm.runName')}
             value={form.period_name}
             onChange={field('period_name')}
-            placeholder="e.g. June 2025 Payroll"
+            placeholder={t('payroll.runForm.eGJune2025Payroll')}
           />
 
           <div
@@ -101,7 +107,7 @@ export default function PayrollRunForm() {
             }}
           >
             <Input
-              label="Period start"
+              label={t('payroll.runForm.periodStart')}
               type="date"
               value={form.start_date}
               onChange={field('start_date')}
@@ -109,7 +115,7 @@ export default function PayrollRunForm() {
               onBlur={checkOverlap}
             />
             <Input
-              label="Period end"
+              label={t('payroll.runForm.periodEnd')}
               type="date"
               value={form.end_date}
               onChange={field('end_date')}
@@ -121,12 +127,12 @@ export default function PayrollRunForm() {
           {overlapWarning && (
             <div
               style={{
-                background: overlapWarning.includes('Cannot') ? theme.dangerBg : theme.warningBg,
-                border: `1px solid ${overlapWarning.includes('Cannot') ? theme.dangerBorder : theme.warningBorder}`,
+                background: overlapBlocked ? theme.dangerBg : theme.warningBg,
+                border: `1px solid ${overlapBlocked ? theme.dangerBorder : theme.warningBorder}`,
                 borderRadius: '8px',
                 padding: '10px 14px',
                 fontSize: '13px',
-                color: overlapWarning.includes('Cannot') ? theme.danger : theme.warning,
+                color: overlapBlocked ? theme.danger : theme.warning,
               }}
             >
               {overlapWarning}
@@ -143,7 +149,7 @@ export default function PayrollRunForm() {
               color: theme.textMuted,
             }}
           >
-            FX rates will be locked at the time of processing.
+            {t('payroll.runForm.fxRatesWillBeLockedAt')}
           </div>
         </Card>
 
@@ -157,15 +163,15 @@ export default function PayrollRunForm() {
               navigate('/payroll/runs')
             }}
           >
-            Cancel
+            {t('payroll.runForm.cancel')}
           </Button>
           <Button
             variant="primary"
             type="submit"
             loading={loading}
-            disabled={!!overlapWarning && overlapWarning.includes('Cannot')}
+            disabled={overlapBlocked}
           >
-            Create run
+            {t('payroll.runForm.createRun')}
           </Button>
         </div>
       </form>

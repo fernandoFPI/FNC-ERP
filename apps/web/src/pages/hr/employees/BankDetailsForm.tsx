@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery } from '@apollo/client'
 import {
@@ -27,6 +28,7 @@ interface Props {
 const REVEAL_SECONDS = 30
 
 export function BankDetailsForm({ employeeId }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -72,7 +74,7 @@ export function BankDetailsForm({ employeeId }: Props) {
   async function handleReveal() {
     try {
       const res = await revealMutation({ variables: { employee_id: employeeId } })
-      if (!res.data?.revealBankDetails) throw new Error('No bank details returned')
+      if (!res.data?.revealBankDetails) throw new Error(t('hr.bankForm.noBankDetailsReturned'))
       setRevealed(res.data.revealBankDetails as BankDetails)
       startCountdown()
     } catch (err) {
@@ -93,7 +95,7 @@ export function BankDetailsForm({ employeeId }: Props) {
           },
         },
       })
-      addToast({ type: 'success', message: 'Bank details updated' })
+      addToast({ type: 'success', message: t('hr.bankForm.bankDetailsUpdated') })
       setEditing(false)
       setRevealed(null)
       if (timerRef.current) {
@@ -142,11 +144,11 @@ export function BankDetailsForm({ employeeId }: Props) {
           background: theme.bgSurface,
           border: 'none',
           cursor: 'pointer',
-          textAlign: 'left',
+          textAlign: 'start',
         }}
       >
         <span style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>
-          Bank Details
+          {t('hr.bankForm.bankDetails')}
         </span>
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{expanded ? '▲' : '▼'}</span>
       </button>
@@ -156,49 +158,49 @@ export function BankDetailsForm({ employeeId }: Props) {
           {editing ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <Input
-                label="Bank Name"
+                label={t('hr.bankForm.bankName')}
                 value={editForm.bank_name ?? ''}
                 onChange={(e) => {
                   setEditForm((f) => ({ ...f, bank_name: e.target.value }))
                 }}
               />
               <Input
-                label="Account Number"
+                label={t('hr.bankForm.accountNumber')}
                 value={editForm.account_number ?? ''}
                 onChange={(e) => {
                   setEditForm((f) => ({ ...f, account_number: e.target.value }))
                 }}
                 placeholder={
                   revealed?.account_number
-                    ? '(leave blank to keep existing)'
-                    : 'Enter account number'
+                    ? t('hr.bankForm.leaveBlankToKeepExisting')
+                    : t('hr.bankForm.enterAccountNumber')
                 }
               />
               <Input
-                label="IBAN"
+                label={t('hr.bankForm.iban')}
                 value={editForm.iban ?? ''}
                 onChange={(e) => {
                   setEditForm((f) => ({ ...f, iban: e.target.value }))
                 }}
-                placeholder={revealed?.iban ? '(leave blank to keep existing)' : 'Enter IBAN'}
+                placeholder={revealed?.iban ? t('hr.bankForm.leaveBlankToKeepExisting') : t('hr.bankForm.enterIban')}
               />
               <div>
                 <SearchableSelect
-                  label="Currency"
+                  label={t('hr.bankForm.currency')}
                   value={editForm.currency_code ?? ''}
                   onChange={(v) => {
                     setEditForm((f) => ({ ...f, currency_code: v }))
                   }}
-                  placeholder="— Select currency —"
+                  placeholder={t('hr.bankForm.selectCurrency')}
                   options={[
-                    { value: 'IQD', label: 'IQD – Iraqi Dinar' },
-                    { value: 'USD', label: 'USD – US Dollar' },
-                    { value: 'EUR', label: 'EUR – Euro' },
-                    { value: 'GBP', label: 'GBP – British Pound' },
-                    { value: 'AED', label: 'AED – UAE Dirham' },
-                    { value: 'SAR', label: 'SAR – Saudi Riyal' },
-                    { value: 'TRY', label: 'TRY – Turkish Lira' },
-                    { value: 'CNY', label: 'CNY – Chinese Yuan' },
+                    { value: 'IQD', label: t('hr.bankForm.iqdIraqiDinar') },
+                    { value: 'USD', label: t('hr.bankForm.usdUsDollar') },
+                    { value: 'EUR', label: t('hr.bankForm.eurEuro') },
+                    { value: 'GBP', label: t('hr.bankForm.gbpBritishPound') },
+                    { value: 'AED', label: t('hr.bankForm.aedUaeDirham') },
+                    { value: 'SAR', label: t('hr.bankForm.sarSaudiRiyal') },
+                    { value: 'TRY', label: t('hr.bankForm.tryTurkishLira') },
+                    { value: 'CNY', label: t('hr.bankForm.cnyChineseYuan') },
                   ]}
                 />
               </div>
@@ -210,10 +212,10 @@ export function BankDetailsForm({ employeeId }: Props) {
                     setEditing(false)
                   }}
                 >
-                  Cancel
+                  {t('hr.bankForm.cancel')}
                 </Button>
                 <Button variant="primary" size="sm" loading={saving} onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)}>
-                  Save
+                  {t('hr.bankForm.save')}
                 </Button>
               </div>
             </div>
@@ -229,22 +231,22 @@ export function BankDetailsForm({ employeeId }: Props) {
               >
                 {[
                   {
-                    label: 'Bank',
+                    label: t('hr.bankForm.bank'),
                     value: summary?.bank_name ?? revealed?.bank_name ?? '—',
                     sensitive: false,
                   },
                   {
-                    label: 'Account Number',
+                    label: t('hr.bankForm.accountNumber'),
                     value: revealed?.account_number ?? (hasData ? '••••••••' : '—'),
                     sensitive: !revealed,
                   },
                   {
-                    label: 'IBAN',
+                    label: t('hr.bankForm.iban'),
                     value: revealed?.iban ?? (hasData ? '••••••••' : '—'),
                     sensitive: !revealed,
                   },
                   {
-                    label: 'Currency',
+                    label: t('hr.bankForm.currency'),
                     value: summary?.currency_code ?? revealed?.currency_code ?? '—',
                     sensitive: false,
                   },
@@ -277,9 +279,7 @@ export function BankDetailsForm({ employeeId }: Props) {
 
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 {revealed ? (
-                  <span style={{ fontSize: '12px', color: theme.warning, fontWeight: 500 }}>
-                    Hiding in {countdown}s
-                  </span>
+                  <span style={{ fontSize: '12px', color: theme.warning, fontWeight: 500 }}>{t('hr.bankForm.hidingInS', { countdown })}</span>
                 ) : (
                   hasData && (
                     <PermissionGate permission="hr.employees.view_salary" minLevel="view">
@@ -289,14 +289,14 @@ export function BankDetailsForm({ employeeId }: Props) {
                         loading={revealing}
                         onClick={(...args: Parameters<typeof handleReveal>) => void handleReveal(...args)}
                       >
-                        Reveal
+                        {t('hr.bankForm.reveal')}
                       </Button>
                     </PermissionGate>
                   )
                 )}
                 <PermissionGate permission="hr.employees.manage_salary" minLevel="edit">
                   <Button variant="ghost" size="sm" onClick={handleEdit}>
-                    {hasData ? 'Edit' : 'Add bank details'}
+                    {hasData ? t('hr.bankForm.edit') : t('hr.bankForm.addBankDetails')}
                   </Button>
                 </PermissionGate>
               </div>

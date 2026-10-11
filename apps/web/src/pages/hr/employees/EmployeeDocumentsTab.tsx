@@ -1,3 +1,5 @@
+import i18n from '../../../i18n'
+import { Trans, useTranslation } from 'react-i18next'
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client'
 import {
@@ -21,10 +23,10 @@ import type { AttachFileMutation, AttachFileMutationVariables, DetachFileMutatio
 type Attachment = EntityAttachmentsQuery['entityAttachments'][number]
 
 const CATEGORY_OPTIONS = [
-  { value: 'contract', label: 'Contract' },
-  { value: 'identity', label: 'Identity document' },
-  { value: 'attachment', label: 'Attachment' },
-  { value: 'report', label: 'Report' },
+  { value: 'contract', get label() { return i18n.t('hr.empDocs.contract', { defaultValue: "Contract" }) } },
+  { value: 'identity', get label() { return i18n.t('hr.empDocs.identityDocument', { defaultValue: "Identity document" }) } },
+  { value: 'attachment', get label() { return i18n.t('hr.empDocs.attachment', { defaultValue: "Attachment" }) } },
+  { value: 'report', get label() { return i18n.t('hr.empDocs.report', { defaultValue: "Report" }) } },
 ]
 
 function formatBytes(bytes: number): string {
@@ -42,6 +44,7 @@ function fileIcon(mimeType: string): string {
 }
 
 export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const accessToken = useAuthStore((s) => s.accessToken)
@@ -92,7 +95,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
           category: uploadCategory,
         },
       })
-      if (!urlData) throw new Error('Failed to request upload URL')
+      if (!urlData) throw new Error(t('hr.empDocs.failedToRequestUploadUrl'))
       const { fileId } = urlData.requestUploadUrl
 
       // Upload through gateway proxy — avoids browser-to-B2 CORS issues and works in dev mode
@@ -109,7 +112,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
         const errJson = (await proxyRes.json().catch(() => ({}))) as {
           error?: { message?: string }
         }
-        throw new Error(errJson.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
+        throw new Error(errJson.error?.message ?? t('hr.empDocs.uploadFailedStatus', { status: proxyRes.statusText }))
       }
 
       await attachFile({
@@ -121,7 +124,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
         },
       })
 
-      addToast({ type: 'success', message: 'Document uploaded' })
+      addToast({ type: 'success', message: t('hr.empDocs.documentUploaded') })
       setUploadModalOpen(false)
       setPendingFile(null)
       void refetch()
@@ -136,7 +139,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
     try {
       const { data: dlData } = await getDownloadUrl({ variables: { fileId } })
       const url = dlData?.fileDownloadUrl.downloadUrl
-      if (!url) throw new Error('No download URL')
+      if (!url) throw new Error(t('hr.empDocs.noDownloadUrl'))
       const a = document.createElement('a')
       a.href = url
       a.download = filename
@@ -155,7 +158,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
       await detachFile({
         variables: { attachmentId: deleteTarget.id, entityType: 'employee', entityId: employeeId },
       })
-      addToast({ type: 'success', message: 'Document removed' })
+      addToast({ type: 'success', message: t('hr.empDocs.documentRemoved') })
       setDeleteTarget(null)
       void refetch()
     } catch (err) {
@@ -182,11 +185,9 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
             borderBottom: `1px solid ${theme.border}`,
           }}
         >
-          <span style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>
-            Documents ({attachments.length})
-          </span>
+          <span style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>{t('hr.empDocs.documents', { length: attachments.length })}</span>
           <Button variant="primary" size="sm" onClick={openFilePicker}>
-            Upload document
+            {t('hr.empDocs.uploadDocument')}
           </Button>
         </div>
 
@@ -199,7 +200,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
               fontSize: '13px',
             }}
           >
-            Loading…
+            {t('hr.empDocs.loading')}
           </div>
         )}
 
@@ -212,7 +213,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
               fontSize: '13px',
             }}
           >
-            No documents uploaded yet
+            {t('hr.empDocs.noDocumentsUploadedYet')}
           </div>
         )}
 
@@ -277,7 +278,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
                     size="sm"
                     onClick={() => void handleDownload(att.file.id, att.file.originalFilename)}
                   >
-                    Download
+                    {t('hr.empDocs.download')}
                   </Button>
                   <Button
                     variant="ghost"
@@ -287,7 +288,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
                       setDeleteTarget(att)
                     }}
                   >
-                    Remove
+                    {t('hr.empDocs.remove')}
                   </Button>
                 </div>
               </div>
@@ -303,7 +304,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
           setUploadModalOpen(false)
           setPendingFile(null)
         }}
-        title="Upload document"
+        title={t('hr.empDocs.uploadDocument')}
         size="sm"
         footer={
           <>
@@ -314,10 +315,10 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
                 setPendingFile(null)
               }}
             >
-              Cancel
+              {t('hr.empDocs.cancel')}
             </Button>
             <Button variant="primary" onClick={(...args: Parameters<typeof handleUpload>) => void handleUpload(...args)} loading={uploading}>
-              Upload
+              {t('hr.empDocs.upload')}
             </Button>
           </>
         }
@@ -340,7 +341,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
           )}
           <div>
             <SearchableSelect
-              label="Category"
+              label={t('hr.empDocs.category')}
               value={uploadCategory}
               onChange={(v) => {
                 setUploadCategory(v)
@@ -349,12 +350,12 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
             />
           </div>
           <Input
-            label="Label (optional)"
+            label={t('hr.empDocs.labelOptional')}
             value={uploadLabel}
             onChange={(e) => {
               setUploadLabel(e.target.value)
             }}
-            placeholder="e.g. Employment contract 2025"
+            placeholder={t('hr.empDocs.eGEmploymentContract2025')}
           />
         </div>
       </Modal>
@@ -365,7 +366,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
         onClose={() => {
           setDeleteTarget(null)
         }}
-        title="Remove document"
+        title={t('hr.empDocs.removeDocument')}
         size="sm"
         footer={
           <>
@@ -375,18 +376,15 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
                 setDeleteTarget(null)
               }}
             >
-              Cancel
+              {t('hr.empDocs.cancel')}
             </Button>
             <Button variant="danger" onClick={(...args: Parameters<typeof handleDetach>) => void handleDetach(...args)} loading={detaching}>
-              Remove
+              {t('hr.empDocs.remove')}
             </Button>
           </>
         }
       >
-        <p style={{ margin: 0, color: theme.textPrimary, fontSize: '13px' }}>
-          Remove <strong>{deleteTarget?.label ?? deleteTarget?.file.originalFilename}</strong> from
-          this employee's record? The file will be detached but not permanently deleted.
-        </p>
+        <p style={{ margin: 0, color: theme.textPrimary, fontSize: '13px' }}><Trans i18nKey="hr.empDocs.removeFromThisEmployeeSRecord" values={{ value: deleteTarget?.label ?? deleteTarget?.file.originalFilename }} components={[<strong />]} /></p>
       </Modal>
     </div>
   )

@@ -1,4 +1,6 @@
-﻿import { useParams } from 'react-router-dom'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   LEAVE_REQUEST_QUERY,
@@ -18,6 +20,7 @@ import { useState } from 'react'
 import type { ApproveLeaveRequestMutation, ApproveLeaveRequestMutationVariables, CancelLeaveRequestMutation, CancelLeaveRequestMutationVariables, LeaveRequestQuery, LeaveRequestQueryVariables, RejectLeaveRequestMutation, RejectLeaveRequestMutationVariables } from '../../../graphql/generated'
 
 export default function LeaveRequestDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
@@ -36,7 +39,7 @@ export default function LeaveRequestDetail() {
   async function handleApprove() {
     try {
       await approveRequest({ variables: { id: id ?? '' } })
-      addToast({ type: 'success', message: 'Leave request approved' })
+      addToast({ type: 'success', message: t('hr.leaveDetail.leaveRequestApproved') })
       void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -45,12 +48,12 @@ export default function LeaveRequestDetail() {
 
   async function handleReject() {
     if (!rejectNotes) {
-      addToast({ type: 'error', message: 'Review notes required' })
+      addToast({ type: 'error', message: t('hr.leaveDetail.reviewNotesRequired') })
       return
     }
     try {
       await rejectRequest({ variables: { id: id ?? '', reviewNotes: rejectNotes } })
-      addToast({ type: 'warning', message: 'Leave request rejected' })
+      addToast({ type: 'warning', message: t('hr.leaveDetail.leaveRequestRejected') })
       setShowReject(false)
       void refetch()
     } catch (err) {
@@ -61,7 +64,7 @@ export default function LeaveRequestDetail() {
   async function handleCancel() {
     try {
       await cancelRequest({ variables: { id: id ?? '' } })
-      addToast({ type: 'warning', message: 'Leave request cancelled' })
+      addToast({ type: 'warning', message: t('hr.leaveDetail.leaveRequestCancelled') })
       void refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -69,8 +72,8 @@ export default function LeaveRequestDetail() {
   }
 
   if (loading && !req)
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
-  if (!req) return <div style={{ padding: '24px', color: theme.textMuted }}>Request not found</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('hr.leaveDetail.loading')}</div>
+  if (!req) return <div style={{ padding: '24px', color: theme.textMuted }}>{t('hr.leaveDetail.requestNotFound')}</div>
 
   const statusVariant =
     req.status === 'approved'
@@ -91,19 +94,19 @@ export default function LeaveRequestDetail() {
       }}
     >
       <DetailHeader
-        title={`Leave Request — ${req.leave_type_name ?? ''}`}
+        title={t('hr.leaveDetail.leaveRequest', { value: req.leave_type_name ?? '' })}
         subtitle={req.employee_name ?? undefined}
-        status={req.status}
+        status={enumLabel(req.status)}
         statusVariant={statusVariant}
         backPath="/hr/leave"
-        backLabel="Leave requests"
+        backLabel={t('hr.leaveDetail.leaveRequests')}
         actions={
           !isPhone ? (
             <div style={{ display: 'flex', gap: '8px' }}>
               {req.status === 'pending' && (
                 <>
                   <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleApprove>) => void handleApprove(...args)} loading={approving}>
-                    Approve
+                    {t('hr.leaveDetail.approve')}
                   </Button>
                   <Button
                     variant="ghost"
@@ -112,10 +115,10 @@ export default function LeaveRequestDetail() {
                       setShowReject((v) => !v)
                     }}
                   >
-                    Reject
+                    {t('hr.leaveDetail.reject')}
                   </Button>
                   <Button variant="danger" size="sm" onClick={(...args: Parameters<typeof handleCancel>) => void handleCancel(...args)} loading={cancelling}>
-                    Cancel
+                    {t('hr.leaveDetail.cancel')}
                   </Button>
                 </>
               )}
@@ -134,12 +137,12 @@ export default function LeaveRequestDetail() {
             }}
           >
             {[
-              ['Employee', req.employee_name],
-              ['Leave type', req.leave_type_name],
-              ['Start date', req.start_date],
-              ['End date', req.end_date],
-              ['Days requested', req.total_days],
-              ['Submitted', req.created_at?.slice(0, 10)],
+              [t('hr.leaveDetail.employee'), req.employee_name],
+              [t('hr.leaveDetail.leaveType'), req.leave_type_name],
+              [t('hr.leaveDetail.startDate'), req.start_date],
+              [t('hr.leaveDetail.endDate'), req.end_date],
+              [t('hr.leaveDetail.daysRequested'), req.total_days],
+              [t('hr.leaveDetail.submitted'), req.created_at?.slice(0, 10)],
             ].map(([label, value]) => (
               <div
                 key={label}
@@ -168,7 +171,7 @@ export default function LeaveRequestDetail() {
               }}
             >
               <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-                Reason
+                {t('hr.leaveDetail.reason')}
               </div>
               <div style={{ fontSize: '13px', color: theme.textSecondary }}>{req.reason}</div>
             </div>
@@ -178,7 +181,7 @@ export default function LeaveRequestDetail() {
         {showReject && (
           <Card style={{ padding: '16px' }}>
             <Textarea
-              label="Rejection notes (required)"
+              label={t('hr.leaveDetail.rejectionNotesRequired')}
               value={rejectNotes}
               onChange={(e) => {
                 setRejectNotes(e.target.value)
@@ -194,7 +197,7 @@ export default function LeaveRequestDetail() {
                 loading={rejecting}
                 disabled={!rejectNotes}
               >
-                Confirm rejection
+                {t('hr.leaveDetail.confirmRejection')}
               </Button>
               <Button
                 variant="ghost"
@@ -203,7 +206,7 @@ export default function LeaveRequestDetail() {
                   setShowReject(false)
                 }}
               >
-                Cancel
+                {t('hr.leaveDetail.cancel')}
               </Button>
             </div>
           </Card>
@@ -215,7 +218,7 @@ export default function LeaveRequestDetail() {
         {req.reviewed_at && (
           <Card style={{ padding: '16px' }}>
             <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '6px' }}>
-              Reviewed
+              {t('hr.leaveDetail.reviewed')}
             </div>
             {req.reviewed_at && (
               <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '6px' }}>
@@ -237,7 +240,7 @@ export default function LeaveRequestDetail() {
               loading={approving}
               style={{ flex: 1 }}
             >
-              Approve
+              {t('hr.leaveDetail.approve')}
             </Button>
             <Button
               variant="ghost"
@@ -246,7 +249,7 @@ export default function LeaveRequestDetail() {
               }}
               style={{ flex: 1 }}
             >
-              Reject
+              {t('hr.leaveDetail.reject')}
             </Button>
             <Button
               variant="danger"
@@ -254,7 +257,7 @@ export default function LeaveRequestDetail() {
               loading={cancelling}
               style={{ flex: 1 }}
             >
-              Cancel
+              {t('hr.leaveDetail.cancel')}
             </Button>
           </div>
         </StickyActionBar>

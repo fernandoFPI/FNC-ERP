@@ -1,9 +1,10 @@
+import i18n from '../../i18n'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
 
 const TABS = [
-  { label: 'Payroll runs', path: '/payroll/runs' },
-  { label: 'Payslips', path: '/payroll/payslips' },
+  { get label() { return i18n.t('payroll.layout.payrollRuns', { defaultValue: "Payroll runs" }) }, path: '/payroll/runs' },
+  { get label() { return i18n.t('payroll.layout.payslips', { defaultValue: "Payslips" }) }, path: '/payroll/payslips' },
 ]
 
 export default function PayrollLayout() {

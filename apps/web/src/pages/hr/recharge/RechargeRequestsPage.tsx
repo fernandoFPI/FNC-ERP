@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import i18n, { useIsRtl } from '../../../i18n'
 import { useState, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -90,12 +92,12 @@ const EMPTY_FORM = {
   requestedForUserId: '',
   requestedForName: '',
 }
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
+// Month names follow the active language (Intl), so Arabic shows يناير … ديسمبر.
+const monthName = (m: number) =>
+  new Intl.DateTimeFormat(i18n.resolvedLanguage ?? 'en', { month: 'long' }).format(new Date(2000, m - 1, 1))
 
 export default function RechargeRequestsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const pagePadding = usePagePadding()
@@ -182,10 +184,10 @@ export default function RechargeRequestsPage() {
   }
 
   const tabs = [
-    { key: 'mine', label: 'My Requests', badge: mine.filter((r) => r.status === 'fulfilled').length || undefined },
-    { key: 'toFulfill', label: 'To Fulfill', badge: toFulfill.length || undefined },
-    ...(canAdmin ? [{ key: 'filedByMe', label: 'Filed for Others', badge: filedByMe.length || undefined }] : []),
-    ...(canSeeSummary ? [{ key: 'summary', label: 'Monthly Summary' }] : []),
+    { key: 'mine', label: t('hr.recharge.myRequests'), badge: mine.filter((r) => r.status === 'fulfilled').length || undefined },
+    { key: 'toFulfill', label: t('hr.recharge.toFulfill'), badge: toFulfill.length || undefined },
+    ...(canAdmin ? [{ key: 'filedByMe', label: t('hr.recharge.filedForOthers'), badge: filedByMe.length || undefined }] : []),
+    ...(canSeeSummary ? [{ key: 'summary', label: t('hr.recharge.monthlySummary') }] : []),
   ]
 
   const activeList =
@@ -216,12 +218,12 @@ export default function RechargeRequestsPage() {
 
   async function handleCreate() {
     if (!form.bundleId || !form.phoneNumber.trim()) {
-      addToast({ type: 'error', message: 'Bundle and phone number are required' })
+      addToast({ type: 'error', message: t('hr.recharge.bundleAndPhoneNumberAreRequired') })
       return
     }
     const isExternal = form.requestedForUserId === EXTERNAL_RECIPIENT
     if (isExternal && !form.requestedForName.trim()) {
-      addToast({ type: 'error', message: "Enter the recipient's name" })
+      addToast({ type: 'error', message: t('hr.recharge.enterTheRecipientSName') })
       return
     }
     try {
@@ -236,7 +238,7 @@ export default function RechargeRequestsPage() {
           },
         },
       })
-      addToast({ type: 'success', message: 'Recharge request submitted' })
+      addToast({ type: 'success', message: t('hr.recharge.rechargeRequestSubmitted') })
       setShowCreateModal(false)
       setForm(EMPTY_FORM)
       refetchAll()
@@ -248,7 +250,7 @@ export default function RechargeRequestsPage() {
   async function handleCancel(id: string) {
     try {
       await cancelRequest({ variables: { id } })
-      addToast({ type: 'success', message: 'Request cancelled' })
+      addToast({ type: 'success', message: t('hr.recharge.requestCancelled') })
       setSelectedId(null)
       refetchAll()
     } catch (e: unknown) {
@@ -263,7 +265,7 @@ export default function RechargeRequestsPage() {
 
   async function handleFulfill(id: string) {
     if (!fulfillFile) {
-      addToast({ type: 'error', message: 'Please attach a photo first' })
+      addToast({ type: 'error', message: t('hr.recharge.pleaseAttachAPhotoFirst') })
       return
     }
     setUploadingPhoto(true)
@@ -279,7 +281,7 @@ export default function RechargeRequestsPage() {
         headers: { 'Content-Type': fulfillFile.type || 'image/jpeg' },
       })
       await fulfillRequest({ variables: { id, fileId } })
-      addToast({ type: 'success', message: 'Proof uploaded — requester notified' })
+      addToast({ type: 'success', message: t('hr.recharge.proofUploadedRequesterNotified') })
       setFulfillFile(null)
       setFulfillPreview(null)
       refetchAll()
@@ -293,7 +295,7 @@ export default function RechargeRequestsPage() {
   async function handleConfirm(id: string) {
     try {
       await confirmReceipt({ variables: { id } })
-      addToast({ type: 'success', message: 'Receipt confirmed' })
+      addToast({ type: 'success', message: t('hr.recharge.receiptConfirmed') })
       refetchAll()
     } catch (e: unknown) {
       addToast({ type: 'error', message: (e as Error).message })
@@ -305,8 +307,8 @@ export default function RechargeRequestsPage() {
   return (
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
-        title="Phone Recharge Requests"
-        subtitle="Request a recharge bundle, and confirm once it arrives"
+        title={t('hr.recharge.phoneRechargeRequests')}
+        subtitle={t('hr.recharge.requestARechargeBundleAndConfirm')}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             {canAdmin && (
@@ -316,7 +318,7 @@ export default function RechargeRequestsPage() {
                   navigate('/recharge/bundles')
                 }}
               >
-                Manage Bundles
+                {t('hr.recharge.manageBundles')}
               </Button>
             )}
             <Button
@@ -325,16 +327,16 @@ export default function RechargeRequestsPage() {
                 setShowCreateModal(true)
               }}
             >
-              + New Request
+              {t('hr.recharge.newRequest')}
             </Button>
           </div>
         }
       />
 
       <Grid cols={3} tabletCols={3} phoneCols={1} gap={12} style={{ marginTop: '20px', marginBottom: '20px' }}>
-        <KPICard label="My open requests" value={mine.filter((r) => !['confirmed', 'cancelled'].includes(r.status)).length} iconColor="accent" />
-        <KPICard label="Awaiting my confirmation" value={awaitingConfirmCount} iconColor={awaitingConfirmCount > 0 ? 'warning' : 'accent'} />
-        <KPICard label="Ready to fulfill" value={toFulfill.length} iconColor={toFulfill.length > 0 ? 'warning' : 'accent'} />
+        <KPICard label={t('hr.recharge.myOpenRequests')} value={mine.filter((r) => !['confirmed', 'cancelled'].includes(r.status)).length} iconColor="accent" />
+        <KPICard label={t('hr.recharge.awaitingMyConfirmation')} value={awaitingConfirmCount} iconColor={awaitingConfirmCount > 0 ? 'warning' : 'accent'} />
+        <KPICard label={t('hr.recharge.readyToFulfill')} value={toFulfill.length} iconColor={toFulfill.length > 0 ? 'warning' : 'accent'} />
       </Grid>
 
       <TabBar
@@ -374,17 +376,17 @@ export default function RechargeRequestsPage() {
             <EmptyState
               title={
                 activeTab === 'mine'
-                  ? 'No recharge requests yet'
+                  ? t('hr.recharge.noRechargeRequestsYet')
                   : activeTab === 'filedByMe'
-                    ? 'Nothing filed for others yet'
-                    : 'Nothing to fulfill right now'
+                    ? t('hr.recharge.nothingFiledForOthersYet')
+                    : t('hr.recharge.nothingToFulfillRightNow')
               }
               message={
                 activeTab === 'mine'
-                  ? 'Submit a request to get a phone recharge bundle sent to you.'
+                  ? t('hr.recharge.submitARequestToGetA')
                   : activeTab === 'filedByMe'
-                    ? "Requests you file on someone else's behalf will show up here."
-                    : "You're not the assigned fulfiller, or there's nothing pending."
+                    ? t('hr.recharge.requestsYouFileOnSomeoneElse')
+                    : t('hr.recharge.youReNotTheAssignedFulfiller')
               }
               action={
                 activeTab === 'mine' ? (
@@ -395,7 +397,7 @@ export default function RechargeRequestsPage() {
                       setShowCreateModal(true)
                     }}
                   >
-                    New Request
+                    {t('hr.recharge.newRequest2')}
                   </Button>
                 ) : undefined
               }
@@ -418,7 +420,7 @@ export default function RechargeRequestsPage() {
                           setSelectedId(r.id)
                         }}
                       >
-                        Upload Proof
+                        {t('hr.recharge.uploadProof')}
                       </Button>
                     ) : activeTab === 'mine' && r.status === 'fulfilled' ? (
                       <Button
@@ -427,7 +429,7 @@ export default function RechargeRequestsPage() {
                         loading={confirming}
                         onClick={() => void handleConfirm(r.id)}
                       >
-                        Confirm Receipt
+                        {t('hr.recharge.confirmReceipt')}
                       </Button>
                     ) : activeTab === 'mine' && r.status === 'pending' ? (
                       <Button
@@ -435,7 +437,7 @@ export default function RechargeRequestsPage() {
                         size="sm"
                         onClick={() => void handleCancel(r.id)}
                       >
-                        Cancel
+                        {t('hr.recharge.cancel')}
                       </Button>
                     ) : null
                   }
@@ -453,8 +455,8 @@ export default function RechargeRequestsPage() {
           setShowCreateModal(false)
           setForm(EMPTY_FORM)
         }}
-        title="New Recharge Request"
-        description="The assigned fulfiller will be notified immediately and will send the bundle."
+        title={t('hr.recharge.newRechargeRequest')}
+        description={t('hr.recharge.theAssignedFulfillerWillBeNotified')}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
             <Button
@@ -464,10 +466,10 @@ export default function RechargeRequestsPage() {
                 setForm(EMPTY_FORM)
               }}
             >
-              Cancel
+              {t('hr.recharge.cancel')}
             </Button>
             <Button variant="primary" loading={creating} onClick={() => void handleCreate()}>
-              Submit Request
+              {t('hr.recharge.submitRequest')}
             </Button>
           </div>
         }
@@ -476,33 +478,32 @@ export default function RechargeRequestsPage() {
           {canAdmin && (
             <>
               <Select
-                label="Request for"
+                label={t('hr.recharge.requestFor')}
                 value={form.requestedForUserId}
                 onChange={(e) => {
                   setForm((f) => ({ ...f, requestedForUserId: e.target.value }))
                 }}
               >
-                <option value="">— Myself —</option>
+                <option value="">{t('hr.recharge.myself')}</option>
                 {employees.map((e) => (
                   <option key={e.id} value={e.user_id ?? ''}>
                     {e.first_name} {e.last_name}
                   </option>
                 ))}
-                <option value={EXTERNAL_RECIPIENT}>— Someone not listed —</option>
+                <option value={EXTERNAL_RECIPIENT}>{t('hr.recharge.someoneNotListed')}</option>
               </Select>
               {form.requestedForUserId === EXTERNAL_RECIPIENT && (
                 <div>
                   <Input
-                    label="Recipient's name"
+                    label={t('hr.recharge.recipientSName')}
                     value={form.requestedForName}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, requestedForName: e.target.value }))
                     }}
-                    placeholder="e.g. Ahmed the driver"
+                    placeholder={t('hr.recharge.eGAhmedTheDriver')}
                   />
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                    They have no account here, so you'll confirm receipt on their behalf once
-                    you've verified it with them directly.
+                    {t('hr.recharge.theyHaveNoAccountHereSo')}
                   </div>
                 </div>
               )}
@@ -510,13 +511,13 @@ export default function RechargeRequestsPage() {
           )}
           <div>
             <Select
-              label="Bundle"
+              label={t('hr.recharge.bundle')}
               value={form.bundleId}
               onChange={(e) => {
                 setForm((f) => ({ ...f, bundleId: e.target.value }))
               }}
             >
-              <option value="">Select bundle…</option>
+              <option value="">{t('hr.recharge.selectBundle')}</option>
               {bundles.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name} — {b.amount.toLocaleString()} {b.currencyCode}
@@ -531,22 +532,22 @@ export default function RechargeRequestsPage() {
           </div>
 
           <Input
-            label="Phone Number"
+            label={t('hr.recharge.phoneNumber')}
             type="tel"
             value={form.phoneNumber}
             onChange={(e) => {
               setForm((f) => ({ ...f, phoneNumber: e.target.value }))
             }}
-            placeholder="07xx xxx xxxx"
+            placeholder={t('hr.recharge.07xxXxxXxxx')}
           />
 
           <Textarea
-            label="Notes (optional)"
+            label={t('hr.recharge.notesOptional')}
             value={form.notes}
             onChange={(e) => {
               setForm((f) => ({ ...f, notes: e.target.value }))
             }}
-            placeholder="Anything the fulfiller should know…"
+            placeholder={t('hr.recharge.anythingTheFulfillerShouldKnow')}
             rows={2}
           />
         </div>
@@ -560,7 +561,7 @@ export default function RechargeRequestsPage() {
           setFulfillFile(null)
           setFulfillPreview(null)
         }}
-        title={selectedRequest ? selectedRequest.phoneNumber : 'Recharge Request'}
+        title={selectedRequest ? selectedRequest.phoneNumber : t('hr.recharge.rechargeRequest')}
         width="440px"
       >
         {selectedRequest && (
@@ -605,6 +606,8 @@ function MonthlySummaryView({
   onChangeMonth: (year: number, month: number) => void
   onSelectRequest: (id: string) => void
 }) {
+  const { t } = useTranslation()
+  const rtl = useIsRtl()
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
 
   // Entries can span multiple currencies for the same requester in one
@@ -645,10 +648,10 @@ function MonthlySummaryView({
               shiftMonth(-1)
             }}
           >
-            ←
+            {rtl ? '→' : '←'}
           </Button>
           <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary, minWidth: '140px', textAlign: 'center' }}>
-            {MONTH_NAMES[month - 1]} {year}
+            {monthName(month)} {year}
           </div>
           <Button
             variant="ghost"
@@ -657,12 +660,12 @@ function MonthlySummaryView({
               shiftMonth(1)
             }}
           >
-            →
+            {rtl ? '←' : '→'}
           </Button>
         </div>
         {entries.length > 0 && (
           <div style={{ fontSize: '13px', color: theme.textMuted, display: 'flex', gap: '12px' }}>
-            <span>Total sent:</span>
+            <span>{t('hr.recharge.totalSent')}</span>
             {Object.entries(totalsByCurrency).map(([code, amount]) => (
               <span key={code} style={{ color: theme.accent, fontWeight: 700 }}>
                 {amount.toLocaleString()} {code}
@@ -676,8 +679,8 @@ function MonthlySummaryView({
         <div className="skeleton" style={{ height: '200px', borderRadius: '12px' }} />
       ) : entries.length === 0 ? (
         <EmptyState
-          title="No recharges fulfilled this month"
-          message="Once requests are sent out this month, per-person totals will show up here."
+          title={t('hr.recharge.noRechargesFulfilledThisMonth')}
+          message={t('hr.recharge.onceRequestsAreSentOutThis')}
         />
       ) : (
         <Card style={{ padding: 0, overflow: 'hidden' }}>
@@ -685,14 +688,14 @@ function MonthlySummaryView({
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  <th style={{ textAlign: 'left', padding: '10px 16px', color: theme.textMuted, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase' }}>
-                    Requester
+                  <th style={{ textAlign: 'start', padding: '10px 16px', color: theme.textMuted, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase' }}>
+                    {t('hr.recharge.requester')}
                   </th>
-                  <th style={{ textAlign: 'right', padding: '10px 16px', color: theme.textMuted, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase' }}>
-                    Requests
+                  <th style={{ textAlign: 'end', padding: '10px 16px', color: theme.textMuted, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase' }}>
+                    {t('hr.recharge.requests')}
                   </th>
-                  <th style={{ textAlign: 'right', padding: '10px 16px', color: theme.textMuted, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase' }}>
-                    Total Received
+                  <th style={{ textAlign: 'end', padding: '10px 16px', color: theme.textMuted, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase' }}>
+                    {t('hr.recharge.totalReceived')}
                   </th>
                 </tr>
               </thead>
@@ -716,15 +719,15 @@ function MonthlySummaryView({
                         <td style={{ padding: '10px 16px', color: theme.textPrimary }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                             <span style={{ color: theme.textMuted, fontSize: '10px' }}>
-                              {isExpanded ? '▼' : '▶'}
+                              {isExpanded ? '▼' : rtl ? '◀' : '▶'}
                             </span>
                             {e.requestedByEmail ?? '—'}
                           </span>
                         </td>
-                        <td style={{ padding: '10px 16px', textAlign: 'right', color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
+                        <td style={{ padding: '10px 16px', textAlign: 'end', color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
                           {e.requestCount}
                         </td>
-                        <td style={{ padding: '10px 16px', textAlign: 'right', color: theme.accent, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                        <td style={{ padding: '10px 16px', textAlign: 'end', color: theme.accent, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                           {e.totalAmount.toLocaleString()} {e.currencyCode}
                         </td>
                       </tr>
@@ -756,7 +759,7 @@ function MonthlySummaryView({
                                   }}
                                 >
                                   <span style={{ fontSize: '12px', color: theme.textSecondary }}>
-                                    {req.phoneNumber} · {req.bundleName ?? 'Bundle'}
+                                    {req.phoneNumber} · {req.bundleName ?? t('hr.recharge.bundle')}
                                   </span>
                                   <Badge variant={RECHARGE_STATUS_VARIANTS[req.status] ?? 'neutral'}>
                                     {RECHARGE_STATUS_LABELS[req.status] ?? req.status}
@@ -817,6 +820,7 @@ function RequestDetailBody({
   confirming,
   onCancel,
 }: RequestDetailBodyProps) {
+  const { t } = useTranslation()
   const statusSteps = ['pending', 'fulfilled', 'confirmed']
   const isCancelled = r.status === 'cancelled'
   // Cancel only ever fires from 'pending' (see cancelRechargeRequest's WHERE
@@ -829,8 +833,8 @@ function RequestDetailBody({
   const events: TimelineEvent[] = [
     {
       id: 'created',
-      title: 'Request submitted',
-      description: `${r.bundleName ?? 'Bundle'} for ${r.phoneNumber}`,
+      title: t('hr.recharge.requestSubmitted'),
+      description: t('hr.recharge.bundleForPhone', { bundle: r.bundleName ?? t('hr.recharge.bundle'), phone: r.phoneNumber }),
       // Who actually filed it — only differs from the requester when a
       // recharge admin submitted this on someone else's behalf.
       user: r.createdByEmail ?? r.requestedByEmail ?? undefined,
@@ -840,7 +844,7 @@ function RequestDetailBody({
   if (r.fulfilledAt) {
     events.push({
       id: 'fulfilled',
-      title: 'Proof uploaded — sent to requester',
+      title: t('hr.recharge.proofUploadedSentToRequester'),
       user: r.fulfilledByEmail ?? undefined,
       timestamp: r.fulfilledAt,
       variant: 'default',
@@ -849,7 +853,7 @@ function RequestDetailBody({
   if (r.confirmedAt) {
     events.push({
       id: 'confirmed',
-      title: 'Receipt confirmed',
+      title: t('hr.recharge.receiptConfirmed'),
       timestamp: r.confirmedAt,
       variant: 'success',
     })
@@ -863,7 +867,7 @@ function RequestDetailBody({
       // 'cancelled' too (see migration 193), so this can't claim it was
       // always the requester who cancelled.
       id: 'cancelled',
-      title: 'Cancelled',
+      title: t('hr.recharge.cancelled'),
       timestamp: r.updatedAt,
       variant: 'danger',
     })
@@ -880,19 +884,19 @@ function RequestDetailBody({
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-        <InfoField label="Company" value={r.companyName ?? '—'} theme={theme} />
+        <InfoField label={t('hr.recharge.company')} value={r.companyName ?? '—'} theme={theme} />
         <InfoField
-          label="Requester"
-          value={r.requestedBy ? (r.requestedByEmail ?? '—') : `${r.requestedByEmail ?? '—'} (not in system)`}
+          label={t('hr.recharge.requester')}
+          value={r.requestedBy ? (r.requestedByEmail ?? '—') : t('hr.recharge.notInSystem', { value: r.requestedByEmail ?? '—' })}
           theme={theme}
         />
         {r.createdBy !== r.requestedBy && (
-          <InfoField label="Submitted By" value={r.createdByEmail ?? '—'} theme={theme} />
+          <InfoField label={t('hr.recharge.submittedBy')} value={r.createdByEmail ?? '—'} theme={theme} />
         )}
-        <InfoField label="Cost Center" value={r.costCenterName ?? '—'} theme={theme} />
-        <InfoField label="Bundle" value={r.bundleName ?? '—'} theme={theme} />
+        <InfoField label={t('hr.recharge.costCenter')} value={r.costCenterName ?? '—'} theme={theme} />
+        <InfoField label={t('hr.recharge.bundle')} value={r.bundleName ?? '—'} theme={theme} />
         <InfoField
-          label="Amount"
+          label={t('hr.recharge.amount')}
           value={
             r.bundleAmount != null ? `${r.bundleAmount.toLocaleString()} ${r.bundleCurrencyCode ?? ''}` : '—'
           }
@@ -902,7 +906,7 @@ function RequestDetailBody({
 
       {r.notes && (
         <div>
-          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Notes</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>{t('hr.recharge.notes')}</div>
           <div style={{ fontSize: '13px', color: theme.textSecondary }}>{r.notes}</div>
         </div>
       )}
@@ -910,7 +914,7 @@ function RequestDetailBody({
       {/* ── Photo / reveal gate ──────────────────────────────────────────── */}
       {(r.status === 'fulfilled' || r.status === 'confirmed') && (
         <div>
-          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '6px' }}>Proof of purchase</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '6px' }}>{t('hr.recharge.proofOfPurchase')}</div>
           {r.photoDownloadUrl ? (
             <a href={r.photoDownloadUrl} target="_blank" rel="noreferrer">
               <div
@@ -923,7 +927,7 @@ function RequestDetailBody({
               >
                 <img
                   src={r.photoDownloadUrl}
-                  alt="Recharge proof"
+                  alt={t('hr.recharge.rechargeProof')}
                   style={{ width: '100%', display: 'block', maxHeight: '280px', objectFit: 'cover' }}
                 />
                 {r.status === 'confirmed' && (
@@ -931,7 +935,7 @@ function RequestDetailBody({
                     style={{
                       position: 'absolute',
                       top: '8px',
-                      right: '8px',
+                      insetInlineEnd: '8px',
                       background: theme.success,
                       color: '#fff',
                       borderRadius: '999px',
@@ -966,16 +970,16 @@ function RequestDetailBody({
             >
               <LockIconInline color={theme.accent} />
               <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                Proof is ready
+                {t('hr.recharge.proofIsReady')}
               </div>
               <div style={{ fontSize: '12px', color: theme.textMuted, maxWidth: '260px' }}>
                 {canAdminConfirm
-                  ? "Confirm once you've verified with the recipient that it arrived, to unlock the photo."
-                  : 'Confirm you received your recharge to unlock the photo.'}
+                  ? t('hr.recharge.confirmOnceYouVeVerifiedWith')
+                  : t('hr.recharge.confirmYouReceivedYourRechargeTo')}
               </div>
               {(isRequester || canAdminConfirm) && (
                 <Button variant="primary" size="sm" loading={confirming} onClick={onConfirm}>
-                  Confirm Receipt
+                  {t('hr.recharge.confirmReceipt')}
                 </Button>
               )}
             </div>
@@ -987,12 +991,12 @@ function RequestDetailBody({
       {isFulfillTab && r.status === 'pending' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
-            Upload proof of purchase
+            {t('hr.recharge.uploadProofOfPurchase')}
           </div>
           {fulfillPreview ? (
             <img
               src={fulfillPreview}
-              alt="Selected proof"
+              alt={t('hr.recharge.selectedProof')}
               style={{
                 width: '100%',
                 maxHeight: '200px',
@@ -1021,7 +1025,7 @@ function RequestDetailBody({
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                 <circle cx="12" cy="13" r="4" />
               </svg>
-              Take or choose a photo
+              {t('hr.recharge.takeOrChooseAPhoto')}
               <input
                 type="file"
                 accept="image/*"
@@ -1035,19 +1039,19 @@ function RequestDetailBody({
             </label>
           )}
           <Button variant="primary" loading={uploadingPhoto} disabled={!fulfillFile} onClick={onFulfill}>
-            Send &amp; Notify Requester
+            {t('hr.recharge.sendNotifyRequester')}
           </Button>
         </div>
       )}
 
       {(isRequester || canAdminCancel) && r.status === 'pending' && (
         <Button variant="ghost" onClick={onCancel}>
-          Cancel Request
+          {t('hr.recharge.cancelRequest')}
         </Button>
       )}
 
       <div>
-        <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>Activity</div>
+        <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>{t('hr.recharge.activity')}</div>
         <Timeline events={events} />
       </div>
     </div>
