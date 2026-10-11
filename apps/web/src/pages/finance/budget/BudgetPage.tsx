@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -34,6 +36,7 @@ const STATUS_BADGE: Record<string, 'neutral' | 'success' | 'info'> = {
 const currentYear = new Date().getFullYear()
 
 export default function BudgetPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const navigate = useNavigate()
@@ -105,41 +108,41 @@ export default function BudgetPage() {
   const columns: Column<Budget>[] = [
     {
       key: 'name',
-      header: 'Budget Name',
+      header: t('fin.budget.budgetName'),
       mobilePrimary: true,
       render: (b) => <span style={{ fontWeight: 600, color: theme.textPrimary }}>{b.name}</span>,
     },
     {
       key: 'fiscal_year',
-      header: 'Year',
+      header: t('fin.budget.year'),
       mobileSecondary: true,
       render: (b) => `FY ${b.fiscal_year}`,
     },
     {
       key: 'currency_code',
-      header: 'Currency',
+      header: t('fin.budget.currency'),
       render: (b) => b.currency_code,
     },
     {
       key: 'line_count',
-      header: 'Lines',
+      header: t('fin.budget.lines'),
       render: (b) => b.line_count,
     },
     {
       key: 'total_budget',
-      header: 'Total Budget',
+      header: t('fin.budget.totalBudget'),
       render: (b) => (
         <AmountDisplay amount={Number(b.total_budget)} currency={b.currency_code} size="sm" />
       ),
     },
     {
       key: 'status',
-      header: 'Status',
-      render: (b) => <Badge variant={STATUS_BADGE[b.status] ?? 'neutral'}>{b.status}</Badge>,
+      header: t('fin.budget.status'),
+      render: (b) => <Badge variant={STATUS_BADGE[b.status] ?? 'neutral'}>{enumLabel(b.status)}</Badge>,
     },
     {
       key: 'created_at',
-      header: 'Created',
+      header: t('fin.budget.created'),
       render: (b) => new Date(b.created_at).toLocaleDateString(),
     },
     {
@@ -154,7 +157,7 @@ export default function BudgetPage() {
             navigate(`/finance/budget/${b.id}`)
           }}
         >
-          Open
+          {t('fin.budget.open')}
         </Button>
       ),
     },
@@ -163,8 +166,8 @@ export default function BudgetPage() {
   return (
     <div style={pagePadding}>
       <PageHeader
-        title="GL Budget Management"
-        subtitle="Define annual budgets per account and track budget vs actual performance"
+        title={t('fin.budget.glBudgetManagement')}
+        subtitle={t('fin.budget.defineAnnualBudgetsPerAccountAnd')}
         actions={
           canEdit ? (
             <Button
@@ -174,7 +177,7 @@ export default function BudgetPage() {
                 setShowForm(true)
               }}
             >
-              + New Budget
+              {t('fin.budget.newBudget')}
             </Button>
           ) : undefined
         }
@@ -184,7 +187,7 @@ export default function BudgetPage() {
       <Grid cols={4} tabletCols={2} phoneCols={2} gap={12} style={{ marginBottom: '20px' }}>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Budgets
+            {t('fin.budget.totalBudgets')}
           </p>
           <p style={{ fontSize: '24px', fontWeight: 700, color: theme.textPrimary }}>
             {budgets.length}
@@ -192,7 +195,7 @@ export default function BudgetPage() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Active Budgets
+            {t('fin.budget.activeBudgets')}
           </p>
           <p style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e' }}>
             {activeBudgets.length}
@@ -200,13 +203,13 @@ export default function BudgetPage() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Active Budget
+            {t('fin.budget.totalActiveBudget')}
           </p>
           <AmountDisplay amount={totalActive} currency="IQD" size="md" />
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Current Year
+            {t('fin.budget.currentYear')}
           </p>
           <p style={{ fontSize: '24px', fontWeight: 700, color: theme.accent }}>{currentYear}</p>
         </Card>
@@ -219,7 +222,7 @@ export default function BudgetPage() {
           data={budgets}
           rowKey="id"
           loading={loading}
-          emptyMessage='No budgets yet. Click "+ New Budget" to create your first annual budget.'
+          emptyMessage={t('fin.budget.noBudgetsYetClickNewBudget')}
           onRowClick={(b) => {
             navigate(`/finance/budget/${b.id}`)
           }}
@@ -248,7 +251,7 @@ export default function BudgetPage() {
                 marginBottom: '20px',
               }}
             >
-              <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>New Budget</h3>
+              <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>{t('fin.budget.newBudget2')}</h3>
               <Button
                 variant="ghost"
                 size="sm"
@@ -261,11 +264,11 @@ export default function BudgetPage() {
             </div>
             <div style={{ display: 'grid', gap: '12px' }}>
               <div>
-                <label style={labelStyle}>Budget Name *</label>
+                <label style={labelStyle}>{t('fin.budget.budgetName2')}</label>
                 <input
                   style={inputStyle}
                   value={form.name}
-                  placeholder="e.g. FY2025 Operating Budget"
+                  placeholder={t('fin.budget.eGFy2025OperatingBudget')}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, name: e.target.value }))
                   }}
@@ -273,7 +276,7 @@ export default function BudgetPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label style={labelStyle}>Fiscal Year *</label>
+                  <label style={labelStyle}>{t('fin.budget.fiscalYear')}</label>
                   <input
                     type="number"
                     style={inputStyle}
@@ -286,7 +289,7 @@ export default function BudgetPage() {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Currency</label>
+                  <label style={labelStyle}>{t('fin.budget.currency')}</label>
                   <select
                     style={inputStyle}
                     value={form.currency_code}
@@ -301,7 +304,7 @@ export default function BudgetPage() {
                 </div>
               </div>
               <div>
-                <label style={labelStyle}>Notes</label>
+                <label style={labelStyle}>{t('fin.budget.notes')}</label>
                 <input
                   style={inputStyle}
                   value={form.notes}
@@ -321,7 +324,7 @@ export default function BudgetPage() {
                   setShowForm(false)
                 }}
               >
-                Cancel
+                {t('fin.budget.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -329,7 +332,7 @@ export default function BudgetPage() {
                 onClick={() => void handleCreate()}
                 disabled={saving || !form.name}
               >
-                {saving ? 'Creating...' : 'Create & Open'}
+                {saving ? t('fin.budget.creating') : t('fin.budget.createOpen')}
               </Button>
             </div>
           </Card>

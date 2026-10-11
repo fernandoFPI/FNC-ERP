@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useCallback } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
@@ -55,6 +56,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export default function AnalyticAccountsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const navigate = useNavigate()
@@ -86,7 +88,7 @@ export default function AnalyticAccountsPage() {
       setItems(Array.isArray(aaRes.data) ? aaRes.data : [])
       setCostCenters(Array.isArray(ccRes.data) ? ccRes.data : [])
     } catch {
-      addToast({ type: 'error', message: 'Failed to load analytic accounts' })
+      addToast({ type: 'error', message: t('fin.analytic.failedToLoadAnalyticAccounts') })
     } finally {
       setLoading(false)
     }
@@ -109,11 +111,11 @@ export default function AnalyticAccountsPage() {
 
   async function handleSave() {
     if (!form.code.trim()) {
-      addToast({ type: 'error', message: 'Code is required' })
+      addToast({ type: 'error', message: t('fin.analytic.codeIsRequired') })
       return
     }
     if (!form.name.trim()) {
-      addToast({ type: 'error', message: 'Name is required' })
+      addToast({ type: 'error', message: t('fin.analytic.nameIsRequired') })
       return
     }
     setSaving(true)
@@ -121,15 +123,15 @@ export default function AnalyticAccountsPage() {
     try {
       if (editing) {
         await api.put(`/finance/analytic-accounts/${editing.id}`, payload)
-        addToast({ type: 'success', message: 'Analytic account updated' })
+        addToast({ type: 'success', message: t('fin.analytic.analyticAccountUpdated') })
       } else {
         await api.post('/finance/analytic-accounts', payload)
-        addToast({ type: 'success', message: 'Analytic account created' })
+        addToast({ type: 'success', message: t('fin.analytic.analyticAccountCreated') })
       }
       setModalOpen(false)
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Save failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.analytic.saveFailed')) })
     } finally {
       setSaving(false)
     }
@@ -140,11 +142,11 @@ export default function AnalyticAccountsPage() {
     setDeleteLoading(true)
     try {
       await api.delete(`/finance/analytic-accounts/${deletingId}`)
-      addToast({ type: 'success', message: 'Analytic account deactivated' })
+      addToast({ type: 'success', message: t('fin.analytic.analyticAccountDeactivated') })
       setDeletingId(null)
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Delete failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.analytic.deleteFailed')) })
     } finally {
       setDeleteLoading(false)
     }
@@ -156,13 +158,13 @@ export default function AnalyticAccountsPage() {
   const columns: Column<AnalyticAccount>[] = [
     {
       key: 'name',
-      header: 'Name',
+      header: t('fin.analytic.name'),
       mobilePrimary: true,
       render: (aa) => <span style={{ color: theme.textPrimary }}>{aa.name}</span>,
     },
     {
       key: 'code',
-      header: 'Code',
+      header: t('fin.analytic.code'),
       mobileSecondary: true,
       render: (aa) => (
         <span style={{ fontFamily: 'monospace', color: theme.accent }}>{aa.code}</span>
@@ -170,7 +172,7 @@ export default function AnalyticAccountsPage() {
     },
     {
       key: 'cost_center_code',
-      header: 'Cost center',
+      header: t('fin.analytic.costCenter'),
       mobilePriority: 3,
       render: (aa) => (
         <span style={{ color: theme.textMuted, fontFamily: 'monospace', fontSize: '11px' }}>
@@ -180,7 +182,7 @@ export default function AnalyticAccountsPage() {
     },
     {
       key: 'project_name',
-      header: 'Project',
+      header: t('fin.analytic.project'),
       mobilePriority: 4,
       render: (aa) =>
         aa.project_name ? (
@@ -194,13 +196,13 @@ export default function AnalyticAccountsPage() {
     },
     {
       key: 'journal_line_count',
-      header: 'Lines',
+      header: t('fin.analytic.lines'),
       mobilePriority: 7,
       render: (aa) => aa.journal_line_count.toLocaleString(),
     },
     {
       key: 'total_debits',
-      header: 'Debits',
+      header: t('fin.analytic.debits'),
       mobilePriority: 5,
       render: (aa) => (
         <AmountDisplay amount={parseFloat(aa.total_debits)} currency="IQD" size="sm" />
@@ -208,7 +210,7 @@ export default function AnalyticAccountsPage() {
     },
     {
       key: 'total_credits',
-      header: 'Credits',
+      header: t('fin.analytic.credits'),
       mobilePriority: 6,
       render: (aa) => (
         <AmountDisplay amount={parseFloat(aa.total_credits)} currency="IQD" size="sm" />
@@ -216,7 +218,7 @@ export default function AnalyticAccountsPage() {
     },
     {
       key: 'balance',
-      header: 'Balance',
+      header: t('fin.analytic.balance'),
       mobilePriority: 2,
       render: (aa) => {
         const bal = balance(aa)
@@ -233,17 +235,17 @@ export default function AnalyticAccountsPage() {
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('fin.analytic.status'),
       mobilePriority: 1,
       render: (aa) => (
         <Badge variant={aa.is_active ? 'success' : 'neutral'} size="sm">
-          {aa.is_active ? 'Active' : 'Inactive'}
+          {aa.is_active ? t('fin.analytic.active') : t('fin.analytic.inactive')}
         </Badge>
       ),
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: t('fin.analytic.actions'),
       mobileAction: true,
       render: (aa) => (
         <div
@@ -260,7 +262,7 @@ export default function AnalyticAccountsPage() {
                 openEdit(aa)
               }}
             >
-              Edit
+              {t('fin.analytic.edit')}
             </Button>
           )}
           {canEdit && aa.is_active && (
@@ -271,7 +273,7 @@ export default function AnalyticAccountsPage() {
                 setDeletingId(aa.id)
               }}
             >
-              Deactivate
+              {t('fin.analytic.deactivate')}
             </Button>
           )}
         </div>
@@ -282,12 +284,12 @@ export default function AnalyticAccountsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
-        title="Analytic Accounts"
-        subtitle="Project and cost tracking by analytic dimension"
+        title={t('fin.analytic.analyticAccounts')}
+        subtitle={t('fin.analytic.projectAndCostTrackingByAnalytic')}
         actions={
           canEdit ? (
             <Button variant="primary" size="sm" onClick={openCreate}>
-              New analytic account
+              {t('fin.analytic.newAnalyticAccount')}
             </Button>
           ) : undefined
         }
@@ -309,7 +311,7 @@ export default function AnalyticAccountsPage() {
             onChange={(e) => {
               setSearch(e.target.value)
             }}
-            placeholder="Search code or name…"
+            placeholder={t('fin.analytic.searchCodeOrName')}
             style={{
               flex: 1,
               minWidth: '160px',
@@ -338,7 +340,7 @@ export default function AnalyticAccountsPage() {
                 setActiveOnly(e.target.checked)
               }}
             />
-            Active only
+            {t('fin.analytic.activeOnly')}
           </label>
         </div>
         <Table
@@ -346,7 +348,7 @@ export default function AnalyticAccountsPage() {
           data={items}
           rowKey="id"
           loading={loading}
-          emptyMessage="No analytic accounts found"
+          emptyMessage={t('fin.analytic.noAnalyticAccountsFound')}
           onRowClick={(aa) => {
             navigate(`/finance/analytic-accounts/${aa.id}`)
           }}
@@ -359,9 +361,9 @@ export default function AnalyticAccountsPage() {
         onClose={() => {
           setModalOpen(false)
         }}
-        title={editing ? 'Edit analytic account' : 'New analytic account'}
+        title={editing ? t('fin.analytic.editAnalyticAccount') : t('fin.analytic.newAnalyticAccount')}
       >
-        <Field label="Code *">
+        <Field label={t('fin.analytic.code2')}>
           <input
             value={form.code}
             onChange={(e) => {
@@ -381,13 +383,13 @@ export default function AnalyticAccountsPage() {
             }}
           />
         </Field>
-        <Field label="Name *">
+        <Field label={t('fin.analytic.name2')}>
           <input
             value={form.name}
             onChange={(e) => {
               setForm((p) => ({ ...p, name: e.target.value }))
             }}
-            placeholder="Project Alpha"
+            placeholder={t('fin.analytic.projectAlpha')}
             style={{
               width: '100%',
               padding: '7px 10px',
@@ -399,13 +401,13 @@ export default function AnalyticAccountsPage() {
             }}
           />
         </Field>
-        <Field label="Cost center (optional)">
+        <Field label={t('fin.analytic.costCenterOptional')}>
           <SearchableSelect
             value={form.cost_center_id}
             onChange={(v) => {
               setForm((p) => ({ ...p, cost_center_id: v }))
             }}
-            placeholder="None"
+            placeholder={t('fin.analytic.none')}
             options={costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))}
           />
         </Field>
@@ -417,10 +419,10 @@ export default function AnalyticAccountsPage() {
               setModalOpen(false)
             }}
           >
-            Cancel
+            {t('fin.analytic.cancel')}
           </Button>
           <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)} disabled={saving}>
-            {saving ? 'Saving…' : editing ? 'Update' : 'Create'}
+            {saving ? t('fin.analytic.saving') : editing ? t('fin.analytic.update') : t('fin.analytic.create')}
           </Button>
         </div>
       </Modal>
@@ -431,9 +433,9 @@ export default function AnalyticAccountsPage() {
           setDeletingId(null)
         }}
         onConfirm={(...args: Parameters<typeof handleDelete>) => void handleDelete(...args)}
-        title="Deactivate analytic account"
-        message="This will deactivate the analytic account. Existing journal entries are unaffected."
-        confirmLabel="Deactivate"
+        title={t('fin.analytic.deactivateAnalyticAccount')}
+        message={t('fin.analytic.thisWillDeactivateTheAnalyticAccount')}
+        confirmLabel={t('fin.analytic.deactivate')}
         loading={deleteLoading}
       />
     </div>

@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -25,6 +26,7 @@ const ACCOUNT_CATEGORIES = [
 ]
 
 export default function AccountForm() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
   const navigate = useNavigate()
@@ -78,13 +80,13 @@ export default function AccountForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.account_type) {
-      addToast({ type: 'error', message: 'Select an account type' })
+      addToast({ type: 'error', message: t('fin.accountForm.selectAnAccountType') })
       return
     }
     if (form.is_active && !/^\d{4}(-\d{2})?$/.test(form.code)) {
       addToast({
         type: 'error',
-        message: 'Account code must be 4 digits, optionally with a -NN suffix (e.g. 1200 or 3111-01)',
+        message: t('fin.accountForm.accountCodeMustBe4Digits'),
       })
       return
     }
@@ -105,13 +107,13 @@ export default function AccountForm() {
       }
       if (isEdit) {
         await updateAccount({ variables: { id, input } })
-        addToast({ type: 'success', message: 'Account updated' })
+        addToast({ type: 'success', message: t('fin.accountForm.accountUpdated') })
       } else {
         await createAccount({
           variables: { input },
           refetchQueries: [{ query: ACCOUNTS_QUERY, variables: {} }],
         })
-        addToast({ type: 'success', message: 'Account created' })
+        addToast({ type: 'success', message: t('fin.accountForm.accountCreated') })
       }
       navigate('/finance/accounts')
     } catch (err) {
@@ -120,7 +122,7 @@ export default function AccountForm() {
   }
 
   const parentOptions = [
-    { value: '', label: 'None (top level)' },
+    { value: '', label: t('fin.accountForm.noneTopLevel') },
     ...(allAccounts?.accounts ?? []).filter((v): v is NonNullable<typeof v> => v !== null).map((a) => ({
       value: a.id,
       label: `${a.code} — ${a.name}`,
@@ -139,13 +141,13 @@ export default function AccountForm() {
     }))
 
   const loading = creating || updating
-  const title = isEdit ? (existing?.account?.name ?? 'Edit Account') : 'New Account'
+  const title = isEdit ? (existing?.account?.name ?? t('fin.accountForm.editAccount')) : t('fin.accountForm.newAccount')
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '800px' }}>
       <PageHeader
         title={title}
-        subtitle={isEdit ? 'Edit account details' : 'Add to chart of accounts'}
+        subtitle={isEdit ? t('fin.accountForm.editAccountDetails') : t('fin.accountForm.addToChartOfAccounts')}
         backPath="/finance/accounts"
       />
 
@@ -162,7 +164,7 @@ export default function AccountForm() {
             }}
           >
             <Input
-              label="Account Code"
+              label={t('fin.accountForm.accountCode')}
               value={form.code}
               onChange={(e) => {
                 setForm((f) => ({ ...f, code: e.target.value }))
@@ -171,7 +173,7 @@ export default function AccountForm() {
               placeholder="e.g. 1200 or 3111-01"
             />
             <Select
-              label="Type"
+              label={t('fin.accountForm.type')}
               value={form.account_type}
               onChange={(e) => {
                 setForm((f) => ({ ...f, account_type: e.target.value }))
@@ -179,24 +181,24 @@ export default function AccountForm() {
               required
             >
               <option value="" disabled>
-                Select type…
+                {t('fin.accountForm.selectType')}
               </option>
-              <option value="asset">Asset</option>
-              <option value="liability">Liability</option>
-              <option value="equity">Equity</option>
-              <option value="revenue">Revenue</option>
-              <option value="expense">Expense</option>
+              <option value="asset">{t('fin.accountForm.asset')}</option>
+              <option value="liability">{t('fin.accountForm.liability')}</option>
+              <option value="equity">{t('fin.accountForm.equity')}</option>
+              <option value="revenue">{t('fin.accountForm.revenue')}</option>
+              <option value="expense">{t('fin.accountForm.expense')}</option>
             </Select>
           </div>
 
           <Input
-            label="Account Name"
+            label={t('fin.accountForm.accountName')}
             value={form.name}
             onChange={(e) => {
               setForm((f) => ({ ...f, name: e.target.value }))
             }}
             required
-            placeholder="e.g. Cash and Cash Equivalents"
+            placeholder={t('fin.accountForm.eGCashAndCashEquivalents')}
           />
 
           <div
@@ -207,7 +209,7 @@ export default function AccountForm() {
             }}
           >
             <Select
-              label="Currency"
+              label={t('fin.accountForm.currency')}
               value={form.currency_code}
               onChange={(e) => {
                 setForm((f) => ({ ...f, currency_code: e.target.value }))
@@ -219,7 +221,7 @@ export default function AccountForm() {
               <option value="TRY">TRY</option>
             </Select>
             <Select
-              label="Parent Account"
+              label={t('fin.accountForm.parentAccount')}
               value={form.parent_id}
               onChange={(e) => {
                 setForm((f) => ({ ...f, parent_id: e.target.value }))
@@ -241,22 +243,22 @@ export default function AccountForm() {
             }}
           >
             <SearchableSelect
-              label="Group Account"
+              label={t('fin.accountForm.groupAccount')}
               value={form.group_account_id}
               onChange={(v) => {
                 setForm((f) => ({ ...f, group_account_id: v }))
               }}
-              placeholder="Maps to which group account?"
+              placeholder={t('fin.accountForm.mapsToWhichGroupAccount')}
               options={groupOptions}
             />
             <Select
-              label="Category"
+              label={t('fin.accountForm.category')}
               value={form.account_category}
               onChange={(e) => {
                 setForm((f) => ({ ...f, account_category: e.target.value }))
               }}
             >
-              <option value="">None</option>
+              <option value="">{t('fin.accountForm.none')}</option>
               {ACCOUNT_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -267,28 +269,28 @@ export default function AccountForm() {
 
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             <Checkbox
-              label="Reconcilable"
+              label={t('fin.accountForm.reconcilable')}
               checked={form.is_reconcilable}
               onChange={(checked) => {
                 setForm((f) => ({ ...f, is_reconcilable: checked }))
               }}
             />
             <Checkbox
-              label="Active"
+              label={t('fin.accountForm.active')}
               checked={form.is_active}
               onChange={(checked) => {
                 setForm((f) => ({ ...f, is_active: checked }))
               }}
             />
             <Checkbox
-              label="Control account"
+              label={t('fin.accountForm.controlAccount')}
               checked={form.is_control_account}
               onChange={(checked) => {
                 setForm((f) => ({ ...f, is_control_account: checked }))
               }}
             />
             <Checkbox
-              label="Header (grouping only, no postings)"
+              label={t('fin.accountForm.headerGroupingOnlyNoPostings')}
               checked={form.is_header}
               onChange={(checked) => {
                 // A header can't also be postable — the DB enforces this too
@@ -299,7 +301,7 @@ export default function AccountForm() {
             />
             {!form.is_header && (
               <Checkbox
-                label="Postable"
+                label={t('fin.accountForm.postable')}
                 checked={form.is_postable}
                 onChange={(checked) => {
                   setForm((f) => ({ ...f, is_postable: checked }))
@@ -324,10 +326,10 @@ export default function AccountForm() {
                 navigate('/finance/accounts')
               }}
             >
-              Cancel
+              {t('fin.accountForm.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={loading}>
-              {isEdit ? 'Save Changes' : 'Create Account'}
+              {isEdit ? t('fin.accountForm.saveChanges') : t('fin.accountForm.createAccount')}
             </Button>
           </div>
         </form>

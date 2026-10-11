@@ -1,4 +1,6 @@
-﻿import { useState, useEffect } from 'react'
+﻿import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
@@ -67,12 +69,12 @@ interface VendorInvoice {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: 'Draft',
-  submitted: 'Pending approval',
-  approved: 'Approved',
-  partially_paid: 'Partially paid',
-  paid: 'Paid',
-  cancelled: 'Cancelled',
+  get draft() { return i18n.t('fin.apInvDetail.draft', { defaultValue: "Draft" }) },
+  get submitted() { return i18n.t('fin.apInvDetail.pendingApproval', { defaultValue: "Pending approval" }) },
+  get approved() { return i18n.t('fin.apInvDetail.approved', { defaultValue: "Approved" }) },
+  get partially_paid() { return i18n.t('fin.apInvDetail.partiallyPaid', { defaultValue: "Partially paid" }) },
+  get paid() { return i18n.t('fin.apInvDetail.paid', { defaultValue: "Paid" }) },
+  get cancelled() { return i18n.t('fin.apInvDetail.cancelled', { defaultValue: "Cancelled" }) },
 }
 const STATUS_VARIANTS: Record<
   string,
@@ -86,10 +88,10 @@ const STATUS_VARIANTS: Record<
   cancelled: 'danger',
 }
 const PAYMENT_METHODS: Record<string, string> = {
-  bank_transfer: 'Bank transfer',
-  cheque: 'Cheque',
-  cash: 'Cash',
-  other: 'Other',
+  get bank_transfer() { return i18n.t('fin.apInvDetail.bankTransfer', { defaultValue: "Bank transfer" }) },
+  get cheque() { return i18n.t('fin.apInvDetail.cheque', { defaultValue: "Cheque" }) },
+  get cash() { return i18n.t('fin.apInvDetail.cash', { defaultValue: "Cash" }) },
+  get other() { return i18n.t('fin.apInvDetail.other', { defaultValue: "Other" }) },
 }
 
 function fmtAmt(v: string | number) {
@@ -116,6 +118,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function VendorInvoiceDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const navigate = useNavigate()
@@ -148,7 +151,7 @@ export default function VendorInvoiceDetail() {
       const res = await api.get<VendorInvoice>(`/finance/vendor-invoices/${id}`)
       setInvoice(res.data)
     } catch {
-      addToast({ type: 'error', message: 'Failed to load invoice' })
+      addToast({ type: 'error', message: t('fin.apInvDetail.failedToLoadInvoice') })
     } finally {
       setLoading(false)
     }
@@ -183,10 +186,10 @@ export default function VendorInvoiceDetail() {
     setLinkLoading(true)
     try {
       await api.patch(`/finance/vendor-invoices/${id}/link-po`, { po_id: linkPOId })
-      addToast({ type: 'success', message: 'PO linked successfully' })
+      addToast({ type: 'success', message: t('fin.apInvDetail.poLinkedSuccessfully') })
       void fetchInvoice()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Failed to link PO') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.apInvDetail.failedToLinkPo')) })
     } finally {
       setLinkLoading(false)
     }
@@ -196,10 +199,10 @@ export default function VendorInvoiceDetail() {
     setActionLoading(true)
     try {
       await api.post(`/finance/vendor-invoices/${id}/${action}`)
-      addToast({ type: 'success', message: `Invoice ${action}ed` })
+      addToast({ type: 'success', message: t('fin.apInvDetail.invoiceEd', { action }) })
       void fetchInvoice()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, `Failed to ${action}`) })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.apInvDetail.failedTo', { action })) })
     } finally {
       setActionLoading(false)
       setConfirmAction(null)
@@ -208,17 +211,17 @@ export default function VendorInvoiceDetail() {
 
   async function handleReject() {
     if (!rejectReason.trim()) {
-      addToast({ type: 'error', message: 'Reason is required' })
+      addToast({ type: 'error', message: t('fin.apInvDetail.reasonIsRequired') })
       return
     }
     setActionLoading(true)
     try {
       await api.post(`/finance/vendor-invoices/${id}/reject`, { reason: rejectReason })
-      addToast({ type: 'success', message: 'Invoice rejected' })
+      addToast({ type: 'success', message: t('fin.apInvDetail.invoiceRejected') })
       setRejectOpen(false)
       void fetchInvoice()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Reject failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.apInvDetail.rejectFailed')) })
     } finally {
       setActionLoading(false)
     }
@@ -227,7 +230,7 @@ export default function VendorInvoiceDetail() {
   async function handlePay() {
     const amt = parseFloat(payForm.amount)
     if (!amt || amt <= 0) {
-      addToast({ type: 'error', message: 'Valid amount required' })
+      addToast({ type: 'error', message: t('fin.apInvDetail.validAmountRequired') })
       return
     }
     setPayLoading(true)
@@ -237,7 +240,7 @@ export default function VendorInvoiceDetail() {
         amount: parseFloat(payForm.amount),
         currency_code: inv.currency_code,
       })
-      addToast({ type: 'success', message: 'Payment recorded' })
+      addToast({ type: 'success', message: t('fin.apInvDetail.paymentRecorded') })
       setPayOpen(false)
       setPayForm({
         amount: '',
@@ -248,7 +251,7 @@ export default function VendorInvoiceDetail() {
       })
       void fetchInvoice()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Payment failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.apInvDetail.paymentFailed')) })
     } finally {
       setPayLoading(false)
     }
@@ -260,7 +263,7 @@ export default function VendorInvoiceDetail() {
         <div className="skeleton" style={{ height: 400 }} />
       </div>
     )
-  if (!invoice) return <div style={{ padding: '24px', color: '#ef4444' }}>Invoice not found</div>
+  if (!invoice) return <div style={{ padding: '24px', color: '#ef4444' }}>{t('fin.apInvDetail.invoiceNotFound')}</div>
 
   const inv = invoice
   const outstanding =
@@ -282,7 +285,7 @@ export default function VendorInvoiceDetail() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
-        title={`Invoice ${inv.invoice_number}`}
+        title={t('fin.apInvDetail.invoice', { invoice_number: inv.invoice_number })}
         subtitle={inv.vendor_name}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -293,7 +296,7 @@ export default function VendorInvoiceDetail() {
                 navigate('/finance/ap')
               }}
             >
-              Back
+              {t('fin.apInvDetail.back')}
             </Button>
             {canEdit && (
               <Button
@@ -303,7 +306,7 @@ export default function VendorInvoiceDetail() {
                   navigate(`/finance/ap/${id}/edit`)
                 }}
               >
-                Edit
+                {t('fin.apInvDetail.edit')}
               </Button>
             )}
             {canSubmit && inv.lines.length > 0 && (
@@ -314,7 +317,7 @@ export default function VendorInvoiceDetail() {
                   setConfirmAction('submit')
                 }}
               >
-                Submit for approval
+                {t('fin.apInvDetail.submitForApproval')}
               </Button>
             )}
             {canApprove && (
@@ -325,7 +328,7 @@ export default function VendorInvoiceDetail() {
                   setConfirmAction('approve')
                 }}
               >
-                Approve
+                {t('fin.apInvDetail.approve')}
               </Button>
             )}
             {canReject && (
@@ -336,7 +339,7 @@ export default function VendorInvoiceDetail() {
                   setRejectOpen(true)
                 }}
               >
-                Reject
+                {t('fin.apInvDetail.reject')}
               </Button>
             )}
             {canPay && (
@@ -353,7 +356,7 @@ export default function VendorInvoiceDetail() {
                   setPayOpen(true)
                 }}
               >
-                Record payment
+                {t('fin.apInvDetail.recordPayment')}
               </Button>
             )}
             {canCancel && (
@@ -364,7 +367,7 @@ export default function VendorInvoiceDetail() {
                   setConfirmAction('cancel')
                 }}
               >
-                Cancel
+                {t('fin.apInvDetail.cancel')}
               </Button>
             )}
           </div>
@@ -383,7 +386,7 @@ export default function VendorInvoiceDetail() {
             color: theme.warning,
           }}
         >
-          This invoice is <strong>{daysOverdue} days overdue</strong>. Due{' '}
+          This invoice is <strong>{t('fin.apInvDetail.daysOverdue', { daysOverdue })}</strong>. Due{' '}
           {inv.due_date.slice(0, 10)}.
         </div>
       )}
@@ -399,7 +402,7 @@ export default function VendorInvoiceDetail() {
             color: theme.danger,
           }}
         >
-          <strong>Rejected:</strong> {inv.rejection_reason}
+          <strong>{t('fin.apInvDetail.rejected')}</strong> {inv.rejection_reason}
         </div>
       )}
 
@@ -419,12 +422,12 @@ export default function VendorInvoiceDetail() {
         >
           <div style={{ flex: 1, minWidth: '180px' }}>
             <div style={{ fontSize: '12px', fontWeight: 600, color: theme.warning }}>
-              Not linked to a PO
+              {t('fin.apInvDetail.notLinkedToAPo')}
             </div>
             <div
               style={{ fontSize: '11px', color: theme.warning, opacity: 0.85, marginTop: '2px' }}
             >
-              Link this invoice to a PO so it appears on the PO detail page and in audit reports.
+              {t('fin.apInvDetail.linkThisInvoiceToAPo')}
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', minWidth: '260px' }}>
@@ -433,7 +436,7 @@ export default function VendorInvoiceDetail() {
                 value={linkPOId}
                 onChange={setLinkPOId}
                 options={poOptions}
-                placeholder="Select PO…"
+                placeholder={t('fin.apInvDetail.selectPo')}
               />
             </div>
             <Button
@@ -443,7 +446,7 @@ export default function VendorInvoiceDetail() {
               disabled={!linkPOId}
               onClick={() => void handleLinkPO()}
             >
-              Link
+              {t('fin.apInvDetail.link')}
             </Button>
           </div>
         </div>
@@ -467,10 +470,10 @@ export default function VendorInvoiceDetail() {
               marginBottom: '10px',
             }}
           >
-            Invoice info
+            {t('fin.apInvDetail.invoiceInfo')}
           </h3>
           <Row
-            label="Status"
+            label={t('fin.apInvDetail.status')}
             value={
               <Badge variant={STATUS_VARIANTS[inv.status] ?? 'neutral'} size="sm">
                 {STATUS_LABELS[inv.status] ?? inv.status}
@@ -478,12 +481,12 @@ export default function VendorInvoiceDetail() {
             }
           />
           <Row
-            label="Invoice number"
+            label={t('fin.apInvDetail.invoiceNumber')}
             value={<span style={{ fontFamily: 'monospace' }}>{inv.invoice_number}</span>}
           />
-          <Row label="Invoice date" value={inv.invoice_date.slice(0, 10)} />
+          <Row label={t('fin.apInvDetail.invoiceDate')} value={inv.invoice_date.slice(0, 10)} />
           <Row
-            label="Due date"
+            label={t('fin.apInvDetail.dueDate')}
             value={
               <span style={{ color: isOverdue ? theme.danger : theme.textPrimary }}>
                 {inv.due_date.slice(0, 10)}
@@ -491,15 +494,15 @@ export default function VendorInvoiceDetail() {
             }
           />
           <Row
-            label="PO number"
+            label={t('fin.apInvDetail.poNumber')}
             value={
               inv.po_number ? <span style={{ fontFamily: 'monospace' }}>{inv.po_number}</span> : '—'
             }
           />
-          <Row label="Currency" value={inv.currency_code} />
-          {inv.analytic_code && <Row label="Analytic account" value={inv.analytic_code} />}
-          {inv.cost_center_code && <Row label="Cost center" value={inv.cost_center_code} />}
-          {inv.notes && <Row label="Notes" value={inv.notes} />}
+          <Row label={t('fin.apInvDetail.currency')} value={inv.currency_code} />
+          {inv.analytic_code && <Row label={t('fin.apInvDetail.analyticAccount')} value={inv.analytic_code} />}
+          {inv.cost_center_code && <Row label={t('fin.apInvDetail.costCenter')} value={inv.cost_center_code} />}
+          {inv.notes && <Row label={t('fin.apInvDetail.notes')} value={inv.notes} />}
         </Card>
 
         {/* Amounts */}
@@ -512,13 +515,13 @@ export default function VendorInvoiceDetail() {
               marginBottom: '10px',
             }}
           >
-            Amounts
+            {t('fin.apInvDetail.amounts')}
           </h3>
-          <Row label="Subtotal" value={`${inv.currency_code} ${fmtAmt(inv.subtotal)}`} />
-          <Row label="Tax" value={`${inv.currency_code} ${fmtAmt(inv.tax_amount)}`} />
-          <Row label="WHT" value={`${inv.currency_code} ${fmtAmt(inv.wht_amount)}`} />
+          <Row label={t('fin.apInvDetail.subtotal')} value={`${inv.currency_code} ${fmtAmt(inv.subtotal)}`} />
+          <Row label={t('fin.apInvDetail.tax')} value={`${inv.currency_code} ${fmtAmt(inv.tax_amount)}`} />
+          <Row label={t('fin.apInvDetail.wht')} value={`${inv.currency_code} ${fmtAmt(inv.wht_amount)}`} />
           <Row
-            label="Total"
+            label={t('fin.apInvDetail.total')}
             value={
               <strong>
                 {inv.currency_code} {fmtAmt(inv.total_amount)}
@@ -526,7 +529,7 @@ export default function VendorInvoiceDetail() {
             }
           />
           <Row
-            label="Net payable"
+            label={t('fin.apInvDetail.netPayable')}
             value={
               <AmountDisplay
                 amount={parseFloat(inv.net_payable)}
@@ -536,7 +539,7 @@ export default function VendorInvoiceDetail() {
             }
           />
           <Row
-            label="Paid"
+            label={t('fin.apInvDetail.paid')}
             value={
               <span style={{ color: theme.success }}>
                 {inv.currency_code} {fmtAmt(inv.amount_paid)}
@@ -544,14 +547,14 @@ export default function VendorInvoiceDetail() {
             }
           />
           <Row
-            label="Outstanding"
+            label={t('fin.apInvDetail.outstanding')}
             value={
               outstanding > 0 ? (
                 <span style={{ color: theme.danger, fontWeight: 600 }}>
                   {inv.currency_code} {fmtAmt(outstanding)}
                 </span>
               ) : (
-                <span style={{ color: theme.success }}>Fully paid</span>
+                <span style={{ color: theme.success }}>{t('fin.apInvDetail.fullyPaid')}</span>
               )
             }
           />
@@ -562,7 +565,7 @@ export default function VendorInvoiceDetail() {
       <Card padding="none" style={{ marginBottom: '16px' }}>
         <div style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}` }}>
           <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-            Invoice lines
+            {t('fin.apInvDetail.invoiceLines')}
           </h3>
         </div>
         {inv.lines.length === 0 ? (
@@ -574,17 +577,17 @@ export default function VendorInvoiceDetail() {
               textAlign: 'center',
             }}
           >
-            No lines yet
+            {t('fin.apInvDetail.noLinesYet')}
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                {['Description', 'Account', 'Qty', 'Unit price', 'Total'].map((h) => (
+                {[t('fin.apInvDetail.description'), t('fin.apInvDetail.account'), t('fin.apInvDetail.qty'), t('fin.apInvDetail.unitPrice'), t('fin.apInvDetail.total')].map((h) => (
                   <th
                     key={h}
                     style={{
-                      textAlign: 'left',
+                      textAlign: 'start',
                       padding: '8px 14px',
                       color: theme.textMuted,
                       fontWeight: 500,
@@ -646,7 +649,7 @@ export default function VendorInvoiceDetail() {
             alignItems: 'center',
           }}
         >
-          <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>Payments</h3>
+          <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>{t('fin.apInvDetail.payments')}</h3>
         </div>
         {inv.payments.length === 0 ? (
           <div
@@ -657,17 +660,17 @@ export default function VendorInvoiceDetail() {
               textAlign: 'center',
             }}
           >
-            No payments recorded
+            {t('fin.apInvDetail.noPaymentsRecorded')}
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                {['Date', 'Amount', 'Method', 'Reference', 'Posted'].map((h) => (
+                {[t('fin.apInvDetail.date'), t('fin.apInvDetail.amount'), t('fin.apInvDetail.method'), t('fin.apInvDetail.reference'), t('fin.apInvDetail.posted')].map((h) => (
                   <th
                     key={h}
                     style={{
-                      textAlign: 'left',
+                      textAlign: 'start',
                       padding: '8px 14px',
                       color: theme.textMuted,
                       fontWeight: 500,
@@ -706,7 +709,7 @@ export default function VendorInvoiceDetail() {
                   </td>
                   <td style={{ padding: '8px 14px' }}>
                     <Badge variant={pmt.posted ? 'success' : 'neutral'} size="sm">
-                      {pmt.posted ? 'Posted' : 'Pending'}
+                      {pmt.posted ? t('fin.apInvDetail.posted') : t('fin.apInvDetail.pending')}
                     </Badge>
                   </td>
                 </tr>
@@ -723,9 +726,9 @@ export default function VendorInvoiceDetail() {
           setConfirmAction(null)
         }}
         onConfirm={() => void runAction('submit')}
-        title="Submit for approval"
-        message={`Submit invoice ${inv.invoice_number} for approval?`}
-        confirmLabel="Submit"
+        title={t('fin.apInvDetail.submitForApproval')}
+        message={t('fin.apInvDetail.submitInvoiceForApproval', { invoice_number: inv.invoice_number })}
+        confirmLabel={t('fin.apInvDetail.submit')}
         loading={actionLoading}
       />
       <ConfirmDialog
@@ -734,9 +737,9 @@ export default function VendorInvoiceDetail() {
           setConfirmAction(null)
         }}
         onConfirm={() => void runAction('approve')}
-        title="Approve invoice"
-        message={`Approve invoice ${inv.invoice_number} from ${inv.vendor_name}?`}
-        confirmLabel="Approve"
+        title={t('fin.apInvDetail.approveInvoice')}
+        message={t('fin.apInvDetail.approveInvoiceFrom', { invoice_number: inv.invoice_number, vendor_name: inv.vendor_name })}
+        confirmLabel={t('fin.apInvDetail.approve')}
         loading={actionLoading}
       />
       <ConfirmDialog
@@ -745,9 +748,9 @@ export default function VendorInvoiceDetail() {
           setConfirmAction(null)
         }}
         onConfirm={() => void runAction('cancel')}
-        title="Cancel invoice"
-        message={`Cancel invoice ${inv.invoice_number}? This cannot be undone.`}
-        confirmLabel="Cancel invoice"
+        title={t('fin.apInvDetail.cancelInvoice')}
+        message={t('fin.apInvDetail.cancelInvoiceThisCannotBeUndone', { invoice_number: inv.invoice_number })}
+        confirmLabel={t('fin.apInvDetail.cancelInvoice')}
         loading={actionLoading}
       />
 
@@ -757,10 +760,10 @@ export default function VendorInvoiceDetail() {
         onClose={() => {
           setRejectOpen(false)
         }}
-        title="Reject invoice"
+        title={t('fin.apInvDetail.rejectInvoice')}
       >
         <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>
-          Provide a reason for rejection.
+          {t('fin.apInvDetail.provideAReasonForRejection')}
         </p>
         <textarea
           value={rejectReason}
@@ -768,7 +771,7 @@ export default function VendorInvoiceDetail() {
             setRejectReason(e.target.value)
           }}
           rows={4}
-          placeholder="Rejection reason…"
+          placeholder={t('fin.apInvDetail.rejectionReason')}
           style={{
             width: '100%',
             padding: '8px',
@@ -789,10 +792,10 @@ export default function VendorInvoiceDetail() {
               setRejectOpen(false)
             }}
           >
-            Cancel
+            {t('fin.apInvDetail.cancel')}
           </Button>
           <Button variant="danger" size="sm" onClick={(...args: Parameters<typeof handleReject>) => void handleReject(...args)} disabled={actionLoading}>
-            Reject invoice
+            {t('fin.apInvDetail.rejectInvoice')}
           </Button>
         </div>
       </Modal>
@@ -803,24 +806,24 @@ export default function VendorInvoiceDetail() {
         onClose={() => {
           setPayOpen(false)
         }}
-        title="Record payment"
+        title={t('fin.apInvDetail.recordPayment')}
       >
         <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>
-          Outstanding:{' '}
+          {t('fin.apInvDetail.outstanding2')}{' '}
           <strong>
             {inv.currency_code} {fmtAmt(outstanding)}
           </strong>
         </p>
         {[
-          { label: 'Amount', key: 'amount', type: 'number', placeholder: '0.00' },
-          { label: 'Payment date', key: 'payment_date', type: 'date', placeholder: '' },
+          { label: t('fin.apInvDetail.amount'), key: 'amount', type: 'number', placeholder: '0.00' },
+          { label: t('fin.apInvDetail.paymentDate'), key: 'payment_date', type: 'date', placeholder: '' },
           {
-            label: 'Reference',
+            label: t('fin.apInvDetail.reference'),
             key: 'payment_reference',
             type: 'text',
-            placeholder: 'Cheque no. / bank ref…',
+            placeholder: t('fin.apInvDetail.chequeNoBankRef'),
           },
-          { label: 'Notes', key: 'notes', type: 'text', placeholder: '' },
+          { label: t('fin.apInvDetail.notes'), key: 'notes', type: 'text', placeholder: '' },
         ].map((f) => (
           <div key={f.key} style={{ marginBottom: '10px' }}>
             <label
@@ -855,7 +858,7 @@ export default function VendorInvoiceDetail() {
         ))}
         <div style={{ marginBottom: '10px' }}>
           <SearchableSelect
-            label="Payment method"
+            label={t('fin.apInvDetail.paymentMethod')}
             value={payForm.payment_method}
             onChange={(v) => {
               setPayForm((prev) => ({ ...prev, payment_method: v }))
@@ -871,10 +874,10 @@ export default function VendorInvoiceDetail() {
               setPayOpen(false)
             }}
           >
-            Cancel
+            {t('fin.apInvDetail.cancel')}
           </Button>
           <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handlePay>) => void handlePay(...args)} disabled={payLoading}>
-            Record payment
+            {t('fin.apInvDetail.recordPayment')}
           </Button>
         </div>
       </Modal>

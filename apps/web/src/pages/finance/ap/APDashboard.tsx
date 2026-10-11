@@ -1,4 +1,6 @@
-﻿import { useState, useEffect, useCallback } from 'react'
+﻿import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useCompanyStore } from '../../../store/companyStore'
@@ -49,12 +51,12 @@ interface VendorInvoice {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: 'Draft',
-  submitted: 'Pending approval',
-  approved: 'Approved',
-  partially_paid: 'Partial',
-  paid: 'Paid',
-  cancelled: 'Cancelled',
+  get draft() { return i18n.t('fin.apDash.draft', { defaultValue: "Draft" }) },
+  get submitted() { return i18n.t('fin.apDash.pendingApproval2', { defaultValue: "Pending approval" }) },
+  get approved() { return i18n.t('fin.apDash.approved', { defaultValue: "Approved" }) },
+  get partially_paid() { return i18n.t('fin.apDash.partial', { defaultValue: "Partial" }) },
+  get paid() { return i18n.t('fin.apDash.paid', { defaultValue: "Paid" }) },
+  get cancelled() { return i18n.t('fin.apDash.cancelled', { defaultValue: "Cancelled" }) },
 }
 
 const STATUS_VARIANTS: Record<
@@ -87,6 +89,7 @@ function AgingBar({
   total: number
   color: string
 }) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const pct = total > 0 ? Math.min((amount / total) * 100, 100) : 0
   return (
@@ -100,7 +103,7 @@ function AgingBar({
         }}
       >
         <span style={{ color: theme.textSecondary }}>{label}</span>
-        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>IQD {fmtAmt(amount)}</span>
+        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{t('fin.apDash.iqd', { amt: fmtAmt(amount) })}</span>
       </div>
       <div style={{ height: '6px', borderRadius: '3px', background: theme.bgSurfaceHover }}>
         <div
@@ -118,6 +121,7 @@ function AgingBar({
 }
 
 export default function APDashboard() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
@@ -148,7 +152,7 @@ export default function APDashboard() {
       if (Array.isArray(raw)) setInvoices(raw as VendorInvoice[])
       else setInvoices((raw as { items?: VendorInvoice[] }).items ?? [])
     } catch {
-      addToast({ type: 'error', message: 'Failed to load AP data' })
+      addToast({ type: 'error', message: t('fin.apDash.failedToLoadApData') })
     } finally {
       setLoading(false)
     }
@@ -163,11 +167,11 @@ export default function APDashboard() {
     setApproveLoading(true)
     try {
       await api.post(`/finance/vendor-invoices/${approvingId}/approve`)
-      addToast({ type: 'success', message: 'Invoice approved' })
+      addToast({ type: 'success', message: t('fin.apDash.invoiceApproved') })
       setApprovingId(null)
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Approval failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.apDash.approvalFailed')) })
     } finally {
       setApproveLoading(false)
     }
@@ -201,7 +205,7 @@ export default function APDashboard() {
   const invoiceColumns: Column<VendorInvoice>[] = [
     {
       key: 'invoice_number',
-      header: 'Invoice #',
+      header: t('fin.apDash.invoice'),
       mobilePrimary: true,
       render: (inv) => (
         <span style={{ fontFamily: 'monospace', color: theme.accent }}>{inv.invoice_number}</span>
@@ -209,13 +213,13 @@ export default function APDashboard() {
     },
     {
       key: 'vendor_name',
-      header: 'Vendor',
+      header: t('fin.apDash.vendor'),
       mobileSecondary: true,
       render: (inv) => inv.vendor_name,
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('fin.apDash.status'),
       mobilePriority: 1,
       render: (inv) => (
         <Badge variant={STATUS_VARIANTS[inv.status] ?? 'neutral'} size="sm">
@@ -225,7 +229,7 @@ export default function APDashboard() {
     },
     {
       key: 'outstanding',
-      header: 'Outstanding',
+      header: t('fin.apDash.outstanding'),
       mobilePriority: 2,
       render: (inv) => (
         <AmountDisplay
@@ -237,7 +241,7 @@ export default function APDashboard() {
     },
     {
       key: 'due_date',
-      header: 'Due date',
+      header: t('fin.apDash.dueDate'),
       mobilePriority: 3,
       render: (inv) => {
         const isOverdue = inv.days_overdue > 0 && !['paid', 'cancelled'].includes(inv.status)
@@ -250,7 +254,7 @@ export default function APDashboard() {
     },
     {
       key: 'net_payable',
-      header: 'Net payable',
+      header: t('fin.apDash.netPayable'),
       mobilePriority: 4,
       render: (inv) => (
         <AmountDisplay
@@ -272,13 +276,13 @@ export default function APDashboard() {
     },
     {
       key: 'invoice_date',
-      header: 'Invoice date',
+      header: t('fin.apDash.invoiceDate'),
       mobilePriority: 6,
       render: (inv) => inv.invoice_date.slice(0, 10),
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: t('fin.apDash.actions'),
       mobileAction: true,
       render: (inv) => (
         <div
@@ -295,7 +299,7 @@ export default function APDashboard() {
                 setApprovingId(inv.id)
               }}
             >
-              Approve
+              {t('fin.apDash.approve')}
             </Button>
           )}
           {['approved', 'partially_paid'].includes(inv.status) && (
@@ -306,7 +310,7 @@ export default function APDashboard() {
                 navigate(`/finance/ap/${inv.id}`)
               }}
             >
-              Pay
+              {t('fin.apDash.pay')}
             </Button>
           )}
         </div>
@@ -317,7 +321,7 @@ export default function APDashboard() {
   return (
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1600px' }}>
       <PageHeader
-        title="Accounts Payable"
+        title={t('fin.apDash.accountsPayable')}
         subtitle={activeCompany?.name ?? ''}
         actions={
           <Button
@@ -327,7 +331,7 @@ export default function APDashboard() {
               navigate('/finance/ap/new')
             }}
           >
-            New vendor invoice
+            {t('fin.apDash.newVendorInvoice')}
           </Button>
         }
       />
@@ -336,12 +340,12 @@ export default function APDashboard() {
       <Grid cols={4} tabletCols={2} phoneCols={2} gap={14} style={{ marginBottom: '24px' }}>
         {[
           {
-            label: 'Total Outstanding',
+            label: t('fin.apDash.totalOutstanding'),
             value: `IQD ${fmtAmt(totalOutstanding)}`,
             color: totalOutstanding > 0 ? theme.danger : theme.textPrimary,
           },
           {
-            label: 'Pending Approval',
+            label: t('fin.apDash.pendingApproval'),
             value: `${s?.pending_approval_count ?? 0}`,
             sub: 'invoices',
             color: (s?.pending_approval_count ?? 0) > 0 ? theme.warning : theme.textPrimary,
@@ -350,13 +354,13 @@ export default function APDashboard() {
             },
           },
           {
-            label: 'Overdue',
+            label: t('fin.apDash.overdue'),
             value: `${s?.overdue_count ?? 0}`,
-            sub: `IQD ${fmtAmt(b31 + b61 + b90)} overdue`,
+            sub: t('fin.apDash.iqdOverdue', { amt: fmtAmt(b31 + b61 + b90) }),
             color: (s?.overdue_count ?? 0) > 0 ? theme.danger : theme.textPrimary,
           },
           {
-            label: 'Paid This Month',
+            label: t('fin.apDash.paidThisMonth'),
             value: `IQD ${fmtAmt(s?.paid_this_month ?? 0)}`,
             color: theme.success,
           },
@@ -407,34 +411,34 @@ export default function APDashboard() {
             marginBottom: '4px',
           }}
         >
-          AP aging
+          {t('fin.apDash.apAging')}
         </h3>
         <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '14px' }}>
-          What FNC owes vendors by age
+          {t('fin.apDash.whatFncOwesVendorsByAge')}
         </p>
         {loading ? (
           <div className="skeleton" style={{ height: 100 }} />
         ) : (
           <>
             <AgingBar
-              label="0-30 days (current)"
+              label={t('fin.apDash.030DaysCurrent')}
               amount={b0}
               total={totalOutstanding}
               color={theme.success}
             />
             <AgingBar
-              label="31-60 days"
+              label={t('fin.apDash.3160Days')}
               amount={b31}
               total={totalOutstanding}
               color={theme.warning}
             />
             <AgingBar
-              label="61-90 days"
+              label={t('fin.apDash.6190Days')}
               amount={b61}
               total={totalOutstanding}
               color={theme.danger}
             />
-            <AgingBar label="Over 90 days" amount={b90} total={totalOutstanding} color="#dc2626" />
+            <AgingBar label={t('fin.apDash.over90Days')} amount={b90} total={totalOutstanding} color="#dc2626" />
           </>
         )}
       </Card>
@@ -456,17 +460,17 @@ export default function APDashboard() {
               fontSize: '13px',
               fontWeight: 600,
               color: theme.textPrimary,
-              marginRight: '8px',
+              marginInlineEnd: '8px',
             }}
           >
-            Vendor invoices
+            {t('fin.apDash.vendorInvoices')}
           </h3>
           <input
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
             }}
-            placeholder="Search invoice # or vendor…"
+            placeholder={t('fin.apDash.searchInvoiceOrVendor')}
             style={{
               flex: 1,
               minWidth: '160px',
@@ -497,7 +501,7 @@ export default function APDashboard() {
                 fontWeight: statusFilter === s ? 600 : 400,
               }}
             >
-              {s === '' ? 'All' : (STATUS_LABELS[s] ?? s)}
+              {s === '' ? t('fin.apDash.all') : (STATUS_LABELS[s] ?? s)}
             </button>
           ))}
         </div>
@@ -506,7 +510,7 @@ export default function APDashboard() {
             <div className="skeleton" style={{ height: 200 }} />
           </div>
         ) : filtered.length === 0 ? (
-          <EmptyState message="No vendor invoices" />
+          <EmptyState message={t('fin.apDash.noVendorInvoices')} />
         ) : (
           <Table
             columns={invoiceColumns}
@@ -517,7 +521,7 @@ export default function APDashboard() {
             }}
             getRowStyle={(inv) => {
               const isOverdue = inv.days_overdue > 0 && !['paid', 'cancelled'].includes(inv.status)
-              return isOverdue ? { borderLeft: `3px solid ${theme.warning}` } : {}
+              return isOverdue ? { borderInlineStart: `3px solid ${theme.warning}` } : {}
             }}
           />
         )}
@@ -529,13 +533,13 @@ export default function APDashboard() {
           setApprovingId(null)
         }}
         onConfirm={(...args: Parameters<typeof handleApprove>) => void handleApprove(...args)}
-        title="Approve vendor invoice"
+        title={t('fin.apDash.approveVendorInvoice')}
         message={
           approvingInv
-            ? `Approve invoice ${approvingInv.invoice_number} from ${approvingInv.vendor_name} for IQD ${fmtAmt(approvingInv.net_payable)}?`
+            ? t('fin.apDash.approveInvoiceFromForIqd', { invoice_number: approvingInv.invoice_number, vendor_name: approvingInv.vendor_name, amt: fmtAmt(approvingInv.net_payable) })
             : ''
         }
-        confirmLabel="Approve"
+        confirmLabel={t('fin.apDash.approve')}
         loading={approveLoading}
       />
     </div>

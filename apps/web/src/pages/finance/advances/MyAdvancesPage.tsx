@@ -1,3 +1,5 @@
+import i18n, { tlh } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../../store/authStore'
@@ -37,12 +39,12 @@ interface Project {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  pending_approval: 'Pending approval',
-  approved: 'Approved',
-  partially_settled: 'Partially settled',
-  settled: 'Settled',
-  rejected: 'Rejected',
-  cancelled: 'Cancelled',
+  get pending_approval() { return i18n.t('fin.myAdv.pendingApproval', { defaultValue: "Pending approval" }) },
+  get approved() { return i18n.t('fin.myAdv.approved', { defaultValue: "Approved" }) },
+  get partially_settled() { return i18n.t('fin.myAdv.partiallySettled', { defaultValue: "Partially settled" }) },
+  get settled() { return i18n.t('fin.myAdv.settled', { defaultValue: "Settled" }) },
+  get rejected() { return i18n.t('fin.myAdv.rejected', { defaultValue: "Rejected" }) },
+  get cancelled() { return i18n.t('fin.myAdv.cancelled', { defaultValue: "Cancelled" }) },
 }
 
 const STATUS_VARIANTS: Record<string, BadgeVariant> = {
@@ -62,6 +64,7 @@ const EMPTY_FORM = {
 }
 
 export default function MyAdvancesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const pagePadding = usePagePadding()
@@ -102,7 +105,7 @@ export default function MyAdvancesPage() {
 
   async function handleSubmit() {
     if (!form.amount || Number(form.amount) <= 0) {
-      addToast({ type: 'error', message: 'Enter an amount greater than zero' })
+      addToast({ type: 'error', message: t('fin.myAdv.enterAnAmountGreaterThanZero') })
       return
     }
     setSubmitting(true)
@@ -113,7 +116,7 @@ export default function MyAdvancesPage() {
         purpose: form.purpose || undefined,
         project_id: form.project_id || undefined,
       })
-      addToast({ type: 'success', message: 'Advance request submitted' })
+      addToast({ type: 'success', message: t('fin.myAdv.advanceRequestSubmitted') })
       setShowForm(false)
       setForm(EMPTY_FORM)
       void load()
@@ -139,8 +142,8 @@ export default function MyAdvancesPage() {
   return (
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1100px' }}>
       <PageHeader
-        title="My Advances"
-        subtitle="Request cash before spending, and track what you still owe"
+        title={t('fin.myAdv.myAdvances')}
+        subtitle={t('fin.myAdv.requestCashBeforeSpendingAndTrack')}
         actions={
           <Button
             variant="primary"
@@ -149,14 +152,14 @@ export default function MyAdvancesPage() {
                 addToast({
                   type: 'error',
                   message:
-                    'Your account isn’t linked to an employee record yet — ask HR to link it first.',
+                    t('fin.myAdv.yourAccountIsnTLinkedTo'),
                 })
                 return
               }
               setShowForm(true)
             }}
           >
-            + Request Advance
+            {t('fin.myAdv.requestAdvance')}
           </Button>
         }
       />
@@ -169,13 +172,13 @@ export default function MyAdvancesPage() {
         style={{ marginTop: '20px', marginBottom: '20px' }}
       >
         <KPICard
-          label="Pending approval"
+          label={t('fin.myAdv.pendingApproval')}
           value={pendingCount}
           iconColor={pendingCount > 0 ? 'warning' : 'accent'}
         />
-        <KPICard label="Active advances" value={activeCount} iconColor="accent" />
+        <KPICard label={t('fin.myAdv.activeAdvances')} value={activeCount} iconColor="accent" />
         <KPICard
-          label="Outstanding"
+          label={t('fin.myAdv.outstanding')}
           value={totalOutstanding.toLocaleString()}
           iconColor={totalOutstanding > 0 ? 'warning' : 'accent'}
         />
@@ -183,15 +186,15 @@ export default function MyAdvancesPage() {
 
       {!hasEmployeeLink ? (
         <EmptyState
-          title="Your account isn’t linked to an employee record"
-          message="Ask HR to link your user account to your employee profile before you can request an advance."
+          title={t('fin.myAdv.yourAccountIsnTLinkedTo2')}
+          message={t('fin.myAdv.askHrToLinkYourUser')}
         />
       ) : loading && advances.length === 0 ? (
         <div className="skeleton" style={{ height: '200px', borderRadius: '12px' }} />
       ) : advances.length === 0 ? (
         <EmptyState
-          title="No advance requests yet"
-          message="Request an advance and finance will review it."
+          title={t('fin.myAdv.noAdvanceRequestsYet')}
+          message={t('fin.myAdv.requestAnAdvanceAndFinanceWill')}
           action={
             <Button
               variant="primary"
@@ -200,7 +203,7 @@ export default function MyAdvancesPage() {
                 setShowForm(true)
               }}
             >
-              Request Advance
+              {t('fin.myAdv.requestAdvance2')}
             </Button>
           }
         />
@@ -222,7 +225,7 @@ export default function MyAdvancesPage() {
                         textTransform: 'uppercase',
                       }}
                     >
-                      {h}
+                      {tlh('fin.myAdv', h)}
                     </th>
                   ))}
                 </tr>
@@ -249,14 +252,14 @@ export default function MyAdvancesPage() {
                     <td style={{ padding: '10px 16px', color: theme.textSecondary }}>
                       {a.purpose ?? '—'}
                     </td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right' }}>
+                    <td style={{ padding: '10px 16px', textAlign: 'end' }}>
                       <AmountDisplay
                         amount={Number(a.amount)}
                         currency={a.currency_code}
                         size="sm"
                       />
                     </td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right' }}>
+                    <td style={{ padding: '10px 16px', textAlign: 'end' }}>
                       <AmountDisplay
                         amount={Number(a.outstanding_amount)}
                         currency={a.currency_code}
@@ -281,7 +284,7 @@ export default function MyAdvancesPage() {
                           navigate(`/finance/advances/${a.id}`)
                         }}
                       >
-                        View
+                        {t('fin.myAdv.view')}
                       </Button>
                     </td>
                   </tr>
@@ -298,8 +301,8 @@ export default function MyAdvancesPage() {
           setShowForm(false)
           setForm(EMPTY_FORM)
         }}
-        title="Request Advance"
-        description="A finance user will review this request and approve it before cash is issued."
+        title={t('fin.myAdv.requestAdvance2')}
+        description={t('fin.myAdv.aFinanceUserWillReviewThis')}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
             <Button
@@ -309,10 +312,10 @@ export default function MyAdvancesPage() {
                 setForm(EMPTY_FORM)
               }}
             >
-              Cancel
+              {t('fin.myAdv.cancel')}
             </Button>
             <Button variant="primary" loading={submitting} onClick={() => void handleSubmit()}>
-              Submit Request
+              {t('fin.myAdv.submitRequest')}
             </Button>
           </div>
         }
@@ -320,7 +323,7 @@ export default function MyAdvancesPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <Input
-              label="Amount"
+              label={t('fin.myAdv.amount')}
               type="number"
               min="0.01"
               step="0.01"
@@ -330,7 +333,7 @@ export default function MyAdvancesPage() {
               }}
             />
             <Select
-              label="Currency"
+              label={t('fin.myAdv.currency')}
               value={form.currency_code}
               onChange={(e) => {
                 setForm((f) => ({ ...f, currency_code: e.target.value }))
@@ -343,23 +346,23 @@ export default function MyAdvancesPage() {
           </div>
 
           <Textarea
-            label="Purpose"
+            label={t('fin.myAdv.purpose')}
             value={form.purpose}
             onChange={(e) => {
               setForm((f) => ({ ...f, purpose: e.target.value }))
             }}
-            placeholder="What is this advance for?"
+            placeholder={t('fin.myAdv.whatIsThisAdvanceFor')}
             rows={2}
           />
 
           <Select
-            label="Project (optional)"
+            label={t('fin.myAdv.projectOptional')}
             value={form.project_id}
             onChange={(e) => {
               setForm((f) => ({ ...f, project_id: e.target.value }))
             }}
           >
-            <option value="">— Not set —</option>
+            <option value="">{t('fin.myAdv.notSet')}</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.code} · {p.name}

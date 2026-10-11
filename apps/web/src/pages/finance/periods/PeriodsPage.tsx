@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { ACCOUNTING_PERIODS_QUERY, CREATE_PERIOD, CLOSE_PERIOD } from '../../../graphql/finance'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -25,6 +27,7 @@ interface AccountingPeriod {
 }
 
 export default function PeriodsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [showForm, setShowForm] = useState(false)
@@ -46,7 +49,7 @@ export default function PeriodsPage() {
         variables: { input: form },
         refetchQueries: [{ query: ACCOUNTING_PERIODS_QUERY }],
       })
-      addToast({ type: 'success', message: 'Accounting period created' })
+      addToast({ type: 'success', message: t('fin.periods.accountingPeriodCreated') })
       setShowForm(false)
       setForm({ name: '', start_date: '', end_date: '' })
     } catch (err) {
@@ -61,7 +64,7 @@ export default function PeriodsPage() {
         variables: { id: closingId },
         refetchQueries: [{ query: ACCOUNTING_PERIODS_QUERY }],
       })
-      addToast({ type: 'success', message: 'Period closed' })
+      addToast({ type: 'success', message: t('fin.periods.periodClosed') })
       setClosingId(null)
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -71,28 +74,28 @@ export default function PeriodsPage() {
   const columns: Column<AccountingPeriod>[] = [
     {
       key: 'name',
-      header: 'Period Name',
+      header: t('fin.periods.periodName'),
       render: (p) => <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{p.name}</span>,
     },
     {
       key: 'start_date',
-      header: 'Start Date',
+      header: t('fin.periods.startDate'),
       render: (p) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{p.start_date}</span>
       ),
     },
     {
       key: 'end_date',
-      header: 'End Date',
+      header: t('fin.periods.endDate'),
       render: (p) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{p.end_date}</span>
       ),
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('fin.periods.status'),
       render: (p) => (
-        <Badge variant={p.status === 'open' ? 'success' : 'neutral'}>{p.status}</Badge>
+        <Badge variant={p.status === 'open' ? 'success' : 'neutral'}>{enumLabel(p.status)}</Badge>
       ),
     },
     {
@@ -107,11 +110,11 @@ export default function PeriodsPage() {
               setClosingId(p.id)
             }}
           >
-            Close Period
+            {t('fin.periods.closePeriod')}
           </Button>
         ) : (
           <span style={{ fontSize: '12px', color: theme.textMuted }}>
-            {p.closed_at ? `Closed ${p.closed_at.slice(0, 10)}` : ''}
+            {p.closed_at ? t('fin.periods.closed', { closed_at: p.closed_at.slice(0, 10) }) : ''}
           </span>
         ),
     },
@@ -120,7 +123,7 @@ export default function PeriodsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
       <PageHeader
-        title="Accounting Periods"
+        title={t('fin.periods.accountingPeriods')}
         subtitle={`${periods.length} periods`}
         actions={
           <Button
@@ -130,7 +133,7 @@ export default function PeriodsPage() {
               setShowForm(true)
             }}
           >
-            New Period
+            {t('fin.periods.newPeriod')}
           </Button>
         }
       />
@@ -144,14 +147,14 @@ export default function PeriodsPage() {
         onClose={() => {
           setShowForm(false)
         }}
-        title="Create Accounting Period"
+        title={t('fin.periods.createAccountingPeriod')}
       >
         <form
           onSubmit={(...args: Parameters<typeof handleCreate>) => void handleCreate(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <Input
-            label="Period Name"
+            label={t('fin.periods.periodName')}
             value={form.name}
             onChange={(e) => {
               setForm((f) => ({ ...f, name: e.target.value }))
@@ -167,7 +170,7 @@ export default function PeriodsPage() {
             }}
           >
             <Input
-              label="Start Date"
+              label={t('fin.periods.startDate')}
               type="date"
               value={form.start_date}
               onChange={(e) => {
@@ -176,7 +179,7 @@ export default function PeriodsPage() {
               required
             />
             <Input
-              label="End Date"
+              label={t('fin.periods.endDate')}
               type="date"
               value={form.end_date}
               onChange={(e) => {
@@ -193,10 +196,10 @@ export default function PeriodsPage() {
                 setShowForm(false)
               }}
             >
-              Cancel
+              {t('fin.periods.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={creating}>
-              Create
+              {t('fin.periods.create')}
             </Button>
           </div>
         </form>
@@ -204,9 +207,9 @@ export default function PeriodsPage() {
 
       <ConfirmDialog
         open={!!closingId}
-        title="Close Accounting Period"
-        message="Once closed, no new journal entries can be posted to this period. This action cannot be undone."
-        confirmLabel="Close Period"
+        title={t('fin.periods.closeAccountingPeriod')}
+        message={t('fin.periods.onceClosedNoNewJournalEntries')}
+        confirmLabel={t('fin.periods.closePeriod')}
         variant="danger"
         onConfirm={(...args: Parameters<typeof handleClose>) => void handleClose(...args)}
         onCancel={() => {

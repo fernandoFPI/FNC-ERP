@@ -1,3 +1,5 @@
+import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -34,11 +36,11 @@ interface PaymentTermDetail extends PaymentTerm {
 }
 
 const DUE_LABELS: Record<string, string> = {
-  immediate: 'Immediate',
-  days: 'Days after invoice',
-  end_of_month: 'End of month',
-  end_of_next_month: 'End of next month',
-  retention: 'Retention (on release)',
+  get immediate() { return i18n.t('fin.terms.immediate', { defaultValue: "Immediate" }) },
+  get days() { return i18n.t('fin.terms.daysAfterInvoice', { defaultValue: "Days after invoice" }) },
+  get end_of_month() { return i18n.t('fin.terms.endOfMonth', { defaultValue: "End of month" }) },
+  get end_of_next_month() { return i18n.t('fin.terms.endOfNextMonth', { defaultValue: "End of next month" }) },
+  get retention() { return i18n.t('fin.terms.retentionOnRelease', { defaultValue: "Retention (on release)" }) },
 }
 
 const emptyLine = (): TermLine => ({
@@ -52,6 +54,7 @@ const emptyLine = (): TermLine => ({
 })
 
 export default function PaymentTermsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { can } = usePermission()
   const canEdit = can('finance.terms.edit', 'edit')
@@ -140,7 +143,7 @@ export default function PaymentTermsPage() {
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`Delete payment term "${name}"? This cannot be undone.`)) return
+    if (!confirm(t('fin.terms.deletePaymentTermThisCannotBe', { name }))) return
     try {
       await api.delete(`/finance/payment-terms/${id}`)
       void load()
@@ -190,7 +193,7 @@ export default function PaymentTermsPage() {
   const lineFields: LineItemField<TermLine>[] = [
     {
       key: 'description',
-      label: 'Description',
+      label: t('fin.terms.description'),
       width: '30%',
       render: (line, idx) => (
         <input
@@ -199,13 +202,13 @@ export default function PaymentTermsPage() {
           onChange={(e) => {
             updateLine(idx, { description: e.target.value })
           }}
-          placeholder={line.is_retention ? 'Retention' : `Installment ${idx + 1}`}
+          placeholder={line.is_retention ? t('fin.terms.retention') : t('fin.terms.installment', { value: idx + 1 })}
         />
       ),
     },
     {
       key: 'value_type',
-      label: 'Type',
+      label: t('fin.terms.type'),
       width: '80px',
       render: (line, idx) => (
         <select
@@ -216,13 +219,13 @@ export default function PaymentTermsPage() {
           }}
         >
           <option value="percent">%</option>
-          <option value="fixed">Fixed</option>
+          <option value="fixed">{t('fin.terms.fixed')}</option>
         </select>
       ),
     },
     {
       key: 'value',
-      label: 'Value',
+      label: t('fin.terms.value'),
       width: '80px',
       render: (line, idx) => (
         <input
@@ -237,7 +240,7 @@ export default function PaymentTermsPage() {
     },
     {
       key: 'due_type',
-      label: 'Due',
+      label: t('fin.terms.due'),
       width: '150px',
       render: (line, idx) => (
         <select
@@ -260,7 +263,7 @@ export default function PaymentTermsPage() {
     },
     {
       key: 'days',
-      label: 'Days',
+      label: t('fin.terms.days'),
       width: '65px',
       render: (line, idx) => (
         <input
@@ -276,7 +279,7 @@ export default function PaymentTermsPage() {
     },
     {
       key: 'is_retention',
-      label: 'Retention',
+      label: t('fin.terms.retention'),
       width: '70px',
       render: (line, idx) => (
         <input
@@ -296,12 +299,12 @@ export default function PaymentTermsPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Payment Terms"
-        subtitle="Define installment schedules and retention holdback rules"
+        title={t('fin.terms.paymentTerms')}
+        subtitle={t('fin.terms.defineInstallmentSchedulesAndRetentionHoldba')}
         actions={
           canEdit ? (
             <Button variant="primary" size="sm" onClick={openNew}>
-              + New Term
+              {t('fin.terms.newTerm')}
             </Button>
           ) : undefined
         }
@@ -309,21 +312,21 @@ export default function PaymentTermsPage() {
 
       {/* Terms List */}
       <div style={{ display: 'grid', gap: '12px' }}>
-        {loading && <p style={{ color: theme.textMuted, fontSize: '13px' }}>Loading...</p>}
+        {loading && <p style={{ color: theme.textMuted, fontSize: '13px' }}>{t('fin.terms.loading')}</p>}
         {!loading && !terms.length && (
           <Card padding="lg">
             <p style={{ color: theme.textMuted, textAlign: 'center', fontSize: '13px' }}>
-              No payment terms yet.{' '}
+              {t('fin.terms.noPaymentTermsYet')}{' '}
               {canEdit && (
                 <span style={{ color: theme.accent, cursor: 'pointer' }} onClick={openNew}>
-                  Create the first one →
+                  {t('fin.terms.createTheFirstOne')}
                 </span>
               )}
             </p>
           </Card>
         )}
-        {terms.map((t) => (
-          <Card key={t.id} padding="md">
+        {terms.map((tx) => (
+          <Card key={tx.id} padding="md">
             <div
               style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
             >
@@ -332,41 +335,39 @@ export default function PaymentTermsPage() {
                   style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}
                 >
                   <span style={{ fontWeight: 600, fontSize: '14px', color: theme.textPrimary }}>
-                    {t.name}
+                    {tx.name}
                   </span>
-                  {!t.is_active && <Badge variant="neutral">Inactive</Badge>}
-                  {Number(t.retention_pct) > 0 && (
-                    <Badge variant="warning">{t.retention_pct}% Retention</Badge>
+                  {!tx.is_active && <Badge variant="neutral">{t('fin.terms.inactive')}</Badge>}
+                  {Number(tx.retention_pct) > 0 && (
+                    <Badge variant="warning">{t('fin.terms.retention2', { retention_pct: tx.retention_pct })}</Badge>
                   )}
                 </div>
-                {t.note && (
+                {tx.note && (
                   <p style={{ fontSize: '12px', color: theme.textSecondary, margin: '0 0 8px' }}>
-                    {t.note}
+                    {tx.note}
                   </p>
                 )}
-                <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>
-                  {t.line_count} installment line{Number(t.line_count) !== 1 ? 's' : ''}
-                </p>
+                <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>{t('fin.terms.installmentLine', { count: Number(tx.line_count), line_count: tx.line_count })}</p>
               </div>
-              <div style={{ display: 'flex', gap: '6px', marginLeft: '16px' }}>
-                <Button variant="ghost" size="sm" onClick={() => void handlePreview(t.id)}>
-                  Preview
+              <div style={{ display: 'flex', gap: '6px', marginInlineStart: '16px' }}>
+                <Button variant="ghost" size="sm" onClick={() => void handlePreview(tx.id)}>
+                  {t('fin.terms.preview')}
                 </Button>
                 {canEdit && (
-                  <Button variant="secondary" size="sm" onClick={() => void openEdit(t.id)}>
-                    Edit
+                  <Button variant="secondary" size="sm" onClick={() => void openEdit(tx.id)}>
+                    {t('fin.terms.edit')}
                   </Button>
                 )}
                 {canEdit && (
-                  <Button variant="ghost" size="sm" onClick={() => void handleDelete(t.id, t.name)}>
-                    Delete
+                  <Button variant="ghost" size="sm" onClick={() => void handleDelete(tx.id, tx.name)}>
+                    {t('fin.terms.delete')}
                   </Button>
                 )}
               </div>
             </div>
 
             {/* Inline Preview */}
-            {previewId === t.id && schedule.length > 0 && (
+            {previewId === tx.id && schedule.length > 0 && (
               <div
                 style={{
                   marginTop: '12px',
@@ -382,7 +383,7 @@ export default function PaymentTermsPage() {
                     marginBottom: '10px',
                   }}
                 >
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>Preview for</span>
+                  <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.terms.previewFor')}</span>
                   <input
                     type="number"
                     value={previewAmount}
@@ -391,7 +392,7 @@ export default function PaymentTermsPage() {
                     }}
                     style={{ ...inputStyle, width: '100px' }}
                   />
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>on</span>
+                  <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.terms.on')}</span>
                   <input
                     type="date"
                     value={previewDate}
@@ -400,8 +401,8 @@ export default function PaymentTermsPage() {
                     }}
                     style={{ ...inputStyle, width: '130px' }}
                   />
-                  <Button variant="ghost" size="sm" onClick={() => void handlePreview(t.id)}>
-                    Recalculate
+                  <Button variant="ghost" size="sm" onClick={() => void handlePreview(tx.id)}>
+                    {t('fin.terms.recalculate')}
                   </Button>
                 </div>
                 <div
@@ -414,7 +415,7 @@ export default function PaymentTermsPage() {
                     border: `1px solid ${theme.border}`,
                   }}
                 >
-                  {['Description', 'Amount', 'Due Date', 'Type'].map((h) => (
+                  {[t('fin.terms.description'), t('fin.terms.amount'), t('fin.terms.dueDate'), t('fin.terms.type')].map((h) => (
                     <div
                       key={h}
                       style={{
@@ -461,13 +462,13 @@ export default function PaymentTermsPage() {
                         borderTop: `1px solid ${theme.border}`,
                       }}
                     >
-                      {row.due_date ?? 'On release'}
+                      {row.due_date ?? t('fin.terms.onRelease')}
                     </div>,
                     <div
                       key={`t${i}`}
                       style={{ padding: '6px 10px', borderTop: `1px solid ${theme.border}` }}
                     >
-                      {row.is_retention && <Badge variant="warning">Retention</Badge>}
+                      {row.is_retention && <Badge variant="warning">{t('fin.terms.retention')}</Badge>}
                     </div>,
                   ])}
                 </div>
@@ -500,7 +501,7 @@ export default function PaymentTermsPage() {
               }}
             >
               <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
-                {editingId ? 'Edit Payment Term' : 'New Payment Term'}
+                {editingId ? t('fin.terms.editPaymentTerm') : t('fin.terms.newPaymentTerm')}
               </h3>
               <Button
                 variant="ghost"
@@ -522,14 +523,14 @@ export default function PaymentTermsPage() {
               }}
             >
               <div>
-                <label style={labelStyle}>Term Name *</label>
+                <label style={labelStyle}>{t('fin.terms.termName')}</label>
                 <input
                   style={inputStyle}
                   value={form.name}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, name: e.target.value }))
                   }}
-                  placeholder="e.g. 30/60/10-Retention"
+                  placeholder={t('fin.terms.eG306010Retention')}
                 />
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '4px' }}>
@@ -550,18 +551,18 @@ export default function PaymentTermsPage() {
                       setForm((f) => ({ ...f, is_active: e.target.checked }))
                     }}
                   />
-                  Active
+                  {t('fin.terms.active')}
                 </label>
               </div>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Note / Description</label>
+                <label style={labelStyle}>{t('fin.terms.noteDescription')}</label>
                 <input
                   style={inputStyle}
                   value={form.note}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, note: e.target.value }))
                   }}
-                  placeholder="e.g. 30% upfront, 60% on delivery, 10% retention released on handover"
+                  placeholder={t('fin.terms.eG30Upfront60On')}
                 />
               </div>
             </div>
@@ -577,7 +578,7 @@ export default function PaymentTermsPage() {
                 letterSpacing: '0.05em',
               }}
             >
-              Installment Lines
+              {t('fin.terms.installmentLines')}
             </h4>
             <div style={{ marginBottom: '10px' }}>
               <LineItemEditor
@@ -612,7 +613,7 @@ export default function PaymentTermsPage() {
                       setForm((f) => ({ ...f, lines: [...f.lines, emptyLine()] }))
                     }}
                   >
-                    + Add Line
+                    {t('fin.terms.addLine')}
                   </Button>
                   {form.lines.some((l) => l.value_type === 'percent') && (
                     <span
@@ -621,9 +622,7 @@ export default function PaymentTermsPage() {
                         color: isValid ? '#22c55e' : '#ef4444',
                         fontFamily: 'monospace',
                       }}
-                    >
-                      Total: {pctTotal.toFixed(2)}% {isValid ? '✓' : '≠ 100%'}
-                    </span>
+                    >{t('fin.terms.total', { pctTotal: pctTotal.toFixed(2), value: isValid ? '✓' : '≠ 100%' })}</span>
                   )}
                 </div>
               )
@@ -637,7 +636,7 @@ export default function PaymentTermsPage() {
                   setShowModal(false)
                 }}
               >
-                Cancel
+                {t('fin.terms.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -645,7 +644,7 @@ export default function PaymentTermsPage() {
                 onClick={() => void handleSave()}
                 disabled={saving || !form.name.trim()}
               >
-                {saving ? 'Saving...' : 'Save Term'}
+                {saving ? t('fin.terms.saving') : t('fin.terms.saveTerm')}
               </Button>
             </div>
           </Card>

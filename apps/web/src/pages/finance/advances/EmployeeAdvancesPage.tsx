@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -62,6 +63,7 @@ const emptyForm = () => ({
 })
 
 export default function EmployeeAdvancesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { can } = usePermission()
@@ -142,8 +144,8 @@ export default function EmployeeAdvancesPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Employee Advances"
-        subtitle="Cash issued to employees ahead of spending, settled against receipts"
+        title={t('fin.advList.employeeAdvances')}
+        subtitle={t('fin.advList.cashIssuedToEmployeesAheadOf')}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button
@@ -153,7 +155,7 @@ export default function EmployeeAdvancesPage() {
                 navigate('/finance/advances/dashboard')
               }}
             >
-              Dashboard
+              {t('fin.advList.dashboard')}
             </Button>
             {canEdit && (
               <Button
@@ -163,7 +165,7 @@ export default function EmployeeAdvancesPage() {
                   setShowForm(true)
                 }}
               >
-                + New Advance
+                {t('fin.advList.newAdvance')}
               </Button>
             )}
           </div>
@@ -181,7 +183,7 @@ export default function EmployeeAdvancesPage() {
         >
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Pending Approval
+              {t('fin.advList.pendingApproval')}
             </p>
             <p style={{ fontSize: '22px', fontWeight: 700, color: '#3b82f6' }}>
               {summary.pending_count}
@@ -190,7 +192,7 @@ export default function EmployeeAdvancesPage() {
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Active Advances
+              {t('fin.advList.activeAdvances')}
             </p>
             <p style={{ fontSize: '22px', fontWeight: 700, color: theme.textSecondary }}>
               {summary.active_count}
@@ -198,7 +200,7 @@ export default function EmployeeAdvancesPage() {
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Outstanding
+              {t('fin.advList.totalOutstanding')}
             </p>
             <AmountDisplay
               amount={Number(summary.total_outstanding)}
@@ -209,7 +211,7 @@ export default function EmployeeAdvancesPage() {
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Fully Settled
+              {t('fin.advList.fullySettled')}
             </p>
             <p style={{ fontSize: '22px', fontWeight: 700, color: '#22c55e' }}>
               {summary.settled_count}
@@ -226,7 +228,7 @@ export default function EmployeeAdvancesPage() {
           }}
           style={{ ...inputStyle, width: 'auto' }}
         >
-          <option value="">All Statuses</option>
+          <option value="">{t('fin.advList.allStatuses')}</option>
           {[
             'draft',
             'pending_approval',
@@ -242,7 +244,7 @@ export default function EmployeeAdvancesPage() {
           ))}
         </select>
         <Button variant="ghost" size="sm" onClick={() => void load()}>
-          Refresh
+          {t('fin.advList.refresh')}
         </Button>
       </div>
 
@@ -250,12 +252,12 @@ export default function EmployeeAdvancesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
           <thead>
             <tr style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
-              {['Ref', 'Employee', 'Purpose', 'Amount', 'Outstanding', 'Status', ''].map((h) => (
+              {[t('fin.advList.ref'), t('fin.advList.employee2'), t('fin.advList.purpose'), t('fin.advList.amount2'), t('fin.advList.outstanding'), t('fin.advList.status'), ''].map((h) => (
                 <th
                   key={h}
                   style={{
                     padding: '9px 12px',
-                    textAlign: 'left',
+                    textAlign: 'start',
                     color: theme.textMuted,
                     fontWeight: 500,
                   }}
@@ -272,7 +274,7 @@ export default function EmployeeAdvancesPage() {
                   colSpan={7}
                   style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                 >
-                  Loading...
+                  {t('fin.advList.loading')}
                 </td>
               </tr>
             )}
@@ -282,7 +284,7 @@ export default function EmployeeAdvancesPage() {
                   colSpan={7}
                   style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                 >
-                  No employee advances found.
+                  {t('fin.advList.noEmployeeAdvancesFound')}
                 </td>
               </tr>
             )}
@@ -338,7 +340,7 @@ export default function EmployeeAdvancesPage() {
                       navigate(`/finance/advances/${a.id}`)
                     }}
                   >
-                    View
+                    {t('fin.advList.view')}
                   </Button>
                 </td>
               </tr>
@@ -369,7 +371,7 @@ export default function EmployeeAdvancesPage() {
                 marginBottom: '20px',
               }}
             >
-              <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>New Advance</h3>
+              <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>{t('fin.advList.newAdvance2')}</h3>
               <Button
                 variant="ghost"
                 size="sm"
@@ -383,7 +385,7 @@ export default function EmployeeAdvancesPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
-                <label style={labelStyle}>Employee *</label>
+                <label style={labelStyle}>{t('fin.advList.employee')}</label>
                 <select
                   style={inputStyle}
                   value={form.employee_id}
@@ -396,7 +398,7 @@ export default function EmployeeAdvancesPage() {
                     }))
                   }}
                 >
-                  <option value="">— Select employee —</option>
+                  <option value="">{t('fin.advList.selectEmployee')}</option>
                   {employees.map((em) => (
                     <option key={em.id} value={em.id}>
                       {em.first_name} {em.last_name}
@@ -406,7 +408,7 @@ export default function EmployeeAdvancesPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label style={labelStyle}>Amount *</label>
+                  <label style={labelStyle}>{t('fin.advList.amount')}</label>
                   <input
                     type="number"
                     min="0.01"
@@ -419,7 +421,7 @@ export default function EmployeeAdvancesPage() {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Currency</label>
+                  <label style={labelStyle}>{t('fin.advList.currency')}</label>
                   <select
                     style={inputStyle}
                     value={form.currency_code}
@@ -434,18 +436,18 @@ export default function EmployeeAdvancesPage() {
                 </div>
               </div>
               <div>
-                <label style={labelStyle}>Purpose</label>
+                <label style={labelStyle}>{t('fin.advList.purpose')}</label>
                 <input
                   style={inputStyle}
                   value={form.purpose}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, purpose: e.target.value }))
                   }}
-                  placeholder="e.g. Purchase electrical and plumbing materials"
+                  placeholder={t('fin.advList.eGPurchaseElectricalAndPlumbing')}
                 />
               </div>
               <div>
-                <label style={labelStyle}>Project</label>
+                <label style={labelStyle}>{t('fin.advList.project')}</label>
                 <select
                   style={inputStyle}
                   value={form.project_id}
@@ -453,7 +455,7 @@ export default function EmployeeAdvancesPage() {
                     setForm((f) => ({ ...f, project_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Not set —</option>
+                  <option value="">{t('fin.advList.notSet')}</option>
                   {projects.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.code} · {p.name}
@@ -462,12 +464,10 @@ export default function EmployeeAdvancesPage() {
                 </select>
               </div>
               <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>
-                Cash and advance-control accounts are resolved automatically from the employee and
-                currency. Cost center is set by finance when the advance is approved, once what it's
-                for is known.
+                {t('fin.advList.cashAndAdvanceControlAccountsAre')}
               </p>
               <div>
-                <label style={labelStyle}>Notes</label>
+                <label style={labelStyle}>{t('fin.advList.notes')}</label>
                 <input
                   style={inputStyle}
                   value={form.notes}
@@ -488,7 +488,7 @@ export default function EmployeeAdvancesPage() {
                   setShowForm(false)
                 }}
               >
-                Cancel
+                {t('fin.advList.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -496,7 +496,7 @@ export default function EmployeeAdvancesPage() {
                 onClick={() => void handleSave()}
                 disabled={saving || !form.employee_id || !form.amount || Number(form.amount) <= 0}
               >
-                {saving ? 'Creating...' : 'Create Advance'}
+                {saving ? t('fin.advList.creating') : t('fin.advList.createAdvance')}
               </Button>
             </div>
           </Card>

@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   FX_RATES_QUERY,
@@ -41,6 +43,7 @@ interface StalenessStatus {
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'GBP', 'AED', 'SAR']
 
 export default function FXRatesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [showForm, setShowForm] = useState(false)
@@ -85,7 +88,7 @@ export default function FXRatesPage() {
         },
         refetchQueries: [{ query: FX_RATES_QUERY, variables: {} }, { query: FX_STALENESS_QUERY }],
       })
-      addToast({ type: 'success', message: 'FX rate saved' })
+      addToast({ type: 'success', message: t('fin.fxRates.fxRateSaved') })
       setShowForm(false)
       setForm({
         from_currency: 'USD',
@@ -101,7 +104,7 @@ export default function FXRatesPage() {
   async function handleSync() {
     try {
       await triggerSync()
-      addToast({ type: 'success', message: 'FX sync triggered' })
+      addToast({ type: 'success', message: t('fin.fxRates.fxSyncTriggered') })
       setTimeout(() => void refetch(), 2000)
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -111,7 +114,7 @@ export default function FXRatesPage() {
   const rateColumns: Column<FXRate>[] = [
     {
       key: 'from_currency',
-      header: 'From',
+      header: t('fin.fxRates.from'),
       render: (r) => <Badge variant="accent">{r.from_currency}</Badge>,
     },
     {
@@ -121,7 +124,7 @@ export default function FXRatesPage() {
     },
     {
       key: 'rate',
-      header: 'Rate',
+      header: t('fin.fxRates.rate'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>
           {parseFloat(r.rate).toFixed(4)}
@@ -130,27 +133,27 @@ export default function FXRatesPage() {
     },
     {
       key: 'rate_date',
-      header: 'Date',
+      header: t('fin.fxRates.date'),
       render: (r) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{r.rate_date}</span>
       ),
     },
     {
       key: 'source',
-      header: 'Source',
-      render: (r) => <Badge variant="neutral">{r.source ?? 'manual'}</Badge>,
+      header: t('fin.fxRates.source'),
+      render: (r) => <Badge variant="neutral">{enumLabel(r.source ?? 'manual')}</Badge>,
     },
   ]
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
       <PageHeader
-        title="FX Rates"
-        subtitle="Exchange rate management"
+        title={t('fin.fxRates.fxRates')}
+        subtitle={t('fin.fxRates.exchangeRateManagement')}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="ghost" size="sm" onClick={(...args: Parameters<typeof handleSync>) => void handleSync(...args)} loading={syncing}>
-              Sync Rates
+              {t('fin.fxRates.syncRates')}
             </Button>
             <Button
               variant="primary"
@@ -159,7 +162,7 @@ export default function FXRatesPage() {
                 setShowForm(true)
               }}
             >
-              Add Rate
+              {t('fin.fxRates.addRate')}
             </Button>
           </div>
         }
@@ -212,7 +215,7 @@ export default function FXRatesPage() {
                   marginTop: '2px',
                 }}
               >
-                {p.ageHours != null ? `${Math.round(p.ageHours)}h ago` : 'no data'} · {p.message}
+                {p.ageHours != null ? t('fin.fxRates.hAgo', { value: Math.round(p.ageHours) }) : t('fin.fxRates.noData')} · {p.message}
               </div>
             </div>
           ))}
@@ -228,7 +231,7 @@ export default function FXRatesPage() {
         onClose={() => {
           setShowForm(false)
         }}
-        title="Add / Update FX Rate"
+        title={t('fin.fxRates.addUpdateFxRate')}
       >
         <form
           onSubmit={(...args: Parameters<typeof handleUpsert>) => void handleUpsert(...args)}
@@ -242,7 +245,7 @@ export default function FXRatesPage() {
             }}
           >
             <Select
-              label="From Currency"
+              label={t('fin.fxRates.fromCurrency')}
               value={form.from_currency}
               onChange={(e) => {
                 setForm((f) => ({ ...f, from_currency: e.target.value }))
@@ -255,7 +258,7 @@ export default function FXRatesPage() {
               ))}
             </Select>
             <Select
-              label="To Currency"
+              label={t('fin.fxRates.toCurrency')}
               value={form.to_currency}
               onChange={(e) => {
                 setForm((f) => ({ ...f, to_currency: e.target.value }))
@@ -276,7 +279,7 @@ export default function FXRatesPage() {
             }}
           >
             <Input
-              label="Rate"
+              label={t('fin.fxRates.rate')}
               type="number"
               step="0.0001"
               min="0"
@@ -287,7 +290,7 @@ export default function FXRatesPage() {
               required
             />
             <Input
-              label="Date"
+              label={t('fin.fxRates.date')}
               type="date"
               value={form.rate_date}
               onChange={(e) => {
@@ -304,10 +307,10 @@ export default function FXRatesPage() {
                 setShowForm(false)
               }}
             >
-              Cancel
+              {t('fin.fxRates.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={upserting}>
-              Save
+              {t('fin.fxRates.save')}
             </Button>
           </div>
         </form>

@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { TRIAL_BALANCE_QUERY } from '../../../graphql/finance'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -22,6 +24,7 @@ interface TBLine {
 }
 
 export default function TrialBalance() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
   const [queried, setQueried] = useState(false)
@@ -44,7 +47,7 @@ export default function TrialBalance() {
   const columns: Column<TBLine>[] = [
     {
       key: 'code',
-      header: 'Code',
+      header: t('fin.tb.code'),
       mobilePrimary: true,
       render: (r) => (
         <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>{r.code}</span>
@@ -52,18 +55,18 @@ export default function TrialBalance() {
     },
     {
       key: 'name',
-      header: 'Account Name',
+      header: t('fin.tb.accountName'),
       mobileSecondary: true,
       render: (r) => <span style={{ color: theme.textPrimary }}>{r.name}</span>,
     },
     {
       key: 'account_type',
-      header: 'Type',
-      render: (r) => <Badge variant="neutral">{r.account_type}</Badge>,
+      header: t('fin.tb.type'),
+      render: (r) => <Badge variant="neutral">{enumLabel(r.account_type)}</Badge>,
     },
     {
       key: 'total_debit',
-      header: 'Debit',
+      header: t('fin.tb.debit'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>
           {parseFloat(r.total_debit).toLocaleString()}
@@ -72,7 +75,7 @@ export default function TrialBalance() {
     },
     {
       key: 'total_credit',
-      header: 'Credit',
+      header: t('fin.tb.credit'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>
           {parseFloat(r.total_credit).toLocaleString()}
@@ -81,7 +84,7 @@ export default function TrialBalance() {
     },
     {
       key: 'balance',
-      header: 'Balance',
+      header: t('fin.tb.balance'),
       render: (r) => (
         <span
           style={{
@@ -97,12 +100,12 @@ export default function TrialBalance() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
-      <PageHeader title="Trial Balance" subtitle="As of date summary" />
+      <PageHeader title={t('fin.tb.trialBalance')} subtitle={t('fin.tb.asOfDateSummary')} />
 
       <Card style={{ marginTop: '20px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', gap: '12px', padding: '16px', alignItems: 'flex-end' }}>
           <Input
-            label="As of Date"
+            label={t('fin.tb.asOfDate')}
             type="date"
             value={asOfDate}
             onChange={(e) => {
@@ -110,7 +113,7 @@ export default function TrialBalance() {
             }}
           />
           <Button variant="primary" onClick={run} loading={loading}>
-            Run Report
+            {t('fin.tb.runReport')}
           </Button>
         </div>
       </Card>

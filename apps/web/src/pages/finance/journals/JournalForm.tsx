@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@apollo/client'
 import {
@@ -35,6 +36,7 @@ const emptyLine = (): JournalLine => ({
 })
 
 export default function JournalForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
@@ -78,7 +80,7 @@ export default function JournalForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!isBalanced) {
-      addToast({ type: 'error', message: 'Entry must be balanced (debits = credits)' })
+      addToast({ type: 'error', message: t('fin.jrnForm.entryMustBeBalancedDebitsCredits') })
       return
     }
     try {
@@ -101,7 +103,7 @@ export default function JournalForm() {
         variables: { input },
         refetchQueries: [{ query: JOURNAL_ENTRIES_QUERY, variables: {} }],
       })
-      addToast({ type: 'success', message: 'Journal entry created' })
+      addToast({ type: 'success', message: t('fin.jrnForm.journalEntryCreated') })
       navigate('/finance/journals')
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -111,7 +113,7 @@ export default function JournalForm() {
   const lineFields: LineItemField<JournalLine>[] = [
     {
       key: 'account_id',
-      label: 'Account',
+      label: t('fin.jrnForm.account'),
       render: (line, i) => (
         <Select
           value={line.account_id}
@@ -119,7 +121,7 @@ export default function JournalForm() {
             updateLine(i, 'account_id', e.target.value)
           }}
         >
-          <option value="">Select account…</option>
+          <option value="">{t('fin.jrnForm.selectAccount')}</option>
           {accountOptions.map((o: { value: string; label: string }) => (
             <option key={o.value} value={o.value}>
               {o.label}
@@ -130,7 +132,7 @@ export default function JournalForm() {
     },
     {
       key: 'description',
-      label: 'Description',
+      label: t('fin.jrnForm.description'),
       width: '160px',
       render: (line, i) => (
         <Input
@@ -138,13 +140,13 @@ export default function JournalForm() {
           onChange={(e) => {
             updateLine(i, 'description', e.target.value)
           }}
-          placeholder="Description"
+          placeholder={t('fin.jrnForm.description')}
         />
       ),
     },
     {
       key: 'debit',
-      label: 'Debit',
+      label: t('fin.jrnForm.debit'),
       width: '120px',
       render: (line, i) => (
         <Input
@@ -160,7 +162,7 @@ export default function JournalForm() {
     },
     {
       key: 'credit',
-      label: 'Credit',
+      label: t('fin.jrnForm.credit'),
       width: '120px',
       render: (line, i) => (
         <Input
@@ -179,8 +181,8 @@ export default function JournalForm() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
       <PageHeader
-        title="New Journal Entry"
-        subtitle="Create a manual journal entry"
+        title={t('fin.jrnForm.newJournalEntry')}
+        subtitle={t('fin.jrnForm.createAManualJournalEntry')}
         backPath="/finance/journals"
       />
 
@@ -196,7 +198,7 @@ export default function JournalForm() {
           >
             <div data-tour="journal-entry-date">
               <Input
-                label="Entry Date"
+                label={t('fin.jrnForm.entryDate')}
                 type="date"
                 value={entryDate}
                 onChange={(e) => {
@@ -207,13 +209,13 @@ export default function JournalForm() {
             </div>
             <div data-tour="journal-description">
               <Textarea
-                label="Description"
+                label={t('fin.jrnForm.description')}
                 value={description}
                 onChange={(e) => {
                   setDescription(e.target.value)
                 }}
                 rows={2}
-                placeholder="Purpose of this entry…"
+                placeholder={t('fin.jrnForm.purposeOfThisEntry')}
               />
             </div>
           </div>
@@ -229,7 +231,7 @@ export default function JournalForm() {
               footerRow={{
                 description: (
                   <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted }}>
-                    Totals
+                    {t('fin.jrnForm.totals')}
                   </span>
                 ),
                 debit: <AmountDisplay amount={totalDebit} currency="IQD" />,
@@ -239,10 +241,7 @@ export default function JournalForm() {
           </div>
 
           {!isBalanced && totalDebit + totalCredit > 0 && (
-            <div style={{ color: theme.danger, fontSize: '13px', marginTop: '8px' }}>
-              Entry is not balanced. Difference:{' '}
-              {Math.abs(totalDebit - totalCredit).toLocaleString()}
-            </div>
+            <div style={{ color: theme.danger, fontSize: '13px', marginTop: '8px' }}>{t('fin.jrnForm.entryIsNotBalancedDifference', { value: Math.abs(totalDebit - totalCredit).toLocaleString() })}</div>
           )}
 
           <div style={{ marginTop: '12px' }}>
@@ -253,7 +252,7 @@ export default function JournalForm() {
               type="button"
               onClick={addLine}
             >
-              + Add Line
+              {t('fin.jrnForm.addLine')}
             </Button>
           </div>
         </Card>
@@ -268,7 +267,7 @@ export default function JournalForm() {
               navigate('/finance/journals')
             }}
           >
-            Cancel
+            {t('fin.jrnForm.cancel')}
           </Button>
           <Button
             data-tour="create-entry-btn"
@@ -277,7 +276,7 @@ export default function JournalForm() {
             loading={loading}
             disabled={!isBalanced}
           >
-            Create Entry
+            {t('fin.jrnForm.createEntry')}
           </Button>
         </div>
       </form>

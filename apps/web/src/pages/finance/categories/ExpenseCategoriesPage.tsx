@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
@@ -51,6 +52,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export default function ExpenseCategoriesPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const { can } = usePermission()
@@ -78,7 +80,7 @@ export default function ExpenseCategoriesPage() {
       setItems(Array.isArray(catRes.data) ? catRes.data : [])
       setGlAccounts(Array.isArray(glRes.data) ? glRes.data : [])
     } catch {
-      addToast({ type: 'error', message: 'Failed to load expense categories' })
+      addToast({ type: 'error', message: t('fin.expCats.failedToLoadExpenseCategories') })
     } finally {
       setLoading(false)
     }
@@ -105,7 +107,7 @@ export default function ExpenseCategoriesPage() {
 
   async function handleSave() {
     if (!form.name.trim()) {
-      addToast({ type: 'error', message: 'Name is required' })
+      addToast({ type: 'error', message: t('fin.expCats.nameIsRequired') })
       return
     }
     setSaving(true)
@@ -117,19 +119,19 @@ export default function ExpenseCategoriesPage() {
           is_project_related: form.is_project_related,
           is_active: editing.is_active,
         })
-        addToast({ type: 'success', message: 'Category updated' })
+        addToast({ type: 'success', message: t('fin.expCats.categoryUpdated') })
       } else {
         await api.post('/finance/expense-claims/categories', {
           name: form.name,
           gl_account_id: form.gl_account_id || undefined,
           is_project_related: form.is_project_related,
         })
-        addToast({ type: 'success', message: 'Category created' })
+        addToast({ type: 'success', message: t('fin.expCats.categoryCreated') })
       }
       setModalOpen(false)
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Save failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.expCats.saveFailed')) })
     } finally {
       setSaving(false)
     }
@@ -147,11 +149,11 @@ export default function ExpenseCategoriesPage() {
         is_project_related: cat.is_project_related,
         is_active: false,
       })
-      addToast({ type: 'success', message: 'Category deactivated' })
+      addToast({ type: 'success', message: t('fin.expCats.categoryDeactivated') })
       setDeactivatingId(null)
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Deactivate failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.expCats.deactivateFailed')) })
     } finally {
       setDeactivateLoading(false)
     }
@@ -166,17 +168,17 @@ export default function ExpenseCategoriesPage() {
   const columns: Column<Category>[] = [
     {
       key: 'name',
-      header: 'Name',
+      header: t('fin.expCats.name'),
       mobilePrimary: true,
       render: (c) => <span style={{ color: theme.textPrimary }}>{c.name}</span>,
     },
     {
       key: 'is_project_related',
-      header: 'Requires project',
+      header: t('fin.expCats.requiresProject'),
       render: (c) =>
         c.is_project_related ? (
           <Badge variant="warning" size="sm">
-            Required
+            {t('fin.expCats.required')}
           </Badge>
         ) : (
           <span style={{ color: theme.textMuted, fontSize: '11px' }}>—</span>
@@ -184,7 +186,7 @@ export default function ExpenseCategoriesPage() {
     },
     {
       key: 'gl_account_id',
-      header: 'Default GL account',
+      header: t('fin.expCats.defaultGlAccount'),
       mobileSecondary: true,
       render: (c) =>
         c.account_code ? (
@@ -192,21 +194,21 @@ export default function ExpenseCategoriesPage() {
             {c.account_code} · {c.account_name}
           </span>
         ) : (
-          <span style={{ color: theme.textMuted, fontSize: '11px' }}>Not set</span>
+          <span style={{ color: theme.textMuted, fontSize: '11px' }}>{t('fin.expCats.notSet')}</span>
         ),
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('fin.expCats.status'),
       render: (c) => (
         <Badge variant={c.is_active ? 'success' : 'neutral'} size="sm">
-          {c.is_active ? 'Active' : 'Inactive'}
+          {c.is_active ? t('fin.expCats.active') : t('fin.expCats.inactive')}
         </Badge>
       ),
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: t('fin.expCats.actions'),
       render: (c) => (
         <div style={{ display: 'flex', gap: '6px' }}>
           {canEdit && (
@@ -217,7 +219,7 @@ export default function ExpenseCategoriesPage() {
                 openEdit(c)
               }}
             >
-              Edit
+              {t('fin.expCats.edit')}
             </Button>
           )}
           {canEdit && c.is_active && (
@@ -228,7 +230,7 @@ export default function ExpenseCategoriesPage() {
                 setDeactivatingId(c.id)
               }}
             >
-              Deactivate
+              {t('fin.expCats.deactivate')}
             </Button>
           )}
         </div>
@@ -239,12 +241,12 @@ export default function ExpenseCategoriesPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
-        title="Expense Categories"
-        subtitle="Used when settling expense claims, petty cash, and employee advances"
+        title={t('fin.expCats.expenseCategories')}
+        subtitle={t('fin.expCats.usedWhenSettlingExpenseClaimsPetty')}
         actions={
           canEdit ? (
             <Button variant="primary" size="sm" onClick={openCreate}>
-              New category
+              {t('fin.expCats.newCategory')}
             </Button>
           ) : undefined
         }
@@ -266,7 +268,7 @@ export default function ExpenseCategoriesPage() {
             onChange={(e) => {
               setSearch(e.target.value)
             }}
-            placeholder="Search name…"
+            placeholder={t('fin.expCats.searchName')}
             style={{
               flex: 1,
               minWidth: '160px',
@@ -295,7 +297,7 @@ export default function ExpenseCategoriesPage() {
                 setActiveOnly(e.target.checked)
               }}
             />
-            Active only
+            {t('fin.expCats.activeOnly')}
           </label>
         </div>
         <Table
@@ -303,7 +305,7 @@ export default function ExpenseCategoriesPage() {
           data={visible}
           rowKey="id"
           loading={loading}
-          emptyMessage="No expense categories found"
+          emptyMessage={t('fin.expCats.noExpenseCategoriesFound')}
           getRowStyle={(c) => (c.is_active ? {} : { opacity: 0.5 })}
         />
       </Card>
@@ -313,15 +315,15 @@ export default function ExpenseCategoriesPage() {
         onClose={() => {
           setModalOpen(false)
         }}
-        title={editing ? 'Edit category' : 'New category'}
+        title={editing ? t('fin.expCats.editCategory') : t('fin.expCats.newCategory')}
       >
-        <Field label="Name *">
+        <Field label={t('fin.expCats.name2')}>
           <input
             value={form.name}
             onChange={(e) => {
               setForm((p) => ({ ...p, name: e.target.value }))
             }}
-            placeholder="Site Materials"
+            placeholder={t('fin.expCats.siteMaterials')}
             style={{
               width: '100%',
               padding: '7px 10px',
@@ -333,21 +335,20 @@ export default function ExpenseCategoriesPage() {
             }}
           />
         </Field>
-        <Field label="Default GL account (optional)">
+        <Field label={t('fin.expCats.defaultGlAccountOptional')}>
           <SearchableSelect
             value={form.gl_account_id}
             onChange={(v) => {
               setForm((p) => ({ ...p, gl_account_id: v }))
             }}
-            placeholder="Not set"
+            placeholder={t('fin.expCats.notSet')}
             options={glAccounts.map((a) => ({ value: a.id, label: `${a.code} · ${a.name}` }))}
           />
           <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-            Pre-fills the GL account when this category is picked, but can still be changed per
-            line.
+            {t('fin.expCats.preFillsTheGlAccountWhen')}
           </div>
         </Field>
-        <Field label="Requires a project">
+        <Field label={t('fin.expCats.requiresAProject')}>
           <label
             style={{
               display: 'flex',
@@ -365,7 +366,7 @@ export default function ExpenseCategoriesPage() {
                 setForm((p) => ({ ...p, is_project_related: e.target.checked }))
               }}
             />
-            Lines using this category must be tagged with a project
+            {t('fin.expCats.linesUsingThisCategoryMustBe')}
           </label>
         </Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
@@ -376,10 +377,10 @@ export default function ExpenseCategoriesPage() {
               setModalOpen(false)
             }}
           >
-            Cancel
+            {t('fin.expCats.cancel')}
           </Button>
           <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)} disabled={saving}>
-            {saving ? 'Saving…' : editing ? 'Update' : 'Create'}
+            {saving ? t('fin.expCats.saving') : editing ? t('fin.expCats.update') : t('fin.expCats.create')}
           </Button>
         </div>
       </Modal>
@@ -390,9 +391,9 @@ export default function ExpenseCategoriesPage() {
           setDeactivatingId(null)
         }}
         onConfirm={(...args: Parameters<typeof handleDeactivate>) => void handleDeactivate(...args)}
-        title="Deactivate category"
-        message="This will deactivate the category. It will no longer appear in dropdowns for new lines. Existing entries are unaffected."
-        confirmLabel="Deactivate"
+        title={t('fin.expCats.deactivateCategory')}
+        message={t('fin.expCats.thisWillDeactivateTheCategoryIt')}
+        confirmLabel={t('fin.expCats.deactivate')}
         loading={deactivateLoading}
       />
     </div>

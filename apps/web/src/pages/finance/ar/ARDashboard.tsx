@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useCallback } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useCompanyStore } from '../../../store/companyStore'
@@ -73,6 +74,7 @@ function AgingBar({
   total: number
   color: string
 }) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const pct = total > 0 ? Math.min((amount / total) * 100, 100) : 0
   return (
@@ -87,7 +89,7 @@ function AgingBar({
       >
         <span style={{ color: theme.textSecondary }}>{label}</span>
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
-          IQD {fmtAmt(amount)} &nbsp;
+          {t('fin.arDash.iqd3')} {fmtAmt(amount)} &nbsp;
           <span style={{ color: theme.textMuted }}>({pct.toFixed(0)}%)</span>
         </span>
       </div>
@@ -114,27 +116,27 @@ function AgingBar({
 }
 
 function DaysCell({ days }: { days: number }) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   if (days < -1)
     return (
-      <span style={{ color: theme.textMuted, fontSize: '12px' }}>Due in {Math.abs(days)}d</span>
+      <span style={{ color: theme.textMuted, fontSize: '12px' }}>{t('fin.arDash.dueInD', { value: Math.abs(days) })}</span>
     )
   if (days === 0)
     return (
-      <span style={{ color: theme.warning, fontSize: '12px', fontWeight: 500 }}>Due today</span>
+      <span style={{ color: theme.warning, fontSize: '12px', fontWeight: 500 }}>{t('fin.arDash.dueToday')}</span>
     )
   if (days <= 30)
     return (
-      <span style={{ color: theme.warning, fontSize: '12px', fontWeight: 500 }}>
-        {days}d overdue
-      </span>
+      <span style={{ color: theme.warning, fontSize: '12px', fontWeight: 500 }}>{t('fin.arDash.dOverdue', { days })}</span>
     )
   return (
-    <span style={{ color: theme.danger, fontSize: '12px', fontWeight: 600 }}>{days}d overdue</span>
+    <span style={{ color: theme.danger, fontSize: '12px', fontWeight: 600 }}>{t('fin.arDash.dOverdue', { days })}</span>
   )
 }
 
 export default function ARDashboard() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
@@ -165,7 +167,7 @@ export default function ARDashboard() {
       setByClient(clientRes.data)
       setWhtRecoverable(whtRes.data.wht_recoverable)
     } catch {
-      addToast({ type: 'error', message: 'Failed to load AR data' })
+      addToast({ type: 'error', message: t('fin.arDash.failedToLoadArData') })
     } finally {
       setLoading(false)
     }
@@ -258,13 +260,13 @@ export default function ARDashboard() {
   const byClientColumns: Column<ARByClient>[] = [
     {
       key: 'client_name',
-      header: 'Client',
+      header: t('fin.arDash.client'),
       mobilePrimary: true,
       render: (c) => c.client_name,
     },
     {
       key: 'total_outstanding',
-      header: 'Outstanding',
+      header: t('fin.arDash.outstanding'),
       mobilePriority: 1,
       render: (c) => (
         <AmountDisplay amount={parseFloat(c.total_outstanding)} currency="IQD" size="sm" />
@@ -272,7 +274,7 @@ export default function ARDashboard() {
     },
     {
       key: 'overdue_count',
-      header: 'Overdue',
+      header: t('fin.arDash.overdue'),
       mobilePriority: 2,
       render: (c) =>
         c.overdue_count > 0 ? (
@@ -285,7 +287,7 @@ export default function ARDashboard() {
     },
     {
       key: 'oldest_due_date',
-      header: 'Oldest due',
+      header: t('fin.arDash.oldestDue'),
       mobilePriority: 3,
       render: (c) => (
         <span
@@ -299,7 +301,7 @@ export default function ARDashboard() {
     },
     {
       key: 'invoice_count',
-      header: 'Open',
+      header: t('fin.arDash.open'),
       mobilePriority: 4,
       render: (c) => c.invoice_count,
     },
@@ -308,7 +310,7 @@ export default function ARDashboard() {
   const invoiceColumns: Column<ARInvoice>[] = [
     {
       key: 'invoice_number',
-      header: 'Invoice #',
+      header: t('fin.arDash.invoice'),
       mobilePrimary: true,
       render: (inv) => (
         <span style={{ fontFamily: 'monospace', color: theme.accent }}>{inv.invoice_number}</span>
@@ -316,13 +318,13 @@ export default function ARDashboard() {
     },
     {
       key: 'client_name',
-      header: 'Client',
+      header: t('fin.arDash.client'),
       mobileSecondary: true,
       render: (inv) => inv.client_name,
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('fin.arDash.status'),
       mobilePriority: 1,
       render: (inv) => (
         <Badge variant={statusVariant(inv.status)} size="sm">
@@ -332,7 +334,7 @@ export default function ARDashboard() {
     },
     {
       key: 'outstanding',
-      header: 'Outstanding',
+      header: t('fin.arDash.outstanding'),
       mobilePriority: 2,
       render: (inv) => (
         <AmountDisplay
@@ -344,13 +346,13 @@ export default function ARDashboard() {
     },
     {
       key: 'days_overdue',
-      header: 'Days',
+      header: t('fin.arDash.days'),
       mobilePriority: 3,
       render: (inv) => <DaysCell days={inv.days_overdue} />,
     },
     {
       key: 'source_type',
-      header: 'Type',
+      header: t('fin.arDash.type'),
       mobilePriority: 4,
       render: (inv) => (
         <Badge variant={inv.source_type === 'project' ? 'accent' : 'warning'} size="sm">
@@ -360,7 +362,7 @@ export default function ARDashboard() {
     },
     {
       key: 'due_date',
-      header: 'Due',
+      header: t('fin.arDash.due'),
       mobilePriority: 5,
       render: (inv) => (
         <span style={{ color: inv.days_overdue > 0 ? theme.danger : theme.textMuted }}>
@@ -380,40 +382,40 @@ export default function ARDashboard() {
   return (
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1600px' }}>
       <PageHeader
-        title="Accounts Receivable"
-        subtitle={`${activeCompany?.name ?? ''} · as of today`}
+        title={t('fin.arDash.accountsReceivable')}
+        subtitle={t('fin.arDash.asOfToday', { value: activeCompany?.name ?? '' })}
       />
 
       {/* KPI row */}
       <Grid cols={5} tabletCols={3} phoneCols={2} gap={14} style={{ marginBottom: '24px' }}>
         {[
           {
-            label: 'Total Outstanding',
+            label: t('fin.arDash.totalOutstanding'),
             value: `IQD ${fmtAmt(totalOutstanding)}`,
-            sub: `IQD ${fmtAmt(collectedThisMonth)} collected this month`,
+            sub: t('fin.arDash.iqdCollectedThisMonth', { amt: fmtAmt(collectedThisMonth) }),
             color: theme.info,
           },
           {
-            label: 'Open Invoices',
+            label: t('fin.arDash.openInvoices'),
             value: `${s?.open_count ?? 0}`,
             sub: s?.overdue_count ? `${s.overdue_count} overdue` : undefined,
             subDanger: (s?.overdue_count ?? 0) > 0,
           },
           {
-            label: 'Overdue Amount',
+            label: t('fin.arDash.overdueAmount'),
             value: `IQD ${fmtAmt(b31 + b61 + b90)}`,
-            sub: `across ${s?.overdue_count ?? 0} invoices`,
+            sub: t('fin.arDash.acrossInvoices', { value: s?.overdue_count ?? 0 }),
             color: b31 + b61 + b90 > 0 ? theme.danger : theme.textMuted,
           },
           {
-            label: 'Collected This Month',
+            label: t('fin.arDash.collectedThisMonth'),
             value: `IQD ${fmtAmt(collectedThisMonth)}`,
             color: theme.success,
           },
           {
-            label: 'WHT Recoverable YTD',
+            label: t('fin.arDash.whtRecoverableYtd'),
             value: `IQD ${fmtAmt(whtRecoverable)}`,
-            sub: 'Client-withheld WHT this year',
+            sub: t('fin.arDash.clientWithheldWhtThisYear'),
             color: theme.accent,
           },
         ].map((kpi, i) => (
@@ -471,32 +473,32 @@ export default function ARDashboard() {
               marginBottom: '16px',
             }}
           >
-            Aging analysis
+            {t('fin.arDash.agingAnalysis')}
           </h3>
           {loading ? (
             <div className="skeleton" style={{ height: 120 }} />
           ) : (
             <>
               <AgingBar
-                label="0-30 days (current)"
+                label={t('fin.arDash.030DaysCurrent')}
                 amount={b0}
                 total={totalOutstanding}
                 color={theme.success}
               />
               <AgingBar
-                label="31-60 days"
+                label={t('fin.arDash.3160Days')}
                 amount={b31}
                 total={totalOutstanding}
                 color={theme.warning}
               />
               <AgingBar
-                label="61-90 days"
+                label={t('fin.arDash.6190Days')}
                 amount={b61}
                 total={totalOutstanding}
                 color={theme.danger}
               />
               <AgingBar
-                label="Over 90 days"
+                label={t('fin.arDash.over90Days')}
                 amount={b90}
                 total={totalOutstanding}
                 color="#dc2626"
@@ -506,12 +508,12 @@ export default function ARDashboard() {
                   borderTop: `1px solid ${theme.border}`,
                   paddingTop: '10px',
                   marginTop: '8px',
-                  textAlign: 'right',
+                  textAlign: 'end',
                   fontSize: '13px',
                   color: theme.textSecondary,
                 }}
               >
-                <strong>IQD {fmtAmt(totalOutstanding)}</strong> total outstanding
+                <strong>{t('fin.arDash.iqd', { amt: fmtAmt(totalOutstanding) })}</strong> total outstanding
               </div>
             </>
           )}
@@ -526,7 +528,7 @@ export default function ARDashboard() {
               marginBottom: '16px',
             }}
           >
-            By source
+            {t('fin.arDash.bySource')}
           </h3>
           {loading ? (
             <div className="skeleton" style={{ height: 120 }} />
@@ -573,11 +575,9 @@ export default function ARDashboard() {
                         display: 'inline-block',
                       }}
                     />
-                    Project invoices
+                    {t('fin.arDash.projectInvoices')}
                   </span>
-                  <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
-                    IQD {fmtAmt(projectTotal)} · {projectInvs.length}
-                  </span>
+                  <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{t('fin.arDash.iqd2', { amt: fmtAmt(projectTotal), length: projectInvs.length })}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -590,11 +590,9 @@ export default function ARDashboard() {
                         display: 'inline-block',
                       }}
                     />
-                    Rental invoices
+                    {t('fin.arDash.rentalInvoices')}
                   </span>
-                  <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
-                    IQD {fmtAmt(rentalTotal)} · {rentalInvs.length}
-                  </span>
+                  <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{t('fin.arDash.iqd2', { amt: fmtAmt(rentalTotal), length: rentalInvs.length })}</span>
                 </div>
               </div>
             </>
@@ -613,12 +611,12 @@ export default function ARDashboard() {
               marginBottom: '14px',
             }}
           >
-            By client
+            {t('fin.arDash.byClient')}
           </h3>
           {loading ? (
             <div className="skeleton" style={{ height: 200 }} />
           ) : byClient.length === 0 ? (
-            <EmptyState message="No outstanding receivables" />
+            <EmptyState message={t('fin.arDash.noOutstandingReceivables')} />
           ) : (
             <div>
               <Table
@@ -644,7 +642,7 @@ export default function ARDashboard() {
                     setSelectedClient('')
                   }}
                 >
-                  Clear filter ×
+                  {t('fin.arDash.clearFilter')}
                 </p>
               )}
             </div>
@@ -661,10 +659,10 @@ export default function ARDashboard() {
             }}
           >
             <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-              Outstanding invoices
+              {t('fin.arDash.outstandingInvoices')}
             </h3>
             <Button variant="ghost" size="sm" onClick={exportCSV}>
-              Export CSV
+              {t('fin.arDash.exportCsv')}
             </Button>
           </div>
 
@@ -675,7 +673,7 @@ export default function ARDashboard() {
               onChange={(e) => {
                 setSearch(e.target.value)
               }}
-              placeholder="Search invoice # or client…"
+              placeholder={t('fin.arDash.searchInvoiceOrClient')}
               style={{
                 flex: 1,
                 minWidth: '140px',
@@ -693,10 +691,10 @@ export default function ARDashboard() {
                 onChange={(v) => {
                   setSourceFilter(v)
                 }}
-                placeholder="All sources"
+                placeholder={t('fin.arDash.allSources')}
                 options={[
-                  { value: 'project', label: 'Project' },
-                  { value: 'rental', label: 'Rental' },
+                  { value: 'project', label: t('fin.arDash.project') },
+                  { value: 'rental', label: t('fin.arDash.rental') },
                 ]}
               />
             </div>
@@ -717,14 +715,14 @@ export default function ARDashboard() {
                   setOverdueOnly(e.target.checked)
                 }}
               />
-              Overdue only
+              {t('fin.arDash.overdueOnly')}
             </label>
           </div>
 
           {loading ? (
             <div className="skeleton" style={{ height: 200 }} />
           ) : filteredInvoices.length === 0 ? (
-            <EmptyState message="No invoices found" />
+            <EmptyState message={t('fin.arDash.noInvoicesFound')} />
           ) : (
             <div>
               <Table
@@ -744,7 +742,7 @@ export default function ARDashboard() {
                     marginTop: '12px',
                   }}
                 >
-                  <span style={{ fontSize: '12px', color: theme.textMuted }}>{total} total</span>
+                  <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('fin.arDash.total', { total })}</span>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <Button
                       variant="ghost"
@@ -754,7 +752,7 @@ export default function ARDashboard() {
                         setPage((p) => p - 1)
                       }}
                     >
-                      Prev
+                      {t('fin.arDash.prev')}
                     </Button>
                     <Button
                       variant="ghost"
@@ -764,7 +762,7 @@ export default function ARDashboard() {
                         setPage((p) => p + 1)
                       }}
                     >
-                      Next
+                      {t('fin.arDash.next')}
                     </Button>
                   </div>
                 </div>

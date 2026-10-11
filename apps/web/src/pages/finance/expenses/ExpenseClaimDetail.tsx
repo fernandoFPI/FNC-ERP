@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -100,6 +102,7 @@ const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | '
 const FLOW = ['draft', 'submitted', 'approved', 'audited', 'posted', 'paid']
 
 export default function ExpenseClaimDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const navigate = useNavigate()
@@ -238,12 +241,12 @@ export default function ExpenseClaimDetail() {
   async function saveEdit() {
     if (!id || !claim) return
     if (editLines.length === 0) {
-      setEditError('At least one line is required')
+      setEditError(t('fin.expDetail.atLeastOneLineIsRequired'))
       return
     }
     for (const l of editLines) {
       if (!l.expense_date || !l.amount || isNaN(parseFloat(l.amount)) || parseFloat(l.amount) <= 0) {
-        setEditError('Every line needs a date and a positive amount')
+        setEditError(t('fin.expDetail.everyLineNeedsADateAnd'))
         return
       }
     }
@@ -269,7 +272,7 @@ export default function ExpenseClaimDetail() {
       void load()
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: { error?: { message?: string } } } }
-      setEditError(apiError.response?.data?.error?.message ?? 'Could not save changes')
+      setEditError(apiError.response?.data?.error?.message ?? t('fin.expDetail.couldNotSaveChanges'))
     } finally {
       setSavingEdit(false)
     }
@@ -296,11 +299,11 @@ export default function ExpenseClaimDetail() {
   async function submitPostPayment() {
     if (!id) return
     if (postPaymentSource === 'petty_cash' && !selectedFloatId) {
-      setPostPaymentError('Select a petty cash float')
+      setPostPaymentError(t('fin.expDetail.selectAPettyCashFloat'))
       return
     }
     if (postPaymentSource === 'advance' && !selectedAdvanceId) {
-      setPostPaymentError('Select which advance to settle against')
+      setPostPaymentError(t('fin.expDetail.selectWhichAdvanceToSettleAgainst'))
       return
     }
     setActing(true)
@@ -315,7 +318,7 @@ export default function ExpenseClaimDetail() {
       void load()
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: { error?: { message?: string } } } }
-      setPostPaymentError(apiError.response?.data?.error?.message ?? 'Could not post payment')
+      setPostPaymentError(apiError.response?.data?.error?.message ?? t('fin.expDetail.couldNotPostPayment'))
     } finally {
       setActing(false)
     }
@@ -333,8 +336,8 @@ export default function ExpenseClaimDetail() {
     boxSizing: 'border-box' as const,
   }
 
-  if (loading) return <div style={{ padding: '24px', color: theme.textMuted }}>Loading...</div>
-  if (!claim) return <div style={{ padding: '24px', color: theme.textMuted }}>Claim not found.</div>
+  if (loading) return <div style={{ padding: '24px', color: theme.textMuted }}>{t('fin.expDetail.loading')}</div>
+  if (!claim) return <div style={{ padding: '24px', color: theme.textMuted }}>{t('fin.expDetail.claimNotFound')}</div>
 
   const stepIdx = FLOW.indexOf(claim.status)
 
@@ -345,7 +348,7 @@ export default function ExpenseClaimDetail() {
         subtitle={`${claim.employee_name} · ${claim.currency_code}`}
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <Badge variant={STATUS_BADGE[claim.status] ?? 'neutral'}>{claim.status}</Badge>
+            <Badge variant={STATUS_BADGE[claim.status] ?? 'neutral'}>{enumLabel(claim.status)}</Badge>
             <Button
               variant="ghost"
               size="sm"
@@ -353,7 +356,7 @@ export default function ExpenseClaimDetail() {
                 setShowPrintModal(true)
               }}
             >
-              Print
+              {t('fin.expDetail.print')}
             </Button>
             <Button
               variant="ghost"
@@ -362,12 +365,12 @@ export default function ExpenseClaimDetail() {
                 navigate(-1)
               }}
             >
-              ← Back
+              {t('fin.expDetail.back')}
             </Button>
             {canEdit && claim.status === 'draft' && !isEditing && (
               <>
                 <Button variant="ghost" size="sm" onClick={startEdit}>
-                  Edit
+                  {t('fin.expDetail.edit')}
                 </Button>
                 <Button
                   variant="primary"
@@ -375,14 +378,14 @@ export default function ExpenseClaimDetail() {
                   onClick={() => void act('submit')}
                   disabled={acting}
                 >
-                  Submit for Approval
+                  {t('fin.expDetail.submitForApproval')}
                 </Button>
               </>
             )}
             {isEditing && (
               <>
                 <Button variant="ghost" size="sm" onClick={cancelEdit} disabled={savingEdit}>
-                  Cancel
+                  {t('fin.expDetail.cancel')}
                 </Button>
                 <Button
                   variant="primary"
@@ -390,7 +393,7 @@ export default function ExpenseClaimDetail() {
                   onClick={() => void saveEdit()}
                   disabled={savingEdit}
                 >
-                  Save Changes
+                  {t('fin.expDetail.saveChanges')}
                 </Button>
               </>
             )}
@@ -402,7 +405,7 @@ export default function ExpenseClaimDetail() {
                   setShowReject(true)
                 }}
               >
-                Reject
+                {t('fin.expDetail.reject')}
               </Button>
             )}
             {claim.status === 'submitted' && canApprove && (
@@ -412,7 +415,7 @@ export default function ExpenseClaimDetail() {
                 onClick={() => void act('approve')}
                 disabled={acting}
               >
-                Approve
+                {t('fin.expDetail.approve')}
               </Button>
             )}
             {claim.status === 'approved' && canAudit && (
@@ -425,7 +428,7 @@ export default function ExpenseClaimDetail() {
                   }}
                   disabled={acting}
                 >
-                  Fail Audit
+                  {t('fin.expDetail.failAudit')}
                 </Button>
                 <Button
                   variant="primary"
@@ -433,7 +436,7 @@ export default function ExpenseClaimDetail() {
                   onClick={() => void act('pass-audit')}
                   disabled={acting}
                 >
-                  Pass Audit
+                  {t('fin.expDetail.passAudit')}
                 </Button>
               </>
             )}
@@ -444,7 +447,7 @@ export default function ExpenseClaimDetail() {
                 onClick={() => void openPostPayment()}
                 disabled={acting}
               >
-                Decide Funding & Post
+                {t('fin.expDetail.decideFundingPost')}
               </Button>
             )}
             {canApprove && claim.status === 'posted' && (
@@ -454,7 +457,7 @@ export default function ExpenseClaimDetail() {
                 onClick={() => void act('mark-paid')}
                 disabled={acting}
               >
-                Mark as Paid
+                {t('fin.expDetail.markAsPaid')}
               </Button>
             )}
           </div>
@@ -526,8 +529,8 @@ export default function ExpenseClaimDetail() {
           void skip
         })}
         {claim.status === 'rejected' && (
-          <div style={{ marginLeft: '12px' }}>
-            <Badge variant="danger">Rejected</Badge>
+          <div style={{ marginInlineStart: '12px' }}>
+            <Badge variant="danger">{t('fin.expDetail.rejected')}</Badge>
           </div>
         )}
       </div>
@@ -546,62 +549,65 @@ export default function ExpenseClaimDetail() {
                 marginBottom: '12px',
               }}
             >
-              Claim Details
+              {t('fin.expDetail.claimDetails')}
             </p>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <tbody>
                 {[
-                  ['Claim #', claim.claim_number],
-                  ['Employee', claim.employee_name],
+                  [t('fin.expDetail.claim'), claim.claim_number],
+                  [t('fin.expDetail.employee'), claim.employee_name],
                   [
-                    'Requested By',
+                    t('fin.expDetail.requestedBy'),
                     claim.created_by_name && claim.created_by_name !== claim.employee_name
                       ? claim.created_by_name
                       : claim.employee_name,
                   ],
                   [
-                    'Project',
+                    t('fin.expDetail.project'),
                     claim.project_code ? `${claim.project_code} — ${claim.project_name}` : '—',
                   ],
-                  ['Currency', claim.currency_code],
-                  ['Total Amount', null],
+                  [t('fin.expDetail.currency'), claim.currency_code],
+                  [t('fin.expDetail.totalAmount'), null],
                   ...(claim.funding_source
                     ? [
                         [
-                          'Paid Via',
+                          t('fin.expDetail.paidVia'),
                           claim.funding_source === 'reimburse'
-                            ? 'Reimbursement'
+                            ? t('fin.expDetail.reimbursement')
                             : claim.funding_source === 'petty_cash'
-                              ? `Petty cash — ${claim.petty_cash_float_name ?? '—'}`
-                              : `Advance settlement ${claim.settlement_number ?? ''} (${claim.advance_number ?? '—'})`,
+                              ? t('fin.expDetail.pettyCashFloat', { name: claim.petty_cash_float_name ?? '—' })
+                              : t('fin.expDetail.advanceSettlementRef', {
+                                number: claim.settlement_number ?? '',
+                                advance: claim.advance_number ?? '—',
+                              }),
                         ] as [string, string],
                       ]
                     : []),
-                  ['Created', new Date(claim.created_at).toLocaleDateString()],
+                  [t('fin.expDetail.created'), new Date(claim.created_at).toLocaleDateString()],
                   [
-                    'Submitted',
+                    t('fin.expDetail.submitted'),
                     claim.submitted_at ? new Date(claim.submitted_at).toLocaleDateString() : '—',
                   ],
                   [
-                    'Approved',
+                    t('fin.expDetail.approved'),
                     claim.approved_at
                       ? `${new Date(claim.approved_at).toLocaleDateString()}${claim.approved_by_name ? ` — ${claim.approved_by_name}` : ''}`
                       : '—',
                   ],
                   [
-                    'Rejected',
+                    t('fin.expDetail.rejected'),
                     claim.rejected_at
                       ? `${new Date(claim.rejected_at).toLocaleDateString()}${claim.rejected_by_name ? ` — ${claim.rejected_by_name}` : ''}`
                       : '—',
                   ],
                   [
-                    'Audited',
+                    t('fin.expDetail.audited'),
                     claim.audited_at
                       ? `${new Date(claim.audited_at).toLocaleDateString()}${claim.audited_by_name ? ` — ${claim.audited_by_name}` : ''}`
                       : '—',
                   ],
                   [
-                    'Paid',
+                    t('fin.expDetail.paid'),
                     claim.paid_at
                       ? `${new Date(claim.paid_at).toLocaleDateString()}${claim.paid_by_name ? ` — ${claim.paid_by_name}` : ''}`
                       : '—',
@@ -610,7 +616,7 @@ export default function ExpenseClaimDetail() {
                   <tr key={k} style={{ borderBottom: `1px solid ${theme.border}` }}>
                     <td style={{ padding: '7px 0', color: theme.textMuted, width: '45%' }}>{k}</td>
                     <td style={{ padding: '7px 0', color: theme.textPrimary, fontWeight: 500 }}>
-                      {k === 'Total Amount' ? (
+                      {k === t('fin.expDetail.totalAmount') ? (
                         <AmountDisplay
                           amount={Number(claim.total_amount)}
                           currency={claim.currency_code}
@@ -650,7 +656,7 @@ export default function ExpenseClaimDetail() {
                   color: '#ef4444',
                 }}
               >
-                <strong>Rejected:</strong> {claim.rejection_reason}
+                <strong>{t('fin.expDetail.rejected2')}</strong> {claim.rejection_reason}
               </div>
             )}
             {claim.status === 'draft' && claim.audit_fail_reason && (
@@ -665,7 +671,7 @@ export default function ExpenseClaimDetail() {
                   color: theme.warning,
                 }}
               >
-                <strong>Sent back from audit:</strong> {claim.audit_fail_reason}
+                <strong>{t('fin.expDetail.sentBackFromAudit')}</strong> {claim.audit_fail_reason}
               </div>
             )}
             {claim.journal_entry_id && (
@@ -680,7 +686,7 @@ export default function ExpenseClaimDetail() {
                   color: theme.accent,
                 }}
               >
-                JE posted:{' '}
+                {t('fin.expDetail.jePosted')}{' '}
                 <span style={{ fontFamily: 'monospace' }}>
                   {claim.journal_entry_id.slice(0, 8)}…
                 </span>
@@ -692,13 +698,13 @@ export default function ExpenseClaimDetail() {
             <EntityAttachments
               entityType="expense_claim"
               entityId={claim.id}
-              title="Receipts"
-              description="One shared receipt for the whole claim, or one per line — whatever the employee attached when submitting."
-              uploadButtonLabel="Upload receipt"
-              emptyMessage="No receipts attached"
+              title={t('fin.expDetail.receipts')}
+              description={t('fin.expDetail.oneSharedReceiptForTheWhole')}
+              uploadButtonLabel={t('fin.expDetail.uploadReceipt')}
+              emptyMessage={t('fin.expDetail.noReceiptsAttached')}
               groupBy={[
-                { match: 'expense_claim', title: 'Shared receipt (whole claim)' },
-                { match: 'expense_claim_line', title: 'Per-line receipts' },
+                { match: 'expense_claim', title: t('fin.expDetail.sharedReceiptWholeClaim') },
+                { match: 'expense_claim_line', title: t('fin.expDetail.perLineReceipts') },
               ]}
             />
           </div>
@@ -718,11 +724,11 @@ export default function ExpenseClaimDetail() {
                   letterSpacing: '0.05em',
                 }}
               >
-                Editing Expense Lines
+                {t('fin.expDetail.editingExpenseLines')}
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
                 <div style={{ flex: '1 1 220px' }}>
-                  <label style={{ fontSize: '11px', color: theme.textMuted }}>Description</label>
+                  <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.description')}</label>
                   <input
                     style={inputStyle}
                     value={editDescription}
@@ -732,7 +738,7 @@ export default function ExpenseClaimDetail() {
                   />
                 </div>
                 <div style={{ width: '110px' }}>
-                  <label style={{ fontSize: '11px', color: theme.textMuted }}>Currency</label>
+                  <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.currency')}</label>
                   <input
                     style={inputStyle}
                     value={editCurrency}
@@ -743,7 +749,7 @@ export default function ExpenseClaimDetail() {
                   />
                 </div>
                 <div style={{ flex: '1 1 220px' }}>
-                  <label style={{ fontSize: '11px', color: theme.textMuted }}>Notes</label>
+                  <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.notes')}</label>
                   <input
                     style={inputStyle}
                     value={editNotes}
@@ -766,7 +772,7 @@ export default function ExpenseClaimDetail() {
                   }}
                 >
                   <div style={{ width: '130px' }}>
-                    <label style={{ fontSize: '11px', color: theme.textMuted }}>Date</label>
+                    <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.date')}</label>
                     <input
                       type="date"
                       style={inputStyle}
@@ -777,20 +783,20 @@ export default function ExpenseClaimDetail() {
                     />
                   </div>
                   <div style={{ flex: '1 1 150px' }}>
-                    <label style={{ fontSize: '11px', color: theme.textMuted }}>Category</label>
+                    <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.category')}</label>
                     <Select
                       value={l.category_id}
                       onChange={(e) => {
                         updateEditLine(l.key, { category_id: e.target.value })
                       }}
                       options={[
-                        { value: '', label: loadingCategories ? 'Loading…' : 'Select category…' },
+                        { value: '', label: loadingCategories ? t('fin.expDetail.loading2') : t('fin.expDetail.selectCategory') },
                         ...(categories ?? []).map((c) => ({ value: c.id, label: c.name })),
                       ]}
                     />
                   </div>
                   <div style={{ flex: '1 1 180px' }}>
-                    <label style={{ fontSize: '11px', color: theme.textMuted }}>Description</label>
+                    <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.description')}</label>
                     <input
                       style={inputStyle}
                       value={l.description}
@@ -800,7 +806,7 @@ export default function ExpenseClaimDetail() {
                     />
                   </div>
                   <div style={{ width: '110px' }}>
-                    <label style={{ fontSize: '11px', color: theme.textMuted }}>Amount</label>
+                    <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.amount')}</label>
                     <input
                       type="number"
                       min="0"
@@ -819,12 +825,12 @@ export default function ExpenseClaimDetail() {
                     }}
                     disabled={editLines.length <= 1}
                   >
-                    Remove
+                    {t('fin.expDetail.remove')}
                   </Button>
                 </div>
               ))}
               <Button variant="ghost" size="sm" onClick={addEditLine}>
-                + Add Line
+                {t('fin.expDetail.addLine')}
               </Button>
               {editError && (
                 <div style={{ marginTop: '12px', fontSize: '12px', color: theme.danger }}>
@@ -844,21 +850,19 @@ export default function ExpenseClaimDetail() {
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
                   }}
-                >
-                  Expense Lines ({claim.lines.length})
-                </p>
+                >{t('fin.expDetail.expenseLines', { length: claim.lines.length })}</p>
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr
                     style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
                   >
-                    {['Date', 'Category', 'Account', 'Description', 'Amount'].map((h) => (
+                    {[t('fin.expDetail.date'), t('fin.expDetail.category'), t('fin.expDetail.account'), t('fin.expDetail.description'), t('fin.expDetail.amount')].map((h) => (
                       <th
                         key={h}
                         style={{
                           padding: '8px 12px',
-                          textAlign: 'left',
+                          textAlign: 'start',
                           color: theme.textMuted,
                           fontWeight: 500,
                         }}
@@ -897,7 +901,7 @@ export default function ExpenseClaimDetail() {
                             >
                               {l.account_code}
                             </span>
-                            <span style={{ marginLeft: '4px', color: theme.textPrimary }}>
+                            <span style={{ marginInlineStart: '4px', color: theme.textPrimary }}>
                               {l.account_name}
                             </span>
                           </span>
@@ -908,7 +912,7 @@ export default function ExpenseClaimDetail() {
                       <td style={{ padding: '8px 12px', color: theme.textSecondary }}>
                         {l.description ?? '—'}
                       </td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                      <td style={{ padding: '8px 12px', textAlign: 'end' }}>
                         <AmountDisplay
                           amount={Number(l.amount)}
                           currency={l.currency_code}
@@ -924,9 +928,9 @@ export default function ExpenseClaimDetail() {
                       colSpan={4}
                       style={{ padding: '8px 12px', fontWeight: 700, color: theme.textPrimary }}
                     >
-                      Total
+                      {t('fin.expDetail.total')}
                     </td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
+                    <td style={{ padding: '8px 12px', textAlign: 'end', fontWeight: 700 }}>
                       <AmountDisplay
                         amount={Number(claim.total_amount)}
                         currency={claim.currency_code}
@@ -956,10 +960,10 @@ export default function ExpenseClaimDetail() {
         >
           <Card padding="lg" style={{ width: '400px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              Reject Claim
+              {t('fin.expDetail.rejectClaim')}
             </h3>
             <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
-              Provide a reason — this will be shown to the employee.
+              {t('fin.expDetail.provideAReasonThisWillBe')}
             </p>
             <textarea
               style={{ ...inputStyle, height: '80px', resize: 'vertical' as const }}
@@ -967,7 +971,7 @@ export default function ExpenseClaimDetail() {
               onChange={(e) => {
                 setRejectReason(e.target.value)
               }}
-              placeholder="Reason for rejection..."
+              placeholder={t('fin.expDetail.reasonForRejection')}
             />
             <div
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}
@@ -979,7 +983,7 @@ export default function ExpenseClaimDetail() {
                   setShowReject(false)
                 }}
               >
-                Cancel
+                {t('fin.expDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -991,7 +995,7 @@ export default function ExpenseClaimDetail() {
                 })()}
                 disabled={acting || !rejectReason}
               >
-                Reject Claim
+                {t('fin.expDetail.rejectClaim')}
               </Button>
             </div>
           </Card>
@@ -1013,11 +1017,10 @@ export default function ExpenseClaimDetail() {
         >
           <Card padding="lg" style={{ width: '400px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              Fail Audit
+              {t('fin.expDetail.failAudit')}
             </h3>
             <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
-              Sends this claim back to Draft so it can be corrected and resubmitted — provide a
-              reason.
+              {t('fin.expDetail.sendsThisClaimBackToDraft')}
             </p>
             <textarea
               style={{ ...inputStyle, height: '80px', resize: 'vertical' as const }}
@@ -1025,7 +1028,7 @@ export default function ExpenseClaimDetail() {
               onChange={(e) => {
                 setFailAuditReason(e.target.value)
               }}
-              placeholder="What needs to be corrected..."
+              placeholder={t('fin.expDetail.whatNeedsToBeCorrected')}
             />
             <div
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}
@@ -1037,7 +1040,7 @@ export default function ExpenseClaimDetail() {
                   setShowFailAudit(false)
                 }}
               >
-                Cancel
+                {t('fin.expDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1049,7 +1052,7 @@ export default function ExpenseClaimDetail() {
                 })()}
                 disabled={acting || !failAuditReason}
               >
-                Fail Audit
+                {t('fin.expDetail.failAudit')}
               </Button>
             </div>
           </Card>
@@ -1071,49 +1074,47 @@ export default function ExpenseClaimDetail() {
         >
           <Card padding="lg" style={{ width: '440px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              Decide Funding & Post
+              {t('fin.expDetail.decideFundingPost')}
             </h3>
-            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
-              How is this {claim.total_amount.toLocaleString()} {claim.currency_code} actually being paid?
-            </p>
+            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>{t('fin.expDetail.howIsThisActuallyBeingPaid', { total_amount: claim.total_amount.toLocaleString(), currency_code: claim.currency_code })}</p>
             <Select
-              label="Funding source"
+              label={t('fin.expDetail.fundingSource')}
               value={postPaymentSource}
               onChange={(e) => {
                 setPostPaymentSource(e.target.value as 'reimburse' | 'advance' | 'petty_cash')
                 setPostPaymentError('')
               }}
             >
-              <option value="reimburse">Reimburse — pay from the default cash/bank account</option>
-              <option value="petty_cash">Pay from a petty cash float</option>
-              <option value="advance">Settle against the employee's advance</option>
+              <option value="reimburse">{t('fin.expDetail.reimbursePayFromTheDefaultCash')}</option>
+              <option value="petty_cash">{t('fin.expDetail.payFromAPettyCashFloat')}</option>
+              <option value="advance">{t('fin.expDetail.settleAgainstTheEmployeeSAdvance')}</option>
             </Select>
 
             {loadingFundingOptions && (
               <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '12px' }}>
-                Loading options…
+                {t('fin.expDetail.loadingOptions')}
               </p>
             )}
 
             {!loadingFundingOptions && postPaymentSource === 'petty_cash' && (
               <div style={{ marginTop: '12px' }}>
                 <Select
-                  label="Petty cash float"
+                  label={t('fin.expDetail.pettyCashFloat')}
                   value={selectedFloatId}
                   onChange={(e) => {
                     setSelectedFloatId(e.target.value)
                   }}
                   options={[
-                    { value: '', label: 'Select float…' },
+                    { value: '', label: t('fin.expDetail.selectFloat') },
                     ...(fundingOptions?.petty_cash_floats ?? []).map((f) => ({
                       value: f.id,
-                      label: `${f.name} — ${Number(f.current_balance).toLocaleString()} ${f.currency_code} available`,
+                      label: t('fin.expDetail.available', { name: f.name, value: Number(f.current_balance).toLocaleString(), currency_code: f.currency_code }),
                     })),
                   ]}
                 />
                 {fundingOptions?.petty_cash_floats.length === 0 && (
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
-                    No active petty cash floats found.
+                    {t('fin.expDetail.noActivePettyCashFloatsFound')}
                   </div>
                 )}
               </div>
@@ -1122,13 +1123,13 @@ export default function ExpenseClaimDetail() {
             {!loadingFundingOptions && postPaymentSource === 'advance' && (
               <div style={{ marginTop: '12px' }}>
                 <Select
-                  label="Advance"
+                  label={t('fin.expDetail.advance')}
                   value={selectedAdvanceId}
                   onChange={(e) => {
                     setSelectedAdvanceId(e.target.value)
                   }}
                   options={[
-                    { value: '', label: 'Select advance…' },
+                    { value: '', label: t('fin.expDetail.selectAdvance') },
                     ...(fundingOptions?.advances ?? []).map((a) => ({
                       value: a.id,
                       label: `${a.advance_number} — ${Number(a.outstanding_amount).toLocaleString()} ${a.currency_code} outstanding${a.purpose ? ` (${a.purpose})` : ''}`,
@@ -1137,7 +1138,7 @@ export default function ExpenseClaimDetail() {
                 />
                 {fundingOptions?.advances.length === 0 && (
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
-                    This employee has no approved advance with an outstanding balance.
+                    {t('fin.expDetail.thisEmployeeHasNoApprovedAdvance')}
                   </div>
                 )}
               </div>
@@ -1159,7 +1160,7 @@ export default function ExpenseClaimDetail() {
                   setShowPostPayment(false)
                 }}
               >
-                Cancel
+                {t('fin.expDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1167,7 +1168,7 @@ export default function ExpenseClaimDetail() {
                 onClick={() => void submitPostPayment()}
                 disabled={acting || loadingFundingOptions}
               >
-                Post Payment
+                {t('fin.expDetail.postPayment')}
               </Button>
             </div>
           </Card>
@@ -1217,9 +1218,7 @@ export default function ExpenseClaimDetail() {
                 flexShrink: 0,
               }}
             >
-              <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
-                Print Expense Claim — {claim.claim_number}
-              </span>
+              <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>{t('fin.expDetail.printExpenseClaim', { claim_number: claim.claim_number })}</span>
               <button
                 onClick={() => {
                   setShowPrintModal(false)
@@ -1267,7 +1266,7 @@ export default function ExpenseClaimDetail() {
                   })),
                 })}
                 style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-                title={`Expense Claim ${claim.claim_number}`}
+                title={t('fin.expDetail.expenseClaim', { claim_number: claim.claim_number })}
               />
             </div>
 
@@ -1288,14 +1287,14 @@ export default function ExpenseClaimDetail() {
                   setShowPrintModal(false)
                 }}
               >
-                Cancel
+                {t('fin.expDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
                 size="sm"
                 onClick={() => printIframeRef.current?.contentWindow?.print()}
               >
-                Print / Save as PDF
+                {t('fin.expDetail.printSaveAsPdf')}
               </Button>
             </div>
           </div>

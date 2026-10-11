@@ -1,3 +1,5 @@
+import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
@@ -40,13 +42,14 @@ const STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'success' | 'warning' 
 }
 
 const STATUS_OPTIONS = [
-  { value: 'draft', label: 'Draft' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'draft', get label() { return i18n.t('fin.pvList.draft', { defaultValue: "Draft" }) } },
+  { value: 'approved', get label() { return i18n.t('fin.pvList.approved', { defaultValue: "Approved" }) } },
+  { value: 'paid', get label() { return i18n.t('fin.pvList.paid', { defaultValue: "Paid" }) } },
+  { value: 'cancelled', get label() { return i18n.t('fin.pvList.cancelled', { defaultValue: "Cancelled" }) } },
 ]
 
 export default function PaymentVouchersPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
@@ -80,7 +83,7 @@ export default function PaymentVouchersPage() {
   const columns: Column<PaymentVoucher>[] = [
     {
       key: 'voucher_number',
-      header: 'Voucher No.',
+      header: t('fin.pvList.voucherNo'),
       render: (v) => (
         <span style={{ fontFamily: 'monospace', color: theme.accent, fontWeight: 600 }}>
           {v.voucher_number}
@@ -89,21 +92,21 @@ export default function PaymentVouchersPage() {
     },
     {
       key: 'voucher_date',
-      header: 'Date',
+      header: t('fin.pvList.date'),
       render: (v) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{v.voucher_date}</span>
       ),
     },
     {
       key: 'received_from',
-      header: 'Received From',
+      header: t('fin.pvList.receivedFrom'),
       render: (v) => (
         <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{v.received_from}</span>
       ),
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('fin.pvList.status'),
       render: (v) => (
         <Badge variant={STATUS_VARIANT[v.status] ?? 'neutral'}>
           {v.status.charAt(0).toUpperCase() + v.status.slice(1)}
@@ -112,12 +115,12 @@ export default function PaymentVouchersPage() {
     },
     {
       key: 'total_amount_iqd',
-      header: 'Amount (IQD)',
+      header: t('fin.pvList.amountIqd'),
       render: (v) => <AmountDisplay amount={parseFloat(v.total_amount_iqd)} currency="IQD" />,
     },
     {
       key: 'total_amount_usd',
-      header: 'Amount (USD)',
+      header: t('fin.pvList.amountUsd'),
       render: (v) =>
         parseFloat(v.total_amount_usd) > 0 ? (
           <AmountDisplay amount={parseFloat(v.total_amount_usd)} currency="USD" />
@@ -127,14 +130,14 @@ export default function PaymentVouchersPage() {
     },
     {
       key: 'journal_count',
-      header: 'Journals',
+      header: t('fin.pvList.journals'),
       render: (v) => (
         <span style={{ color: theme.textMuted, fontSize: '13px' }}>{v.journal_count ?? '0'}</span>
       ),
     },
     {
       key: 'auditor_email',
-      header: 'Auditor',
+      header: t('fin.pvList.auditor'),
       render: (v) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{v.auditor_email ?? '—'}</span>
       ),
@@ -144,7 +147,7 @@ export default function PaymentVouchersPage() {
   return (
     <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
       <PageHeader
-        title="Payment Vouchers"
+        title={t('fin.pvList.paymentVouchers')}
         subtitle={`${filtered.length} vouchers`}
         actions={
           <Button
@@ -154,7 +157,7 @@ export default function PaymentVouchersPage() {
               navigate('/finance/payment-vouchers/new')
             }}
           >
-            New Voucher
+            {t('fin.pvList.newVoucher')}
           </Button>
         }
       />
@@ -166,7 +169,7 @@ export default function PaymentVouchersPage() {
           filters={[
             {
               key: 'status',
-              label: 'Status',
+              label: t('fin.pvList.status'),
               value: statusFilter,
               options: STATUS_OPTIONS,
               onChange: setStatusFilter,

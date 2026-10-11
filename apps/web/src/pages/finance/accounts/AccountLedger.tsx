@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { Trans, useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { ACCOUNT_QUERY, ACCOUNT_LEDGER_QUERY } from '../../../graphql/finance'
@@ -26,6 +27,7 @@ interface LedgerLine {
 const PAGE_SIZE = 50
 
 export default function AccountLedger() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -54,12 +56,12 @@ export default function AccountLedger() {
   const columns: Column<LedgerLine>[] = [
     {
       key: 'date',
-      header: 'Date',
+      header: t('fin.ledger.date'),
       render: (r) => <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{r.date}</span>,
     },
     {
       key: 'reference',
-      header: 'Reference',
+      header: t('fin.ledger.reference'),
       render: (r) => (
         <button
           onClick={() => {
@@ -80,14 +82,14 @@ export default function AccountLedger() {
     },
     {
       key: 'description',
-      header: 'Description',
+      header: t('fin.ledger.description'),
       render: (r) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{r.description ?? '—'}</span>
       ),
     },
     {
       key: 'debit',
-      header: 'Debit',
+      header: t('fin.ledger.debit'),
       render: (r) =>
         parseFloat(r.debit) > 0 ? (
           <AmountDisplay amount={parseFloat(r.debit)} currency="IQD" />
@@ -97,7 +99,7 @@ export default function AccountLedger() {
     },
     {
       key: 'credit',
-      header: 'Credit',
+      header: t('fin.ledger.credit'),
       render: (r) =>
         parseFloat(r.credit) > 0 ? (
           <AmountDisplay amount={parseFloat(r.credit)} currency="IQD" />
@@ -107,7 +109,7 @@ export default function AccountLedger() {
     },
     {
       key: 'running_balance',
-      header: 'Balance',
+      header: t('fin.ledger.balance'),
       render: (r) => (
         <AmountDisplay amount={parseFloat(r.running_balance)} currency="IQD" colored />
       ),
@@ -119,8 +121,8 @@ export default function AccountLedger() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
       <PageHeader
-        title={account ? `${account.code} — ${account.name}` : 'Account Ledger'}
-        subtitle="Transaction history"
+        title={account ? `${account.code} — ${account.name}` : t('fin.ledger.accountLedger')}
+        subtitle={t('fin.ledger.transactionHistory')}
         backPath="/finance/accounts"
       />
 
@@ -135,7 +137,7 @@ export default function AccountLedger() {
             alignItems: 'flex-end',
           }}
         >
-          <DatePicker label="From" value={fromDate} onChange={setFromDate} />
+          <DatePicker label={t('fin.ledger.from')} value={fromDate} onChange={setFromDate} />
           <DatePicker label="To" value={toDate} onChange={setToDate} />
           <Button
             variant="ghost"
@@ -145,29 +147,14 @@ export default function AccountLedger() {
               setToDate('')
             }}
           >
-            Clear
+            {t('fin.ledger.clear')}
           </Button>
           <div style={{ flex: 1 }} />
           {ledger && (
             <div style={{ display: 'flex', gap: '24px', fontSize: '13px' }}>
-              <span style={{ color: theme.textMuted }}>
-                Total Debit:{' '}
-                <strong style={{ color: theme.textPrimary }}>
-                  {parseFloat(ledger.totalDebit).toLocaleString()}
-                </strong>
-              </span>
-              <span style={{ color: theme.textMuted }}>
-                Total Credit:{' '}
-                <strong style={{ color: theme.textPrimary }}>
-                  {parseFloat(ledger.totalCredit).toLocaleString()}
-                </strong>
-              </span>
-              <span style={{ color: theme.textMuted }}>
-                Net:{' '}
-                <strong style={{ color: theme.textPrimary }}>
-                  {parseFloat(ledger.netBalance).toLocaleString()}
-                </strong>
-              </span>
+              <span style={{ color: theme.textMuted }}><Trans i18nKey="fin.ledger.totalDebit" values={{ value: parseFloat(ledger.totalDebit).toLocaleString() }} components={[<strong style={{ color: theme.textPrimary }} />]} /></span>
+              <span style={{ color: theme.textMuted }}><Trans i18nKey="fin.ledger.totalCredit" values={{ value: parseFloat(ledger.totalCredit).toLocaleString() }} components={[<strong style={{ color: theme.textPrimary }} />]} /></span>
+              <span style={{ color: theme.textMuted }}><Trans i18nKey="fin.ledger.net" values={{ value: parseFloat(ledger.netBalance).toLocaleString() }} components={[<strong style={{ color: theme.textPrimary }} />]} /></span>
             </div>
           )}
         </div>
@@ -192,11 +179,9 @@ export default function AccountLedger() {
               }}
               disabled={page === 1}
             >
-              Previous
+              {t('fin.ledger.previous')}
             </Button>
-            <span style={{ alignSelf: 'center', color: theme.textMuted, fontSize: '13px' }}>
-              Page {page} of {totalPages}
-            </span>
+            <span style={{ alignSelf: 'center', color: theme.textMuted, fontSize: '13px' }}>{t('fin.ledger.pageOf', { page, totalPages })}</span>
             <Button
               variant="ghost"
               size="sm"
@@ -205,7 +190,7 @@ export default function AccountLedger() {
               }}
               disabled={page === totalPages}
             >
-              Next
+              {t('fin.ledger.next')}
             </Button>
           </div>
         )}

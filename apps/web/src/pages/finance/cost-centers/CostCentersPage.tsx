@@ -1,4 +1,6 @@
-﻿import { useState, useEffect, useCallback } from 'react'
+﻿import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -34,10 +36,10 @@ interface CostCenter {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  department: 'Department',
-  project: 'Project',
-  entity: 'Entity',
-  overhead: 'Overhead',
+  get department() { return i18n.t('fin.cc.department', { defaultValue: "Department" }) },
+  get project() { return i18n.t('fin.cc.project', { defaultValue: "Project" }) },
+  get entity() { return i18n.t('fin.cc.entity', { defaultValue: "Entity" }) },
+  get overhead() { return i18n.t('fin.cc.overhead', { defaultValue: "Overhead" }) },
 }
 const TYPE_VARIANTS: Record<string, 'neutral' | 'info' | 'accent' | 'warning'> = {
   department: 'info',
@@ -70,6 +72,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export default function CostCentersPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
@@ -102,7 +105,7 @@ export default function CostCentersPage() {
       const res = await api.get<CostCenter[]>('/finance/cost-centers', { params })
       setItems(Array.isArray(res.data) ? res.data : [])
     } catch {
-      addToast({ type: 'error', message: 'Failed to load cost centers' })
+      addToast({ type: 'error', message: t('fin.cc.failedToLoadCostCenters') })
     } finally {
       setLoading(false)
     }
@@ -132,18 +135,18 @@ export default function CostCentersPage() {
 
   async function handleSave() {
     if (!form.code.trim()) {
-      addToast({ type: 'error', message: 'Code is required' })
+      addToast({ type: 'error', message: t('fin.cc.codeIsRequired') })
       return
     }
     if (!form.name.trim()) {
-      addToast({ type: 'error', message: 'Name is required' })
+      addToast({ type: 'error', message: t('fin.cc.nameIsRequired') })
       return
     }
     if (
       form.default_recharge_fulfiller_id &&
       form.default_recharge_fulfiller_id === form.default_recharge_fulfiller_id_2
     ) {
-      addToast({ type: 'error', message: 'The two recharge fulfillers must be different people' })
+      addToast({ type: 'error', message: t('fin.cc.theTwoRechargeFulfillersMustBe') })
       return
     }
     setSaving(true)
@@ -158,15 +161,15 @@ export default function CostCentersPage() {
     try {
       if (editing) {
         await api.put(`/finance/cost-centers/${editing.id}`, payload)
-        addToast({ type: 'success', message: 'Cost center updated' })
+        addToast({ type: 'success', message: t('fin.cc.costCenterUpdated') })
       } else {
         await api.post('/finance/cost-centers', payload)
-        addToast({ type: 'success', message: 'Cost center created' })
+        addToast({ type: 'success', message: t('fin.cc.costCenterCreated') })
       }
       setModalOpen(false)
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Save failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.cc.saveFailed')) })
     } finally {
       setSaving(false)
     }
@@ -177,11 +180,11 @@ export default function CostCentersPage() {
     setDeleteLoading(true)
     try {
       await api.delete(`/finance/cost-centers/${deletingId}`)
-      addToast({ type: 'success', message: 'Cost center deactivated' })
+      addToast({ type: 'success', message: t('fin.cc.costCenterDeactivated') })
       setDeletingId(null)
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Delete failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.cc.deleteFailed')) })
     } finally {
       setDeleteLoading(false)
     }
@@ -194,10 +197,10 @@ export default function CostCentersPage() {
         type: cc.type,
         is_active: true,
       })
-      addToast({ type: 'success', message: 'Cost center reactivated' })
+      addToast({ type: 'success', message: t('fin.cc.costCenterReactivated') })
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Reactivate failed') })
+      addToast({ type: 'error', message: apiErrMsg(e, t('fin.cc.reactivateFailed')) })
     }
   }
 
@@ -206,7 +209,7 @@ export default function CostCentersPage() {
   const columns: Column<CostCenter>[] = [
     {
       key: 'code',
-      header: 'Code',
+      header: t('fin.cc.code'),
       mobilePrimary: true,
       render: (cc) => (
         <span style={{ fontFamily: 'monospace', color: theme.accent }}>{cc.code}</span>
@@ -214,13 +217,13 @@ export default function CostCentersPage() {
     },
     {
       key: 'name',
-      header: 'Name',
+      header: t('fin.cc.name'),
       mobileSecondary: true,
       render: (cc) => <span style={{ color: theme.textPrimary }}>{cc.name}</span>,
     },
     {
       key: 'type',
-      header: 'Type',
+      header: t('fin.cc.type'),
       render: (cc) => (
         <Badge variant={TYPE_VARIANTS[cc.type] ?? 'neutral'} size="sm">
           {TYPE_LABELS[cc.type] ?? cc.type}
@@ -229,23 +232,23 @@ export default function CostCentersPage() {
     },
     {
       key: 'journal_line_count',
-      header: 'Journal lines',
+      header: t('fin.cc.journalLines'),
       render: (cc) => (
         <span style={{ color: theme.textSecondary }}>{cc.journal_line_count.toLocaleString()}</span>
       ),
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('fin.cc.status'),
       render: (cc) => (
         <Badge variant={cc.is_active ? 'success' : 'neutral'} size="sm">
-          {cc.is_active ? 'Active' : 'Inactive'}
+          {cc.is_active ? t('fin.cc.active') : t('fin.cc.inactive')}
         </Badge>
       ),
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: t('fin.cc.actions'),
       render: (cc) => (
         <div
           style={{ display: 'flex', gap: '6px' }}
@@ -261,7 +264,7 @@ export default function CostCentersPage() {
                 openEdit(cc)
               }}
             >
-              Edit
+              {t('fin.cc.edit')}
             </Button>
           )}
           {canEdit &&
@@ -273,11 +276,11 @@ export default function CostCentersPage() {
                   setDeletingId(cc.id)
                 }}
               >
-                Deactivate
+                {t('fin.cc.deactivate')}
               </Button>
             ) : (
               <Button variant="ghost" size="sm" onClick={() => void handleReactivate(cc)}>
-                Reactivate
+                {t('fin.cc.reactivate')}
               </Button>
             ))}
         </div>
@@ -288,12 +291,12 @@ export default function CostCentersPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
-        title="Cost Centers"
-        subtitle="Track costs by department, project, entity, or overhead"
+        title={t('fin.cc.costCenters')}
+        subtitle={t('fin.cc.trackCostsByDepartmentProjectEntity')}
         actions={
           canEdit ? (
             <Button variant="primary" size="sm" onClick={openCreate}>
-              New cost center
+              {t('fin.cc.newCostCenter')}
             </Button>
           ) : undefined
         }
@@ -315,7 +318,7 @@ export default function CostCentersPage() {
             onChange={(e) => {
               setSearch(e.target.value)
             }}
-            placeholder="Search code or name…"
+            placeholder={t('fin.cc.searchCodeOrName')}
             style={{
               flex: 1,
               minWidth: '160px',
@@ -344,7 +347,7 @@ export default function CostCentersPage() {
                 setActiveOnly(e.target.checked)
               }}
             />
-            Active only
+            {t('fin.cc.activeOnly')}
           </label>
         </div>
         <Table
@@ -352,7 +355,7 @@ export default function CostCentersPage() {
           data={items}
           rowKey="id"
           loading={loading}
-          emptyMessage="No cost centers found"
+          emptyMessage={t('fin.cc.noCostCentersFound')}
           getRowStyle={(cc) => (cc.is_active ? {} : { opacity: 0.5 })}
           onRowClick={(cc) => {
             navigate(`/finance/cost-centers/${cc.id}`)
@@ -365,9 +368,9 @@ export default function CostCentersPage() {
         onClose={() => {
           setModalOpen(false)
         }}
-        title={editing ? 'Edit cost center' : 'New cost center'}
+        title={editing ? t('fin.cc.editCostCenter') : t('fin.cc.newCostCenter')}
       >
-        <Field label="Code *">
+        <Field label={t('fin.cc.code2')}>
           <input
             value={form.code}
             onChange={(e) => {
@@ -387,13 +390,13 @@ export default function CostCentersPage() {
             }}
           />
         </Field>
-        <Field label="Name *">
+        <Field label={t('fin.cc.name2')}>
           <input
             value={form.name}
             onChange={(e) => {
               setForm((p) => ({ ...p, name: e.target.value }))
             }}
-            placeholder="Operations"
+            placeholder={t('fin.cc.operations')}
             style={{
               width: '100%',
               padding: '7px 10px',
@@ -405,7 +408,7 @@ export default function CostCentersPage() {
             }}
           />
         </Field>
-        <Field label="Type">
+        <Field label={t('fin.cc.type')}>
           <SearchableSelect
             value={form.type}
             onChange={(v) => {
@@ -414,39 +417,37 @@ export default function CostCentersPage() {
             options={Object.entries(TYPE_LABELS).map(([v, l]) => ({ value: v, label: l }))}
           />
         </Field>
-        <Field label="Parent cost center (optional)">
+        <Field label={t('fin.cc.parentCostCenterOptional')}>
           <SearchableSelect
             value={form.parent_id}
             onChange={(v) => {
               setForm((p) => ({ ...p, parent_id: v }))
             }}
-            placeholder="None"
+            placeholder={t('fin.cc.none')}
             options={parentOptions.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))}
           />
         </Field>
-        <Field label="Recharge fulfiller (optional)">
+        <Field label={t('fin.cc.rechargeFulfillerOptional')}>
           <SearchableSelect
             value={form.default_recharge_fulfiller_id}
             onChange={(v) => {
               setForm((p) => ({ ...p, default_recharge_fulfiller_id: v }))
             }}
-            placeholder="Unassigned"
+            placeholder={t('fin.cc.unassigned')}
             options={companyUsers.map((u) => ({ value: u.id, label: u.email }))}
           />
         </Field>
-        <Field label="Second recharge fulfiller (optional)">
+        <Field label={t('fin.cc.secondRechargeFulfillerOptional')}>
           <SearchableSelect
             value={form.default_recharge_fulfiller_id_2}
             onChange={(v) => {
               setForm((p) => ({ ...p, default_recharge_fulfiller_id_2: v }))
             }}
-            placeholder="Unassigned"
+            placeholder={t('fin.cc.unassigned')}
             options={companyUsers.map((u) => ({ value: u.id, label: u.email }))}
           />
           <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-            Both get notified and can fulfill phone recharge requests charged to this cost
-            center. Each can fulfill the other's own request — a fulfiller can never fulfill
-            their own.
+            {t('fin.cc.bothGetNotifiedAndCanFulfill')}
           </div>
         </Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
@@ -457,10 +458,10 @@ export default function CostCentersPage() {
               setModalOpen(false)
             }}
           >
-            Cancel
+            {t('fin.cc.cancel')}
           </Button>
           <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)} disabled={saving}>
-            {saving ? 'Saving…' : editing ? 'Update' : 'Create'}
+            {saving ? t('fin.cc.saving') : editing ? t('fin.cc.update') : t('fin.cc.create')}
           </Button>
         </div>
       </Modal>
@@ -471,9 +472,9 @@ export default function CostCentersPage() {
           setDeletingId(null)
         }}
         onConfirm={(...args: Parameters<typeof handleDelete>) => void handleDelete(...args)}
-        title="Deactivate cost center"
-        message="This will deactivate the cost center. It will no longer appear in dropdowns. Existing journal entries are unaffected."
-        confirmLabel="Deactivate"
+        title={t('fin.cc.deactivateCostCenter')}
+        message={t('fin.cc.thisWillDeactivateTheCostCenter')}
+        confirmLabel={t('fin.cc.deactivate')}
         loading={deleteLoading}
       />
     </div>

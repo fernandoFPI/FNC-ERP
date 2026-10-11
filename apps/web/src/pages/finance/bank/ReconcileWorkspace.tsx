@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -110,6 +112,7 @@ const emptyLineDraft = {
 }
 
 export default function ReconcileWorkspace() {
+  const { t } = useTranslation()
   const { accountId, statementId } = useParams<{ accountId: string; statementId?: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -251,8 +254,8 @@ export default function ReconcileWorkspace() {
         `/finance/bank/statements/${statementId}/auto-match`,
       )
       await loadStatement()
-      if (r.data.matched === 0) alert('No automatic matches found. Try matching manually.')
-      else alert(`Auto-matched ${r.data.matched} line(s).`)
+      if (r.data.matched === 0) alert(t('fin.reconWs.noAutomaticMatchesFoundTryMatching'))
+      else alert(t('fin.reconWs.autoMatchedLineS', { matched: r.data.matched }))
     } catch {
       /* handled */
     } finally {
@@ -274,7 +277,7 @@ export default function ReconcileWorkspace() {
   }
 
   async function handleUnmatch(lineId: string) {
-    if (!confirm('Remove this match?')) return
+    if (!confirm(t('fin.reconWs.removeThisMatch'))) return
     try {
       await api.delete(`/finance/bank/match/line/${lineId}`)
       await loadStatement()
@@ -332,7 +335,7 @@ export default function ReconcileWorkspace() {
   }
 
   async function handleFinalize() {
-    if (!statementId || !confirm('Mark this statement as fully reconciled? This cannot be undone.'))
+    if (!statementId || !confirm(t('fin.reconWs.markThisStatementAsFullyReconciled')))
       return
     setFinalizing(true)
     try {
@@ -378,7 +381,7 @@ export default function ReconcileWorkspace() {
     const statementColumns: Column<StatementSummary>[] = [
       {
         key: 'period',
-        header: 'Period',
+        header: t('fin.reconWs.period'),
         mobilePrimary: true,
         render: (s) => (
           <span style={{ color: theme.textPrimary, fontWeight: 600, fontFamily: 'monospace' }}>
@@ -388,21 +391,21 @@ export default function ReconcileWorkspace() {
       },
       {
         key: 'statement_date',
-        header: 'Statement Date',
+        header: t('fin.reconWs.statementDate'),
         mobileSecondary: true,
         render: (s) => new Date(s.statement_date).toLocaleDateString(),
       },
       {
         key: 'status',
-        header: 'Status',
+        header: t('fin.reconWs.status'),
         mobilePriority: 1,
         render: (s) => (
-          <Badge variant={STMT_BADGE[s.status] ?? 'neutral'}>{s.status.replace('_', ' ')}</Badge>
+          <Badge variant={STMT_BADGE[s.status] ?? 'neutral'}>{enumLabel(s.status).replace('_', ' ')}</Badge>
         ),
       },
       {
         key: 'progress',
-        header: 'Progress',
+        header: t('fin.reconWs.progress'),
         mobilePriority: 2,
         render: (s) => {
           const pct =
@@ -437,24 +440,24 @@ export default function ReconcileWorkspace() {
       },
       {
         key: 'opening_balance',
-        header: 'Opening',
+        header: t('fin.reconWs.opening'),
         mobilePriority: 3,
         render: (s) => (
           <AmountDisplay
             amount={s.opening_balance}
-            currency={account?.currency_code ?? 'IQD'}
+            currency={account?.currency_code ?? t('fin.reconWs.iqd')}
             size="sm"
           />
         ),
       },
       {
         key: 'closing_balance',
-        header: 'Closing',
+        header: t('fin.reconWs.closing'),
         mobilePriority: 4,
         render: (s) => (
           <AmountDisplay
             amount={s.closing_balance}
-            currency={account?.currency_code ?? 'IQD'}
+            currency={account?.currency_code ?? t('fin.reconWs.iqd')}
             size="sm"
           />
         ),
@@ -471,7 +474,7 @@ export default function ReconcileWorkspace() {
               navigate(`/finance/bank/${accountId}/reconcile/${s.id}`)
             }}
           >
-            {s.status === 'reconciled' ? 'View' : 'Open'}
+            {s.status === 'reconciled' ? t('fin.reconWs.view') : t('fin.reconWs.open')}
           </Button>
         ),
       },
@@ -480,7 +483,7 @@ export default function ReconcileWorkspace() {
     return (
       <div style={{ padding: '24px' }}>
         <PageHeader
-          title={account?.name ?? 'Bank Account'}
+          title={account?.name ?? t('fin.reconWs.bankAccount')}
           subtitle={[account?.bank_name, account?.account_number].filter(Boolean).join(' · ')}
           actions={
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -491,7 +494,7 @@ export default function ReconcileWorkspace() {
                   navigate('/finance/bank')
                 }}
               >
-                ← All Accounts
+                {t('fin.reconWs.allAccounts')}
               </Button>
               {canEdit && (
                 <Button
@@ -501,7 +504,7 @@ export default function ReconcileWorkspace() {
                     setShowNewStmt(true)
                   }}
                 >
-                  + New Statement
+                  {t('fin.reconWs.newStatement')}
                 </Button>
               )}
             </div>
@@ -520,8 +523,7 @@ export default function ReconcileWorkspace() {
               color: theme.textPrimary,
             }}
           >
-            ⚠ No GL account linked. Edit this account and link it to a chart of accounts entry to
-            enable reconciliation.
+            {t('fin.reconWs.noGlAccountLinkedEditThis')}
           </div>
         )}
 
@@ -531,7 +533,7 @@ export default function ReconcileWorkspace() {
             data={statements}
             rowKey="id"
             loading={loading}
-            emptyMessage="No statements yet. Click + New Statement to create the first one."
+            emptyMessage={t('fin.reconWs.noStatementsYetClickNewStatement')}
           />
         </Card>
 
@@ -558,7 +560,7 @@ export default function ReconcileWorkspace() {
                 }}
               >
                 <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
-                  New Bank Statement
+                  {t('fin.reconWs.newBankStatement')}
                 </h3>
                 <Button
                   variant="ghost"
@@ -572,7 +574,7 @@ export default function ReconcileWorkspace() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label style={labelStyle}>Period (YYYY-MM) *</label>
+                  <label style={labelStyle}>{t('fin.reconWs.periodYyyyMm')}</label>
                   <input
                     style={inputStyle}
                     placeholder="2025-12"
@@ -583,7 +585,7 @@ export default function ReconcileWorkspace() {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Statement Date *</label>
+                  <label style={labelStyle}>{t('fin.reconWs.statementDate2')}</label>
                   <input
                     style={inputStyle}
                     type="date"
@@ -594,7 +596,7 @@ export default function ReconcileWorkspace() {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Opening Balance</label>
+                  <label style={labelStyle}>{t('fin.reconWs.openingBalance')}</label>
                   <input
                     style={inputStyle}
                     type="number"
@@ -605,7 +607,7 @@ export default function ReconcileWorkspace() {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Closing Balance *</label>
+                  <label style={labelStyle}>{t('fin.reconWs.closingBalance')}</label>
                   <input
                     style={inputStyle}
                     type="number"
@@ -616,7 +618,7 @@ export default function ReconcileWorkspace() {
                   />
                 </div>
                 <div style={{ gridColumn: '1/-1' }}>
-                  <label style={labelStyle}>Notes</label>
+                  <label style={labelStyle}>{t('fin.reconWs.notes')}</label>
                   <input
                     style={inputStyle}
                     value={newStmt.notes}
@@ -641,7 +643,7 @@ export default function ReconcileWorkspace() {
                     setShowNewStmt(false)
                   }}
                 >
-                  Cancel
+                  {t('fin.reconWs.cancel')}
                 </Button>
                 <Button
                   variant="primary"
@@ -649,7 +651,7 @@ export default function ReconcileWorkspace() {
                   onClick={() => void handleCreateStatement()}
                   disabled={creatingStmt || !newStmt.period || !newStmt.statement_date}
                 >
-                  {creatingStmt ? 'Creating...' : 'Create & Open'}
+                  {creatingStmt ? t('fin.reconWs.creating') : t('fin.reconWs.createOpen')}
                 </Button>
               </div>
             </Card>
@@ -663,11 +665,11 @@ export default function ReconcileWorkspace() {
   if (loading)
     return (
       <div style={{ padding: '24px', color: theme.textMuted }}>
-        Loading reconciliation workspace...
+        {t('fin.reconWs.loadingReconciliationWorkspace')}
       </div>
     )
   if (!stmt)
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Statement not found.</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('fin.reconWs.statementNotFound')}</div>
 
   const totalLines = Number(stmt.total_lines)
   const matchedLines = Number(stmt.matched_lines)
@@ -678,12 +680,12 @@ export default function ReconcileWorkspace() {
   type LineDraft = typeof emptyLineDraft
   const lineDraftFields: LineItemField<LineDraft>[] = (
     [
-      { field: 'transaction_date', label: 'Date *', type: 'date', width: '120px' },
-      { field: 'description', label: 'Description *', type: 'text', width: '160px' },
-      { field: 'reference', label: 'Reference', type: 'text', width: '90px' },
-      { field: 'debit', label: 'Debit (Out)', type: 'number', width: '90px' },
-      { field: 'credit', label: 'Credit (In)', type: 'number', width: '90px' },
-      { field: 'balance_after', label: 'Balance After', type: 'number', width: '90px' },
+      { field: 'transaction_date', label: t('fin.reconWs.date'), type: 'date', width: '120px' },
+      { field: 'description', label: t('fin.reconWs.description'), type: 'text', width: '160px' },
+      { field: 'reference', label: t('fin.reconWs.reference'), type: 'text', width: '90px' },
+      { field: 'debit', label: t('fin.reconWs.debitOut'), type: 'number', width: '90px' },
+      { field: 'credit', label: t('fin.reconWs.creditIn'), type: 'number', width: '90px' },
+      { field: 'balance_after', label: t('fin.reconWs.balanceAfter'), type: 'number', width: '90px' },
     ] as const
   ).map(({ field, label, type, width }) => ({
     key: field,
@@ -723,7 +725,7 @@ export default function ReconcileWorkspace() {
                 navigate(`/finance/bank/${accountId}`)
               }}
             >
-              ← Statements
+              {t('fin.reconWs.statements')}
             </Button>
             <Badge variant={STMT_BADGE[stmt.status] ?? 'neutral'}>
               {stmt.status.replace('_', ' ')}
@@ -735,7 +737,7 @@ export default function ReconcileWorkspace() {
                 onClick={() => void handleAutoMatch()}
                 disabled={autoMatching}
               >
-                {autoMatching ? 'Matching...' : 'Auto-Match'}
+                {autoMatching ? t('fin.reconWs.matching') : t('fin.reconWs.autoMatch')}
               </Button>
             )}
             {canEdit && !isReconciled && (
@@ -746,7 +748,7 @@ export default function ReconcileWorkspace() {
                   setShowAddLines(true)
                 }}
               >
-                + Add Lines
+                {t('fin.reconWs.addLines')}
               </Button>
             )}
             {canEdit && (
@@ -756,7 +758,7 @@ export default function ReconcileWorkspace() {
                 onClick={() => void handleFinalize()}
                 disabled={!canFinalize || finalizing}
               >
-                {finalizing ? 'Finalizing...' : 'Finalize'}
+                {finalizing ? t('fin.reconWs.finalizing') : t('fin.reconWs.finalize')}
               </Button>
             )}
           </div>
@@ -774,7 +776,7 @@ export default function ReconcileWorkspace() {
       >
         {[
           {
-            label: 'Opening Balance',
+            label: t('fin.reconWs.openingBalance'),
             value: (
               <AmountDisplay
                 amount={stmt.opening_balance}
@@ -784,7 +786,7 @@ export default function ReconcileWorkspace() {
             ),
           },
           {
-            label: 'Closing Balance',
+            label: t('fin.reconWs.closingBalance2'),
             value: (
               <AmountDisplay
                 amount={stmt.closing_balance}
@@ -794,7 +796,7 @@ export default function ReconcileWorkspace() {
             ),
           },
           {
-            label: 'Statement Movement',
+            label: t('fin.reconWs.statementMovement'),
             value: (
               <AmountDisplay
                 amount={stmt.closing_balance - stmt.opening_balance}
@@ -805,7 +807,7 @@ export default function ReconcileWorkspace() {
             ),
           },
           {
-            label: 'Lines Matched',
+            label: t('fin.reconWs.linesMatched'),
             value: (
               <span style={{ fontSize: '18px', fontWeight: 700, color: theme.textPrimary }}>
                 {matchedLines}/{totalLines}
@@ -823,7 +825,7 @@ export default function ReconcileWorkspace() {
       {/* Progress bar */}
       <div style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-          <span style={{ fontSize: '11px', color: theme.textMuted }}>Reconciliation Progress</span>
+          <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.reconWs.reconciliationProgress')}</span>
           <span style={{ fontSize: '11px', color: theme.textMuted }}>{reconPct}%</span>
         </div>
         <div style={{ height: '6px', borderRadius: '3px', background: theme.border }}>
@@ -850,9 +852,7 @@ export default function ReconcileWorkspace() {
               color: theme.textPrimary,
               marginBottom: '8px',
             }}
-          >
-            Bank Statement — {unreconciled.length} unmatched
-          </h3>
+          >{t('fin.reconWs.bankStatementUnmatched', { length: unreconciled.length })}</h3>
           <Card padding="none" style={{ maxHeight: '520px', overflowY: 'auto' }}>
             {!stmt.lines.length && (
               <div
@@ -863,7 +863,7 @@ export default function ReconcileWorkspace() {
                   fontSize: '12px',
                 }}
               >
-                No lines yet. Click "Add Lines" to enter transactions.
+                {t('fin.reconWs.noLinesYetClickAddLines')}
               </div>
             )}
             {stmt.lines.map((line) => {
@@ -948,7 +948,7 @@ export default function ReconcileWorkspace() {
                           </p>
                         ))}
                     </div>
-                    <div style={{ textAlign: 'right', marginLeft: '12px', flexShrink: 0 }}>
+                    <div style={{ textAlign: 'end', marginInlineStart: '12px', flexShrink: 0 }}>
                       <p
                         style={{
                           fontSize: '13px',
@@ -977,7 +977,7 @@ export default function ReconcileWorkspace() {
                             marginTop: '2px',
                           }}
                         >
-                          × unmatch
+                          {t('fin.reconWs.unmatch')}
                         </button>
                       )}
                     </div>
@@ -997,9 +997,7 @@ export default function ReconcileWorkspace() {
               color: theme.textPrimary,
               marginBottom: '8px',
             }}
-          >
-            GL Entries — {glEntries.length} unmatched
-          </h3>
+          >{t('fin.reconWs.glEntriesUnmatched', { length: glEntries.length })}</h3>
           {!stmt.gl_account_id && (
             <div
               style={{
@@ -1012,7 +1010,7 @@ export default function ReconcileWorkspace() {
                 color: theme.textPrimary,
               }}
             >
-              No GL account linked to this bank account — GL entries cannot be loaded.
+              {t('fin.reconWs.noGlAccountLinkedToThis')}
             </div>
           )}
           <Card padding="none" style={{ maxHeight: '520px', overflowY: 'auto' }}>
@@ -1025,7 +1023,7 @@ export default function ReconcileWorkspace() {
                   fontSize: '12px',
                 }}
               >
-                No unmatched GL entries found for this period.
+                {t('fin.reconWs.noUnmatchedGlEntriesFoundFor')}
               </div>
             )}
             {glEntries.map((entry) => {
@@ -1096,7 +1094,7 @@ export default function ReconcileWorkspace() {
                         {entry.source_type?.replace('_', ' ')}
                       </p>
                     </div>
-                    <div style={{ textAlign: 'right', marginLeft: '12px', flexShrink: 0 }}>
+                    <div style={{ textAlign: 'end', marginInlineStart: '12px', flexShrink: 0 }}>
                       <p
                         style={{
                           fontSize: '13px',
@@ -1142,11 +1140,11 @@ export default function ReconcileWorkspace() {
         >
           <div style={{ flex: 1 }}>
             <span style={{ fontSize: '12px', color: theme.textSecondary }}>
-              Bank: <strong>{selectedBank.size}</strong> selected
+              {t('fin.reconWs.bank')} <strong>{selectedBank.size}</strong> {t('fin.reconWs.selected')}
               {selectedBank.size > 0 && (
                 <span
                   style={{
-                    marginLeft: '6px',
+                    marginInlineStart: '6px',
                     fontFamily: 'monospace',
                     color: selectedBankNet >= 0 ? '#22c55e' : '#ef4444',
                   }}
@@ -1158,11 +1156,11 @@ export default function ReconcileWorkspace() {
             </span>
             <span style={{ margin: '0 16px', color: theme.border }}>|</span>
             <span style={{ fontSize: '12px', color: theme.textSecondary }}>
-              GL: <strong>{selectedGl.size}</strong> selected
+              {t('fin.reconWs.gl')} <strong>{selectedGl.size}</strong> {t('fin.reconWs.selected')}
               {selectedGl.size > 0 && (
                 <span
                   style={{
-                    marginLeft: '6px',
+                    marginInlineStart: '6px',
                     fontFamily: 'monospace',
                     color: selectedGlNet >= 0 ? '#22c55e' : '#ef4444',
                   }}
@@ -1181,9 +1179,7 @@ export default function ReconcileWorkspace() {
                     fontWeight: 600,
                     color: matchDiff === 0 ? '#22c55e' : '#ef4444',
                   }}
-                >
-                  Difference: {matchDiff === 0 ? '0.00 ✓' : matchDiff.toLocaleString()}
-                </span>
+                >{t('fin.reconWs.difference', { value: matchDiff === 0 ? '0.00 ✓' : matchDiff.toLocaleString() })}</span>
               </>
             )}
           </div>
@@ -1195,11 +1191,11 @@ export default function ReconcileWorkspace() {
               setSelectedGl(new Set())
             }}
           >
-            Clear
+            {t('fin.reconWs.clear')}
           </Button>
           {canEdit && canCreate && (
             <Button variant="secondary" size="sm" onClick={openCreateEntry}>
-              Create Journal Entry
+              {t('fin.reconWs.createJournalEntry')}
             </Button>
           )}
           {canEdit && (
@@ -1209,7 +1205,7 @@ export default function ReconcileWorkspace() {
               onClick={() => void handleMatch()}
               disabled={!canMatch}
             >
-              Confirm Match
+              {t('fin.reconWs.confirmMatch')}
             </Button>
           )}
         </div>
@@ -1238,7 +1234,7 @@ export default function ReconcileWorkspace() {
               }}
             >
               <h3 style={{ margin: 0, fontSize: '15px', color: theme.textPrimary }}>
-                Add Statement Lines
+                {t('fin.reconWs.addStatementLines')}
               </h3>
               <Button
                 variant="ghost"
@@ -1259,7 +1255,7 @@ export default function ReconcileWorkspace() {
               onAddRow={() => {
                 setLineDrafts((prev) => [...prev, { ...emptyLineDraft }])
               }}
-              addLabel="+ Add Row"
+              addLabel={t('fin.reconWs.addRow')}
             />
             <div
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}
@@ -1271,7 +1267,7 @@ export default function ReconcileWorkspace() {
                   setShowAddLines(false)
                 }}
               >
-                Cancel
+                {t('fin.reconWs.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1279,7 +1275,7 @@ export default function ReconcileWorkspace() {
                 onClick={() => void handleAddLines()}
                 disabled={addingLines}
               >
-                {addingLines ? 'Saving...' : 'Save Lines'}
+                {addingLines ? t('fin.reconWs.saving') : t('fin.reconWs.saveLines')}
               </Button>
             </div>
           </Card>
@@ -1309,7 +1305,7 @@ export default function ReconcileWorkspace() {
               }}
             >
               <h3 style={{ margin: 0, fontSize: '15px', color: theme.textPrimary }}>
-                Create Journal Entry
+                {t('fin.reconWs.createJournalEntry')}
               </h3>
               <Button
                 variant="ghost"
@@ -1331,7 +1327,7 @@ export default function ReconcileWorkspace() {
               }}
             >
               <p style={{ fontSize: '11px', color: theme.textMuted, margin: '0 0 4px' }}>
-                Bank line
+                {t('fin.reconWs.bankLine')}
               </p>
               <p
                 style={{
@@ -1353,13 +1349,13 @@ export default function ReconcileWorkspace() {
               >
                 {createEntryLine.transaction_date.slice(0, 10)} ·{' '}
                 {Number(createEntryLine.credit) > 0
-                  ? `Credit +${Number(createEntryLine.credit).toLocaleString()}`
-                  : `Debit -${Number(createEntryLine.debit).toLocaleString()}`}
+                  ? t('fin.reconWs.credit', { value: Number(createEntryLine.credit).toLocaleString() })
+                  : t('fin.reconWs.debit', { value: Number(createEntryLine.debit).toLocaleString() })}
               </p>
             </div>
 
             <div style={{ marginBottom: '12px' }}>
-              <label style={labelStyle}>Offset GL Account *</label>
+              <label style={labelStyle}>{t('fin.reconWs.offsetGlAccount')}</label>
               <select
                 style={inputStyle}
                 value={offsetAccountId}
@@ -1367,7 +1363,7 @@ export default function ReconcileWorkspace() {
                   setOffsetAccountId(e.target.value)
                 }}
               >
-                <option value="">— Select account —</option>
+                <option value="">{t('fin.reconWs.selectAccount')}</option>
                 {glAccounts.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.code} · {g.name}
@@ -1376,12 +1372,12 @@ export default function ReconcileWorkspace() {
               </select>
               <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px' }}>
                 {Number(createEntryLine.credit) > 0
-                  ? 'DR Bank / CR this account (e.g. Income, Liability)'
-                  : 'DR this account / CR Bank (e.g. Expense, Asset)'}
+                  ? t('fin.reconWs.drBankCrThisAccountE')
+                  : t('fin.reconWs.drThisAccountCrBankE')}
               </p>
             </div>
             <div style={{ marginBottom: '16px' }}>
-              <label style={labelStyle}>Description</label>
+              <label style={labelStyle}>{t('fin.reconWs.description2')}</label>
               <input
                 style={inputStyle}
                 value={createEntryDesc}
@@ -1398,7 +1394,7 @@ export default function ReconcileWorkspace() {
                   setShowCreateEntry(false)
                 }}
               >
-                Cancel
+                {t('fin.reconWs.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1406,7 +1402,7 @@ export default function ReconcileWorkspace() {
                 onClick={() => void handleCreateEntry()}
                 disabled={creatingEntry || !offsetAccountId}
               >
-                {creatingEntry ? 'Creating...' : 'Create & Match'}
+                {creatingEntry ? t('fin.reconWs.creating') : t('fin.reconWs.createMatch')}
               </Button>
             </div>
           </Card>

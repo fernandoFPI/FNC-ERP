@@ -1,3 +1,5 @@
+import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { Fragment, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client'
@@ -140,9 +142,9 @@ interface JournalEntryRow {
 type JournalEntryDetail = NonNullable<JournalEntryQuery['journalEntry']>
 
 const STATUS_OPTIONS = [
-  { value: 'draft', label: 'Draft' },
-  { value: 'posted', label: 'Posted' },
-  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'draft', get label() { return i18n.t('fin.jrnList.draft', { defaultValue: "Draft" }) } },
+  { value: 'posted', get label() { return i18n.t('fin.jrnList.posted', { defaultValue: "Posted" }) } },
+  { value: 'cancelled', get label() { return i18n.t('fin.jrnList.cancelled', { defaultValue: "Cancelled" }) } },
 ]
 
 // Every source_type a journal entry can actually be posted with, grouped by
@@ -155,33 +157,33 @@ const STATUS_OPTIONS = [
 // is overridden with its real cancel_reason where one was recorded (see
 // rowSubtitle below), so this default only ever shows for non-reversal rows.
 const SOURCE_META: Record<string, { label: string; variant: BadgeVariant; blurb: string }> = {
-  project_invoice: { label: 'Project Invoice', variant: 'success', blurb: 'Client invoice' },
-  rental_invoice: { label: 'Rental Invoice', variant: 'success', blurb: 'Rental invoice' },
-  invoice_payment: { label: 'Invoice Payment', variant: 'success', blurb: 'Invoice payment received' },
+  project_invoice: { get label() { return i18n.t('fin.jrnList.projectInvoice', { defaultValue: "Project Invoice" }) }, variant: 'success', get blurb() { return i18n.t('fin.jrnList.clientInvoice', { defaultValue: "Client invoice" }) } },
+  rental_invoice: { get label() { return i18n.t('fin.jrnList.rentalInvoice', { defaultValue: "Rental Invoice" }) }, variant: 'success', get blurb() { return i18n.t('fin.jrnList.rentalInvoice2', { defaultValue: "Rental invoice" }) } },
+  invoice_payment: { get label() { return i18n.t('fin.jrnList.invoicePayment', { defaultValue: "Invoice Payment" }) }, variant: 'success', get blurb() { return i18n.t('fin.jrnList.invoicePaymentReceived', { defaultValue: "Invoice payment received" }) } },
 
-  vendor_invoice: { label: 'Vendor Invoice', variant: 'warning', blurb: 'Vendor invoice' },
-  vendor_payment: { label: 'Vendor Payment', variant: 'warning', blurb: 'Vendor payment' },
-  payroll_run: { label: 'Payroll', variant: 'warning', blurb: 'Payroll run' },
-  depreciation: { label: 'Depreciation', variant: 'warning', blurb: 'Asset depreciation' },
-  asset_disposal: { label: 'Asset Disposal', variant: 'warning', blurb: 'Asset disposal' },
-  po_completion: { label: 'PO Completion', variant: 'warning', blurb: 'Purchase order completed' },
-  manufacturing_order: { label: 'Manufacturing', variant: 'warning', blurb: 'Manufacturing order' },
-  mo_completion: { label: 'Manufacturing', variant: 'warning', blurb: 'Manufacturing order completed' },
-  retention: { label: 'Retention Held', variant: 'warning', blurb: 'Retention held' },
-  retention_release: { label: 'Retention Release', variant: 'warning', blurb: 'Retention released' },
-  expense_claim: { label: 'Expense Claim', variant: 'info', blurb: 'Employee expense claim' },
+  vendor_invoice: { get label() { return i18n.t('fin.jrnList.vendorInvoice', { defaultValue: "Vendor Invoice" }) }, variant: 'warning', get blurb() { return i18n.t('fin.jrnList.vendorInvoice2', { defaultValue: "Vendor invoice" }) } },
+  vendor_payment: { get label() { return i18n.t('fin.jrnList.vendorPayment', { defaultValue: "Vendor Payment" }) }, variant: 'warning', get blurb() { return i18n.t('fin.jrnList.vendorPayment2', { defaultValue: "Vendor payment" }) } },
+  payroll_run: { get label() { return i18n.t('fin.jrnList.payroll', { defaultValue: "Payroll" }) }, variant: 'warning', get blurb() { return i18n.t('fin.jrnList.payrollRun', { defaultValue: "Payroll run" }) } },
+  depreciation: { get label() { return i18n.t('fin.jrnList.depreciation', { defaultValue: "Depreciation" }) }, variant: 'warning', get blurb() { return i18n.t('fin.jrnList.assetDepreciation', { defaultValue: "Asset depreciation" }) } },
+  asset_disposal: { get label() { return i18n.t('fin.jrnList.assetDisposal', { defaultValue: "Asset Disposal" }) }, variant: 'warning', get blurb() { return i18n.t('fin.jrnList.assetDisposal2', { defaultValue: "Asset disposal" }) } },
+  po_completion: { get label() { return i18n.t('fin.jrnList.poCompletion', { defaultValue: "PO Completion" }) }, variant: 'warning', get blurb() { return i18n.t('fin.jrnList.purchaseOrderCompleted', { defaultValue: "Purchase order completed" }) } },
+  manufacturing_order: { get label() { return i18n.t('fin.jrnList.manufacturing', { defaultValue: "Manufacturing" }) }, variant: 'warning', get blurb() { return i18n.t('fin.jrnList.manufacturingOrder', { defaultValue: "Manufacturing order" }) } },
+  mo_completion: { get label() { return i18n.t('fin.jrnList.manufacturing', { defaultValue: "Manufacturing" }) }, variant: 'warning', get blurb() { return i18n.t('fin.jrnList.manufacturingOrderCompleted', { defaultValue: "Manufacturing order completed" }) } },
+  retention: { get label() { return i18n.t('fin.jrnList.retentionHeld', { defaultValue: "Retention Held" }) }, variant: 'warning', get blurb() { return i18n.t('fin.jrnList.retentionHeld2', { defaultValue: "Retention held" }) } },
+  retention_release: { get label() { return i18n.t('fin.jrnList.retentionRelease', { defaultValue: "Retention Release" }) }, variant: 'warning', get blurb() { return i18n.t('fin.jrnList.retentionReleased', { defaultValue: "Retention released" }) } },
+  expense_claim: { get label() { return i18n.t('fin.jrnList.expenseClaim', { defaultValue: "Expense Claim" }) }, variant: 'info', get blurb() { return i18n.t('fin.jrnList.employeeExpenseClaim', { defaultValue: "Employee expense claim" }) } },
 
-  employee_advance_issuance: { label: 'Advance Issued', variant: 'info', blurb: 'Advance payment' },
-  advance_settlement: { label: 'Advance Settled', variant: 'info', blurb: 'Advance settlement' },
-  advance_return: { label: 'Advance Returned', variant: 'info', blurb: 'Advance returned' },
+  employee_advance_issuance: { get label() { return i18n.t('fin.jrnList.advanceIssued', { defaultValue: "Advance Issued" }) }, variant: 'info', get blurb() { return i18n.t('fin.jrnList.advancePayment', { defaultValue: "Advance payment" }) } },
+  advance_settlement: { get label() { return i18n.t('fin.jrnList.advanceSettled', { defaultValue: "Advance Settled" }) }, variant: 'info', get blurb() { return i18n.t('fin.jrnList.advanceSettlement', { defaultValue: "Advance settlement" }) } },
+  advance_return: { get label() { return i18n.t('fin.jrnList.advanceReturned', { defaultValue: "Advance Returned" }) }, variant: 'info', get blurb() { return i18n.t('fin.jrnList.advanceReturned2', { defaultValue: "Advance returned" }) } },
 
-  cancellation: { label: 'Reversal', variant: 'danger', blurb: 'Reversal' },
+  cancellation: { get label() { return i18n.t('fin.jrnList.reversal', { defaultValue: "Reversal" }) }, variant: 'danger', get blurb() { return i18n.t('fin.jrnList.reversal', { defaultValue: "Reversal" }) } },
 
-  combined: { label: 'Combined', variant: 'accent', blurb: 'Combined entries' },
-  manual: { label: 'Manual', variant: 'neutral', blurb: 'Manual entry' },
-  interco: { label: 'Intercompany', variant: 'neutral', blurb: 'Intercompany transaction' },
-  interco_transaction: { label: 'Intercompany', variant: 'neutral', blurb: 'Intercompany transaction' },
-  bank_entry: { label: 'Bank Entry', variant: 'neutral', blurb: 'Bank entry' },
+  combined: { get label() { return i18n.t('fin.jrnList.combined', { defaultValue: "Combined" }) }, variant: 'accent', get blurb() { return i18n.t('fin.jrnList.combinedEntries', { defaultValue: "Combined entries" }) } },
+  manual: { get label() { return i18n.t('fin.jrnList.manual', { defaultValue: "Manual" }) }, variant: 'neutral', get blurb() { return i18n.t('fin.jrnList.manualEntry', { defaultValue: "Manual entry" }) } },
+  interco: { get label() { return i18n.t('fin.jrnList.intercompany', { defaultValue: "Intercompany" }) }, variant: 'neutral', get blurb() { return i18n.t('fin.jrnList.intercompanyTransaction', { defaultValue: "Intercompany transaction" }) } },
+  interco_transaction: { get label() { return i18n.t('fin.jrnList.intercompany', { defaultValue: "Intercompany" }) }, variant: 'neutral', get blurb() { return i18n.t('fin.jrnList.intercompanyTransaction', { defaultValue: "Intercompany transaction" }) } },
+  bank_entry: { get label() { return i18n.t('fin.jrnList.bankEntry', { defaultValue: "Bank Entry" }) }, variant: 'neutral', get blurb() { return i18n.t('fin.jrnList.bankEntry2', { defaultValue: "Bank entry" }) } },
 }
 
 function sourceMeta(sourceType?: string | null): { label: string; variant: BadgeVariant; blurb: string } {
@@ -190,7 +192,7 @@ function sourceMeta(sourceType?: string | null): { label: string; variant: Badge
     SOURCE_META[key] ?? {
       label: key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
       variant: 'neutral',
-      blurb: 'Journal entry',
+      blurb: i18n.t('fin.jrnList.journalEntryBlurb', { defaultValue: 'Journal entry' }),
     }
   )
 }
@@ -214,12 +216,13 @@ function statusDisplay(entry: { status: string; source_type?: string | null }): 
   label: string
   variant: BadgeVariant
 } {
+  const { t } = useTranslation()
   if (entry.status === 'posted' && entry.source_type === 'cancellation') {
-    return { label: 'Reversed', variant: 'warning' }
+    return { label: t('fin.jrnList.reversed'), variant: 'warning' }
   }
-  if (entry.status === 'posted') return { label: 'Posted', variant: 'success' }
-  if (entry.status === 'draft') return { label: 'Draft', variant: 'info' }
-  if (entry.status === 'cancelled') return { label: 'Cancelled', variant: 'neutral' }
+  if (entry.status === 'posted') return { label: t('fin.jrnList.posted'), variant: 'success' }
+  if (entry.status === 'draft') return { label: t('fin.jrnList.draft'), variant: 'info' }
+  if (entry.status === 'cancelled') return { label: t('fin.jrnList.cancelled'), variant: 'neutral' }
   return { label: entry.status, variant: 'neutral' }
 }
 
@@ -278,6 +281,7 @@ function initials(label: string | null | undefined): string {
 }
 
 export default function JournalsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
@@ -430,7 +434,7 @@ export default function JournalsPage() {
         variables: { journalIds: Array.from(selectedIds), description: combineDesc.trim() || undefined },
       })
       const ref = result.data?.combineJournalEntries.reference
-      addToast({ type: 'success', message: `Journals combined into ${ref ?? 'new entry'}` })
+      addToast({ type: 'success', message: t('fin.jrnList.journalsCombinedInto', { value: ref ?? 'new entry' }) })
       setSelectedIds(new Set())
       setShowCombineDialog(false)
       setCombineDesc('')
@@ -462,19 +466,17 @@ export default function JournalsPage() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: theme.textPrimary }}>Journal Entries</h1>
+            <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: theme.textPrimary }}>{t('fin.jrnList.journalEntries')}</h1>
             <p style={{ margin: '4px 0 0', fontSize: '13px', color: theme.textMuted }}>
-              Manage and track all journal entries across the system.
+              {t('fin.jrnList.manageAndTrackAllJournalEntries')}
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             {selectedCount >= 2 && (
-              <Button variant="secondary" size="sm" onClick={() => { setShowCombineDialog(true) }}>
-                Combine {selectedCount} Entries
-              </Button>
+              <Button variant="secondary" size="sm" onClick={() => { setShowCombineDialog(true) }}>{t('fin.jrnList.combineEntries2', { selectedCount })}</Button>
             )}
             {selectedCount === 1 && (
-              <span style={{ fontSize: '12px', color: theme.textMuted }}>Select 1 more draft to combine</span>
+              <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('fin.jrnList.select1MoreDraftToCombine')}</span>
             )}
             <Button
               data-tour="new-journal-btn"
@@ -482,7 +484,7 @@ export default function JournalsPage() {
               size="sm"
               onClick={() => { navigate('/finance/journals/new') }}
             >
-              + New Entry
+              {t('fin.jrnList.newEntry')}
             </Button>
           </div>
         </div>
@@ -498,10 +500,10 @@ export default function JournalsPage() {
         >
           {(
             [
-              { label: 'Total', value: statTotal, prev: prevTotal, color: theme.accent, bg: theme.accentBg, icon: 'layers' },
-              { label: 'Posted', value: statPosted, prev: prevPosted, color: theme.success, bg: theme.successBg, icon: 'check-circle' },
-              { label: 'Draft', value: statDraft, prev: prevDraft, color: theme.info, bg: theme.infoBg, icon: 'file-text' },
-              { label: 'Reversed', value: statReversed, prev: prevReversed, color: theme.warning, bg: theme.warningBg, icon: 'rotate-ccw' },
+              { label: t('fin.jrnList.total'), value: statTotal, prev: prevTotal, color: theme.accent, bg: theme.accentBg, icon: 'layers' },
+              { label: t('fin.jrnList.posted'), value: statPosted, prev: prevPosted, color: theme.success, bg: theme.successBg, icon: 'check-circle' },
+              { label: t('fin.jrnList.draft'), value: statDraft, prev: prevDraft, color: theme.info, bg: theme.infoBg, icon: 'file-text' },
+              { label: t('fin.jrnList.reversed'), value: statReversed, prev: prevReversed, color: theme.warning, bg: theme.warningBg, icon: 'rotate-ccw' },
             ] as const
           ).map((card) => {
             // One subtotal row per currency actually present this month or
@@ -549,7 +551,7 @@ export default function JournalsPage() {
                           <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textMuted }}>{currency}</span>
                         </div>
                         <div style={{ fontSize: '11px', marginTop: '2px', color: trend.pct === null ? theme.textMuted : trend.up ? theme.success : theme.danger }}>
-                          {trend.pct === null ? 'No prior data' : `${trend.up ? '↑' : '↓'} ${Math.abs(trend.pct)}% vs last month`}
+                          {trend.pct === null ? t('fin.jrnList.noPriorData') : t('fin.jrnList.vsLastMonth', { arrow: trend.up ? '↑' : '↓', pct: Math.abs(trend.pct) })}
                         </div>
                       </div>
                     )
@@ -570,7 +572,7 @@ export default function JournalsPage() {
               <input
                 value={search}
                 onChange={(e) => { setSearch(e.target.value) }}
-                placeholder="Search by reference, description, employee, source, amount…"
+                placeholder={t('fin.jrnList.searchByReferenceDescriptionEmployeeSource')}
                 style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', padding: '8px 60px 8px 30px' }}
               />
               <span
@@ -593,14 +595,14 @@ export default function JournalsPage() {
               <Select
                 value={statusFilter}
                 onChange={(e) => { setStatusFilter(e.target.value) }}
-                options={[{ value: '', label: 'All Status' }, ...STATUS_OPTIONS]}
+                options={[{ value: '', label: t('fin.jrnList.allStatus') }, ...STATUS_OPTIONS]}
               />
             </div>
             <div style={{ width: '170px' }}>
               <Select
                 value={sourceFilter}
                 onChange={(e) => { setSourceFilter(e.target.value) }}
-                options={[{ value: '', label: 'All Source' }, ...SOURCE_OPTIONS]}
+                options={[{ value: '', label: t('fin.jrnList.allSource') }, ...SOURCE_OPTIONS]}
               />
             </div>
             <div style={{ position: 'relative' }}>
@@ -609,8 +611,8 @@ export default function JournalsPage() {
                 onClick={() => { setShowDateRange((v) => !v) }}
                 style={{ ...inputStyle, cursor: 'pointer', whiteSpace: 'nowrap' }}
               >
-                <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: '6px' }}><JEIcon name="calendar" size={14} /></span>
-                {fromDate ? formatDateShort(fromDate) : 'From'} – {toDate ? formatDateShort(toDate) : 'To'}
+                <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginInlineEnd: '6px' }}><JEIcon name="calendar" size={14} /></span>
+                {fromDate ? formatDateShort(fromDate) : t('fin.jrnList.from')} – {toDate ? formatDateShort(toDate) : 'To'}
               </button>
               {showDateRange && (
                 <div
@@ -630,20 +632,20 @@ export default function JournalsPage() {
                   }}
                 >
                   <label style={{ fontSize: '11px', color: theme.textMuted }}>
-                    From
+                    {t('fin.jrnList.from')}
                     <input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value) }} style={{ ...inputStyle, display: 'block', marginTop: '4px' }} />
                   </label>
                   <label style={{ fontSize: '11px', color: theme.textMuted }}>
-                    To
+                    {t('fin.jrnList.to')}
                     <input type="date" value={toDate} onChange={(e) => { setToDate(e.target.value) }} style={{ ...inputStyle, display: 'block', marginTop: '4px' }} />
                   </label>
-                  <Button variant="ghost" size="sm" onClick={() => { setShowDateRange(false) }}>Done</Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setShowDateRange(false) }}>{t('fin.jrnList.done')}</Button>
                 </div>
               )}
             </div>
             <div style={{ position: 'relative' }}>
               <Button variant="secondary" size="sm" onClick={() => { setShowAdvanced((v) => !v) }}>
-<span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: '6px' }}><JEIcon name="sliders" size={14} /></span>Advanced Filters
+<span style={{ display: 'inline-flex', verticalAlign: 'middle', marginInlineEnd: '6px' }}><JEIcon name="sliders" size={14} /></span>{t('fin.jrnList.advancedFilters')}
               </Button>
               {showAdvanced && (
                 <div
@@ -661,12 +663,12 @@ export default function JournalsPage() {
                   }}
                 >
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Amount Range
+                    {t('fin.jrnList.amountRange')}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '14px' }}>
-                    <input type="number" value={minAmount} onChange={(e) => { setMinAmount(e.target.value) }} placeholder="Min" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
+                    <input type="number" value={minAmount} onChange={(e) => { setMinAmount(e.target.value) }} placeholder={t('fin.jrnList.min')} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
                     <span style={{ color: theme.textMuted }}>–</span>
-                    <input type="number" value={maxAmount} onChange={(e) => { setMaxAmount(e.target.value) }} placeholder="Max" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
+                    <input type="number" value={maxAmount} onChange={(e) => { setMaxAmount(e.target.value) }} placeholder={t('fin.jrnList.max')} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
                   </div>
                   <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '10px' }}>
                     <FilterPresets
@@ -683,13 +685,13 @@ export default function JournalsPage() {
                 </div>
               )}
             </div>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>{sorted.length} entries</span>
+            <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>{t('fin.jrnList.entries', { length: sorted.length })}</span>
               <div style={{ display: 'flex', border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden' }}>
                 <button
                   type="button"
                   onClick={() => { setViewMode('list') }}
-                  title="List view"
+                  title={t('fin.jrnList.listView')}
                   style={{
                     padding: '6px 9px',
                     background: viewMode === 'list' ? theme.accentBg : 'transparent',
@@ -704,13 +706,13 @@ export default function JournalsPage() {
                 <button
                   type="button"
                   onClick={() => { setViewMode('grid') }}
-                  title="Grid view"
+                  title={t('fin.jrnList.gridView')}
                   style={{
                     padding: '6px 9px',
                     background: viewMode === 'grid' ? theme.accentBg : 'transparent',
                     color: viewMode === 'grid' ? theme.accent : theme.textMuted,
                     border: 'none',
-                    borderLeft: `1px solid ${theme.border}`,
+                    borderInlineStart: `1px solid ${theme.border}`,
                     cursor: 'pointer',
                     fontSize: '13px',
                   }}
@@ -732,7 +734,7 @@ export default function JournalsPage() {
             >
               {sorted.length === 0 && !loading && (
                 <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px', color: theme.textMuted, fontSize: '13px' }}>
-                  No journal entries found
+                  {t('fin.jrnList.noJournalEntriesFound')}
                 </div>
               )}
               {sorted.map((e) => {
@@ -752,7 +754,7 @@ export default function JournalsPage() {
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '10px' }}>{rowSubtitle(e)}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Badge variant={meta.variant}>{meta.label}</Badge>
-                      <AmountDisplay amount={parseFloat(e.total_debit ?? '0')} currency={e.payment_currency ?? 'IQD'} size="sm" />
+                      <AmountDisplay amount={parseFloat(e.total_debit ?? '0')} currency={e.payment_currency ?? t('fin.jrnList.iqd')} size="sm" />
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px' }}>{formatDateShort(e.entry_date)}</div>
                   </Card>
@@ -763,37 +765,33 @@ export default function JournalsPage() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
-                  <tr style={{ borderBottom: `1px solid ${theme.border}`, textAlign: 'left' }}>
+                  <tr style={{ borderBottom: `1px solid ${theme.border}`, textAlign: 'start' }}>
                     <th style={{ padding: '8px 6px', width: '34px' }}>
-                      <input type="checkbox" checked={allDraftsSelected} onChange={toggleSelectAll} title="Select all drafts" style={{ cursor: 'pointer' }} />
+                      <input type="checkbox" checked={allDraftsSelected} onChange={toggleSelectAll} title={t('fin.jrnList.selectAllDrafts')} style={{ cursor: 'pointer' }} />
                     </th>
-                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500 }}>Reference</th>
+                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500 }}>{t('fin.jrnList.reference')}</th>
                     <th
                       style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500, cursor: 'pointer', userSelect: 'none' }}
                       onClick={() => { toggleSort('entry_date') }}
-                    >
-                      Date {sortKey === 'entry_date' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500 }}>Description</th>
-                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500 }}>Source</th>
-                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500, textAlign: 'right' }}>Debit</th>
-                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500, textAlign: 'right' }}>Credit</th>
+                    >{t('fin.jrnList.date', { value: sortKey === 'entry_date' ? (sortDir === 'asc' ? '↑' : '↓') : '' })}</th>
+                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500 }}>{t('fin.jrnList.description')}</th>
+                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500 }}>{t('fin.jrnList.source')}</th>
+                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500, textAlign: 'end' }}>{t('fin.jrnList.debit')}</th>
+                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500, textAlign: 'end' }}>{t('fin.jrnList.credit')}</th>
                     <th
-                      style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500, textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}
+                      style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500, textAlign: 'end', cursor: 'pointer', userSelect: 'none' }}
                       onClick={() => { toggleSort('total_debit') }}
-                    >
-                      Amount {sortKey === 'total_debit' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500 }}>Status</th>
+                    >{t('fin.jrnList.amount', { value: sortKey === 'total_debit' ? (sortDir === 'asc' ? '↑' : '↓') : '' })}</th>
+                    <th style={{ padding: '8px 10px', color: theme.textMuted, fontWeight: 500 }}>{t('fin.jrnList.status')}</th>
                     <th style={{ width: '32px' }} />
                   </tr>
                 </thead>
                 <tbody>
                   {loading && sorted.length === 0 && (
-                    <tr><td colSpan={10} style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}>Loading…</td></tr>
+                    <tr><td colSpan={10} style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}>{t('fin.jrnList.loading')}</td></tr>
                   )}
                   {!loading && sorted.length === 0 && (
-                    <tr><td colSpan={10} style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}>No journal entries found</td></tr>
+                    <tr><td colSpan={10} style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}>{t('fin.jrnList.noJournalEntriesFound')}</td></tr>
                   )}
                   {sorted.map((e) => {
                     const sd = statusDisplay(e)
@@ -829,14 +827,14 @@ export default function JournalsPage() {
                             <div style={{ color: theme.textMuted, fontSize: '11px', marginTop: '1px' }}>{rowSubtitle(e)}</div>
                           </td>
                           <td style={{ padding: '10px' }}><Badge variant={meta.variant}>{meta.label}</Badge></td>
-                          <td style={{ padding: '10px', textAlign: 'right' }}>
-                            {e.total_debit ? <AmountDisplay amount={parseFloat(e.total_debit)} currency={e.payment_currency ?? 'IQD'} size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
+                          <td style={{ padding: '10px', textAlign: 'end' }}>
+                            {e.total_debit ? <AmountDisplay amount={parseFloat(e.total_debit)} currency={e.payment_currency ?? t('fin.jrnList.iqd')} size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
                           </td>
-                          <td style={{ padding: '10px', textAlign: 'right' }}>
-                            {e.total_credit ? <AmountDisplay amount={parseFloat(e.total_credit)} currency={e.payment_currency ?? 'IQD'} size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
+                          <td style={{ padding: '10px', textAlign: 'end' }}>
+                            {e.total_credit ? <AmountDisplay amount={parseFloat(e.total_credit)} currency={e.payment_currency ?? t('fin.jrnList.iqd')} size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
                           </td>
-                          <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600 }}>
-                            {e.total_debit ? <AmountDisplay amount={parseFloat(e.total_debit)} currency={e.payment_currency ?? 'IQD'} size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
+                          <td style={{ padding: '10px', textAlign: 'end', fontWeight: 600 }}>
+                            {e.total_debit ? <AmountDisplay amount={parseFloat(e.total_debit)} currency={e.payment_currency ?? t('fin.jrnList.iqd')} size="sm" /> : <span style={{ color: theme.textMuted }}>—</span>}
                           </td>
                           <td style={{ padding: '10px' }}><Badge variant={sd.variant} dot>{sd.label}</Badge></td>
                           <td style={{ padding: '10px', position: 'relative' }} onClick={(ev) => { ev.stopPropagation() }}>
@@ -865,16 +863,16 @@ export default function JournalsPage() {
                                 <button
                                   type="button"
                                   onClick={() => { setOpenMenuId(null); navigate(`/finance/journals/${e.id}`) }}
-                                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textPrimary, fontSize: '12px' }}
+                                  style={{ display: 'block', width: '100%', textAlign: 'start', padding: '9px 12px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textPrimary, fontSize: '12px' }}
                                 >
-                                  View Full Details
+                                  {t('fin.jrnList.viewFullDetails')}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => { openAudit(e.id) }}
-                                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textPrimary, fontSize: '12px', borderTop: `1px solid ${theme.border}` }}
+                                  style={{ display: 'block', width: '100%', textAlign: 'start', padding: '9px 12px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textPrimary, fontSize: '12px', borderTop: `1px solid ${theme.border}` }}
                                 >
-                                  View Audit Trail
+                                  {t('fin.jrnList.viewAuditTrail')}
                                 </button>
                               </div>
                             )}
@@ -886,18 +884,18 @@ export default function JournalsPage() {
                               <div style={{ display: 'flex', gap: '16px', padding: '16px', flexWrap: 'wrap' }}>
                                 <div style={{ flex: '2 1 360px' }}>
                                   <div style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                                    Journal Lines
+                                    {t('fin.jrnList.journalLines')}
                                   </div>
                                   {!detail && detailLoading ? (
-                                    <div style={{ color: theme.textMuted, fontSize: '12px' }}>Loading…</div>
+                                    <div style={{ color: theme.textMuted, fontSize: '12px' }}>{t('fin.jrnList.loading')}</div>
                                   ) : (
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                                       <thead>
                                         <tr style={{ color: theme.textMuted }}>
-                                          <th style={{ textAlign: 'left', padding: '4px 8px 4px 0' }}>Account</th>
-                                          <th style={{ textAlign: 'left', padding: '4px 8px' }}>Description</th>
-                                          <th style={{ textAlign: 'right', padding: '4px 8px' }}>Debit</th>
-                                          <th style={{ textAlign: 'right', padding: '4px 0' }}>Credit</th>
+                                          <th style={{ textAlign: 'start', padding: '4px 8px 4px 0' }}>{t('fin.jrnList.account')}</th>
+                                          <th style={{ textAlign: 'start', padding: '4px 8px' }}>{t('fin.jrnList.description')}</th>
+                                          <th style={{ textAlign: 'end', padding: '4px 8px' }}>{t('fin.jrnList.debit')}</th>
+                                          <th style={{ textAlign: 'end', padding: '4px 0' }}>{t('fin.jrnList.credit')}</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -907,10 +905,10 @@ export default function JournalsPage() {
                                               {l.account_code ? `${l.account_code} - ` : ''}{l.account_name ?? '—'}
                                             </td>
                                             <td style={{ padding: '6px 8px', color: theme.textSecondary }}>{l.description ?? '—'}</td>
-                                            <td style={{ padding: '6px 8px', textAlign: 'right', color: theme.textPrimary }}>
+                                            <td style={{ padding: '6px 8px', textAlign: 'end', color: theme.textPrimary }}>
                                               {parseFloat(l.debit) > 0 ? parseFloat(l.debit).toLocaleString() : '—'}
                                             </td>
-                                            <td style={{ padding: '6px 0', textAlign: 'right', color: theme.textPrimary }}>
+                                            <td style={{ padding: '6px 0', textAlign: 'end', color: theme.textPrimary }}>
                                               {parseFloat(l.credit) > 0 ? parseFloat(l.credit).toLocaleString() : '—'}
                                             </td>
                                           </tr>
@@ -923,26 +921,26 @@ export default function JournalsPage() {
                                     <EntityAttachments
                                       entityType="journal_entry"
                                       entityId={e.id}
-                                      title="Attachments"
-                                      emptyMessage="No attachments"
+                                      title={t('fin.jrnList.attachments')}
+                                      emptyMessage={t('fin.jrnList.noAttachments')}
                                       recordLabel="this journal entry"
                                     />
                                   </div>
                                 </div>
                                 <div style={{ flex: '1 1 260px' }}>
                                   <div style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                                    Details
+                                    {t('fin.jrnList.details')}
                                   </div>
                                   <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                                     <tbody>
                                       {([
-                                        ['Reference', e.reference],
-                                        ['Date', formatDateShort(e.entry_date)],
-                                        ['Created By', detail?.created_by_email ?? e.created_by_email ?? '—'],
-                                        ['Source', meta.label],
-                                        ['Status', sd.label],
-                                        ['Description', e.description ?? '—'],
-                                        ['Notes', detail?.cancel_reason ?? '—'],
+                                        [t('fin.jrnList.reference'), e.reference],
+                                        [t('fin.jrnList.date2'), formatDateShort(e.entry_date)],
+                                        [t('fin.jrnList.createdBy'), detail?.created_by_email ?? e.created_by_email ?? '—'],
+                                        [t('fin.jrnList.source'), meta.label],
+                                        [t('fin.jrnList.status'), sd.label],
+                                        [t('fin.jrnList.description'), e.description ?? '—'],
+                                        [t('fin.jrnList.notes'), detail?.cancel_reason ?? '—'],
                                       ] as [string, string][]).map(([k, v]) => (
                                         <tr key={k} style={{ borderBottom: `1px solid ${theme.border}` }}>
                                           <td style={{ padding: '5px 0', color: theme.textMuted, width: '38%' }}>{k}</td>
@@ -957,7 +955,7 @@ export default function JournalsPage() {
                                     style={{ marginTop: '10px' }}
                                     onClick={() => { navigate(`/finance/journals/${e.id}`) }}
                                   >
-                                    View Full Details →
+                                    {t('fin.jrnList.viewFullDetails2')}
                                   </Button>
                                 </div>
                               </div>
@@ -990,13 +988,13 @@ export default function JournalsPage() {
             </div>
             <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '12px' }}>{formatDateShort(panelEntry.entry_date)}</div>
 
-            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Source</div>
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>{t('fin.jrnList.source')}</div>
             <Badge variant={sourceMeta(panelEntry.source_type).variant}>{sourceMeta(panelEntry.source_type).label}</Badge>
 
-            <div style={{ fontSize: '11px', color: theme.textMuted, margin: '12px 0 4px' }}>Description</div>
+            <div style={{ fontSize: '11px', color: theme.textMuted, margin: '12px 0 4px' }}>{t('fin.jrnList.description')}</div>
             <div style={{ fontSize: '12px', color: theme.textPrimary }}>{panelEntry.description ?? '—'}</div>
 
-            <div style={{ fontSize: '11px', color: theme.textMuted, margin: '12px 0 6px' }}>Created By</div>
+            <div style={{ fontSize: '11px', color: theme.textMuted, margin: '12px 0 6px' }}>{t('fin.jrnList.createdBy')}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: theme.accentBg, color: theme.accent, fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {initials(panelDetail?.created_by_email ?? panelEntry.created_by_email)}
@@ -1005,10 +1003,10 @@ export default function JournalsPage() {
             </div>
 
             <div style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '18px 0 8px' }}>
-              Journal Lines
+              {t('fin.jrnList.journalLines')}
             </div>
             {detailLoading && !panelDetail ? (
-              <div style={{ fontSize: '12px', color: theme.textMuted }}>Loading…</div>
+              <div style={{ fontSize: '12px', color: theme.textMuted }}>{t('fin.jrnList.loading')}</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {(panelDetail?.lines ?? []).map((l) => (
@@ -1026,15 +1024,15 @@ export default function JournalsPage() {
             )}
 
             <div style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '18px 0 8px' }}>
-              Meta Information
+              {t('fin.jrnList.metaInformation')}
             </div>
             <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
               <tbody>
                 {([
-                  ['Reference', panelEntry.reference],
-                  ['Company', panelDetail?.company_name ?? '—'],
-                  ['Currency', panelDetail?.lines?.[0]?.currency_code ?? 'IQD'],
-                  ['Notes', panelDetail?.cancel_reason ?? '—'],
+                  [t('fin.jrnList.reference'), panelEntry.reference],
+                  [t('fin.jrnList.company'), panelDetail?.company_name ?? '—'],
+                  [t('fin.jrnList.currency'), panelDetail?.lines?.[0]?.currency_code ?? 'IQD'],
+                  [t('fin.jrnList.notes'), panelDetail?.cancel_reason ?? '—'],
                 ] as [string, string][]).map(([k, v]) => (
                   <tr key={k} style={{ borderBottom: `1px solid ${theme.border}` }}>
                     <td style={{ padding: '5px 0', color: theme.textMuted, width: '38%' }}>{k}</td>
@@ -1045,7 +1043,7 @@ export default function JournalsPage() {
             </table>
 
             <Button variant="secondary" size="sm" style={{ marginTop: '14px', width: '100%' }} onClick={() => { openAudit(panelEntry.id) }}>
-              View Audit Trail
+              {t('fin.jrnList.viewAuditTrail')}
             </Button>
           </Card>
         </div>
@@ -1055,19 +1053,19 @@ export default function JournalsPage() {
       <Modal
         open={!!auditOpenFor}
         onClose={() => { setAuditOpenFor(null) }}
-        title="Audit Trail"
+        title={t('fin.jrnList.auditTrail')}
         size="md"
       >
-        {auditLoading && <div style={{ color: theme.textMuted, fontSize: '13px' }}>Loading…</div>}
+        {auditLoading && <div style={{ color: theme.textMuted, fontSize: '13px' }}>{t('fin.jrnList.loading')}</div>}
         {!auditLoading && (auditData?.auditTrail ?? []).length === 0 && (
-          <div style={{ color: theme.textMuted, fontSize: '13px' }}>No audit trail entries recorded for this entry.</div>
+          <div style={{ color: theme.textMuted, fontSize: '13px' }}>{t('fin.jrnList.noAuditTrailEntriesRecordedFor')}</div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {(auditData?.auditTrail ?? []).map((a) => (
-            <div key={a.id} style={{ borderLeft: `2px solid ${theme.accent}`, paddingLeft: '10px' }}>
+            <div key={a.id} style={{ borderInlineStart: `2px solid ${theme.accent}`, paddingInlineStart: '10px' }}>
               <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>{a.action}</div>
               <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                {a.userEmail ?? 'Unknown user'} · {new Date(a.createdAt).toLocaleString()}
+                {a.userEmail ?? t('fin.jrnList.unknownUser')} · {new Date(a.createdAt).toLocaleString()}
               </div>
             </div>
           ))}
@@ -1083,25 +1081,25 @@ export default function JournalsPage() {
             style={{ background: theme.bgCanvas, borderRadius: '12px', padding: '28px', width: '460px', maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: `1px solid ${theme.border}` }}
             onClick={(ev) => { ev.stopPropagation() }}
           >
-            <h3 style={{ margin: '0 0 8px', fontSize: '16px', color: theme.textPrimary, fontWeight: 600 }}>Combine {selectedCount} Journal Entries</h3>
+            <h3 style={{ margin: '0 0 8px', fontSize: '16px', color: theme.textPrimary, fontWeight: 600 }}>{t('fin.jrnList.combineJournalEntries', { selectedCount })}</h3>
             <p style={{ margin: '0 0 20px', fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5' }}>
-              All journal lines and PO links from the selected draft entries will be merged into one new draft. The original entries will be deleted.
+              {t('fin.jrnList.allJournalLinesAndPoLinks')}
             </p>
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', fontSize: '11px', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Description (optional)
+                {t('fin.jrnList.descriptionOptional')}
               </label>
               <input
                 type="text"
                 value={combineDesc}
                 onChange={(e) => { setCombineDesc(e.target.value) }}
-                placeholder="Leave blank to auto-generate"
+                placeholder={t('fin.jrnList.leaveBlankToAutoGenerate')}
                 style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.border}`, background: theme.bgSurface, color: theme.textPrimary, fontSize: '13px', outline: 'none' }}
               />
             </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <Button variant="ghost" size="sm" onClick={() => { setShowCombineDialog(false) }}>Cancel</Button>
-              <Button variant="primary" size="sm" onClick={() => void handleCombine()} loading={combining}>Combine Entries</Button>
+              <Button variant="ghost" size="sm" onClick={() => { setShowCombineDialog(false) }}>{t('fin.jrnList.cancel')}</Button>
+              <Button variant="primary" size="sm" onClick={() => void handleCombine()} loading={combining}>{t('fin.jrnList.combineEntries')}</Button>
             </div>
           </div>
         </div>

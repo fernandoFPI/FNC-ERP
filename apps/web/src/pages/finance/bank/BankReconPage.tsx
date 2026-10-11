@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -56,6 +57,7 @@ const emptyForm = {
 }
 
 export default function BankReconPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { can } = usePermission()
@@ -187,12 +189,12 @@ export default function BankReconPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Bank Reconciliation"
-        subtitle="Match bank statement lines to journal entries"
+        title={t('fin.bankRecon.bankReconciliation')}
+        subtitle={t('fin.bankRecon.matchBankStatementLinesToJournal')}
         actions={
           canEdit ? (
             <Button variant="primary" size="sm" onClick={openNew}>
-              + New Account
+              {t('fin.bankRecon.newAccount')}
             </Button>
           ) : undefined
         }
@@ -209,7 +211,7 @@ export default function BankReconPage() {
       >
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Bank Accounts
+            {t('fin.bankRecon.bankAccounts')}
           </p>
           <p style={{ fontSize: '22px', fontWeight: 700, color: theme.textPrimary }}>
             {totalAccounts}
@@ -217,7 +219,7 @@ export default function BankReconPage() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Pending Statements
+            {t('fin.bankRecon.pendingStatements')}
           </p>
           <p
             style={{
@@ -231,7 +233,7 @@ export default function BankReconPage() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Last Reconciled
+            {t('fin.bankRecon.lastReconciled')}
           </p>
           <p style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
             {lastReconDate ? new Date(lastReconDate).toLocaleDateString() : '—'}
@@ -245,20 +247,20 @@ export default function BankReconPage() {
           <thead>
             <tr style={{ borderBottom: `1px solid ${theme.border}`, background: theme.bgSurface }}>
               {[
-                'Account',
-                'Bank / Branch',
-                'Account No.',
-                'GL Account',
-                'Last Reconciled',
-                'Last Balance',
-                'Status',
+                t('fin.bankRecon.account'),
+                t('fin.bankRecon.bankBranch'),
+                t('fin.bankRecon.accountNo'),
+                t('fin.bankRecon.glAccount'),
+                t('fin.bankRecon.lastReconciled'),
+                t('fin.bankRecon.lastBalance'),
+                t('fin.bankRecon.status'),
                 '',
               ].map((h) => (
                 <th
                   key={h}
                   style={{
                     padding: '10px 14px',
-                    textAlign: 'left',
+                    textAlign: 'start',
                     color: theme.textMuted,
                     fontWeight: 500,
                     whiteSpace: 'nowrap',
@@ -276,7 +278,7 @@ export default function BankReconPage() {
                   colSpan={8}
                   style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                 >
-                  Loading...
+                  {t('fin.bankRecon.loading')}
                 </td>
               </tr>
             )}
@@ -286,10 +288,10 @@ export default function BankReconPage() {
                   colSpan={8}
                   style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                 >
-                  No bank accounts configured.{' '}
+                  {t('fin.bankRecon.noBankAccountsConfigured')}{' '}
                   {canEdit && (
                     <span style={{ color: theme.accent, cursor: 'pointer' }} onClick={openNew}>
-                      Add your first account →
+                      {t('fin.bankRecon.addYourFirstAccount')}
                     </span>
                   )}
                 </td>
@@ -320,7 +322,7 @@ export default function BankReconPage() {
                       {a.gl_account_code} · {a.gl_account_name}
                     </span>
                   ) : (
-                    <Badge variant="warning">No GL linked</Badge>
+                    <Badge variant="warning">{t('fin.bankRecon.noGlLinked')}</Badge>
                   )}
                 </td>
                 <td style={{ padding: '10px 14px', color: theme.textSecondary, fontSize: '12px' }}>
@@ -328,9 +330,7 @@ export default function BankReconPage() {
                     ? new Date(a.last_reconciled_date).toLocaleDateString()
                     : '—'}
                   {a.latest_period && (
-                    <p style={{ fontSize: '11px', color: theme.textMuted }}>
-                      Latest: {a.latest_period}
-                    </p>
+                    <p style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.bankRecon.latest', { latest_period: a.latest_period })}</p>
                   )}
                 </td>
                 <td style={{ padding: '10px 14px' }}>
@@ -346,11 +346,11 @@ export default function BankReconPage() {
                 </td>
                 <td style={{ padding: '10px 14px' }}>
                   {Number(a.pending_statements) > 0 ? (
-                    <Badge variant="warning">{a.pending_statements} pending</Badge>
+                    <Badge variant="warning">{t('fin.bankRecon.pending', { pending_statements: a.pending_statements })}</Badge>
                   ) : a.last_reconciled_date ? (
-                    <Badge variant="success">Up to date</Badge>
+                    <Badge variant="success">{t('fin.bankRecon.upToDate')}</Badge>
                   ) : (
-                    <Badge variant="neutral">Not started</Badge>
+                    <Badge variant="neutral">{t('fin.bankRecon.notStarted')}</Badge>
                   )}
                 </td>
                 <td style={{ padding: '10px 14px' }}>
@@ -362,7 +362,7 @@ export default function BankReconPage() {
                         navigate(`/finance/bank/${a.id}`)
                       }}
                     >
-                      Reconcile
+                      {t('fin.bankRecon.reconcile')}
                     </Button>
                     {canEdit && (
                       <Button
@@ -372,7 +372,7 @@ export default function BankReconPage() {
                           openEdit(a)
                         }}
                       >
-                        Edit
+                        {t('fin.bankRecon.edit')}
                       </Button>
                     )}
                   </div>
@@ -406,7 +406,7 @@ export default function BankReconPage() {
               }}
             >
               <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '16px' }}>
-                {editingId ? 'Edit Bank Account' : 'New Bank Account'}
+                {editingId ? t('fin.bankRecon.editBankAccount') : t('fin.bankRecon.newBankAccount')}
               </h3>
               <Button
                 variant="ghost"
@@ -430,7 +430,7 @@ export default function BankReconPage() {
                 }}
               >
                 <label style={{ ...labelStyle, marginBottom: '6px' }}>
-                  Auto-fill from company bank account
+                  {t('fin.bankRecon.autoFillFromCompanyBankAccount')}
                 </label>
                 <select
                   style={inputStyle}
@@ -439,7 +439,7 @@ export default function BankReconPage() {
                     if (e.target.value) handleImportCompanyAccount(e.target.value)
                   }}
                 >
-                  <option value="">— Select to auto-fill fields below —</option>
+                  <option value="">{t('fin.bankRecon.selectToAutoFillFieldsBelow')}</option>
                   {companyBankAccounts.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
@@ -453,51 +453,51 @@ export default function BankReconPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Account Name *</label>
+                <label style={labelStyle}>{t('fin.bankRecon.accountName')}</label>
                 <input
                   style={inputStyle}
                   value={form.name}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, name: e.target.value }))
                   }}
-                  placeholder="e.g. Rafidain Bank — Main"
+                  placeholder={t('fin.bankRecon.eGRafidainBankMain')}
                 />
               </div>
               <div>
-                <label style={labelStyle}>Bank Name</label>
+                <label style={labelStyle}>{t('fin.bankRecon.bankName')}</label>
                 <input
                   style={inputStyle}
                   value={form.bank_name}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, bank_name: e.target.value }))
                   }}
-                  placeholder="Rafidain Bank"
+                  placeholder={t('fin.bankRecon.rafidainBank')}
                 />
               </div>
               <div>
-                <label style={labelStyle}>Branch</label>
+                <label style={labelStyle}>{t('fin.bankRecon.branch')}</label>
                 <input
                   style={inputStyle}
                   value={form.branch}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, branch: e.target.value }))
                   }}
-                  placeholder="Main Branch"
+                  placeholder={t('fin.bankRecon.mainBranch')}
                 />
               </div>
               <div>
-                <label style={labelStyle}>Account Number</label>
+                <label style={labelStyle}>{t('fin.bankRecon.accountNumber')}</label>
                 <input
                   style={inputStyle}
                   value={form.account_number}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, account_number: e.target.value }))
                   }}
-                  placeholder="XXXXXXXXXX"
+                  placeholder={t('fin.bankRecon.xxxxxxxxxx')}
                 />
               </div>
               <div>
-                <label style={labelStyle}>Currency</label>
+                <label style={labelStyle}>{t('fin.bankRecon.currency')}</label>
                 <select
                   style={inputStyle}
                   value={form.currency_code}
@@ -505,35 +505,35 @@ export default function BankReconPage() {
                     setForm((f) => ({ ...f, currency_code: e.target.value }))
                   }}
                 >
-                  <option value="IQD">IQD — Iraqi Dinar</option>
-                  <option value="USD">USD — US Dollar</option>
-                  <option value="EUR">EUR — Euro</option>
+                  <option value="IQD">{t('fin.bankRecon.iqdIraqiDinar')}</option>
+                  <option value="USD">{t('fin.bankRecon.usdUsDollar')}</option>
+                  <option value="EUR">{t('fin.bankRecon.eurEuro')}</option>
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>SWIFT / BIC</label>
+                <label style={labelStyle}>{t('fin.bankRecon.swiftBic')}</label>
                 <input
                   style={inputStyle}
                   value={form.swift_code}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, swift_code: e.target.value }))
                   }}
-                  placeholder="RBNKIQBA"
+                  placeholder={t('fin.bankRecon.rbnkiqba')}
                 />
               </div>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>IBAN</label>
+                <label style={labelStyle}>{t('fin.bankRecon.iban')}</label>
                 <input
                   style={inputStyle}
                   value={form.iban}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, iban: e.target.value }))
                   }}
-                  placeholder="IQ98RBNK..."
+                  placeholder={t('fin.bankRecon.iq98rbnk')}
                 />
               </div>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>GL Account (Bank Account in Chart of Accounts)</label>
+                <label style={labelStyle}>{t('fin.bankRecon.glAccountBankAccountInChart')}</label>
                 <select
                   style={inputStyle}
                   value={form.gl_account_id}
@@ -541,7 +541,7 @@ export default function BankReconPage() {
                     setForm((f) => ({ ...f, gl_account_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Select GL account —</option>
+                  <option value="">{t('fin.bankRecon.selectGlAccount')}</option>
                   {glAccounts.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.code} · {g.name}
@@ -550,7 +550,7 @@ export default function BankReconPage() {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Opening Balance</label>
+                <label style={labelStyle}>{t('fin.bankRecon.openingBalance')}</label>
                 <input
                   style={inputStyle}
                   type="number"
@@ -561,7 +561,7 @@ export default function BankReconPage() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Notes</label>
+                <label style={labelStyle}>{t('fin.bankRecon.notes')}</label>
                 <input
                   style={inputStyle}
                   value={form.notes}
@@ -582,7 +582,7 @@ export default function BankReconPage() {
                   setShowForm(false)
                 }}
               >
-                Cancel
+                {t('fin.bankRecon.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -590,7 +590,7 @@ export default function BankReconPage() {
                 onClick={() => void handleSave()}
                 disabled={saving || !form.name.trim()}
               >
-                {saving ? 'Saving...' : 'Save Account'}
+                {saving ? t('fin.bankRecon.saving') : t('fin.bankRecon.saveAccount')}
               </Button>
             </div>
           </Card>

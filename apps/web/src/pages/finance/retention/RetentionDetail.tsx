@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -53,6 +54,7 @@ const STATUS_BADGE: Record<string, 'danger' | 'warning' | 'success'> = {
 }
 
 export default function RetentionDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const navigate = useNavigate()
@@ -173,13 +175,13 @@ export default function RetentionDetail() {
   if (loading)
     return (
       <div style={{ padding: '24px', color: theme.textMuted, fontSize: '13px' }}>
-        Loading retention record...
+        {t('fin.retDetail.loadingRetentionRecord')}
       </div>
     )
   if (!record)
     return (
       <div style={{ padding: '24px', color: theme.textMuted, fontSize: '13px' }}>
-        Record not found.
+        {t('fin.retDetail.recordNotFound')}
       </div>
     )
 
@@ -198,7 +200,7 @@ export default function RetentionDetail() {
     <div style={{ padding: '24px' }}>
       <PageHeader
         title={record.record_number}
-        subtitle={`${record.retention_type.toUpperCase()} Retention · ${record.counterparty_name}`}
+        subtitle={t('fin.retDetail.retention', { retention_type: record.retention_type.toUpperCase(), counterparty_name: record.counterparty_name })}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button
@@ -208,7 +210,7 @@ export default function RetentionDetail() {
                 navigate(-1)
               }}
             >
-              ← Back
+              {t('fin.retDetail.back')}
             </Button>
             {canEdit && (
               <Button
@@ -218,7 +220,7 @@ export default function RetentionDetail() {
                   setShowEdit(true)
                 }}
               >
-                Edit
+                {t('fin.retDetail.edit')}
               </Button>
             )}
             {canEdit && canRelease && (
@@ -229,7 +231,7 @@ export default function RetentionDetail() {
                   setShowRelease(true)
                 }}
               >
-                Release Retention
+                {t('fin.retDetail.releaseRetention')}
               </Button>
             )}
           </div>
@@ -242,15 +244,15 @@ export default function RetentionDetail() {
           {record.status.replace('_', ' ')}
         </Badge>
         <Badge variant={record.retention_type === 'ar' ? 'info' : 'warning'}>
-          {record.retention_type === 'ar' ? 'AR — Client owes us' : 'AP — We owe vendor'}
+          {record.retention_type === 'ar' ? t('fin.retDetail.arClientOwesUs') : t('fin.retDetail.apWeOweVendor')}
         </Badge>
-        {isOverdue && <Badge variant="danger">Past Expected Release Date</Badge>}
+        {isOverdue && <Badge variant="danger">{t('fin.retDetail.pastExpectedReleaseDate')}</Badge>}
       </div>
 
       {/* Progress Bar */}
       <Card padding="md" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>Release Progress</span>
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('fin.retDetail.releaseProgress')}</span>
           <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
             {releasePct}%
           </span>
@@ -274,12 +276,8 @@ export default function RetentionDetail() {
           />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
-          <span style={{ fontSize: '11px', color: theme.textMuted }}>
-            Released: {Number(record.released_amount).toLocaleString()} IQD
-          </span>
-          <span style={{ fontSize: '11px', color: theme.textMuted }}>
-            Remaining: {outstanding.toLocaleString()} IQD
-          </span>
+          <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.retDetail.releasedIqd', { value: Number(record.released_amount).toLocaleString() })}</span>
+          <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.retDetail.remainingIqd', { outstanding: outstanding.toLocaleString() })}</span>
         </div>
       </Card>
 
@@ -294,13 +292,13 @@ export default function RetentionDetail() {
       >
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Invoice Amount
+            {t('fin.retDetail.invoiceAmount')}
           </p>
           <AmountDisplay amount={record.invoice_amount} currency="IQD" size="md" />
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Retention Rate
+            {t('fin.retDetail.retentionRate')}
           </p>
           <p
             style={{
@@ -315,12 +313,12 @@ export default function RetentionDetail() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Held
+            {t('fin.retDetail.totalHeld')}
           </p>
           <AmountDisplay amount={record.retention_amount} currency="IQD" size="md" />
         </Card>
         <Card padding="sm">
-          <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Released</p>
+          <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>{t('fin.retDetail.released')}</p>
           <AmountDisplay amount={Number(record.released_amount)} currency="IQD" size="md" />
         </Card>
         <Card
@@ -328,7 +326,7 @@ export default function RetentionDetail() {
           style={{ border: outstanding > 0 && isOverdue ? '1px solid #ef4444' : undefined }}
         >
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Outstanding
+            {t('fin.retDetail.outstanding')}
           </p>
           <AmountDisplay amount={outstanding} currency="IQD" size="md" colored />
         </Card>
@@ -348,24 +346,24 @@ export default function RetentionDetail() {
                 marginBottom: '12px',
               }}
             >
-              Record Details
+              {t('fin.retDetail.recordDetails')}
             </p>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <tbody>
                 {[
-                  ['Record #', record.record_number],
-                  ['Type', record.retention_type === 'ar' ? 'AR (Client)' : 'AP (Vendor)'],
-                  ['Counterparty', record.counterparty_name],
-                  ['Project', record.project_name ?? '—'],
-                  ['Source Ref', record.source_ref ?? '—'],
-                  ['Invoice Date', new Date(record.invoice_date).toLocaleDateString()],
+                  [t('fin.retDetail.record'), record.record_number],
+                  [t('fin.retDetail.type'), record.retention_type === 'ar' ? t('fin.retDetail.arClient') : t('fin.retDetail.apVendor')],
+                  [t('fin.retDetail.counterparty'), record.counterparty_name],
+                  [t('fin.retDetail.project'), record.project_name ?? '—'],
+                  [t('fin.retDetail.sourceRef'), record.source_ref ?? '—'],
+                  [t('fin.retDetail.invoiceDate'), new Date(record.invoice_date).toLocaleDateString()],
                   [
-                    'Expected Release',
+                    t('fin.retDetail.expectedRelease'),
                     record.expected_release_date
                       ? new Date(record.expected_release_date).toLocaleDateString()
                       : '—',
                   ],
-                  ['Created', new Date(record.created_at).toLocaleDateString()],
+                  [t('fin.retDetail.created'), new Date(record.created_at).toLocaleDateString()],
                 ].map(([k, v]) => (
                   <tr key={k} style={{ borderBottom: `1px solid ${theme.border}` }}>
                     <td style={{ padding: '7px 0', color: theme.textMuted, width: '50%' }}>{k}</td>
@@ -414,11 +412,9 @@ export default function RetentionDetail() {
                   margin: 0,
                 }}
               >
-                Release History
+                {t('fin.retDetail.releaseHistory')}
               </p>
-              <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                {releases.length} releases
-              </span>
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.retDetail.releases', { length: releases.length })}</span>
             </div>
             {!releases.length ? (
               <div
@@ -428,10 +424,7 @@ export default function RetentionDetail() {
                   color: theme.textMuted,
                   fontSize: '12px',
                 }}
-              >
-                No releases yet.
-                {canRelease ? ' Click "Release Retention" to record the first release.' : ''}
-              </div>
+              >{t('fin.retDetail.noReleasesYet', { value: canRelease ? t('fin.retDetail.clickReleaseRetentionToRecordThe') : '' })}</div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
@@ -441,12 +434,12 @@ export default function RetentionDetail() {
                       borderBottom: `1px solid ${theme.border}`,
                     }}
                   >
-                    {['Date', 'Amount Released', 'Journal Entry', 'Notes'].map((h) => (
+                    {[t('fin.retDetail.date'), t('fin.retDetail.amountReleased'), t('fin.retDetail.journalEntry'), t('fin.retDetail.notes')].map((h) => (
                       <th
                         key={h}
                         style={{
                           padding: '8px 12px',
-                          textAlign: 'left',
+                          textAlign: 'start',
                           color: theme.textMuted,
                           fontWeight: 500,
                           fontSize: '11px',
@@ -511,7 +504,7 @@ export default function RetentionDetail() {
               }}
             >
               <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
-                Release Retention
+                {t('fin.retDetail.releaseRetention')}
               </h3>
               <Button
                 variant="ghost"
@@ -536,20 +529,16 @@ export default function RetentionDetail() {
               <div
                 style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}
               >
-                <span style={{ color: theme.textMuted }}>Total held:</span>
+                <span style={{ color: theme.textMuted }}>{t('fin.retDetail.totalHeld2')}</span>
                 <span
                   style={{ color: theme.textPrimary, fontWeight: 600, fontFamily: 'monospace' }}
-                >
-                  {Number(record.retention_amount).toLocaleString()} IQD
-                </span>
+                >{t('fin.retDetail.iqd', { value: Number(record.retention_amount).toLocaleString() })}</span>
               </div>
               <div
                 style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}
               >
-                <span style={{ color: theme.textMuted }}>Already released:</span>
-                <span style={{ color: theme.textSecondary, fontFamily: 'monospace' }}>
-                  {Number(record.released_amount).toLocaleString()} IQD
-                </span>
+                <span style={{ color: theme.textMuted }}>{t('fin.retDetail.alreadyReleased')}</span>
+                <span style={{ color: theme.textSecondary, fontFamily: 'monospace' }}>{t('fin.retDetail.iqd', { value: Number(record.released_amount).toLocaleString() })}</span>
               </div>
               <div
                 style={{
@@ -560,16 +549,14 @@ export default function RetentionDetail() {
                   borderTop: `1px solid ${theme.border}`,
                 }}
               >
-                <span style={{ color: theme.textMuted }}>Max releasable:</span>
-                <span style={{ color: theme.accent, fontFamily: 'monospace' }}>
-                  {outstanding.toLocaleString()} IQD
-                </span>
+                <span style={{ color: theme.textMuted }}>{t('fin.retDetail.maxReleasable')}</span>
+                <span style={{ color: theme.accent, fontFamily: 'monospace' }}>{t('fin.retDetail.iqd2', { outstanding: outstanding.toLocaleString() })}</span>
               </div>
             </div>
 
             <div style={{ display: 'grid', gap: '12px' }}>
               <div>
-                <label style={labelStyle}>Release Amount *</label>
+                <label style={labelStyle}>{t('fin.retDetail.releaseAmount')}</label>
                 <input
                   type="number"
                   style={inputStyle}
@@ -580,12 +567,10 @@ export default function RetentionDetail() {
                     setReleaseForm((f) => ({ ...f, amount: e.target.value }))
                   }}
                 />
-                <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '3px' }}>
-                  Max: {outstanding.toLocaleString()} IQD (remaining balance)
-                </p>
+                <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '3px' }}>{t('fin.retDetail.maxIqdRemainingBalance', { outstanding: outstanding.toLocaleString() })}</p>
               </div>
               <div>
-                <label style={labelStyle}>Release Date *</label>
+                <label style={labelStyle}>{t('fin.retDetail.releaseDate')}</label>
                 <input
                   type="date"
                   style={inputStyle}
@@ -596,11 +581,11 @@ export default function RetentionDetail() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Notes</label>
+                <label style={labelStyle}>{t('fin.retDetail.notes')}</label>
                 <input
                   style={inputStyle}
                   value={releaseForm.notes}
-                  placeholder="e.g. Project milestone completion"
+                  placeholder={t('fin.retDetail.eGProjectMilestoneCompletion')}
                   onChange={(e) => {
                     setReleaseForm((f) => ({ ...f, notes: e.target.value }))
                   }}
@@ -624,7 +609,7 @@ export default function RetentionDetail() {
                       setReleaseForm((f) => ({ ...f, post_journal_entry: e.target.checked }))
                     }}
                   />
-                  Post journal entry (reverses the original retention entry)
+                  {t('fin.retDetail.postJournalEntryReversesTheOriginal')}
                 </label>
               </div>
             </div>
@@ -639,7 +624,7 @@ export default function RetentionDetail() {
                   setShowRelease(false)
                 }}
               >
-                Cancel
+                {t('fin.retDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -652,7 +637,7 @@ export default function RetentionDetail() {
                   Number(releaseForm.amount) <= 0
                 }
               >
-                {saving ? 'Processing...' : 'Confirm Release'}
+                {saving ? t('fin.retDetail.processing') : t('fin.retDetail.confirmRelease')}
               </Button>
             </div>
           </Card>
@@ -682,7 +667,7 @@ export default function RetentionDetail() {
               }}
             >
               <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
-                Edit Retention Record
+                {t('fin.retDetail.editRetentionRecord')}
               </h3>
               <Button
                 variant="ghost"
@@ -697,7 +682,7 @@ export default function RetentionDetail() {
 
             <div style={{ display: 'grid', gap: '12px' }}>
               <div>
-                <label style={labelStyle}>Expected Release Date</label>
+                <label style={labelStyle}>{t('fin.retDetail.expectedReleaseDate')}</label>
                 <input
                   type="date"
                   style={inputStyle}
@@ -710,8 +695,8 @@ export default function RetentionDetail() {
               <div>
                 <label style={labelStyle}>
                   {record.retention_type === 'ar'
-                    ? 'Retention Receivable Account'
-                    : 'Retention Payable Account'}
+                    ? t('fin.retDetail.retentionReceivableAccount')
+                    : t('fin.retDetail.retentionPayableAccount')}
                 </label>
                 <select
                   style={inputStyle}
@@ -720,7 +705,7 @@ export default function RetentionDetail() {
                     setEditForm((f) => ({ ...f, retention_account_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Select GL account —</option>
+                  <option value="">{t('fin.retDetail.selectGlAccount')}</option>
                   {glAccounts.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.code} · {g.name}
@@ -730,7 +715,7 @@ export default function RetentionDetail() {
               </div>
               <div>
                 <label style={labelStyle}>
-                  {record.retention_type === 'ar' ? 'AR Account (offset)' : 'AP Account (offset)'}
+                  {record.retention_type === 'ar' ? t('fin.retDetail.arAccountOffset') : t('fin.retDetail.apAccountOffset')}
                 </label>
                 <select
                   style={inputStyle}
@@ -739,7 +724,7 @@ export default function RetentionDetail() {
                     setEditForm((f) => ({ ...f, offset_account_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Select GL account —</option>
+                  <option value="">{t('fin.retDetail.selectGlAccount')}</option>
                   {glAccounts.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.code} · {g.name}
@@ -748,7 +733,7 @@ export default function RetentionDetail() {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Notes</label>
+                <label style={labelStyle}>{t('fin.retDetail.notes')}</label>
                 <input
                   style={inputStyle}
                   value={editForm.notes}
@@ -769,7 +754,7 @@ export default function RetentionDetail() {
                   setShowEdit(false)
                 }}
               >
-                Cancel
+                {t('fin.retDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -777,7 +762,7 @@ export default function RetentionDetail() {
                 onClick={() => void handleEdit()}
                 disabled={saving}
               >
-                {saving ? 'Saving...' : 'Save Changes'}
+                {saving ? t('fin.retDetail.saving') : t('fin.retDetail.saveChanges')}
               </Button>
             </div>
           </Card>

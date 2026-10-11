@@ -1,3 +1,5 @@
+import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -60,15 +62,16 @@ interface EmployeeRow {
 }
 
 const STATUS_BADGE: Record<string, { variant: 'neutral' | 'info' | 'success' | 'danger' | 'warning'; label: string }> = {
-  draft: { variant: 'neutral', label: 'Draft' },
-  submitted: { variant: 'info', label: 'Pending approval' },
-  approved: { variant: 'warning', label: 'Awaiting funding decision' },
-  posted: { variant: 'warning', label: 'Awaiting payment' },
-  paid: { variant: 'success', label: 'Paid' },
-  rejected: { variant: 'danger', label: 'Rejected' },
+  draft: { variant: 'neutral', get label() { return i18n.t('fin.expDash.draft', { defaultValue: "Draft" }) } },
+  submitted: { variant: 'info', get label() { return i18n.t('fin.expDash.pendingApproval', { defaultValue: "Pending approval" }) } },
+  approved: { variant: 'warning', get label() { return i18n.t('fin.expDash.awaitingFundingDecision', { defaultValue: "Awaiting funding decision" }) } },
+  posted: { variant: 'warning', get label() { return i18n.t('fin.expDash.awaitingPayment', { defaultValue: "Awaiting payment" }) } },
+  paid: { variant: 'success', get label() { return i18n.t('fin.expDash.paid', { defaultValue: "Paid" }) } },
+  rejected: { variant: 'danger', get label() { return i18n.t('fin.expDash.rejected', { defaultValue: "Rejected" }) } },
 }
 
 export default function ExpenseClaimDashboard() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [data, setData] = useState<Dashboard | null>(null)
@@ -118,8 +121,8 @@ export default function ExpenseClaimDashboard() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Expense Claims Dashboard"
-        subtitle="Every expense claim, by employee"
+        title={t('fin.expDash.expenseClaimsDashboard')}
+        subtitle={t('fin.expDash.everyExpenseClaimByEmployee')}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button
@@ -129,10 +132,10 @@ export default function ExpenseClaimDashboard() {
                 navigate('/procurement/requisitions')
               }}
             >
-              ← Back to Requisitions
+              {t('fin.expDash.backToRequisitions')}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => void load()}>
-              Refresh
+              {t('fin.expDash.refresh')}
             </Button>
           </div>
         }
@@ -148,7 +151,7 @@ export default function ExpenseClaimDashboard() {
       >
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Claimed
+            {t('fin.expDash.totalClaimed')}
           </p>
           {totalCurrencies.length === 0 ? (
             <AmountDisplay amount={0} currency="IQD" size="md" colored />
@@ -168,7 +171,7 @@ export default function ExpenseClaimDashboard() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Employees
+            {t('fin.expDash.employees')}
           </p>
           <p style={{ fontSize: '22px', fontWeight: 700, color: theme.textSecondary }}>
             {employeeCount}
@@ -176,7 +179,7 @@ export default function ExpenseClaimDashboard() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Claims
+            {t('fin.expDash.totalClaims')}
           </p>
           <p style={{ fontSize: '22px', fontWeight: 700, color: theme.textSecondary }}>
             {claimCount}
@@ -195,7 +198,7 @@ export default function ExpenseClaimDashboard() {
             marginBottom: '8px',
           }}
         >
-          By Employee
+          {t('fin.expDash.byEmployee')}
         </p>
         <Card padding="none">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -203,7 +206,7 @@ export default function ExpenseClaimDashboard() {
               <tr
                 style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
               >
-                {['Employee', 'Claims', 'Total Amount'].map((h, i) => (
+                {[t('fin.expDash.employee'), t('fin.expDash.claims'), t('fin.expDash.totalAmount')].map((h, i) => (
                   <th
                     key={h}
                     style={{
@@ -225,7 +228,7 @@ export default function ExpenseClaimDashboard() {
                     colSpan={3}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    Loading...
+                    {t('fin.expDash.loading')}
                   </td>
                 </tr>
               )}
@@ -235,7 +238,7 @@ export default function ExpenseClaimDashboard() {
                     colSpan={3}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    No claims yet.
+                    {t('fin.expDash.noClaimsYet')}
                   </td>
                 </tr>
               )}
@@ -245,11 +248,11 @@ export default function ExpenseClaimDashboard() {
                     {e.employee_name}
                   </td>
                   <td
-                    style={{ padding: '9px 12px', textAlign: 'right', color: theme.textSecondary }}
+                    style={{ padding: '9px 12px', textAlign: 'end', color: theme.textSecondary }}
                   >
                     {e.claim_count}
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end' }}>
                       {sortedCurrencies(e.amounts).map((currency) => (
                         <AmountDisplay
@@ -280,7 +283,7 @@ export default function ExpenseClaimDashboard() {
             marginBottom: '8px',
           }}
         >
-          All Claims
+          {t('fin.expDash.allClaims')}
         </p>
         <Card padding="none">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -288,7 +291,7 @@ export default function ExpenseClaimDashboard() {
               <tr
                 style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
               >
-                {['Ref', 'Employee', 'Amount', 'Status'].map((h, i) => (
+                {[t('fin.expDash.ref'), t('fin.expDash.employee'), t('fin.expDash.amount'), t('fin.expDash.status')].map((h, i) => (
                   <th
                     key={h}
                     style={{
@@ -310,7 +313,7 @@ export default function ExpenseClaimDashboard() {
                     colSpan={4}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    Loading...
+                    {t('fin.expDash.loading')}
                   </td>
                 </tr>
               )}
@@ -320,7 +323,7 @@ export default function ExpenseClaimDashboard() {
                     colSpan={4}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    No claims yet.
+                    {t('fin.expDash.noClaimsYet')}
                   </td>
                 </tr>
               )}
@@ -345,7 +348,7 @@ export default function ExpenseClaimDashboard() {
                   <td style={{ padding: '9px 12px', fontWeight: 500, color: theme.textPrimary }}>
                     {c.employee_name}
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <AmountDisplay
                       amount={Number(c.total_amount)}
                       currency={c.currency_code}

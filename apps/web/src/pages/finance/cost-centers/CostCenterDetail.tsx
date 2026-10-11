@@ -1,3 +1,5 @@
+import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -43,10 +45,10 @@ interface CostCenterDetail {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  department: 'Department',
-  project: 'Project',
-  entity: 'Entity',
-  overhead: 'Overhead',
+  get department() { return i18n.t('fin.ccDetail.department', { defaultValue: "Department" }) },
+  get project() { return i18n.t('fin.ccDetail.project', { defaultValue: "Project" }) },
+  get entity() { return i18n.t('fin.ccDetail.entity', { defaultValue: "Entity" }) },
+  get overhead() { return i18n.t('fin.ccDetail.overhead', { defaultValue: "Overhead" }) },
 }
 const TYPE_VARIANTS: Record<string, 'neutral' | 'info' | 'accent' | 'warning'> = {
   department: 'info',
@@ -56,13 +58,14 @@ const TYPE_VARIANTS: Record<string, 'neutral' | 'info' | 'accent' | 'warning'> =
 }
 
 const SOURCE_LABELS: Record<string, string> = {
-  mo_completion: 'MO Completion',
-  po_completion: 'PO Completion',
-  interco_transaction: 'Interco Transaction',
-  manual: 'Manual',
+  get mo_completion() { return i18n.t('fin.ccDetail.moCompletion', { defaultValue: "MO Completion" }) },
+  get po_completion() { return i18n.t('fin.ccDetail.poCompletion', { defaultValue: "PO Completion" }) },
+  get interco_transaction() { return i18n.t('fin.ccDetail.intercoTransaction', { defaultValue: "Interco Transaction" }) },
+  get manual() { return i18n.t('fin.ccDetail.manual', { defaultValue: "Manual" }) },
 }
 
 export default function CostCenterDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -80,7 +83,7 @@ export default function CostCenterDetail() {
         setCc(res.data)
       })
       .catch(() => {
-        setError('Failed to load cost center')
+        setError(t('fin.ccDetail.failedToLoadCostCenter'))
       })
       .finally(() => {
         setLoading(false)
@@ -103,9 +106,9 @@ export default function CostCenterDetail() {
             navigate(-1)
           }}
         >
-          ← Back
+          {t('fin.ccDetail.back')}
         </Button>
-        <p style={{ color: '#ef4444', marginTop: '16px' }}>{error ?? 'Cost center not found'}</p>
+        <p style={{ color: '#ef4444', marginTop: '16px' }}>{error ?? t('fin.ccDetail.costCenterNotFound')}</p>
       </div>
     )
 
@@ -124,7 +127,7 @@ export default function CostCenterDetail() {
               {TYPE_LABELS[cc.type] ?? cc.type}
             </Badge>
             <Badge variant={cc.is_active ? 'success' : 'neutral'}>
-              {cc.is_active ? 'Active' : 'Inactive'}
+              {cc.is_active ? t('fin.ccDetail.active') : t('fin.ccDetail.inactive')}
             </Badge>
             <Button
               variant="ghost"
@@ -133,7 +136,7 @@ export default function CostCenterDetail() {
                 navigate(-1)
               }}
             >
-              ← Back
+              {t('fin.ccDetail.back')}
             </Button>
           </div>
         }
@@ -150,16 +153,16 @@ export default function CostCenterDetail() {
       >
         <Card padding="sm">
           <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Lines
+            {t('fin.ccDetail.totalLines')}
           </div>
           <div style={{ fontWeight: 700, fontSize: '15px', color: theme.textPrimary }}>
             {cc.journal_line_count.toLocaleString()}
           </div>
         </Card>
         {[
-          { label: 'Total Debits', iqd: totalDebits },
-          { label: 'Total Credits', iqd: totalCredits },
-          { label: 'Balance (Dr − Cr)', iqd: Math.abs(balance), suffix: balance < 0 ? ' Cr' : '' },
+          { label: t('fin.ccDetail.totalDebits'), iqd: totalDebits },
+          { label: t('fin.ccDetail.totalCredits'), iqd: totalCredits },
+          { label: t('fin.ccDetail.balanceDrCr'), iqd: Math.abs(balance), suffix: balance < 0 ? ' Cr' : '' },
         ].map(({ label, iqd, suffix = '' }) => (
           <Card key={label} padding="sm">
             <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -187,10 +190,10 @@ export default function CostCenterDetail() {
             {cc.parent_id && (
               <div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                  Parent Cost Center
+                  {t('fin.ccDetail.parentCostCenter')}
                 </div>
                 <div style={{ fontWeight: 600, color: theme.textPrimary }}>
-                  <span style={{ fontFamily: 'monospace', fontSize: '12px', marginRight: '6px' }}>
+                  <span style={{ fontFamily: 'monospace', fontSize: '12px', marginInlineEnd: '6px' }}>
                     {cc.parent_code}
                   </span>
                   {cc.parent_name}
@@ -200,7 +203,7 @@ export default function CostCenterDetail() {
             {cc.default_recharge_fulfiller_email && (
               <div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                  Recharge Fulfiller
+                  {t('fin.ccDetail.rechargeFulfiller')}
                 </div>
                 <div style={{ fontWeight: 600, color: theme.textPrimary }}>
                   {cc.default_recharge_fulfiller_email}
@@ -210,7 +213,7 @@ export default function CostCenterDetail() {
             {cc.default_recharge_fulfiller_email_2 && (
               <div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                  Second Recharge Fulfiller
+                  {t('fin.ccDetail.secondRechargeFulfiller')}
                 </div>
                 <div style={{ fontWeight: 600, color: theme.textPrimary }}>
                   {cc.default_recharge_fulfiller_email_2}
@@ -232,10 +235,10 @@ export default function CostCenterDetail() {
             color: theme.textPrimary,
           }}
         >
-          Journal Lines{' '}
+          {t('fin.ccDetail.journalLines')}{' '}
           {cc.lines.length >= 200 && (
             <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: 400 }}>
-              (showing latest 200)
+              {t('fin.ccDetail.showingLatest200')}
             </span>
           )}
         </div>
@@ -248,7 +251,7 @@ export default function CostCenterDetail() {
               fontSize: '13px',
             }}
           >
-            No journal lines yet.
+            {t('fin.ccDetail.noJournalLinesYet')}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -256,19 +259,19 @@ export default function CostCenterDetail() {
               <thead>
                 <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                   {[
-                    'Date',
-                    'Reference',
-                    'Account',
-                    'Description',
-                    'Source',
-                    'Amount (orig.)',
-                    'IQD Equiv.',
-                    'Status',
+                    t('fin.ccDetail.date'),
+                    t('fin.ccDetail.reference'),
+                    t('fin.ccDetail.account'),
+                    t('fin.ccDetail.description'),
+                    t('fin.ccDetail.source'),
+                    t('fin.ccDetail.amountOrig'),
+                    t('fin.ccDetail.iqdEquiv'),
+                    t('fin.ccDetail.status'),
                   ].map((h) => (
                     <th
                       key={h}
                       style={{
-                        textAlign: 'left',
+                        textAlign: 'start',
                         padding: '8px 12px',
                         color: theme.textMuted,
                         fontWeight: 500,
@@ -308,7 +311,7 @@ export default function CostCenterDetail() {
                       <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>
                         {line.account_code}
                       </span>
-                      <span style={{ marginLeft: '6px' }}>{line.account_name}</span>
+                      <span style={{ marginInlineStart: '6px' }}>{line.account_name}</span>
                     </td>
                     <td
                       style={{
@@ -326,7 +329,7 @@ export default function CostCenterDetail() {
                     <td style={{ padding: '8px 12px', color: theme.textMuted }}>
                       {SOURCE_LABELS[line.source_type] ?? line.source_type ?? '—'}
                     </td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                    <td style={{ padding: '8px 12px', textAlign: 'end' }}>
                       {(() => {
                         const isDebit = parseFloat(line.debit) > 0
                         const isCredit = parseFloat(line.credit) > 0
@@ -340,11 +343,11 @@ export default function CostCenterDetail() {
                                 <span
                                   style={{
                                     fontSize: '10px',
-                                    marginLeft: '3px',
+                                    marginInlineStart: '3px',
                                     color: theme.success,
                                   }}
                                 >
-                                  Cr
+                                  {t('fin.ccDetail.cr')}
                                 </span>
                               )}
                             </span>
@@ -357,7 +360,7 @@ export default function CostCenterDetail() {
                         )
                       })()}
                     </td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                    <td style={{ padding: '8px 12px', textAlign: 'end' }}>
                       <AmountDisplay
                         amount={parseFloat(line.amount_company_currency)}
                         currency="IQD"

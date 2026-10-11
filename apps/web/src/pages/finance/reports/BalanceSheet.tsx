@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { BALANCE_SHEET_QUERY } from '../../../graphql/finance'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -17,6 +18,7 @@ interface BSLine {
 }
 
 export default function BalanceSheet() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
   const [queried, setQueried] = useState(false)
@@ -69,7 +71,7 @@ export default function BalanceSheet() {
                   fontFamily: 'monospace',
                   color: theme.textMuted,
                   fontSize: '12px',
-                  marginRight: '8px',
+                  marginInlineEnd: '8px',
                 }}
               >
                 {l.code}
@@ -87,12 +89,12 @@ export default function BalanceSheet() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
-      <PageHeader title="Balance Sheet" subtitle="Financial position" />
+      <PageHeader title={t('fin.bs.balanceSheet')} subtitle={t('fin.bs.financialPosition')} />
 
       <Card style={{ marginTop: '20px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', gap: '12px', padding: '16px', alignItems: 'flex-end' }}>
           <Input
-            label="As of Date"
+            label={t('fin.bs.asOfDate')}
             type="date"
             value={asOfDate}
             onChange={(e) => {
@@ -100,7 +102,7 @@ export default function BalanceSheet() {
             }}
           />
           <Button variant="primary" onClick={run} loading={loading}>
-            Run Report
+            {t('fin.bs.runReport')}
           </Button>
         </div>
       </Card>
@@ -110,7 +112,7 @@ export default function BalanceSheet() {
           {/* Balanced indicator */}
           <div style={{ marginBottom: '12px' }}>
             <Badge variant={report.isBalanced ? 'success' : 'danger'}>
-              {report.isBalanced ? 'Balanced' : 'UNBALANCED — check for errors'}
+              {report.isBalanced ? t('fin.bs.balanced') : t('fin.bs.unbalancedCheckForErrors')}
             </Badge>
           </div>
 
@@ -122,7 +124,7 @@ export default function BalanceSheet() {
             }}
           >
             <Card style={{ padding: '24px' }}>
-              <Section title="Assets" lines={report.assets} color={theme.success} />
+              <Section title={t('fin.bs.assets')} lines={report.assets} color={theme.success} />
               <div
                 style={{
                   borderTop: `2px solid ${theme.border}`,
@@ -132,7 +134,7 @@ export default function BalanceSheet() {
                   fontWeight: 700,
                 }}
               >
-                <span style={{ color: theme.textPrimary }}>Total Assets</span>
+                <span style={{ color: theme.textPrimary }}>{t('fin.bs.totalAssets')}</span>
                 <span style={{ fontFamily: 'monospace', color: theme.success }}>
                   {parseFloat(report.totalAssets).toLocaleString()}
                 </span>
@@ -141,7 +143,7 @@ export default function BalanceSheet() {
 
             <div>
               <Card style={{ padding: '24px', marginBottom: '16px' }}>
-                <Section title="Liabilities" lines={report.liabilities} color={theme.danger} />
+                <Section title={t('fin.bs.liabilities')} lines={report.liabilities} color={theme.danger} />
                 <div
                   style={{
                     borderTop: `2px solid ${theme.border}`,
@@ -151,7 +153,7 @@ export default function BalanceSheet() {
                     fontWeight: 700,
                   }}
                 >
-                  <span style={{ color: theme.textPrimary }}>Total Liabilities</span>
+                  <span style={{ color: theme.textPrimary }}>{t('fin.bs.totalLiabilities')}</span>
                   <span style={{ fontFamily: 'monospace', color: theme.danger }}>
                     {parseFloat(report.totalLiabilities).toLocaleString()}
                   </span>
@@ -159,7 +161,7 @@ export default function BalanceSheet() {
               </Card>
 
               <Card style={{ padding: '24px' }}>
-                <Section title="Equity" lines={report.equity} color={theme.accent} />
+                <Section title={t('fin.bs.equity')} lines={report.equity} color={theme.accent} />
                 {/* Retained earnings = net P&L not yet closed to an equity account */}
                 {parseFloat(report.retainedEarnings) !== 0 && (
                   <div
@@ -176,13 +178,13 @@ export default function BalanceSheet() {
                           fontFamily: 'monospace',
                           color: theme.textMuted,
                           fontSize: '12px',
-                          marginRight: '8px',
+                          marginInlineEnd: '8px',
                         }}
                       >
                         —
                       </span>
                       <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
-                        Retained Earnings (current period)
+                        {t('fin.bs.retainedEarningsCurrentPeriod')}
                       </span>
                     </div>
                     <span
@@ -206,7 +208,7 @@ export default function BalanceSheet() {
                     fontWeight: 700,
                   }}
                 >
-                  <span style={{ color: theme.textPrimary }}>Total Equity</span>
+                  <span style={{ color: theme.textPrimary }}>{t('fin.bs.totalEquity')}</span>
                   <span style={{ fontFamily: 'monospace', color: theme.accent }}>
                     {parseFloat(report.totalEquity).toLocaleString()}
                   </span>

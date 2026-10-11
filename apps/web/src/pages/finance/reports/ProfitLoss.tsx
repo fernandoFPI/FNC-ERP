@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { PROFIT_LOSS_QUERY } from '../../../graphql/finance'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -17,6 +18,7 @@ interface PLLine {
 }
 
 export default function ProfitLoss() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const now = new Date()
   const firstOfYear = `${now.getFullYear()}-01-01`
@@ -42,9 +44,9 @@ export default function ProfitLoss() {
 
   const chartData = report
     ? [
-        { label: 'Revenue', value: parseFloat(report.totalRevenue) },
-        { label: 'Expenses', value: parseFloat(report.totalExpenses) },
-        { label: 'Net Profit', value: parseFloat(report.netProfit) },
+        { label: t('fin.pl.revenue'), value: parseFloat(report.totalRevenue) },
+        { label: t('fin.pl.expenses'), value: parseFloat(report.totalExpenses) },
+        { label: t('fin.pl.netProfit'), value: parseFloat(report.netProfit) },
       ]
     : []
 
@@ -88,7 +90,7 @@ export default function ProfitLoss() {
                   fontFamily: 'monospace',
                   color: theme.textMuted,
                   fontSize: '12px',
-                  marginRight: '8px',
+                  marginInlineEnd: '8px',
                 }}
               >
                 {l.code}
@@ -108,7 +110,7 @@ export default function ProfitLoss() {
             fontWeight: 700,
           }}
         >
-          <span style={{ color: theme.textPrimary }}>Total {title}</span>
+          <span style={{ color: theme.textPrimary }}>{t('fin.pl.total', { title })}</span>
           <span style={{ fontFamily: 'monospace', color }}>{total.toLocaleString()}</span>
         </div>
       </div>
@@ -117,12 +119,12 @@ export default function ProfitLoss() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
-      <PageHeader title="Profit & Loss" subtitle="Income statement" />
+      <PageHeader title={t('fin.pl.profitLoss')} subtitle={t('fin.pl.incomeStatement')} />
 
       <Card style={{ marginTop: '20px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', gap: '12px', padding: '16px', alignItems: 'flex-end' }}>
           <Input
-            label="From Date"
+            label={t('fin.pl.fromDate')}
             type="date"
             value={fromDate}
             onChange={(e) => {
@@ -130,7 +132,7 @@ export default function ProfitLoss() {
             }}
           />
           <Input
-            label="To Date"
+            label={t('fin.pl.toDate')}
             type="date"
             value={toDate}
             onChange={(e) => {
@@ -138,7 +140,7 @@ export default function ProfitLoss() {
             }}
           />
           <Button variant="primary" onClick={run} loading={loading}>
-            Run Report
+            {t('fin.pl.runReport')}
           </Button>
         </div>
       </Card>
@@ -150,16 +152,16 @@ export default function ProfitLoss() {
               <BarChart
                 data={chartData.map((d) => ({ label: d.label, value: d.value, target: 0 }))}
                 xKey="label"
-                bars={[{ key: 'value', label: 'Amount' }]}
+                bars={[{ key: 'value', label: t('fin.pl.amount') }]}
                 height={200}
               />
             </Card>
           )}
 
           <Card style={{ padding: '24px' }}>
-            <ReportSection title="Revenue" lines={revenue} color={theme.success} />
+            <ReportSection title={t('fin.pl.revenue')} lines={revenue} color={theme.success} />
             <div style={{ marginTop: '20px' }}>
-              <ReportSection title="Expenses" lines={expenses} color={theme.danger} />
+              <ReportSection title={t('fin.pl.expenses')} lines={expenses} color={theme.danger} />
             </div>
             <div
               style={{
@@ -176,7 +178,7 @@ export default function ProfitLoss() {
                   fontWeight: 700,
                 }}
               >
-                <span style={{ color: theme.textPrimary }}>Net Profit</span>
+                <span style={{ color: theme.textPrimary }}>{t('fin.pl.netProfit')}</span>
                 <span
                   style={{
                     fontFamily: 'monospace',

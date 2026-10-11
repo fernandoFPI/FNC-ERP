@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -43,6 +44,7 @@ const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | '
 }
 
 export default function EmployeeAdvanceDashboard() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [data, setData] = useState<Dashboard | null>(null)
@@ -71,8 +73,8 @@ export default function EmployeeAdvanceDashboard() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Advances Dashboard"
-        subtitle="Company-wide outstanding cash advances, by employee"
+        title={t('fin.advDash.advancesDashboard')}
+        subtitle={t('fin.advDash.companyWideOutstandingCashAdvancesBy')}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button
@@ -82,10 +84,10 @@ export default function EmployeeAdvanceDashboard() {
                 navigate('/finance/advances')
               }}
             >
-              ← Back to Advances
+              {t('fin.advDash.backToAdvances')}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => void load()}>
-              Refresh
+              {t('fin.advDash.refresh')}
             </Button>
           </div>
         }
@@ -101,13 +103,13 @@ export default function EmployeeAdvanceDashboard() {
       >
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Outstanding
+            {t('fin.advDash.totalOutstanding')}
           </p>
           <AmountDisplay amount={totalOutstanding} currency="IQD" size="md" colored />
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Employees Holding Advances
+            {t('fin.advDash.employeesHoldingAdvances')}
           </p>
           <p style={{ fontSize: '22px', fontWeight: 700, color: theme.textSecondary }}>
             {employeeCount}
@@ -115,7 +117,7 @@ export default function EmployeeAdvanceDashboard() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Open Advances
+            {t('fin.advDash.openAdvances')}
           </p>
           <p style={{ fontSize: '22px', fontWeight: 700, color: theme.textSecondary }}>
             {advanceCount}
@@ -134,7 +136,7 @@ export default function EmployeeAdvanceDashboard() {
             marginBottom: '8px',
           }}
         >
-          By Employee
+          {t('fin.advDash.byEmployee')}
         </p>
         <Card padding="none">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -142,7 +144,7 @@ export default function EmployeeAdvanceDashboard() {
               <tr
                 style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
               >
-                {['Employee', 'Advances', 'Issued', 'Settled', 'Returned', 'Outstanding'].map(
+                {[t('fin.advDash.employee'), t('fin.advDash.advances'), t('fin.advDash.issued'), t('fin.advDash.settled'), t('fin.advDash.returned'), t('fin.advDash.outstanding')].map(
                   (h, i) => (
                     <th
                       key={h}
@@ -166,7 +168,7 @@ export default function EmployeeAdvanceDashboard() {
                     colSpan={6}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    Loading...
+                    {t('fin.advDash.loading')}
                   </td>
                 </tr>
               )}
@@ -176,7 +178,7 @@ export default function EmployeeAdvanceDashboard() {
                     colSpan={6}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    No outstanding advances.
+                    {t('fin.advDash.noOutstandingAdvances')}
                   </td>
                 </tr>
               )}
@@ -186,20 +188,20 @@ export default function EmployeeAdvanceDashboard() {
                     {e.employee_name}
                   </td>
                   <td
-                    style={{ padding: '9px 12px', textAlign: 'right', color: theme.textSecondary }}
+                    style={{ padding: '9px 12px', textAlign: 'end', color: theme.textSecondary }}
                   >
                     {e.advance_count}
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <AmountDisplay amount={Number(e.total_issued)} currency="IQD" size="sm" />
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <AmountDisplay amount={Number(e.total_settled)} currency="IQD" size="sm" />
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <AmountDisplay amount={Number(e.total_returned)} currency="IQD" size="sm" />
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <AmountDisplay
                       amount={Number(e.total_outstanding)}
                       currency="IQD"
@@ -225,7 +227,7 @@ export default function EmployeeAdvanceDashboard() {
             marginBottom: '8px',
           }}
         >
-          Open Advances
+          {t('fin.advDash.openAdvances')}
         </p>
         <Card padding="none">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -233,7 +235,7 @@ export default function EmployeeAdvanceDashboard() {
               <tr
                 style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
               >
-                {['Ref', 'Employee', 'Amount', 'Settled', 'Returned', 'Outstanding', 'Status'].map(
+                {[t('fin.advDash.ref'), t('fin.advDash.employee'), t('fin.advDash.amount'), t('fin.advDash.settled'), t('fin.advDash.returned'), t('fin.advDash.outstanding'), t('fin.advDash.status')].map(
                   (h, i) => (
                     <th
                       key={h}
@@ -257,7 +259,7 @@ export default function EmployeeAdvanceDashboard() {
                     colSpan={7}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    Loading...
+                    {t('fin.advDash.loading')}
                   </td>
                 </tr>
               )}
@@ -267,7 +269,7 @@ export default function EmployeeAdvanceDashboard() {
                     colSpan={7}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    No open advances.
+                    {t('fin.advDash.noOpenAdvances')}
                   </td>
                 </tr>
               )}
@@ -292,24 +294,24 @@ export default function EmployeeAdvanceDashboard() {
                   <td style={{ padding: '9px 12px', fontWeight: 500, color: theme.textPrimary }}>
                     {a.employee_name}
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <AmountDisplay amount={Number(a.amount)} currency={a.currency_code} size="sm" />
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <AmountDisplay
                       amount={Number(a.settled_amount)}
                       currency={a.currency_code}
                       size="sm"
                     />
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <AmountDisplay
                       amount={Number(a.returned_amount)}
                       currency={a.currency_code}
                       size="sm"
                     />
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <AmountDisplay
                       amount={Number(a.outstanding_amount)}
                       currency={a.currency_code}

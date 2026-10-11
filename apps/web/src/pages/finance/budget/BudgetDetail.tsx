@@ -1,3 +1,5 @@
+import { enumLabel, tlh } from '../../../i18n'
+import { Trans, useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -77,6 +79,7 @@ const STATUS_BADGE: Record<string, 'neutral' | 'success' | 'info'> = {
 }
 
 export default function BudgetDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const navigate = useNavigate()
@@ -182,20 +185,20 @@ export default function BudgetDetail() {
     color: theme.textPrimary,
     fontFamily: 'monospace',
     width: '90px',
-    textAlign: 'right' as const,
+    textAlign: 'end' as const,
     outline: 'none',
   }
 
   if (loading && !budget)
     return (
       <div style={{ padding: '24px', color: theme.textMuted, fontSize: '13px' }}>
-        Loading budget...
+        {t('fin.budgetDetail.loadingBudget')}
       </div>
     )
   if (!budget)
     return (
       <div style={{ padding: '24px', color: theme.textMuted, fontSize: '13px' }}>
-        Budget not found.
+        {t('fin.budgetDetail.budgetNotFound')}
       </div>
     )
 
@@ -239,10 +242,10 @@ export default function BudgetDetail() {
     <div style={{ padding: '24px' }}>
       <PageHeader
         title={budget.name}
-        subtitle={`Fiscal Year ${budget.fiscal_year} · ${budget.currency_code}`}
+        subtitle={t('fin.budgetDetail.fiscalYear', { fiscal_year: budget.fiscal_year, currency_code: budget.currency_code })}
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <Badge variant={STATUS_BADGE[budget.status] ?? 'neutral'}>{budget.status}</Badge>
+            <Badge variant={STATUS_BADGE[budget.status] ?? 'neutral'}>{enumLabel(budget.status)}</Badge>
             <Button
               variant="ghost"
               size="sm"
@@ -250,21 +253,21 @@ export default function BudgetDetail() {
                 navigate(-1)
               }}
             >
-              ← Back
+              {t('fin.budgetDetail.back')}
             </Button>
             {canEdit && budget.status === 'draft' && (
               <Button variant="ghost" size="sm" onClick={() => void handleStatusChange('active')}>
-                Activate
+                {t('fin.budgetDetail.activate')}
               </Button>
             )}
             {canEdit && budget.status === 'active' && (
               <Button variant="ghost" size="sm" onClick={() => void handleStatusChange('locked')}>
-                Lock
+                {t('fin.budgetDetail.lock')}
               </Button>
             )}
             {canEdit && budget.status === 'locked' && (
               <Button variant="ghost" size="sm" onClick={() => void handleStatusChange('draft')}>
-                Unlock
+                {t('fin.budgetDetail.unlock')}
               </Button>
             )}
             {canEdit && hasEdits && !isLocked && (
@@ -274,7 +277,7 @@ export default function BudgetDetail() {
                 onClick={() => void handleSave()}
                 disabled={saving}
               >
-                {saving ? 'Saving...' : `Save ${Object.keys(edits).length} changes`}
+                {saving ? t('fin.budgetDetail.saving') : t('fin.budgetDetail.saveChanges', { length: Object.keys(edits).length })}
               </Button>
             )}
           </div>
@@ -283,11 +286,11 @@ export default function BudgetDetail() {
 
       {/* Tab selector */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-        {(['matrix', 'variance'] as const).map((t) => (
+        {(['matrix', 'variance'] as const).map((tx) => (
           <button
-            key={t}
+            key={tx}
             onClick={() => {
-              setActiveTab(t)
+              setActiveTab(tx)
             }}
             style={{
               padding: '6px 16px',
@@ -295,13 +298,13 @@ export default function BudgetDetail() {
               border: 'none',
               cursor: 'pointer',
               fontSize: '13px',
-              background: activeTab === t ? theme.accent : theme.bgSurface,
-              color: activeTab === t ? '#fff' : theme.textSecondary,
+              background: activeTab === tx ? theme.accent : theme.bgSurface,
+              color: activeTab === tx ? '#fff' : theme.textSecondary,
               fontFamily: 'inherit',
-              fontWeight: activeTab === t ? 600 : 400,
+              fontWeight: activeTab === tx ? 600 : 400,
             }}
           >
-            {t === 'matrix' ? 'Budget Matrix' : 'Budget vs Actual'}
+            {tx === 'matrix' ? t('fin.budgetDetail.budgetMatrix') : t('fin.budgetDetail.budgetVsActual')}
           </button>
         ))}
       </div>
@@ -317,7 +320,7 @@ export default function BudgetDetail() {
                 <th
                   style={{
                     padding: '8px 10px',
-                    textAlign: 'left',
+                    textAlign: 'start',
                     color: theme.textMuted,
                     fontWeight: 500,
                     position: 'sticky',
@@ -327,14 +330,14 @@ export default function BudgetDetail() {
                     zIndex: 2,
                   }}
                 >
-                  Account
+                  {t('fin.budgetDetail.account')}
                 </th>
                 {MONTH_LABELS.map((m, i) => (
                   <th
                     key={m}
                     style={{
                       padding: '8px 6px',
-                      textAlign: 'right',
+                      textAlign: 'end',
                       color: theme.textMuted,
                       fontWeight: 500,
                       minWidth: '90px',
@@ -348,13 +351,13 @@ export default function BudgetDetail() {
                 <th
                   style={{
                     padding: '8px 10px',
-                    textAlign: 'right',
+                    textAlign: 'end',
                     color: theme.accent,
                     fontWeight: 600,
                     minWidth: '100px',
                   }}
                 >
-                  Total
+                  {t('fin.budgetDetail.total')}
                 </th>
               </tr>
             </thead>
@@ -365,7 +368,7 @@ export default function BudgetDetail() {
                     colSpan={14}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    No accounts added yet. Click "+ Add Account Row" below.
+                    {t('fin.budgetDetail.noAccountsAddedYetClickAdd')}
                   </td>
                 </tr>
               )}
@@ -393,7 +396,7 @@ export default function BudgetDetail() {
                         {acc?.code}
                       </span>
                       <span
-                        style={{ color: theme.textPrimary, marginLeft: '6px', fontSize: '11px' }}
+                        style={{ color: theme.textPrimary, marginInlineStart: '6px', fontSize: '11px' }}
                       >
                         {acc?.name}
                       </span>
@@ -403,7 +406,7 @@ export default function BudgetDetail() {
                         key={p}
                         style={{
                           padding: '3px 4px',
-                          textAlign: 'right',
+                          textAlign: 'end',
                           background: cellKey(aid, p) in edits ? theme.accent + '10' : undefined,
                         }}
                       >
@@ -441,7 +444,7 @@ export default function BudgetDetail() {
                     <td
                       style={{
                         padding: '5px 10px',
-                        textAlign: 'right',
+                        textAlign: 'end',
                         fontFamily: 'monospace',
                         fontWeight: 600,
                         color: total ? theme.accent : theme.textMuted,
@@ -465,14 +468,14 @@ export default function BudgetDetail() {
                     background: theme.bgSurface,
                   }}
                 >
-                  Total
+                  {t('fin.budgetDetail.total')}
                 </td>
                 {colTotals.map((c) => (
                   <td
                     key={c.period}
                     style={{
                       padding: '8px 6px',
-                      textAlign: 'right',
+                      textAlign: 'end',
                       fontFamily: 'monospace',
                       fontWeight: 600,
                       color: c.total ? theme.textPrimary : theme.textMuted,
@@ -484,7 +487,7 @@ export default function BudgetDetail() {
                 <td
                   style={{
                     padding: '8px 10px',
-                    textAlign: 'right',
+                    textAlign: 'end',
                     fontFamily: 'monospace',
                     fontWeight: 700,
                     color: theme.accent,
@@ -516,7 +519,7 @@ export default function BudgetDetail() {
                       background: theme.bgSurface,
                       width: '240px',
                     }}
-                    placeholder="Search account code or name..."
+                    placeholder={t('fin.budgetDetail.searchAccountCodeOrName')}
                     autoFocus
                     value={accountSearch}
                     onChange={(e) => {
@@ -548,7 +551,7 @@ export default function BudgetDetail() {
                     ))}
                     {!filteredAccounts.length && (
                       <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                        No accounts found.
+                        {t('fin.budgetDetail.noAccountsFound')}
                       </span>
                     )}
                   </div>
@@ -559,7 +562,7 @@ export default function BudgetDetail() {
                       setShowAccountPicker(false)
                     }}
                   >
-                    Cancel
+                    {t('fin.budgetDetail.cancel')}
                   </Button>
                 </div>
               ) : (
@@ -570,7 +573,7 @@ export default function BudgetDetail() {
                     setShowAccountPicker(true)
                   }}
                 >
-                  + Add Account Row
+                  {t('fin.budgetDetail.addAccountRow')}
                 </Button>
               )}
             </div>
@@ -583,7 +586,7 @@ export default function BudgetDetail() {
         <Card padding="none">
           {!vsActual ? (
             <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>
-              Loading variance data...
+              {t('fin.budgetDetail.loadingVarianceData')}
             </div>
           ) : (
             <>
@@ -596,34 +599,14 @@ export default function BudgetDetail() {
                 }}
               >
                 <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                  Period:{' '}
+                  {t('fin.budgetDetail.period')}{' '}
                   <strong style={{ color: theme.textPrimary }}>
                     {vsActual.period_from} – {vsActual.period_to}
                   </strong>
                 </span>
-                <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                  Total Budget:{' '}
-                  <strong style={{ color: theme.accent, fontFamily: 'monospace' }}>
-                    {vsActual.totals.budget.toLocaleString()}
-                  </strong>
-                </span>
-                <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                  Total Actual:{' '}
-                  <strong style={{ color: theme.textPrimary, fontFamily: 'monospace' }}>
-                    {vsActual.totals.actual.toLocaleString()}
-                  </strong>
-                </span>
-                <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                  Variance:{' '}
-                  <strong
-                    style={{
-                      color: vsActual.totals.variance >= 0 ? '#22c55e' : '#ef4444',
-                      fontFamily: 'monospace',
-                    }}
-                  >
-                    {vsActual.totals.variance.toLocaleString()}
-                  </strong>
-                </span>
+                <span style={{ fontSize: '12px', color: theme.textMuted }}><Trans i18nKey="fin.budgetDetail.totalBudget" values={{ budget: vsActual.totals.budget.toLocaleString() }} components={[<strong style={{ color: theme.accent, fontFamily: 'monospace' }} />]} /></span>
+                <span style={{ fontSize: '12px', color: theme.textMuted }}><Trans i18nKey="fin.budgetDetail.totalActual" values={{ actual: vsActual.totals.actual.toLocaleString() }} components={[<strong style={{ color: theme.textPrimary, fontFamily: 'monospace' }} />]} /></span>
+                <span style={{ fontSize: '12px', color: theme.textMuted }}><Trans i18nKey="fin.budgetDetail.variance" values={{ variance: vsActual.totals.variance.toLocaleString() }} components={[<strong style={{ color: vsActual.totals.variance >= 0 ? '#22c55e' : '#ef4444', fontFamily: 'monospace', }}  />]} /></span>
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
@@ -644,7 +627,7 @@ export default function BudgetDetail() {
                             fontWeight: 500,
                           }}
                         >
-                          {h}
+                          {tlh('fin.budgetDetail', h)}
                         </th>
                       ),
                     )}
@@ -657,7 +640,7 @@ export default function BudgetDetail() {
                         colSpan={7}
                         style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                       >
-                        No budget lines with data for this period.
+                        {t('fin.budgetDetail.noBudgetLinesWithDataFor')}
                       </td>
                     </tr>
                   )}
@@ -682,17 +665,17 @@ export default function BudgetDetail() {
                           >
                             {row.account_code}
                           </span>
-                          <span style={{ color: theme.textPrimary, marginLeft: '6px' }}>
+                          <span style={{ color: theme.textPrimary, marginInlineStart: '6px' }}>
                             {row.account_name}
                           </span>
                         </td>
-                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                          <Badge variant="neutral">{row.account_type}</Badge>
+                        <td style={{ padding: '8px 12px', textAlign: 'end' }}>
+                          <Badge variant="neutral">{enumLabel(row.account_type)}</Badge>
                         </td>
                         <td
                           style={{
                             padding: '8px 12px',
-                            textAlign: 'right',
+                            textAlign: 'end',
                             fontFamily: 'monospace',
                           }}
                         >
@@ -701,7 +684,7 @@ export default function BudgetDetail() {
                         <td
                           style={{
                             padding: '8px 12px',
-                            textAlign: 'right',
+                            textAlign: 'end',
                             fontFamily: 'monospace',
                           }}
                         >
@@ -710,7 +693,7 @@ export default function BudgetDetail() {
                         <td
                           style={{
                             padding: '8px 12px',
-                            textAlign: 'right',
+                            textAlign: 'end',
                             fontFamily: 'monospace',
                             color: row.variance >= 0 ? '#22c55e' : '#ef4444',
                             fontWeight: 600,
@@ -722,14 +705,14 @@ export default function BudgetDetail() {
                         <td
                           style={{
                             padding: '8px 12px',
-                            textAlign: 'right',
+                            textAlign: 'end',
                             color: over ? '#ef4444' : theme.textSecondary,
                             fontFamily: 'monospace',
                           }}
                         >
                           {row.variance_pct !== null ? `${row.variance_pct}%` : '—'}
                         </td>
-                        <td style={{ padding: '8px 12px', textAlign: 'right', minWidth: '100px' }}>
+                        <td style={{ padding: '8px 12px', textAlign: 'end', minWidth: '100px' }}>
                           <div
                             style={{
                               display: 'flex',
@@ -775,12 +758,12 @@ export default function BudgetDetail() {
                       colSpan={2}
                       style={{ padding: '8px 12px', fontWeight: 700, color: theme.textPrimary }}
                     >
-                      Grand Total
+                      {t('fin.budgetDetail.grandTotal')}
                     </td>
                     <td
                       style={{
                         padding: '8px 12px',
-                        textAlign: 'right',
+                        textAlign: 'end',
                         fontFamily: 'monospace',
                         fontWeight: 700,
                       }}
@@ -790,7 +773,7 @@ export default function BudgetDetail() {
                     <td
                       style={{
                         padding: '8px 12px',
-                        textAlign: 'right',
+                        textAlign: 'end',
                         fontFamily: 'monospace',
                         fontWeight: 700,
                       }}
@@ -800,7 +783,7 @@ export default function BudgetDetail() {
                     <td
                       style={{
                         padding: '8px 12px',
-                        textAlign: 'right',
+                        textAlign: 'end',
                         fontFamily: 'monospace',
                         fontWeight: 700,
                         color: vsActual.totals.variance >= 0 ? '#22c55e' : '#ef4444',

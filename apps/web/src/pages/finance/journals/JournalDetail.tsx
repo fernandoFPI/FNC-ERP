@@ -1,4 +1,5 @@
-﻿import { useParams, useNavigate } from 'react-router-dom'
+﻿import { useTranslation } from 'react-i18next'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   JOURNAL_ENTRY_QUERY,
@@ -43,6 +44,7 @@ interface LinkedPO {
 }
 
 export default function JournalDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -72,7 +74,7 @@ export default function JournalDetail() {
         variables: { id: id ?? '' },
         refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }],
       })
-      addToast({ type: 'success', message: 'Entry posted' })
+      addToast({ type: 'success', message: t('fin.jrnDetail.entryPosted') })
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -84,7 +86,7 @@ export default function JournalDetail() {
         variables: { id: id ?? '' },
         refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }],
       })
-      addToast({ type: 'warning', message: 'Entry cancelled' })
+      addToast({ type: 'warning', message: t('fin.jrnDetail.entryCancelled') })
       setShowCancelDialog(false)
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -97,7 +99,7 @@ export default function JournalDetail() {
         variables: { id: id ?? '' },
         refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }],
       })
-      addToast({ type: 'success', message: 'Entry signed off by auditor' })
+      addToast({ type: 'success', message: t('fin.jrnDetail.entrySignedOffByAuditor') })
       setShowAuditDialog(false)
       void refetch()
     } catch (err) {
@@ -136,8 +138,8 @@ export default function JournalDetail() {
   }
 
   if (loading && !entry)
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
-  if (!entry) return <div style={{ padding: '24px', color: theme.textMuted }}>Entry not found</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('fin.jrnDetail.loading')}</div>
+  if (!entry) return <div style={{ padding: '24px', color: theme.textMuted }}>{t('fin.jrnDetail.entryNotFound')}</div>
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
@@ -169,7 +171,7 @@ export default function JournalDetail() {
                   loading={posting}
                   disabled={lock.lockedByOther}
                 >
-                  Post
+                  {t('fin.jrnDetail.post')}
                 </Button>
                 <Button
                   variant="danger"
@@ -179,7 +181,7 @@ export default function JournalDetail() {
                     setShowCancelDialog(true)
                   }}
                 >
-                  Cancel Entry
+                  {t('fin.jrnDetail.cancelEntry')}
                 </Button>
               </>
             )}
@@ -192,13 +194,13 @@ export default function JournalDetail() {
                   setShowAuditDialog(true)
                 }}
               >
-                Auditor Sign-off
+                {t('fin.jrnDetail.auditorSignOff')}
               </Button>
             )}
             {entry.status === 'posted' && (
               <>
                 <Button variant="ghost" size="sm" onClick={handlePrint}>
-                  Print
+                  {t('fin.jrnDetail.print')}
                 </Button>
                 <Button
                   variant="danger"
@@ -208,7 +210,7 @@ export default function JournalDetail() {
                     setShowCancelDialog(true)
                   }}
                 >
-                  Reverse
+                  {t('fin.jrnDetail.reverse')}
                 </Button>
               </>
             )}
@@ -240,8 +242,7 @@ export default function JournalDetail() {
               flexShrink: 0,
             }}
           />
-          <strong>{lock.lockedByName}</strong>&nbsp;is currently working on this entry — actions are
-          disabled until they finish.
+          <strong>{lock.lockedByName}</strong>{t('fin.jrnDetail.isCurrentlyWorkingOnThisEntry')}
         </div>
       )}
 
@@ -255,17 +256,17 @@ export default function JournalDetail() {
         }}
       >
         {[
-          ['Source', entry.source_type ?? 'manual'],
-          ['Created by', entry.created_by_email ?? '—'],
-          ['Total Debit', entry.total_debit ? parseFloat(entry.total_debit).toLocaleString() : '—'],
+          [t('fin.jrnDetail.source'), entry.source_type ?? 'manual'],
+          [t('fin.jrnDetail.createdBy'), entry.created_by_email ?? '—'],
+          [t('fin.jrnDetail.totalDebit'), entry.total_debit ? parseFloat(entry.total_debit).toLocaleString() : '—'],
           [
-            'Total Credit',
+            t('fin.jrnDetail.totalCredit'),
             entry.total_credit ? parseFloat(entry.total_credit).toLocaleString() : '—',
           ],
-          ...(entry.accountant_email ? [['Accountant', entry.accountant_email]] : []),
-          ...(entry.auditor_email ? [['Auditor', entry.auditor_email]] : []),
+          ...(entry.accountant_email ? [[t('fin.jrnDetail.accountant'), entry.accountant_email]] : []),
+          ...(entry.auditor_email ? [[t('fin.jrnDetail.auditor'), entry.auditor_email]] : []),
           ...(entry.audited_at
-            ? [['Audited at', new Date(entry.audited_at).toLocaleString()]]
+            ? [[t('fin.jrnDetail.auditedAt'), new Date(entry.audited_at).toLocaleString()]]
             : []),
         ].map(([label, value]) => (
           <div
@@ -312,7 +313,7 @@ export default function JournalDetail() {
               letterSpacing: '0.06em',
             }}
           >
-            Description
+            {t('fin.jrnDetail.description')}
           </div>
           <div style={{ fontSize: '13px', color: theme.textSecondary }}>{entry.description}</div>
         </div>
@@ -322,19 +323,19 @@ export default function JournalDetail() {
       <Card style={{ marginBottom: '16px' }}>
         <div style={{ padding: '16px', borderBottom: `1px solid ${theme.border}` }}>
           <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-            Journal Lines
+            {t('fin.jrnDetail.journalLines')}
           </span>
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
               <tr style={{ background: theme.bgSurface }}>
-                {['Account', 'Description', 'Currency', 'Debit', 'Credit'].map((h) => (
+                {[t('fin.jrnDetail.account'), t('fin.jrnDetail.description'), t('fin.jrnDetail.currency'), t('fin.jrnDetail.debit'), t('fin.jrnDetail.credit')].map((h) => (
                   <th
                     key={h}
                     style={{
                       padding: '8px 16px',
-                      textAlign: 'left',
+                      textAlign: 'start',
                       fontWeight: 600,
                       fontSize: '11px',
                       color: theme.textMuted,
@@ -355,7 +356,7 @@ export default function JournalDetail() {
                     <span style={{ fontFamily: 'monospace', color: theme.accent }}>
                       {line.account_code}
                     </span>
-                    <span style={{ color: theme.textSecondary, marginLeft: '8px' }}>
+                    <span style={{ color: theme.textSecondary, marginInlineStart: '8px' }}>
                       {line.account_name}
                     </span>
                   </td>
@@ -363,13 +364,13 @@ export default function JournalDetail() {
                     {line.description ?? '—'}
                   </td>
                   <td style={{ padding: '10px 16px', color: theme.textMuted }}>
-                    {line.currency_code ?? 'IQD'}
+                    {line.currency_code ?? t('fin.jrnDetail.iqd')}
                   </td>
                   <td style={{ padding: '10px 16px' }}>
                     {parseFloat(line.debit) > 0 ? (
                       <AmountDisplay
                         amount={parseFloat(line.debit)}
-                        currency={line.currency_code ?? 'IQD'}
+                        currency={line.currency_code ?? t('fin.jrnDetail.iqd')}
                       />
                     ) : (
                       <span style={{ color: theme.textMuted }}>—</span>
@@ -379,7 +380,7 @@ export default function JournalDetail() {
                     {parseFloat(line.credit) > 0 ? (
                       <AmountDisplay
                         amount={parseFloat(line.credit)}
-                        currency={line.currency_code ?? 'IQD'}
+                        currency={line.currency_code ?? t('fin.jrnDetail.iqd')}
                       />
                     ) : (
                       <span style={{ color: theme.textMuted }}>—</span>
@@ -404,7 +405,7 @@ export default function JournalDetail() {
           }}
         >
           <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-            Linked Purchase Orders
+            {t('fin.jrnDetail.linkedPurchaseOrders')}
           </span>
           <span style={{ fontSize: '12px', color: theme.textMuted }}>
             {linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''}
@@ -419,18 +420,18 @@ export default function JournalDetail() {
               fontSize: '13px',
             }}
           >
-            No purchase orders linked to this journal entry.
+            {t('fin.jrnDetail.noPurchaseOrdersLinkedToThis')}
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
               <tr style={{ background: theme.bgSurface }}>
-                {['PO Number', 'Vendor', 'Status', 'Amount'].map((h) => (
+                {[t('fin.jrnDetail.poNumber'), t('fin.jrnDetail.vendor'), t('fin.jrnDetail.status'), t('fin.jrnDetail.amount')].map((h) => (
                   <th
                     key={h}
                     style={{
                       padding: '8px 16px',
-                      textAlign: 'left',
+                      textAlign: 'start',
                       fontWeight: 600,
                       fontSize: '11px',
                       color: theme.textMuted,
@@ -480,7 +481,7 @@ export default function JournalDetail() {
                     {po.total_amount ? (
                       <AmountDisplay
                         amount={parseFloat(po.total_amount)}
-                        currency={po.currency_code ?? 'IQD'}
+                        currency={po.currency_code ?? t('fin.jrnDetail.iqd')}
                       />
                     ) : (
                       '—'
@@ -508,10 +509,10 @@ export default function JournalDetail() {
             }}
           >
             <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-              Print Preview
+              {t('fin.jrnDetail.printPreview')}
             </span>
             <Button variant="primary" size="sm" onClick={handlePrint}>
-              Print / Save as PDF
+              {t('fin.jrnDetail.printSaveAsPdf')}
             </Button>
           </div>
           <div style={{ background: '#f5f5f5', overflow: 'hidden', borderRadius: '0 0 8px 8px' }}>
@@ -519,7 +520,7 @@ export default function JournalDetail() {
               ref={iframeRef}
               srcDoc={previewHtml}
               style={{ width: '100%', height: '1100px', border: 'none', display: 'block' }}
-              title={`Journal Entry ${entry.reference}`}
+              title={t('fin.jrnDetail.journalEntry', { reference: entry.reference })}
             />
           </div>
         </Card>
@@ -527,9 +528,9 @@ export default function JournalDetail() {
 
       <ConfirmDialog
         open={showCancelDialog}
-        title="Cancel Journal Entry"
-        message="Are you sure you want to cancel this journal entry? This action cannot be undone."
-        confirmLabel="Cancel Entry"
+        title={t('fin.jrnDetail.cancelJournalEntry')}
+        message={t('fin.jrnDetail.areYouSureYouWantTo')}
+        confirmLabel={t('fin.jrnDetail.cancelEntry')}
         variant="danger"
         onConfirm={(...args: Parameters<typeof handleCancel>) => void handleCancel(...args)}
         onCancel={() => {
@@ -539,9 +540,9 @@ export default function JournalDetail() {
       />
       <ConfirmDialog
         open={showAuditDialog}
-        title="Auditor Sign-off"
-        message="Sign off this journal entry as auditor? This marks it as reviewed and approved for payment vouchers."
-        confirmLabel="Sign Off"
+        title={t('fin.jrnDetail.auditorSignOff')}
+        message={t('fin.jrnDetail.signOffThisJournalEntryAs')}
+        confirmLabel={t('fin.jrnDetail.signOff')}
         variant="primary"
         onConfirm={(...args: Parameters<typeof handleAudit>) => void handleAudit(...args)}
         onCancel={() => {

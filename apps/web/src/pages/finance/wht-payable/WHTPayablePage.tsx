@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useCompanyStore } from '../../../store/companyStore'
@@ -43,6 +44,7 @@ interface MonthlyRow {
 }
 
 export default function WHTPayablePage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const activeCompany = useCompanyStore((s) => s.activeCompany)
@@ -82,20 +84,20 @@ export default function WHTPayablePage() {
   const monthlyColumns: Column<MonthlyRow>[] = [
     {
       key: 'month',
-      header: 'Month',
+      header: t('fin.wht.month'),
       mobilePrimary: true,
       render: (row) => `${MONTHS[row.month - 1]} ${data?.year ?? ''}`,
     },
     {
       key: 'payments_subject_to_wht',
-      header: 'Payments Subject to WHT',
+      header: t('fin.wht.paymentsSubjectToWht'),
       render: (row) => (
         <AmountDisplay amount={row.payments_subject_to_wht} currency="IQD" size="sm" />
       ),
     },
     {
       key: 'wht_amount',
-      header: 'WHT Amount',
+      header: t('fin.wht.whtAmount'),
       render: (row) => (
         <span style={{ fontWeight: 600, color: theme.warning }}>
           <AmountDisplay amount={row.wht_amount} currency="IQD" size="sm" />
@@ -104,7 +106,7 @@ export default function WHTPayablePage() {
     },
     {
       key: 'rate',
-      header: 'Effective Rate',
+      header: t('fin.wht.effectiveRate'),
       render: (row) => `${row.rate.toFixed(1)}%`,
     },
   ]
@@ -112,8 +114,8 @@ export default function WHTPayablePage() {
   return (
     <div style={{ ...pagePadding, maxWidth: '1200px', margin: '0 auto' }}>
       <PageHeader
-        title="WHT Payable"
-        subtitle={`${data?.year ?? new Date().getFullYear()} year-to-date · ${activeCompany?.name ?? ''}`}
+        title={t('fin.wht.whtPayable')}
+        subtitle={t('fin.wht.yearToDate', { value: data?.year ?? new Date().getFullYear(), value2: activeCompany?.name ?? '' })}
         actions={
           <Button
             variant="ghost"
@@ -122,7 +124,7 @@ export default function WHTPayablePage() {
               void load()
             }}
           >
-            Refresh
+            {t('fin.wht.refresh')}
           </Button>
         }
       />
@@ -143,11 +145,11 @@ export default function WHTPayablePage() {
                   marginBottom: '6px',
                 }}
               >
-                Total WHT Payable YTD
+                {t('fin.wht.totalWhtPayableYtd')}
               </p>
               <AmountDisplay amount={data?.total_wht_payable ?? 0} currency="IQD" size="lg" />
               <p style={{ fontSize: '11px', color: theme.warning, marginTop: '4px' }}>
-                Due to tax authority
+                {t('fin.wht.dueToTaxAuthority')}
               </p>
             </>
           )}
@@ -166,13 +168,13 @@ export default function WHTPayablePage() {
                   marginBottom: '6px',
                 }}
               >
-                Vendors Subject to WHT
+                {t('fin.wht.vendorsSubjectToWht')}
               </p>
               <p style={{ fontSize: '28px', fontWeight: 700, color: theme.textPrimary, margin: 0 }}>
                 {data?.vendor_count ?? 0}
               </p>
               <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                Unique vendors this year
+                {t('fin.wht.uniqueVendorsThisYear')}
               </p>
             </>
           )}
@@ -191,13 +193,13 @@ export default function WHTPayablePage() {
                   marginBottom: '6px',
                 }}
               >
-                Invoices with WHT
+                {t('fin.wht.invoicesWithWht')}
               </p>
               <p style={{ fontSize: '28px', fontWeight: 700, color: theme.textPrimary, margin: 0 }}>
                 {data?.invoice_count ?? 0}
               </p>
               <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                Vendor invoices YTD
+                {t('fin.wht.vendorInvoicesYtd')}
               </p>
             </>
           )}
@@ -215,12 +217,12 @@ export default function WHTPayablePage() {
               marginBottom: '16px',
             }}
           >
-            Monthly WHT accumulated
+            {t('fin.wht.monthlyWhtAccumulated')}
           </h3>
           {loading ? (
             <div className="skeleton" style={{ height: 140 }} />
           ) : !monthly.length ? (
-            <EmptyState message="No WHT data for this year" />
+            <EmptyState message={t('fin.wht.noWhtDataForThisYear')} />
           ) : (
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', height: '120px' }}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
@@ -241,7 +243,7 @@ export default function WHTPayablePage() {
                     }}
                   >
                     <div
-                      title={`${MONTHS[month - 1]}: IQD ${fmtAmt(wht)}`}
+                      title={t('fin.wht.iqd', { value: MONTHS[month - 1], amt: fmtAmt(wht) })}
                       style={{
                         width: '100%',
                         height: `${Math.max(pct, wht > 0 ? 4 : 0)}%`,
@@ -271,23 +273,23 @@ export default function WHTPayablePage() {
               marginBottom: '14px',
             }}
           >
-            Top vendors by WHT
+            {t('fin.wht.topVendorsByWht')}
           </h3>
           {loading ? (
             <div className="skeleton" style={{ height: 140 }} />
           ) : !data?.top_vendors.length ? (
-            <EmptyState message="No vendor WHT data" />
+            <EmptyState message={t('fin.wht.noVendorWhtData')} />
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    {['Vendor', 'Invoices', 'WHT Withheld'].map((h) => (
+                    {[t('fin.wht.vendor'), t('fin.wht.invoices'), t('fin.wht.whtWithheld')].map((h) => (
                       <th
                         key={h}
                         style={{
                           padding: '6px 8px',
-                          textAlign: 'left',
+                          textAlign: 'start',
                           color: theme.textMuted,
                           fontWeight: 500,
                         }}
@@ -323,7 +325,7 @@ export default function WHTPayablePage() {
         <Card padding="none">
           <div style={{ padding: '16px', borderBottom: `1px solid ${theme.border}` }}>
             <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-              Monthly breakdown
+              {t('fin.wht.monthlyBreakdown')}
             </h3>
           </div>
           <div style={{ padding: '0 16px 16px' }}>

@@ -1,3 +1,5 @@
+import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -42,13 +44,14 @@ interface AccountDetail {
 }
 
 const SOURCE_LABELS: Record<string, string> = {
-  mo_completion: 'MO Completion',
-  po_completion: 'PO Completion',
-  interco_transaction: 'Interco Transaction',
-  manual: 'Manual',
+  get mo_completion() { return i18n.t('fin.analyticDetail.moCompletion', { defaultValue: "MO Completion" }) },
+  get po_completion() { return i18n.t('fin.analyticDetail.poCompletion', { defaultValue: "PO Completion" }) },
+  get interco_transaction() { return i18n.t('fin.analyticDetail.intercoTransaction', { defaultValue: "Interco Transaction" }) },
+  get manual() { return i18n.t('fin.analyticDetail.manual', { defaultValue: "Manual" }) },
 }
 
 export default function AnalyticAccountDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -66,7 +69,7 @@ export default function AnalyticAccountDetail() {
         setAccount(res.data)
       })
       .catch(() => {
-        setError('Failed to load analytic account')
+        setError(t('fin.analyticDetail.failedToLoadAnalyticAccount'))
       })
       .finally(() => {
         setLoading(false)
@@ -89,9 +92,9 @@ export default function AnalyticAccountDetail() {
             navigate(-1)
           }}
         >
-          ← Back
+          {t('fin.analyticDetail.back')}
         </Button>
-        <p style={{ color: '#ef4444', marginTop: '16px' }}>{error ?? 'Account not found'}</p>
+        <p style={{ color: '#ef4444', marginTop: '16px' }}>{error ?? t('fin.analyticDetail.accountNotFound')}</p>
       </div>
     )
 
@@ -113,7 +116,7 @@ export default function AnalyticAccountDetail() {
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <Badge variant={account.is_active ? 'success' : 'neutral'}>
-              {account.is_active ? 'Account Active' : 'Account Inactive'}
+              {account.is_active ? t('fin.analyticDetail.accountActive') : t('fin.analyticDetail.accountInactive')}
             </Badge>
             <Button
               variant="ghost"
@@ -122,7 +125,7 @@ export default function AnalyticAccountDetail() {
                 navigate(-1)
               }}
             >
-              ← Back
+              {t('fin.analyticDetail.back')}
             </Button>
           </div>
         }
@@ -139,16 +142,16 @@ export default function AnalyticAccountDetail() {
       >
         <Card padding="sm">
           <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Lines
+            {t('fin.analyticDetail.totalLines')}
           </div>
           <div style={{ fontWeight: 700, fontSize: '15px', color: theme.textPrimary }}>
             {account.journal_line_count.toLocaleString()}
           </div>
         </Card>
         {[
-          { label: 'Total Debits', iqd: totalDebitsIQD },
-          { label: 'Total Credits', iqd: totalCreditsIQD },
-          { label: 'Balance (Dr − Cr)', iqd: Math.abs(balance), suffix: balance < 0 ? ' Cr' : '' },
+          { label: t('fin.analyticDetail.totalDebits'), iqd: totalDebitsIQD },
+          { label: t('fin.analyticDetail.totalCredits'), iqd: totalCreditsIQD },
+          { label: t('fin.analyticDetail.balanceDrCr'), iqd: Math.abs(balance), suffix: balance < 0 ? ' Cr' : '' },
         ].map(({ label, iqd, suffix = '' }) => (
           <Card key={label} padding="sm">
             <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -188,7 +191,7 @@ export default function AnalyticAccountDetail() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                Linked Project
+                {t('fin.analyticDetail.linkedProject')}
               </div>
               <div style={{ fontWeight: 600, color: theme.textPrimary }}>
                 {account.project_name}
@@ -215,7 +218,7 @@ export default function AnalyticAccountDetail() {
                   navigate(`/projects/${account.project_id}`)
                 }}
               >
-                View Project →
+                {t('fin.analyticDetail.viewProject')}
               </Button>
             </div>
           </div>
@@ -233,10 +236,10 @@ export default function AnalyticAccountDetail() {
             color: theme.textPrimary,
           }}
         >
-          Journal Lines{' '}
+          {t('fin.analyticDetail.journalLines')}{' '}
           {account.lines.length >= 200 && (
             <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: 400 }}>
-              (showing latest 200)
+              {t('fin.analyticDetail.showingLatest200')}
             </span>
           )}
         </div>
@@ -249,26 +252,26 @@ export default function AnalyticAccountDetail() {
               fontSize: '13px',
             }}
           >
-            No journal lines yet.
+            {t('fin.analyticDetail.noJournalLinesYet')}
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                 {[
-                  'Date',
-                  'Reference',
-                  'Account',
-                  'Description',
-                  'Source',
-                  'Amount (orig.)',
-                  'IQD Equiv.',
-                  'Status',
+                  t('fin.analyticDetail.date'),
+                  t('fin.analyticDetail.reference'),
+                  t('fin.analyticDetail.account'),
+                  t('fin.analyticDetail.description'),
+                  t('fin.analyticDetail.source'),
+                  t('fin.analyticDetail.amountOrig'),
+                  t('fin.analyticDetail.iqdEquiv'),
+                  t('fin.analyticDetail.status'),
                 ].map((h) => (
                   <th
                     key={h}
                     style={{
-                      textAlign: 'left',
+                      textAlign: 'start',
                       padding: '8px 12px',
                       color: theme.textMuted,
                       fontWeight: 500,
@@ -306,7 +309,7 @@ export default function AnalyticAccountDetail() {
                     <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>
                       {line.account_code}
                     </span>
-                    <span style={{ marginLeft: '6px' }}>{line.account_name}</span>
+                    <span style={{ marginInlineStart: '6px' }}>{line.account_name}</span>
                   </td>
                   <td
                     style={{
@@ -324,7 +327,7 @@ export default function AnalyticAccountDetail() {
                   <td style={{ padding: '8px 12px', color: theme.textMuted }}>
                     {SOURCE_LABELS[line.source_type] ?? line.source_type ?? '—'}
                   </td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '8px 12px', textAlign: 'end' }}>
                     {(() => {
                       const isDebit = parseFloat(line.debit) > 0
                       const isCredit = parseFloat(line.credit) > 0
@@ -338,11 +341,11 @@ export default function AnalyticAccountDetail() {
                               <span
                                 style={{
                                   fontSize: '10px',
-                                  marginLeft: '3px',
+                                  marginInlineStart: '3px',
                                   color: theme.success,
                                 }}
                               >
-                                Cr
+                                {t('fin.analyticDetail.cr')}
                               </span>
                             )}
                           </span>
@@ -355,7 +358,7 @@ export default function AnalyticAccountDetail() {
                       )
                     })()}
                   </td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                  <td style={{ padding: '8px 12px', textAlign: 'end' }}>
                     <AmountDisplay
                       amount={parseFloat(line.amount_company_currency)}
                       currency="IQD"

@@ -1,4 +1,6 @@
-﻿import { useState, useEffect } from 'react'
+﻿import i18n from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useLazyQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -64,13 +66,13 @@ interface FormState {
 }
 
 const CURRENCIES = [
-  { value: 'IQD', label: 'IQD — Iraqi Dinar' },
-  { value: 'USD', label: 'USD — US Dollar' },
-  { value: 'EUR', label: 'EUR — Euro' },
-  { value: 'GBP', label: 'GBP — British Pound' },
-  { value: 'AED', label: 'AED — UAE Dirham' },
-  { value: 'SAR', label: 'SAR — Saudi Riyal' },
-  { value: 'TRY', label: 'TRY — Turkish Lira' },
+  { value: 'IQD', get label() { return i18n.t('fin.apInvForm.iqdIraqiDinar', { defaultValue: "IQD — Iraqi Dinar" }) } },
+  { value: 'USD', get label() { return i18n.t('fin.apInvForm.usdUsDollar', { defaultValue: "USD — US Dollar" }) } },
+  { value: 'EUR', get label() { return i18n.t('fin.apInvForm.eurEuro', { defaultValue: "EUR — Euro" }) } },
+  { value: 'GBP', get label() { return i18n.t('fin.apInvForm.gbpBritishPound', { defaultValue: "GBP — British Pound" }) } },
+  { value: 'AED', get label() { return i18n.t('fin.apInvForm.aedUaeDirham', { defaultValue: "AED — UAE Dirham" }) } },
+  { value: 'SAR', get label() { return i18n.t('fin.apInvForm.sarSaudiRiyal', { defaultValue: "SAR — Saudi Riyal" }) } },
+  { value: 'TRY', get label() { return i18n.t('fin.apInvForm.tryTurkishLira', { defaultValue: "TRY — Turkish Lira" }) } },
 ]
 
 function autoInvNumber(poNumber?: string): string {
@@ -131,6 +133,7 @@ function labelStyle(theme: Record<string, string>) {
 }
 
 export default function VendorInvoiceForm() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
   const { theme } = useTheme()
@@ -242,7 +245,7 @@ export default function VendorInvoiceForm() {
         }
       })
       .catch(() => {
-        addToast({ type: 'error', message: 'Failed to load invoice' })
+        addToast({ type: 'error', message: t('fin.apInvForm.failedToLoadInvoice') })
       })
       .finally(() => {
         setLoading(false)
@@ -298,7 +301,7 @@ export default function VendorInvoiceForm() {
             if (existing) {
               addToast({
                 type: 'warning',
-                message: `Invoice ${autoInvNum} already exists for this vendor — opening it`,
+                message: t('fin.apInvForm.invoiceAlreadyExistsForThisVendor', { autoInvNum }),
               })
               navigate(`/finance/ap/${existing.id}`)
             }
@@ -362,19 +365,19 @@ export default function VendorInvoiceForm() {
 
   async function handleSave() {
     if (!form.vendor_id) {
-      addToast({ type: 'error', message: 'Vendor is required' })
+      addToast({ type: 'error', message: t('fin.apInvForm.vendorIsRequired') })
       return
     }
     if (!form.invoice_number.trim()) {
-      addToast({ type: 'error', message: 'Invoice number is required' })
+      addToast({ type: 'error', message: t('fin.apInvForm.invoiceNumberIsRequired') })
       return
     }
     if (!form.invoice_date) {
-      addToast({ type: 'error', message: 'Invoice date is required' })
+      addToast({ type: 'error', message: t('fin.apInvForm.invoiceDateIsRequired') })
       return
     }
     if (!form.due_date) {
-      addToast({ type: 'error', message: 'Due date is required' })
+      addToast({ type: 'error', message: t('fin.apInvForm.dueDateIsRequired') })
       return
     }
 
@@ -401,11 +404,11 @@ export default function VendorInvoiceForm() {
     try {
       if (isEdit) {
         await api.put(`/finance/vendor-invoices/${id}`, payload)
-        addToast({ type: 'success', message: 'Invoice updated' })
+        addToast({ type: 'success', message: t('fin.apInvForm.invoiceUpdated') })
         navigate(`/finance/ap/${id}`)
       } else {
         const res = await api.post<{ id: string }>('/finance/vendor-invoices', payload)
-        addToast({ type: 'success', message: 'Invoice created' })
+        addToast({ type: 'success', message: t('fin.apInvForm.invoiceCreated') })
         navigate(`/finance/ap/${res.data.id}`)
       }
     } catch (e: unknown) {
@@ -427,7 +430,7 @@ export default function VendorInvoiceForm() {
           if (existing) {
             addToast({
               type: 'warning',
-              message: `Invoice ${form.invoice_number} already exists for this vendor — opening it so you can link it to the PO`,
+              message: t('fin.apInvForm.invoiceAlreadyExistsForThisVendor2', { invoice_number: form.invoice_number }),
             })
             navigate(`/finance/ap/${existing.id}`)
             return
@@ -437,10 +440,10 @@ export default function VendorInvoiceForm() {
         }
         addToast({
           type: 'error',
-          message: `Invoice number "${form.invoice_number}" already exists for this vendor. Search for it in AP and link it to this PO manually.`,
+          message: t('fin.apInvForm.invoiceNumberAlreadyExistsForThis', { invoice_number: form.invoice_number }),
         })
       } else {
-        addToast({ type: 'error', message: apiErrMsg(e, 'Save failed') })
+        addToast({ type: 'error', message: apiErrMsg(e, t('fin.apInvForm.saveFailed')) })
       }
     } finally {
       setSaving(false)
@@ -459,7 +462,7 @@ export default function VendorInvoiceForm() {
   const lineFields: LineItemField<LineForm>[] = [
     {
       key: 'po_line_id',
-      label: 'PO line',
+      label: t('fin.apInvForm.poLine'),
       width: '160px',
       render: (line) => (
         <SearchableSelect
@@ -467,7 +470,7 @@ export default function VendorInvoiceForm() {
           onChange={(v) => {
             setLine(line._key, 'po_line_id', v)
           }}
-          placeholder="None"
+          placeholder={t('fin.apInvForm.none')}
           options={poLines.map((pl) => ({
             value: pl.id,
             label: pl.description?.slice(0, 30) ?? pl.id,
@@ -477,7 +480,7 @@ export default function VendorInvoiceForm() {
     },
     {
       key: 'description',
-      label: 'Description',
+      label: t('fin.apInvForm.description'),
       width: '220px',
       render: (line) => (
         <input
@@ -485,14 +488,14 @@ export default function VendorInvoiceForm() {
           onChange={(e) => {
             setLine(line._key, 'description', e.target.value)
           }}
-          placeholder="Description…"
+          placeholder={t('fin.apInvForm.description2')}
           style={inputStyle(theme as unknown as Record<string, string>)}
         />
       ),
     },
     {
       key: 'qty',
-      label: 'Qty',
+      label: t('fin.apInvForm.qty'),
       width: '90px',
       render: (line) => (
         <input
@@ -507,7 +510,7 @@ export default function VendorInvoiceForm() {
     },
     {
       key: 'unit_price',
-      label: 'Unit price',
+      label: t('fin.apInvForm.unitPrice'),
       width: '120px',
       render: (line) => (
         <input
@@ -522,7 +525,7 @@ export default function VendorInvoiceForm() {
     },
     {
       key: 'total',
-      label: 'Total',
+      label: t('fin.apInvForm.total'),
       width: '110px',
       render: (line) => {
         const lineTotal = parseFloat(line.qty || '0') * parseFloat(line.unit_price || '0')
@@ -535,7 +538,7 @@ export default function VendorInvoiceForm() {
     },
     {
       key: 'account_id',
-      label: 'Account',
+      label: t('fin.apInvForm.account'),
       width: '180px',
       render: (line) => (
         <SearchableSelect
@@ -543,7 +546,7 @@ export default function VendorInvoiceForm() {
           onChange={(v) => {
             setLine(line._key, 'account_id', v)
           }}
-          placeholder="No account"
+          placeholder={t('fin.apInvForm.noAccount')}
           options={chartAccounts.map((a) => ({
             value: a.id,
             label: `${a.code} ${a.name.slice(0, 25)}`,
@@ -556,7 +559,7 @@ export default function VendorInvoiceForm() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
-        title={isEdit ? 'Edit vendor invoice' : 'New vendor invoice'}
+        title={isEdit ? t('fin.apInvForm.editVendorInvoice') : t('fin.apInvForm.newVendorInvoice')}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button
@@ -566,11 +569,11 @@ export default function VendorInvoiceForm() {
                 navigate(isEdit ? `/finance/ap/${id}` : '/finance/ap')
               }}
             >
-              Cancel
+              {t('fin.apInvForm.cancel')}
             </Button>
             {canEdit && (
               <Button variant="primary" size="sm" onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)} disabled={saving}>
-                {saving ? 'Saving…' : 'Save invoice'}
+                {saving ? t('fin.apInvForm.saving') : t('fin.apInvForm.saveInvoice')}
               </Button>
             )}
           </div>
@@ -586,7 +589,7 @@ export default function VendorInvoiceForm() {
             marginBottom: '12px',
           }}
         >
-          Invoice details
+          {t('fin.apInvForm.invoiceDetails')}
         </h3>
         <div
           style={{
@@ -597,44 +600,44 @@ export default function VendorInvoiceForm() {
         >
           <div>
             <SearchableSelect
-              label="Vendor *"
+              label={t('fin.apInvForm.vendor')}
               value={form.vendor_id}
               onChange={(v) => {
                 setF('vendor_id', v)
               }}
-              placeholder="Select vendor…"
+              placeholder={t('fin.apInvForm.selectVendor')}
               options={vendors.map((v) => ({ value: v.id, label: v.name }))}
               disabled={isEdit}
             />
           </div>
           <div>
             <SearchableSelect
-              label="Purchase order (optional)"
+              label={t('fin.apInvForm.purchaseOrderOptional')}
               value={form.po_id}
               onChange={(v) => {
                 setF('po_id', v)
               }}
-              placeholder="None"
+              placeholder={t('fin.apInvForm.none')}
               options={vendorPOs.map((p) => ({ value: p.id, label: p.po_number }))}
               disabled={isEdit && !!form.po_id}
             />
           </div>
           <div>
             <label style={labelStyle(theme as unknown as Record<string, string>)}>
-              Invoice number *
+              {t('fin.apInvForm.invoiceNumber')}
             </label>
             <input
               value={form.invoice_number}
               onChange={(e) => {
                 setF('invoice_number', e.target.value)
               }}
-              placeholder="INV-2024-001"
+              placeholder={t('fin.apInvForm.inv2024001')}
               style={inputStyle(theme as unknown as Record<string, string>)}
             />
           </div>
           <div>
             <Select
-              label="Currency"
+              label={t('fin.apInvForm.currency')}
               value={form.currency_code}
               onChange={(e) => {
                 setF('currency_code', e.target.value)
@@ -644,7 +647,7 @@ export default function VendorInvoiceForm() {
           </div>
           <div>
             <label style={labelStyle(theme as unknown as Record<string, string>)}>
-              Invoice date *
+              {t('fin.apInvForm.invoiceDate')}
             </label>
             <input
               type="date"
@@ -656,7 +659,7 @@ export default function VendorInvoiceForm() {
             />
           </div>
           <div>
-            <label style={labelStyle(theme as unknown as Record<string, string>)}>Due date *</label>
+            <label style={labelStyle(theme as unknown as Record<string, string>)}>{t('fin.apInvForm.dueDate')}</label>
             <input
               type="date"
               value={form.due_date}
@@ -668,23 +671,23 @@ export default function VendorInvoiceForm() {
           </div>
           <div>
             <SearchableSelect
-              label="Cost center"
+              label={t('fin.apInvForm.costCenter')}
               value={form.cost_center_id}
               onChange={(v) => {
                 setF('cost_center_id', v)
               }}
-              placeholder="None"
+              placeholder={t('fin.apInvForm.none')}
               options={costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))}
             />
           </div>
           <div>
             <SearchableSelect
-              label="Analytic account"
+              label={t('fin.apInvForm.analyticAccount')}
               value={form.analytic_account_id}
               onChange={(v) => {
                 setF('analytic_account_id', v)
               }}
-              placeholder="None"
+              placeholder={t('fin.apInvForm.none')}
               options={analyticAccounts.map((a) => ({
                 value: a.id,
                 label: `${a.code} — ${a.name}`,
@@ -692,7 +695,7 @@ export default function VendorInvoiceForm() {
             />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle(theme as unknown as Record<string, string>)}>Notes</label>
+            <label style={labelStyle(theme as unknown as Record<string, string>)}>{t('fin.apInvForm.notes')}</label>
             <textarea
               value={form.notes}
               onChange={(e) => {
@@ -720,7 +723,7 @@ export default function VendorInvoiceForm() {
           }}
         >
           <h3 style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
-            Invoice lines
+            {t('fin.apInvForm.invoiceLines')}
           </h3>
           <Button
             variant="secondary"
@@ -729,7 +732,7 @@ export default function VendorInvoiceForm() {
               setLines((prev) => [...prev, mkLine()])
             }}
           >
-            + Add line
+            {t('fin.apInvForm.addLine')}
           </Button>
         </div>
         <div style={{ padding: '12px 16px' }}>
@@ -755,7 +758,7 @@ export default function VendorInvoiceForm() {
             marginBottom: '12px',
           }}
         >
-          Totals
+          {t('fin.apInvForm.totals')}
         </h3>
         <div
           style={{
@@ -766,7 +769,7 @@ export default function VendorInvoiceForm() {
           }}
         >
           <div>
-            <label style={labelStyle(theme as unknown as Record<string, string>)}>Tax amount</label>
+            <label style={labelStyle(theme as unknown as Record<string, string>)}>{t('fin.apInvForm.taxAmount')}</label>
             <input
               type="number"
               value={form.tax_amount}
@@ -777,7 +780,7 @@ export default function VendorInvoiceForm() {
             />
           </div>
           <div>
-            <label style={labelStyle(theme as unknown as Record<string, string>)}>WHT</label>
+            <label style={labelStyle(theme as unknown as Record<string, string>)}>{t('fin.apInvForm.wht')}</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
               <input
                 type="checkbox"
@@ -791,7 +794,7 @@ export default function VendorInvoiceForm() {
                 htmlFor="wht-applies"
                 style={{ fontSize: '12px', color: theme.textPrimary, cursor: 'pointer' }}
               >
-                Deduct WHT
+                {t('fin.apInvForm.deductWht')}
               </label>
               {form.wht_applies && (
                 <>
@@ -801,7 +804,7 @@ export default function VendorInvoiceForm() {
                     onChange={(e) => {
                       setForm((prev) => ({ ...prev, wht_rate: e.target.value }))
                     }}
-                    placeholder="Rate %"
+                    placeholder={t('fin.apInvForm.rate')}
                     min="0"
                     max="100"
                     step="0.1"
@@ -818,11 +821,11 @@ export default function VendorInvoiceForm() {
         </div>
         <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '10px' }}>
           {[
-            { label: 'Subtotal', value: subtotal },
-            { label: 'Tax', value: tax },
-            { label: 'WHT', value: -wht },
-            { label: 'Total', value: total, bold: true },
-            { label: 'Net payable', value: netPayable, bold: true, color: theme.accent },
+            { label: t('fin.apInvForm.subtotal'), value: subtotal },
+            { label: t('fin.apInvForm.tax'), value: tax },
+            { label: t('fin.apInvForm.wht'), value: -wht },
+            { label: t('fin.apInvForm.total'), value: total, bold: true },
+            { label: t('fin.apInvForm.netPayable'), value: netPayable, bold: true, color: theme.accent },
           ].map((row) => (
             <div
               key={row.label}

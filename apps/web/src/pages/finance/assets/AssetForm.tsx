@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -42,6 +43,7 @@ interface Asset {
 }
 
 export default function AssetForm() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
@@ -155,7 +157,7 @@ export default function AssetForm() {
       }
       navigate('/finance/assets')
     } catch {
-      alert('Failed to save asset')
+      alert(t('fin.assetForm.failedToSaveAsset'))
     } finally {
       setSaving(false)
     }
@@ -218,7 +220,7 @@ export default function AssetForm() {
         fontFamily: 'inherit',
       }}
     >
-      <option value="">— Select —</option>
+      <option value="">{t('fin.assetForm.select')}</option>
       {options.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
@@ -241,11 +243,11 @@ export default function AssetForm() {
   return (
     <div style={{ padding: '24px', maxWidth: '860px' }}>
       <PageHeader
-        title={isEdit ? 'Edit Asset' : 'New Fixed Asset'}
+        title={isEdit ? t('fin.assetForm.editAsset') : t('fin.assetForm.newFixedAsset')}
         subtitle={
           isEdit
-            ? 'Update asset details (only available in Draft status)'
-            : 'Register a new asset in the fixed asset register'
+            ? t('fin.assetForm.updateAssetDetailsOnlyAvailableIn')
+            : t('fin.assetForm.registerANewAssetInThe')
         }
         actions={
           <Button
@@ -255,7 +257,7 @@ export default function AssetForm() {
               navigate('/finance/assets')
             }}
           >
-            ← Back
+            {t('fin.assetForm.back')}
           </Button>
         }
       />
@@ -275,16 +277,16 @@ export default function AssetForm() {
               marginBottom: '16px',
             }}
           >
-            Asset Information
+            {t('fin.assetForm.assetInformation')}
           </p>
           {row(
             <>
               <div>
-                {label('Asset Name *')}
+                {label(t('fin.assetForm.assetName'))}
                 {input('name')}
               </div>
               <div>
-                {label('Category')}
+                {label(t('fin.assetForm.category'))}
                 <select
                   value={form.category_id}
                   onChange={(e) => {
@@ -301,7 +303,7 @@ export default function AssetForm() {
                     fontFamily: 'inherit',
                   }}
                 >
-                  <option value="">— Select —</option>
+                  <option value="">{t('fin.assetForm.select')}</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -314,17 +316,17 @@ export default function AssetForm() {
           {row(
             <>
               <div>
-                {label('Serial Number')}
+                {label(t('fin.assetForm.serialNumber'))}
                 {input('serial_number')}
               </div>
               <div>
-                {label('Location / Site')}
+                {label(t('fin.assetForm.locationSite'))}
                 {input('location')}
               </div>
             </>,
           )}
           <div style={{ marginBottom: '16px' }}>
-            {label('Description')}
+            {label(t('fin.assetForm.description'))}
             <textarea
               value={form.description}
               onChange={(e) => {
@@ -357,16 +359,16 @@ export default function AssetForm() {
               marginBottom: '16px',
             }}
           >
-            Financial Details
+            {t('fin.assetForm.financialDetails')}
           </p>
           {row(
             <>
               <div>
-                {label('Purchase Date *')}
+                {label(t('fin.assetForm.purchaseDate'))}
                 {input('purchase_date', 'date')}
               </div>
               <div>
-                {label('Purchase Cost *')}
+                {label(t('fin.assetForm.purchaseCost'))}
                 {input('purchase_cost', 'number', { min: '0', step: '0.01' })}
               </div>
             </>,
@@ -374,11 +376,11 @@ export default function AssetForm() {
           {row(
             <>
               <div>
-                {label('Salvage Value')}
+                {label(t('fin.assetForm.salvageValue'))}
                 {input('salvage_value', 'number', { min: '0', step: '0.01' })}
               </div>
               <div>
-                {label('Useful Life (months) *')}
+                {label(t('fin.assetForm.usefulLifeMonths'))}
                 {input('useful_life_months', 'number', { min: '1', step: '1' })}
               </div>
             </>,
@@ -386,15 +388,15 @@ export default function AssetForm() {
           {row(
             <>
               <div>
-                {label('Depreciation Method *')}
+                {label(t('fin.assetForm.depreciationMethod'))}
                 {select('depreciation_method', [
-                  { value: 'straight_line', label: 'Straight Line (SL)' },
-                  { value: 'declining_balance', label: 'Declining Balance (DB)' },
+                  { value: 'straight_line', label: t('fin.assetForm.straightLineSl') },
+                  { value: 'declining_balance', label: t('fin.assetForm.decliningBalanceDb') },
                 ])}
               </div>
               {form.depreciation_method === 'declining_balance' && (
                 <div>
-                  {label('Annual Declining Rate (e.g. 0.20 = 20%)')}
+                  {label(t('fin.assetForm.annualDecliningRateEG0'))}
                   {input('declining_rate', 'number', { min: '0', max: '1', step: '0.01' })}
                 </div>
               )}
@@ -409,16 +411,7 @@ export default function AssetForm() {
                 fontSize: '11px',
                 color: theme.textMuted,
               }}
-            >
-              Monthly depreciation (SL):{' '}
-              <strong style={{ color: theme.textPrimary }}>
-                {(
-                  (Number(form.purchase_cost) - Number(form.salvage_value)) /
-                  Number(form.useful_life_months)
-                ).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </strong>{' '}
-              per month over {form.useful_life_months} months
-            </div>
+            ><Trans i18nKey="fin.assetForm.monthlyDepreciationSlPerMonthOver" values={{ value: ( (Number(form.purchase_cost) - Number(form.salvage_value)) / Number(form.useful_life_months) ).toLocaleString(undefined, { maximumFractionDigits: 2 }), useful_life_months: form.useful_life_months }} components={[<strong style={{ color: theme.textPrimary }} />]} /></div>
           )}
         </Card>
 
@@ -432,22 +425,22 @@ export default function AssetForm() {
               marginBottom: '4px',
             }}
           >
-            GL Account Mapping
+            {t('fin.assetForm.glAccountMapping')}
           </p>
           <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '16px' }}>
-            Required to auto-post depreciation journal entries
+            {t('fin.assetForm.requiredToAutoPostDepreciationJournal')}
           </p>
           {row(
             <>
               <div>
-                {label('Asset Account (Balance Sheet)')}
+                {label(t('fin.assetForm.assetAccountBalanceSheet'))}
                 {select(
                   'asset_account_id',
                   assetAccounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` })),
                 )}
               </div>
               <div>
-                {label('Accumulated Depreciation Account')}
+                {label(t('fin.assetForm.accumulatedDepreciationAccount'))}
                 {select(
                   'accum_dep_account_id',
                   assetAccounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` })),
@@ -456,7 +449,7 @@ export default function AssetForm() {
             </>,
           )}
           <div style={{ maxWidth: '420px' }}>
-            {label('Depreciation Expense Account')}
+            {label(t('fin.assetForm.depreciationExpenseAccount'))}
             {select(
               'dep_expense_account_id',
               expenseAccounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` })),
@@ -466,7 +459,7 @@ export default function AssetForm() {
 
         {/* Notes */}
         <Card padding="md" style={{ marginBottom: '24px' }}>
-          {label('Notes')}
+          {label(t('fin.assetForm.notes'))}
           <textarea
             value={form.notes}
             onChange={(e) => {
@@ -491,7 +484,7 @@ export default function AssetForm() {
         <div style={{ display: 'flex', gap: '8px' }}>
           {canEdit && (
             <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Asset'}
+              {saving ? t('fin.assetForm.saving') : isEdit ? t('fin.assetForm.saveChanges') : t('fin.assetForm.createAsset')}
             </Button>
           )}
           <Button
@@ -501,7 +494,7 @@ export default function AssetForm() {
               navigate('/finance/assets')
             }}
           >
-            Cancel
+            {t('fin.assetForm.cancel')}
           </Button>
         </div>
       </form>

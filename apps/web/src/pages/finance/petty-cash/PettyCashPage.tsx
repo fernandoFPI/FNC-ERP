@@ -1,3 +1,5 @@
+import { Trans, useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -79,6 +81,7 @@ const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger'> = 
 }
 
 export default function PettyCashPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { can } = usePermission()
   const canEdit = can('finance.petty_cash.edit', 'edit')
@@ -279,8 +282,8 @@ export default function PettyCashPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Petty Cash"
-        subtitle="Manage petty cash floats per location — record spend, request replenishment, post journal entries"
+        title={t('fin.petty.pettyCash')}
+        subtitle={t('fin.petty.managePettyCashFloatsPerLocation')}
         actions={
           canEdit ? (
             <Button
@@ -290,7 +293,7 @@ export default function PettyCashPage() {
                 setShowNewFloat(true)
               }}
             >
-              + New Float
+              {t('fin.petty.newFloat')}
             </Button>
           ) : undefined
         }
@@ -307,7 +310,7 @@ export default function PettyCashPage() {
       >
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Active Floats
+            {t('fin.petty.activeFloats')}
           </p>
           <p style={{ fontSize: '24px', fontWeight: 700, color: theme.textPrimary }}>
             {floats.filter((f) => f.is_active).length}
@@ -315,19 +318,19 @@ export default function PettyCashPage() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Cash Held
+            {t('fin.petty.totalCashHeld')}
           </p>
           <AmountDisplay amount={totalBalance} currency="IQD" size="md" colored />
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Authorized
+            {t('fin.petty.totalAuthorized')}
           </p>
           <AmountDisplay amount={totalAuthorized} currency="IQD" size="md" />
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Overall Utilization
+            {t('fin.petty.overallUtilization')}
           </p>
           <p
             style={{
@@ -339,7 +342,7 @@ export default function PettyCashPage() {
           >
             {totalAuthorized > 0 ? Math.round((1 - totalBalance / totalAuthorized) * 100) : 0}%
           </p>
-          <p style={{ fontSize: '10px', color: theme.textMuted }}>spent of authorized</p>
+          <p style={{ fontSize: '10px', color: theme.textMuted }}>{t('fin.petty.spentOfAuthorized')}</p>
         </Card>
       </div>
 
@@ -358,12 +361,12 @@ export default function PettyCashPage() {
                   margin: 0,
                 }}
               >
-                Floats
+                {t('fin.petty.floats')}
               </p>
             </div>
             {loading && (
               <p style={{ padding: '16px', fontSize: '12px', color: theme.textMuted }}>
-                Loading...
+                {t('fin.petty.loading')}
               </p>
             )}
             {floats.map((f) => {
@@ -401,7 +404,7 @@ export default function PettyCashPage() {
                     >
                       {f.name}
                     </span>
-                    {low && <Badge variant="danger">Low</Badge>}
+                    {low && <Badge variant="danger">{t('fin.petty.low')}</Badge>}
                   </div>
                   {f.location && (
                     <p style={{ fontSize: '10px', color: theme.textMuted, margin: '0 0 6px' }}>
@@ -450,7 +453,7 @@ export default function PettyCashPage() {
                   textAlign: 'center',
                 }}
               >
-                No floats yet.
+                {t('fin.petty.noFloatsYet')}
               </p>
             )}
           </Card>
@@ -461,7 +464,7 @@ export default function PettyCashPage() {
           {!selected ? (
             <Card padding="lg" style={{ textAlign: 'center' }}>
               <p style={{ color: theme.textMuted, fontSize: '13px' }}>
-                Select a float to view transactions and manage it.
+                {t('fin.petty.selectAFloatToViewTransactions')}
               </p>
             </Card>
           ) : (
@@ -487,9 +490,7 @@ export default function PettyCashPage() {
                       </p>
                     )}
                     {selected.custodian_display_name && (
-                      <p style={{ margin: 0, fontSize: '12px', color: theme.textSecondary }}>
-                        Custodian: {selected.custodian_display_name}
-                      </p>
+                      <p style={{ margin: 0, fontSize: '12px', color: theme.textSecondary }}>{t('fin.petty.custodian2', { custodian_display_name: selected.custodian_display_name })}</p>
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -501,7 +502,7 @@ export default function PettyCashPage() {
                           setShowSpend(true)
                         }}
                       >
-                        Record Spend
+                        {t('fin.petty.recordSpend')}
                       </Button>
                     )}
                     {canEdit && (
@@ -512,7 +513,7 @@ export default function PettyCashPage() {
                           setShowReplen(true)
                         }}
                       >
-                        Request Replenishment
+                        {t('fin.petty.requestReplenishment')}
                       </Button>
                     )}
                   </div>
@@ -527,7 +528,7 @@ export default function PettyCashPage() {
                 >
                   <div>
                     <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>
-                      Current Balance
+                      {t('fin.petty.currentBalance')}
                     </p>
                     <p
                       style={{
@@ -545,7 +546,7 @@ export default function PettyCashPage() {
                   </div>
                   <div>
                     <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>
-                      Authorized Limit
+                      {t('fin.petty.authorizedLimit')}
                     </p>
                     <p
                       style={{
@@ -560,7 +561,7 @@ export default function PettyCashPage() {
                   </div>
                   <div>
                     <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>
-                      GL Account
+                      {t('fin.petty.glAccount')}
                     </p>
                     <p
                       style={{
@@ -570,7 +571,7 @@ export default function PettyCashPage() {
                     >
                       {selected.account_code
                         ? `${selected.account_code} · ${selected.account_name}`
-                        : 'Not linked'}
+                        : t('fin.petty.notLinked')}
                     </p>
                   </div>
                 </div>
@@ -589,7 +590,7 @@ export default function PettyCashPage() {
                       letterSpacing: '0.05em',
                     }}
                   >
-                    Recent Transactions
+                    {t('fin.petty.recentTransactions')}
                   </p>
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -600,12 +601,12 @@ export default function PettyCashPage() {
                         borderBottom: `1px solid ${theme.border}`,
                       }}
                     >
-                      {['Date', 'Description', 'Category', 'Type', 'Amount', 'Balance'].map((h) => (
+                      {[t('fin.petty.date2'), t('fin.petty.description2'), t('fin.petty.category'), t('fin.petty.type'), t('fin.petty.amount2'), t('fin.petty.balance')].map((h) => (
                         <th
                           key={h}
                           style={{
                             padding: '7px 12px',
-                            textAlign: 'left',
+                            textAlign: 'start',
                             color: theme.textMuted,
                             fontWeight: 500,
                           }}
@@ -622,7 +623,7 @@ export default function PettyCashPage() {
                           colSpan={6}
                           style={{ padding: '20px', textAlign: 'center', color: theme.textMuted }}
                         >
-                          No transactions yet.
+                          {t('fin.petty.noTransactionsYet')}
                         </td>
                       </tr>
                     )}
@@ -690,7 +691,7 @@ export default function PettyCashPage() {
                         letterSpacing: '0.05em',
                       }}
                     >
-                      Replenishment Requests
+                      {t('fin.petty.replenishmentRequests')}
                     </p>
                   </div>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -701,12 +702,12 @@ export default function PettyCashPage() {
                           borderBottom: `1px solid ${theme.border}`,
                         }}
                       >
-                        {['Ref', 'Requested', 'Approved', 'Status', 'Date', ''].map((h) => (
+                        {[t('fin.petty.ref'), t('fin.petty.requested2'), t('fin.petty.approved'), t('fin.petty.status'), t('fin.petty.date2'), ''].map((h) => (
                           <th
                             key={h}
                             style={{
                               padding: '7px 12px',
-                              textAlign: 'left',
+                              textAlign: 'start',
                               color: theme.textMuted,
                               fontWeight: 500,
                             }}
@@ -748,7 +749,7 @@ export default function PettyCashPage() {
                             )}
                           </td>
                           <td style={{ padding: '7px 12px' }}>
-                            <Badge variant={STATUS_BADGE[r.status] ?? 'neutral'}>{r.status}</Badge>
+                            <Badge variant={STATUS_BADGE[r.status] ?? 'neutral'}>{enumLabel(r.status)}</Badge>
                           </td>
                           <td
                             style={{
@@ -772,7 +773,7 @@ export default function PettyCashPage() {
                                   })
                                 }}
                               >
-                                Approve
+                                {t('fin.petty.approve')}
                               </Button>
                             )}
                           </td>
@@ -810,7 +811,7 @@ export default function PettyCashPage() {
               }}
             >
               <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
-                New Petty Cash Float
+                {t('fin.petty.newPettyCashFloat')}
               </h3>
               <Button
                 variant="ghost"
@@ -824,18 +825,18 @@ export default function PettyCashPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Float Name *</label>
+                <label style={labelStyle}>{t('fin.petty.floatName')}</label>
                 <input
                   style={inputStyle}
                   value={floatForm.name}
-                  placeholder="e.g. Head Office Petty Cash"
+                  placeholder={t('fin.petty.eGHeadOfficePettyCash')}
                   onChange={(e) => {
                     setFloatForm((f) => ({ ...f, name: e.target.value }))
                   }}
                 />
               </div>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Cashbox (GL Account) *</label>
+                <label style={labelStyle}>{t('fin.petty.cashboxGlAccount')}</label>
                 <select
                   style={inputStyle}
                   value={floatForm.gl_account_id}
@@ -843,7 +844,7 @@ export default function PettyCashPage() {
                     setFloatForm((f) => ({ ...f, gl_account_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Select cashbox —</option>
+                  <option value="">{t('fin.petty.selectCashbox')}</option>
                   {cashAccounts.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.code} · {g.name}
@@ -852,13 +853,12 @@ export default function PettyCashPage() {
                 </select>
                 {cashAccounts.length === 0 && (
                   <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '3px' }}>
-                    No postable CASH accounts found — ask Finance to add one under Chart of
-                    Accounts (e.g. a branch/site cashbox under 1212/1213) first.
+                    {t('fin.petty.noPostableCashAccountsFoundAsk')}
                   </p>
                 )}
               </div>
               <div>
-                <label style={labelStyle}>Custodian</label>
+                <label style={labelStyle}>{t('fin.petty.custodian')}</label>
                 <select
                   style={inputStyle}
                   value={floatForm.custodian_employee_id}
@@ -866,7 +866,7 @@ export default function PettyCashPage() {
                     setFloatForm((f) => ({ ...f, custodian_employee_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Select employee —</option>
+                  <option value="">{t('fin.petty.selectEmployee')}</option>
                   {employees.map((em) => (
                     <option key={em.id} value={em.id}>
                       {em.first_name} {em.last_name}
@@ -875,7 +875,7 @@ export default function PettyCashPage() {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Authorized Limit *</label>
+                <label style={labelStyle}>{t('fin.petty.authorizedLimit2')}</label>
                 <input
                   type="number"
                   style={inputStyle}
@@ -886,7 +886,7 @@ export default function PettyCashPage() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Opening Balance</label>
+                <label style={labelStyle}>{t('fin.petty.openingBalance')}</label>
                 <input
                   type="number"
                   style={inputStyle}
@@ -907,7 +907,7 @@ export default function PettyCashPage() {
                   setShowNewFloat(false)
                 }}
               >
-                Cancel
+                {t('fin.petty.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -917,7 +917,7 @@ export default function PettyCashPage() {
                   saving || !floatForm.name || !floatForm.authorized_limit || !floatForm.gl_account_id
                 }
               >
-                {saving ? 'Creating...' : 'Create Float'}
+                {saving ? t('fin.petty.creating') : t('fin.petty.createFloat')}
               </Button>
             </div>
           </Card>
@@ -946,9 +946,7 @@ export default function PettyCashPage() {
                 marginBottom: '20px',
               }}
             >
-              <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
-                Record Spend — {selected.name}
-              </h3>
+              <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>{t('fin.petty.recordSpend2', { name: selected.name })}</h3>
               <Button
                 variant="ghost"
                 size="sm"
@@ -968,7 +966,7 @@ export default function PettyCashPage() {
                 fontSize: '12px',
               }}
             >
-              Available balance:{' '}
+              {t('fin.petty.availableBalance')}{' '}
               <strong style={{ color: theme.accent, fontFamily: 'monospace' }}>
                 {Number(selected.current_balance).toLocaleString()} {selected.currency_code}
               </strong>
@@ -976,7 +974,7 @@ export default function PettyCashPage() {
             <div style={{ display: 'grid', gap: '12px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label style={labelStyle}>Date *</label>
+                  <label style={labelStyle}>{t('fin.petty.date')}</label>
                   <input
                     type="date"
                     style={inputStyle}
@@ -987,7 +985,7 @@ export default function PettyCashPage() {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Amount *</label>
+                  <label style={labelStyle}>{t('fin.petty.amount')}</label>
                   <input
                     type="number"
                     style={inputStyle}
@@ -1001,18 +999,18 @@ export default function PettyCashPage() {
                 </div>
               </div>
               <div>
-                <label style={labelStyle}>Description *</label>
+                <label style={labelStyle}>{t('fin.petty.description')}</label>
                 <input
                   style={inputStyle}
                   value={spendForm.description}
                   onChange={(e) => {
                     setSpendForm((f) => ({ ...f, description: e.target.value }))
                   }}
-                  placeholder="What was purchased?"
+                  placeholder={t('fin.petty.whatWasPurchased')}
                 />
               </div>
               <div>
-                <label style={labelStyle}>Category</label>
+                <label style={labelStyle}>{t('fin.petty.category')}</label>
                 <select
                   style={inputStyle}
                   value={spendForm.category_id}
@@ -1025,7 +1023,7 @@ export default function PettyCashPage() {
                     }))
                   }}
                 >
-                  <option value="">— Select category —</option>
+                  <option value="">{t('fin.petty.selectCategory')}</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -1034,7 +1032,7 @@ export default function PettyCashPage() {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Expense GL Account (for journal entry)</label>
+                <label style={labelStyle}>{t('fin.petty.expenseGlAccountForJournalEntry')}</label>
                 <select
                   style={inputStyle}
                   value={spendForm.gl_account_id}
@@ -1042,7 +1040,7 @@ export default function PettyCashPage() {
                     setSpendForm((f) => ({ ...f, gl_account_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Select account —</option>
+                  <option value="">{t('fin.petty.selectAccount')}</option>
                   {glAccounts.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.code} · {g.name}
@@ -1061,7 +1059,7 @@ export default function PettyCashPage() {
                   setShowSpend(false)
                 }}
               >
-                Cancel
+                {t('fin.petty.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1074,7 +1072,7 @@ export default function PettyCashPage() {
                   Number(spendForm.amount) > selected.current_balance
                 }
               >
-                {saving ? 'Recording...' : 'Record Spend'}
+                {saving ? t('fin.petty.recording') : t('fin.petty.recordSpend')}
               </Button>
             </div>
           </Card>
@@ -1104,7 +1102,7 @@ export default function PettyCashPage() {
               }}
             >
               <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
-                Request Replenishment
+                {t('fin.petty.requestReplenishment')}
               </h3>
               <Button
                 variant="ghost"
@@ -1116,19 +1114,10 @@ export default function PettyCashPage() {
                 ✕
               </Button>
             </div>
-            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
-              Current balance:{' '}
-              <strong style={{ fontFamily: 'monospace' }}>
-                {Number(selected.current_balance).toLocaleString()}
-              </strong>{' '}
-              · Authorized limit:{' '}
-              <strong style={{ fontFamily: 'monospace' }}>
-                {Number(selected.authorized_limit).toLocaleString()}
-              </strong>
-            </p>
+            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}><Trans i18nKey="fin.petty.currentBalanceAuthorizedLimit" values={{ value: Number(selected.current_balance).toLocaleString(), value2: Number(selected.authorized_limit).toLocaleString() }} components={[<strong style={{ fontFamily: 'monospace' }} />, <strong style={{ fontFamily: 'monospace' }} />]} /></p>
             <div style={{ display: 'grid', gap: '12px' }}>
               <div>
-                <label style={labelStyle}>Amount to Replenish *</label>
+                <label style={labelStyle}>{t('fin.petty.amountToReplenish')}</label>
                 <input
                   type="number"
                   style={inputStyle}
@@ -1138,15 +1127,10 @@ export default function PettyCashPage() {
                     setReplenForm((f) => ({ ...f, requested_amount: e.target.value }))
                   }}
                 />
-                <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '3px' }}>
-                  Max top-up:{' '}
-                  {(
-                    Number(selected.authorized_limit) - Number(selected.current_balance)
-                  ).toLocaleString()}
-                </p>
+                <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '3px' }}>{t('fin.petty.maxTopUp', { value: ( Number(selected.authorized_limit) - Number(selected.current_balance) ).toLocaleString() })}</p>
               </div>
               <div>
-                <label style={labelStyle}>Notes</label>
+                <label style={labelStyle}>{t('fin.petty.notes')}</label>
                 <input
                   style={inputStyle}
                   value={replenForm.notes}
@@ -1166,7 +1150,7 @@ export default function PettyCashPage() {
                   setShowReplen(false)
                 }}
               >
-                Cancel
+                {t('fin.petty.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1174,7 +1158,7 @@ export default function PettyCashPage() {
                 onClick={() => void handleReplen()}
                 disabled={saving || !replenForm.requested_amount}
               >
-                {saving ? 'Sending...' : 'Submit Request'}
+                {saving ? t('fin.petty.sending') : t('fin.petty.submitRequest')}
               </Button>
             </div>
           </Card>
@@ -1204,7 +1188,7 @@ export default function PettyCashPage() {
               }}
             >
               <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
-                Approve Replenishment
+                {t('fin.petty.approveReplenishment')}
               </h3>
               <Button
                 variant="ghost"
@@ -1216,12 +1200,7 @@ export default function PettyCashPage() {
                 ✕
               </Button>
             </div>
-            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '16px' }}>
-              Requested:{' '}
-              <strong style={{ fontFamily: 'monospace' }}>
-                {Number(showApprove.requested_amount).toLocaleString()}
-              </strong>
-            </p>
+            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '16px' }}><Trans i18nKey="fin.petty.requested" values={{ value: Number(showApprove.requested_amount).toLocaleString() }} components={[<strong style={{ fontFamily: 'monospace' }} />]} /></p>
             <div style={{ display: 'grid', gap: '12px' }}>
               <div>
                 <label
@@ -1232,7 +1211,7 @@ export default function PettyCashPage() {
                     display: 'block',
                   }}
                 >
-                  Approved Amount *
+                  {t('fin.petty.approvedAmount')}
                 </label>
                 <input
                   type="number"
@@ -1252,7 +1231,7 @@ export default function PettyCashPage() {
                     display: 'block',
                   }}
                 >
-                  Bank / Cash Offset Account (for JE)
+                  {t('fin.petty.bankCashOffsetAccountForJe')}
                 </label>
                 <select
                   style={inputStyle}
@@ -1261,7 +1240,7 @@ export default function PettyCashPage() {
                     setApproveForm((f) => ({ ...f, offset_account_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Optional — needed for JE —</option>
+                  <option value="">{t('fin.petty.optionalNeededForJe')}</option>
                   {cashAndBankAccounts.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.code} · {g.name}
@@ -1280,7 +1259,7 @@ export default function PettyCashPage() {
                   setShowApprove(null)
                 }}
               >
-                Cancel
+                {t('fin.petty.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1288,7 +1267,7 @@ export default function PettyCashPage() {
                 onClick={() => void handleApproveReplen()}
                 disabled={saving || !approveForm.approved_amount}
               >
-                {saving ? 'Approving...' : 'Approve & Post'}
+                {saving ? t('fin.petty.approving') : t('fin.petty.approvePost')}
               </Button>
             </div>
           </Card>

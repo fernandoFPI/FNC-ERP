@@ -1,3 +1,5 @@
+import { Trans, useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
@@ -145,6 +147,7 @@ const STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'success' | 'warning' 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PaymentVoucherDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const isNew = id === 'new'
   const navigate = useNavigate()
@@ -294,7 +297,7 @@ export default function PaymentVoucherDetail() {
 
   async function handleSave() {
     if (!form.received_from.trim()) {
-      addToast({ type: 'error', message: '"Received From" is required' })
+      addToast({ type: 'error', message: t('fin.pvDetail.receivedFromIsRequired') })
       return
     }
     setSaving(true)
@@ -305,25 +308,25 @@ export default function PaymentVoucherDetail() {
           refetchQueries: [{ query: PAYMENT_VOUCHERS_QUERY }],
         })
         if (!data?.createPaymentVoucher) {
-          addToast({ type: 'error', message: 'Voucher creation did not return a result' })
+          addToast({ type: 'error', message: t('fin.pvDetail.voucherCreationDidNotReturnA') })
           return
         }
         addToast({
           type: 'success',
-          message: `Voucher ${data.createPaymentVoucher.voucher_number} created`,
+          message: t('fin.pvDetail.voucherCreated', { voucher_number: data.createPaymentVoucher.voucher_number }),
         })
         navigate(`/finance/payment-vouchers/${data.createPaymentVoucher.id}`)
       } else {
         const effectiveId = voucher?.id ?? id
         if (!effectiveId) {
-          addToast({ type: 'error', message: 'Voucher ID not found — please reload the page' })
+          addToast({ type: 'error', message: t('fin.pvDetail.voucherIdNotFoundPleaseReload') })
           return
         }
         await updateVoucher({
           variables: { id: effectiveId, input: buildInput() },
           refetchQueries: [{ query: PAYMENT_VOUCHER_QUERY, variables: { id: effectiveId } }],
         })
-        addToast({ type: 'success', message: 'Voucher saved' })
+        addToast({ type: 'success', message: t('fin.pvDetail.voucherSaved') })
         void refetch()
       }
     } catch (err) {
@@ -339,7 +342,7 @@ export default function PaymentVoucherDetail() {
         variables: { id: id ?? '' },
         refetchQueries: [{ query: PAYMENT_VOUCHER_QUERY, variables: { id } }],
       })
-      addToast({ type: 'success', message: 'Voucher approved' })
+      addToast({ type: 'success', message: t('fin.pvDetail.voucherApproved') })
       setShowApproveDialog(false)
       void refetch()
     } catch (err) {
@@ -353,7 +356,7 @@ export default function PaymentVoucherDetail() {
         variables: { id: id ?? '' },
         refetchQueries: [{ query: PAYMENT_VOUCHER_QUERY, variables: { id } }],
       })
-      addToast({ type: 'success', message: 'Voucher marked as paid' })
+      addToast({ type: 'success', message: t('fin.pvDetail.voucherMarkedAsPaid') })
       setShowPaidDialog(false)
       void refetch()
     } catch (err) {
@@ -509,7 +512,7 @@ export default function PaymentVoucherDetail() {
   }, [form, lines, linkedJournalIds, allJournals, voucher, totalIqd, totalUsd])
 
   if (loadingVoucher && !voucher) {
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('fin.pvDetail.loading')}</div>
   }
 
   // Style helpers
@@ -544,7 +547,7 @@ export default function PaymentVoucherDetail() {
     // longer offered for new entry.
     {
       key: 'acct_5',
-      label: 'Account',
+      label: t('fin.pvDetail.account'),
       width: '90px',
       render: (line: VoucherLine, idx: number) => (
         <input
@@ -566,13 +569,13 @@ export default function PaymentVoucherDetail() {
     },
     {
       key: 'statement',
-      label: 'Statement (البيان)',
+      label: t('fin.pvDetail.statement'),
       render: (line, idx) => (
         <input
           type="text"
           readOnly={isReadOnly}
           value={line.statement}
-          placeholder="Description…"
+          placeholder={t('fin.pvDetail.description')}
           style={inputStyle}
           onChange={(e) => {
             updateLine(idx, 'statement', e.target.value)
@@ -582,7 +585,7 @@ export default function PaymentVoucherDetail() {
     },
     {
       key: 'amount_iqd',
-      label: 'Amount IQD',
+      label: t('fin.pvDetail.amountIqd'),
       width: '110px',
       render: (line, idx) => (
         <input
@@ -591,7 +594,7 @@ export default function PaymentVoucherDetail() {
           value={line.amount_iqd}
           min="0"
           step="0.01"
-          style={{ ...inputStyle, textAlign: 'right', fontFamily: 'monospace' }}
+          style={{ ...inputStyle, textAlign: 'end', fontFamily: 'monospace' }}
           onChange={(e) => {
             updateLine(idx, 'amount_iqd', e.target.value)
           }}
@@ -600,7 +603,7 @@ export default function PaymentVoucherDetail() {
     },
     {
       key: 'amount_usd',
-      label: 'Amount USD',
+      label: t('fin.pvDetail.amountUsd'),
       width: '100px',
       render: (line, idx) => (
         <input
@@ -609,7 +612,7 @@ export default function PaymentVoucherDetail() {
           value={line.amount_usd}
           min="0"
           step="0.01"
-          style={{ ...inputStyle, textAlign: 'right', fontFamily: 'monospace' }}
+          style={{ ...inputStyle, textAlign: 'end', fontFamily: 'monospace' }}
           onChange={(e) => {
             updateLine(idx, 'amount_usd', e.target.value)
           }}
@@ -621,12 +624,12 @@ export default function PaymentVoucherDetail() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
       <PageHeader
-        title={isNew ? 'New Payment Voucher' : (voucher?.voucher_number ?? 'Payment Voucher')}
-        subtitle={isNew ? 'Create payment voucher' : (voucher?.voucher_date ?? '')}
+        title={isNew ? t('fin.pvDetail.newPaymentVoucher') : (voucher?.voucher_number ?? t('fin.pvDetail.paymentVoucher2'))}
+        subtitle={isNew ? t('fin.pvDetail.createPaymentVoucher') : (voucher?.voucher_date ?? '')}
         backPath="/finance/payment-vouchers"
         status={
           !isNew && voucher ? (
-            <Badge variant={STATUS_VARIANT[voucher.status] ?? 'neutral'}>{voucher.status}</Badge>
+            <Badge variant={STATUS_VARIANT[voucher.status] ?? 'neutral'}>{enumLabel(voucher.status)}</Badge>
           ) : undefined
         }
         actions={
@@ -638,7 +641,7 @@ export default function PaymentVoucherDetail() {
                 onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)}
                 loading={saving || creating || updating}
               >
-                {isNew ? 'Create Voucher' : 'Save Changes'}
+                {isNew ? t('fin.pvDetail.createVoucher') : t('fin.pvDetail.saveChanges')}
               </Button>
             )}
             {!isNew && voucher?.status === 'draft' && (
@@ -649,7 +652,7 @@ export default function PaymentVoucherDetail() {
                   setShowApproveDialog(true)
                 }}
               >
-                Approve
+                {t('fin.pvDetail.approve')}
               </Button>
             )}
             {!isNew && voucher?.status === 'approved' && (
@@ -660,12 +663,12 @@ export default function PaymentVoucherDetail() {
                   setShowPaidDialog(true)
                 }}
               >
-                Mark Paid
+                {t('fin.pvDetail.markPaid')}
               </Button>
             )}
             {!isNew && (
               <Button variant="ghost" size="sm" onClick={handlePrint}>
-                Print / Save PDF
+                {t('fin.pvDetail.printSavePdf')}
               </Button>
             )}
           </div>
@@ -721,16 +724,10 @@ export default function PaymentVoucherDetail() {
             color: theme.textSecondary,
           }}
         >
-          <span>
-            Auditor: <strong>{voucher.auditor_email ?? '—'}</strong>
-          </span>
-          <span>
-            Audited at: <strong>{new Date(voucher.audited_at).toLocaleString()}</strong>
-          </span>
+          <span><Trans i18nKey="fin.pvDetail.auditor" values={{ value: voucher.auditor_email ?? '—' }} components={[<strong />]} /></span>
+          <span><Trans i18nKey="fin.pvDetail.auditedAt" values={{ value: new Date(voucher.audited_at).toLocaleString() }} components={[<strong />]} /></span>
           {voucher.cashier_email && (
-            <span>
-              Cashier: <strong>{voucher.cashier_email}</strong>
-            </span>
+            <span><Trans i18nKey="fin.pvDetail.cashier" values={{ cashier_email: voucher.cashier_email }} components={[<strong />]} /></span>
           )}
         </div>
       )}
@@ -740,7 +737,7 @@ export default function PaymentVoucherDetail() {
         <div style={{ marginTop: '16px' }}>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <Button variant="primary" size="sm" onClick={handlePrint}>
-              Print / Save as PDF
+              {t('fin.pvDetail.printSaveAsPdf')}
             </Button>
           </div>
           <div
@@ -755,7 +752,7 @@ export default function PaymentVoucherDetail() {
               ref={iframeRef}
               srcDoc={previewHtml}
               style={{ width: '100%', height: '820px', border: 'none', display: 'block' }}
-              title={`Payment Voucher ${voucher?.voucher_number ?? ''}`}
+              title={t('fin.pvDetail.paymentVoucher', { value: voucher?.voucher_number ?? '' })}
             />
           </div>
         </div>
@@ -778,7 +775,7 @@ export default function PaymentVoucherDetail() {
             <Card>
               <div style={{ padding: '16px', borderBottom: `1px solid ${theme.border}` }}>
                 <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-                  Voucher Details
+                  {t('fin.pvDetail.voucherDetails')}
                 </span>
               </div>
               <div
@@ -790,7 +787,7 @@ export default function PaymentVoucherDetail() {
                 }}
               >
                 <div>
-                  <label style={labelStyle}>Date *</label>
+                  <label style={labelStyle}>{t('fin.pvDetail.date')}</label>
                   <input
                     type="date"
                     style={inputStyle}
@@ -803,13 +800,13 @@ export default function PaymentVoucherDetail() {
                 </div>
 
                 <div>
-                  <label style={labelStyle}>Received From (ادفعوا لأمر) *</label>
+                  <label style={labelStyle}>{t('fin.pvDetail.receivedFrom')}</label>
                   <input
                     type="text"
                     style={inputStyle}
                     value={form.received_from}
                     readOnly={isReadOnly}
-                    placeholder="Supplier / employee name"
+                    placeholder={t('fin.pvDetail.supplierEmployeeName')}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, received_from: e.target.value }))
                     }}
@@ -817,13 +814,13 @@ export default function PaymentVoucherDetail() {
                 </div>
 
                 <div>
-                  <label style={labelStyle}>Reference To (وذلك عن)</label>
+                  <label style={labelStyle}>{t('fin.pvDetail.referenceTo')}</label>
                   <input
                     type="text"
                     style={inputStyle}
                     value={form.reference_to}
                     readOnly={isReadOnly}
-                    placeholder="Invoice / contract reference"
+                    placeholder={t('fin.pvDetail.invoiceContractReference')}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, reference_to: e.target.value }))
                     }}
@@ -831,13 +828,13 @@ export default function PaymentVoucherDetail() {
                 </div>
 
                 <div>
-                  <label style={labelStyle}>Bank Account / Fund (حسابات البنك/الصندوق)</label>
+                  <label style={labelStyle}>{t('fin.pvDetail.bankAccountFund')}</label>
                   <input
                     type="text"
                     style={inputStyle}
                     value={form.bank_account_fund}
                     readOnly={isReadOnly}
-                    placeholder="Account name or fund"
+                    placeholder={t('fin.pvDetail.accountNameOrFund')}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, bank_account_fund: e.target.value }))
                     }}
@@ -845,7 +842,7 @@ export default function PaymentVoucherDetail() {
                 </div>
 
                 <div>
-                  <label style={labelStyle}>Paid From</label>
+                  <label style={labelStyle}>{t('fin.pvDetail.paidFrom')}</label>
                   <SearchableSelect
                     value={fundingSourceValue(
                       form.funding_source_type,
@@ -862,7 +859,7 @@ export default function PaymentVoucherDetail() {
                       }))
                     }}
                     disabled={isReadOnly}
-                    placeholder="Select a cash box or bank account…"
+                    placeholder={t('fin.pvDetail.selectACashBoxOrBank')}
                     options={[
                       ...pettyCashFloats.map((f) => ({
                         value: `cash_box:${f.id}`,
@@ -877,13 +874,13 @@ export default function PaymentVoucherDetail() {
                 </div>
 
                 <div>
-                  <label style={labelStyle}>Receiver Name (المستلم)</label>
+                  <label style={labelStyle}>{t('fin.pvDetail.receiverName')}</label>
                   <input
                     type="text"
                     style={inputStyle}
                     value={form.receiver_name}
                     readOnly={isReadOnly}
-                    placeholder="Name of person receiving payment"
+                    placeholder={t('fin.pvDetail.nameOfPersonReceivingPayment')}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, receiver_name: e.target.value }))
                     }}
@@ -891,13 +888,13 @@ export default function PaymentVoucherDetail() {
                 </div>
 
                 <div>
-                  <label style={labelStyle}>Notes</label>
+                  <label style={labelStyle}>{t('fin.pvDetail.notes')}</label>
                   <input
                     type="text"
                     style={inputStyle}
                     value={form.notes}
                     readOnly={isReadOnly}
-                    placeholder="Optional internal note"
+                    placeholder={t('fin.pvDetail.optionalInternalNote')}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, notes: e.target.value }))
                     }}
@@ -918,11 +915,11 @@ export default function PaymentVoucherDetail() {
                 }}
               >
                 <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-                  Payment Lines
+                  {t('fin.pvDetail.paymentLines')}
                 </span>
                 {!isReadOnly && (
                   <Button variant="ghost" size="sm" onClick={addLine}>
-                    + Add Line
+                    {t('fin.pvDetail.addLine')}
                   </Button>
                 )}
               </div>
@@ -940,7 +937,7 @@ export default function PaymentVoucherDetail() {
                 removeDisabled={() => lines.length <= 1}
                 footerRow={{
                   statement: (
-                    <span style={{ fontSize: '12px', color: theme.textSecondary }}>Total</span>
+                    <span style={{ fontSize: '12px', color: theme.textSecondary }}>{t('fin.pvDetail.total')}</span>
                   ),
                   amount_iqd: <AmountDisplay amount={totalIqd} currency="IQD" />,
                   amount_usd:
@@ -958,7 +955,7 @@ export default function PaymentVoucherDetail() {
               <Card>
                 <div style={{ padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
                   <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-                    Linked Journal Entries
+                    {t('fin.pvDetail.linkedJournalEntries')}
                   </span>
                 </div>
                 <div style={{ padding: '12px' }}>
@@ -987,7 +984,7 @@ export default function PaymentVoucherDetail() {
                               fontFamily: 'monospace',
                               color: theme.accent,
                               fontWeight: 600,
-                              marginRight: '10px',
+                              marginInlineEnd: '10px',
                             }}
                           >
                             {j.reference}
@@ -996,8 +993,8 @@ export default function PaymentVoucherDetail() {
                             {j.entry_date}
                           </span>
                           {j.audited_at && (
-                            <span style={{ marginLeft: '8px' }}>
-                              <Badge variant="success">Audited</Badge>
+                            <span style={{ marginInlineStart: '8px' }}>
+                              <Badge variant="success">{t('fin.pvDetail.audited')}</Badge>
                             </span>
                           )}
                         </div>
@@ -1048,17 +1045,17 @@ export default function PaymentVoucherDetail() {
             <Card>
               <div style={{ padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
                 <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-                  Link Journal Entries
+                  {t('fin.pvDetail.linkJournalEntries')}
                 </span>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                  Posted journals to include in this voucher
+                  {t('fin.pvDetail.postedJournalsToIncludeInThis')}
                 </div>
               </div>
 
               <div style={{ padding: '10px 12px', borderBottom: `1px solid ${theme.border}` }}>
                 <input
                   type="search"
-                  placeholder="Search journals…"
+                  placeholder={t('fin.pvDetail.searchJournals')}
                   value={journalSearch}
                   style={{ ...inputStyle, width: '100%' }}
                   onChange={(e) => {
@@ -1077,7 +1074,7 @@ export default function PaymentVoucherDetail() {
                       fontSize: '13px',
                     }}
                   >
-                    No posted journals found
+                    {t('fin.pvDetail.noPostedJournalsFound')}
                   </div>
                 ) : (
                   filteredJournals.map((j) => {
@@ -1137,7 +1134,7 @@ export default function PaymentVoucherDetail() {
                                   borderRadius: '4px',
                                 }}
                               >
-                                audited
+                                {t('fin.pvDetail.audited2')}
                               </span>
                             )}
                           </div>
@@ -1159,9 +1156,7 @@ export default function PaymentVoucherDetail() {
                           {j.linked_pos && j.linked_pos.length > 0 && (
                             <div
                               style={{ fontSize: '10px', color: theme.textMuted, marginTop: '2px' }}
-                            >
-                              POs: {j.linked_pos.map((p) => p.po_number).join(', ')}
-                            </div>
+                            >{t('fin.pvDetail.pos', { value: j.linked_pos.map((p) => p.po_number).join(', ') })}</div>
                           )}
                         </div>
                       </label>
@@ -1177,9 +1172,7 @@ export default function PaymentVoucherDetail() {
                   fontSize: '12px',
                   color: theme.textMuted,
                 }}
-              >
-                {linkedJournalIds.size} journal{linkedJournalIds.size !== 1 ? 's' : ''} selected
-              </div>
+              >{t('fin.pvDetail.journalSelected', { count: linkedJournalIds.size })}</div>
             </Card>
           </div>
         </div>
@@ -1188,9 +1181,9 @@ export default function PaymentVoucherDetail() {
       {/* Confirm dialogs */}
       <ConfirmDialog
         open={showApproveDialog}
-        title="Approve Payment Voucher"
-        message="Approve this payment voucher? This marks it as auditor-approved and ready for payment."
-        confirmLabel="Approve"
+        title={t('fin.pvDetail.approvePaymentVoucher')}
+        message={t('fin.pvDetail.approveThisPaymentVoucherThisMarks')}
+        confirmLabel={t('fin.pvDetail.approve')}
         variant="primary"
         onConfirm={(...args: Parameters<typeof handleApprove>) => void handleApprove(...args)}
         onCancel={() => {
@@ -1200,9 +1193,9 @@ export default function PaymentVoucherDetail() {
       />
       <ConfirmDialog
         open={showPaidDialog}
-        title="Mark as Paid"
-        message="Confirm that this payment has been disbursed by the cashier?"
-        confirmLabel="Mark Paid"
+        title={t('fin.pvDetail.markAsPaid')}
+        message={t('fin.pvDetail.confirmThatThisPaymentHasBeen')}
+        confirmLabel={t('fin.pvDetail.markPaid')}
         variant="primary"
         onConfirm={(...args: Parameters<typeof handleMarkPaid>) => void handleMarkPaid(...args)}
         onCancel={() => {

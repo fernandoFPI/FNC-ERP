@@ -1,3 +1,5 @@
+import i18n, { enumLabel, tlh } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -147,12 +149,13 @@ interface ReturnForm {
 }
 
 const LEDGER_TYPE_LABEL: Record<LedgerEntry['type'], string> = {
-  issuance: 'Issuance',
-  settlement: 'Settlement',
-  return: 'Return',
+  get issuance() { return i18n.t('fin.advDetail.issuance', { defaultValue: "Issuance" }) },
+  get settlement() { return i18n.t('fin.advDetail.settlement', { defaultValue: "Settlement" }) },
+  get return() { return i18n.t('fin.advDetail.return', { defaultValue: "Return" }) },
 }
 
 export default function EmployeeAdvanceDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const navigate = useNavigate()
@@ -400,9 +403,9 @@ export default function EmployeeAdvanceDetail() {
     display: 'block' as const,
   }
 
-  if (loading) return <div style={{ padding: '24px', color: theme.textMuted }}>Loading...</div>
+  if (loading) return <div style={{ padding: '24px', color: theme.textMuted }}>{t('fin.advDetail.loading')}</div>
   if (!advance)
-    return <div style={{ padding: '24px', color: theme.textMuted }}>Advance not found.</div>
+    return <div style={{ padding: '24px', color: theme.textMuted }}>{t('fin.advDetail.advanceNotFound')}</div>
 
   const canSettle = ['approved', 'partially_settled'].includes(advance.status)
   const canVoid =
@@ -421,7 +424,7 @@ export default function EmployeeAdvanceDetail() {
   const lineFields: LineItemField<LineForm>[] = [
     {
       key: 'line_date',
-      label: 'Date',
+      label: t('fin.advDetail.date'),
       width: '120px',
       render: (line, i) => (
         <input
@@ -436,7 +439,7 @@ export default function EmployeeAdvanceDetail() {
     },
     {
       key: 'category_id',
-      label: 'Category',
+      label: t('fin.advDetail.category'),
       width: '150px',
       render: (line, i) => (
         <select
@@ -446,7 +449,7 @@ export default function EmployeeAdvanceDetail() {
             applyCategory(i, e.target.value)
           }}
         >
-          <option value="">— Category —</option>
+          <option value="">{t('fin.advDetail.category2')}</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -458,7 +461,7 @@ export default function EmployeeAdvanceDetail() {
     },
     {
       key: 'gl_account_id',
-      label: 'GL Account',
+      label: t('fin.advDetail.glAccount'),
       width: '170px',
       render: (line, i) => (
         <select
@@ -468,7 +471,7 @@ export default function EmployeeAdvanceDetail() {
             updateLine(i, 'gl_account_id', e.target.value)
           }}
         >
-          <option value="">— Account —</option>
+          <option value="">{t('fin.advDetail.account')}</option>
           {glAccounts.map((g) => (
             <option key={g.id} value={g.id}>
               {g.code} · {g.name}
@@ -479,7 +482,7 @@ export default function EmployeeAdvanceDetail() {
     },
     {
       key: 'project_id',
-      label: 'Project',
+      label: t('fin.advDetail.project'),
       width: '160px',
       render: (line, i) => (
         <select
@@ -492,7 +495,7 @@ export default function EmployeeAdvanceDetail() {
             updateLine(i, 'project_id', e.target.value)
           }}
         >
-          <option value="">{lineIsProjectRequired(line) ? '— Required —' : '— None —'}</option>
+          <option value="">{lineIsProjectRequired(line) ? t('fin.advDetail.required') : t('fin.advDetail.none')}</option>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
               {p.code} · {p.name}
@@ -503,7 +506,7 @@ export default function EmployeeAdvanceDetail() {
     },
     {
       key: 'cost_center_id',
-      label: 'Cost Center',
+      label: t('fin.advDetail.costCenter'),
       width: '150px',
       render: (line, i) => (
         <select
@@ -513,7 +516,7 @@ export default function EmployeeAdvanceDetail() {
             updateLine(i, 'cost_center_id', e.target.value)
           }}
         >
-          <option value="">— Required —</option>
+          <option value="">{t('fin.advDetail.required')}</option>
           {costCenters.map((c) => (
             <option key={c.id} value={c.id}>
               {c.code} · {c.name}
@@ -524,7 +527,7 @@ export default function EmployeeAdvanceDetail() {
     },
     {
       key: 'description',
-      label: 'Description',
+      label: t('fin.advDetail.description'),
       width: '160px',
       render: (line, i) => (
         <input
@@ -533,18 +536,18 @@ export default function EmployeeAdvanceDetail() {
           onChange={(e) => {
             updateLine(i, 'description', e.target.value)
           }}
-          placeholder="What was this for?"
+          placeholder={t('fin.advDetail.whatWasThisFor')}
         />
       ),
     },
     {
       key: 'amount',
-      label: 'Amount',
+      label: t('fin.advDetail.amount'),
       width: '100px',
       render: (line, i) => (
         <input
           type="number"
-          style={{ ...inputStyle, textAlign: 'right' }}
+          style={{ ...inputStyle, textAlign: 'end' }}
           value={line.amount}
           min="0.01"
           step="0.01"
@@ -574,11 +577,11 @@ export default function EmployeeAdvanceDetail() {
                 navigate(-1)
               }}
             >
-              ← Back
+              {t('fin.advDetail.back')}
             </Button>
             {canEdit && advance.status === 'draft' && (
               <Button variant="primary" size="sm" onClick={() => void act('submit')} disabled={acting}>
-                Submit for Approval
+                {t('fin.advDetail.submitForApproval')}
               </Button>
             )}
             {advance.status === 'pending_approval' && (
@@ -591,7 +594,7 @@ export default function EmployeeAdvanceDetail() {
                       setShowReject(true)
                     }}
                   >
-                    Reject
+                    {t('fin.advDetail.reject')}
                   </Button>
                 )}
                 {canApprove && (
@@ -604,7 +607,7 @@ export default function EmployeeAdvanceDetail() {
                     }}
                     disabled={acting}
                   >
-                    Approve &amp; Issue
+                    {t('fin.advDetail.approveIssue')}
                   </Button>
                 )}
               </>
@@ -617,12 +620,12 @@ export default function EmployeeAdvanceDetail() {
                   setShowSettlementForm(true)
                 }}
               >
-                + New Settlement
+                {t('fin.advDetail.newSettlement')}
               </Button>
             )}
             {canEdit && canSettle && (
               <Button variant="secondary" size="sm" onClick={openReturnForm}>
-                + New Return
+                {t('fin.advDetail.newReturn')}
               </Button>
             )}
             {canEdit && canVoid && (
@@ -633,7 +636,7 @@ export default function EmployeeAdvanceDetail() {
                   setShowVoid(true)
                 }}
               >
-                Void Advance
+                {t('fin.advDetail.voidAdvance')}
               </Button>
             )}
           </div>
@@ -690,13 +693,13 @@ export default function EmployeeAdvanceDetail() {
           )
         })}
         {advance.status === 'rejected' && (
-          <div style={{ marginLeft: '12px' }}>
-            <Badge variant="danger">Rejected</Badge>
+          <div style={{ marginInlineStart: '12px' }}>
+            <Badge variant="danger">{t('fin.advDetail.rejected')}</Badge>
           </div>
         )}
         {advance.status === 'cancelled' && (
-          <div style={{ marginLeft: '12px' }}>
-            <Badge variant="neutral">Voided</Badge>
+          <div style={{ marginInlineStart: '12px' }}>
+            <Badge variant="neutral">{t('fin.advDetail.voided')}</Badge>
           </div>
         )}
       </div>
@@ -715,33 +718,33 @@ export default function EmployeeAdvanceDetail() {
                 marginBottom: '12px',
               }}
             >
-              Advance Details
+              {t('fin.advDetail.advanceDetails')}
             </p>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <tbody>
                 {[
-                  ['Advance #', advance.advance_number],
-                  ['Employee', advance.employee_name],
-                  ['Original Amount', null],
-                  ['Settled', null],
-                  ['Returned', null],
-                  ['Outstanding', null],
-                  ['Created', new Date(advance.created_at).toLocaleDateString()],
+                  [t('fin.advDetail.advance'), advance.advance_number],
+                  [t('fin.advDetail.employee'), advance.employee_name],
+                  [t('fin.advDetail.originalAmount'), null],
+                  [t('fin.advDetail.settled'), null],
+                  [t('fin.advDetail.returned'), null],
+                  [t('fin.advDetail.outstanding'), null],
+                  [t('fin.advDetail.created'), new Date(advance.created_at).toLocaleDateString()],
                   [
-                    'Approved',
+                    t('fin.advDetail.approved'),
                     advance.approved_at ? new Date(advance.approved_at).toLocaleDateString() : '—',
                   ],
                 ].map(([k, v]) => (
                   <tr key={k} style={{ borderBottom: `1px solid ${theme.border}` }}>
                     <td style={{ padding: '7px 0', color: theme.textMuted, width: '45%' }}>{k}</td>
                     <td style={{ padding: '7px 0', color: theme.textPrimary, fontWeight: 500 }}>
-                      {k === 'Original Amount' ? (
+                      {k === t('fin.advDetail.originalAmount') ? (
                         <AmountDisplay amount={Number(advance.amount)} currency={advance.currency_code} size="sm" />
-                      ) : k === 'Settled' ? (
+                      ) : k === t('fin.advDetail.settled') ? (
                         <AmountDisplay amount={Number(advance.settled_amount)} currency={advance.currency_code} size="sm" />
-                      ) : k === 'Returned' ? (
+                      ) : k === t('fin.advDetail.returned') ? (
                         <AmountDisplay amount={Number(advance.returned_amount)} currency={advance.currency_code} size="sm" />
-                      ) : k === 'Outstanding' ? (
+                      ) : k === t('fin.advDetail.outstanding') ? (
                         <AmountDisplay
                           amount={Number(advance.outstanding_amount)}
                           currency={advance.currency_code}
@@ -782,7 +785,7 @@ export default function EmployeeAdvanceDetail() {
                   color: '#ef4444',
                 }}
               >
-                <strong>{advance.status === 'cancelled' ? 'Voided:' : 'Rejected:'}</strong>{' '}
+                <strong>{advance.status === 'cancelled' ? t('fin.advDetail.voided2') : t('fin.advDetail.rejected2')}</strong>{' '}
                 {advance.status === 'cancelled' ? advance.void_reason : advance.rejection_reason}
               </div>
             )}
@@ -798,7 +801,7 @@ export default function EmployeeAdvanceDetail() {
                   color: theme.accent,
                 }}
               >
-                Issuance JE posted:{' '}
+                {t('fin.advDetail.issuanceJePosted')}{' '}
                 <span style={{ fontFamily: 'monospace' }}>
                   {advance.journal_entry_id.slice(0, 8)}…
                 </span>
@@ -829,17 +832,15 @@ export default function EmployeeAdvanceDetail() {
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
                   }}
-                >
-                  Pending PO Line Items ({pendingPOLines.length})
-                </p>
+                >{t('fin.advDetail.pendingPoLineItems', { length: pendingPOLines.length })}</p>
                 <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                  Completed POs funded by this advance, awaiting settlement
+                  {t('fin.advDetail.completedPosFundedByThisAdvance')}
                 </span>
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
-                    {['', 'PO #', 'Project', 'Description', 'Account', 'Cost Center', 'Amount'].map(
+                    {['', 'PO #', t('fin.advDetail.project'), t('fin.advDetail.description'), t('fin.advDetail.account2'), t('fin.advDetail.costCenter'), t('fin.advDetail.amount')].map(
                       (h, i) => (
                         <th
                           key={h}
@@ -850,7 +851,7 @@ export default function EmployeeAdvanceDetail() {
                             fontWeight: 500,
                           }}
                         >
-                          {h}
+                          {tlh('fin.advDetail', h)}
                         </th>
                       ),
                     )}
@@ -884,7 +885,7 @@ export default function EmployeeAdvanceDetail() {
                         {l.project_code ? (
                           `${l.project_code} · ${l.project_name ?? ''}`
                         ) : (
-                          <span style={{ fontStyle: 'italic' }}>General</span>
+                          <span style={{ fontStyle: 'italic' }}>{t('fin.advDetail.general')}</span>
                         )}
                       </td>
                       <td style={{ padding: '8px 12px', color: theme.textSecondary }}>{l.description}</td>
@@ -894,7 +895,7 @@ export default function EmployeeAdvanceDetail() {
                       <td style={{ padding: '8px 12px', color: theme.textSecondary, fontSize: '11px' }}>
                         {l.cost_center_code ? `${l.cost_center_code} · ${l.cost_center_name ?? ''}` : '—'}
                       </td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                      <td style={{ padding: '8px 12px', textAlign: 'end' }}>
                         <AmountDisplay amount={Number(l.total_price)} currency={advance.currency_code} size="sm" />
                       </td>
                     </tr>
@@ -911,7 +912,7 @@ export default function EmployeeAdvanceDetail() {
                 }}
               >
                 <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                  {selectedPOLineIds.size} selected · Total:{' '}
+                  {selectedPOLineIds.size} {t('fin.advDetail.selectedTotal')}{' '}
                   <span style={{ fontFamily: 'monospace', color: theme.accent, fontWeight: 700 }}>
                     {selectedPOTotal.toLocaleString()} {advance.currency_code}
                   </span>
@@ -923,7 +924,7 @@ export default function EmployeeAdvanceDetail() {
                     onClick={() => void handleBundleSettlement()}
                     disabled={bundling || selectedPOLineIds.size === 0}
                   >
-                    {bundling ? 'Creating...' : 'Create Settlement from Selected'}
+                    {bundling ? t('fin.advDetail.creating') : t('fin.advDetail.createSettlementFromSelected')}
                   </Button>
                 )}
               </div>
@@ -941,22 +942,20 @@ export default function EmployeeAdvanceDetail() {
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
                 }}
-              >
-                Settlements ({advance.settlements.length})
-              </p>
+              >{t('fin.advDetail.settlements', { length: advance.settlements.length })}</p>
             </div>
             {advance.settlements.length === 0 ? (
               <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted, fontSize: '12px' }}>
-                No settlements submitted yet.
+                {t('fin.advDetail.noSettlementsSubmittedYet')}
               </div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
-                    {['Ref', 'Date', 'Lines', 'Total', 'Status', ''].map((h) => (
+                    {[t('fin.advDetail.ref'), t('fin.advDetail.date'), t('fin.advDetail.lines'), t('fin.advDetail.total'), t('fin.advDetail.status'), ''].map((h) => (
                       <th
                         key={h}
-                        style={{ padding: '8px 12px', textAlign: 'left', color: theme.textMuted, fontWeight: 500 }}
+                        style={{ padding: '8px 12px', textAlign: 'start', color: theme.textMuted, fontWeight: 500 }}
                       >
                         {h}
                       </th>
@@ -979,7 +978,7 @@ export default function EmployeeAdvanceDetail() {
                         <AmountDisplay amount={Number(s.total_amount)} currency={s.currency_code} size="sm" />
                       </td>
                       <td style={{ padding: '8px 12px' }}>
-                        <Badge variant={STATUS_BADGE[s.status] ?? 'neutral'}>{s.status}</Badge>
+                        <Badge variant={STATUS_BADGE[s.status] ?? 'neutral'}>{enumLabel(s.status)}</Badge>
                       </td>
                       <td style={{ padding: '8px 12px' }}>
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -990,7 +989,7 @@ export default function EmployeeAdvanceDetail() {
                               onClick={() => void actOnSettlement(s.id, 'submit')}
                               disabled={acting}
                             >
-                              Submit
+                              {t('fin.advDetail.submit')}
                             </Button>
                           )}
                           {s.status === 'submitted' && (
@@ -1003,7 +1002,7 @@ export default function EmployeeAdvanceDetail() {
                                     setRejectingSettlementId(s.id)
                                   }}
                                 >
-                                  Reject
+                                  {t('fin.advDetail.reject')}
                                 </Button>
                               )}
                               {canApprove && (
@@ -1013,7 +1012,7 @@ export default function EmployeeAdvanceDetail() {
                                   onClick={() => void actOnSettlement(s.id, 'approve')}
                                   disabled={acting}
                                 >
-                                  Approve
+                                  {t('fin.advDetail.approve')}
                                 </Button>
                               )}
                             </>
@@ -1040,22 +1039,20 @@ export default function EmployeeAdvanceDetail() {
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
                   }}
-                >
-                  Returns ({advance.returns.length})
-                </p>
+                >{t('fin.advDetail.returns', { length: advance.returns.length })}</p>
               </div>
               {advance.returns.length === 0 ? (
                 <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted, fontSize: '12px' }}>
-                  No cash returned yet.
+                  {t('fin.advDetail.noCashReturnedYet')}
                 </div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                   <thead>
                     <tr style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
-                      {['Ref', 'Date', 'Amount', 'Status', ''].map((h) => (
+                      {[t('fin.advDetail.ref'), t('fin.advDetail.date'), t('fin.advDetail.amount'), t('fin.advDetail.status'), ''].map((h) => (
                         <th
                           key={h}
-                          style={{ padding: '8px 12px', textAlign: 'left', color: theme.textMuted, fontWeight: 500 }}
+                          style={{ padding: '8px 12px', textAlign: 'start', color: theme.textMuted, fontWeight: 500 }}
                         >
                           {h}
                         </th>
@@ -1075,7 +1072,7 @@ export default function EmployeeAdvanceDetail() {
                           <AmountDisplay amount={Number(ret.amount)} currency={ret.currency_code} size="sm" />
                         </td>
                         <td style={{ padding: '8px 12px' }}>
-                          <Badge variant={STATUS_BADGE[ret.status] ?? 'neutral'}>{ret.status}</Badge>
+                          <Badge variant={STATUS_BADGE[ret.status] ?? 'neutral'}>{enumLabel(ret.status)}</Badge>
                         </td>
                         <td style={{ padding: '8px 12px' }}>
                           {ret.status === 'draft' && (
@@ -1087,7 +1084,7 @@ export default function EmployeeAdvanceDetail() {
                                   onClick={() => void actOnReturn(ret.id, 'cancel')}
                                   disabled={acting}
                                 >
-                                  Cancel
+                                  {t('fin.advDetail.cancel')}
                                 </Button>
                               )}
                               {canApprove && (
@@ -1097,7 +1094,7 @@ export default function EmployeeAdvanceDetail() {
                                   onClick={() => void actOnReturn(ret.id, 'approve')}
                                   disabled={acting}
                                 >
-                                  Approve
+                                  {t('fin.advDetail.approve')}
                                 </Button>
                               )}
                             </div>
@@ -1127,19 +1124,19 @@ export default function EmployeeAdvanceDetail() {
                 letterSpacing: '0.05em',
               }}
             >
-              Ledger
+              {t('fin.advDetail.ledger')}
             </p>
           </div>
           {ledger.length === 0 ? (
             <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted, fontSize: '12px' }}>
-              No posted activity yet.
+              {t('fin.advDetail.noPostedActivityYet')}
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
-                    {['Date', 'Type', 'Reference', 'Description', 'Amount', 'Balance'].map((h, i) => (
+                    {[t('fin.advDetail.date'), t('fin.advDetail.type'), t('fin.advDetail.reference'), t('fin.advDetail.description'), t('fin.advDetail.amount'), t('fin.advDetail.balance')].map((h, i) => (
                       <th
                         key={h}
                         style={{
@@ -1179,7 +1176,7 @@ export default function EmployeeAdvanceDetail() {
                       <td
                         style={{
                           padding: '8px 12px',
-                          textAlign: 'right',
+                          textAlign: 'end',
                           fontFamily: 'monospace',
                           color: entry.amount >= 0 ? theme.textPrimary : theme.danger,
                         }}
@@ -1190,7 +1187,7 @@ export default function EmployeeAdvanceDetail() {
                       <td
                         style={{
                           padding: '8px 12px',
-                          textAlign: 'right',
+                          textAlign: 'end',
                           fontFamily: 'monospace',
                           fontWeight: 600,
                           color: theme.textPrimary,
@@ -1223,15 +1220,15 @@ export default function EmployeeAdvanceDetail() {
         >
           <Card padding="lg" style={{ width: '420px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              Approve &amp; Issue Advance
+              {t('fin.advDetail.approveIssueAdvance')}
             </h3>
             {advance.purpose && (
               <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
-                <strong>Purpose:</strong> {advance.purpose}
+                <strong>{t('fin.advDetail.purpose')}</strong> {advance.purpose}
               </p>
             )}
             <div style={{ marginBottom: '4px' }}>
-              <label style={labelStyle}>Cost Center (optional)</label>
+              <label style={labelStyle}>{t('fin.advDetail.costCenterOptional')}</label>
               <select
                 style={inputStyle}
                 value={approveCostCenterId}
@@ -1239,7 +1236,7 @@ export default function EmployeeAdvanceDetail() {
                   setApproveCostCenterId(e.target.value)
                 }}
               >
-                <option value="">— Not set —</option>
+                <option value="">{t('fin.advDetail.notSet')}</option>
                 {costCenters.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.code} · {c.name}
@@ -1248,8 +1245,7 @@ export default function EmployeeAdvanceDetail() {
               </select>
             </div>
             <p style={{ fontSize: '11px', color: theme.textMuted, margin: '4px 0 0' }}>
-              Classify this advance now that you know what it's for — it's informational at
-              issuance, but helps track which department the spend belongs to.
+              {t('fin.advDetail.classifyThisAdvanceNowThatYou')}
             </p>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
               <Button
@@ -1259,7 +1255,7 @@ export default function EmployeeAdvanceDetail() {
                   setShowApprove(false)
                 }}
               >
-                Cancel
+                {t('fin.advDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1270,7 +1266,7 @@ export default function EmployeeAdvanceDetail() {
                 })()}
                 disabled={acting}
               >
-                Approve &amp; Issue
+                {t('fin.advDetail.approveIssue')}
               </Button>
             </div>
           </Card>
@@ -1291,10 +1287,10 @@ export default function EmployeeAdvanceDetail() {
         >
           <Card padding="lg" style={{ width: '400px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              Reject Advance
+              {t('fin.advDetail.rejectAdvance')}
             </h3>
             <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
-              Provide a reason — this will be shown to the employee.
+              {t('fin.advDetail.provideAReasonThisWillBe')}
             </p>
             <textarea
               style={{ ...inputStyle, height: '80px', resize: 'vertical' as const }}
@@ -1302,7 +1298,7 @@ export default function EmployeeAdvanceDetail() {
               onChange={(e) => {
                 setRejectReason(e.target.value)
               }}
-              placeholder="Reason for rejection..."
+              placeholder={t('fin.advDetail.reasonForRejection')}
             />
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
               <Button
@@ -1312,7 +1308,7 @@ export default function EmployeeAdvanceDetail() {
                   setShowReject(false)
                 }}
               >
-                Cancel
+                {t('fin.advDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1324,7 +1320,7 @@ export default function EmployeeAdvanceDetail() {
                 })()}
                 disabled={acting || !rejectReason}
               >
-                Reject Advance
+                {t('fin.advDetail.rejectAdvance')}
               </Button>
             </div>
           </Card>
@@ -1346,7 +1342,7 @@ export default function EmployeeAdvanceDetail() {
         >
           <Card padding="lg" style={{ width: '400px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              Reject Settlement
+              {t('fin.advDetail.rejectSettlement')}
             </h3>
             <textarea
               style={{ ...inputStyle, height: '80px', resize: 'vertical' as const }}
@@ -1354,7 +1350,7 @@ export default function EmployeeAdvanceDetail() {
               onChange={(e) => {
                 setSettlementRejectReason(e.target.value)
               }}
-              placeholder="Reason for rejection..."
+              placeholder={t('fin.advDetail.reasonForRejection')}
             />
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
               <Button
@@ -1365,7 +1361,7 @@ export default function EmployeeAdvanceDetail() {
                   setSettlementRejectReason('')
                 }}
               >
-                Cancel
+                {t('fin.advDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1379,7 +1375,7 @@ export default function EmployeeAdvanceDetail() {
                 })()}
                 disabled={acting || !settlementRejectReason}
               >
-                Reject Settlement
+                {t('fin.advDetail.rejectSettlement')}
               </Button>
             </div>
           </Card>
@@ -1409,7 +1405,7 @@ export default function EmployeeAdvanceDetail() {
                 marginBottom: '16px',
               }}
             >
-              <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>New Settlement</h3>
+              <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>{t('fin.advDetail.newSettlement2')}</h3>
               <Button
                 variant="ghost"
                 size="sm"
@@ -1421,27 +1417,27 @@ export default function EmployeeAdvanceDetail() {
               </Button>
             </div>
             <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>
-              Outstanding balance:{' '}
+              {t('fin.advDetail.outstandingBalance')}{' '}
               <AmountDisplay amount={Number(advance.outstanding_amount)} currency={advance.currency_code} size="sm" />
-              {' · '}Categories marked with * require a project.{' '}
+              {' · '}{t('fin.advDetail.categoriesMarkedWithRequireAProject')}{' '}
               <a
                 href="/finance/categories"
                 target="_blank"
                 rel="noreferrer"
                 style={{ color: theme.accent }}
               >
-                Manage categories
+                {t('fin.advDetail.manageCategories')}
               </a>
             </p>
             <div style={{ marginBottom: '12px' }}>
-              <label style={labelStyle}>Description</label>
+              <label style={labelStyle}>{t('fin.advDetail.description')}</label>
               <input
                 style={inputStyle}
                 value={settlementDescription}
                 onChange={(e) => {
                   setSettlementDescription(e.target.value)
                 }}
-                placeholder="Brief summary of this settlement"
+                placeholder={t('fin.advDetail.briefSummaryOfThisSettlement')}
               />
             </div>
 
@@ -1470,10 +1466,10 @@ export default function EmployeeAdvanceDetail() {
                   setLines((ls) => [...ls, emptyLine()])
                 }}
               >
-                + Add Line
+                {t('fin.advDetail.addLine')}
               </Button>
               <div style={{ fontSize: '13px', fontWeight: 700, color: theme.textPrimary }}>
-                Total:{' '}
+                {t('fin.advDetail.total2')}{' '}
                 <span style={{ fontFamily: 'monospace', color: theme.accent }}>
                   {totalLines.toLocaleString()} {advance.currency_code}
                 </span>
@@ -1488,7 +1484,7 @@ export default function EmployeeAdvanceDetail() {
                   setShowSettlementForm(false)
                 }}
               >
-                Cancel
+                {t('fin.advDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1496,7 +1492,7 @@ export default function EmployeeAdvanceDetail() {
                 onClick={() => void handleCreateSettlement()}
                 disabled={savingSettlement || !linesValid}
               >
-                {savingSettlement ? 'Creating...' : 'Create Settlement'}
+                {savingSettlement ? t('fin.advDetail.creating') : t('fin.advDetail.createSettlement')}
               </Button>
             </div>
           </Card>
@@ -1518,14 +1514,14 @@ export default function EmployeeAdvanceDetail() {
         >
           <Card padding="lg" style={{ width: '420px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              New Return
+              {t('fin.advDetail.newReturn2')}
             </h3>
             <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>
-              Outstanding balance:{' '}
+              {t('fin.advDetail.outstandingBalance')}{' '}
               <AmountDisplay amount={Number(advance.outstanding_amount)} currency={advance.currency_code} size="sm" />
             </p>
             <div style={{ marginBottom: '12px' }}>
-              <label style={labelStyle}>Date</label>
+              <label style={labelStyle}>{t('fin.advDetail.date')}</label>
               <input
                 type="date"
                 style={inputStyle}
@@ -1536,7 +1532,7 @@ export default function EmployeeAdvanceDetail() {
               />
             </div>
             <div style={{ marginBottom: '12px' }}>
-              <label style={labelStyle}>Amount</label>
+              <label style={labelStyle}>{t('fin.advDetail.amount')}</label>
               <input
                 type="number"
                 min="0.01"
@@ -1550,7 +1546,7 @@ export default function EmployeeAdvanceDetail() {
               />
             </div>
             <div style={{ marginBottom: '12px' }}>
-              <label style={labelStyle}>Cash account</label>
+              <label style={labelStyle}>{t('fin.advDetail.cashAccount')}</label>
               <select
                 style={inputStyle}
                 value={returnForm.cash_account_id}
@@ -1558,7 +1554,7 @@ export default function EmployeeAdvanceDetail() {
                   setReturnForm((p) => ({ ...p, cash_account_id: e.target.value }))
                 }}
               >
-                <option value="">— Account —</option>
+                <option value="">{t('fin.advDetail.account')}</option>
                 {glAccounts.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.code} · {g.name}
@@ -1567,14 +1563,14 @@ export default function EmployeeAdvanceDetail() {
               </select>
             </div>
             <div style={{ marginBottom: '12px' }}>
-              <label style={labelStyle}>Description (optional)</label>
+              <label style={labelStyle}>{t('fin.advDetail.descriptionOptional')}</label>
               <input
                 style={inputStyle}
                 value={returnForm.description}
                 onChange={(e) => {
                   setReturnForm((p) => ({ ...p, description: e.target.value }))
                 }}
-                placeholder="What is this cash return for?"
+                placeholder={t('fin.advDetail.whatIsThisCashReturnFor')}
               />
             </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
@@ -1585,7 +1581,7 @@ export default function EmployeeAdvanceDetail() {
                   setShowReturnForm(false)
                 }}
               >
-                Cancel
+                {t('fin.advDetail.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -1593,7 +1589,7 @@ export default function EmployeeAdvanceDetail() {
                 onClick={() => void handleCreateReturn()}
                 disabled={savingReturn || !returnForm.amount || !returnForm.cash_account_id}
               >
-                {savingReturn ? 'Creating...' : 'Create Return'}
+                {savingReturn ? t('fin.advDetail.creating') : t('fin.advDetail.createReturn')}
               </Button>
             </div>
           </Card>
@@ -1615,11 +1611,10 @@ export default function EmployeeAdvanceDetail() {
         >
           <Card padding="lg" style={{ width: '420px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              Void Advance
+              {t('fin.advDetail.voidAdvance')}
             </h3>
             <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
-              Reverses the issuance journal entry and cancels this advance. Only possible because
-              nothing has been settled or returned against it yet — provide a reason for the record.
+              {t('fin.advDetail.reversesTheIssuanceJournalEntryAnd')}
             </p>
             <textarea
               style={{ ...inputStyle, height: '80px', resize: 'vertical' as const }}
@@ -1627,7 +1622,7 @@ export default function EmployeeAdvanceDetail() {
               onChange={(e) => {
                 setVoidReason(e.target.value)
               }}
-              placeholder="Reason for voiding..."
+              placeholder={t('fin.advDetail.reasonForVoiding')}
             />
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
               <Button
@@ -1637,7 +1632,7 @@ export default function EmployeeAdvanceDetail() {
                   setShowVoid(false)
                 }}
               >
-                Cancel
+                {t('fin.advDetail.cancel')}
               </Button>
               <Button
                 variant="danger"
@@ -1649,7 +1644,7 @@ export default function EmployeeAdvanceDetail() {
                 })()}
                 disabled={acting || !voidReason}
               >
-                Void Advance
+                {t('fin.advDetail.voidAdvance')}
               </Button>
             </div>
           </Card>

@@ -1,3 +1,5 @@
+import { Trans, useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -56,6 +58,7 @@ const todayStr = new Date().toISOString().slice(0, 10)
 const currentPeriod = new Date().toISOString().slice(0, 7)
 
 export default function RevaluationPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { can } = usePermission()
   const canEdit = can('finance.revaluation.edit', 'edit')
@@ -188,8 +191,8 @@ export default function RevaluationPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Currency Revaluation"
-        subtitle="Revalue foreign-currency monetary balances at period-end rates and post unrealized gain/loss entries"
+        title={t('fin.reval.currencyRevaluation')}
+        subtitle={t('fin.reval.revalueForeignCurrencyMonetaryBalancesAt')}
         actions={
           canEdit ? (
             <Button
@@ -199,7 +202,7 @@ export default function RevaluationPage() {
                 setShowCompute(true)
               }}
             >
-              + New Revaluation Run
+              {t('fin.reval.newRevaluationRun')}
             </Button>
           ) : undefined
         }
@@ -216,21 +219,21 @@ export default function RevaluationPage() {
       >
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Runs
+            {t('fin.reval.totalRuns')}
           </p>
           <p style={{ fontSize: '24px', fontWeight: 700, color: theme.textPrimary }}>
             {runs.length}
           </p>
         </Card>
         <Card padding="sm">
-          <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Posted</p>
+          <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>{t('fin.reval.posted')}</p>
           <p style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e' }}>
             {runs.filter((r) => r.status === 'posted').length}
           </p>
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Net Gain / (Loss)
+            {t('fin.reval.netGainLoss')}
           </p>
           <p
             style={{
@@ -246,13 +249,13 @@ export default function RevaluationPage() {
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Gains
+            {t('fin.reval.totalGains')}
           </p>
           <AmountDisplay amount={gains} currency="IQD" size="md" colored />
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-            Total Losses
+            {t('fin.reval.totalLosses')}
           </p>
           <p
             style={{
@@ -273,19 +276,19 @@ export default function RevaluationPage() {
           <thead>
             <tr style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
               {[
-                'Period',
-                'Run Date',
-                'Lines',
-                'Total Gain / (Loss)',
-                'Journal Entry',
-                'Status',
+                t('fin.reval.period'),
+                t('fin.reval.runDate2'),
+                t('fin.reval.lines'),
+                t('fin.reval.totalGainLoss'),
+                t('fin.reval.journalEntry'),
+                t('fin.reval.status'),
                 '',
               ].map((h) => (
                 <th
                   key={h}
                   style={{
                     padding: '9px 12px',
-                    textAlign: 'left',
+                    textAlign: 'start',
                     color: theme.textMuted,
                     fontWeight: 500,
                   }}
@@ -302,7 +305,7 @@ export default function RevaluationPage() {
                   colSpan={7}
                   style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                 >
-                  Loading...
+                  {t('fin.reval.loading')}
                 </td>
               </tr>
             )}
@@ -312,7 +315,7 @@ export default function RevaluationPage() {
                   colSpan={7}
                   style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                 >
-                  No revaluation runs yet. Click "+ New Revaluation Run" to create one.
+                  {t('fin.reval.noRevaluationRunsYetClickNew')}
                 </td>
               </tr>
             )}
@@ -358,7 +361,7 @@ export default function RevaluationPage() {
                   {r.journal_entry_id ? r.journal_entry_id.slice(0, 8) + '…' : '—'}
                 </td>
                 <td style={{ padding: '9px 12px' }}>
-                  <Badge variant={STATUS_BADGE[r.status] ?? 'neutral'}>{r.status}</Badge>
+                  <Badge variant={STATUS_BADGE[r.status] ?? 'neutral'}>{enumLabel(r.status)}</Badge>
                 </td>
                 <td style={{ padding: '9px 12px' }}>
                   {canEdit && r.status === 'posted' && (
@@ -369,7 +372,7 @@ export default function RevaluationPage() {
                         setReverseModal({ runId: r.id, period: r.period })
                       }}
                     >
-                      Reverse
+                      {t('fin.reval.reverse')}
                     </Button>
                   )}
                 </td>
@@ -402,7 +405,7 @@ export default function RevaluationPage() {
               }}
             >
               <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
-                New Revaluation Run
+                {t('fin.reval.newRevaluationRun2')}
               </h3>
               <Button
                 variant="ghost"
@@ -425,7 +428,7 @@ export default function RevaluationPage() {
               }}
             >
               <div>
-                <label style={labelStyle}>Period (YYYY-MM) *</label>
+                <label style={labelStyle}>{t('fin.reval.periodYyyyMm')}</label>
                 <input
                   style={inputStyle}
                   value={computeForm.period}
@@ -436,7 +439,7 @@ export default function RevaluationPage() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Run Date *</label>
+                <label style={labelStyle}>{t('fin.reval.runDate')}</label>
                 <input
                   type="date"
                   style={inputStyle}
@@ -447,7 +450,7 @@ export default function RevaluationPage() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Functional Currency</label>
+                <label style={labelStyle}>{t('fin.reval.functionalCurrency')}</label>
                 <select
                   style={inputStyle}
                   value={computeForm.functional_currency}
@@ -461,7 +464,7 @@ export default function RevaluationPage() {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Notes</label>
+                <label style={labelStyle}>{t('fin.reval.notes')}</label>
                 <input
                   style={inputStyle}
                   value={computeForm.notes}
@@ -478,7 +481,7 @@ export default function RevaluationPage() {
               onClick={() => void handleCompute()}
               disabled={computing || !computeForm.period}
             >
-              {computing ? 'Computing...' : 'Compute Preview'}
+              {computing ? t('fin.reval.computing') : t('fin.reval.computePreview')}
             </Button>
 
             {/* Preview results */}
@@ -501,13 +504,8 @@ export default function RevaluationPage() {
                       color: preview.total_gain_loss >= 0 ? '#22c55e' : '#ef4444',
                       margin: 0,
                     }}
-                  >
-                    Net Gain/(Loss): {preview.total_gain_loss >= 0 ? '+' : ''}
-                    {preview.total_gain_loss.toLocaleString()} {computeForm.functional_currency}
-                  </p>
-                  <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                    {preview.lines.length} accounts to revalue
-                  </p>
+                  >{t('fin.reval.netGainLoss2', { value: preview.total_gain_loss >= 0 ? '+' : '', total_gain_loss: preview.total_gain_loss.toLocaleString(), functional_currency: computeForm.functional_currency })}</p>
+                  <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>{t('fin.reval.accountsToRevalue', { length: preview.lines.length })}</p>
                 </div>
 
                 <div style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '16px' }}>
@@ -515,18 +513,18 @@ export default function RevaluationPage() {
                     <thead>
                       <tr style={{ background: theme.bgSurface }}>
                         {[
-                          'Account',
-                          'CCY',
-                          'Current Balance',
-                          'Rate',
-                          'Revalued',
-                          'Gain/(Loss)',
+                          t('fin.reval.account'),
+                          t('fin.reval.ccy'),
+                          t('fin.reval.currentBalance'),
+                          t('fin.reval.rate'),
+                          t('fin.reval.revalued'),
+                          t('fin.reval.gainLoss'),
                         ].map((h) => (
                           <th
                             key={h}
                             style={{
                               padding: '6px 8px',
-                              textAlign: 'right',
+                              textAlign: 'end',
                               color: theme.textMuted,
                               fontWeight: 500,
                             }}
@@ -542,7 +540,7 @@ export default function RevaluationPage() {
                           key={l.account_id}
                           style={{ borderBottom: `1px solid ${theme.border}` }}
                         >
-                          <td style={{ padding: '5px 8px', textAlign: 'left' }}>
+                          <td style={{ padding: '5px 8px', textAlign: 'start' }}>
                             <span
                               style={{
                                 fontFamily: 'monospace',
@@ -552,14 +550,14 @@ export default function RevaluationPage() {
                             >
                               {l.account_code}
                             </span>
-                            <span style={{ color: theme.textPrimary, marginLeft: '6px' }}>
+                            <span style={{ color: theme.textPrimary, marginInlineStart: '6px' }}>
                               {l.account_name}
                             </span>
                           </td>
                           <td
                             style={{
                               padding: '5px 8px',
-                              textAlign: 'right',
+                              textAlign: 'end',
                               fontFamily: 'monospace',
                             }}
                           >
@@ -568,7 +566,7 @@ export default function RevaluationPage() {
                           <td
                             style={{
                               padding: '5px 8px',
-                              textAlign: 'right',
+                              textAlign: 'end',
                               fontFamily: 'monospace',
                             }}
                           >
@@ -577,7 +575,7 @@ export default function RevaluationPage() {
                           <td
                             style={{
                               padding: '5px 8px',
-                              textAlign: 'right',
+                              textAlign: 'end',
                               fontFamily: 'monospace',
                             }}
                           >
@@ -586,7 +584,7 @@ export default function RevaluationPage() {
                           <td
                             style={{
                               padding: '5px 8px',
-                              textAlign: 'right',
+                              textAlign: 'end',
                               fontFamily: 'monospace',
                             }}
                           >
@@ -595,7 +593,7 @@ export default function RevaluationPage() {
                           <td
                             style={{
                               padding: '5px 8px',
-                              textAlign: 'right',
+                              textAlign: 'end',
                               fontFamily: 'monospace',
                               fontWeight: 600,
                               color: l.gain_loss >= 0 ? '#22c55e' : '#ef4444',
@@ -619,7 +617,7 @@ export default function RevaluationPage() {
                   }}
                 >
                   <div>
-                    <label style={labelStyle}>Unrealized FX Gain Account *</label>
+                    <label style={labelStyle}>{t('fin.reval.unrealizedFxGainAccount')}</label>
                     <select
                       style={inputStyle}
                       value={computeForm.gain_account_id}
@@ -627,7 +625,7 @@ export default function RevaluationPage() {
                         setComputeForm((f) => ({ ...f, gain_account_id: e.target.value }))
                       }}
                     >
-                      <option value="">— Select GL account —</option>
+                      <option value="">{t('fin.reval.selectGlAccount')}</option>
                       {glAccounts.map((g) => (
                         <option key={g.id} value={g.id}>
                           {g.code} · {g.name}
@@ -636,7 +634,7 @@ export default function RevaluationPage() {
                     </select>
                   </div>
                   <div>
-                    <label style={labelStyle}>Unrealized FX Loss Account *</label>
+                    <label style={labelStyle}>{t('fin.reval.unrealizedFxLossAccount')}</label>
                     <select
                       style={inputStyle}
                       value={computeForm.loss_account_id}
@@ -644,7 +642,7 @@ export default function RevaluationPage() {
                         setComputeForm((f) => ({ ...f, loss_account_id: e.target.value }))
                       }}
                     >
-                      <option value="">— Select GL account —</option>
+                      <option value="">{t('fin.reval.selectGlAccount')}</option>
                       {glAccounts.map((g) => (
                         <option key={g.id} value={g.id}>
                           {g.code} · {g.name}
@@ -663,7 +661,7 @@ export default function RevaluationPage() {
                       setPreview(null)
                     }}
                   >
-                    Cancel
+                    {t('fin.reval.cancel')}
                   </Button>
                   <Button
                     variant="primary"
@@ -676,7 +674,7 @@ export default function RevaluationPage() {
                       !preview.lines.length
                     }
                   >
-                    {posting ? 'Posting...' : 'Post Revaluation Entry'}
+                    {posting ? t('fin.reval.posting') : t('fin.reval.postRevaluationEntry')}
                   </Button>
                 </div>
               </>
@@ -700,14 +698,11 @@ export default function RevaluationPage() {
         >
           <Card padding="lg" style={{ width: '380px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              Reverse Revaluation
+              {t('fin.reval.reverseRevaluation')}
             </h3>
-            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '16px' }}>
-              This will create a reversal journal entry that cancels the FX revaluation for period{' '}
-              <strong>{reverseModal.period}</strong>.
-            </p>
+            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '16px' }}><Trans i18nKey="fin.reval.thisWillCreateAReversalJournal" values={{ period: reverseModal.period }} components={[<strong />]} /></p>
             <div style={{ marginBottom: '16px' }}>
-              <label style={labelStyle}>Reversal Date</label>
+              <label style={labelStyle}>{t('fin.reval.reversalDate')}</label>
               <input
                 type="date"
                 style={inputStyle}
@@ -725,7 +720,7 @@ export default function RevaluationPage() {
                   setReverseModal(null)
                 }}
               >
-                Cancel
+                {t('fin.reval.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -733,7 +728,7 @@ export default function RevaluationPage() {
                 onClick={() => void handleReverse()}
                 disabled={!!reversing}
               >
-                {reversing ? 'Reversing...' : 'Confirm Reversal'}
+                {reversing ? t('fin.reval.reversing') : t('fin.reval.confirmReversal')}
               </Button>
             </div>
           </Card>

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -46,6 +48,7 @@ const STATUS_BADGE: Record<string, 'neutral' | 'success' | 'warning' | 'danger' 
 }
 
 export default function AssetsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const navigate = useNavigate()
@@ -86,7 +89,7 @@ export default function AssetsPage() {
     const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
     if (
       !confirm(
-        `Post depreciation for ${period}? This will create journal entries for all active assets.`,
+        t('fin.assets.postDepreciationForThisWillCreate', { period }),
       )
     )
       return
@@ -96,10 +99,10 @@ export default function AssetsPage() {
         '/finance/assets/run-depreciation',
         { period },
       )
-      alert(`Posted ${r.data.posted} depreciation entries for ${r.data.period}`)
+      alert(t('fin.assets.postedDepreciationEntriesFor', { posted: r.data.posted, period: r.data.period }))
       void load()
     } catch {
-      alert('Failed to run depreciation')
+      alert(t('fin.assets.failedToRunDepreciation'))
     } finally {
       setRunningDep(false)
     }
@@ -118,7 +121,7 @@ export default function AssetsPage() {
   const columns: Column<Asset>[] = [
     {
       key: 'asset_number',
-      header: 'Asset No.',
+      header: t('fin.assets.assetNo'),
       mobilePrimary: true,
       render: (a) => (
         <span style={{ color: theme.accent, fontFamily: 'monospace' }}>{a.asset_number}</span>
@@ -126,33 +129,33 @@ export default function AssetsPage() {
     },
     {
       key: 'name',
-      header: 'Name',
+      header: t('fin.assets.name'),
       mobileSecondary: true,
       render: (a) => a.name,
     },
     {
       key: 'category_name',
-      header: 'Category',
+      header: t('fin.assets.category'),
       render: (a) => a.category_name ?? '—',
     },
     {
       key: 'purchase_date',
-      header: 'Purchase Date',
+      header: t('fin.assets.purchaseDate'),
       render: (a) => new Date(a.purchase_date).toLocaleDateString(),
     },
     {
       key: 'purchase_cost',
-      header: 'Cost',
+      header: t('fin.assets.cost'),
       render: (a) => <AmountDisplay amount={a.purchase_cost} currency="IQD" size="sm" />,
     },
     {
       key: 'book_value',
-      header: 'Book Value',
+      header: t('fin.assets.bookValue'),
       render: (a) => <AmountDisplay amount={a.book_value} currency="IQD" size="sm" colored />,
     },
     {
       key: 'depreciated_pct',
-      header: 'Depreciated %',
+      header: t('fin.assets.depreciated'),
       render: (a) => {
         const depPct =
           a.purchase_cost > 0 ? Math.round((a.accumulated_depreciation / a.purchase_cost) * 100) : 0
@@ -182,9 +185,9 @@ export default function AssetsPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('fin.assets.status'),
       render: (a) => (
-        <Badge variant={STATUS_BADGE[a.status] ?? 'neutral'}>{a.status.replace('_', ' ')}</Badge>
+        <Badge variant={STATUS_BADGE[a.status] ?? 'neutral'}>{enumLabel(a.status).replace('_', ' ')}</Badge>
       ),
     },
     {
@@ -199,7 +202,7 @@ export default function AssetsPage() {
             navigate(`/finance/assets/${a.id}`)
           }}
         >
-          View
+          {t('fin.assets.view')}
         </Button>
       ),
     },
@@ -208,8 +211,8 @@ export default function AssetsPage() {
   return (
     <div style={pagePadding}>
       <PageHeader
-        title="Fixed Assets"
-        subtitle="Asset register and depreciation management"
+        title={t('fin.assets.fixedAssets')}
+        subtitle={t('fin.assets.assetRegisterAndDepreciationManagement')}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             {canEdit && (summary?.pending_this_month ?? 0) > 0 && (
@@ -220,8 +223,8 @@ export default function AssetsPage() {
                 disabled={runningDep}
               >
                 {runningDep
-                  ? 'Running...'
-                  : `Run Depreciation (${summary?.pending_this_month} pending)`}
+                  ? t('fin.assets.running')
+                  : t('fin.assets.runDepreciationPending', { pending_this_month: summary?.pending_this_month })}
               </Button>
             )}
             {canEdit && (
@@ -232,7 +235,7 @@ export default function AssetsPage() {
                   navigate('/finance/assets/new')
                 }}
               >
-                + New Asset
+                {t('fin.assets.newAsset')}
               </Button>
             )}
           </div>
@@ -244,25 +247,25 @@ export default function AssetsPage() {
         <Grid cols={5} tabletCols={3} phoneCols={2} gap={12} style={{ marginBottom: '20px' }}>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Total Cost
+              {t('fin.assets.totalCost')}
             </p>
             <AmountDisplay amount={summary.total_cost} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Net Book Value
+              {t('fin.assets.netBookValue')}
             </p>
             <AmountDisplay amount={summary.total_book_value} currency="IQD" size="md" colored />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Accum. Depreciation
+              {t('fin.assets.accumDepreciation')}
             </p>
             <AmountDisplay amount={summary.total_accum_dep} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Active Assets
+              {t('fin.assets.activeAssets')}
             </p>
             <p style={{ fontSize: '20px', fontWeight: 700, color: theme.textPrimary }}>
               {summary.active_count}
@@ -270,7 +273,7 @@ export default function AssetsPage() {
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Fully Depreciated
+              {t('fin.assets.fullyDepreciated')}
             </p>
             <p style={{ fontSize: '20px', fontWeight: 700, color: theme.textPrimary }}>
               {summary.fully_depreciated_count}
@@ -283,7 +286,7 @@ export default function AssetsPage() {
       <Card padding="sm" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input
-            placeholder="Search name or number..."
+            placeholder={t('fin.assets.searchNameOrNumber')}
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -297,14 +300,14 @@ export default function AssetsPage() {
             }}
             style={inputStyle}
           >
-            <option value="">All Statuses</option>
-            <option value="draft">Draft</option>
-            <option value="active">Active</option>
-            <option value="fully_depreciated">Fully Depreciated</option>
-            <option value="disposed">Disposed</option>
+            <option value="">{t('fin.assets.allStatuses')}</option>
+            <option value="draft">{t('fin.assets.draft')}</option>
+            <option value="active">{t('fin.assets.active')}</option>
+            <option value="fully_depreciated">{t('fin.assets.fullyDepreciated')}</option>
+            <option value="disposed">{t('fin.assets.disposed')}</option>
           </select>
           <Button variant="ghost" size="sm" onClick={() => void load()}>
-            Refresh
+            {t('fin.assets.refresh')}
           </Button>
         </div>
       </Card>
@@ -316,7 +319,7 @@ export default function AssetsPage() {
           data={assets}
           rowKey="id"
           loading={loading}
-          emptyMessage="No assets found. Use the + New Asset button above to add one."
+          emptyMessage={t('fin.assets.noAssetsFoundUseTheNew')}
           onRowClick={(a) => {
             navigate(`/finance/assets/${a.id}`)
           }}

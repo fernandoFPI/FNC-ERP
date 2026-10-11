@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
@@ -23,6 +24,7 @@ interface DefaultCashAccount {
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 
 export default function AdvanceConfigPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const addToast = useToastStore((s) => s.addToast)
@@ -68,7 +70,7 @@ export default function AdvanceConfigPage() {
         currency_code: newCurrency,
         account_id: newAccountId,
       })
-      addToast({ type: 'success', message: `Default cash account set for ${newCurrency}` })
+      addToast({ type: 'success', message: t('fin.advConfig.defaultCashAccountSetFor', { newCurrency }) })
       setNewAccountId('')
       void load()
     } catch (e: unknown) {
@@ -92,7 +94,7 @@ export default function AdvanceConfigPage() {
     try {
       await api.put('/finance/advance-config/parent-account', { account_id: accountId })
       setParentAccountId(accountId)
-      addToast({ type: 'success', message: 'Employee Advances parent account updated' })
+      addToast({ type: 'success', message: t('fin.advConfig.employeeAdvancesParentAccountUpdated') })
     } catch (e: unknown) {
       addToast({ type: 'error', message: (e as Error).message })
     } finally {
@@ -121,8 +123,8 @@ export default function AdvanceConfigPage() {
   return (
     <div style={pagePadding}>
       <PageHeader
-        title="Advance Automation"
-        subtitle="Accounts used to auto-resolve employee cash advance and expense reimbursement postings"
+        title={t('fin.advConfig.advanceAutomation')}
+        subtitle={t('fin.advConfig.accountsUsedToAutoResolveEmployee')}
       />
 
       <Card padding="md" style={{ marginTop: '20px', maxWidth: '640px' }}>
@@ -136,11 +138,10 @@ export default function AdvanceConfigPage() {
             marginBottom: '4px',
           }}
         >
-          Default Cash Accounts
+          {t('fin.advConfig.defaultCashAccounts')}
         </p>
         <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '14px' }}>
-          The account credited when an advance is issued or an expense claim is reimbursed, chosen
-          automatically by currency.
+          {t('fin.advConfig.theAccountCreditedWhenAnAdvance')}
         </p>
 
         {defaults.length > 0 && (
@@ -154,12 +155,12 @@ export default function AdvanceConfigPage() {
           >
             <thead>
               <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                {['Currency', 'Account', ''].map((h) => (
+                {[t('fin.advConfig.currency'), t('fin.advConfig.account'), ''].map((h) => (
                   <th
                     key={h}
                     style={{
                       padding: '6px 8px',
-                      textAlign: 'left',
+                      textAlign: 'start',
                       color: theme.textMuted,
                       fontWeight: 500,
                     }}
@@ -184,7 +185,7 @@ export default function AdvanceConfigPage() {
                       size="sm"
                       onClick={() => void handleRemoveDefault(d.id)}
                     >
-                      Remove
+                      {t('fin.advConfig.remove')}
                     </Button>
                   </td>
                 </tr>
@@ -194,11 +195,11 @@ export default function AdvanceConfigPage() {
         )}
 
         {loading ? (
-          <div style={{ fontSize: '12px', color: theme.textMuted }}>Loading…</div>
+          <div style={{ fontSize: '12px', color: theme.textMuted }}>{t('fin.advConfig.loading')}</div>
         ) : (
           <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
             <div style={{ width: '110px' }}>
-              <label style={labelStyle}>Currency</label>
+              <label style={labelStyle}>{t('fin.advConfig.currency')}</label>
               <select
                 style={inputStyle}
                 value={newCurrency}
@@ -214,7 +215,7 @@ export default function AdvanceConfigPage() {
               </select>
             </div>
             <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Account</label>
+              <label style={labelStyle}>{t('fin.advConfig.account')}</label>
               <select
                 style={inputStyle}
                 value={newAccountId}
@@ -222,7 +223,7 @@ export default function AdvanceConfigPage() {
                   setNewAccountId(e.target.value)
                 }}
               >
-                <option value="">— Select account —</option>
+                <option value="">{t('fin.advConfig.selectAccount')}</option>
                 {glAccounts.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.code} · {g.name}
@@ -236,7 +237,7 @@ export default function AdvanceConfigPage() {
               onClick={() => void handleAddDefault()}
               disabled={savingDefault || !newAccountId}
             >
-              {savingDefault ? 'Saving...' : 'Save'}
+              {savingDefault ? t('fin.advConfig.saving') : t('fin.advConfig.save')}
             </Button>
           </div>
         )}
@@ -253,12 +254,10 @@ export default function AdvanceConfigPage() {
             marginBottom: '4px',
           }}
         >
-          Employee Advances Parent Account
+          {t('fin.advConfig.employeeAdvancesParentAccount')}
         </p>
         <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '14px' }}>
-          Each employee's own advance-tracking account is auto-created the first time they need one,
-          as a child of this account. Also used to auto-fill Payment Vouchers linked to an advance
-          settlement — this account's code on the voucher header, the employee's own on the line.
+          {t('fin.advConfig.eachEmployeeSOwnAdvanceTracking')}
         </p>
         <Select
           value={parentAccountId ?? ''}
@@ -267,7 +266,7 @@ export default function AdvanceConfigPage() {
           }}
           disabled={savingParent}
         >
-          <option value="">— Select parent account —</option>
+          <option value="">{t('fin.advConfig.selectParentAccount')}</option>
           {glAccounts.map((g) => (
             <option key={g.id} value={g.id}>
               {g.code} · {g.name}

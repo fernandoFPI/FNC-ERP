@@ -1,3 +1,5 @@
+import { tlh } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -73,6 +75,7 @@ const emptyForm = {
 }
 
 export default function RetentionPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { can } = usePermission()
@@ -172,8 +175,8 @@ export default function RetentionPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Retention Management"
-        subtitle="Track held-back retention on client invoices (AR) and vendor payments (AP)"
+        title={t('fin.ret.retentionManagement')}
+        subtitle={t('fin.ret.trackHeldBackRetentionOnClient')}
         actions={
           canEdit ? (
             <Button
@@ -183,7 +186,7 @@ export default function RetentionPage() {
                 setShowForm(true)
               }}
             >
-              + New Retention
+              {t('fin.ret.newRetention')}
             </Button>
           ) : undefined
         }
@@ -201,25 +204,25 @@ export default function RetentionPage() {
         >
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              AR Retention Held
+              {t('fin.ret.arRetentionHeld')}
             </p>
             <AmountDisplay amount={Number(summary.ar_held) || 0} currency="IQD" size="md" />
             <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px' }}>
-              Owed to us by clients
+              {t('fin.ret.owedToUsByClients')}
             </p>
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              AP Retention Held
+              {t('fin.ret.apRetentionHeld')}
             </p>
             <AmountDisplay amount={Number(summary.ap_held) || 0} currency="IQD" size="md" />
             <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px' }}>
-              Held from vendors by us
+              {t('fin.ret.heldFromVendorsByUs')}
             </p>
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Due This Month
+              {t('fin.ret.dueThisMonth')}
             </p>
             <AmountDisplay
               amount={Number(summary.due_this_month) || 0}
@@ -232,24 +235,20 @@ export default function RetentionPage() {
             padding="sm"
             style={{ border: Number(summary.overdue_count) > 0 ? `1px solid #ef4444` : undefined }}
           >
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Overdue</p>
+            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>{t('fin.ret.overdue')}</p>
             <AmountDisplay amount={Number(summary.overdue_amount) || 0} currency="IQD" size="md" />
             {Number(summary.overdue_count) > 0 && (
-              <p style={{ fontSize: '10px', color: '#ef4444', marginTop: '4px' }}>
-                {summary.overdue_count} records past due date
-              </p>
+              <p style={{ fontSize: '10px', color: '#ef4444', marginTop: '4px' }}>{t('fin.ret.recordsPastDueDate', { overdue_count: summary.overdue_count })}</p>
             )}
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Open Records
+              {t('fin.ret.openRecords')}
             </p>
             <p style={{ fontSize: '22px', fontWeight: 700, color: theme.textPrimary }}>
               {summary.total_held_count}
             </p>
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px' }}>
-              {summary.partial_count} partially released
-            </p>
+            <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px' }}>{t('fin.ret.partiallyReleased2', { partial_count: summary.partial_count })}</p>
           </Card>
         </div>
       )}
@@ -266,12 +265,10 @@ export default function RetentionPage() {
               letterSpacing: '0.05em',
               marginBottom: '10px',
             }}
-          >
-            {tab.toUpperCase()} Retention Aging
-          </p>
+          >{t('fin.ret.retentionAging', { tab: tab.toUpperCase() })}</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: '8px' }}>
             {[
-              { label: 'Not Yet Due', value: curAging.not_yet_due, color: theme.textSecondary },
+              { label: t('fin.ret.notYetDue'), value: curAging.not_yet_due, color: theme.textSecondary },
               { label: '0–30 Days Overdue', value: curAging.due_0_30, color: '#f59e0b' },
               { label: '31–90 Days', value: curAging.due_31_90, color: '#f97316' },
               { label: '91–180 Days', value: curAging.due_91_180, color: '#ef4444' },
@@ -300,11 +297,11 @@ export default function RetentionPage() {
           flexWrap: 'wrap',
         }}
       >
-        {(['ar', 'ap'] as const).map((t) => (
+        {(['ar', 'ap'] as const).map((tx) => (
           <button
-            key={t}
+            key={tx}
             onClick={() => {
-              setTab(t)
+              setTab(tx)
             }}
             style={{
               padding: '6px 16px',
@@ -312,13 +309,13 @@ export default function RetentionPage() {
               border: 'none',
               cursor: 'pointer',
               fontSize: '13px',
-              background: tab === t ? theme.accent : theme.bgSurface,
-              color: tab === t ? '#fff' : theme.textSecondary,
+              background: tab === tx ? theme.accent : theme.bgSurface,
+              color: tab === tx ? '#fff' : theme.textSecondary,
               fontFamily: 'inherit',
-              fontWeight: tab === t ? 600 : 400,
+              fontWeight: tab === tx ? 600 : 400,
             }}
           >
-            {t === 'ar' ? 'AR Retention (Client)' : 'AP Retention (Vendor)'}
+            {tx === 'ar' ? t('fin.ret.arRetentionClient') : t('fin.ret.apRetentionVendor')}
           </button>
         ))}
         <select
@@ -326,15 +323,15 @@ export default function RetentionPage() {
           onChange={(e) => {
             setStatusFilter(e.target.value)
           }}
-          style={{ ...inputStyle, width: 'auto', marginLeft: 'auto' }}
+          style={{ ...inputStyle, width: 'auto', marginInlineStart: 'auto' }}
         >
-          <option value="">All Statuses</option>
-          <option value="held">Held</option>
-          <option value="partially_released">Partially Released</option>
-          <option value="released">Released</option>
+          <option value="">{t('fin.ret.allStatuses')}</option>
+          <option value="held">{t('fin.ret.held')}</option>
+          <option value="partially_released">{t('fin.ret.partiallyReleased')}</option>
+          <option value="released">{t('fin.ret.released')}</option>
         </select>
         <Button variant="ghost" size="sm" onClick={() => void load()}>
-          Refresh
+          {t('fin.ret.refresh')}
         </Button>
       </div>
 
@@ -345,7 +342,7 @@ export default function RetentionPage() {
             <tr style={{ borderBottom: `1px solid ${theme.border}`, background: theme.bgSurface }}>
               {[
                 'Ref',
-                tab === 'ar' ? 'Client' : 'Vendor',
+                tab === 'ar' ? t('fin.ret.client') : t('fin.ret.vendor'),
                 'Project',
                 'Invoice Amt',
                 'Rate',
@@ -360,13 +357,13 @@ export default function RetentionPage() {
                   key={h}
                   style={{
                     padding: '9px 12px',
-                    textAlign: 'left',
+                    textAlign: 'start',
                     color: theme.textMuted,
                     fontWeight: 500,
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {h}
+                  {tlh('fin.ret', h)}
                 </th>
               ))}
             </tr>
@@ -378,7 +375,7 @@ export default function RetentionPage() {
                   colSpan={11}
                   style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                 >
-                  Loading...
+                  {t('fin.ret.loading')}
                 </td>
               </tr>
             )}
@@ -387,9 +384,7 @@ export default function RetentionPage() {
                 <td
                   colSpan={11}
                   style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
-                >
-                  No {tab.toUpperCase()} retention records found.
-                </td>
+                >{t('fin.ret.noRetentionRecordsFound', { tab: tab.toUpperCase() })}</td>
               </tr>
             )}
             {records.map((r) => {
@@ -456,7 +451,7 @@ export default function RetentionPage() {
                     {r.expected_release_date
                       ? new Date(r.expected_release_date).toLocaleDateString()
                       : '—'}
-                    {isOverdue && <span style={{ marginLeft: '4px', fontSize: '10px' }}>⚠</span>}
+                    {isOverdue && <span style={{ marginInlineStart: '4px', fontSize: '10px' }}>⚠</span>}
                   </td>
                   <td style={{ padding: '9px 12px' }}>
                     <Badge variant={STATUS_BADGE[r.status] ?? 'neutral'}>
@@ -476,7 +471,7 @@ export default function RetentionPage() {
                         navigate(`/finance/retention/${r.id}`)
                       }}
                     >
-                      View
+                      {t('fin.ret.view')}
                     </Button>
                   </td>
                 </tr>
@@ -509,7 +504,7 @@ export default function RetentionPage() {
               }}
             >
               <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
-                New Retention Record
+                {t('fin.ret.newRetentionRecord')}
               </h3>
               <Button
                 variant="ghost"
@@ -524,38 +519,38 @@ export default function RetentionPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Retention Type *</label>
+                <label style={labelStyle}>{t('fin.ret.retentionType')}</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  {(['ar', 'ap'] as const).map((t) => (
+                  {(['ar', 'ap'] as const).map((tx) => (
                     <button
-                      key={t}
+                      key={tx}
                       onClick={() => {
-                        setForm((f) => ({ ...f, retention_type: t }))
+                        setForm((f) => ({ ...f, retention_type: tx }))
                       }}
                       style={{
                         flex: 1,
                         padding: '8px',
                         borderRadius: '6px',
-                        border: `2px solid ${form.retention_type === t ? theme.accent : theme.border}`,
+                        border: `2px solid ${form.retention_type === tx ? theme.accent : theme.border}`,
                         cursor: 'pointer',
                         fontSize: '12px',
                         fontWeight: 600,
                         background:
-                          form.retention_type === t ? theme.accent + '15' : theme.bgSurface,
-                        color: form.retention_type === t ? theme.accent : theme.textSecondary,
+                          form.retention_type === tx ? theme.accent + '15' : theme.bgSurface,
+                        color: form.retention_type === tx ? theme.accent : theme.textSecondary,
                         fontFamily: 'inherit',
                       }}
                     >
-                      {t === 'ar'
-                        ? 'AR — Client holds back from us'
-                        : 'AP — We hold back from vendor'}
+                      {tx === 'ar'
+                        ? t('fin.ret.arClientHoldsBackFromUs')
+                        : t('fin.ret.apWeHoldBackFromVendor')}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
                 <label style={labelStyle}>
-                  {form.retention_type === 'ar' ? 'Client Name' : 'Vendor Name'} *
+                  {form.retention_type === 'ar' ? t('fin.ret.clientName') : t('fin.ret.vendorName')} *
                 </label>
                 <input
                   style={inputStyle}
@@ -566,18 +561,18 @@ export default function RetentionPage() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Source Ref (Invoice / PO No.)</label>
+                <label style={labelStyle}>{t('fin.ret.sourceRefInvoicePoNo')}</label>
                 <input
                   style={inputStyle}
                   value={form.source_ref}
                   onChange={(e) => {
                     setForm((f) => ({ ...f, source_ref: e.target.value }))
                   }}
-                  placeholder="INV-2025-001"
+                  placeholder={t('fin.ret.inv2025001')}
                 />
               </div>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Project Name</label>
+                <label style={labelStyle}>{t('fin.ret.projectName')}</label>
                 <input
                   style={inputStyle}
                   value={form.project_name}
@@ -587,7 +582,7 @@ export default function RetentionPage() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Invoice Amount *</label>
+                <label style={labelStyle}>{t('fin.ret.invoiceAmount')}</label>
                 <input
                   type="number"
                   style={inputStyle}
@@ -598,7 +593,7 @@ export default function RetentionPage() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Retention Rate % *</label>
+                <label style={labelStyle}>{t('fin.ret.retentionRate')}</label>
                 <input
                   type="number"
                   style={inputStyle}
@@ -624,13 +619,13 @@ export default function RetentionPage() {
                     color: theme.textPrimary,
                   }}
                 >
-                  Retention amount: <strong>{retentionPreview.toLocaleString()} IQD</strong> (
+                  Retention amount: <strong>{t('fin.ret.iqd', { retentionPreview: retentionPreview.toLocaleString() })}</strong> (
                   {form.retention_rate}% of {Number(form.invoice_amount).toLocaleString()})
                 </div>
               )}
 
               <div>
-                <label style={labelStyle}>Invoice Date *</label>
+                <label style={labelStyle}>{t('fin.ret.invoiceDate')}</label>
                 <input
                   type="date"
                   style={inputStyle}
@@ -641,7 +636,7 @@ export default function RetentionPage() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Expected Release Date</label>
+                <label style={labelStyle}>{t('fin.ret.expectedReleaseDate')}</label>
                 <input
                   type="date"
                   style={inputStyle}
@@ -654,8 +649,8 @@ export default function RetentionPage() {
               <div>
                 <label style={labelStyle}>
                   {form.retention_type === 'ar'
-                    ? 'Retention Receivable Account'
-                    : 'Retention Payable Account'}
+                    ? t('fin.ret.retentionReceivableAccount')
+                    : t('fin.ret.retentionPayableAccount')}
                 </label>
                 <select
                   style={inputStyle}
@@ -664,7 +659,7 @@ export default function RetentionPage() {
                     setForm((f) => ({ ...f, retention_account_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Select GL account —</option>
+                  <option value="">{t('fin.ret.selectGlAccount')}</option>
                   {glAccounts.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.code} · {g.name}
@@ -675,8 +670,8 @@ export default function RetentionPage() {
               <div>
                 <label style={labelStyle}>
                   {form.retention_type === 'ar'
-                    ? 'Accounts Receivable Account'
-                    : 'Accounts Payable Account'}
+                    ? t('fin.ret.accountsReceivableAccount')
+                    : t('fin.ret.accountsPayableAccount')}
                 </label>
                 <select
                   style={inputStyle}
@@ -685,7 +680,7 @@ export default function RetentionPage() {
                     setForm((f) => ({ ...f, offset_account_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Select GL account —</option>
+                  <option value="">{t('fin.ret.selectGlAccount')}</option>
                   {glAccounts.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.code} · {g.name}
@@ -694,7 +689,7 @@ export default function RetentionPage() {
                 </select>
               </div>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>Notes</label>
+                <label style={labelStyle}>{t('fin.ret.notes')}</label>
                 <input
                   style={inputStyle}
                   value={form.notes}
@@ -721,7 +716,7 @@ export default function RetentionPage() {
                       setForm((f) => ({ ...f, post_journal_entry: e.target.checked }))
                     }}
                   />
-                  Post journal entry immediately (requires both GL accounts above)
+                  {t('fin.ret.postJournalEntryImmediatelyRequiresBoth')}
                 </label>
               </div>
             </div>
@@ -736,7 +731,7 @@ export default function RetentionPage() {
                   setShowForm(false)
                 }}
               >
-                Cancel
+                {t('fin.ret.cancel')}
               </Button>
               <Button
                 variant="primary"
@@ -744,7 +739,7 @@ export default function RetentionPage() {
                 onClick={() => void handleSave()}
                 disabled={saving || !form.counterparty_name || !form.invoice_amount}
               >
-                {saving ? 'Saving...' : 'Create Record'}
+                {saving ? t('fin.ret.saving') : t('fin.ret.createRecord')}
               </Button>
             </div>
           </Card>

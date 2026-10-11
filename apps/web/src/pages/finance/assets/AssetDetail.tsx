@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -62,6 +63,7 @@ const STATUS_BADGE: Record<string, 'neutral' | 'success' | 'warning' | 'danger' 
 }
 
 export default function AssetDetail() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
@@ -95,14 +97,14 @@ export default function AssetDetail() {
   }, [id])
 
   async function handleActivate() {
-    if (!id || !confirm('Activate this asset? This will generate the full depreciation schedule.'))
+    if (!id || !confirm(t('fin.assetDetail.activateThisAssetThisWillGenerate')))
       return
     setActivating(true)
     try {
       await api.post(`/finance/assets/${id}/activate`, {})
       await load()
     } catch {
-      alert('Failed to activate asset')
+      alert(t('fin.assetDetail.failedToActivateAsset'))
     } finally {
       setActivating(false)
     }
@@ -123,13 +125,13 @@ export default function AssetDetail() {
       setShowDispose(false)
       await load()
     } catch {
-      alert('Failed to dispose asset')
+      alert(t('fin.assetDetail.failedToDisposeAsset'))
     } finally {
       setDisposing(false)
     }
   }
 
-  if (!asset) return <div style={{ padding: '24px', color: theme.textMuted }}>Loading...</div>
+  if (!asset) return <div style={{ padding: '24px', color: theme.textMuted }}>{t('fin.assetDetail.loading')}</div>
 
   const depPct =
     asset.purchase_cost > 0
@@ -149,7 +151,7 @@ export default function AssetDetail() {
       }}
     >
       <span style={{ color: theme.textMuted }}>{label}</span>
-      <span style={{ color: theme.textPrimary, fontWeight: 500, textAlign: 'right' }}>
+      <span style={{ color: theme.textPrimary, fontWeight: 500, textAlign: 'end' }}>
         {value ?? '—'}
       </span>
     </div>
@@ -174,7 +176,7 @@ export default function AssetDetail() {
                     navigate(`/finance/assets/${id}/edit`)
                   }}
                 >
-                  Edit
+                  {t('fin.assetDetail.edit')}
                 </Button>
                 <Button
                   variant="primary"
@@ -182,7 +184,7 @@ export default function AssetDetail() {
                   onClick={() => void handleActivate()}
                   disabled={activating}
                 >
-                  {activating ? 'Activating...' : 'Activate'}
+                  {activating ? t('fin.assetDetail.activating') : t('fin.assetDetail.activate')}
                 </Button>
               </>
             )}
@@ -194,7 +196,7 @@ export default function AssetDetail() {
                   setShowDispose(true)
                 }}
               >
-                Dispose
+                {t('fin.assetDetail.dispose')}
               </Button>
             )}
             <Button
@@ -204,7 +206,7 @@ export default function AssetDetail() {
                 navigate('/finance/assets')
               }}
             >
-              ← Back
+              {t('fin.assetDetail.back')}
             </Button>
           </div>
         }
@@ -221,10 +223,8 @@ export default function AssetDetail() {
             marginBottom: '6px',
           }}
         >
-          <span>Depreciation Progress</span>
-          <span>
-            {depPct}% depreciated — {postedCount} of {asset.schedule.length} periods posted
-          </span>
+          <span>{t('fin.assetDetail.depreciationProgress')}</span>
+          <span>{t('fin.assetDetail.depreciatedOfPeriodsPosted', { depPct, postedCount, length: asset.schedule.length })}</span>
         </div>
         <div
           style={{
@@ -254,21 +254,21 @@ export default function AssetDetail() {
         >
           {[
             {
-              label: 'Cost',
+              label: t('fin.assetDetail.cost'),
               value: <AmountDisplay amount={asset.purchase_cost} currency="IQD" size="sm" />,
             },
             {
-              label: 'Accum. Dep.',
+              label: t('fin.assetDetail.accumDep'),
               value: (
                 <AmountDisplay amount={asset.accumulated_depreciation} currency="IQD" size="sm" />
               ),
             },
             {
-              label: 'Book Value',
+              label: t('fin.assetDetail.bookValue'),
               value: <AmountDisplay amount={asset.book_value} currency="IQD" size="sm" colored />,
             },
             {
-              label: 'Salvage Value',
+              label: t('fin.assetDetail.salvageValue'),
               value: <AmountDisplay amount={asset.salvage_value} currency="IQD" size="sm" />,
             },
           ].map((kpi) => (
@@ -291,11 +291,11 @@ export default function AssetDetail() {
           borderBottom: `1px solid ${theme.border}`,
         }}
       >
-        {(['overview', 'schedule'] as const).map((t) => (
+        {(['overview', 'schedule'] as const).map((tx) => (
           <button
-            key={t}
+            key={tx}
             onClick={() => {
-              setTab(t)
+              setTab(tx)
             }}
             style={{
               padding: '8px 16px',
@@ -303,12 +303,12 @@ export default function AssetDetail() {
               border: 'none',
               background: 'transparent',
               cursor: 'pointer',
-              color: tab === t ? theme.accent : theme.textSecondary,
-              fontWeight: tab === t ? 600 : 400,
-              borderBottom: tab === t ? `2px solid ${theme.accent}` : '2px solid transparent',
+              color: tab === tx ? theme.accent : theme.textSecondary,
+              fontWeight: tab === tx ? 600 : 400,
+              borderBottom: tab === tx ? `2px solid ${theme.accent}` : '2px solid transparent',
             }}
           >
-            {t === 'overview' ? 'Overview' : `Schedule (${asset.schedule.length})`}
+            {tx === 'overview' ? t('fin.assetDetail.overview') : t('fin.assetDetail.schedule', { length: asset.schedule.length })}
           </button>
         ))}
       </div>
@@ -324,18 +324,18 @@ export default function AssetDetail() {
                 marginBottom: '12px',
               }}
             >
-              Asset Details
+              {t('fin.assetDetail.assetDetails')}
             </p>
-            {row('Asset Number', asset.asset_number)}
-            {row('Category', asset.category_name)}
-            {row('Serial Number', asset.serial_number)}
-            {row('Location', asset.location)}
-            {row('Purchase Date', new Date(asset.purchase_date).toLocaleDateString())}
+            {row(t('fin.assetDetail.assetNumber'), asset.asset_number)}
+            {row(t('fin.assetDetail.category'), asset.category_name)}
+            {row(t('fin.assetDetail.serialNumber'), asset.serial_number)}
+            {row(t('fin.assetDetail.location'), asset.location)}
+            {row(t('fin.assetDetail.purchaseDate'), new Date(asset.purchase_date).toLocaleDateString())}
             {row(
-              'Activation Date',
+              t('fin.assetDetail.activationDate'),
               asset.activation_date ? new Date(asset.activation_date).toLocaleDateString() : null,
             )}
-            {asset.notes && row('Notes', asset.notes)}
+            {asset.notes && row(t('fin.assetDetail.notes'), asset.notes)}
           </Card>
           <Card padding="md">
             <p
@@ -346,31 +346,33 @@ export default function AssetDetail() {
                 marginBottom: '12px',
               }}
             >
-              Depreciation Settings
+              {t('fin.assetDetail.depreciationSettings')}
             </p>
             {row(
-              'Method',
-              asset.depreciation_method === 'straight_line' ? 'Straight Line' : 'Declining Balance',
+              t('fin.assetDetail.method'),
+              asset.depreciation_method === 'straight_line'
+                ? t('fin.assetDetail.straightLine')
+                : t('fin.assetDetail.decliningBalance'),
             )}
             {row(
-              'Useful Life',
+              t('fin.assetDetail.usefulLife'),
               `${asset.useful_life_months} months (${Math.round((asset.useful_life_months / 12) * 10) / 10} years)`,
             )}
             {row(
-              'Declining Rate',
+              t('fin.assetDetail.decliningRate'),
               asset.declining_rate != null
                 ? `${(asset.declining_rate * 100).toFixed(0)}% p.a.`
                 : null,
             )}
             {row(
-              'Monthly Dep. (SL)',
+              t('fin.assetDetail.monthlyDepSl'),
               (
                 (asset.purchase_cost - asset.salvage_value) /
                 asset.useful_life_months
               ).toLocaleString(undefined, { maximumFractionDigits: 2 }),
             )}
-            {row('Periods Posted', `${postedCount}`)}
-            {row('Periods Pending', `${pendingCount}`)}
+            {row(t('fin.assetDetail.periodsPosted'), `${postedCount}`)}
+            {row(t('fin.assetDetail.periodsPending'), `${pendingCount}`)}
             <p
               style={{
                 fontSize: '12px',
@@ -379,22 +381,22 @@ export default function AssetDetail() {
                 margin: '12px 0 12px',
               }}
             >
-              GL Accounts
+              {t('fin.assetDetail.glAccounts')}
             </p>
             {row(
-              'Asset Account',
+              t('fin.assetDetail.assetAccount'),
               asset.asset_account_code
                 ? `${asset.asset_account_code} — ${asset.asset_account_name}`
                 : null,
             )}
             {row(
-              'Accum. Dep. Account',
+              t('fin.assetDetail.accumDepAccount'),
               asset.accum_dep_account_code
                 ? `${asset.accum_dep_account_code} — ${asset.accum_dep_account_name}`
                 : null,
             )}
             {row(
-              'Dep. Expense Account',
+              t('fin.assetDetail.depExpenseAccount'),
               asset.dep_expense_account_code
                 ? `${asset.dep_expense_account_code} — ${asset.dep_expense_account_name}`
                 : null,
@@ -412,8 +414,7 @@ export default function AssetDetail() {
                   color: '#92400e',
                 }}
               >
-                GL accounts not fully configured — depreciation entries won't be posted as journal
-                entries.
+                {t('fin.assetDetail.glAccountsNotFullyConfiguredDepreciation')}
               </div>
             )}
           </Card>
@@ -427,20 +428,20 @@ export default function AssetDetail() {
                   marginBottom: '12px',
                 }}
               >
-                Disposal Details
+                {t('fin.assetDetail.disposalDetails')}
               </p>
               {row(
-                'Disposal Date',
+                t('fin.assetDetail.disposalDate2'),
                 asset.disposal_date ? new Date(asset.disposal_date).toLocaleDateString() : null,
               )}
               {row(
-                'Proceeds',
+                t('fin.assetDetail.proceeds'),
                 asset.disposal_proceeds != null ? (
                   <AmountDisplay amount={asset.disposal_proceeds} currency="IQD" size="sm" />
                 ) : null,
               )}
               {row(
-                'Gain / (Loss)',
+                t('fin.assetDetail.gainLoss'),
                 asset.disposal_gain_loss != null ? (
                   <span style={{ color: asset.disposal_gain_loss >= 0 ? '#22c55e' : '#ef4444' }}>
                     {asset.disposal_gain_loss >= 0 ? '+' : ''}
@@ -448,7 +449,7 @@ export default function AssetDetail() {
                   </span>
                 ) : null,
               )}
-              {asset.disposal_notes && row('Notes', asset.disposal_notes)}
+              {asset.disposal_notes && row(t('fin.assetDetail.notes'), asset.disposal_notes)}
             </Card>
           )}
         </div>
@@ -461,12 +462,12 @@ export default function AssetDetail() {
               <tr
                 style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
               >
-                {['Period', 'Depreciation', 'Accum. Dep.', 'Book Value', 'Status'].map((h) => (
+                {[t('fin.assetDetail.period'), t('fin.assetDetail.depreciation'), t('fin.assetDetail.accumDep'), t('fin.assetDetail.bookValue'), t('fin.assetDetail.status')].map((h) => (
                   <th
                     key={h}
                     style={{
                       padding: '10px 14px',
-                      textAlign: 'left',
+                      textAlign: 'start',
                       color: theme.textMuted,
                       fontWeight: 500,
                     }}
@@ -483,7 +484,7 @@ export default function AssetDetail() {
                     colSpan={5}
                     style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                   >
-                    Schedule will be generated when the asset is activated.
+                    {t('fin.assetDetail.scheduleWillBeGeneratedWhenThe')}
                   </td>
                 </tr>
               )}
@@ -558,7 +559,7 @@ export default function AssetDetail() {
                 marginBottom: '16px',
               }}
             >
-              Dispose Asset
+              {t('fin.assetDetail.disposeAsset')}
             </p>
             <form
               onSubmit={(e) => {
@@ -566,8 +567,8 @@ export default function AssetDetail() {
               }}
             >
               {[
-                { label: 'Disposal Date *', key: 'disposal_date', type: 'date' },
-                { label: 'Proceeds Received', key: 'disposal_proceeds', type: 'number' },
+                { label: t('fin.assetDetail.disposalDate'), key: 'disposal_date', type: 'date' },
+                { label: t('fin.assetDetail.proceedsReceived'), key: 'disposal_proceeds', type: 'number' },
               ].map((f) => (
                 <div key={f.key} style={{ marginBottom: '12px' }}>
                   <label
@@ -609,7 +610,7 @@ export default function AssetDetail() {
                     marginBottom: '4px',
                   }}
                 >
-                  Notes
+                  {t('fin.assetDetail.notes')}
                 </label>
                 <textarea
                   value={disposeForm.disposal_notes}
@@ -641,11 +642,11 @@ export default function AssetDetail() {
                   marginBottom: '16px',
                 }}
               >
-                Book value:{' '}
+                {t('fin.assetDetail.bookValue2')}{' '}
                 <strong style={{ color: theme.textPrimary }}>
                   {asset.book_value.toLocaleString()}
                 </strong>{' '}
-                — Estimated{' '}
+                {t('fin.assetDetail.estimated')}{' '}
                 {Number(disposeForm.disposal_proceeds) >= asset.book_value ? 'gain' : 'loss'}:
                 <strong
                   style={{
@@ -667,10 +668,10 @@ export default function AssetDetail() {
                     setShowDispose(false)
                   }}
                 >
-                  Cancel
+                  {t('fin.assetDetail.cancel')}
                 </Button>
                 <Button type="submit" variant="danger" disabled={disposing}>
-                  {disposing ? 'Disposing...' : 'Confirm Disposal'}
+                  {disposing ? t('fin.assetDetail.disposing') : t('fin.assetDetail.confirmDisposal')}
                 </Button>
               </div>
             </form>
