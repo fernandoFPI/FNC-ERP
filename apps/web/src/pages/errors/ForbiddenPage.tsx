@@ -1,8 +1,10 @@
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
 import { Button } from '../../components/ui/Button'
 
 export default function ForbiddenPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
 
@@ -38,11 +40,10 @@ export default function ForbiddenPage() {
         <h1
           style={{ fontSize: '24px', fontWeight: 700, color: theme.textPrimary, margin: '0 0 8px' }}
         >
-          Access Denied
+          {t('errors.forbidden.accessDenied')}
         </h1>
         <p style={{ fontSize: '14px', color: theme.textMuted, margin: 0, maxWidth: '360px' }}>
-          You don't have permission to view this page. Contact your administrator if you believe
-          this is a mistake.
+          {t('errors.forbidden.youDonTHavePermissionTo')}
         </p>
       </div>
       <div style={{ display: 'flex', gap: '8px' }}>
@@ -52,7 +53,7 @@ export default function ForbiddenPage() {
             navigate(-1)
           }}
         >
-          Go Back
+          {t('errors.forbidden.goBack')}
         </Button>
         <Button
           variant="primary"
@@ -60,7 +61,7 @@ export default function ForbiddenPage() {
             navigate('/dashboard')
           }}
         >
-          Dashboard
+          {t('errors.forbidden.dashboard')}
         </Button>
       </div>
     </div>

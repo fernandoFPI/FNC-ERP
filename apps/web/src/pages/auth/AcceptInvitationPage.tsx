@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import axios from 'axios'
@@ -16,14 +17,15 @@ interface TokenInfo {
 }
 
 const passwordRequirements = [
-  { label: 'At least 12 characters', test: (p: string) => p.length >= 12 },
-  { label: 'At least one uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
-  { label: 'At least one lowercase letter', test: (p: string) => /[a-z]/.test(p) },
-  { label: 'At least one number', test: (p: string) => /[0-9]/.test(p) },
-  { label: 'At least one special character', test: (p: string) => /[^A-Za-z0-9]/.test(p) },
+  { key: 'req12', label: 'At least 12 characters', test: (p: string) => p.length >= 12 },
+  { key: 'reqUpper', label: 'At least one uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
+  { key: 'reqLower', label: 'At least one lowercase letter', test: (p: string) => /[a-z]/.test(p) },
+  { key: 'reqNumber', label: 'At least one number', test: (p: string) => /[0-9]/.test(p) },
+  { key: 'reqSpecial', label: 'At least one special character', test: (p: string) => /[^A-Za-z0-9]/.test(p) },
 ]
 
 export default function AcceptInvitationPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -40,7 +42,7 @@ export default function AcceptInvitationPage() {
 
   useEffect(() => {
     if (!token) {
-      setTokenError('No invitation token provided.')
+      setTokenError(t('auth.invite.noToken'))
       setValidating(false)
       return
     }
@@ -51,7 +53,7 @@ export default function AcceptInvitationPage() {
         setValidating(false)
       })
       .catch(() => {
-        setTokenError('This invitation link is invalid or has expired.')
+        setTokenError(t('auth.invite.invalidLink'))
         setValidating(false)
       })
   }, [token])
@@ -70,7 +72,7 @@ export default function AcceptInvitationPage() {
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
-          ?.message ?? 'Failed to accept invitation.'
+          ?.message ?? t('auth.invite.failedAccept')
       setSubmitError(msg)
     } finally {
       setSubmitting(false)
@@ -105,11 +107,11 @@ export default function AcceptInvitationPage() {
               marginBottom: '6px',
             }}
           >
-            Accept invitation
+            {t('auth.invite.acceptInvitation')}
           </div>
           {validating && (
             <div style={{ color: theme.textMuted, fontSize: '13px' }}>
-              Validating your invitation…
+              {t('auth.invite.validatingYourInvitation')}
             </div>
           )}
           {tokenError && (
@@ -117,19 +119,19 @@ export default function AcceptInvitationPage() {
           )}
           {tokenInfo && !validating && (
             <div style={{ fontSize: '13px', color: theme.textMuted }}>
-              You were invited by {tokenInfo.invitedByName} to join:
-              <ul style={{ margin: '6px 0 0', paddingLeft: '18px' }}>
+              {t('auth.invite.invitedBy', { name: tokenInfo.invitedByName })}
+              <ul style={{ margin: '6px 0 0', paddingInlineStart: '18px' }}>
                 {tokenInfo.companies.map((c) => (
                   <li key={c.companyName}>
                     <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
                       {c.companyName}
                     </span>{' '}
-                    as <span style={{ color: theme.accent }}>{c.role}</span>
+                    {t('auth.invite.as')} <span style={{ color: theme.accent }}>{c.role}</span>
                   </li>
                 ))}
               </ul>
               <div style={{ marginTop: '8px' }}>
-                Accepting as: <span style={{ color: theme.textPrimary }}>{tokenInfo.email}</span>
+                {t('auth.invite.acceptingAs')} <span style={{ color: theme.textPrimary }}>{tokenInfo.email}</span>
               </div>
             </div>
           )}
@@ -147,7 +149,7 @@ export default function AcceptInvitationPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Password *
+                  {t('auth.invite.password')}
                 </label>
                 <input
                   type="password"
@@ -191,7 +193,7 @@ export default function AcceptInvitationPage() {
                       }}
                     >
                       <span style={{ fontSize: '14px' }}>{met ? '✓' : '○'}</span>
-                      {req.label}
+                      {t(`auth.invite.${req.key}`)}
                     </div>
                   )
                 })}
@@ -206,7 +208,7 @@ export default function AcceptInvitationPage() {
                     marginBottom: '4px',
                   }}
                 >
-                  Confirm password *
+                  {t('auth.invite.confirmPassword')}
                 </label>
                 <input
                   type="password"
@@ -226,7 +228,7 @@ export default function AcceptInvitationPage() {
                 />
                 {confirmPassword && !passwordsMatch && (
                   <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px' }}>
-                    Passwords do not match.
+                    {t('auth.invite.passwordsDoNotMatch')}
                   </div>
                 )}
               </div>
@@ -242,7 +244,7 @@ export default function AcceptInvitationPage() {
                 onClick={() => void handleSubmit()}
                 style={{ width: '100%', marginTop: '4px' }}
               >
-                Set password &amp; join
+                {t('auth.invite.setPasswordJoin')}
               </Button>
             </div>
           </>
@@ -256,7 +258,7 @@ export default function AcceptInvitationPage() {
             }}
             style={{ marginTop: '16px', width: '100%' }}
           >
-            Back to login
+            {t('auth.invite.backToLogin')}
           </Button>
         )}
       </div>

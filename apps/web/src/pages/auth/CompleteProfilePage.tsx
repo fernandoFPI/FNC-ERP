@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from 'react-i18next'
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../../lib/axios'
@@ -15,6 +16,7 @@ interface ProfileResponse {
 }
 
 export default function CompleteProfilePage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
@@ -37,11 +39,11 @@ export default function CompleteProfilePage() {
 
   function validate() {
     const e: Partial<typeof form> = {}
-    if (!form.firstName.trim()) e.firstName = 'First name is required'
-    if (!form.lastName.trim()) e.lastName = 'Last name is required'
-    if (!form.jobTitle.trim()) e.jobTitle = 'Job title is required'
-    if (!form.phone.trim()) e.phone = 'Phone number is required'
-    if (!form.emergencyPhone.trim()) e.emergencyPhone = 'Emergency phone is required'
+    if (!form.firstName.trim()) e.firstName = t('auth.profile.firstNameRequired')
+    if (!form.lastName.trim()) e.lastName = t('auth.profile.lastNameRequired')
+    if (!form.jobTitle.trim()) e.jobTitle = t('auth.profile.jobTitleRequired')
+    if (!form.phone.trim()) e.phone = t('auth.profile.phoneRequired')
+    if (!form.emergencyPhone.trim()) e.emergencyPhone = t('auth.profile.emergencyPhoneRequired')
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -69,10 +71,10 @@ export default function CompleteProfilePage() {
       // 3. Update auth store
       setProfileCompleted()
       setUser({ firstName: data.firstName, lastName: data.lastName })
-      addToast({ type: 'success', message: 'Profile saved — welcome!' })
+      addToast({ type: 'success', message: t('auth.profile.profileSavedWelcome') })
       navigate('/', { replace: true })
     } catch {
-      addToast({ type: 'error', message: 'Failed to save profile. Please try again.' })
+      addToast({ type: 'error', message: t('auth.profile.failedToSaveProfilePleaseTry') })
     } finally {
       setSaving(false)
     }
@@ -135,11 +137,14 @@ export default function CompleteProfilePage() {
               margin: '0 0 6px',
             }}
           >
-            Complete your profile
+            {t('auth.profile.completeYourProfile')}
           </h1>
           <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
-            Logged in as <strong style={{ color: theme.textSecondary }}>{user?.email}</strong>. Fill
-            in your details to continue.
+            <Trans
+              i18nKey="auth.profile.loggedInAs"
+              values={{ email: user?.email ?? '' }}
+              components={{ strong: <strong style={{ color: theme.textSecondary }} /> }}
+            />
           </p>
         </div>
 
@@ -180,7 +185,7 @@ export default function CompleteProfilePage() {
               {preview ? (
                 <img
                   src={preview}
-                  alt="avatar"
+                  alt={t('auth.profile.avatar')}
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
               ) : (
@@ -195,17 +200,17 @@ export default function CompleteProfilePage() {
               onChange={handleAvatarChange}
             />
             <span style={{ fontSize: '11px', color: theme.textMuted }}>
-              {avatar ? avatar.name : 'Click to upload a profile photo (optional)'}
+              {avatar ? avatar.name : t('auth.profile.clickToUploadAProfilePhoto')}
             </span>
           </div>
 
           {/* Name row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            {field('firstName', 'First Name *', 'e.g. Ahmed')}
-            {field('lastName', 'Last Name *', 'e.g. Al-Farage')}
+            {field('firstName', t('auth.profile.firstNameLabel'), t('auth.profile.firstNamePh'))}
+            {field('lastName', t('auth.profile.lastNameLabel'), t('auth.profile.lastNamePh'))}
           </div>
 
-          {field('jobTitle', 'Job Title *', 'e.g. Project Manager')}
+          {field('jobTitle', t('auth.profile.jobTitleLabel'), t('auth.profile.jobTitlePh'))}
 
           {/* Email (read-only) */}
           <div>
@@ -218,7 +223,7 @@ export default function CompleteProfilePage() {
                 marginBottom: '6px',
               }}
             >
-              Email
+              {t('auth.profile.email')}
             </label>
             <div
               style={{
@@ -234,8 +239,8 @@ export default function CompleteProfilePage() {
             </div>
           </div>
 
-          {field('phone', 'Phone Number *', 'e.g. +964 770 000 0000', 'tel')}
-          {field('emergencyPhone', 'Emergency Contact Phone *', 'e.g. +964 770 111 1111', 'tel')}
+          {field('phone', t('auth.profile.phoneLabel'), '+964 770 000 0000', 'tel')}
+          {field('emergencyPhone', t('auth.profile.emergencyLabel'), '+964 770 111 1111', 'tel')}
 
           <Button
             variant="primary"
@@ -246,7 +251,7 @@ export default function CompleteProfilePage() {
             loading={saving}
             style={{ marginTop: '4px' }}
           >
-            Save & Continue
+            {t('auth.profile.saveContinue')}
           </Button>
         </div>
       </div>

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import i18n, { enumLabel } from '../../i18n'
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { buildInvoiceHTML, type InvoiceRenderData, type BankAccount } from '../../lib/invoiceHtml'
@@ -192,6 +194,7 @@ const CSS = `
 `
 
 export default function InvoiceVerifyPage() {
+  const { t } = useTranslation()
   const { token } = useParams<{ token: string }>()
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
@@ -253,6 +256,7 @@ export default function InvoiceVerifyPage() {
     : null
 
   const verifiedAt = new Date()
+  const dateLocale = i18n.resolvedLanguage?.startsWith('ar') ? 'ar' : 'en-GB'
 
   return (
     <>
@@ -260,9 +264,9 @@ export default function InvoiceVerifyPage() {
       <div className="vp">
         {/* Header */}
         <header className="vp-header">
-          <span className="vp-header-logo">FNC Group ERP</span>
+          <span className="vp-header-logo">{t('verify.invoice.fncGroupErp')}</span>
           <span className="vp-header-sep" />
-          <span className="vp-header-tag">Invoice Verification Portal</span>
+          <span className="vp-header-tag">{t('verify.invoice.invoiceVerificationPortal')}</span>
         </header>
 
         {/* Loading */}
@@ -271,7 +275,7 @@ export default function InvoiceVerifyPage() {
             <div>
               <div className="vp-spinner" />
               <div style={{ fontSize: '13px', color: '#64748b', textAlign: 'center' }}>
-                Verifying invoice…
+                {t('verify.invoice.verifyingInvoice')}
               </div>
             </div>
           </div>
@@ -290,11 +294,10 @@ export default function InvoiceVerifyPage() {
                   marginBottom: '10px',
                 }}
               >
-                Invalid QR Code
+                {t('verify.invoice.invalidQrCode')}
               </div>
               <div style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.65 }}>
-                This QR code does not match any invoice in our system. If you received this invoice,
-                please contact the issuing company to verify its authenticity.
+                {t('verify.invoice.thisQrCodeDoesNotMatch')}
               </div>
             </div>
           </div>
@@ -306,14 +309,14 @@ export default function InvoiceVerifyPage() {
             {/* Invoice preview */}
             <div className="vp-invoice" ref={invoicePanelRef}>
               <div className="vp-invoice-bar">
-                <span className="vp-invoice-bar-title">Invoice Preview</span>
+                <span className="vp-invoice-bar-title">{t('verify.invoice.invoicePreview')}</span>
                 <span className="vp-invoice-bar-num">#{inv.invoiceNumber}</span>
               </div>
               <iframe
                 ref={iframeRef}
                 srcDoc={invoiceHtml ?? ''}
                 className="vp-iframe"
-                title={`Invoice ${inv.invoiceNumber}`}
+                title={t('verify.invoice.invoice2', { invoiceNumber: inv.invoiceNumber })}
                 style={{ height: `${Math.round(1800 * zoom)}px` }}
               />
             </div>
@@ -327,45 +330,36 @@ export default function InvoiceVerifyPage() {
                     {valid ? '✅' : '❌'}
                   </div>
                   <div className={`vp-status-title ${valid ? 'valid' : 'invalid'}`}>
-                    {valid ? 'Genuine Invoice' : 'Invoice Revoked'}
+                    {valid ? t('verify.invoice.genuineInvoice') : t('verify.invoice.invoiceRevoked')}
                   </div>
                   <div className="vp-status-sub">
                     {valid
-                      ? 'This invoice was issued by FNC Group and is authentic.'
-                      : `This invoice has been ${result.reason ?? 'revoked'} and is no longer valid.`}
+                      ? t('verify.invoice.thisInvoiceWasIssuedByFnc')
+                      : t('verify.invoice.thisInvoiceHasBeenAndIs', { value: enumLabel(result.reason ?? 'revoked') })}
                   </div>
                 </div>
 
                 <div className="vp-rows">
-                  <Row label="Invoice #" value={inv.invoiceNumber} />
+                  <Row label={t('verify.invoice.invoice')} value={inv.invoiceNumber} />
                   <Row
-                    label="Status"
+                    label={t('verify.invoice.status')}
                     value={inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
                     color={valid ? 'green' : 'red'}
                   />
-                  <Row label="Invoice Date" value={fmtDate(String(inv.invoiceDate))} />
-                  <Row label="Due Date" value={fmtDate(String(inv.dueDate))} />
-                  <Row label="Client" value={inv.clientName ?? '—'} />
-                  <Row label="Project" value={inv.projectName ?? '—'} />
-                  <Row label="Net Payable" value={fmt(inv.netPayable, inv.currencyCode)} bold />
+                  <Row label={t('verify.invoice.invoiceDate')} value={fmtDate(String(inv.invoiceDate))} />
+                  <Row label={t('verify.invoice.dueDate')} value={fmtDate(String(inv.dueDate))} />
+                  <Row label={t('verify.invoice.client')} value={inv.clientName ?? '—'} />
+                  <Row label={t('verify.invoice.project')} value={inv.projectName ?? '—'} />
+                  <Row label={t('verify.invoice.netPayable')} value={fmt(inv.netPayable, inv.currencyCode)} bold />
                 </div>
               </div>
 
               {/* Issuer */}
               <div className="vp-issuer">
-                <div className="vp-issuer-label">Issued By</div>
-                <div className="vp-issuer-name">{inv.companyName ?? 'FNC Group'}</div>
+                <div className="vp-issuer-label">{t('verify.invoice.issuedBy')}</div>
+                <div className="vp-issuer-name">{inv.companyName ?? t('verify.invoice.fncGroup')}</div>
                 <div className="vp-issuer-legal">{inv.companyLegalName ?? ''}</div>
-                <div className="vp-issuer-time">
-                  Verified{' '}
-                  {verifiedAt.toLocaleDateString('en-GB', {
-                    day: '2-digit',
-                    month: 'long',
-                    year: 'numeric',
-                  })}{' '}
-                  at{' '}
-                  {verifiedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                </div>
+                <div className="vp-issuer-time">{t('verify.invoice.verifiedAt', { verifiedAt: verifiedAt.toLocaleDateString(dateLocale, { day: '2-digit', month: 'long', year: 'numeric', }), value: verifiedAt.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' }) })}</div>
               </div>
 
               {/* Print */}
@@ -373,7 +367,7 @@ export default function InvoiceVerifyPage() {
                 className="vp-print"
                 onClick={() => iframeRef.current?.contentWindow?.print()}
               >
-                Print / Save as PDF
+                {t('verify.invoice.printSaveAsPdf')}
               </button>
             </div>
           </div>

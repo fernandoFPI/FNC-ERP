@@ -1,4 +1,5 @@
-﻿import { useQuery, gql } from '@apollo/client'
+﻿import { useTranslation } from 'react-i18next'
+import { useQuery, gql } from '@apollo/client'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '../../components/ui/PageHeader'
@@ -120,6 +121,7 @@ function formatCurrency(amount: number, currency: string) {
 }
 
 export default function CompanyDashboard() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone, isTablet } = useBreakpoint()
   const pagePadding = usePagePadding()
@@ -149,11 +151,11 @@ export default function CompanyDashboard() {
         <div style={{ padding: '24px' }}>
           <Card padding="md">
             <EmptyState
-              title="Failed to load dashboard"
-              message="Could not fetch data from the server."
+              title={t('dash.company.failedToLoadDashboard')}
+              message={t('dash.company.couldNotFetchDataFromThe')}
             >
               <Button variant="secondary" size="sm" onClick={() => void refetch()}>
-                Retry
+                {t('dash.company.retry')}
               </Button>
             </EmptyState>
           </Card>
@@ -170,7 +172,7 @@ export default function CompanyDashboard() {
         }}
       >
         <PageHeader
-          title="Dashboard"
+          title={t('dash.company.dashboard')}
           subtitle={subtitle}
           actions={
             <Button
@@ -180,7 +182,7 @@ export default function CompanyDashboard() {
                 navigate('/reporting/executive')
               }}
             >
-              New report
+              {t('dash.company.newReport')}
             </Button>
           }
         />
@@ -188,7 +190,7 @@ export default function CompanyDashboard() {
         {/* KPI Grid */}
         <Grid cols={4} tabletCols={2} phoneCols={2} gap={12}>
           <KPICard
-            label="Revenue"
+            label={t('dash.company.revenue')}
             value={loading ? '—' : formatCurrency(data?.dashboardKPIs.revenue ?? 0, currency)}
             delta={
               data
@@ -215,7 +217,7 @@ export default function CompanyDashboard() {
             }
           />
           <KPICard
-            label="Open POs"
+            label={t('dash.company.openPos')}
             value={loading ? '—' : String(data?.dashboardKPIs.openPOs ?? 0)}
             delta={
               data
@@ -243,7 +245,7 @@ export default function CompanyDashboard() {
             }
           />
           <KPICard
-            label="Active projects"
+            label={t('dash.company.activeProjects')}
             value={loading ? '—' : String(data?.dashboardKPIs.activeProjects ?? 0)}
             loading={loading}
             iconColor="info"
@@ -261,7 +263,7 @@ export default function CompanyDashboard() {
             }
           />
           <KPICard
-            label="Headcount"
+            label={t('dash.company.headcount')}
             value={loading ? '—' : String(data?.dashboardKPIs.headcount ?? 0)}
             loading={loading}
             iconColor="accent"
@@ -294,7 +296,7 @@ export default function CompanyDashboard() {
                 marginBottom: '16px',
               }}
             >
-              Revenue
+              {t('dash.company.revenue')}
             </p>
             {loading ? (
               <div className="skeleton" style={{ height: '260px', borderRadius: '8px' }} />
@@ -302,11 +304,11 @@ export default function CompanyDashboard() {
               <BarChart
                 data={data?.revenueVsTarget ?? []}
                 xKey="month"
-                bars={[{ key: 'revenue', label: 'Revenue' }]}
+                bars={[{ key: 'revenue', label: t('dash.company.revenue') }]}
                 height={chartHeight}
               />
             ) : (
-              <EmptyState message="No revenue data available" />
+              <EmptyState message={t('dash.company.noRevenueDataAvailable')} />
             )}
           </Card>
 
@@ -319,7 +321,7 @@ export default function CompanyDashboard() {
                 marginBottom: '16px',
               }}
             >
-              Spend by category
+              {t('dash.company.spendByCategory')}
             </p>
             {loading ? (
               <div className="skeleton" style={{ height: '260px', borderRadius: '8px' }} />
@@ -333,7 +335,7 @@ export default function CompanyDashboard() {
                 formatValue={(v) => formatCurrency(v, currency)}
               />
             ) : (
-              <EmptyState message="No spend data available" />
+              <EmptyState message={t('dash.company.noSpendDataAvailable')} />
             )}
           </Card>
         </Grid>
@@ -343,7 +345,7 @@ export default function CompanyDashboard() {
           <Card padding="none" rimHighlight>
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
               <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}>
-                Recent purchase orders
+                {t('dash.company.recentPurchaseOrders')}
               </p>
             </div>
             <Table<Record<string, unknown>>
@@ -358,16 +360,16 @@ export default function CompanyDashboard() {
                     </span>
                   ),
                 },
-                { key: 'vendor', header: 'Vendor', mobileSecondary: true },
+                { key: 'vendor', header: t('dash.company.vendor'), mobileSecondary: true },
                 {
                   key: 'amount',
-                  header: 'Amount',
+                  header: t('dash.company.amount'),
                   render: (row) =>
                     formatCurrency(Number(row.amount), String(row.currency ?? currency)),
                 },
                 {
                   key: 'status',
-                  header: 'Status',
+                  header: t('dash.company.status'),
                   mobileAction: true,
                   render: (row) => (
                     <Badge variant={statusVariant(String(row.status ?? ''))} size="sm">
@@ -382,14 +384,14 @@ export default function CompanyDashboard() {
                   : ((data?.recentPurchaseOrders as unknown as Record<string, unknown>[]) ?? [])
               }
               loading={loading}
-              emptyMessage="No purchase orders"
+              emptyMessage={t('dash.company.noPurchaseOrders')}
             />
           </Card>
 
           <Card padding="none" rimHighlight>
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
               <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}>
-                Activity feed
+                {t('dash.company.activityFeed')}
               </p>
             </div>
             {loading ? (
@@ -403,7 +405,7 @@ export default function CompanyDashboard() {
                 ))}
               </div>
             ) : (data?.activityFeed.length ?? 0) === 0 ? (
-              <EmptyState message="No recent activity" />
+              <EmptyState message={t('dash.company.noRecentActivity')} />
             ) : (
               <div style={{ padding: '8px 0' }}>
                 {(data?.activityFeed ?? []).map((event) => (

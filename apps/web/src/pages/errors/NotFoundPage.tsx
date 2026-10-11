@@ -1,8 +1,10 @@
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
 import { Button } from '../../components/ui/Button'
 
 export default function NotFoundPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
 
@@ -41,7 +43,7 @@ export default function NotFoundPage() {
             margin: '0 0 10px',
           }}
         >
-          You're not supposed to be here!
+          {t('errors.notFound.youReNotSupposedToBe')}
         </h1>
         <p
           style={{
@@ -52,8 +54,7 @@ export default function NotFoundPage() {
             lineHeight: 1.6,
           }}
         >
-          The page you're looking for doesn't exist or was moved. Double-check the URL or head back
-          to safety.
+          {t('errors.notFound.thePageYouReLookingFor')}
         </p>
       </div>
 
@@ -64,7 +65,7 @@ export default function NotFoundPage() {
             navigate(-1)
           }}
         >
-          Go Back
+          {t('errors.notFound.goBack')}
         </Button>
         <Button
           variant="primary"
@@ -72,7 +73,7 @@ export default function NotFoundPage() {
             navigate('/dashboard')
           }}
         >
-          Back to Dashboard
+          {t('errors.notFound.backToDashboard')}
         </Button>
       </div>
     </div>

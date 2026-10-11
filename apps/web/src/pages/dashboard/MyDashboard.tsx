@@ -1,3 +1,5 @@
+import { navLabel } from '../../i18n'
+import { useTranslation } from 'react-i18next'
 import { useQuery, gql } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '../../components/ui/PageHeader'
@@ -106,6 +108,7 @@ const QUICK_LINKS: QuickLink[] = [
 ]
 
 export default function MyDashboard() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
   const pagePadding = usePagePadding()
@@ -133,11 +136,11 @@ export default function MyDashboard() {
         <div style={{ padding: '24px' }}>
           <Card padding="md">
             <EmptyState
-              title="Failed to load dashboard"
-              message="Could not fetch data from the server."
+              title={t('dash.my.failedToLoadDashboard')}
+              message={t('dash.my.couldNotFetchDataFromThe')}
             >
               <Button variant="secondary" size="sm" onClick={() => void refetch()}>
-                Retry
+                {t('dash.my.retry')}
               </Button>
             </EmptyState>
           </Card>
@@ -165,7 +168,7 @@ export default function MyDashboard() {
                   size="sm"
                   onClick={() => { navigate(link.path); }}
                 >
-                  {link.label}
+                  {navLabel(link.label)}
                 </Button>
               ))}
             </div>
@@ -176,7 +179,7 @@ export default function MyDashboard() {
           <Card padding="none" rimHighlight>
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
               <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}>
-                My pending POs
+                {t('dash.my.myPendingPos')}
               </p>
             </div>
             <Table<Record<string, unknown>>
@@ -193,19 +196,19 @@ export default function MyDashboard() {
                 },
                 {
                   key: 'vendor_name',
-                  header: 'Vendor',
+                  header: t('dash.my.vendor'),
                   mobileSecondary: true,
                   render: (row) => <span>{String(row.vendor_name ?? '—')}</span>,
                 },
                 {
                   key: 'total_amount',
-                  header: 'Amount',
+                  header: t('dash.my.amount'),
                   render: (row) =>
                     formatCurrency(Number(row.total_amount), String(row.currency_code ?? currency)),
                 },
                 {
                   key: 'status',
-                  header: 'Status',
+                  header: t('dash.my.status'),
                   mobileAction: true,
                   render: (row) => (
                     <Badge variant={statusVariant(String(row.status ?? ''))} size="sm">
@@ -218,7 +221,7 @@ export default function MyDashboard() {
                 loading ? [] : ((data?.myPOQueue as unknown as Record<string, unknown>[]) ?? [])
               }
               loading={loading}
-              emptyMessage="Nothing waiting on you right now"
+              emptyMessage={t('dash.my.nothingWaitingOnYouRightNow')}
               onRowClick={(row) => { navigate(`/procurement/purchase-orders/${String(row.id)}`); }}
             />
           </Card>
@@ -226,14 +229,14 @@ export default function MyDashboard() {
           <Card padding="none" rimHighlight>
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
               <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}>
-                My projects
+                {t('dash.my.myProjects')}
               </p>
             </div>
             <Table<Record<string, unknown>>
               columns={[
                 {
                   key: 'name',
-                  header: 'Project',
+                  header: t('dash.my.project'),
                   mobilePrimary: true,
                   render: (row) => (
                     <span style={{ color: theme.accent, fontWeight: 500 }}>
@@ -241,10 +244,10 @@ export default function MyDashboard() {
                     </span>
                   ),
                 },
-                { key: 'code', header: 'Code', mobileSecondary: true },
+                { key: 'code', header: t('dash.my.code'), mobileSecondary: true },
                 {
                   key: 'status',
-                  header: 'Status',
+                  header: t('dash.my.status'),
                   mobileAction: true,
                   render: (row) => (
                     <Badge variant={statusVariant(String(row.status ?? ''))} size="sm">
@@ -257,7 +260,7 @@ export default function MyDashboard() {
                 loading ? [] : ((data?.myProjects as unknown as Record<string, unknown>[]) ?? [])
               }
               loading={loading}
-              emptyMessage="You're not assigned to any projects yet"
+              emptyMessage={t('dash.my.youReNotAssignedToAny')}
               onRowClick={(row) => { navigate(`/projects/${String(row.id)}`); }}
             />
           </Card>
@@ -266,7 +269,7 @@ export default function MyDashboard() {
         <Card padding="none" rimHighlight>
           <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
             <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}>
-              My recent activity
+              {t('dash.my.myRecentActivity')}
             </p>
           </div>
           {loading ? (
@@ -280,7 +283,7 @@ export default function MyDashboard() {
               ))}
             </div>
           ) : (data?.myActivityFeed.length ?? 0) === 0 ? (
-            <EmptyState message="No recent activity" />
+            <EmptyState message={t('dash.my.noRecentActivity')} />
           ) : (
             <div style={{ padding: '8px 0' }}>
               {(data?.myActivityFeed ?? []).map((event) => (

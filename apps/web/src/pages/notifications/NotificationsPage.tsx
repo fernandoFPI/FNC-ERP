@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
@@ -48,6 +49,7 @@ function matchesFilter(n: AppNotification, filter: FilterType): boolean {
 }
 
 export default function NotificationsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const pagePadding = usePagePadding()
@@ -111,12 +113,12 @@ export default function NotificationsPage() {
       }}
     >
       <PageHeader
-        title="Notifications"
-        subtitle={unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
+        title={t('notifPage.notifications')}
+        subtitle={unreadCount > 0 ? `${unreadCount} unread` : t('notifPage.allCaughtUp')}
         actions={
           unreadCount > 0 ? (
             <Button variant="ghost" size="sm" onClick={(...args: Parameters<typeof handleMarkAllAsRead>) => void handleMarkAllAsRead(...args)}>
-              Mark all read
+              {t('notifPage.markAllRead')}
             </Button>
           ) : undefined
         }
@@ -153,7 +155,7 @@ export default function NotificationsPage() {
               fontFamily: 'inherit',
             }}
           >
-            {f}
+            {t(`notifPage.f${f}`)}
           </button>
         ))}
       </div>
@@ -188,7 +190,7 @@ export default function NotificationsPage() {
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
-            <span style={{ fontSize: '13px', color: theme.textMuted }}>No notifications</span>
+            <span style={{ fontSize: '13px', color: theme.textMuted }}>{t('notifPage.noNotifications')}</span>
           </div>
         ) : (
           <>
@@ -204,7 +206,7 @@ export default function NotificationsPage() {
                     letterSpacing: '0.06em',
                   }}
                 >
-                  Unread
+                  {t('notifPage.unread')}
                 </div>
                 {unread.map((n) => (
                   <NotificationItem
@@ -228,7 +230,7 @@ export default function NotificationsPage() {
                     letterSpacing: '0.06em',
                   }}
                 >
-                  Earlier
+                  {t('notifPage.earlier')}
                 </div>
                 {read.map((n) => (
                   <NotificationItem
@@ -247,7 +249,7 @@ export default function NotificationsPage() {
       {notifications.length >= PAGE_SIZE && (
         <div style={{ padding: '12px 0', textAlign: 'center' }}>
           <Button variant="ghost" size="sm" onClick={(...args: Parameters<typeof loadMore>) => void loadMore(...args)}>
-            Load more
+            {t('notifPage.loadMore')}
           </Button>
         </div>
       )}

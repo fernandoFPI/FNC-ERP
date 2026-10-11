@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
@@ -67,6 +68,7 @@ async function getSavedPassword(email: string): Promise<string | null> {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { login } = useAuth()
@@ -155,13 +157,13 @@ export default function LoginPage() {
         const status = err.response?.status
         if (status === 429) {
           const retryAfter = String(err.response?.headers['retry-after'] ?? '60')
-          setError(`Too many attempts. Please wait ${retryAfter} seconds.`)
+          setError(t('auth.login.tooMany', { seconds: retryAfter }))
         } else {
           const msg = (err.response?.data as { message?: string })?.message
-          setError(msg ?? 'Invalid email or password.')
+          setError(msg ?? t('auth.login.invalidCreds'))
         }
       } else {
-        setError('An unexpected error occurred. Please try again.')
+        setError(t('auth.login.unexpected'))
       }
     } finally {
       setLoading(false)
@@ -207,7 +209,7 @@ export default function LoginPage() {
             <div style={{ margin: '0 auto 12px', width: '72px', height: '72px' }}>
               <img
                 src="/fnc_logo.gif"
-                alt="FNC Group"
+                alt={t('auth.login.fncGroup')}
                 style={{ width: '110%', height: '110%', objectFit: 'contain', display: 'block' }}
               />
             </div>
@@ -219,10 +221,10 @@ export default function LoginPage() {
                 margin: '0 0 4px',
               }}
             >
-              FNC GROUP
+              {t('auth.login.fncGroup2')}
             </h1>
             <p style={{ fontSize: '13px', color: theme.textSecondary, margin: 0 }}>
-              {view === 'accounts' ? 'Welcome back' : 'Sign in to your account'}
+              {view === 'accounts' ? t('auth.login.welcomeBack') : t('auth.login.signInToYourAccount')}
             </p>
           </div>
 
@@ -256,7 +258,7 @@ export default function LoginPage() {
                         border: `1px solid ${isLoggingIn ? theme.accent : 'transparent'}`,
                         background: isLoggingIn ? theme.accentBg : 'transparent',
                         cursor: autoLoggingIn ? 'default' : 'pointer',
-                        textAlign: 'left',
+                        textAlign: 'start',
                         transition: 'background 120ms, border-color 120ms',
                         opacity: autoLoggingIn && !isLoggingIn ? 0.4 : 1,
                       }}
@@ -330,7 +332,7 @@ export default function LoginPage() {
                               marginTop: '1px',
                             }}
                           >
-                            Signing in…
+                            {t('auth.login.signingIn')}
                           </span>
                         )}
                       </div>
@@ -405,7 +407,7 @@ export default function LoginPage() {
                       borderRadius: '6px',
                     }}
                   >
-                    Use another account
+                    {t('auth.login.useAnotherAccount')}
                   </button>
                 </div>
               )}
@@ -419,20 +421,20 @@ export default function LoginPage() {
               style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
             >
               <Input
-                label="Email"
+                label={t('auth.login.email')}
                 type="email"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value)
                 }}
-                placeholder="you@fnc-group.com"
+                placeholder={t('auth.login.youFncGroupCom')}
                 autoComplete="email"
                 required
                 disabled={loading}
               />
 
               <Input
-                label="Password"
+                label={t('auth.login.password')}
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => {
@@ -510,7 +512,7 @@ export default function LoginPage() {
                 disabled={loading || !email || !password}
                 style={{ width: '100%', justifyContent: 'center' }}
               >
-                Sign in
+                {t('auth.login.signIn')}
               </Button>
 
               {accounts.length > 0 && (
@@ -529,7 +531,7 @@ export default function LoginPage() {
                       padding: '2px 6px',
                     }}
                   >
-                    ← Back to accounts
+                    {t('auth.login.backToAccounts')}
                   </button>
                 </div>
               )}

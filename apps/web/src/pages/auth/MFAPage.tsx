@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
@@ -7,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth'
 import axios from 'axios'
 
 export default function MFAPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
@@ -129,7 +131,7 @@ export default function MFAPage() {
                 margin: '0 0 4px',
               }}
             >
-              Two-factor authentication
+              {t('auth.mfa.twoFactorAuthentication')}
             </h1>
             {state?.email && (
               <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0 }}>{state.email}</p>
@@ -144,7 +146,7 @@ export default function MFAPage() {
               textAlign: 'center',
             }}
           >
-            Enter the 6-digit code from your authenticator app.
+            {t('auth.mfa.enterThe6DigitCodeFrom')}
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -178,10 +180,10 @@ export default function MFAPage() {
               />
               <div>
                 <div style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
-                  Trust this device for 30 days
+                  {t('auth.mfa.trustThisDeviceFor30Days')}
                 </div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
-                  Skip 2FA on this browser for 30 days
+                  {t('auth.mfa.skip2faOnThisBrowserFor')}
                 </div>
               </div>
             </label>
@@ -242,7 +244,7 @@ export default function MFAPage() {
                 </span>
               </div>
               <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                seconds until code expires
+                {t('auth.mfa.secondsUntilCodeExpires')}
               </span>
             </div>
 
@@ -270,7 +272,7 @@ export default function MFAPage() {
               onClick={() => void submit(code)}
               style={{ width: '100%', justifyContent: 'center' }}
             >
-              Verify
+              {t('auth.mfa.verify')}
             </Button>
 
             <Link
@@ -282,7 +284,7 @@ export default function MFAPage() {
                 textDecoration: 'none',
               }}
             >
-              ← Back to sign in
+              {t('auth.mfa.backToSignIn')}
             </Link>
           </div>
         </Card>
