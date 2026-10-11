@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel, useIsRtl } from '../../../i18n'
+import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -74,6 +76,7 @@ function JournalEntryPreview({
   tx: IntercoTxDetail
   theme: Record<string, string>
 }) {
+  const { t } = useTranslation()
   const entries = [
     {
       company: tx.fromCompanyName,
@@ -108,13 +111,13 @@ function JournalEntryPreview({
   const columns: Column<(typeof entries)[number]>[] = [
     {
       key: 'company',
-      header: 'Company',
+      header: t('interco.txnDetail.company'),
       mobileSecondary: true,
       render: (e) => <span style={{ color: theme.textSecondary }}>{e.company}</span>,
     },
     {
       key: 'account',
-      header: 'Account',
+      header: t('interco.txnDetail.account'),
       mobilePrimary: true,
       render: (e) => (
         <span style={{ color: theme.textPrimary, fontFamily: 'monospace', fontSize: '12px' }}>
@@ -124,17 +127,17 @@ function JournalEntryPreview({
     },
     {
       key: 'side',
-      header: 'Side',
+      header: t('interco.txnDetail.side'),
       mobilePriority: 1,
       render: (e) => (
         <Badge variant={e.side === 'Debit' ? 'info' : 'warning'} size="sm">
-          {e.side}
+          {e.side === 'Debit' ? t('interco.txnDetail.debit') : t('interco.txnDetail.credit')}
         </Badge>
       ),
     },
     {
       key: 'amount',
-      header: 'Amount',
+      header: t('interco.txnDetail.amount'),
       mobilePriority: 2,
       render: (e) => <AmountDisplay amount={e.amount} currency={e.currency} size="sm" />,
     },
@@ -143,14 +146,13 @@ function JournalEntryPreview({
   return (
     <div>
       <p style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>
-        The following journal entries will be created in both entities on posting:
+        {t('interco.txnDetail.theFollowingJournalEntriesWillBe')}
       </p>
       <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, overflow: 'hidden' }}>
         <Table columns={columns} data={entries} />
       </div>
       <p style={{ fontSize: 11, color: theme.textMuted, marginTop: 10, fontStyle: 'italic' }}>
-        Note: Exact accounts are determined at creation time. This preview shows the transaction
-        accounts on record.
+        {t('interco.txnDetail.noteExactAccountsAreDeterminedAt')}
       </p>
     </div>
   )
@@ -172,6 +174,7 @@ function AccountPicker({
   onSet: (accountId: string) => void
   setting: boolean
 }) {
+  const { t } = useTranslation()
   const { data } = useQuery<{ accounts: AccountOption[] }>(ACCOUNTS_QUERY, {
     variables: { type: accountType, isActive: true },
   })
@@ -188,7 +191,7 @@ function AccountPicker({
         onChange={(e) => {
           setAccountId(e.target.value)
         }}
-        options={[{ value: '', label: 'Select account…' }, ...options]}
+        options={[{ value: '', label: t('interco.txnDetail.selectAccount') }, ...options]}
       />
       <Button
         variant="secondary"
@@ -199,13 +202,15 @@ function AccountPicker({
           onSet(accountId)
         }}
       >
-        Set
+        {t('interco.txnDetail.set')}
       </Button>
     </div>
   )
 }
 
 export default function IntercoTransactionDetail() {
+  const { t } = useTranslation()
+  const rtl = useIsRtl()
   const { theme } = useTheme()
   const { id } = useParams<{ id: string }>()
   const addToast = useToastStore((s) => s.addToast)
@@ -224,7 +229,7 @@ export default function IntercoTransactionDetail() {
   const [postTx, { loading: posting }] = useMutation(POST_INTERCO_TRANSACTION, {
     variables: { id },
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Transaction posted' })
+      addToast({ type: 'success', message: t('interco.txnDetail.transactionPosted') })
       setShowJournalPreview(false)
       void refetch()
     },
@@ -237,7 +242,7 @@ export default function IntercoTransactionDetail() {
   const [cancelTx, { loading: cancelling }] = useMutation(CANCEL_INTERCO_TRANSACTION, {
     variables: { id },
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Transaction cancelled' })
+      addToast({ type: 'success', message: t('interco.txnDetail.transactionCancelled') })
       setConfirmCancel(false)
     },
     onError: (e) => {
@@ -250,7 +255,7 @@ export default function IntercoTransactionDetail() {
   const [approveTx, { loading: approving }] = useMutation(APPROVE_INTERCO_COMPANY, {
     variables: { id },
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Approval recorded' })
+      addToast({ type: 'success', message: t('interco.txnDetail.approvalRecorded') })
       void refetch()
     },
     onError: (e) => {
@@ -261,7 +266,7 @@ export default function IntercoTransactionDetail() {
 
   const [setAccount, { loading: settingAccount }] = useMutation(SET_INTERCO_TRANSACTION_ACCOUNT, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Posting account set' })
+      addToast({ type: 'success', message: t('interco.txnDetail.postingAccountSet') })
       void refetch()
     },
     onError: (e) => {
@@ -287,7 +292,7 @@ export default function IntercoTransactionDetail() {
   if (!tx) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: theme.textMuted }}>Transaction not found.</p>
+        <p style={{ color: theme.textMuted }}>{t('interco.txnDetail.transactionNotFound')}</p>
       </div>
     )
   }
@@ -313,17 +318,17 @@ export default function IntercoTransactionDetail() {
     <div style={{ padding: '24px' }}>
       <PageHeader
         title={tx.reference}
-        subtitle={`${tx.transactionType.replace('interco_', '')} · ${tx.fromCompanyName} → ${tx.toCompanyName}`}
+        subtitle={`${enumLabel(tx.transactionType.replace('interco_', ''))} · ${tx.fromCompanyName} ${rtl ? '←' : '→'} ${tx.toCompanyName}`}
         backPath="/interco/transactions"
-        backLabel="Transactions"
-        status={<Badge variant={statusVariant(tx.status)}>{tx.status}</Badge>}
+        backLabel={t('interco.txnDetail.transactions')}
+        status={<Badge variant={statusVariant(tx.status)}>{enumLabel(tx.status)}</Badge>}
         actions={
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {isDraft && !canPost && (
               <span style={{ fontSize: '12px', color: theme.textMuted }}>
                 {!eitherApproved
-                  ? 'Awaiting approval from at least one company'
-                  : 'Awaiting posting account selection from both companies'}
+                  ? t('interco.txnDetail.awaitingApprovalFromAtLeastOne')
+                  : t('interco.txnDetail.awaitingPostingAccountSelectionFromBoth')}
               </span>
             )}
             {canPost && (
@@ -335,7 +340,7 @@ export default function IntercoTransactionDetail() {
                 }}
                 loading={posting}
               >
-                Post
+                {t('interco.txnDetail.post')}
               </Button>
             )}
             {canCancel && (
@@ -347,7 +352,7 @@ export default function IntercoTransactionDetail() {
                 }}
                 loading={cancelling}
               >
-                Cancel
+                {t('interco.txnDetail.cancel')}
               </Button>
             )}
           </div>
@@ -372,7 +377,7 @@ export default function IntercoTransactionDetail() {
               marginBottom: '12px',
             }}
           >
-            Company Approvals Required
+            {t('interco.txnDetail.companyApprovalsRequired')}
           </p>
           <div
             style={{
@@ -396,7 +401,7 @@ export default function IntercoTransactionDetail() {
               {tx.fromCompanyApprovedBy ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Badge variant="success" size="sm">
-                    Approved
+                    {t('interco.txnDetail.approved')}
                   </Badge>
                   {tx.fromCompanyApprovedAt && (
                     <span style={{ fontSize: '11px', color: theme.textMuted }}>
@@ -412,12 +417,10 @@ export default function IntercoTransactionDetail() {
                     void approveTx()
                   }}
                   loading={approving}
-                >
-                  Approve for {tx.fromCompanyName}
-                </Button>
+                >{t('interco.txnDetail.approveFor', { fromCompanyName: tx.fromCompanyName })}</Button>
               ) : (
                 <Badge variant="neutral" size="sm">
-                  Pending
+                  {t('interco.txnDetail.pending')}
                 </Badge>
               )}
             </div>
@@ -436,7 +439,7 @@ export default function IntercoTransactionDetail() {
               {tx.toCompanyApprovedBy ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Badge variant="success" size="sm">
-                    Approved
+                    {t('interco.txnDetail.approved')}
                   </Badge>
                   {tx.toCompanyApprovedAt && (
                     <span style={{ fontSize: '11px', color: theme.textMuted }}>
@@ -452,12 +455,10 @@ export default function IntercoTransactionDetail() {
                     void approveTx()
                   }}
                   loading={approving}
-                >
-                  Approve for {tx.toCompanyName}
-                </Button>
+                >{t('interco.txnDetail.approveFor2', { toCompanyName: tx.toCompanyName })}</Button>
               ) : (
                 <Badge variant="neutral" size="sm">
-                  Pending
+                  {t('interco.txnDetail.pending')}
                 </Badge>
               )}
             </div>
@@ -484,7 +485,7 @@ export default function IntercoTransactionDetail() {
               marginBottom: '12px',
             }}
           >
-            From Entity
+            {t('interco.txnDetail.fromEntity')}
           </p>
           <dl
             style={{
@@ -494,11 +495,11 @@ export default function IntercoTransactionDetail() {
               fontSize: '13px',
             }}
           >
-            <dt style={{ color: theme.textMuted }}>Company</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.company')}</dt>
             <dd style={{ color: theme.textPrimary, fontWeight: 500, margin: 0 }}>
               {tx.fromCompanyName}
             </dd>
-            <dt style={{ color: theme.textMuted }}>Account</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.account')}</dt>
             <dd style={{ color: theme.textSecondary, margin: 0 }}>
               {tx.fromAccountName ||
                 tx.fromAccountId ||
@@ -514,7 +515,7 @@ export default function IntercoTransactionDetail() {
             </dd>
             {tx.fromJournalId && (
               <>
-                <dt style={{ color: theme.textMuted }}>Journal</dt>
+                <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.journal')}</dt>
                 <dd style={{ color: theme.accent, margin: 0 }}>{tx.fromJournalId}</dd>
               </>
             )}
@@ -533,7 +534,7 @@ export default function IntercoTransactionDetail() {
               marginBottom: '12px',
             }}
           >
-            To Entity
+            {t('interco.txnDetail.toEntity')}
           </p>
           <dl
             style={{
@@ -543,11 +544,11 @@ export default function IntercoTransactionDetail() {
               fontSize: '13px',
             }}
           >
-            <dt style={{ color: theme.textMuted }}>Company</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.company')}</dt>
             <dd style={{ color: theme.textPrimary, fontWeight: 500, margin: 0 }}>
               {tx.toCompanyName}
             </dd>
-            <dt style={{ color: theme.textMuted }}>Account</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.account')}</dt>
             <dd style={{ color: theme.textSecondary, margin: 0 }}>
               {tx.toAccountName ||
                 tx.toAccountId ||
@@ -563,7 +564,7 @@ export default function IntercoTransactionDetail() {
             </dd>
             {tx.toJournalId && (
               <>
-                <dt style={{ color: theme.textMuted }}>Journal</dt>
+                <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.journal')}</dt>
                 <dd style={{ color: theme.accent, margin: 0 }}>{tx.toJournalId}</dd>
               </>
             )}
@@ -582,7 +583,7 @@ export default function IntercoTransactionDetail() {
               marginBottom: '12px',
             }}
           >
-            Transaction Details
+            {t('interco.txnDetail.transactionDetails')}
           </p>
           <dl
             style={{
@@ -592,27 +593,27 @@ export default function IntercoTransactionDetail() {
               fontSize: '13px',
             }}
           >
-            <dt style={{ color: theme.textMuted }}>Amount</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.amount')}</dt>
             <dd style={{ margin: 0 }}>
               <AmountDisplay amount={tx.amount} currency={tx.currencyCode} size="md" />
             </dd>
-            <dt style={{ color: theme.textMuted }}>Type</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.type')}</dt>
             <dd style={{ margin: 0 }}>
-              <Badge variant="neutral">{tx.transactionType}</Badge>
+              <Badge variant="neutral">{enumLabel(tx.transactionType)}</Badge>
             </dd>
-            <dt style={{ color: theme.textMuted }}>Description</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.description')}</dt>
             <dd style={{ color: theme.textSecondary, margin: 0 }}>{tx.description || '—'}</dd>
-            <dt style={{ color: theme.textMuted }}>Created</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.created')}</dt>
             <dd style={{ color: theme.textMuted, margin: 0, fontSize: '12px' }}>
               {new Date(tx.createdAt).toLocaleString()}
             </dd>
             {tx.postedAt && (
               <>
-                <dt style={{ color: theme.textMuted }}>Posted</dt>
+                <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.posted')}</dt>
                 <dd style={{ color: theme.textMuted, margin: 0, fontSize: '12px' }}>
                   {new Date(tx.postedAt).toLocaleString()}
                 </dd>
-                <dt style={{ color: theme.textMuted }}>Posted By</dt>
+                <dt style={{ color: theme.textMuted }}>{t('interco.txnDetail.postedBy')}</dt>
                 <dd style={{ color: theme.textMuted, margin: 0, fontSize: '12px' }}>
                   {tx.postedBy}
                 </dd>
@@ -628,7 +629,7 @@ export default function IntercoTransactionDetail() {
         onClose={() => {
           setShowJournalPreview(false)
         }}
-        title="Review Journal Entries"
+        title={t('interco.txnDetail.reviewJournalEntries')}
         size="md"
         footer={
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -639,7 +640,7 @@ export default function IntercoTransactionDetail() {
                 setShowJournalPreview(false)
               }}
             >
-              Cancel
+              {t('interco.txnDetail.cancel')}
             </Button>
             <Button
               variant="primary"
@@ -649,7 +650,7 @@ export default function IntercoTransactionDetail() {
               }}
               loading={posting}
             >
-              Confirm &amp; Post
+              {t('interco.txnDetail.confirmPost')}
             </Button>
           </div>
         }
@@ -665,9 +666,9 @@ export default function IntercoTransactionDetail() {
         onConfirm={() => {
           void cancelTx()
         }}
-        title="Cancel Transaction"
-        message={`Cancel transaction ${tx.reference}? This action cannot be undone.`}
-        confirmLabel="Cancel Transaction"
+        title={t('interco.txnDetail.cancelTransaction')}
+        message={t('interco.txnDetail.cancelTransactionThisActionCannotBe', { reference: tx.reference })}
+        confirmLabel={t('interco.txnDetail.cancelTransaction')}
         confirmVariant="danger"
         loading={cancelling}
       />

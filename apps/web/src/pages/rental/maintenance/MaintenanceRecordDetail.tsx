@@ -1,4 +1,6 @@
-﻿import { useState, useEffect } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import i18n, { enumLabel } from '../../../i18n'
+import { useState, useEffect } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { api } from '../../../lib/axios'
 import { Drawer } from '../../../components/ui/Drawer'
@@ -49,11 +51,11 @@ function relativeTime(dateStr?: string): string {
   if (!dateStr) return '—'
   const diff = Date.now() - new Date(dateStr).getTime()
   const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 1) return i18n.t('rental.maintDetail.justNow', { defaultValue: 'just now' })
+  if (mins < 60) return i18n.t('rental.maintDetail.minsAgo', { count: mins, defaultValue: '{{count}}m ago' })
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
+  if (hours < 24) return i18n.t('rental.maintDetail.hoursAgo', { count: hours, defaultValue: '{{count}}h ago' })
+  return i18n.t('rental.maintDetail.daysAgo', { count: Math.floor(hours / 24), defaultValue: '{{count}}d ago' })
 }
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger'> = {
@@ -64,6 +66,7 @@ const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger
 }
 
 export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCompleted }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
@@ -89,7 +92,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
       const res = await api.get(`/rental/assets/${assetId}/maintenance/${recordId}`)
       setRecord(res.data as MaintenanceRecord)
     } catch {
-      addToast({ type: 'error', message: 'Failed to load maintenance record' })
+      addToast({ type: 'error', message: t('rental.maintDetail.failedToLoadMaintenanceRecord') })
     } finally {
       setLoading(false)
     }
@@ -114,10 +117,10 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
     setStarting(true)
     try {
       await api.post(`/rental/assets/${assetId}/maintenance/${recordId}/start`)
-      addToast({ type: 'success', message: 'Maintenance started' })
+      addToast({ type: 'success', message: t('rental.maintDetail.maintenanceStarted') })
       void fetchRecord()
     } catch {
-      addToast({ type: 'error', message: 'Failed to start maintenance' })
+      addToast({ type: 'error', message: t('rental.maintDetail.failedToStartMaintenance') })
     } finally {
       setStarting(false)
     }
@@ -139,12 +142,12 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
       const nextDue = (res.data as { nextServiceDue?: string }).nextServiceDue
       addToast({
         type: 'success',
-        message: nextDue ? `Next service due: ${nextDue}` : 'Asset returned to available status',
+        message: nextDue ? t('rental.maintDetail.nextServiceDue2', { nextDue }) : t('rental.maintDetail.assetReturnedToAvailableStatus'),
       })
       onCompleted()
       onClose()
     } catch {
-      addToast({ type: 'error', message: 'Failed to complete maintenance' })
+      addToast({ type: 'error', message: t('rental.maintDetail.failedToCompleteMaintenance') })
     } finally {
       setCompleting(false)
     }
@@ -154,11 +157,11 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
     setCancelling(true)
     try {
       await api.post(`/rental/assets/${assetId}/maintenance/${recordId}/cancel`)
-      addToast({ type: 'success', message: 'Maintenance schedule cancelled' })
+      addToast({ type: 'success', message: t('rental.maintDetail.maintenanceScheduleCancelled') })
       onCompleted()
       onClose()
     } catch {
-      addToast({ type: 'error', message: 'Failed to cancel maintenance' })
+      addToast({ type: 'error', message: t('rental.maintDetail.failedToCancelMaintenance') })
     } finally {
       setCancelling(false)
       setShowCancel(false)
@@ -166,10 +169,10 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
   }
 
   const drawerTitle = loading
-    ? 'Loading…'
+    ? t('rental.maintDetail.loading')
     : (record?.schedule_name ??
-      record?.maintenance_type?.replace(/_/g, ' ') ??
-      'Maintenance Record')
+      (record?.maintenance_type ? enumLabel(record.maintenance_type).replace(/_/g, ' ') : undefined) ??
+      t('rental.maintDetail.maintenanceRecord'))
 
   return (
     <>
@@ -188,7 +191,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
             >
               <div>
                 <div style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>
-                  {record.asset_name ?? 'Unknown Asset'}
+                  {record.asset_name ?? t('rental.maintDetail.unknownAsset')}
                 </div>
                 <div
                   style={{
@@ -198,11 +201,11 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     textTransform: 'capitalize',
                   }}
                 >
-                  {record.maintenance_type?.replace(/_/g, ' ')}
+                  {enumLabel(record.maintenance_type).replace(/_/g, ' ')}
                 </div>
               </div>
               <Badge variant={STATUS_VARIANT[record.status] ?? 'neutral'}>
-                {record.status.replace(/_/g, ' ')}
+                {enumLabel(record.status).replace(/_/g, ' ')}
               </Badge>
             </div>
 
@@ -225,7 +228,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                   marginBottom: '10px',
                 }}
               >
-                Schedule Info
+                {t('rental.maintDetail.scheduleInfo')}
               </div>
               <div
                 style={{
@@ -235,18 +238,18 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                 }}
               >
                 {[
-                  ['Type', record.maintenance_type?.replace(/_/g, ' ') ?? '—'],
-                  ['Trigger', record.trigger_type?.replace(/_/g, ' ') ?? '—'],
-                  ['Due Date', record.due_date ?? '—'],
+                  [t('rental.maintDetail.type'), record.maintenance_type?.replace(/_/g, ' ') ?? '—'],
+                  [t('rental.maintDetail.trigger'), record.trigger_type?.replace(/_/g, ' ') ?? '—'],
+                  [t('rental.maintDetail.dueDate'), record.due_date ?? '—'],
                   [
-                    'Due Engine Hrs',
+                    t('rental.maintDetail.dueEngineHrs'),
                     record.due_engine_hours != null ? `${record.due_engine_hours}h` : '—',
                   ],
                   [
-                    'Est. Cost',
+                    t('rental.maintDetail.estCost'),
                     record.estimated_cost ? formatCurrency(record.estimated_cost, 'IQD') : '—',
                   ],
-                  ['Interval', record.interval_description ?? '—'],
+                  [t('rental.maintDetail.interval'), record.interval_description ?? '—'],
                 ].map(([label, value]) => (
                   <div key={label}>
                     <div style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>
@@ -284,11 +287,10 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     marginBottom: '6px',
                   }}
                 >
-                  Ready to begin maintenance
+                  {t('rental.maintDetail.readyToBeginMaintenance')}
                 </div>
                 <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '14px' }}>
-                  Starting maintenance will set this asset to "In maintenance" status until work is
-                  complete.
+                  {t('rental.maintDetail.startingMaintenanceWillSetThisAsset')}
                 </div>
                 <Button
                   variant="primary"
@@ -297,7 +299,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                   onClick={(...args: Parameters<typeof handleStart>) => void handleStart(...args)}
                   style={{ width: '100%' }}
                 >
-                  Start Maintenance
+                  {t('rental.maintDetail.startMaintenance')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -307,7 +309,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                   }}
                   style={{ width: '100%', marginTop: '8px', color: theme.danger }}
                 >
-                  Cancel Schedule
+                  {t('rental.maintDetail.cancelSchedule')}
                 </Button>
               </div>
             )}
@@ -324,23 +326,21 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     fontSize: '11px',
                     color: theme.warning,
                   }}
-                >
-                  Maintenance started {relativeTime(record.started_at)}
-                </div>
+                >{t('rental.maintDetail.maintenanceStarted2', { relativeTime: relativeTime(record.started_at) })}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {record.trigger_type?.includes('hour') && (
                     <Input
-                      label="Engine hours at service"
+                      label={t('rental.maintDetail.engineHoursAtService')}
                       type="number"
                       value={form.engineHoursAtService}
                       onChange={(e) => {
                         setForm((f) => ({ ...f, engineHoursAtService: e.target.value }))
                       }}
-                      placeholder="Current cumulative engine hours"
+                      placeholder={t('rental.maintDetail.currentCumulativeEngineHours')}
                     />
                   )}
                   <CurrencyInput
-                    label="Actual cost"
+                    label={t('rental.maintDetail.actualCost')}
                     value={form.actualCost}
                     onChange={(v) => {
                       setForm((f) => ({ ...f, actualCost: v }))
@@ -348,35 +348,35 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     currency="IQD"
                   />
                   <Textarea
-                    label="Findings"
+                    label={t('rental.maintDetail.findings')}
                     value={form.findings}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, findings: e.target.value }))
                     }}
-                    placeholder="Describe the condition found during maintenance…"
+                    placeholder={t('rental.maintDetail.describeTheConditionFoundDuringMaintenance')}
                     rows={3}
                   />
                   <Textarea
-                    label="Parts replaced"
+                    label={t('rental.maintDetail.partsReplaced')}
                     value={form.partsReplaced}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, partsReplaced: e.target.value }))
                     }}
-                    placeholder="List parts replaced, with part numbers if known…"
+                    placeholder={t('rental.maintDetail.listPartsReplacedWithPartNumbers')}
                     rows={2}
                   />
                   <Input
-                    label="Downtime hours"
+                    label={t('rental.maintDetail.downtimeHours')}
                     type="number"
                     step="0.5"
                     value={form.downtimeHours}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, downtimeHours: e.target.value }))
                     }}
-                    placeholder="Total hours asset was out of service"
+                    placeholder={t('rental.maintDetail.totalHoursAssetWasOutOf')}
                   />
                   <Textarea
-                    label="Notes for next service"
+                    label={t('rental.maintDetail.notesForNextService')}
                     value={form.nextServiceNotes}
                     onChange={(e) => {
                       setForm((f) => ({ ...f, nextServiceNotes: e.target.value }))
@@ -390,7 +390,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     onClick={(...args: Parameters<typeof handleComplete>) => void handleComplete(...args)}
                     style={{ width: '100%' }}
                   >
-                    Complete Maintenance
+                    {t('rental.maintDetail.completeMaintenance')}
                   </Button>
                 </div>
               </>
@@ -414,31 +414,31 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     marginBottom: '10px',
                   }}
                 >
-                  Completion Record
+                  {t('rental.maintDetail.completionRecord')}
                 </div>
                 <div
                   style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}
                 >
                   {[
                     [
-                      'Completed',
+                      t('rental.maintDetail.completed'),
                       record.completed_at
                         ? `${relativeTime(record.completed_at)}${record.completed_by_name ? ` · ${record.completed_by_name}` : ''}`
                         : '—',
                     ],
                     [
-                      'Engine hours',
+                      t('rental.maintDetail.engineHours'),
                       record.engine_hours_at_service != null
                         ? `${record.engine_hours_at_service}h`
                         : '—',
                     ],
                     [
-                      'Actual cost',
+                      t('rental.maintDetail.actualCost'),
                       record.actual_cost ? formatCurrency(record.actual_cost, 'IQD') : '—',
                     ],
-                    ['Downtime', record.downtime_hours != null ? `${record.downtime_hours}h` : '—'],
-                    ['Findings', record.findings ?? '—'],
-                    ['Parts replaced', record.parts_replaced ?? '—'],
+                    [t('rental.maintDetail.downtime'), record.downtime_hours != null ? `${record.downtime_hours}h` : '—'],
+                    [t('rental.maintDetail.findings'), record.findings ?? '—'],
+                    [t('rental.maintDetail.partsReplaced'), record.parts_replaced ?? '—'],
                   ].map(([label, value]) => (
                     <div
                       key={label}
@@ -460,9 +460,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                       fontSize: '11px',
                       color: theme.info,
                     }}
-                  >
-                    Next service due: {record.next_service_due}
-                  </div>
+                  >{t('rental.maintDetail.nextServiceDue', { next_service_due: record.next_service_due })}</div>
                 )}
               </div>
             )}
@@ -475,9 +473,9 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
 
       <ConfirmDialog
         open={showCancel}
-        title="Cancel Maintenance Schedule"
-        message="This will cancel the maintenance schedule and return the asset to its previous status."
-        confirmLabel="Cancel Schedule"
+        title={t('rental.maintDetail.cancelMaintenanceSchedule')}
+        message={t('rental.maintDetail.thisWillCancelTheMaintenanceSchedule')}
+        confirmLabel={t('rental.maintDetail.cancelSchedule')}
         variant="danger"
         onConfirm={(...args: Parameters<typeof handleCancel>) => void handleCancel(...args)}
         onCancel={() => {

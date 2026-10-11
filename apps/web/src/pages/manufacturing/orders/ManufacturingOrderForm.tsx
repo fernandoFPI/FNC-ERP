@@ -1,4 +1,5 @@
-﻿import { useState, useEffect } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -18,6 +19,7 @@ import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import type { BoMsQuery, BoMsQueryVariables, CreateManufacturingOrderMutation, CreateManufacturingOrderMutationVariables, ProjectsQuery, ProjectsQueryVariables, WorkCentersQuery, WorkCentersQueryVariables } from '../../../graphql/generated'
 
 export default function ManufacturingOrderForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const addToast = useToastStore((s) => s.addToast)
@@ -52,7 +54,7 @@ export default function ManufacturingOrderForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.bom_id) {
-      addToast({ type: 'error', message: 'Select a BOM' })
+      addToast({ type: 'error', message: t('mfg.moForm.selectABom') })
       return
     }
     const input = {
@@ -70,10 +72,10 @@ export default function ManufacturingOrderForm() {
         refetchQueries: [{ query: MANUFACTURING_ORDERS_QUERY }],
       })
       if (!res.data?.createManufacturingOrder) {
-        addToast({ type: 'error', message: 'Manufacturing order creation did not return a result' })
+        addToast({ type: 'error', message: t('mfg.moForm.manufacturingOrderCreationDidNotReturn') })
         return
       }
-      addToast({ type: 'success', message: 'Manufacturing order created' })
+      addToast({ type: 'success', message: t('mfg.moForm.manufacturingOrderCreated') })
       navigate(`/manufacturing/orders/${res.data.createManufacturingOrder.id}`)
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -82,7 +84,7 @@ export default function ManufacturingOrderForm() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1000px' }}>
-      <PageHeader title="New Manufacturing Order" subtitle="Create from BOM" />
+      <PageHeader title={t('mfg.moForm.newManufacturingOrder')} subtitle={t('mfg.moForm.createFromBom')} />
       <Card style={{ marginTop: '20px' }}>
         <form
           onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
@@ -97,12 +99,12 @@ export default function ManufacturingOrderForm() {
           >
             <div>
               <SearchableSelect
-                label="Bill of Materials"
+                label={t('mfg.moForm.billOfMaterials')}
                 value={form.bom_id}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, bom_id: v }))
                 }}
-                placeholder="Select BOM…"
+                placeholder={t('mfg.moForm.selectBom')}
                 options={boms.map((b) => ({
                   value: b.id,
                   label: `${b.product_name} v${b.version}`,
@@ -110,7 +112,7 @@ export default function ManufacturingOrderForm() {
               />
             </div>
             <Input
-              label="Qty to Produce"
+              label={t('mfg.moForm.qtyToProduce')}
               type="number"
               step="0.001"
               min="0.001"
@@ -131,12 +133,12 @@ export default function ManufacturingOrderForm() {
           >
             <div>
               <SearchableSelect
-                label="Work Center"
+                label={t('mfg.moForm.workCenter')}
                 value={form.work_center_id}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, work_center_id: v }))
                 }}
-                placeholder="None"
+                placeholder={t('mfg.moForm.none')}
                 options={workCenters.map((wc: { id: string; name: string }) => ({
                   value: wc.id,
                   label: wc.name,
@@ -145,12 +147,12 @@ export default function ManufacturingOrderForm() {
             </div>
             <div>
               <SearchableSelect
-                label="Project (optional)"
+                label={t('mfg.moForm.projectOptional')}
                 value={form.project_id}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, project_id: v }))
                 }}
-                placeholder="None"
+                placeholder={t('mfg.moForm.none')}
                 options={projects.map((p: { id: string; name: string; code: string }) => ({
                   value: p.id,
                   label: `${p.code} — ${p.name}`,
@@ -167,7 +169,7 @@ export default function ManufacturingOrderForm() {
             }}
           >
             <Input
-              label="Scheduled Start"
+              label={t('mfg.moForm.scheduledStart')}
               type="date"
               value={form.scheduled_start}
               onChange={(e) => {
@@ -175,7 +177,7 @@ export default function ManufacturingOrderForm() {
               }}
             />
             <Input
-              label="Scheduled End"
+              label={t('mfg.moForm.scheduledEnd')}
               type="date"
               value={form.scheduled_end}
               onChange={(e) => {
@@ -185,7 +187,7 @@ export default function ManufacturingOrderForm() {
           </div>
 
           <Input
-            label="Notes"
+            label={t('mfg.moForm.notes')}
             value={form.notes}
             onChange={(e) => {
               setForm((f) => ({ ...f, notes: e.target.value }))
@@ -200,10 +202,10 @@ export default function ManufacturingOrderForm() {
                 navigate('/manufacturing/orders')
               }}
             >
-              Cancel
+              {t('mfg.moForm.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={loading}>
-              Create MO
+              {t('mfg.moForm.createMo')}
             </Button>
           </div>
         </form>

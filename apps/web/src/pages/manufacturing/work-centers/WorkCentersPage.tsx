@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   WORK_CENTERS_QUERY,
@@ -29,6 +30,7 @@ interface WorkCenter {
 }
 
 export default function WorkCentersPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [showForm, setShowForm] = useState(false)
@@ -88,10 +90,10 @@ export default function WorkCentersPage() {
           variables: { id: editId, input },
           refetchQueries: [{ query: WORK_CENTERS_QUERY }],
         })
-        addToast({ type: 'success', message: 'Work center updated' })
+        addToast({ type: 'success', message: t('mfg.workCenters.workCenterUpdated') })
       } else {
         await createWC({ variables: { input }, refetchQueries: [{ query: WORK_CENTERS_QUERY }] })
-        addToast({ type: 'success', message: 'Work center created' })
+        addToast({ type: 'success', message: t('mfg.workCenters.workCenterCreated') })
       }
       setShowForm(false)
       void refetch()
@@ -103,7 +105,7 @@ export default function WorkCentersPage() {
   const columns: Column<WorkCenter>[] = [
     {
       key: 'code',
-      header: 'Code',
+      header: t('mfg.workCenters.code'),
       render: (wc) => (
         <span style={{ color: theme.accent, fontFamily: 'monospace', fontSize: '13px' }}>
           {wc.code}
@@ -112,7 +114,7 @@ export default function WorkCentersPage() {
     },
     {
       key: 'name',
-      header: 'Name',
+      header: t('mfg.workCenters.name'),
       render: (wc) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500, fontSize: '13px' }}>
           {wc.name}
@@ -121,7 +123,7 @@ export default function WorkCentersPage() {
     },
     {
       key: 'capacity_hours_per_day',
-      header: 'Capacity (h/day)',
+      header: t('mfg.workCenters.capacityHDay'),
       render: (wc) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
           {wc.capacity_hours_per_day}h
@@ -130,15 +132,15 @@ export default function WorkCentersPage() {
     },
     {
       key: 'cost_per_hour',
-      header: 'Cost/Hour',
+      header: t('mfg.workCenters.costHour'),
       render: (wc) => <AmountDisplay amount={wc.cost_per_hour} currency={wc.currency_code} />,
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('mfg.workCenters.status'),
       render: (wc) => (
         <Badge variant={wc.is_active ? 'success' : 'neutral'}>
-          {wc.is_active ? 'Active' : 'Inactive'}
+          {wc.is_active ? t('mfg.workCenters.active') : t('mfg.workCenters.inactive')}
         </Badge>
       ),
     },
@@ -153,7 +155,7 @@ export default function WorkCentersPage() {
             openEdit(wc)
           }}
         >
-          Edit
+          {t('mfg.workCenters.edit')}
         </Button>
       ),
     },
@@ -162,11 +164,11 @@ export default function WorkCentersPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
-        title="Work Centers"
-        subtitle={`${workCenters.length} work centers`}
+        title={t('mfg.workCenters.workCenters')}
+        subtitle={t('mfg.workCenters.workCenters2', { length: workCenters.length })}
         actions={
           <Button variant="primary" size="sm" onClick={openCreate}>
-            New Work Center
+            {t('mfg.workCenters.newWorkCenter')}
           </Button>
         }
       />
@@ -179,7 +181,7 @@ export default function WorkCentersPage() {
         onClose={() => {
           setShowForm(false)
         }}
-        title={editId ? 'Edit Work Center' : 'New Work Center'}
+        title={editId ? t('mfg.workCenters.editWorkCenter') : t('mfg.workCenters.newWorkCenter')}
       >
         <form
           onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
@@ -187,7 +189,7 @@ export default function WorkCentersPage() {
         >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
             <Input
-              label="Code"
+              label={t('mfg.workCenters.code')}
               value={form.code}
               onChange={(e) => {
                 setForm((f) => ({ ...f, code: e.target.value }))
@@ -195,7 +197,7 @@ export default function WorkCentersPage() {
               required
             />
             <Input
-              label="Name"
+              label={t('mfg.workCenters.name')}
               value={form.name}
               onChange={(e) => {
                 setForm((f) => ({ ...f, name: e.target.value }))
@@ -211,7 +213,7 @@ export default function WorkCentersPage() {
             }}
           >
             <Input
-              label="Capacity (hours/day)"
+              label={t('mfg.workCenters.capacityHoursDay')}
               type="number"
               step="0.5"
               value={form.capacity_hours_per_day}
@@ -220,7 +222,7 @@ export default function WorkCentersPage() {
               }}
             />
             <Input
-              label="Cost per Hour"
+              label={t('mfg.workCenters.costPerHour')}
               type="number"
               step="0.01"
               value={form.cost_per_hour}
@@ -237,10 +239,10 @@ export default function WorkCentersPage() {
                 setShowForm(false)
               }}
             >
-              Cancel
+              {t('mfg.workCenters.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={creating || updating}>
-              {editId ? 'Save' : 'Create'}
+              {editId ? t('mfg.workCenters.save') : t('mfg.workCenters.create')}
             </Button>
           </div>
         </form>

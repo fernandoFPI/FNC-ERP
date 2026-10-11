@@ -1,3 +1,5 @@
+import i18n, { enumLabel } from '../../../i18n'
+import { Trans, useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -21,13 +23,14 @@ import type { CreateRentalContractMutation, CreateRentalContractMutationVariable
 const RENTAL_TYPES = ['short_term', 'long_term', 'project_based']
 const BILLING_CYCLES = ['daily', 'weekly', 'monthly']
 const DEPRECIATION_METHODS = [
-  { value: 'straight_line', label: 'Straight Line' },
-  { value: 'declining_balance', label: 'Declining Balance' },
-  { value: 'usage_based', label: 'Usage Based' },
-  { value: 'none', label: 'None' },
+  { value: 'straight_line', get label() { return i18n.t('rental.contractForm.straightLine', { defaultValue: "Straight Line" }) } },
+  { value: 'declining_balance', get label() { return i18n.t('rental.contractForm.decliningBalance', { defaultValue: "Declining Balance" }) } },
+  { value: 'usage_based', get label() { return i18n.t('rental.contractForm.usageBased', { defaultValue: "Usage Based" }) } },
+  { value: 'none', get label() { return i18n.t('rental.contractForm.none', { defaultValue: "None" }) } },
 ]
 
 export default function RentalContractForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams()
   const [searchParams] = useSearchParams()
@@ -154,7 +157,7 @@ export default function RentalContractForm() {
             },
           },
         })
-        addToast({ type: 'success', message: 'Contract updated' })
+        addToast({ type: 'success', message: t('rental.contractForm.contractUpdated') })
         navigate(`/rental/contracts/${id}`)
       } else {
         const res = await createContract({
@@ -162,10 +165,10 @@ export default function RentalContractForm() {
           refetchQueries: [{ query: RENTAL_CONTRACTS_QUERY }],
         })
         if (!res.data?.createRentalContract) {
-          addToast({ type: 'error', message: 'Contract creation did not return a result' })
+          addToast({ type: 'error', message: t('rental.contractForm.contractCreationDidNotReturnA') })
           return
         }
-        addToast({ type: 'success', message: 'Contract created' })
+        addToast({ type: 'success', message: t('rental.contractForm.contractCreated') })
         navigate(`/rental/contracts/${res.data.createRentalContract.id}`)
       }
     } catch (err) {
@@ -178,8 +181,8 @@ export default function RentalContractForm() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1000px' }}>
       <PageHeader
-        title={isEdit ? 'Edit Rental Contract' : 'New Rental Contract'}
-        subtitle="Equipment rental agreement"
+        title={isEdit ? t('rental.contractForm.editRentalContract') : t('rental.contractForm.newRentalContract')}
+        subtitle={t('rental.contractForm.equipmentRentalAgreement')}
       />
 
       <Card style={{ marginTop: '20px' }}>
@@ -197,12 +200,12 @@ export default function RentalContractForm() {
           >
             <div>
               <SearchableSelect
-                label="Equipment Asset"
+                label={t('rental.contractForm.equipmentAsset')}
                 value={form.asset_id}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, asset_id: v }))
                 }}
-                placeholder="Select asset…"
+                placeholder={t('rental.contractForm.selectAsset')}
                 options={assets.map((a) => ({
                   value: a.id,
                   label: `${a.asset_number} — ${a.name}`,
@@ -213,12 +216,12 @@ export default function RentalContractForm() {
             </div>
             <div>
               <SearchableSelect
-                label="Project (optional)"
+                label={t('rental.contractForm.projectOptional')}
                 value={form.project_id}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, project_id: v }))
                 }}
-                placeholder="None"
+                placeholder={t('rental.contractForm.none')}
                 options={projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
                 disabled={isEdit}
               />
@@ -234,7 +237,7 @@ export default function RentalContractForm() {
             }}
           >
             <Input
-              label="Client Name"
+              label={t('rental.contractForm.clientName')}
               value={form.client_name}
               onChange={(e) => {
                 setForm((f) => ({ ...f, client_name: e.target.value }))
@@ -242,7 +245,7 @@ export default function RentalContractForm() {
               required
             />
             <Input
-              label="Client Contact"
+              label={t('rental.contractForm.clientContact')}
               value={form.client_contact}
               onChange={(e) => {
                 setForm((f) => ({ ...f, client_contact: e.target.value }))
@@ -260,37 +263,37 @@ export default function RentalContractForm() {
           >
             <div>
               <SearchableSelect
-                label="Rental Type"
+                label={t('rental.contractForm.rentalType')}
                 value={form.rental_type}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, rental_type: v }))
                 }}
-                options={RENTAL_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ') }))}
+                options={RENTAL_TYPES.map((rt) => ({ value: rt, label: enumLabel(rt).replace(/_/g, ' ') }))}
                 disabled={isEdit}
               />
             </div>
             <div>
               <SearchableSelect
-                label="Billing Cycle"
+                label={t('rental.contractForm.billingCycle')}
                 value={form.billing_cycle}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, billing_cycle: v }))
                 }}
-                options={BILLING_CYCLES.map((c) => ({ value: c, label: c }))}
+                options={BILLING_CYCLES.map((c) => ({ value: c, label: enumLabel(c) }))}
                 disabled={isEdit}
               />
             </div>
             <div>
               <SearchableSelect
-                label="Currency"
+                label={t('rental.contractForm.currency')}
                 value={form.currency_code}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, currency_code: v }))
                 }}
                 options={[
-                  { value: 'IQD', label: 'IQD' },
-                  { value: 'USD', label: 'USD' },
-                  { value: 'EUR', label: 'EUR' },
+                  { value: 'IQD', label: t('rental.contractForm.iqd') },
+                  { value: 'USD', label: t('rental.contractForm.usd') },
+                  { value: 'EUR', label: t('rental.contractForm.eur') },
                 ]}
                 disabled={isEdit}
               />
@@ -305,7 +308,7 @@ export default function RentalContractForm() {
             }}
           >
             <Input
-              label="Daily Rate"
+              label={t('rental.contractForm.dailyRate')}
               type="number"
               step="0.01"
               value={form.rate_amount}
@@ -315,7 +318,7 @@ export default function RentalContractForm() {
               required
             />
             <Input
-              label="Deposit Amount"
+              label={t('rental.contractForm.depositAmount')}
               type="number"
               step="0.01"
               value={form.deposit_amount}
@@ -333,7 +336,7 @@ export default function RentalContractForm() {
             }}
           >
             <Input
-              label="Start Date"
+              label={t('rental.contractForm.startDate')}
               type="date"
               value={form.start_date}
               onChange={(e) => {
@@ -342,7 +345,7 @@ export default function RentalContractForm() {
               required
             />
             <Input
-              label="End Date (optional)"
+              label={t('rental.contractForm.endDateOptional')}
               type="date"
               value={form.end_date}
               onChange={(e) => {
@@ -352,7 +355,7 @@ export default function RentalContractForm() {
           </div>
 
           <Input
-            label="Notes"
+            label={t('rental.contractForm.notes')}
             value={form.notes}
             onChange={(e) => {
               setForm((f) => ({ ...f, notes: e.target.value }))
@@ -371,16 +374,18 @@ export default function RentalContractForm() {
                 borderBottom: `1px solid ${theme.border}`,
               }}
             >
-              Depreciation
+              {t('rental.contractForm.depreciation')}
             </div>
             {selectedAsset?.purchase_price && (
               <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>
-                Asset purchase price:{' '}
-                <strong style={{ color: theme.textSecondary }}>
-                  {parseFloat(selectedAsset.purchase_price).toLocaleString()}{' '}
-                  {selectedAsset.currency_code ?? form.currency_code}
-                </strong>{' '}
-                — enter useful life below to auto-calculate daily depreciation.
+                <Trans
+                  i18nKey="rental.contractForm.assetPurchasePriceHint"
+                  values={{
+                    amount: parseFloat(selectedAsset.purchase_price).toLocaleString(),
+                    currency: selectedAsset.currency_code ?? form.currency_code,
+                  }}
+                  components={[<strong key="price" style={{ color: theme.textSecondary }} />]}
+                />
               </div>
             )}
             <div
@@ -392,7 +397,7 @@ export default function RentalContractForm() {
             >
               <div>
                 <SearchableSelect
-                  label="Method"
+                  label={t('rental.contractForm.method')}
                   value={form.depreciation_method}
                   onChange={(v) => {
                     setForm((f) => ({ ...f, depreciation_method: v }))
@@ -401,7 +406,7 @@ export default function RentalContractForm() {
                 />
               </div>
               <Input
-                label="Useful Life (days)"
+                label={t('rental.contractForm.usefulLifeDays')}
                 type="number"
                 min="1"
                 step="1"
@@ -412,7 +417,7 @@ export default function RentalContractForm() {
                 disabled={form.depreciation_method === 'none'}
               />
               <Input
-                label="Salvage Value"
+                label={t('rental.contractForm.salvageValue')}
                 type="number"
                 step="0.01"
                 min="0"
@@ -423,7 +428,7 @@ export default function RentalContractForm() {
                 disabled={form.depreciation_method === 'none'}
               />
               <Input
-                label="Depreciation / Day"
+                label={t('rental.contractForm.depreciationDay')}
                 type="number"
                 step="0.0001"
                 min="0"
@@ -445,18 +450,21 @@ export default function RentalContractForm() {
                   color: theme.textSecondary,
                 }}
               >
-                Total depreciation over contract period:{' '}
-                <strong style={{ color: theme.textPrimary }}>
-                  {(
-                    parseFloat(form.depreciation_per_day) *
-                    (Math.ceil(
-                      (new Date(form.end_date).getTime() - new Date(form.start_date).getTime()) /
-                        86400000,
-                    ) +
-                      1)
-                  ).toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
-                  {form.currency_code}
-                </strong>
+                <Trans
+                  i18nKey="rental.contractForm.totalDepreciationOverPeriod"
+                  values={{
+                    amount: (
+                      parseFloat(form.depreciation_per_day) *
+                      (Math.ceil(
+                        (new Date(form.end_date).getTime() - new Date(form.start_date).getTime()) /
+                          86400000,
+                      ) +
+                        1)
+                    ).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+                    currency: form.currency_code,
+                  }}
+                  components={[<strong key="total" style={{ color: theme.textPrimary }} />]}
+                />
               </div>
             )}
           </div>
@@ -469,10 +477,10 @@ export default function RentalContractForm() {
                 navigate('/rental/contracts')
               }}
             >
-              Cancel
+              {t('rental.contractForm.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={creating || updating}>
-              {isEdit ? 'Save' : 'Create Contract'}
+              {isEdit ? t('rental.contractForm.save') : t('rental.contractForm.createContract')}
             </Button>
           </div>
         </form>

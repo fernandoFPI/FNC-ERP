@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import i18n, { enumLabel } from '../../../i18n'
+import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -69,10 +71,10 @@ interface CreateTxForm {
 // the previous list here (interco_charge/interco_loan/interco_settlement)
 // didn't, so every create and every type-filter silently failed.
 const TRANSACTION_TYPES = [
-  { value: 'goods_transfer', label: 'Goods Transfer' },
-  { value: 'service_charge', label: 'Service Charge' },
-  { value: 'equipment_rental', label: 'Equipment Rental' },
-  { value: 'management_fee', label: 'Management Fee' },
+  { value: 'goods_transfer', get label() { return i18n.t('interco.txns.goodsTransfer', { defaultValue: "Goods Transfer" }) } },
+  { value: 'service_charge', get label() { return i18n.t('interco.txns.serviceCharge', { defaultValue: "Service Charge" }) } },
+  { value: 'equipment_rental', get label() { return i18n.t('interco.txns.equipmentRental', { defaultValue: "Equipment Rental" }) } },
+  { value: 'management_fee', get label() { return i18n.t('interco.txns.managementFee', { defaultValue: "Management Fee" }) } },
 ]
 
 const EMPTY_FORM: CreateTxForm = {
@@ -87,6 +89,7 @@ const EMPTY_FORM: CreateTxForm = {
 }
 
 export default function IntercoTransactionsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
@@ -119,7 +122,7 @@ export default function IntercoTransactionsPage() {
 
   const [createTx, { loading: creating }] = useMutation(CREATE_INTERCO_TRANSACTION, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Transaction created' })
+      addToast({ type: 'success', message: t('interco.txns.transactionCreated') })
       setShowCreate(false)
       setForm(EMPTY_FORM)
       void refetch()
@@ -139,7 +142,7 @@ export default function IntercoTransactionsPage() {
   const columns: Column<IntercoTxItem>[] = [
     {
       key: 'reference',
-      header: 'Reference',
+      header: t('interco.txns.reference'),
       mobilePrimary: true,
       render: (row) => (
         <span style={{ color: theme.accent, fontWeight: 500 }}>{row.reference}</span>
@@ -147,18 +150,18 @@ export default function IntercoTransactionsPage() {
     },
     {
       key: 'transactionType',
-      header: 'Type',
+      header: t('interco.txns.type'),
       mobilePriority: 3,
       render: (row) => (
         <Badge variant="neutral" size="sm">
-          {TRANSACTION_TYPES.find((t) => t.value === row.transactionType)?.label ??
+          {TRANSACTION_TYPES.find((tt) => tt.value === row.transactionType)?.label ??
             row.transactionType}
         </Badge>
       ),
     },
     {
       key: 'fromCompanyName',
-      header: 'From',
+      header: t('interco.txns.from'),
       mobileSecondary: true,
       render: (row) => <span style={{ color: theme.textSecondary }}>{row.fromCompanyName}</span>,
     },
@@ -170,23 +173,23 @@ export default function IntercoTransactionsPage() {
     },
     {
       key: 'amount',
-      header: 'Amount',
+      header: t('interco.txns.amount'),
       mobilePriority: 2,
       render: (row) => <AmountDisplay amount={row.amount} currency={row.currencyCode} size="sm" />,
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('interco.txns.status'),
       mobilePriority: 1,
       render: (row) => (
         <Badge variant={statusVariant(row.status)} size="sm">
-          {row.status}
+          {enumLabel(row.status)}
         </Badge>
       ),
     },
     {
       key: 'createdAt',
-      header: 'Date',
+      header: t('interco.txns.date'),
       mobilePriority: 5,
       render: (row) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -216,8 +219,8 @@ export default function IntercoTransactionsPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Intercompany Transactions"
-        subtitle="Charges, loans, and settlements between group entities"
+        title={t('interco.txns.intercompanyTransactions')}
+        subtitle={t('interco.txns.chargesLoansAndSettlementsBetweenGroup')}
         actions={
           <Button
             variant="primary"
@@ -226,7 +229,7 @@ export default function IntercoTransactionsPage() {
               setShowCreate(true)
             }}
           >
-            + New Transaction
+            {t('interco.txns.newTransaction')}
           </Button>
         }
       />
@@ -236,23 +239,23 @@ export default function IntercoTransactionsPage() {
           search={{
             value: search,
             onChange: setSearch,
-            placeholder: 'Search reference or company…',
+            placeholder: t('interco.txns.searchReferenceOrCompany'),
           }}
           filters={[
             {
               key: 'status',
-              label: 'Status',
+              label: t('interco.txns.status'),
               value: statusFilter,
               onChange: setStatusFilter,
               options: [
-                { value: 'pending', label: 'Pending' },
-                { value: 'posted', label: 'Posted' },
-                { value: 'cancelled', label: 'Cancelled' },
+                { value: 'pending', label: t('interco.txns.pending') },
+                { value: 'posted', label: t('interco.txns.posted') },
+                { value: 'cancelled', label: t('interco.txns.cancelled') },
               ],
             },
             {
               key: 'type',
-              label: 'Type',
+              label: t('interco.txns.type'),
               value: typeFilter,
               onChange: setTypeFilter,
               options: TRANSACTION_TYPES,
@@ -291,7 +294,7 @@ export default function IntercoTransactionsPage() {
           data={items}
           rowKey="id"
           loading={loading}
-          emptyMessage="No transactions found. Create a new intercompany transaction to get started."
+          emptyMessage={t('interco.txns.noTransactionsFoundCreateANew')}
           onRowClick={(row) => {
             navigate(`/interco/transactions/${row.id}`)
           }}
@@ -304,7 +307,7 @@ export default function IntercoTransactionsPage() {
         onClose={() => {
           setShowCreate(false)
         }}
-        title="New Intercompany Transaction"
+        title={t('interco.txns.newIntercompanyTransaction')}
         size="md"
         footer={
           <>
@@ -316,17 +319,17 @@ export default function IntercoTransactionsPage() {
               }}
               disabled={creating}
             >
-              Cancel
+              {t('interco.txns.cancel')}
             </Button>
             <Button variant="primary" size="md" onClick={handleCreate} loading={creating}>
-              Create
+              {t('interco.txns.create')}
             </Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <Select
-            label="Transaction Type"
+            label={t('interco.txns.transactionType')}
             value={form.transactionType}
             onChange={(e) => {
               setForm((f) => ({ ...f, transactionType: e.target.value }))
@@ -341,7 +344,7 @@ export default function IntercoTransactionsPage() {
             }}
           >
             <Input
-              label="From Company ID"
+              label={t('interco.txns.fromCompanyId')}
               value={form.fromCompanyId}
               onChange={(e) => {
                 setForm((f) => ({ ...f, fromCompanyId: e.target.value }))
@@ -349,7 +352,7 @@ export default function IntercoTransactionsPage() {
               placeholder="e.g. 1"
             />
             <Input
-              label="To Company ID"
+              label={t('interco.txns.toCompanyId')}
               value={form.toCompanyId}
               onChange={(e) => {
                 setForm((f) => ({ ...f, toCompanyId: e.target.value }))
@@ -359,7 +362,7 @@ export default function IntercoTransactionsPage() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
             <Input
-              label="Amount"
+              label={t('interco.txns.amount')}
               type="number"
               value={form.amount}
               onChange={(e) => {
@@ -368,25 +371,25 @@ export default function IntercoTransactionsPage() {
               placeholder="0.00"
             />
             <Select
-              label="Currency"
+              label={t('interco.txns.currency')}
               value={form.currencyCode}
               onChange={(e) => {
                 setForm((f) => ({ ...f, currencyCode: e.target.value }))
               }}
               options={[
-                { value: 'USD', label: 'USD' },
-                { value: 'IQD', label: 'IQD' },
-                { value: 'EUR', label: 'EUR' },
+                { value: 'USD', label: t('interco.txns.usd') },
+                { value: 'IQD', label: t('interco.txns.iqd') },
+                { value: 'EUR', label: t('interco.txns.eur') },
               ]}
             />
           </div>
           <Input
-            label="Description"
+            label={t('interco.txns.description')}
             value={form.description}
             onChange={(e) => {
               setForm((f) => ({ ...f, description: e.target.value }))
             }}
-            placeholder="Transaction description…"
+            placeholder={t('interco.txns.transactionDescription')}
           />
           <div
             style={{
@@ -396,20 +399,20 @@ export default function IntercoTransactionsPage() {
             }}
           >
             <Input
-              label="From Account ID"
+              label={t('interco.txns.fromAccountId')}
               value={form.fromAccountId}
               onChange={(e) => {
                 setForm((f) => ({ ...f, fromAccountId: e.target.value }))
               }}
-              placeholder="Account ID"
+              placeholder={t('interco.txns.accountId')}
             />
             <Input
-              label="To Account ID"
+              label={t('interco.txns.toAccountId')}
               value={form.toAccountId}
               onChange={(e) => {
                 setForm((f) => ({ ...f, toAccountId: e.target.value }))
               }}
-              placeholder="Account ID"
+              placeholder={t('interco.txns.accountId')}
             />
           </div>
         </div>

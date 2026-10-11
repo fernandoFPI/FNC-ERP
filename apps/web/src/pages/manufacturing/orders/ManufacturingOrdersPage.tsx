@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { MANUFACTURING_ORDERS_QUERY } from '../../../graphql/manufacturing'
@@ -44,6 +46,7 @@ interface MO {
 }
 
 export default function ManufacturingOrdersPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
@@ -78,7 +81,7 @@ export default function ManufacturingOrdersPage() {
   const columns: Column<MO>[] = [
     {
       key: 'mo_number',
-      header: 'MO Number',
+      header: t('mfg.orders.moNumber'),
       render: (o) => (
         <button
           onClick={() => {
@@ -100,21 +103,21 @@ export default function ManufacturingOrdersPage() {
     },
     {
       key: 'product_name',
-      header: 'Product',
+      header: t('mfg.orders.product'),
       render: (o) => (
         <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{o.product_name ?? '—'}</span>
       ),
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('mfg.orders.status'),
       render: (o) => (
-        <Badge variant={STATUS_VARIANT[o.status] ?? 'neutral'}>{o.status.replace('_', ' ')}</Badge>
+        <Badge variant={STATUS_VARIANT[o.status] ?? 'neutral'}>{enumLabel(o.status).replace('_', ' ')}</Badge>
       ),
     },
     {
       key: 'qty_planned',
-      header: 'Qty Planned',
+      header: t('mfg.orders.qtyPlanned'),
       render: (o) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
           {parseFloat(o.qty_planned).toLocaleString()}
@@ -123,7 +126,7 @@ export default function ManufacturingOrdersPage() {
     },
     {
       key: 'qty_produced',
-      header: 'Produced',
+      header: t('mfg.orders.produced'),
       render: (o) => (
         <span style={{ fontFamily: 'monospace', color: theme.success }}>
           {parseFloat(o.qty_produced).toLocaleString()}
@@ -132,17 +135,17 @@ export default function ManufacturingOrdersPage() {
     },
     {
       key: 'planned_cost',
-      header: 'Planned Cost',
+      header: t('mfg.orders.plannedCost'),
       render: (o) => <AmountDisplay amount={parseFloat(o.planned_cost)} currency="IQD" />,
     },
     {
       key: 'actual_cost',
-      header: 'Actual Cost',
+      header: t('mfg.orders.actualCost'),
       render: (o) => <AmountDisplay amount={parseFloat(o.actual_cost)} currency="IQD" />,
     },
     {
       key: 'work_center_name',
-      header: 'Work Center',
+      header: t('mfg.orders.workCenter'),
       render: (o) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
           {o.work_center_name ?? '—'}
@@ -151,7 +154,7 @@ export default function ManufacturingOrdersPage() {
     },
     {
       key: 'scheduled_start',
-      header: 'Scheduled',
+      header: t('mfg.orders.scheduled'),
       render: (o) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
           {o.scheduled_start?.slice(0, 10) ?? '—'}
@@ -163,8 +166,8 @@ export default function ManufacturingOrdersPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1600px' }}>
       <PageHeader
-        title="Manufacturing Orders"
-        subtitle={`${filtered.length} orders`}
+        title={t('mfg.orders.manufacturingOrders')}
+        subtitle={t('mfg.orders.ordersCount', { count: filtered.length })}
         actions={
           <Button
             variant="primary"
@@ -173,7 +176,7 @@ export default function ManufacturingOrdersPage() {
               navigate('/manufacturing/orders/new')
             }}
           >
-            New MO
+            {t('mfg.orders.newMo')}
           </Button>
         }
       />
@@ -204,7 +207,7 @@ export default function ManufacturingOrdersPage() {
               fontWeight: s === statusFilter ? 600 : 400,
             }}
           >
-            {s.replace('_', ' ')} ({statusCounts[s] ?? 0})
+            {enumLabel(s).replace('_', ' ')} ({statusCounts[s] ?? 0})
           </button>
         ))}
       </div>

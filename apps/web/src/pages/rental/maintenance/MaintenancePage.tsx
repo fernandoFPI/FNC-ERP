@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel, tl } from '../../../i18n'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -27,7 +29,12 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { MaintenanceRecordDetail } from './MaintenanceRecordDetail'
 import type { EquipmentAssetsQuery, EquipmentAssetsQueryVariables, MaintenanceRecordsQuery, MaintenanceRecordsQueryVariables, MaintenanceSchedulesQuery, MaintenanceSchedulesQueryVariables, RecordMaintenanceMutation, RecordMaintenanceMutationVariables, ScheduleMaintenanceItemMutation, ScheduleMaintenanceItemMutationVariables } from '../../../graphql/generated'
 
-const TABS = ['Calendar', 'Scheduled', 'Records'].map((t) => ({ key: t, label: t }))
+const TABS = ['Calendar', 'Scheduled', 'Records'].map((k) => ({
+  key: k,
+  get label() {
+    return tl('rental.maintenance.tabOpts', k, k)
+  },
+}))
 const MAINTENANCE_TYPES = [
   'inspection',
   'oil_change',
@@ -63,6 +70,7 @@ interface Record {
 }
 
 export default function MaintenancePage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [searchParams] = useSearchParams()
@@ -126,7 +134,7 @@ export default function MaintenancePage() {
 
   const calendarEvents: MaintenanceEvent[] = schedules.map((s) => ({
     id: s.id,
-    title: `${s.asset_name ?? 'Asset'}: ${s.maintenance_type}`,
+    title: `${s.asset_name ?? t('rental.maintenance.asset')}: ${enumLabel(s.maintenance_type)}`,
     date: s.scheduled_date,
     type:
       s.status === 'completed'
@@ -146,7 +154,7 @@ export default function MaintenancePage() {
     }
     try {
       await scheduleMaintenance({ variables: { input } })
-      addToast({ type: 'success', message: 'Maintenance scheduled' })
+      addToast({ type: 'success', message: t('rental.maintenance.maintenanceScheduled') })
       setShowScheduleForm(false)
       void refetchSchedules()
     } catch (err) {
@@ -163,7 +171,7 @@ export default function MaintenancePage() {
     }
     try {
       await recordMaintenance({ variables: { input } })
-      addToast({ type: 'success', message: 'Maintenance recorded' })
+      addToast({ type: 'success', message: t('rental.maintenance.maintenanceRecorded') })
       setShowRecordForm(false)
       void refetchRecords()
     } catch (err) {
@@ -174,7 +182,7 @@ export default function MaintenancePage() {
   const scheduleColumns: Column<Schedule>[] = [
     {
       key: 'asset_name',
-      header: 'Asset',
+      header: t('rental.maintenance.asset'),
       render: (s) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500, fontSize: '13px' }}>
           {s.asset_name ?? '—'}
@@ -183,12 +191,12 @@ export default function MaintenancePage() {
     },
     {
       key: 'maintenance_type',
-      header: 'Type',
-      render: (s) => <Badge variant="neutral">{s.maintenance_type.replace('_', ' ')}</Badge>,
+      header: t('rental.maintenance.type'),
+      render: (s) => <Badge variant="neutral">{enumLabel(s.maintenance_type).replace('_', ' ')}</Badge>,
     },
     {
       key: 'scheduled_date',
-      header: 'Date',
+      header: t('rental.maintenance.date'),
       render: (s) => {
         const isOverdue =
           s.status === 'scheduled' && s.scheduled_date < new Date().toISOString().slice(0, 10)
@@ -207,20 +215,20 @@ export default function MaintenancePage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('rental.maintenance.status'),
       render: (s) => {
         const isOverdue =
           s.status === 'scheduled' && s.scheduled_date < new Date().toISOString().slice(0, 10)
         return (
           <Badge variant={s.status === 'completed' ? 'success' : isOverdue ? 'danger' : 'neutral'}>
-            {isOverdue ? 'OVERDUE' : s.status}
+            {isOverdue ? t('rental.maintenance.overdue') : s.status}
           </Badge>
         )
       },
     },
     {
       key: 'estimated_cost',
-      header: 'Est. Cost',
+      header: t('rental.maintenance.estCost'),
       render: (s) =>
         s.estimated_cost ? (
           <AmountDisplay amount={s.estimated_cost} currency="IQD" size="sm" />
@@ -230,7 +238,7 @@ export default function MaintenancePage() {
     },
     {
       key: 'assigned_to',
-      header: 'Assigned To',
+      header: t('rental.maintenance.assignedTo'),
       render: (s) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{s.assigned_to ?? '—'}</span>
       ),
@@ -240,7 +248,7 @@ export default function MaintenancePage() {
   const recordColumns: Column<Record>[] = [
     {
       key: 'asset_id',
-      header: 'Asset',
+      header: t('rental.maintenance.asset'),
       render: (r) => (
         <span style={{ color: theme.textMuted, fontFamily: 'monospace', fontSize: '12px' }}>
           {r.asset_id}
@@ -249,38 +257,38 @@ export default function MaintenancePage() {
     },
     {
       key: 'maintenance_type',
-      header: 'Type',
-      render: (r) => <Badge variant="neutral">{r.maintenance_type.replace('_', ' ')}</Badge>,
+      header: t('rental.maintenance.type'),
+      render: (r) => <Badge variant="neutral">{enumLabel(r.maintenance_type).replace('_', ' ')}</Badge>,
     },
     {
       key: 'performed_date',
-      header: 'Performed',
+      header: t('rental.maintenance.performed'),
       render: (r) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{r.performed_date}</span>
       ),
     },
     {
       key: 'description',
-      header: 'Description',
+      header: t('rental.maintenance.description'),
       render: (r) => (
         <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{r.description}</span>
       ),
     },
     {
       key: 'cost',
-      header: 'Cost',
+      header: t('rental.maintenance.cost'),
       render: (r) => <AmountDisplay amount={r.cost} currency="IQD" size="sm" />,
     },
     {
       key: 'performed_by',
-      header: 'Performed By',
+      header: t('rental.maintenance.performedBy'),
       render: (r) => (
         <span style={{ color: theme.textSecondary, fontSize: '12px' }}>{r.performed_by}</span>
       ),
     },
     {
       key: 'next_due_date',
-      header: 'Next Due',
+      header: t('rental.maintenance.nextDue'),
       render: (r) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{r.next_due_date ?? '—'}</span>
       ),
@@ -296,7 +304,7 @@ export default function MaintenancePage() {
             setDetailDrawer({ recordId: r.id, assetId: r.asset_id })
           }}
         >
-          View
+          {t('rental.maintenance.view')}
         </Button>
       ),
     },
@@ -305,8 +313,8 @@ export default function MaintenancePage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1500px' }}>
       <PageHeader
-        title="Maintenance"
-        subtitle="Equipment maintenance scheduling and records"
+        title={t('rental.maintenance.maintenance')}
+        subtitle={t('rental.maintenance.equipmentMaintenanceSchedulingAndRecords')}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button
@@ -316,7 +324,7 @@ export default function MaintenancePage() {
                 setShowRecordForm(true)
               }}
             >
-              Record Service
+              {t('rental.maintenance.recordService')}
             </Button>
             <Button
               variant="primary"
@@ -325,7 +333,7 @@ export default function MaintenancePage() {
                 setShowScheduleForm(true)
               }}
             >
-              Schedule Maintenance
+              {t('rental.maintenance.scheduleMaintenance')}
             </Button>
           </div>
         }
@@ -340,21 +348,21 @@ export default function MaintenancePage() {
         }}
       >
         <KPICard
-          title="Scheduled"
+          title={t('rental.maintenance.scheduled')}
           value={schedules.filter((s) => s.status === 'scheduled').length}
-          subtitle="upcoming"
+          subtitle={t('rental.maintenance.upcoming')}
           iconColor="info"
         />
         <KPICard
-          title="Due This Week"
+          title={t('rental.maintenance.dueThisWeek')}
           value={dueSoonCount}
-          subtitle="within 7 days"
+          subtitle={t('rental.maintenance.within7Days')}
           iconColor="warning"
         />
         <KPICard
-          title="Overdue"
+          title={t('rental.maintenance.overdue2')}
           value={overdueCount}
-          subtitle="past due date"
+          subtitle={t('rental.maintenance.pastDueDate')}
           iconColor={overdueCount > 0 ? 'danger' : 'success'}
         />
       </div>
@@ -394,7 +402,7 @@ export default function MaintenancePage() {
         onClose={() => {
           setShowScheduleForm(false)
         }}
-        title="Schedule Maintenance"
+        title={t('rental.maintenance.scheduleMaintenance')}
       >
         <form
           onSubmit={(...args: Parameters<typeof handleScheduleSubmit>) => void handleScheduleSubmit(...args)}
@@ -402,12 +410,12 @@ export default function MaintenancePage() {
         >
           <div>
             <SearchableSelect
-              label="Asset"
+              label={t('rental.maintenance.asset')}
               value={scheduleForm.asset_id}
               onChange={(v) => {
                 setScheduleForm((f) => ({ ...f, asset_id: v }))
               }}
-              placeholder="Select asset…"
+              placeholder={t('rental.maintenance.selectAsset')}
               options={assets.map((a: { id: string; asset_number: string; name: string }) => ({
                 value: a.id,
                 label: `${a.asset_number} — ${a.name}`,
@@ -416,16 +424,16 @@ export default function MaintenancePage() {
           </div>
           <div>
             <SearchableSelect
-              label="Maintenance Type"
+              label={t('rental.maintenance.maintenanceType')}
               value={scheduleForm.maintenance_type}
               onChange={(v) => {
                 setScheduleForm((f) => ({ ...f, maintenance_type: v }))
               }}
-              options={MAINTENANCE_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ') }))}
+              options={MAINTENANCE_TYPES.map((mt) => ({ value: mt, label: enumLabel(mt).replace(/_/g, ' ') }))}
             />
           </div>
           <Input
-            label="Scheduled Date"
+            label={t('rental.maintenance.scheduledDate')}
             type="date"
             value={scheduleForm.scheduled_date}
             onChange={(e) => {
@@ -434,7 +442,7 @@ export default function MaintenancePage() {
             required
           />
           <Input
-            label="Description"
+            label={t('rental.maintenance.description')}
             value={scheduleForm.description}
             onChange={(e) => {
               setScheduleForm((f) => ({ ...f, description: e.target.value }))
@@ -448,7 +456,7 @@ export default function MaintenancePage() {
             }}
           >
             <Input
-              label="Estimated Cost"
+              label={t('rental.maintenance.estimatedCost')}
               type="number"
               step="0.01"
               value={scheduleForm.estimated_cost}
@@ -457,7 +465,7 @@ export default function MaintenancePage() {
               }}
             />
             <Input
-              label="Assigned To"
+              label={t('rental.maintenance.assignedTo')}
               value={scheduleForm.assigned_to}
               onChange={(e) => {
                 setScheduleForm((f) => ({ ...f, assigned_to: e.target.value }))
@@ -472,10 +480,10 @@ export default function MaintenancePage() {
                 setShowScheduleForm(false)
               }}
             >
-              Cancel
+              {t('rental.maintenance.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={scheduling}>
-              Schedule
+              {t('rental.maintenance.schedule')}
             </Button>
           </div>
         </form>
@@ -487,7 +495,7 @@ export default function MaintenancePage() {
         onClose={() => {
           setShowRecordForm(false)
         }}
-        title="Record Maintenance Service"
+        title={t('rental.maintenance.recordMaintenanceService')}
       >
         <form
           onSubmit={(...args: Parameters<typeof handleRecordSubmit>) => void handleRecordSubmit(...args)}
@@ -495,12 +503,12 @@ export default function MaintenancePage() {
         >
           <div>
             <SearchableSelect
-              label="Asset"
+              label={t('rental.maintenance.asset')}
               value={recordForm.asset_id}
               onChange={(v) => {
                 setRecordForm((f) => ({ ...f, asset_id: v }))
               }}
-              placeholder="Select asset…"
+              placeholder={t('rental.maintenance.selectAsset')}
               options={assets.map((a: { id: string; asset_number: string; name: string }) => ({
                 value: a.id,
                 label: `${a.asset_number} — ${a.name}`,
@@ -509,16 +517,16 @@ export default function MaintenancePage() {
           </div>
           <div>
             <SearchableSelect
-              label="Maintenance Type"
+              label={t('rental.maintenance.maintenanceType')}
               value={recordForm.maintenance_type}
               onChange={(v) => {
                 setRecordForm((f) => ({ ...f, maintenance_type: v }))
               }}
-              options={MAINTENANCE_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ') }))}
+              options={MAINTENANCE_TYPES.map((mt) => ({ value: mt, label: enumLabel(mt).replace(/_/g, ' ') }))}
             />
           </div>
           <Input
-            label="Performed Date"
+            label={t('rental.maintenance.performedDate')}
             type="date"
             value={recordForm.performed_date}
             onChange={(e) => {
@@ -527,7 +535,7 @@ export default function MaintenancePage() {
             required
           />
           <Input
-            label="Description"
+            label={t('rental.maintenance.description')}
             value={recordForm.description}
             onChange={(e) => {
               setRecordForm((f) => ({ ...f, description: e.target.value }))
@@ -542,7 +550,7 @@ export default function MaintenancePage() {
             }}
           >
             <Input
-              label="Cost"
+              label={t('rental.maintenance.cost')}
               type="number"
               step="0.01"
               value={recordForm.cost}
@@ -552,7 +560,7 @@ export default function MaintenancePage() {
               required
             />
             <Input
-              label="Performed By"
+              label={t('rental.maintenance.performedBy')}
               value={recordForm.performed_by}
               onChange={(e) => {
                 setRecordForm((f) => ({ ...f, performed_by: e.target.value }))
@@ -561,7 +569,7 @@ export default function MaintenancePage() {
             />
           </div>
           <Input
-            label="Next Due Date (optional)"
+            label={t('rental.maintenance.nextDueDateOptional')}
             type="date"
             value={recordForm.next_due_date}
             onChange={(e) => {
@@ -576,10 +584,10 @@ export default function MaintenancePage() {
                 setShowRecordForm(false)
               }}
             >
-              Cancel
+              {t('rental.maintenance.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={recording}>
-              Save Record
+              {t('rental.maintenance.saveRecord')}
             </Button>
           </div>
         </form>

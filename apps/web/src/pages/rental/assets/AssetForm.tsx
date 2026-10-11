@@ -1,4 +1,6 @@
-﻿import { useState, useEffect } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -19,6 +21,7 @@ const STATUSES = ['available', 'rented', 'maintenance', 'reserved', 'retired']
 const CATEGORIES = ['vehicle', 'machinery', 'equipment', 'tool', 'other']
 
 export default function AssetForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams()
   const isEdit = !!id
@@ -75,7 +78,7 @@ export default function AssetForm() {
           variables: { id, input },
           refetchQueries: [{ query: EQUIPMENT_ASSET_QUERY, variables: { id } }],
         })
-        addToast({ type: 'success', message: 'Asset updated' })
+        addToast({ type: 'success', message: t('rental.assetForm.assetUpdated') })
         navigate(`/rental/assets/${id}`)
       } else {
         const res = await createAsset({
@@ -83,10 +86,10 @@ export default function AssetForm() {
           refetchQueries: [{ query: EQUIPMENT_ASSETS_QUERY }],
         })
         if (!res.data?.createEquipmentAsset) {
-          addToast({ type: 'error', message: 'Asset creation did not return a result' })
+          addToast({ type: 'error', message: t('rental.assetForm.assetCreationDidNotReturnA') })
           return
         }
-        addToast({ type: 'success', message: 'Asset created' })
+        addToast({ type: 'success', message: t('rental.assetForm.assetCreated') })
         navigate(`/rental/assets/${res.data.createEquipmentAsset.id}`)
       }
     } catch (err) {
@@ -97,8 +100,8 @@ export default function AssetForm() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1000px' }}>
       <PageHeader
-        title={isEdit ? 'Edit Asset' : 'New Equipment Asset'}
-        subtitle={isEdit ? 'Update asset details' : 'Add to fleet'}
+        title={isEdit ? t('rental.assetForm.editAsset') : t('rental.assetForm.newEquipmentAsset')}
+        subtitle={isEdit ? t('rental.assetForm.updateAssetDetails') : t('rental.assetForm.addToFleet')}
       />
       <Card style={{ marginTop: '20px' }}>
         <form
@@ -107,7 +110,7 @@ export default function AssetForm() {
         >
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
             <Input
-              label="Asset Name"
+              label={t('rental.assetForm.assetName')}
               value={form.name}
               onChange={(e) => {
                 setForm((f) => ({ ...f, name: e.target.value }))
@@ -116,17 +119,17 @@ export default function AssetForm() {
             />
             <div>
               <SearchableSelect
-                label="Category"
+                label={t('rental.assetForm.category')}
                 value={form.category}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, category: v }))
                 }}
-                options={CATEGORIES.map((c) => ({ value: c, label: c }))}
+                options={CATEGORIES.map((c) => ({ value: c, label: enumLabel(c) }))}
               />
             </div>
           </div>
           <Input
-            label="Description"
+            label={t('rental.assetForm.description')}
             value={form.description}
             onChange={(e) => {
               setForm((f) => ({ ...f, description: e.target.value }))
@@ -140,7 +143,7 @@ export default function AssetForm() {
             }}
           >
             <Input
-              label="Serial Number"
+              label={t('rental.assetForm.serialNumber')}
               value={form.serial_number}
               onChange={(e) => {
                 setForm((f) => ({ ...f, serial_number: e.target.value }))
@@ -148,12 +151,12 @@ export default function AssetForm() {
             />
             <div>
               <SearchableSelect
-                label="Status"
+                label={t('rental.assetForm.status')}
                 value={form.status}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, status: v }))
                 }}
-                options={STATUSES.map((s) => ({ value: s, label: s }))}
+                options={STATUSES.map((s) => ({ value: s, label: enumLabel(s) }))}
               />
             </div>
           </div>
@@ -165,7 +168,7 @@ export default function AssetForm() {
             }}
           >
             <Input
-              label="Purchase Date"
+              label={t('rental.assetForm.purchaseDate')}
               type="date"
               value={form.purchase_date}
               onChange={(e) => {
@@ -173,7 +176,7 @@ export default function AssetForm() {
               }}
             />
             <Input
-              label="Purchase Price"
+              label={t('rental.assetForm.purchasePrice')}
               type="number"
               step="0.01"
               value={form.purchase_price}
@@ -184,7 +187,7 @@ export default function AssetForm() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
             <Input
-              label="Daily Rate"
+              label={t('rental.assetForm.dailyRate')}
               type="number"
               step="0.01"
               value={form.daily_rate}
@@ -195,21 +198,21 @@ export default function AssetForm() {
             />
             <div>
               <SearchableSelect
-                label="Currency"
+                label={t('rental.assetForm.currency')}
                 value={form.currency_code}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, currency_code: v }))
                 }}
                 options={[
-                  { value: 'IQD', label: 'IQD' },
-                  { value: 'USD', label: 'USD' },
-                  { value: 'EUR', label: 'EUR' },
+                  { value: 'IQD', label: t('rental.assetForm.iqd') },
+                  { value: 'USD', label: t('rental.assetForm.usd') },
+                  { value: 'EUR', label: t('rental.assetForm.eur') },
                 ]}
               />
             </div>
           </div>
           <Input
-            label="Maintenance Due (hours)"
+            label={t('rental.assetForm.maintenanceDueHours')}
             type="number"
             step="1"
             value={form.maintenance_due_hours}
@@ -225,10 +228,10 @@ export default function AssetForm() {
                 navigate('/rental/assets')
               }}
             >
-              Cancel
+              {t('rental.assetForm.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={creating || updating}>
-              {isEdit ? 'Save' : 'Create Asset'}
+              {isEdit ? t('rental.assetForm.save') : t('rental.assetForm.createAsset')}
             </Button>
           </div>
         </form>

@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { EQUIPMENT_ASSETS_QUERY } from '../../../graphql/rental'
@@ -17,6 +19,7 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { EquipmentAssetsQuery, EquipmentAssetsQueryVariables } from '../../../graphql/generated'
 
 const ASSET_STATUSES = ['available', 'rented', 'maintenance', 'reserved', 'retired']
+const capitalize = (x: string) => x.charAt(0).toUpperCase() + x.slice(1)
 
 interface Asset {
   id: string
@@ -33,6 +36,7 @@ interface Asset {
 }
 
 export default function FleetOverviewPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
@@ -66,7 +70,7 @@ export default function FleetOverviewPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1500px' }}>
       <PageHeader
-        title="Fleet Overview"
+        title={t('rental.fleet.fleetOverview')}
         subtitle={`${assets.length} assets`}
         actions={
           <Button
@@ -76,7 +80,7 @@ export default function FleetOverviewPage() {
               navigate('/rental/assets/new')
             }}
           >
-            Add Asset
+            {t('rental.fleet.addAsset')}
           </Button>
         }
       />
@@ -93,9 +97,9 @@ export default function FleetOverviewPage() {
         {ASSET_STATUSES.map((s) => (
           <KPICard
             key={s}
-            title={s.charAt(0).toUpperCase() + s.slice(1)}
+            title={capitalize(enumLabel(s))}
             value={byStatus(s)}
-            subtitle="assets"
+            subtitle={t('rental.fleet.assets')}
             iconColor={
               s === 'available'
                 ? 'success'
@@ -120,15 +124,15 @@ export default function FleetOverviewPage() {
         }}
       >
         <KPICard
-          title="Fleet Utilization"
+          title={t('rental.fleet.fleetUtilization')}
           value={`${avgUtilization}%`}
-          subtitle="currently rented"
+          subtitle={t('rental.fleet.currentlyRented')}
           iconColor="info"
         />
         <KPICard
-          title="Overdue Maintenance"
+          title={t('rental.fleet.overdueMaintenance')}
           value={overdueMaintenance}
-          subtitle="assets needing service"
+          subtitle={t('rental.fleet.assetsNeedingService')}
           iconColor={overdueMaintenance > 0 ? 'danger' : 'success'}
         />
       </div>
@@ -149,7 +153,7 @@ export default function FleetOverviewPage() {
             fontSize: '12px',
           }}
         >
-          All
+          {t('rental.fleet.all')}
         </button>
         {ASSET_STATUSES.map((s) => (
           <button
@@ -167,7 +171,7 @@ export default function FleetOverviewPage() {
               fontSize: '12px',
             }}
           >
-            {s} ({byStatus(s)})
+            {enumLabel(s)} ({byStatus(s)})
           </button>
         ))}
       </div>
@@ -224,7 +228,7 @@ export default function FleetOverviewPage() {
                         textTransform: 'capitalize',
                       }}
                     >
-                      {a.category}
+                      {enumLabel(a.category)}
                     </span>
                   )}
                 </div>
@@ -260,7 +264,7 @@ export default function FleetOverviewPage() {
                   }}
                 >
                   <span style={{ color: theme.textMuted }}>
-                    Rate:{' '}
+                    {t('rental.fleet.rate')}{' '}
                     <AmountDisplay
                       amount={parseFloat(a.daily_rate)}
                       currency={a.currency_code}
@@ -268,9 +272,7 @@ export default function FleetOverviewPage() {
                     />
                   </span>
                   {a.total_hours != null && (
-                    <span style={{ color: theme.textMuted }}>
-                      {a.total_hours.toLocaleString()}h total
-                    </span>
+                    <span style={{ color: theme.textMuted }}>{t('rental.fleet.hTotal', { total_hours: a.total_hours.toLocaleString() })}</span>
                   )}
                 </div>
                 {a.condition_rating != null && (
@@ -287,8 +289,8 @@ export default function FleetOverviewPage() {
                         }}
                       />
                     ))}
-                    <span style={{ fontSize: '10px', color: theme.textMuted, marginLeft: '4px' }}>
-                      Condition
+                    <span style={{ fontSize: '10px', color: theme.textMuted, marginInlineStart: '4px' }}>
+                      {t('rental.fleet.condition')}
                     </span>
                   </div>
                 )}

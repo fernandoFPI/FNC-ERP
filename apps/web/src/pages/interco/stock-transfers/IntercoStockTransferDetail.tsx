@@ -1,4 +1,6 @@
-﻿import { useParams, Link } from 'react-router-dom'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel, useIsRtl } from '../../../i18n'
+import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -70,6 +72,8 @@ function billingStatusVariant(
 }
 
 export default function IntercoStockTransferDetail() {
+  const { t } = useTranslation()
+  const rtl = useIsRtl()
   const { theme } = useTheme()
   const { id } = useParams<{ id: string }>()
 
@@ -95,7 +99,7 @@ export default function IntercoStockTransferDetail() {
   if (!tx) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: theme.textMuted }}>Transfer not found.</p>
+        <p style={{ color: theme.textMuted }}>{t('interco.transferDetail.transferNotFound')}</p>
       </div>
     )
   }
@@ -105,7 +109,7 @@ export default function IntercoStockTransferDetail() {
   const columns: Column<TransferLine>[] = [
     {
       key: 'sku',
-      header: 'SKU',
+      header: t('interco.transferDetail.sku'),
       mobileSecondary: true,
       render: (line) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{line.sku}</span>
@@ -113,7 +117,7 @@ export default function IntercoStockTransferDetail() {
     },
     {
       key: 'productName',
-      header: 'Product',
+      header: t('interco.transferDetail.product'),
       mobilePrimary: true,
       render: (line) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{line.productName}</span>
@@ -121,7 +125,7 @@ export default function IntercoStockTransferDetail() {
     },
     {
       key: 'qty',
-      header: 'Qty',
+      header: t('interco.transferDetail.qty'),
       mobilePriority: 1,
       render: (line) => (
         <span style={{ color: theme.textSecondary }}>{line.qty.toLocaleString()}</span>
@@ -129,19 +133,19 @@ export default function IntercoStockTransferDetail() {
     },
     {
       key: 'avcoAtTransfer',
-      header: 'AVCO at Transfer',
+      header: t('interco.transferDetail.avcoAtTransfer'),
       mobilePriority: 2,
       render: (line) => <AmountDisplay amount={line.avcoAtTransfer} currency={line.currencyCode} size="sm" />,
     },
     {
       key: 'transferPrice',
-      header: 'Transfer Price',
+      header: t('interco.transferDetail.transferPrice'),
       mobilePriority: 3,
       render: (line) => <AmountDisplay amount={line.transferPrice} currency={line.currencyCode} size="sm" />,
     },
     {
       key: 'markupPct',
-      header: 'Markup %',
+      header: t('interco.transferDetail.markup'),
       mobilePriority: 4,
       render: (line) => (
         <span style={{ color: theme.textSecondary }}>{line.markupPct.toFixed(1)}%</span>
@@ -149,7 +153,7 @@ export default function IntercoStockTransferDetail() {
     },
     {
       key: 'totalValue',
-      header: 'Total Value',
+      header: t('interco.transferDetail.totalValue'),
       mobilePriority: 5,
       render: (line) => (
         <span style={{ fontWeight: 500 }}>
@@ -163,10 +167,10 @@ export default function IntercoStockTransferDetail() {
     <div style={{ padding: '24px' }}>
       <PageHeader
         title={tx.transferNumber}
-        subtitle={`${tx.fromCompanyName} → ${tx.toCompanyName} · ${new Date(tx.transferDate).toLocaleDateString()}`}
+        subtitle={`${tx.fromCompanyName} ${rtl ? '←' : '→'} ${tx.toCompanyName} · ${new Date(tx.transferDate).toLocaleDateString()}`}
         backPath="/interco/stock-transfers"
-        backLabel="Stock Transfers"
-        status={<Badge variant={statusVariant(tx.status)}>{tx.status}</Badge>}
+        backLabel={t('interco.transferDetail.stockTransfers')}
+        status={<Badge variant={statusVariant(tx.status)}>{enumLabel(tx.status)}</Badge>}
       />
 
       <div
@@ -188,7 +192,7 @@ export default function IntercoStockTransferDetail() {
               marginBottom: '12px',
             }}
           >
-            Transfer Info
+            {t('interco.transferDetail.transferInfo')}
           </p>
           <dl
             style={{
@@ -198,25 +202,25 @@ export default function IntercoStockTransferDetail() {
               fontSize: '13px',
             }}
           >
-            <dt style={{ color: theme.textMuted }}>From</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.from')}</dt>
             <dd style={{ color: theme.textPrimary, fontWeight: 500, margin: 0 }}>
               {tx.fromCompanyName}
             </dd>
-            <dt style={{ color: theme.textMuted }}>To</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.to')}</dt>
             <dd style={{ color: theme.textPrimary, fontWeight: 500, margin: 0 }}>
               {tx.toCompanyName}
             </dd>
-            <dt style={{ color: theme.textMuted }}>Pricing Method</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.pricingMethod')}</dt>
             <dd style={{ margin: 0 }}>
               <Badge variant="neutral" size="sm">
-                {tx.pricingMethod}
+                {enumLabel(tx.pricingMethod)}
               </Badge>
             </dd>
-            <dt style={{ color: theme.textMuted }}>Transfer Date</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.transferDate')}</dt>
             <dd style={{ color: theme.textSecondary, margin: 0 }}>
               {new Date(tx.transferDate).toLocaleDateString()}
             </dd>
-            <dt style={{ color: theme.textMuted }}>Total Value</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.totalValue')}</dt>
             <dd style={{ margin: 0 }}>
               <AmountDisplay amount={totalValue} currency={tx.currencyCode} size="md" />
             </dd>
@@ -234,7 +238,7 @@ export default function IntercoStockTransferDetail() {
               marginBottom: '12px',
             }}
           >
-            Billing
+            {t('interco.transferDetail.billing')}
           </p>
           {tx.intercoTransactionId ? (
             <dl
@@ -245,7 +249,7 @@ export default function IntercoStockTransferDetail() {
                 fontSize: '13px',
               }}
             >
-              <dt style={{ color: theme.textMuted }}>Transaction</dt>
+              <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.transaction')}</dt>
               <dd style={{ margin: 0 }}>
                 <Link
                   to={`/interco/transactions/${tx.intercoTransactionId}`}
@@ -254,16 +258,16 @@ export default function IntercoStockTransferDetail() {
                   {tx.intercoTransactionReference}
                 </Link>
               </dd>
-              <dt style={{ color: theme.textMuted }}>Status</dt>
+              <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.status')}</dt>
               <dd style={{ margin: 0 }}>
                 <Badge variant={billingStatusVariant(tx.intercoTransactionStatus ?? '')} size="sm">
-                  {tx.intercoTransactionStatus}
+                  {enumLabel(tx.intercoTransactionStatus)}
                 </Badge>
               </dd>
             </dl>
           ) : (
             <p style={{ color: theme.textMuted, fontSize: '13px', margin: 0 }}>
-              No linked interco transaction — this transfer was not auto-billed.
+              {t('interco.transferDetail.noLinkedIntercoTransactionThisTransfer')}
             </p>
           )}
         </Card>
@@ -279,7 +283,7 @@ export default function IntercoStockTransferDetail() {
               marginBottom: '12px',
             }}
           >
-            Journal References
+            {t('interco.transferDetail.journalReferences')}
           </p>
           <dl
             style={{
@@ -289,19 +293,19 @@ export default function IntercoStockTransferDetail() {
               fontSize: '13px',
             }}
           >
-            <dt style={{ color: theme.textMuted }}>From Stock Move</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.fromStockMove')}</dt>
             <dd style={{ color: tx.fromStockMoveId ? theme.accent : theme.textMuted, margin: 0 }}>
               {tx.fromStockMoveId ?? '—'}
             </dd>
-            <dt style={{ color: theme.textMuted }}>To Stock Move</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.toStockMove')}</dt>
             <dd style={{ color: tx.toStockMoveId ? theme.accent : theme.textMuted, margin: 0 }}>
               {tx.toStockMoveId ?? '—'}
             </dd>
-            <dt style={{ color: theme.textMuted }}>From Journal</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.fromJournal')}</dt>
             <dd style={{ color: tx.fromJournalId ? theme.accent : theme.textMuted, margin: 0 }}>
               {tx.fromJournalId ?? '—'}
             </dd>
-            <dt style={{ color: theme.textMuted }}>To Journal</dt>
+            <dt style={{ color: theme.textMuted }}>{t('interco.transferDetail.toJournal')}</dt>
             <dd style={{ color: tx.toJournalId ? theme.accent : theme.textMuted, margin: 0 }}>
               {tx.toJournalId ?? '—'}
             </dd>
@@ -312,16 +316,14 @@ export default function IntercoStockTransferDetail() {
       {/* Transfer Lines */}
       <Card padding="none">
         <div style={{ padding: '16px 20px 12px', borderBottom: `1px solid ${theme.border}` }}>
-          <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-            Transfer Lines ({tx.lines.length})
-          </h3>
+          <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>{t('interco.transferDetail.transferLines', { length: tx.lines.length })}</h3>
         </div>
         <Table
           columns={columns}
           data={tx.lines}
           rowKey="id"
           footerRow={{
-            markupPct: <span style={{ color: theme.textPrimary, fontWeight: 600 }}>Total</span>,
+            markupPct: <span style={{ color: theme.textPrimary, fontWeight: 600 }}>{t('interco.transferDetail.total')}</span>,
             totalValue: (
               <span style={{ fontWeight: 600 }}>
                 <AmountDisplay amount={totalValue} currency={tx.currencyCode} size="sm" />

@@ -1,4 +1,5 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Button'
@@ -39,6 +40,7 @@ interface Props {
 }
 
 export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
 
   const [qtyProduced, setQtyProduced] = useState(String(mo.qty_planned))
@@ -68,21 +70,21 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
   const materialFields: LineItemField<MOLine>[] = [
     {
       key: 'component_name',
-      label: 'Component',
+      label: t('mfg.moComplete.component'),
       render: (l) => (
         <span style={{ fontWeight: 500, color: theme.textPrimary }}>{l.component_name}</span>
       ),
     },
     {
       key: 'qty_planned',
-      label: 'Planned',
+      label: t('mfg.moComplete.planned'),
       render: (l) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>{l.qty_planned}</span>
       ),
     },
     {
       key: 'actual',
-      label: 'Actual',
+      label: t('mfg.moComplete.actual'),
       width: '90px',
       render: (l) => {
         const actualQty = parseFloat(componentActuals[l.id] ?? String(l.qty_planned)) || 0
@@ -111,12 +113,12 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
     },
     {
       key: 'unit_cost',
-      label: 'Unit Cost',
+      label: t('mfg.moComplete.unitCost'),
       render: (l) => <AmountDisplay amount={l.unit_cost} currency="IQD" size="sm" />,
     },
     {
       key: 'total',
-      label: 'Total',
+      label: t('mfg.moComplete.total'),
       render: (l) => {
         const actualQty = parseFloat(componentActuals[l.id] ?? String(l.qty_planned)) || 0
         return <AmountDisplay amount={actualQty * l.unit_cost} currency="IQD" size="sm" />
@@ -124,7 +126,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
     },
     {
       key: 'variance',
-      label: 'Variance',
+      label: t('mfg.moComplete.variance'),
       render: (l) => {
         const actualQty = parseFloat(componentActuals[l.id] ?? String(l.qty_planned)) || 0
         const lineVar = actualQty - l.qty_planned
@@ -160,7 +162,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Complete Manufacturing Order" size="lg">
+    <Modal open={open} onClose={onClose} title={t('mfg.moComplete.completeManufacturingOrder')} size="lg">
       <form
         onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
         style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}
@@ -177,7 +179,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
               marginBottom: '10px',
             }}
           >
-            Quantity Produced
+            {t('mfg.moComplete.quantityProduced')}
           </div>
           <div
             style={{
@@ -187,7 +189,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
             }}
           >
             <Input
-              label={`Qty Produced (planned: ${mo.qty_planned})`}
+              label={t('mfg.moComplete.qtyProducedPlanned', { qty_planned: mo.qty_planned })}
               type="number"
               step="0.001"
               value={qtyProduced}
@@ -197,14 +199,14 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
               required
             />
             <Input
-              label="Work Center Hours (actual)"
+              label={t('mfg.moComplete.workCenterHoursActual')}
               type="number"
               step="0.1"
               value={wcHours}
               onChange={(e) => {
                 setWcHours(e.target.value)
               }}
-              placeholder={mo.work_center_name ? mo.work_center_name : 'Optional'}
+              placeholder={mo.work_center_name ? mo.work_center_name : t('mfg.moComplete.optional')}
             />
           </div>
         </div>
@@ -222,7 +224,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
                 marginBottom: '10px',
               }}
             >
-              Materials Consumed
+              {t('mfg.moComplete.materialsConsumed')}
             </div>
             <LineItemEditor fields={materialFields} rows={mo.lines} rowKey={(l) => l.id} />
           </div>
@@ -240,7 +242,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
               marginBottom: '10px',
             }}
           >
-            Cost Summary
+            {t('mfg.moComplete.costSummary')}
           </div>
           <div
             style={{
@@ -250,14 +252,14 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
             }}
           >
             {[
-              { label: 'Planned Cost', value: planned, color: theme.textPrimary },
+              { label: t('mfg.moComplete.plannedCost'), value: planned, color: theme.textPrimary },
               {
-                label: 'Actual Cost',
+                label: t('mfg.moComplete.actualCost'),
                 value: computedMaterialCost,
                 color: overBudget ? theme.danger : theme.success,
               },
               {
-                label: 'Variance',
+                label: t('mfg.moComplete.variance'),
                 value: Math.abs(variance),
                 color: overBudget ? theme.danger : theme.success,
                 prefix: overBudget ? '+' : '-',
@@ -283,10 +285,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
                 >
                   {label}
                 </div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '14px', color }}>
-                  {prefix}
-                  {value.toLocaleString()} IQD
-                </div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '14px', color }}>{t('mfg.moComplete.iqd', { prefix, value: value.toLocaleString() })}</div>
               </div>
             ))}
           </div>
@@ -298,29 +297,26 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
                 fontWeight: 500,
                 color: overBudget ? theme.danger : theme.success,
               }}
-            >
-              {overBudget ? '▲' : '▼'} {Math.abs(varPct).toFixed(1)}%{' '}
-              {overBudget ? 'over' : 'under'} budget
-            </div>
+            >{t(overBudget ? 'mfg.moComplete.overBudget' : 'mfg.moComplete.underBudget', { arrow: overBudget ? '▲' : '▼', pct: Math.abs(varPct).toFixed(1) })}</div>
           )}
         </div>
 
         {/* Notes */}
         <Input
-          label="Notes (optional)"
+          label={t('mfg.moComplete.notesOptional')}
           value={notes}
           onChange={(e) => {
             setNotes(e.target.value)
           }}
-          placeholder="Completion notes…"
+          placeholder={t('mfg.moComplete.completionNotes')}
         />
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <Button variant="ghost" type="button" onClick={onClose}>
-            Cancel
+            {t('mfg.moComplete.cancel')}
           </Button>
           <Button variant="primary" type="submit" loading={loading}>
-            Complete MO
+            {t('mfg.moComplete.completeMo')}
           </Button>
         </div>
       </form>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -35,6 +36,7 @@ interface TransferLine {
 }
 
 export default function IntercoStockTransferForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { theme } = useTheme()
   const user = useAuthStore((s) => s.user)
@@ -109,7 +111,7 @@ export default function IntercoStockTransferForm() {
   const transferLineFields: LineItemField<TransferLine>[] = [
     {
       key: 'product_id',
-      label: 'Product',
+      label: t('interco.transferForm.product'),
       width: '30%',
       render: (line) => (
         <SearchableSelect
@@ -117,7 +119,7 @@ export default function IntercoStockTransferForm() {
           onChange={(v) => {
             updateLine(line.id, 'product_id', v)
           }}
-          placeholder="Select product…"
+          placeholder={t('interco.transferForm.selectProduct')}
           options={products.map(
             (p) => ({
               value: p.id,
@@ -131,7 +133,7 @@ export default function IntercoStockTransferForm() {
     },
     {
       key: 'from_location_id',
-      label: 'From Location (source)',
+      label: t('interco.transferForm.fromLocationSource'),
       width: '25%',
       render: (line) => (
         <SearchableSelect
@@ -139,7 +141,7 @@ export default function IntercoStockTransferForm() {
           onChange={(v) => {
             updateLine(line.id, 'from_location_id', v)
           }}
-          placeholder={fromCompanyId ? 'Select location…' : 'Pick source company first'}
+          placeholder={fromCompanyId ? t('interco.transferForm.selectLocation') : t('interco.transferForm.pickSourceCompanyFirst')}
           options={fromLocs.map((l: { id: string; name: string }) => ({
             value: l.id,
             label: l.name,
@@ -150,7 +152,7 @@ export default function IntercoStockTransferForm() {
     },
     {
       key: 'to_location_id',
-      label: 'To Location (destination)',
+      label: t('interco.transferForm.toLocationDestination'),
       width: '25%',
       render: (line) => (
         <SearchableSelect
@@ -158,7 +160,7 @@ export default function IntercoStockTransferForm() {
           onChange={(v) => {
             updateLine(line.id, 'to_location_id', v)
           }}
-          placeholder={toCompanyId ? 'Select location…' : 'Pick company first'}
+          placeholder={toCompanyId ? t('interco.transferForm.selectLocation') : t('interco.transferForm.pickCompanyFirst')}
           options={toLocs.map((l: { id: string; name: string }) => ({
             value: l.id,
             label: l.name,
@@ -169,7 +171,7 @@ export default function IntercoStockTransferForm() {
     },
     {
       key: 'qty',
-      label: 'Qty',
+      label: t('interco.transferForm.qty'),
       width: '100px',
       render: (line) => (
         <input
@@ -190,18 +192,18 @@ export default function IntercoStockTransferForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!fromCompanyId) {
-      addToast({ type: 'error', message: 'Select a source company' })
+      addToast({ type: 'error', message: t('interco.transferForm.selectASourceCompany') })
       return
     }
     if (!toCompanyId) {
-      addToast({ type: 'error', message: 'Select a destination company' })
+      addToast({ type: 'error', message: t('interco.transferForm.selectADestinationCompany') })
       return
     }
     const invalid = lines.find(
       (l) => !l.product_id || !l.from_location_id || !l.to_location_id || !l.qty,
     )
     if (invalid) {
-      addToast({ type: 'error', message: 'Fill in all line fields' })
+      addToast({ type: 'error', message: t('interco.transferForm.fillInAllLineFields') })
       return
     }
 
@@ -226,12 +228,12 @@ export default function IntercoStockTransferForm() {
         ],
       })
       if (!res.data?.createIntercoStockTransfer) {
-        addToast({ type: 'error', message: 'Transfer creation did not return a result' })
+        addToast({ type: 'error', message: t('interco.transferForm.transferCreationDidNotReturnA') })
         return
       }
       addToast({
         type: 'success',
-        message: `Transfer ${res.data.createIntercoStockTransfer.transferNumber} created`,
+        message: t('interco.transferForm.transferCreated', { transferNumber: res.data.createIntercoStockTransfer.transferNumber }),
       })
       navigate(`/interco/stock-transfers/${res.data.createIntercoStockTransfer.id}`)
     } catch (err) {
@@ -242,8 +244,8 @@ export default function IntercoStockTransferForm() {
   return (
     <div style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto' }}>
       <PageHeader
-        title="New Interco Stock Transfer"
-        subtitle="Move inventory between group companies"
+        title={t('interco.transferForm.newIntercoStockTransfer')}
+        subtitle={t('interco.transferForm.moveInventoryBetweenGroupCompanies')}
       />
 
       <form
@@ -254,13 +256,13 @@ export default function IntercoStockTransferForm() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
             <div>
               <SearchableSelect
-                label="Source Company *"
+                label={t('interco.transferForm.sourceCompany')}
                 value={fromCompanyId}
                 onChange={(v) => {
                   setFromCompanyId(v)
                   setLines((ls) => ls.map((l) => ({ ...l, product_id: '', from_location_id: '' })))
                 }}
-                placeholder="Select company…"
+                placeholder={t('interco.transferForm.selectCompany')}
                 options={fromCompanyOptions.map((c: { id: string; name: string }) => ({
                   value: c.id,
                   label: c.name,
@@ -269,13 +271,13 @@ export default function IntercoStockTransferForm() {
             </div>
             <div>
               <SearchableSelect
-                label="Destination Company *"
+                label={t('interco.transferForm.destinationCompany')}
                 value={toCompanyId}
                 onChange={(v) => {
                   setToCompanyId(v)
                   setLines((ls) => ls.map((l) => ({ ...l, to_location_id: '' })))
                 }}
-                placeholder="Select company…"
+                placeholder={t('interco.transferForm.selectCompany')}
                 options={toCompanyOptions.map((c: { id: string; name: string }) => ({
                   value: c.id,
                   label: c.name,
@@ -283,7 +285,7 @@ export default function IntercoStockTransferForm() {
               />
             </div>
             <Input
-              label="Transfer Date *"
+              label={t('interco.transferForm.transferDate')}
               type="date"
               value={transferDate}
               onChange={(e) => {
@@ -292,12 +294,12 @@ export default function IntercoStockTransferForm() {
               required
             />
             <Input
-              label="Notes"
+              label={t('interco.transferForm.notes')}
               value={notes}
               onChange={(e) => {
                 setNotes(e.target.value)
               }}
-              placeholder="Optional notes…"
+              placeholder={t('interco.transferForm.optionalNotes')}
             />
           </div>
         </Card>
@@ -311,9 +313,9 @@ export default function IntercoStockTransferForm() {
               marginBottom: '12px',
             }}
           >
-            <div style={{ fontWeight: 600, color: theme.textPrimary }}>Items to Transfer</div>
+            <div style={{ fontWeight: 600, color: theme.textPrimary }}>{t('interco.transferForm.itemsToTransfer')}</div>
             <Button type="button" variant="ghost" size="sm" onClick={addLine}>
-              + Add Item
+              {t('interco.transferForm.addItem')}
             </Button>
           </div>
 
@@ -340,8 +342,8 @@ export default function IntercoStockTransferForm() {
               }}
             >
               {!fromCompanyId
-                ? 'Select a source company above to choose which items/locations to transfer from.'
-                : 'Select a destination company above to choose where stock will be received.'}
+                ? t('interco.transferForm.selectASourceCompanyAboveTo')
+                : t('interco.transferForm.selectADestinationCompanyAboveTo')}
             </div>
           )}
         </Card>
@@ -354,10 +356,10 @@ export default function IntercoStockTransferForm() {
               navigate('/interco/stock-transfers')
             }}
           >
-            Cancel
+            {t('interco.transferForm.cancel')}
           </Button>
           <Button type="submit" variant="primary" loading={loading}>
-            Create Transfer
+            {t('interco.transferForm.createTransfer')}
           </Button>
         </div>
       </form>

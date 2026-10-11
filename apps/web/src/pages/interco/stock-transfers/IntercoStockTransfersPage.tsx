@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
@@ -61,6 +63,7 @@ function billingStatusVariant(
 }
 
 export default function IntercoStockTransfersPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
 
@@ -90,7 +93,7 @@ export default function IntercoStockTransfersPage() {
   const columns: Column<StockTransferItem>[] = [
     {
       key: 'transferNumber',
-      header: 'Transfer #',
+      header: t('interco.transfers.transfer'),
       mobilePrimary: true,
       render: (row) => (
         <span style={{ color: theme.accent, fontWeight: 500 }}>{row.transferNumber}</span>
@@ -98,7 +101,7 @@ export default function IntercoStockTransfersPage() {
     },
     {
       key: 'fromCompanyName',
-      header: 'From',
+      header: t('interco.transfers.from'),
       mobileSecondary: true,
       render: (row) => <span style={{ color: theme.textSecondary }}>{row.fromCompanyName}</span>,
     },
@@ -110,38 +113,38 @@ export default function IntercoStockTransfersPage() {
     },
     {
       key: 'pricingMethod',
-      header: 'Pricing Method',
+      header: t('interco.transfers.pricingMethod'),
       mobilePriority: 3,
       render: (row) => (
         <Badge variant="neutral" size="sm">
-          {row.pricingMethod}
+          {enumLabel(row.pricingMethod)}
         </Badge>
       ),
     },
     {
       key: 'totalValue',
-      header: 'Total Value',
+      header: t('interco.transfers.totalValue'),
       mobilePriority: 2,
       render: (row) => <AmountDisplay amount={row.totalValue} currency={row.currencyCode} size="sm" />,
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('interco.transfers.status'),
       mobilePriority: 1,
       render: (row) => (
         <Badge variant={statusVariant(row.status)} size="sm">
-          {row.status}
+          {enumLabel(row.status)}
         </Badge>
       ),
     },
     {
       key: 'billing',
-      header: 'Billing',
+      header: t('interco.transfers.billing'),
       mobilePriority: 6,
       render: (row) =>
         row.intercoTransactionId ? (
           <Badge variant={billingStatusVariant(row.intercoTransactionStatus ?? '')} size="sm">
-            {row.intercoTransactionReference ?? row.intercoTransactionStatus}
+            {row.intercoTransactionReference ?? enumLabel(row.intercoTransactionStatus)}
           </Badge>
         ) : (
           <span style={{ color: theme.textMuted, fontSize: '12px' }}>—</span>
@@ -149,7 +152,7 @@ export default function IntercoStockTransfersPage() {
     },
     {
       key: 'transferDate',
-      header: 'Date',
+      header: t('interco.transfers.date'),
       mobilePriority: 5,
       render: (row) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -162,8 +165,8 @@ export default function IntercoStockTransfersPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Interco Stock Transfers"
-        subtitle="Inventory movements between group entities"
+        title={t('interco.transfers.intercoStockTransfers')}
+        subtitle={t('interco.transfers.inventoryMovementsBetweenGroupEntities')}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button
@@ -173,7 +176,7 @@ export default function IntercoStockTransfersPage() {
                 void refetch()
               }}
             >
-              Refresh
+              {t('interco.transfers.refresh')}
             </Button>
             <Button
               variant="primary"
@@ -182,7 +185,7 @@ export default function IntercoStockTransfersPage() {
                 navigate('/interco/stock-transfers/new')
               }}
             >
-              New Transfer
+              {t('interco.transfers.newTransfer')}
             </Button>
           </div>
         }
@@ -193,19 +196,19 @@ export default function IntercoStockTransfersPage() {
           search={{
             value: search,
             onChange: setSearch,
-            placeholder: 'Search transfer number or company…',
+            placeholder: t('interco.transfers.searchTransferNumberOrCompany'),
           }}
           filters={[
             {
               key: 'status',
-              label: 'Status',
+              label: t('interco.transfers.status'),
               value: statusFilter,
               onChange: setStatusFilter,
               options: [
-                { value: 'draft', label: 'Draft' },
-                { value: 'in_transit', label: 'In Transit' },
-                { value: 'completed', label: 'Completed' },
-                { value: 'cancelled', label: 'Cancelled' },
+                { value: 'draft', label: t('interco.transfers.draft') },
+                { value: 'in_transit', label: t('interco.transfers.inTransit') },
+                { value: 'completed', label: t('interco.transfers.completed') },
+                { value: 'cancelled', label: t('interco.transfers.cancelled') },
               ],
             },
           ]}
@@ -226,7 +229,7 @@ export default function IntercoStockTransfersPage() {
           data={items}
           rowKey="id"
           loading={loading}
-          emptyMessage="No intercompany stock transfers found."
+          emptyMessage={t('interco.transfers.noIntercompanyStockTransfersFound')}
           onRowClick={(row) => {
             navigate(`/interco/stock-transfers/${row.id}`)
           }}

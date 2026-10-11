@@ -1,4 +1,5 @@
-﻿import { useState, useEffect } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import { BOM_QUERY, CREATE_BOM, UPDATE_BOM, BOMS_QUERY } from '../../../graphql/manufacturing'
@@ -15,6 +16,7 @@ import { useToastStore } from '../../../store/toastStore'
 import type { BomQuery, BomQueryVariables, CreateBomMutation, CreateBomMutationVariables, ProductsQuery, ProductsQueryVariables, UpdateBomMutation, UpdateBomMutationVariables } from '../../../graphql/generated'
 
 export default function BOMForm() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams()
   const isEdit = !!id
@@ -88,7 +90,7 @@ export default function BOMForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (lines.length === 0) {
-      addToast({ type: 'error', message: 'Add at least one component' })
+      addToast({ type: 'error', message: t('mfg.bomForm.addAtLeastOneComponent') })
       return
     }
     const input = {
@@ -108,7 +110,7 @@ export default function BOMForm() {
           variables: { id, input },
           refetchQueries: [{ query: BOM_QUERY, variables: { id } }],
         })
-        addToast({ type: 'success', message: 'BOM updated' })
+        addToast({ type: 'success', message: t('mfg.bomForm.bomUpdated') })
         navigate(`/manufacturing/boms/${id}`)
       } else {
         const res = await createBOM({
@@ -116,10 +118,10 @@ export default function BOMForm() {
           refetchQueries: [{ query: BOMS_QUERY }],
         })
         if (!res.data?.createBOM) {
-          addToast({ type: 'error', message: 'BOM creation did not return a result' })
+          addToast({ type: 'error', message: t('mfg.bomForm.bomCreationDidNotReturnA') })
           return
         }
-        addToast({ type: 'success', message: 'BOM created' })
+        addToast({ type: 'success', message: t('mfg.bomForm.bomCreated') })
         navigate(`/manufacturing/boms/${res.data.createBOM.id}`)
       }
     } catch (err) {
@@ -130,8 +132,8 @@ export default function BOMForm() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
-        title={isEdit ? 'Edit BOM' : 'New Bill of Materials'}
-        subtitle="Define components and quantities"
+        title={isEdit ? t('mfg.bomForm.editBom') : t('mfg.bomForm.newBillOfMaterials')}
+        subtitle={t('mfg.bomForm.defineComponentsAndQuantities')}
       />
 
       <form
@@ -148,17 +150,17 @@ export default function BOMForm() {
             }}
           >
             <SearchableSelect
-              label="Finished Product"
+              label={t('mfg.bomForm.finishedProduct')}
               value={form.finished_product_id}
               onChange={(v) => {
                 setForm((f) => ({ ...f, finished_product_id: v }))
               }}
               options={productOptions}
-              placeholder="Select product…"
+              placeholder={t('mfg.bomForm.selectProduct')}
               required
             />
             <Input
-              label="Version"
+              label={t('mfg.bomForm.version')}
               value={form.version}
               onChange={(e) => {
                 setForm((f) => ({ ...f, version: e.target.value }))
@@ -166,7 +168,7 @@ export default function BOMForm() {
               required
             />
             <Input
-              label="Qty Produced"
+              label={t('mfg.bomForm.qtyProduced')}
               type="number"
               step="0.001"
               value={form.qty_produced}
@@ -176,7 +178,7 @@ export default function BOMForm() {
             />
           </div>
           <Input
-            label="Notes"
+            label={t('mfg.bomForm.notes')}
             value={form.notes}
             onChange={(e) => {
               setForm((f) => ({ ...f, notes: e.target.value }))
@@ -201,10 +203,10 @@ export default function BOMForm() {
               navigate('/manufacturing/boms')
             }}
           >
-            Cancel
+            {t('mfg.bomForm.cancel')}
           </Button>
           <Button variant="primary" type="submit" loading={creating || updating}>
-            {isEdit ? 'Save BOM' : 'Create BOM'}
+            {isEdit ? t('mfg.bomForm.saveBom') : t('mfg.bomForm.createBom')}
           </Button>
         </div>
       </form>

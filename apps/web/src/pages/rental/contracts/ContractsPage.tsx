@@ -1,4 +1,6 @@
-﻿import { useNavigate } from 'react-router-dom'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { RENTAL_CONTRACTS_QUERY } from '../../../graphql/rental'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -34,6 +36,7 @@ const STATUS_VARIANT: Record<string, 'neutral' | 'success' | 'warning' | 'danger
 }
 
 export default function RentalContractsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
 
@@ -46,7 +49,7 @@ export default function RentalContractsPage() {
   const columns: Column<RentalContract>[] = [
     {
       key: 'contract_number',
-      header: 'Contract #',
+      header: t('rental.contracts.contract'),
       render: (c) => (
         <button
           onClick={() => {
@@ -67,7 +70,7 @@ export default function RentalContractsPage() {
     },
     {
       key: 'client_name',
-      header: 'Client',
+      header: t('rental.contracts.client'),
       render: (c) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500, fontSize: '13px' }}>
           {c.client_name ?? '—'}
@@ -76,45 +79,45 @@ export default function RentalContractsPage() {
     },
     {
       key: 'asset_name',
-      header: 'Asset',
+      header: t('rental.contracts.asset'),
       render: (c) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{c.asset_name ?? '—'}</span>
       ),
     },
     {
       key: 'rental_type',
-      header: 'Type',
-      render: (c) => <Badge variant="neutral">{c.rental_type}</Badge>,
+      header: t('rental.contracts.type'),
+      render: (c) => <Badge variant="neutral">{enumLabel(c.rental_type)}</Badge>,
     },
     {
       key: 'status',
-      header: 'Status',
-      render: (c) => <Badge variant={STATUS_VARIANT[c.status] ?? 'neutral'}>{c.status}</Badge>,
+      header: t('rental.contracts.status'),
+      render: (c) => <Badge variant={STATUS_VARIANT[c.status] ?? 'neutral'}>{enumLabel(c.status)}</Badge>,
     },
     {
       key: 'billing_cycle',
-      header: 'Billing',
-      render: (c) => <Badge variant="neutral">{c.billing_cycle}</Badge>,
+      header: t('rental.contracts.billing'),
+      render: (c) => <Badge variant="neutral">{enumLabel(c.billing_cycle)}</Badge>,
     },
     {
       key: 'rate_amount',
-      header: 'Rate/Day',
+      header: t('rental.contracts.rateDay'),
       render: (c) => (
-        <AmountDisplay amount={parseFloat(c.rate_amount)} currency={c.currency_code ?? 'IQD'} />
+        <AmountDisplay amount={parseFloat(c.rate_amount)} currency={c.currency_code ?? t('rental.contracts.iqd')} />
       ),
     },
     {
       key: 'start_date',
-      header: 'Start',
+      header: t('rental.contracts.start'),
       render: (c) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{c.start_date}</span>
       ),
     },
     {
       key: 'end_date',
-      header: 'End',
+      header: t('rental.contracts.end'),
       render: (c) => (
-        <span style={{ color: theme.textMuted, fontSize: '12px' }}>{c.end_date ?? 'Open'}</span>
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>{c.end_date ?? t('rental.contracts.open')}</span>
       ),
     },
     {
@@ -128,7 +131,7 @@ export default function RentalContractsPage() {
             navigate(`/rental/contracts/${c.id}`)
           }}
         >
-          View
+          {t('rental.contracts.view')}
         </Button>
       ),
     },
@@ -137,7 +140,7 @@ export default function RentalContractsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1500px' }}>
       <PageHeader
-        title="Rental Contracts"
+        title={t('rental.contracts.rentalContracts')}
         subtitle={`${contracts.length} contracts`}
         actions={
           <Button
@@ -147,7 +150,7 @@ export default function RentalContractsPage() {
               navigate('/rental/contracts/new')
             }}
           >
-            New Contract
+            {t('rental.contracts.newContract')}
           </Button>
         }
       />

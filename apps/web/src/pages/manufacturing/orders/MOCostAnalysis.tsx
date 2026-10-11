@@ -1,4 +1,5 @@
-﻿import { useTheme } from '../../../theme/ThemeContext'
+﻿import { useTranslation } from 'react-i18next'
+import { useTheme } from '../../../theme/ThemeContext'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
@@ -34,6 +35,7 @@ interface UnitCostRow {
 }
 
 export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
 
   const { plannedCost, actualCost, variance, variancePct, componentBreakdown } = analysis
@@ -47,7 +49,7 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
   const unitCostRows: UnitCostRow[] = [
     {
       key: 'total',
-      label: 'Total Cost',
+      label: t('mfg.moCost.totalCost'),
       plannedAmount: plannedCost,
       actualAmount: actualCost,
       diffText: `${variance >= 0 ? '+' : ''}${variance.toLocaleString()} IQD`,
@@ -55,7 +57,7 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
     },
     {
       key: 'unit',
-      label: 'Unit Cost',
+      label: t('mfg.moCost.unitCost'),
       plannedAmount: unitPlanned,
       actualAmount: unitActual,
       diffText: `${unitVariance >= 0 ? '+' : ''}${unitVariance.toFixed(2)} IQD`,
@@ -73,19 +75,19 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
     },
     {
       key: 'planned',
-      header: 'Planned',
+      header: t('mfg.moCost.planned'),
       mobilePriority: 1,
       render: (r) => <AmountDisplay amount={r.plannedAmount} currency="IQD" size="sm" />,
     },
     {
       key: 'actual',
-      header: 'Actual',
+      header: t('mfg.moCost.actual'),
       mobilePriority: 2,
       render: (r) => <AmountDisplay amount={r.actualAmount} currency="IQD" size="sm" />,
     },
     {
       key: 'difference',
-      header: 'Difference',
+      header: t('mfg.moCost.difference'),
       mobilePriority: 3,
       render: (r) => (
         <span style={{ fontFamily: 'monospace', fontWeight: 600, color: r.diffColor }}>
@@ -106,21 +108,21 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
         }}
       >
         {[
-          { label: 'Planned Cost', value: plannedCost, currency: true, color: theme.textPrimary },
+          { label: t('mfg.moCost.plannedCost'), value: plannedCost, currency: true, color: theme.textPrimary },
           {
-            label: 'Actual Cost',
+            label: t('mfg.moCost.actualCost'),
             value: actualCost,
             currency: true,
             color: overBudget ? theme.danger : theme.success,
           },
           {
-            label: 'Unit Cost (plan)',
+            label: t('mfg.moCost.unitCostPlan'),
             value: unitPlanned,
             currency: true,
             color: theme.textPrimary,
           },
           {
-            label: 'Unit Cost (actual)',
+            label: t('mfg.moCost.unitCostActual'),
             value: unitActual,
             currency: true,
             color: unitVariance > 0 ? theme.danger : theme.success,
@@ -172,11 +174,11 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
             marginBottom: '16px',
           }}
         >
-          Planned vs Actual
+          {t('mfg.moCost.plannedVsActual')}
         </div>
         {[
-          { label: 'Planned', value: plannedCost, color: theme.accent },
-          { label: 'Actual', value: actualCost, color: overBudget ? theme.danger : theme.success },
+          { label: t('mfg.moCost.planned'), value: plannedCost, color: theme.accent },
+          { label: t('mfg.moCost.actual'), value: actualCost, color: overBudget ? theme.danger : theme.success },
         ].map(({ label, value, color }) => (
           <div key={label} style={{ marginBottom: '14px' }}>
             <div
@@ -189,7 +191,7 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
               }}
             >
               <span>{label}</span>
-              <span style={{ fontFamily: 'monospace', color }}>{value.toLocaleString()} IQD</span>
+              <span style={{ fontFamily: 'monospace', color }}>{t('mfg.moCost.iqd', { value: value.toLocaleString() })}</span>
             </div>
             <div
               style={{
@@ -223,12 +225,7 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
             fontWeight: 600,
             color: overBudget ? theme.danger : theme.success,
           }}
-        >
-          {overBudget ? '▲' : '▼'} {Math.abs(variancePct).toFixed(1)}% variance
-          {' · '}
-          {overBudget ? '+' : ''}
-          {variance.toLocaleString()} IQD {overBudget ? 'over' : 'under'} budget
-        </div>
+        >{t(overBudget ? 'mfg.moCost.varianceIqdOverBudget' : 'mfg.moCost.varianceIqdUnderBudget', { arrow: overBudget ? '▲' : '▼', pct: Math.abs(variancePct).toFixed(1), sign: overBudget ? '+' : '', variance: variance.toLocaleString() })}</div>
       </div>
 
       {/* Component breakdown */}
@@ -249,7 +246,7 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
               marginBottom: '16px',
             }}
           >
-            Component Breakdown
+            {t('mfg.moCost.componentBreakdown')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {componentBreakdown.map((c) => {
@@ -265,9 +262,7 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
                     }}
                   >
                     <span style={{ color: theme.textPrimary }}>{c.label}</span>
-                    <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
-                      {c.amount.toLocaleString()} IQD · {pct.toFixed(1)}%
-                    </span>
+                    <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>{t('mfg.moCost.iqd2', { amount: c.amount.toLocaleString(), pct: pct.toFixed(1) })}</span>
                   </div>
                   <div
                     style={{
@@ -310,7 +305,7 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
             marginBottom: '12px',
           }}
         >
-          Unit Cost Detail
+          {t('mfg.moCost.unitCostDetail')}
         </div>
         <Table
           columns={unitCostColumns}

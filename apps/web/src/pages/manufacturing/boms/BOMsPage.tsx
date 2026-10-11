@@ -1,4 +1,5 @@
-﻿import { useNavigate } from 'react-router-dom'
+﻿import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { BOMS_QUERY } from '../../../graphql/manufacturing'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -19,6 +20,7 @@ interface BOM {
 }
 
 export default function BOMsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
 
@@ -28,7 +30,7 @@ export default function BOMsPage() {
   const columns: Column<BOM>[] = [
     {
       key: 'product_name',
-      header: 'Finished Product',
+      header: t('mfg.boms.finishedProduct'),
       render: (b) => (
         <span style={{ color: theme.textPrimary, fontWeight: 500, fontSize: '13px' }}>
           {b.product_name ?? '—'}
@@ -37,12 +39,12 @@ export default function BOMsPage() {
     },
     {
       key: 'version',
-      header: 'Version',
+      header: t('mfg.boms.version'),
       render: (b) => <Badge variant="neutral">v{b.version}</Badge>,
     },
     {
       key: 'qty_produced',
-      header: 'Qty Produced',
+      header: t('mfg.boms.qtyProduced'),
       render: (b) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
           {b.qty_produced}
@@ -51,10 +53,10 @@ export default function BOMsPage() {
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('mfg.boms.status'),
       render: (b) => (
         <Badge variant={b.is_active ? 'success' : 'neutral'}>
-          {b.is_active ? 'Active' : 'Archived'}
+          {b.is_active ? t('mfg.boms.active') : t('mfg.boms.archived')}
         </Badge>
       ),
     },
@@ -70,7 +72,7 @@ export default function BOMsPage() {
               navigate(`/manufacturing/boms/${b.id}`)
             }}
           >
-            View
+            {t('mfg.boms.view')}
           </Button>
           <Button
             variant="ghost"
@@ -79,7 +81,7 @@ export default function BOMsPage() {
               navigate(`/manufacturing/boms/${b.id}/edit`)
             }}
           >
-            Edit
+            {t('mfg.boms.edit')}
           </Button>
         </div>
       ),
@@ -89,8 +91,8 @@ export default function BOMsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
-        title="Bills of Materials"
-        subtitle={`${boms.length} BOMs`}
+        title={t('mfg.boms.billsOfMaterials')}
+        subtitle={t('mfg.boms.boms', { length: boms.length })}
         actions={
           <Button
             variant="primary"
@@ -99,7 +101,7 @@ export default function BOMsPage() {
               navigate('/manufacturing/boms/new')
             }}
           >
-            New BOM
+            {t('mfg.boms.newBom')}
           </Button>
         }
       />

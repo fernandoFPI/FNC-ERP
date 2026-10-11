@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -44,6 +46,7 @@ interface HistoryData {
 }
 
 export default function TransferPricingPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const companies = useCompanyStore((s) => s.companies)
@@ -76,7 +79,7 @@ export default function TransferPricingPage() {
 
   const [updatePricing, { loading: updating }] = useMutation(UPDATE_INTERCO_PRICING, {
     onCompleted: () => {
-      addToast({ type: 'success', message: 'Transfer pricing updated' })
+      addToast({ type: 'success', message: t('interco.pricing.transferPricingUpdated') })
       setEditing(false)
       void refetchSettings()
     },
@@ -91,33 +94,33 @@ export default function TransferPricingPage() {
   const historyColumns: Column<PricingHistory>[] = [
     {
       key: 'previousMethod',
-      header: 'Previous',
+      header: t('interco.pricing.previous'),
       mobilePriority: 1,
       render: (h) => (
         <Badge variant="neutral" size="sm">
-          {h.previousMethod}
+          {enumLabel(h.previousMethod)}
         </Badge>
       ),
     },
     {
       key: 'newMethod',
-      header: 'New',
+      header: t('interco.pricing.new'),
       mobilePrimary: true,
       render: (h) => (
         <Badge variant="accent" size="sm">
-          {h.newMethod}
+          {enumLabel(h.newMethod)}
         </Badge>
       ),
     },
     {
       key: 'changedBy',
-      header: 'Changed By',
+      header: t('interco.pricing.changedBy'),
       mobilePriority: 2,
       render: (h) => <span style={{ color: theme.textSecondary }}>{h.changedBy}</span>,
     },
     {
       key: 'changedAt',
-      header: 'Date',
+      header: t('interco.pricing.date'),
       mobileSecondary: true,
       render: (h) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
@@ -127,7 +130,7 @@ export default function TransferPricingPage() {
     },
     {
       key: 'notes',
-      header: 'Notes',
+      header: t('interco.pricing.notes'),
       mobilePriority: 3,
       render: (h) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{h.notes || '—'}</span>
@@ -156,14 +159,14 @@ export default function TransferPricingPage() {
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
-        title="Transfer Pricing Settings"
-        subtitle="Configure intercompany stock transfer pricing per entity"
+        title={t('interco.pricing.transferPricingSettings')}
+        subtitle={t('interco.pricing.configureIntercompanyStockTransferPricingPer')}
       />
 
       {/* Company selector */}
       <Card padding="sm" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>Company:</span>
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('interco.pricing.company')}</span>
           <Select
             value={selectedCompanyId}
             onChange={(e) => {
@@ -202,14 +205,11 @@ export default function TransferPricingPage() {
               >
                 {settings.companyName}
               </h3>
-              <p style={{ fontSize: '12px', color: theme.textMuted }}>
-                Last updated by {settings.updatedByEmail} ·{' '}
-                {new Date(settings.updatedAt).toLocaleDateString()}
-              </p>
+              <p style={{ fontSize: '12px', color: theme.textMuted }}>{t('interco.pricing.lastUpdatedBy', { updatedByEmail: settings.updatedByEmail, value: new Date(settings.updatedAt).toLocaleDateString() })}</p>
             </div>
             {!editing && (
               <Button variant="secondary" size="sm" onClick={handleEdit}>
-                Edit
+                {t('interco.pricing.edit')}
               </Button>
             )}
           </div>
@@ -217,21 +217,21 @@ export default function TransferPricingPage() {
           {editing ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <Select
-                label="Pricing Method"
+                label={t('interco.pricing.pricingMethod')}
                 value={editMethod}
                 onChange={(e) => {
                   setEditMethod(e.target.value)
                 }}
                 options={[
-                  { value: 'last_cost', label: 'Last Cost Recorded' },
-                  { value: 'avco', label: 'AVCO (Average Cost)' },
-                  { value: 'cost_plus', label: 'Cost Plus Markup' },
-                  { value: 'market', label: 'Market Price' },
+                  { value: 'last_cost', label: t('interco.pricing.lastCostRecorded') },
+                  { value: 'avco', label: t('interco.pricing.avcoAverageCost') },
+                  { value: 'cost_plus', label: t('interco.pricing.costPlusMarkup') },
+                  { value: 'market', label: t('interco.pricing.marketPrice') },
                 ]}
               />
               {editMethod === 'cost_plus' && (
                 <Input
-                  label="Markup % (Cost Plus)"
+                  label={t('interco.pricing.markupCostPlus')}
                   type="number"
                   value={editMarkupPct}
                   onChange={(e) => {
@@ -243,7 +243,7 @@ export default function TransferPricingPage() {
               )}
               <div style={{ display: 'flex', gap: '8px' }}>
                 <Button variant="primary" size="sm" onClick={handleSave} loading={updating}>
-                  Save
+                  {t('interco.pricing.save')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -253,7 +253,7 @@ export default function TransferPricingPage() {
                   }}
                   disabled={updating}
                 >
-                  Cancel
+                  {t('interco.pricing.cancel')}
                 </Button>
               </div>
             </div>
@@ -267,14 +267,14 @@ export default function TransferPricingPage() {
             >
               <div>
                 <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-                  Method
+                  {t('interco.pricing.method')}
                 </p>
-                <Badge variant="accent">{settings.method.replace('_', ' ').toUpperCase()}</Badge>
+                <Badge variant="accent">{enumLabel(settings.method).replace('_', ' ').toUpperCase()}</Badge>
               </div>
               {settings.method === 'cost_plus' && (
                 <div>
                   <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-                    Markup %
+                    {t('interco.pricing.markup')}
                   </p>
                   <p style={{ fontSize: '18px', fontWeight: 500, color: theme.textPrimary }}>
                     {settings.costPlusMarkupPct}%
@@ -286,8 +286,8 @@ export default function TransferPricingPage() {
         </Card>
       ) : (
         <EmptyState
-          title="No settings"
-          message="No pricing settings configured for this company."
+          title={t('interco.pricing.noSettings')}
+          message={t('interco.pricing.noPricingSettingsConfiguredForThis')}
         />
       )}
 
@@ -295,14 +295,14 @@ export default function TransferPricingPage() {
       <Card padding="none">
         <div style={{ padding: '16px 20px 12px', borderBottom: `1px solid ${theme.border}` }}>
           <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-            Change History
+            {t('interco.pricing.changeHistory')}
           </h3>
         </div>
         <Table
           columns={historyColumns}
           data={history}
           loading={historyLoading}
-          emptyMessage="No configuration changes recorded yet."
+          emptyMessage={t('interco.pricing.noConfigurationChangesRecordedYet')}
         />
       </Card>
     </div>

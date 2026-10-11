@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel, useIsRtl } from '../../../i18n'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -21,6 +23,8 @@ import { formatCurrency } from '../../../lib/format'
 import type { ActivateRentalContractMutation, ActivateRentalContractMutationVariables, CloseRentalContractMutation, CloseRentalContractMutationVariables, GenerateRentalInvoiceMutation, GenerateRentalInvoiceMutationVariables, RentalContractQuery, RentalContractQueryVariables } from '../../../graphql/generated'
 
 export default function RentalContractDetail() {
+  const { t } = useTranslation()
+  const rtl = useIsRtl()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -69,14 +73,14 @@ export default function RentalContractDetail() {
             whtRate: whtApplies ? whtRate : undefined,
           },
         }),
-      'Invoice generated',
+      t('rental.contractDetail.invoiceGenerated'),
     )
     setShowInvoiceModal(false)
     void refetch()
   }
 
   if (loading || !contract)
-    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading…</div>
+    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>{t('rental.contractDetail.loading')}</div>
 
   const cur = contract.currency_code ?? 'IQD'
 
@@ -90,21 +94,21 @@ export default function RentalContractDetail() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
-        title={`Contract ${contract.contract_number}`}
-        subtitle={`${contract.client_name} · ${contract.asset_name ?? 'No asset'}`}
+        title={t('rental.contractDetail.contract', { contract_number: contract.contract_number })}
+        subtitle={`${contract.client_name} · ${contract.asset_name ?? t('rental.contractDetail.noAsset')}`}
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <Badge variant={STATUS_VARIANT[contract.status] ?? 'neutral'}>{contract.status}</Badge>
+            <Badge variant={STATUS_VARIANT[contract.status] ?? 'neutral'}>{enumLabel(contract.status)}</Badge>
             {contract.status === 'draft' && (
               <Button
                 variant="primary"
                 size="sm"
                 onClick={() =>
-                  void handleAction(() => activateContract({ variables: { id: id ?? '' } }), 'Contract activated')
+                  void handleAction(() => activateContract({ variables: { id: id ?? '' } }), t('rental.contractDetail.contractActivated'))
                 }
                 loading={activating}
               >
-                Activate
+                {t('rental.contractDetail.activate')}
               </Button>
             )}
             {contract.status === 'active' && (
@@ -116,17 +120,17 @@ export default function RentalContractDetail() {
                     setShowInvoiceModal(true)
                   }}
                 >
-                  Generate Invoice
+                  {t('rental.contractDetail.generateInvoice')}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    void handleAction(() => closeContract({ variables: { id: id ?? '' } }), 'Contract closed')
+                    void handleAction(() => closeContract({ variables: { id: id ?? '' } }), t('rental.contractDetail.contractClosed'))
                   }
                   loading={closing}
                 >
-                  Close
+                  {t('rental.contractDetail.close')}
                 </Button>
               </>
             )}
@@ -137,7 +141,7 @@ export default function RentalContractDetail() {
                 navigate(`/rental/contracts/${id}/edit`)
               }}
             >
-              Edit
+              {t('rental.contractDetail.edit')}
             </Button>
           </div>
         }
@@ -161,22 +165,22 @@ export default function RentalContractDetail() {
               marginBottom: '12px',
             }}
           >
-            Contract Details
+            {t('rental.contractDetail.contractDetails')}
           </div>
           {[
-            ['Rental Type', contract.rental_type],
-            ['Billing Cycle', contract.billing_cycle],
-            ['Rate/Day', `${parseFloat(contract.rate_amount).toLocaleString()} ${cur}`],
+            [t('rental.contractDetail.rentalType'), contract.rental_type],
+            [t('rental.contractDetail.billingCycle'), contract.billing_cycle],
+            [t('rental.contractDetail.rateDay'), `${parseFloat(contract.rate_amount).toLocaleString()} ${cur}`],
             [
-              'Deposit',
+              t('rental.contractDetail.deposit'),
               contract.deposit_amount
                 ? `${contract.deposit_amount.toLocaleString()} ${cur}`
                 : '—',
             ],
-            ['Start Date', contract.start_date],
-            ['End Date', contract.end_date ?? 'Open-ended'],
-            ['Project', contract.project_name ?? '—'],
-            ['Client Contact', contract.client_contact ?? '—'],
+            [t('rental.contractDetail.startDate'), contract.start_date],
+            [t('rental.contractDetail.endDate'), contract.end_date ?? t('rental.contractDetail.openEnded')],
+            [t('rental.contractDetail.project'), contract.project_name ?? '—'],
+            [t('rental.contractDetail.clientContact'), contract.client_contact ?? '—'],
           ].map(([label, value]) => (
             <div
               key={label}
@@ -204,7 +208,7 @@ export default function RentalContractDetail() {
               marginBottom: '12px',
             }}
           >
-            Recent Usage
+            {t('rental.contractDetail.recentUsage')}
           </div>
           {(contract.usageLogs ?? [])
             .slice(0, 5)
@@ -233,7 +237,7 @@ export default function RentalContractDetail() {
               ),
             )}
           {(contract.usageLogs ?? []).length === 0 && (
-            <div style={{ color: theme.textMuted, fontSize: '13px' }}>No usage logged</div>
+            <div style={{ color: theme.textMuted, fontSize: '13px' }}>{t('rental.contractDetail.noUsageLogged')}</div>
           )}
         </Card>
       </div>
@@ -249,7 +253,7 @@ export default function RentalContractDetail() {
           }}
         >
           <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-            Invoices
+            {t('rental.contractDetail.invoices')}
           </div>
           {contract.status === 'active' && (
             <Button
@@ -259,7 +263,7 @@ export default function RentalContractDetail() {
                 setShowInvoiceModal(true)
               }}
             >
-              Generate Invoice
+              {t('rental.contractDetail.generateInvoice')}
             </Button>
           )}
         </div>
@@ -286,22 +290,22 @@ export default function RentalContractDetail() {
               }}
             >
               <div>
-                <span style={{ fontFamily: 'monospace', color: theme.accent, marginRight: '8px' }}>
+                <span style={{ fontFamily: 'monospace', color: theme.accent, marginInlineEnd: '8px' }}>
                   {inv.invoice_number}
                 </span>
                 <span style={{ color: theme.textMuted }}>
-                  {inv.billing_period_start} → {inv.billing_period_end} ({inv.days_billed}d)
+                  {inv.billing_period_start} {rtl ? '←' : '→'} {inv.billing_period_end} ({t('rental.contractDetail.daysBilledShort', { days: inv.days_billed })})
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                 <AmountDisplay amount={inv.total_amount} currency={cur} />
-                <Badge variant={inv.status === 'paid' ? 'success' : 'neutral'}>{inv.status}</Badge>
+                <Badge variant={inv.status === 'paid' ? 'success' : 'neutral'}>{enumLabel(inv.status)}</Badge>
               </div>
             </div>
           ),
         )}
         {(contract.invoices ?? []).length === 0 && (
-          <div style={{ color: theme.textMuted, fontSize: '13px' }}>No invoices generated</div>
+          <div style={{ color: theme.textMuted, fontSize: '13px' }}>{t('rental.contractDetail.noInvoicesGenerated')}</div>
         )}
       </Card>
 
@@ -310,7 +314,7 @@ export default function RentalContractDetail() {
         onClose={() => {
           setShowInvoiceModal(false)
         }}
-        title="Generate Rental Invoice"
+        title={t('rental.contractDetail.generateRentalInvoice')}
       >
         <form
           onSubmit={(...args: Parameters<typeof handleGenerateInvoice>) => void handleGenerateInvoice(...args)}
@@ -324,7 +328,7 @@ export default function RentalContractDetail() {
             }}
           >
             <Input
-              label="Billing Period Start"
+              label={t('rental.contractDetail.billingPeriodStart')}
               type="date"
               value={periodStart}
               onChange={(e) => {
@@ -333,7 +337,7 @@ export default function RentalContractDetail() {
               required
             />
             <Input
-              label="Billing Period End"
+              label={t('rental.contractDetail.billingPeriodEnd')}
               type="date"
               value={periodEnd}
               onChange={(e) => {
@@ -354,11 +358,7 @@ export default function RentalContractDetail() {
                 ? Math.round(total * (parseFloat(whtRatePct || '0') / 100) * 100) / 100
                 : 0
               return (
-                <div style={{ fontSize: '13px', color: theme.accent, fontFamily: 'monospace' }}>
-                  {days} days × {formatCurrency(parseFloat(contract.rate_amount), cur)} ={' '}
-                  {formatCurrency(total, cur)}
-                  {whtApplies && whtAmt > 0 && <> · WHT {formatCurrency(whtAmt, cur)}</>}
-                </div>
+                <div style={{ fontSize: '13px', color: theme.accent, fontFamily: 'monospace' }}>{t('rental.contractDetail.days', { days, currency: formatCurrency(parseFloat(contract.rate_amount), cur), currency2: formatCurrency(total, cur), value: whtApplies && whtAmt > 0 && <> · WHT {formatCurrency(whtAmt, cur)}</> })}</div>
               )
             })()}
 
@@ -384,23 +384,23 @@ export default function RentalContractDetail() {
                 }}
                 style={{ width: '15px', height: '15px' }}
               />
-              Apply Withholding Tax (WHT)
+              {t('rental.contractDetail.applyWithholdingTaxWht')}
             </label>
             {whtApplies && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <Select
-                  label="WHT scenario"
+                  label={t('rental.contractDetail.whtScenario')}
                   value={whtScenario}
                   onChange={(e) => {
                     setWhtScenario(e.target.value as 'client_withholds' | 'fnc_pays')
                   }}
                   options={[
-                    { value: 'client_withholds', label: 'Client withholds & pays tax authority' },
-                    { value: 'fnc_pays', label: 'FNC pays full, remits WHT annually' },
+                    { value: 'client_withholds', label: t('rental.contractDetail.clientWithholdsPaysTaxAuthority') },
+                    { value: 'fnc_pays', label: t('rental.contractDetail.fncPaysFullRemitsWhtAnnually') },
                   ]}
                 />
                 <Input
-                  label="WHT rate (%)"
+                  label={t('rental.contractDetail.whtRate')}
                   type="number"
                   min="0"
                   max="100"
@@ -422,10 +422,10 @@ export default function RentalContractDetail() {
                 setShowInvoiceModal(false)
               }}
             >
-              Cancel
+              {t('rental.contractDetail.cancel')}
             </Button>
             <Button variant="primary" type="submit" loading={invoicing}>
-              Generate
+              {t('rental.contractDetail.generate')}
             </Button>
           </div>
         </form>

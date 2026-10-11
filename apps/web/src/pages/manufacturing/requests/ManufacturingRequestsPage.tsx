@@ -1,3 +1,5 @@
+import { Trans, useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -70,6 +72,7 @@ interface CreateForm {
 }
 
 export default function ManufacturingRequestsPage() {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
@@ -129,7 +132,7 @@ export default function ManufacturingRequestsPage() {
 
   async function handleCreate() {
     if (!form.projectId) {
-      addToast({ type: 'error', message: 'Project ID is required' })
+      addToast({ type: 'error', message: t('mfg.requests.projectIdIsRequired') })
       return
     }
     try {
@@ -145,7 +148,7 @@ export default function ManufacturingRequestsPage() {
           },
         },
       })
-      addToast({ type: 'success', message: 'Manufacturing request created' })
+      addToast({ type: 'success', message: t('mfg.requests.manufacturingRequestCreated') })
       setShowCreate(false)
       setForm({
         projectId: '',
@@ -165,7 +168,7 @@ export default function ManufacturingRequestsPage() {
   const columns: Column<MR>[] = [
     {
       key: 'requestNumber',
-      header: 'Request #',
+      header: t('mfg.requests.request'),
       render: (r) => (
         <button
           onClick={() => {
@@ -187,21 +190,21 @@ export default function ManufacturingRequestsPage() {
     },
     {
       key: 'projectName',
-      header: 'Project',
+      header: t('mfg.requests.project'),
       render: (r) => (
         <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{r.projectName ?? '—'}</span>
       ),
     },
     {
       key: 'productName',
-      header: 'Product',
+      header: t('mfg.requests.product'),
       render: (r) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{r.productName ?? '—'}</span>
       ),
     },
     {
       key: 'qtyRequested',
-      header: 'Qty',
+      header: t('mfg.requests.qty'),
       render: (r) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
           {r.qtyRequested.toLocaleString()}
@@ -210,14 +213,14 @@ export default function ManufacturingRequestsPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('mfg.requests.status'),
       render: (r) => (
-        <Badge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>{r.status.replace(/_/g, ' ')}</Badge>
+        <Badge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>{enumLabel(r.status).replace(/_/g, ' ')}</Badge>
       ),
     },
     {
       key: 'requestedByName',
-      header: 'Requested By',
+      header: t('mfg.requests.requestedBy'),
       render: (r) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{r.requestedByName ?? '—'}</span>
       ),
@@ -248,7 +251,7 @@ export default function ManufacturingRequestsPage() {
     },
     {
       key: 'actualCost',
-      header: 'Actual Cost',
+      header: t('mfg.requests.actualCost'),
       render: (r) =>
         r.actualCost != null ? (
           <AmountDisplay amount={r.actualCost} currency={r.currencyCode} />
@@ -258,7 +261,7 @@ export default function ManufacturingRequestsPage() {
     },
     {
       key: 'requiredDate',
-      header: 'Required By',
+      header: t('mfg.requests.requiredBy'),
       render: (r) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>
           {r.requiredDate?.slice(0, 10) ?? '—'}
@@ -267,7 +270,7 @@ export default function ManufacturingRequestsPage() {
     },
     {
       key: 'createdAt',
-      header: 'Created',
+      header: t('mfg.requests.created'),
       render: (r) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{r.createdAt.slice(0, 10)}</span>
       ),
@@ -294,8 +297,8 @@ export default function ManufacturingRequestsPage() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1600px' }}>
       <PageHeader
-        title="Manufacturing Requests"
-        subtitle={`${filtered.length} requests`}
+        title={t('mfg.requests.manufacturingRequests')}
+        subtitle={t('mfg.requests.requestsCount', { count: filtered.length })}
         actions={
           <Button
             variant="primary"
@@ -304,7 +307,7 @@ export default function ManufacturingRequestsPage() {
               setShowCreate(true)
             }}
           >
-            New Request
+            {t('mfg.requests.newRequest')}
           </Button>
         }
       />
@@ -335,7 +338,7 @@ export default function ManufacturingRequestsPage() {
               fontWeight: s === statusFilter ? 600 : 400,
             }}
           >
-            {s.replace(/_/g, ' ')} ({statusCounts[s] ?? 0})
+            {enumLabel(s).replace(/_/g, ' ')} ({statusCounts[s] ?? 0})
           </button>
         ))}
       </div>
@@ -366,7 +369,7 @@ export default function ManufacturingRequestsPage() {
       {showCreate && (
         <Modal
           open={showCreate}
-          title="New Manufacturing Request"
+          title={t('mfg.requests.newManufacturingRequest')}
           onClose={() => {
             setShowCreate(false)
           }}
@@ -374,7 +377,7 @@ export default function ManufacturingRequestsPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '420px' }}>
             <div>
               <label style={labelStyle}>
-                Project <span style={{ color: theme.danger }}>*</span>
+                {t('mfg.requests.project')} <span style={{ color: theme.danger }}>*</span>
               </label>
               <select
                 style={{ ...inputStyle, colorScheme: 'dark' }}
@@ -383,7 +386,7 @@ export default function ManufacturingRequestsPage() {
                   setForm((f) => ({ ...f, projectId: e.target.value }))
                 }}
               >
-                <option value="">— Select a project —</option>
+                <option value="">{t('mfg.requests.selectAProject')}</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     [{p.code}] {p.name}
@@ -392,9 +395,7 @@ export default function ManufacturingRequestsPage() {
               </select>
             </div>
             <div>
-              <label style={labelStyle}>
-                Product (BOM) <span style={{ color: theme.textMuted }}>(optional)</span>
-              </label>
+              <label style={labelStyle}><Trans i18nKey="mfg.requests.productBom" values={{ t: t('mfg.requests.optional') }} components={[<span style={{ color: theme.textMuted }} />]} /></label>
               <select
                 style={{ ...inputStyle, colorScheme: 'dark' }}
                 value={form.bomId}
@@ -407,7 +408,7 @@ export default function ManufacturingRequestsPage() {
                   }))
                 }}
               >
-                <option value="">— Select a product —</option>
+                <option value="">{t('mfg.requests.selectAProduct')}</option>
                 {boms.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.product_name} (v{b.version})
@@ -417,7 +418,7 @@ export default function ManufacturingRequestsPage() {
             </div>
             <div>
               <label style={labelStyle}>
-                Quantity Requested <span style={{ color: theme.danger }}>*</span>
+                {t('mfg.requests.quantityRequested')} <span style={{ color: theme.danger }}>*</span>
               </label>
               <input
                 type="number"
@@ -431,7 +432,7 @@ export default function ManufacturingRequestsPage() {
               />
             </div>
             <div>
-              <label style={labelStyle}>Required By Date</label>
+              <label style={labelStyle}>{t('mfg.requests.requiredByDate')}</label>
               <input
                 type="date"
                 style={inputStyle}
@@ -442,7 +443,7 @@ export default function ManufacturingRequestsPage() {
               />
             </div>
             <div>
-              <label style={labelStyle}>Description</label>
+              <label style={labelStyle}>{t('mfg.requests.description')}</label>
               <textarea
                 rows={3}
                 style={{ ...inputStyle, resize: 'vertical' }}
@@ -453,7 +454,7 @@ export default function ManufacturingRequestsPage() {
               />
             </div>
             <div>
-              <label style={labelStyle}>Notes</label>
+              <label style={labelStyle}>{t('mfg.requests.notes')}</label>
               <textarea
                 rows={2}
                 style={{ ...inputStyle, resize: 'vertical' }}
@@ -471,10 +472,10 @@ export default function ManufacturingRequestsPage() {
                   setShowCreate(false)
                 }}
               >
-                Cancel
+                {t('mfg.requests.cancel')}
               </Button>
               <Button variant="primary" size="sm" loading={creating} onClick={(...args: Parameters<typeof handleCreate>) => void handleCreate(...args)}>
-                Create
+                {t('mfg.requests.create')}
               </Button>
             </div>
           </div>

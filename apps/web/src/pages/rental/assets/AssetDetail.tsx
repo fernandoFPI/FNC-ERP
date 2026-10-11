@@ -1,4 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useTranslation } from 'react-i18next'
+import { enumLabel, tl } from '../../../i18n'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import { EQUIPMENT_ASSET_QUERY, LOG_USAGE, SUBMIT_CONDITION_REPORT } from '../../../graphql/rental'
@@ -21,9 +23,11 @@ import { useToastStore } from '../../../store/toastStore'
 import { MaintenanceRecordDetail } from '../maintenance/MaintenanceRecordDetail'
 import type { EquipmentAssetQuery, EquipmentAssetQueryVariables, LogUsageMutation, LogUsageMutationVariables, SubmitConditionReportMutation, SubmitConditionReportMutationVariables } from '../../../graphql/generated'
 
-const TABS = ['Overview', 'Usage Logs', 'Maintenance', 'Condition Reports'].map((t) => ({
-  key: t,
-  label: t,
+const TABS = ['Overview', 'Usage Logs', 'Maintenance', 'Condition Reports'].map((k) => ({
+  key: k,
+  get label() {
+    return tl('rental.assetDetail.tabOpts', k, k)
+  },
 }))
 
 interface UsageLogRow {
@@ -36,6 +40,7 @@ interface UsageLogRow {
 }
 
 export default function AssetDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -57,10 +62,10 @@ export default function AssetDetail() {
         variables: { input: { ...entry, asset_id: id ?? '' } },
         refetchQueries: [{ query: EQUIPMENT_ASSET_QUERY, variables: { id } }],
       })
-      addToast({ type: 'success', message: 'Usage logged' })
+      addToast({ type: 'success', message: t('rental.assetDetail.usageLogged') })
       setShowUsageForm(false)
     } catch (err) {
-      addToast({ type: 'error', message: (err as Error).message ?? 'Failed to log usage' })
+      addToast({ type: 'error', message: (err as Error).message ?? t('rental.assetDetail.failedToLogUsage') })
     }
   }
 
@@ -70,20 +75,20 @@ export default function AssetDetail() {
         variables: { input: { ...report, asset_id: id ?? '' } },
         refetchQueries: [{ query: EQUIPMENT_ASSET_QUERY, variables: { id } }],
       })
-      addToast({ type: 'success', message: 'Condition report submitted' })
+      addToast({ type: 'success', message: t('rental.assetDetail.conditionReportSubmitted') })
       setShowConditionForm(false)
     } catch (err) {
-      addToast({ type: 'error', message: (err as Error).message ?? 'Failed to submit report' })
+      addToast({ type: 'error', message: (err as Error).message ?? t('rental.assetDetail.failedToSubmitReport') })
     }
   }
 
   if (loading || !asset)
-    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading…</div>
+    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>{t('rental.assetDetail.loading')}</div>
 
   const usageLogColumns: Column<UsageLogRow>[] = [
     {
       key: 'usage_date',
-      header: 'Date',
+      header: t('rental.assetDetail.date'),
       mobilePrimary: true,
       render: (l) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{l.usage_date}</span>
@@ -91,7 +96,7 @@ export default function AssetDetail() {
     },
     {
       key: 'operator_name',
-      header: 'Operator',
+      header: t('rental.assetDetail.operator'),
       mobileSecondary: true,
       render: (l) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{l.operator_name}</span>
@@ -99,7 +104,7 @@ export default function AssetDetail() {
     },
     {
       key: 'hours_used',
-      header: 'Hours',
+      header: t('rental.assetDetail.hours'),
       mobilePriority: 1,
       render: (l) => (
         <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>{l.hours_used}h</span>
@@ -107,7 +112,7 @@ export default function AssetDetail() {
     },
     {
       key: 'mileage_km',
-      header: 'Mileage',
+      header: t('rental.assetDetail.mileage'),
       mobilePriority: 2,
       render: (l) => (
         <span style={{ fontFamily: 'monospace', color: theme.textMuted }}>
@@ -117,7 +122,7 @@ export default function AssetDetail() {
     },
     {
       key: 'notes',
-      header: 'Notes',
+      header: t('rental.assetDetail.notes'),
       mobilePriority: 3,
       render: (l) => (
         <span style={{ color: theme.textMuted, fontSize: '12px' }}>{l.notes ?? '—'}</span>
@@ -129,7 +134,7 @@ export default function AssetDetail() {
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
         title={asset.name}
-        subtitle={`${asset.asset_number} · ${asset.category ?? 'Equipment'}`}
+        subtitle={`${asset.asset_number} · ${asset.category ?? t('rental.assetDetail.equipment')}`}
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <AssetStatusBadge
@@ -150,7 +155,7 @@ export default function AssetDetail() {
                 setShowUsageForm(true)
               }}
             >
-              Log Usage
+              {t('rental.assetDetail.logUsage')}
             </Button>
             <Button
               variant="ghost"
@@ -159,7 +164,7 @@ export default function AssetDetail() {
                 setShowConditionForm(true)
               }}
             >
-              Condition Report
+              {t('rental.assetDetail.conditionReport')}
             </Button>
             <Button
               variant="ghost"
@@ -168,7 +173,7 @@ export default function AssetDetail() {
                 navigate(`/rental/assets/${id}/edit`)
               }}
             >
-              Edit
+              {t('rental.assetDetail.edit')}
             </Button>
           </div>
         }
@@ -184,27 +189,27 @@ export default function AssetDetail() {
         }}
       >
         <KPICard
-          title="Daily Rate"
+          title={t('rental.assetDetail.dailyRate')}
           value={parseFloat(asset.daily_rate).toLocaleString()}
           subtitle={asset.currency_code}
           iconColor="info"
         />
         <KPICard
-          title="Total Hours"
+          title={t('rental.assetDetail.totalHours')}
           value={(asset.total_hours ?? 0).toLocaleString()}
-          subtitle="hours operated"
+          subtitle={t('rental.assetDetail.hoursOperated')}
           iconColor="accent"
         />
         <KPICard
-          title="Total Mileage"
+          title={t('rental.assetDetail.totalMileage')}
           value={(asset.total_mileage ?? 0).toLocaleString()}
           subtitle="km"
           iconColor="accent"
         />
         <KPICard
-          title="Condition"
+          title={t('rental.assetDetail.condition')}
           value={`${asset.condition_rating ?? '—'}/5`}
-          subtitle="latest rating"
+          subtitle={t('rental.assetDetail.latestRating')}
           iconColor={
             (asset.condition_rating ?? 0) >= 4
               ? 'success'
@@ -237,23 +242,23 @@ export default function AssetDetail() {
                   marginBottom: '12px',
                 }}
               >
-                Asset Details
+                {t('rental.assetDetail.assetDetails')}
               </div>
               {[
-                ['Serial Number', asset.serial_number ?? '—'],
-                ['Purchase Date', asset.purchase_date ?? '—'],
+                [t('rental.assetDetail.serialNumber'), asset.serial_number ?? '—'],
+                [t('rental.assetDetail.purchaseDate'), asset.purchase_date ?? '—'],
                 [
-                  'Purchase Price',
+                  t('rental.assetDetail.purchasePrice'),
                   asset.purchase_price
                     ? `${asset.purchase_price.toLocaleString()} ${asset.currency_code}`
                     : '—',
                 ],
                 [
-                  'Maintenance Due At',
+                  t('rental.assetDetail.maintenanceDueAt'),
                   asset.maintenance_due_hours ? `${asset.maintenance_due_hours}h` : '—',
                 ],
-                ['Last Maintenance', asset.last_maintenance_date ?? '—'],
-                ['Maintenance Status', asset.maintenance_status ?? '—'],
+                [t('rental.assetDetail.lastMaintenance'), asset.last_maintenance_date ?? '—'],
+                [t('rental.assetDetail.maintenanceStatus'), asset.maintenance_status ?? '—'],
               ].map(([label, value]) => (
                 <div
                   key={label}
@@ -284,7 +289,7 @@ export default function AssetDetail() {
                   marginBottom: '12px',
                 }}
               >
-                Quick Actions
+                {t('rental.assetDetail.quickActions')}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <Button
@@ -294,7 +299,7 @@ export default function AssetDetail() {
                     navigate(`/rental/contracts/new?assetId=${id}`)
                   }}
                 >
-                  Create Rental Contract
+                  {t('rental.assetDetail.createRentalContract')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -303,7 +308,7 @@ export default function AssetDetail() {
                     navigate(`/rental/maintenance?assetId=${id}`)
                   }}
                 >
-                  Schedule Maintenance
+                  {t('rental.assetDetail.scheduleMaintenance')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -312,7 +317,7 @@ export default function AssetDetail() {
                     setShowUsageForm(true)
                   }}
                 >
-                  Log Usage
+                  {t('rental.assetDetail.logUsage')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -321,7 +326,7 @@ export default function AssetDetail() {
                     setShowConditionForm(true)
                   }}
                 >
-                  Condition Report
+                  {t('rental.assetDetail.conditionReport')}
                 </Button>
               </div>
             </Card>
@@ -339,7 +344,7 @@ export default function AssetDetail() {
               }}
             >
               <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-                Usage History
+                {t('rental.assetDetail.usageHistory')}
               </div>
               <Button
                 variant="primary"
@@ -348,14 +353,14 @@ export default function AssetDetail() {
                   setShowUsageForm(true)
                 }}
               >
-                Log Usage
+                {t('rental.assetDetail.logUsage')}
               </Button>
             </div>
             <Table
               columns={usageLogColumns}
               data={(asset.usageLogs ?? []) as UsageLogRow[]}
               rowKey="id"
-              emptyMessage="No usage logs yet"
+              emptyMessage={t('rental.assetDetail.noUsageLogsYet')}
             />
           </Card>
         )}
@@ -370,7 +375,7 @@ export default function AssetDetail() {
                 marginBottom: '12px',
               }}
             >
-              Maintenance Schedule
+              {t('rental.assetDetail.maintenanceSchedule')}
             </div>
             {(asset.maintenanceSchedules ?? []).map(
               (ms) => (
@@ -386,7 +391,7 @@ export default function AssetDetail() {
                 >
                   <div>
                     <div style={{ color: theme.textPrimary, fontWeight: 500 }}>
-                      {ms.maintenance_type}
+                      {enumLabel(ms.maintenance_type)}
                     </div>
                     {ms.description && (
                       <div style={{ color: theme.textMuted, fontSize: '11px' }}>
@@ -412,7 +417,7 @@ export default function AssetDetail() {
                             : 'neutral'
                       }
                     >
-                      {ms.status}
+                      {enumLabel(ms.status)}
                     </Badge>
                     <Button
                       variant="ghost"
@@ -421,7 +426,7 @@ export default function AssetDetail() {
                         setMaintenanceDetail(ms.id)
                       }}
                     >
-                      View
+                      {t('rental.assetDetail.view')}
                     </Button>
                   </div>
                 </div>
@@ -436,7 +441,7 @@ export default function AssetDetail() {
                   fontSize: '13px',
                 }}
               >
-                No scheduled maintenance
+                {t('rental.assetDetail.noScheduledMaintenance')}
               </div>
             )}
           </Card>
@@ -453,7 +458,7 @@ export default function AssetDetail() {
               }}
             >
               <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-                Condition Reports
+                {t('rental.assetDetail.conditionReports')}
               </div>
               <Button
                 variant="primary"
@@ -462,7 +467,7 @@ export default function AssetDetail() {
                   setShowConditionForm(true)
                 }}
               >
-                New Report
+                {t('rental.assetDetail.newReport')}
               </Button>
             </div>
             {(asset.conditionReports ?? []).map(

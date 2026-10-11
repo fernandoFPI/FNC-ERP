@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Outlet } from 'react-router-dom'
 import { useOverdueMaintenance } from '../../hooks/useOverdueMaintenance'
 import { useApprovalStore } from '../../store/approvalStore'

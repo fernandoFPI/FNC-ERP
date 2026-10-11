@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { enumLabel } from '../../../i18n'
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
@@ -38,6 +40,7 @@ interface CreateMOForm {
 }
 
 export default function ManufacturingRequestDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -87,12 +90,12 @@ export default function ManufacturingRequestDetail() {
 
   async function handleReject() {
     if (!rejectReason.trim()) {
-      addToast({ type: 'error', message: 'Rejection reason is required' })
+      addToast({ type: 'error', message: t('mfg.reqDetail.rejectionReasonIsRequired') })
       return
     }
     await handleAction(
       () => rejectMR({ variables: { id: id ?? '', reason: rejectReason } }),
-      'Request rejected',
+      t('mfg.reqDetail.requestRejected'),
     )
     setShowReject(false)
     setRejectReason('')
@@ -100,7 +103,7 @@ export default function ManufacturingRequestDetail() {
 
   async function handleCreateMO() {
     if (!moForm.bomId) {
-      addToast({ type: 'error', message: 'Please select a BOM' })
+      addToast({ type: 'error', message: t('mfg.reqDetail.pleaseSelectABom') })
       return
     }
     await handleAction(
@@ -114,14 +117,14 @@ export default function ManufacturingRequestDetail() {
             scheduledEnd: moForm.scheduledEnd || null,
           },
         }),
-      'Manufacturing order created',
+      t('mfg.reqDetail.manufacturingOrderCreated'),
     )
     setShowCreateMO(false)
     setMOForm({ bomId: '', workCenterId: '', scheduledStart: '', scheduledEnd: '' })
   }
 
   if (loading || !mr)
-    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading…</div>
+    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>{t('mfg.reqDetail.loading')}</div>
 
   const row = (label: string, value: React.ReactNode) => (
     <div
@@ -170,10 +173,10 @@ export default function ManufacturingRequestDetail() {
                 navigate('/manufacturing/requests')
               }}
             >
-              Back
+              {t('mfg.reqDetail.back')}
             </Button>
             <Badge variant={STATUS_VARIANT[mr.status] ?? 'neutral'}>
-              {mr.status.replace(/_/g, ' ')}
+              {enumLabel(mr.status).replace(/_/g, ' ')}
             </Badge>
           </div>
         }
@@ -207,35 +210,35 @@ export default function ManufacturingRequestDetail() {
                 marginBottom: '12px',
               }}
             >
-              Request Details
+              {t('mfg.reqDetail.requestDetails')}
             </div>
             {row(
-              'Request #',
+              t('mfg.reqDetail.request'),
               <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{mr.requestNumber}</span>,
             )}
             {row(
-              'Status',
+              t('mfg.reqDetail.status'),
               <Badge variant={STATUS_VARIANT[mr.status] ?? 'neutral'}>
-                {mr.status.replace(/_/g, ' ')}
+                {enumLabel(mr.status).replace(/_/g, ' ')}
               </Badge>,
             )}
-            {row('Project', mr.projectName ?? mr.projectId)}
-            {row('Company', mr.requestingCompanyName ?? mr.requestingCompanyId)}
+            {row(t('mfg.reqDetail.project'), mr.projectName ?? mr.projectId)}
+            {row(t('mfg.reqDetail.company'), mr.requestingCompanyName ?? mr.requestingCompanyId)}
             {row(
-              'Product',
+              t('mfg.reqDetail.product'),
               mr.productName
                 ? `${mr.productName}${mr.productSku ? ` (${mr.productSku})` : ''}`
                 : '—',
             )}
             {row(
-              'Qty Requested',
+              t('mfg.reqDetail.qtyRequested'),
               <span style={{ fontFamily: 'monospace' }}>{mr.qtyRequested.toLocaleString()}</span>,
             )}
-            {row('Required By', mr.requiredDate?.slice(0, 10) ?? '—')}
-            {row('Description', mr.description ?? '—')}
-            {row('Notes', mr.notes ?? '—')}
-            {row('Created', new Date(mr.createdAt).toLocaleString())}
-            {row('Requested By', mr.requestedByName ?? mr.requestedBy)}
+            {row(t('mfg.reqDetail.requiredBy'), mr.requiredDate?.slice(0, 10) ?? '—')}
+            {row(t('mfg.reqDetail.description'), mr.description ?? '—')}
+            {row(t('mfg.reqDetail.notes'), mr.notes ?? '—')}
+            {row(t('mfg.reqDetail.created'), new Date(mr.createdAt).toLocaleString())}
+            {row(t('mfg.reqDetail.requestedBy'), mr.requestedByName ?? mr.requestedBy)}
           </div>
 
           {/* Approval & MO Card */}
@@ -258,13 +261,13 @@ export default function ManufacturingRequestDetail() {
                   marginBottom: '12px',
                 }}
               >
-                Approval
+                {t('mfg.reqDetail.approval')}
               </div>
-              {row('Approved By', mr.approvedByName ?? '—')}
-              {row('Approved At', mr.approvedAt ? new Date(mr.approvedAt).toLocaleString() : '—')}
+              {row(t('mfg.reqDetail.approvedBy'), mr.approvedByName ?? '—')}
+              {row(t('mfg.reqDetail.approvedAt'), mr.approvedAt ? new Date(mr.approvedAt).toLocaleString() : '—')}
               {mr.rejectionReason &&
                 row(
-                  'Rejection Reason',
+                  t('mfg.reqDetail.rejectionReason'),
                   <span style={{ color: theme.danger }}>{mr.rejectionReason}</span>,
                 )}
             </div>
@@ -287,10 +290,10 @@ export default function ManufacturingRequestDetail() {
                   marginBottom: '12px',
                 }}
               >
-                Manufacturing Order
+                {t('mfg.reqDetail.manufacturingOrder')}
               </div>
               {row(
-                'MO Number',
+                t('mfg.reqDetail.moNumber'),
                 mr.moNumber ? (
                   <button
                     onClick={() => {
@@ -314,7 +317,7 @@ export default function ManufacturingRequestDetail() {
                 ),
               )}
               {row(
-                'Actual Cost',
+                t('mfg.reqDetail.actualCost'),
                 mr.actualCost != null ? (
                   <AmountDisplay amount={mr.actualCost} currency={mr.currencyCode} />
                 ) : (
@@ -335,11 +338,11 @@ export default function ManufacturingRequestDetail() {
               onClick={() =>
                 void handleAction(
                   () => submitMR({ variables: { id: id ?? '' } }),
-                  'Request submitted for approval',
+                  t('mfg.reqDetail.requestSubmittedForApproval'),
                 )
               }
             >
-              Submit for Approval
+              {t('mfg.reqDetail.submitForApproval')}
             </Button>
           )}
           {mr.status === 'pending_approval' && isAdmin && (
@@ -349,10 +352,10 @@ export default function ManufacturingRequestDetail() {
                 size="sm"
                 loading={approving}
                 onClick={() =>
-                  void handleAction(() => approveMR({ variables: { id: id ?? '' } }), 'Request approved')
+                  void handleAction(() => approveMR({ variables: { id: id ?? '' } }), t('mfg.reqDetail.requestApproved'))
                 }
               >
-                Approve
+                {t('mfg.reqDetail.approve')}
               </Button>
               <Button
                 variant="danger"
@@ -361,7 +364,7 @@ export default function ManufacturingRequestDetail() {
                   setShowReject(true)
                 }}
               >
-                Reject
+                {t('mfg.reqDetail.reject')}
               </Button>
             </>
           )}
@@ -373,7 +376,7 @@ export default function ManufacturingRequestDetail() {
                 setShowCreateMO(true)
               }}
             >
-              Create Manufacturing Order
+              {t('mfg.reqDetail.createManufacturingOrder')}
             </Button>
           )}
           {['draft', 'pending_approval'].includes(mr.status) && (
@@ -382,10 +385,10 @@ export default function ManufacturingRequestDetail() {
               size="sm"
               loading={cancelling}
               onClick={() =>
-                void handleAction(() => cancelMR({ variables: { id: id ?? '' } }), 'Request cancelled')
+                void handleAction(() => cancelMR({ variables: { id: id ?? '' } }), t('mfg.reqDetail.requestCancelled'))
               }
             >
-              Cancel Request
+              {t('mfg.reqDetail.cancelRequest')}
             </Button>
           )}
         </div>
@@ -395,7 +398,7 @@ export default function ManufacturingRequestDetail() {
       {showReject && (
         <Modal
           open={showReject}
-          title="Reject Request"
+          title={t('mfg.reqDetail.rejectRequest')}
           onClose={() => {
             setShowReject(false)
           }}
@@ -403,7 +406,7 @@ export default function ManufacturingRequestDetail() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '360px' }}>
             <div>
               <label style={labelStyle}>
-                Reason for rejection <span style={{ color: theme.danger }}>*</span>
+                {t('mfg.reqDetail.reasonForRejection')} <span style={{ color: theme.danger }}>*</span>
               </label>
               <textarea
                 rows={4}
@@ -412,7 +415,7 @@ export default function ManufacturingRequestDetail() {
                 onChange={(e) => {
                   setRejectReason(e.target.value)
                 }}
-                placeholder="Explain why this request is being rejected…"
+                placeholder={t('mfg.reqDetail.explainWhyThisRequestIsBeing')}
               />
             </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -423,10 +426,10 @@ export default function ManufacturingRequestDetail() {
                   setShowReject(false)
                 }}
               >
-                Cancel
+                {t('mfg.reqDetail.cancel')}
               </Button>
               <Button variant="danger" size="sm" loading={rejecting} onClick={(...args: Parameters<typeof handleReject>) => void handleReject(...args)}>
-                Reject
+                {t('mfg.reqDetail.reject')}
               </Button>
             </div>
           </div>
@@ -437,7 +440,7 @@ export default function ManufacturingRequestDetail() {
       {showCreateMO && (
         <Modal
           open={showCreateMO}
-          title="Create Manufacturing Order"
+          title={t('mfg.reqDetail.createManufacturingOrder')}
           onClose={() => {
             setShowCreateMO(false)
           }}
@@ -445,26 +448,26 @@ export default function ManufacturingRequestDetail() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '400px' }}>
             <div>
               <SearchableSelect
-                label="BOM *"
+                label={t('mfg.reqDetail.bom')}
                 value={moForm.bomId}
                 onChange={(v) => {
                   setMOForm((f) => ({ ...f, bomId: v }))
                 }}
-                placeholder="— Select a BOM —"
+                placeholder={t('mfg.reqDetail.selectABom')}
                 options={boms.map((b) => ({
                   value: b.id,
-                  label: `${b.product_name} — v${b.version} (produces ${b.qty_produced})`,
+                  label: t('mfg.reqDetail.vProduces', { product_name: b.product_name, version: b.version, qty_produced: b.qty_produced }),
                 }))}
               />
             </div>
             <div>
               <SearchableSelect
-                label="Work Center (optional)"
+                label={t('mfg.reqDetail.workCenterOptional')}
                 value={moForm.workCenterId}
                 onChange={(v) => {
                   setMOForm((f) => ({ ...f, workCenterId: v }))
                 }}
-                placeholder="— None —"
+                placeholder={t('mfg.reqDetail.none')}
                 options={workCenters.map((wc) => ({
                   value: wc.id,
                   label: `${wc.name} (${wc.code})`,
@@ -473,7 +476,7 @@ export default function ManufacturingRequestDetail() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
-                <label style={labelStyle}>Scheduled Start</label>
+                <label style={labelStyle}>{t('mfg.reqDetail.scheduledStart')}</label>
                 <input
                   type="date"
                   style={inputStyle}
@@ -484,7 +487,7 @@ export default function ManufacturingRequestDetail() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Scheduled End</label>
+                <label style={labelStyle}>{t('mfg.reqDetail.scheduledEnd')}</label>
                 <input
                   type="date"
                   style={inputStyle}
@@ -503,10 +506,10 @@ export default function ManufacturingRequestDetail() {
                   setShowCreateMO(false)
                 }}
               >
-                Cancel
+                {t('mfg.reqDetail.cancel')}
               </Button>
               <Button variant="primary" size="sm" loading={creatingMO} onClick={(...args: Parameters<typeof handleCreateMO>) => void handleCreateMO(...args)}>
-                Create MO
+                {t('mfg.reqDetail.createMo')}
               </Button>
             </div>
           </div>

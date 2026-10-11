@@ -1,4 +1,5 @@
-﻿import { useParams, useNavigate } from 'react-router-dom'
+﻿import { useTranslation } from 'react-i18next'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { BOM_QUERY } from '../../../graphql/manufacturing'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -21,6 +22,7 @@ interface BOMLine {
 }
 
 export default function BOMDetail() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -29,7 +31,7 @@ export default function BOMDetail() {
   const bom = data?.bom
 
   if (loading || !bom)
-    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading…</div>
+    return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>{t('mfg.bomDetail.loading')}</div>
 
   const totalCost = (bom.lines ?? []).reduce(
     (s, l) => s + l.qty * (l.unit_cost ?? 0),
@@ -45,7 +47,7 @@ export default function BOMDetail() {
     },
     {
       key: 'component_name',
-      header: 'Component',
+      header: t('mfg.bomDetail.component'),
       mobilePrimary: true,
       render: (l) => (
         <span style={{ color: theme.textPrimary, fontSize: '13px', fontWeight: 500 }}>
@@ -55,7 +57,7 @@ export default function BOMDetail() {
     },
     {
       key: 'qty',
-      header: 'Qty',
+      header: t('mfg.bomDetail.qty'),
       mobilePriority: 1,
       render: (l) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>{l.qty}</span>
@@ -63,19 +65,19 @@ export default function BOMDetail() {
     },
     {
       key: 'uom',
-      header: 'UOM',
+      header: t('mfg.bomDetail.uom'),
       mobilePriority: 2,
       render: (l) => <Badge variant="neutral">{l.uom}</Badge>,
     },
     {
       key: 'unit_cost',
-      header: 'Unit Cost',
+      header: t('mfg.bomDetail.unitCost'),
       mobilePriority: 3,
       render: (l) => <AmountDisplay amount={l.unit_cost ?? 0} currency="IQD" size="sm" />,
     },
     {
       key: 'line_total',
-      header: 'Line Total',
+      header: t('mfg.bomDetail.lineTotal'),
       mobilePriority: 4,
       render: (l) => (
         <span style={{ fontWeight: 600 }}>
@@ -88,12 +90,12 @@ export default function BOMDetail() {
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
       <PageHeader
-        title={`BOM: ${bom.product_name}`}
-        subtitle={`Version ${bom.version} · Produces ${bom.qty_produced} units`}
+        title={t('mfg.bomDetail.bom', { product_name: bom.product_name })}
+        subtitle={t('mfg.bomDetail.versionProducesUnits', { version: bom.version, qty_produced: bom.qty_produced })}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             <Badge variant={bom.is_active ? 'success' : 'neutral'}>
-              {bom.is_active ? 'Active' : 'Archived'}
+              {bom.is_active ? t('mfg.bomDetail.active') : t('mfg.bomDetail.archived')}
             </Badge>
             <Button
               variant="ghost"
@@ -102,7 +104,7 @@ export default function BOMDetail() {
                 navigate(`/manufacturing/boms/${id}/edit`)
               }}
             >
-              Edit
+              {t('mfg.bomDetail.edit')}
             </Button>
             <Button
               variant="primary"
@@ -111,7 +113,7 @@ export default function BOMDetail() {
                 navigate(`/manufacturing/orders/new?bomId=${id}`)
               }}
             >
-              Create MO
+              {t('mfg.bomDetail.createMo')}
             </Button>
           </div>
         }
@@ -141,12 +143,8 @@ export default function BOMDetail() {
             alignItems: 'center',
           }}
         >
-          <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
-            Components ({(bom.lines ?? []).length})
-          </div>
-          <span style={{ fontFamily: 'monospace', fontSize: '13px', color: theme.accent }}>
-            Total Cost: {totalCost.toLocaleString()} IQD
-          </span>
+          <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>{t('mfg.bomDetail.components', { length: (bom.lines ?? []).length })}</div>
+          <span style={{ fontFamily: 'monospace', fontSize: '13px', color: theme.accent }}>{t('mfg.bomDetail.totalCostIqd', { totalCost: totalCost.toLocaleString() })}</span>
         </div>
         <Table
           columns={columns}
@@ -155,13 +153,11 @@ export default function BOMDetail() {
           footerRow={{
             unit_cost: (
               <span style={{ color: theme.textSecondary, fontWeight: 600, fontSize: '13px' }}>
-                Total Planned Cost
+                {t('mfg.bomDetail.totalPlannedCost')}
               </span>
             ),
             line_total: (
-              <span style={{ color: theme.accent, fontWeight: 700, fontFamily: 'monospace' }}>
-                {totalCost.toLocaleString()} IQD
-              </span>
+              <span style={{ color: theme.accent, fontWeight: 700, fontFamily: 'monospace' }}>{t('mfg.bomDetail.iqd', { totalCost: totalCost.toLocaleString() })}</span>
             ),
           }}
         />
