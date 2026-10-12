@@ -1468,6 +1468,14 @@ export function Sidebar({
 
   return (
     <div
+      // Remounts on a language-direction flip. The closed/off-screen position
+      // mirrors sign based on `rtl` (-100% in LTR, +100% in RTL) — without
+      // this key, switching language while the mobile drawer is closed
+      // animates transform across that unconditional transition, visibly
+      // sliding the hidden panel all the way across the screen and back out.
+      // A fresh key means React mounts a new node already at its final
+      // transform value, with nothing to transition from.
+      key={mobile ? `sidebar-${rtl}` : 'sidebar'}
       style={{
         width,
         minWidth: width,
