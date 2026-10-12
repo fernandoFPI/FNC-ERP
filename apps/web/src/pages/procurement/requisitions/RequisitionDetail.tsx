@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -25,7 +25,8 @@ import {
   APPROVE_REQUISITION_EDIT_REQUEST,
   REJECT_REQUISITION_EDIT_REQUEST,
 } from '../../../graphql/requisitions'
-import { RESOLVE_LINE_FLAG } from '../../../graphql/procurement'
+import { RESOLVE_LINE_FLAG, PO_LINE_COMMENTS_QUERY } from '../../../graphql/procurement'
+import { LineCommentsModal, type LineComment } from './LineCommentsModal'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -92,6 +93,7 @@ import type {
   ResetRequisitionToDraftMutationVariables,
   ResolveLineFlagMutation,
   ResolveLineFlagMutationVariables,
+  PoLineCommentsQuery,
   SubmitRequisitionEditRequestMutation,
   SubmitRequisitionEditRequestMutationVariables,
   SubmitRequisitionMarketPricingMutation,
@@ -401,6 +403,39 @@ export default function RequisitionDetail() {
     ResolveLineFlagMutation,
     ResolveLineFlagMutationVariables
   >(RESOLVE_LINE_FLAG, mutOpts)
+  const [commentModal, setCommentModal] = useState<{ lineId: string; description: string } | null>(
+    null,
+  )
+  const { data: lineCommentsData, refetch: refetchLineComments } = useQuery<PoLineCommentsQuery>(
+    PO_LINE_COMMENTS_QUERY,
+    { variables: { poId: id }, skip: !id, fetchPolicy: 'cache-and-network' },
+  )
+  const fetchLineComments = useCallback(() => {
+    void refetchLineComments()
+  }, [refetchLineComments])
+  // Derived, not synced via useState+useEffect — syncing external query data
+  // into state with an effect re-triggers itself whenever the query result
+  // object isn't referentially stable across renders (real Apollo caching
+  // keeps it stable when the data hasn't changed, but a naive test mock that
+  // rebuilds its return value every render doesn't, turning the effect into
+  // an infinite render loop in that case — OOM'd RequisitionDetail.test.tsx
+  // this way). useMemo recomputing never schedules a render on its own, so
+  // there's no feedback loop regardless of how stable the input reference is.
+  const lineComments = useMemo(() => {
+    const grouped: Record<string, LineComment[]> = {}
+    for (const c of lineCommentsData?.poLineComments ?? []) {
+      ;(grouped[c.po_line_id] ??= []).push({
+        id: c.id,
+        comment: c.comment,
+        created_by_name: c.created_by_name,
+        created_at: c.created_at,
+        flag: (c.flag as LineComment['flag']) ?? null,
+        resolved: c.resolved,
+        resolved_at: c.resolved_at,
+      })
+    }
+    return grouped
+  }, [lineCommentsData])
   // Mirrors PurchaseOrderDetail's own anyLoading — every button within a
   // reject box (plus that panel's own primary action) shares one combined
   // flag so a click on one disables its siblings too. Without this, the
@@ -1334,16 +1369,32 @@ export default function RequisitionDetail() {
                           >
                             {l.flag_reason}
                           </div>
-                          {canResolve && !open && (
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            {canResolve && !open && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                loading={lResolveFlag}
+                                onClick={() => void resolveLineFlag({ variables: { lineId: l.id } })}
+                              >
+                                {t('req.detail.resolve')}
+                              </Button>
+                            )}
                             <Button
-                              variant="secondary"
+                              variant="ghost"
                               size="sm"
-                              loading={lResolveFlag}
-                              onClick={() => void resolveLineFlag({ variables: { lineId: l.id } })}
+                              onClick={() => {
+                                setCommentModal({
+                                  lineId: l.id,
+                                  description: l.description || l.product_name || '',
+                                })
+                              }}
                             >
-                              {t('req.detail.resolve')}
+                              {(lineComments[l.id] ?? []).length > 0
+                                ? t('req.detail.replyCount', { count: (lineComments[l.id] ?? []).length })
+                                : t('req.detail.reply')}
                             </Button>
-                          )}
+                          </div>
                         </div>
                       )}
                       {isComposing && (
@@ -3415,6 +3466,19 @@ export default function RequisitionDetail() {
             </div>
           )
         })()}
+
+      {commentModal && (
+        <LineCommentsModal
+          poId={id}
+          lineId={commentModal.lineId}
+          description={commentModal.description}
+          comments={lineComments[commentModal.lineId] ?? []}
+          onClose={() => {
+            setCommentModal(null)
+          }}
+          onChanged={fetchLineComments}
+        />
+      )}
     </div>
   )
 }

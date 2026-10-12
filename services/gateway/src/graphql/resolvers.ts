@@ -10535,6 +10535,10 @@ export const resolvers = {
 
     // Ported from the deleted services/procurement REST route (GET
     // /:id/line-comments).
+    // `poId` also accepts a requisition id — po_lines.requisition_id is
+    // always set (po_id only exists once a vendor PO is created, see
+    // migration 258), so this one arg works for either parent without the
+    // caller needing to know which stage the line is at.
     poLineComments: async (_: unknown, args: { poId: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
       return (
@@ -10543,9 +10547,12 @@ export const resolvers = {
                   c.flag, c.resolved, c.resolved_by, c.resolved_at,
                   ru.email AS resolved_by_email
            FROM po_line_comments c
-           JOIN purchase_orders po ON po.id = c.po_id
+           JOIN po_lines pl ON pl.id = c.po_line_id
+           LEFT JOIN purchase_orders po ON po.id = pl.po_id
+           LEFT JOIN requisitions req ON req.id = pl.requisition_id
            LEFT JOIN users ru ON ru.id = c.resolved_by
-           WHERE c.po_id = $1 AND po.company_id = $2
+           WHERE (pl.po_id = $1 OR pl.requisition_id = $1)
+             AND (po.company_id = $2 OR req.company_id = $2)
            ORDER BY c.created_at ASC`,
           [args.poId, ctx.auth.companyId],
         )
@@ -24520,6 +24527,10 @@ export const resolvers = {
 
     // Ported from the deleted services/procurement REST route (POST
     // /:id/lines/:lineId/comments) — see git history for the original.
+    // `poId` also accepts a requisition id (see poLineComments above); the
+    // real po_id (possibly still null, pre-vendor) is read from the line
+    // itself rather than trusted from the arg, since for a requisition-stage
+    // line `args.poId` is actually the requisition's id, not a po_id.
     addPOLineComment: async (
       _: unknown,
       args: { poId: string; lineId: string; comment: string; flag?: string | null },
@@ -24529,11 +24540,15 @@ export const resolvers = {
       if (!args.comment.trim()) throw new Error('Comment is required')
       const validFlags = ['info', 'warning', 'dispute']
       const safeFlag = args.flag && validFlags.includes(args.flag) ? args.flag : null
-      const po = await query(`SELECT id FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
-        args.poId,
-        ctx.auth.companyId,
-      ])
-      if (!po.rows[0]) throw new Error('PO not found')
+      const line = await query<{ po_id: string | null }>(
+        `SELECT pl.po_id FROM po_lines pl
+         LEFT JOIN purchase_orders po ON po.id = pl.po_id
+         LEFT JOIN requisitions req ON req.id = pl.requisition_id
+         WHERE pl.id=$1 AND (pl.po_id=$2 OR pl.requisition_id=$2)
+           AND (po.company_id=$3 OR req.company_id=$3)`,
+        [args.lineId, args.poId, ctx.auth.companyId],
+      )
+      if (!line.rows[0]) throw new Error('Line not found')
       const userRow = await query(
         `SELECT COALESCE(NULLIF(TRIM(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')), ''), email) AS display_name FROM users WHERE id=$1`,
         [ctx.auth.userId],
@@ -24543,7 +24558,7 @@ export const resolvers = {
         `INSERT INTO po_line_comments (po_line_id, po_id, comment, created_by_name, flag)
          VALUES ($1,$2,$3,$4,$5)
          RETURNING id, po_line_id, comment, created_by_name, created_at, flag, resolved, resolved_by, resolved_at`,
-        [args.lineId, args.poId, args.comment.trim(), displayName, safeFlag],
+        [args.lineId, line.rows[0].po_id, args.comment.trim(), displayName, safeFlag],
       )
       return result.rows[0]
     },
@@ -24556,16 +24571,25 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const po = await query(`SELECT id FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
-        args.poId,
-        ctx.auth.companyId,
-      ])
-      if (!po.rows[0]) throw new Error('PO not found')
+      const own = await query(
+        `SELECT c.id FROM po_line_comments c
+         JOIN po_lines pl ON pl.id = c.po_line_id
+         LEFT JOIN purchase_orders po ON po.id = pl.po_id
+         LEFT JOIN requisitions req ON req.id = pl.requisition_id
+         WHERE c.id=$1 AND (pl.po_id=$2 OR pl.requisition_id=$2)
+           AND (po.company_id=$3 OR req.company_id=$3)`,
+        [args.commentId, args.poId, ctx.auth.companyId],
+      )
+      if (!own.rows[0]) throw new Error('Comment not found')
+      // Ownership already verified above via po_lines — po_id here would be
+      // null for a requisition-stage comment, so filtering on it again
+      // (against args.poId, which isn't even a po_id in that case) would
+      // never match.
       const result = await query(
         `UPDATE po_line_comments SET resolved=true, resolved_by=$1, resolved_at=NOW()
-         WHERE id=$2 AND po_id=$3 AND flag IS NOT NULL AND resolved=false
+         WHERE id=$2 AND flag IS NOT NULL AND resolved=false
          RETURNING id, po_line_id, comment, created_by_name, created_at, flag, resolved, resolved_by, resolved_at`,
-        [ctx.auth.userId, args.commentId, args.poId],
+        [ctx.auth.userId, args.commentId],
       )
       if (!result.rows[0]) throw new Error('Flag not found or already resolved')
       return result.rows[0]
