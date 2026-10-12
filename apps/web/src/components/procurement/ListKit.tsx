@@ -580,6 +580,12 @@ export function MoreFilters({
             insetInlineEnd: 0,
             zIndex: 40,
             width: '300px',
+            // Anchored to the button, which can sit anywhere on the page —
+            // with no cap, a panel opened low on a long filter bar (or on a
+            // short window) rendered past the viewport edge with nothing to
+            // scroll, making its own "Clear all filters" link unreachable.
+            maxHeight: '70vh',
+            overflowY: 'auto',
             padding: '16px',
             borderRadius: '12px',
             border: `1px solid ${theme.border}`,
