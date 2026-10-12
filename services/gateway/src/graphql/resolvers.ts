@@ -11284,6 +11284,23 @@ export const resolvers = {
           isPrimary: args.isPrimary ?? false,
           uploadedBy: ctx.auth.userId,
         })
+        // recordLinePurchase sets receipt_attachment_id directly when a receipt
+        // is provided at record time, but a receipt added afterward via this
+        // generic attachment flow (e.g. the Items Bought "Receipts" modal) never
+        // backfilled it — leaving ItemsBoughtPage's "No receipt" badge and
+        // finishBuyingRequisition's receipt gate both permanently stuck, even
+        // though a real attachment exists. Only fills it when still unset, so
+        // it never overrides the one chosen at record time.
+        if (args.entityType === 'po_line_purchase') {
+          await client.query(
+            `UPDATE po_line_purchases SET receipt_attachment_id = (
+               SELECT da.id FROM document_attachments da
+               WHERE da.file_id=$1 AND da.entity_type='po_line_purchase' AND da.entity_id=$2
+             )
+             WHERE id=$2 AND receipt_attachment_id IS NULL`,
+            [args.fileId, args.entityId],
+          )
+        }
         await client.query('COMMIT')
       } catch (err) {
         await client.query('ROLLBACK')
