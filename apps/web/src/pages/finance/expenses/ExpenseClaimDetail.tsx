@@ -58,6 +58,8 @@ interface Claim {
   petty_cash_float_name: string | null
   settlement_number: string | null
   advance_number: string | null
+  receipt_pending: boolean
+  has_receipt: boolean
   lines: ClaimLine[]
 }
 
@@ -434,7 +436,7 @@ export default function ExpenseClaimDetail() {
                   variant="primary"
                   size="sm"
                   onClick={() => void act('pass-audit')}
-                  disabled={acting}
+                  disabled={acting || (claim.receipt_pending && !claim.has_receipt)}
                 >
                   {t('fin.expDetail.passAudit')}
                 </Button>
@@ -672,6 +674,22 @@ export default function ExpenseClaimDetail() {
                 }}
               >
                 <strong>{t('fin.expDetail.sentBackFromAudit')}</strong> {claim.audit_fail_reason}
+              </div>
+            )}
+            {claim.receipt_pending && !claim.has_receipt && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  background: theme.warningBg,
+                  border: `1px solid ${theme.warningBorder}`,
+                  borderRadius: '6px',
+                  padding: '8px 10px',
+                  fontSize: '12px',
+                  color: theme.warning,
+                }}
+              >
+                <strong>{t('fin.expDetail.receiptPendingTitle')}</strong>{' '}
+                {t('fin.expDetail.receiptPendingBody')}
               </div>
             )}
             {claim.journal_entry_id && (

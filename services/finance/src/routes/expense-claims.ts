@@ -344,7 +344,13 @@ expenseClaimsRouter.get(
                 COALESCE(du.first_name || ' ' || du.last_name, du.email) AS audited_by_name,
                 COALESCE(pu.first_name || ' ' || pu.last_name, pu.email) AS paid_by_name,
                 pcf.name AS petty_cash_float_name,
-                aset.settlement_number, adv.advance_number
+                aset.settlement_number, adv.advance_number,
+                EXISTS (
+                  SELECT 1 FROM document_attachments da
+                  WHERE (da.entity_type='expense_claim' AND da.entity_id=ec.id)
+                     OR (da.entity_type='expense_claim_line' AND da.entity_id IN (
+                           SELECT id FROM expense_claim_lines WHERE claim_id=ec.id))
+                ) AS has_receipt
          FROM expense_claims ec
          LEFT JOIN projects proj ON proj.id = ec.project_id
          LEFT JOIN users cu ON cu.id = ec.created_by
@@ -508,6 +514,9 @@ const selfClaimSchema = z.object({
   project_id: z.string().uuid().optional(),
   notes: z.string().optional(),
   lines: z.array(selfLineSchema).min(1),
+  // True when the organizer hasn't spent the money yet — approve first,
+  // receipt comes later. Enforced at pass-audit, not here.
+  receipt_pending: z.boolean().default(false),
 })
 
 expenseClaimsRouter.post('/request-self', asyncHandler(async (req, res) => {
@@ -533,8 +542,8 @@ expenseClaimsRouter.post('/request-self', asyncHandler(async (req, res) => {
         const ecRes = await client.query(
           `INSERT INTO expense_claims
              (company_id, claim_number, employee_id, employee_name, description, currency_code,
-              total_amount, project_id, notes, status, submitted_at, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'submitted',NOW(),$10) RETURNING *`,
+              total_amount, project_id, notes, receipt_pending, status, submitted_at, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'submitted',NOW(),$11) RETURNING *`,
           [
             getAuth(req).companyId,
             claimNumber,
@@ -545,6 +554,7 @@ expenseClaimsRouter.post('/request-self', asyncHandler(async (req, res) => {
             totalAmount,
             d.project_id ?? null,
             d.notes ?? null,
+            d.receipt_pending,
             getAuth(req).userId,
           ],
         )
@@ -773,6 +783,35 @@ expenseClaimsRouter.post(
   requirePermission('finance.expenses.audit', 'approve'),
   asyncHandler(async (req, res) => {
     try {
+      // receipt_pending (set at request-self: "approve first, I'll upload
+      // the receipt after") must actually have one attached before it can
+      // pass audit — otherwise a claim could complete with no proof of
+      // spend at all. Checked here, not at approve, since approving is
+      // exactly the point where none exists yet by design.
+      const pending = await query<{ receipt_pending: boolean; has_receipt: boolean }>(
+        `SELECT ec.receipt_pending,
+                EXISTS (
+                  SELECT 1 FROM document_attachments da
+                  WHERE (da.entity_type='expense_claim' AND da.entity_id=ec.id)
+                     OR (da.entity_type='expense_claim_line' AND da.entity_id IN (
+                           SELECT id FROM expense_claim_lines WHERE claim_id=ec.id))
+                ) AS has_receipt
+         FROM expense_claims ec WHERE ec.id=$1 AND ec.company_id=$2`,
+        [req.params['id'], getAuth(req).companyId],
+      )
+      if (!pending.rows[0]) {
+        sendError(res, 404, 'NOT_FOUND', 'Claim not found')
+        return
+      }
+      if (pending.rows[0].receipt_pending && !pending.rows[0].has_receipt) {
+        sendError(
+          res,
+          422,
+          'RECEIPT_REQUIRED',
+          'This claim was submitted without a receipt — attach one before it can pass audit',
+        )
+        return
+      }
       const r = await query(
         `UPDATE expense_claims SET status='audited', audited_by=$1, audited_at=NOW(), updated_at=NOW()
          WHERE id=$2 AND company_id=$3 AND status='approved' RETURNING *`,

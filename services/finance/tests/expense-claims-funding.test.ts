@@ -25,6 +25,11 @@ let floatId: string
 let advanceId: string
 
 async function cleanFixtures(): Promise<void> {
+  await pool.query(
+    `DELETE FROM document_attachments WHERE entity_type='expense_claim' AND entity_id IN (SELECT id FROM expense_claims WHERE company_id=$1)`,
+    [TEST_COMPANY_ID],
+  )
+  await pool.query(`DELETE FROM files WHERE company_id=$1 AND file_key LIKE 'receipt-pending-test-%'`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM expense_claim_lines WHERE company_id=$1`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM expense_claims WHERE company_id=$1`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM advance_settlement_lines WHERE company_id=$1`, [TEST_COMPANY_ID])
@@ -341,5 +346,52 @@ describe('Expense claim funding flow', () => {
     expect(resubmitRes.status).toBe(200)
     expect(resubmitRes.body.data.status).toBe('submitted')
     await approveAndAudit(id)
+  })
+
+  it('blocks pass-audit on a receipt_pending claim until a receipt is attached', async () => {
+    const res = await request(app)
+      .post('/finance/expense-claims/request-self')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        currency_code: 'IQD',
+        receipt_pending: true,
+        lines: [{ expense_date: '2026-01-10', category_id: categoryId, description: 'No receipt yet', amount: 5000 }],
+      })
+    expect(res.status).toBe(201)
+    expect(res.body.data.receipt_pending).toBe(true)
+    const id = res.body.data.id as string
+
+    const approveRes = await request(app)
+      .post(`/finance/expense-claims/${id}/approve`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(approveRes.status).toBe(200)
+
+    const blockedRes = await request(app)
+      .post(`/finance/expense-claims/${id}/pass-audit`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(blockedRes.status).toBe(422)
+    expect(blockedRes.body.error.code).toBe('RECEIPT_REQUIRED')
+
+    const stillApproved = await pool.query<{ status: string }>(
+      `SELECT status FROM expense_claims WHERE id=$1`,
+      [id],
+    )
+    expect(stillApproved.rows[0]!.status).toBe('approved')
+
+    const fileRes = await pool.query<{ id: string }>(
+      `INSERT INTO files (company_id, uploaded_by, file_key, original_filename, mime_type, size_bytes, category, status)
+       VALUES ($1,$2,$3,'receipt.jpg','image/jpeg',1024,'attachment','uploaded') RETURNING id`,
+      [TEST_COMPANY_ID, testUserId, `receipt-pending-test-${Date.now()}`],
+    )
+    await pool.query(
+      `INSERT INTO document_attachments (file_id, entity_type, entity_id, uploaded_by) VALUES ($1,'expense_claim',$2,$3)`,
+      [fileRes.rows[0]!.id, id, testUserId],
+    )
+
+    const auditRes = await request(app)
+      .post(`/finance/expense-claims/${id}/pass-audit`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(auditRes.status).toBe(200)
+    expect(auditRes.body.data.status).toBe('audited')
   })
 })

@@ -113,6 +113,10 @@ export default function RequisitionForm() {
   const [sameReceiptForAll, setSameReceiptForAll] = useState(false)
   const [globalReceiptFiles, setGlobalReceiptFiles] = useState<File[]>([])
   const [pendingReceiptFiles, setPendingReceiptFiles] = useState<Record<number, File[]>>({})
+  // Organizer hasn't spent the money yet — wants approval first and will
+  // attach the receipt afterward, once it exists. Mutually exclusive with
+  // the receipt-upload options below (nothing to attach yet either way).
+  const [receiptPending, setReceiptPending] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
@@ -363,7 +367,11 @@ export default function RequisitionForm() {
       label: t('req.form.receipt'),
       width: '170px',
       render: (_line, i) =>
-        sameReceiptForAll ? (
+        receiptPending ? (
+          <span style={{ fontSize: '11px', color: theme.textMuted }}>
+            {t('req.form.receiptAfterApproval')}
+          </span>
+        ) : sameReceiptForAll ? (
           <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('req.form.sharedReceiptBelow')}</span>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -437,6 +445,7 @@ export default function RequisitionForm() {
           description: notes || undefined,
           currency_code: expenseCurrency,
           project_id: projectId || undefined,
+          receipt_pending: receiptPending,
           lines: realExpenseLines.map(({ line }) => ({
             expense_date: line.expense_date,
             category_id: line.category_id,
@@ -676,12 +685,24 @@ export default function RequisitionForm() {
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: theme.textSecondary, cursor: 'pointer' }}>
                 <input
                   type="checkbox"
-                  checked={sameReceiptForAll}
-                  onChange={(e) => { setSameReceiptForAll(e.target.checked); }}
+                  checked={receiptPending}
+                  onChange={(e) => {
+                    setReceiptPending(e.target.checked)
+                  }}
                 />
-                {t('req.form.attachOneReceiptForTheWhole')}
+                {t('req.form.receiptPendingCheckbox')}
               </label>
-              {sameReceiptForAll && (
+              {!receiptPending && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: theme.textSecondary, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={sameReceiptForAll}
+                    onChange={(e) => { setSameReceiptForAll(e.target.checked); }}
+                  />
+                  {t('req.form.attachOneReceiptForTheWhole')}
+                </label>
+              )}
+              {!receiptPending && sameReceiptForAll && (
                 <div>
                   <input
                     type="file"
