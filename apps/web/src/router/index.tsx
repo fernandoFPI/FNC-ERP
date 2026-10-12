@@ -472,6 +472,17 @@ export const router = createBrowserRouter([
             path: 'revaluation',
             element: withPerm('finance.revaluation.view', <RevaluationPage />),
           },
+          // There's no standalone "Expense Claims" list page — claims are
+          // filed from, and listed alongside, Requisitions (see
+          // RequisitionForm.tsx's request-self flow). Topbar's breadcrumb
+          // builder is generic and always links a non-leaf segment to its own
+          // bare path, so clicking "Expense Claims" while viewing a specific
+          // claim 404'd on a path nothing ever rendered. Send it to the list
+          // it actually lives in instead of inventing a redundant one here.
+          {
+            path: 'expense-claims',
+            element: <Navigate to="/procurement/requisitions" replace />,
+          },
           {
             path: 'expense-claims/dashboard',
             element: withPerm('finance.expenses.view', <ExpenseClaimDashboard />),
