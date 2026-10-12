@@ -265,10 +265,15 @@ export default function POReturnForm() {
       </div>
     )
   }
-  if (!['received', 'invoiced', 'completed'].includes(po.status)) {
+  // Mirrors the "Create Return" button's own gate (PurchaseOrderDetail.tsx) —
+  // that button already allows payment_pending/closed, so this page's check
+  // must too, or a PO at either of those statuses hits this error immediately
+  // after the button let the user in.
+  if (!['received', 'invoiced', 'completed', 'payment_pending', 'closed'].includes(po.status)) {
     return (
       <div style={{ padding: '40px', textAlign: 'center', color: theme.danger }}>
-        Returns can only be created for received, invoiced, or completed POs.
+        Returns can only be created for received, invoiced, completed, payment pending, or closed
+        POs.
       </div>
     )
   }
