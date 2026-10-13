@@ -37231,6 +37231,18 @@ const phase5MutationResolvers = {
        VALUES ($1,'material_issue','SO',1,5,false,'-') ON CONFLICT (company_id, doc_type) DO NOTHING`,
       [company.id],
     )
+    // Same provisional policy 259_seed_price_tolerance backfilled onto every
+    // company that already existed then — a company created since has had
+    // none at all, which both the purchase-side over_tolerance check and
+    // recordProductCostChange's approval gate silently treat as "nothing to
+    // compare against, never flag" rather than an error. Seeding it here
+    // means neither check goes quietly inert for a new company by default.
+    await query(
+      `INSERT INTO company_price_tolerance (company_id, currency_code, tolerance_pct, tolerance_abs, is_provisional)
+       VALUES ($1,'IQD',5,25000,true), ($1,'USD',5,20,true)
+       ON CONFLICT (company_id, currency_code) DO NOTHING`,
+      [company.id],
+    )
     return companyRowToDetail(company)
   },
 
