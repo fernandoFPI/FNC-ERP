@@ -28,8 +28,10 @@ import {
 import { RESOLVE_LINE_FLAG, PO_LINE_COMMENTS_QUERY } from '../../../graphql/procurement'
 import { LineCommentsModal, type LineComment } from './LineCommentsModal'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
+import { MATERIAL_ISSUES_QUERY } from '../../../graphql/projects'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
+import { enumLabel } from '../../../i18n'
 import { usePermission } from '../../../hooks/usePermission'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
@@ -65,6 +67,8 @@ import type {
   CancelRequisitionMutationVariables,
   ConfirmRequisitionInventoryCheckMutation,
   ConfirmRequisitionInventoryCheckMutationVariables,
+  MaterialIssuesQuery,
+  MaterialIssuesQueryVariables,
   ProductsQuery,
   ProductsQueryVariables,
   RejectRequisitionApprovalMutation,
@@ -251,6 +255,12 @@ interface ChildPO {
   total_amount: string
   currency_code: string
   created_at: string
+}
+
+const MATERIAL_ISSUE_STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger'> = {
+  draft: 'warning',
+  issued: 'success',
+  cancelled: 'danger',
 }
 
 interface LineLocationAvailability {
@@ -485,6 +495,19 @@ export default function RequisitionDetail() {
     fetchPolicy: 'cache-and-network',
   })
   const children: ChildPO[] = childData?.requisitionChildPurchaseOrders ?? []
+
+  // Store Outs covering this requisition's stock-covered lines — created
+  // (when working correctly) at approveRequisition time, same window as the
+  // child POs above, so this reuses the same visibility gate.
+  const { data: materialIssuesData } = useQuery<
+    MaterialIssuesQuery,
+    MaterialIssuesQueryVariables
+  >(MATERIAL_ISSUES_QUERY, {
+    variables: { requisitionId: id ?? '' },
+    skip: !id || !showChildren,
+    fetchPolicy: 'cache-and-network',
+  })
+  const materialIssues = materialIssuesData?.materialIssues ?? []
 
   const { data: availData } = useQuery<
     RequisitionStockAvailabilityQuery,
@@ -908,17 +931,31 @@ export default function RequisitionDetail() {
             header: t('req.detail.bought'),
             render: (l: ReqLine) => {
               const purchases = l.purchases ?? []
-              if (purchases.length === 0)
+              if (purchases.length === 0) {
+                if (l.closed_at)
+                  return (
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                      {`Closed — ${l.closed_reason ?? ''}`}
+                    </span>
+                  )
+                // Fully covered from stock — qty_from_stock meets or exceeds
+                // what was ordered, so there's nothing left to purchase on
+                // this line at all (see the Store Outs card for its actual
+                // issuance status, not this column).
+                const fullyFromStock =
+                  parseFloat(l.qty_from_stock ?? '0') >= parseFloat(l.qty) - 0.0001
+                if (fullyFromStock)
+                  return (
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                      {t('req.detail.coveredFromInventory')}
+                    </span>
+                  )
                 return (
-                  <span
-                    style={{
-                      fontSize: '12px',
-                      color: l.closed_at ? theme.textMuted : theme.warning,
-                    }}
-                  >
-                    {l.closed_at ? `Closed — ${l.closed_reason ?? ''}` : t('req.detail.notYetBought')}
+                  <span style={{ fontSize: '12px', color: theme.warning }}>
+                    {t('req.detail.notYetBought')}
                   </span>
                 )
+              }
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   {purchases.map((p) => (
@@ -3248,6 +3285,43 @@ export default function RequisitionDetail() {
                 rowKey="id"
                 onRowClick={(c: ChildPO) => {
                   navigate(`/procurement/purchase-orders/${c.id}`)
+                }}
+              />
+            </Card>
+          )}
+
+          {/* ── Store Outs (once any exist) ──────────────────────────────────── */}
+          {showChildren && materialIssues.length > 0 && (
+            <Card style={sectionCard}>
+              <div style={sectionTitle}>{t('req.detail.storeOuts')}</div>
+              <div style={sectionHint}>{t('req.detail.storeOutsHint')}</div>
+              <Table
+                columns={[
+                  {
+                    key: 'issueNumber',
+                    header: t('req.detail.issueNumber'),
+                    render: (mi: (typeof materialIssues)[number]) => (
+                      <span
+                        style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}
+                      >
+                        {mi.issueNumber}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'status',
+                    header: t('req.detail.status'),
+                    render: (mi: (typeof materialIssues)[number]) => (
+                      <Badge variant={MATERIAL_ISSUE_STATUS_VARIANT[mi.status] ?? 'neutral'}>
+                        {enumLabel(mi.status)}
+                      </Badge>
+                    ),
+                  },
+                ]}
+                data={materialIssues}
+                rowKey="id"
+                onRowClick={(mi: (typeof materialIssues)[number]) => {
+                  navigate(`/inventory/store-out/${mi.id}`)
                 }}
               />
             </Card>
