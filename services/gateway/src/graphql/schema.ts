@@ -2741,6 +2741,7 @@
     has_stock_moves: Boolean
     balances: [ProductBalance!]
     costHistory: [ProductCostHistoryEntry!]
+    pendingCostChanges: [ProductCostChangeRequest!]
   }
 
   # Every recorded change to this product's standard_cost (the one
@@ -2757,6 +2758,30 @@
     source_label: String
     changed_by_name: String
     changed_at: String!
+  }
+
+  # A cost change big enough to trip company_price_tolerance, parked by
+  # recordProductCostChange instead of writing products.standard_cost
+  # immediately — see that function's own comment.
+  type ProductCostChangeRequest {
+    id: ID!
+    product_id: ID!
+    product_name: String
+    product_name_ar: String
+    sku: String
+    old_cost: String
+    new_cost: String!
+    currency_code: String!
+    source_type: String!
+    source_id: ID
+    source_label: String
+    requested_by: ID
+    requested_by_name: String
+    status: String!
+    reviewed_by_name: String
+    reviewed_at: String
+    rejection_reason: String
+    created_at: String!
   }
 
   extend type StockBalance {
@@ -2916,6 +2941,7 @@
 
   extend type Query {
     product(id: ID!): Product
+    productCostChangeRequests(status: String): [ProductCostChangeRequest!]!
     stockLocations(type: String, isActive: Boolean, companyId: ID): [StockLocation!]!
     # The group's central-warehouse company's own real locations (never the
     # caller's own) — lets any company's Material Return picker offer it as
@@ -2947,6 +2973,8 @@
   extend type Mutation {
     createProduct(input: ProductInput!): Product!
     updateProduct(id: ID!, input: ProductInput!): Product!
+    approveProductCostChange(id: ID!): ProductCostChangeRequest!
+    rejectProductCostChange(id: ID!, reason: String!): ProductCostChangeRequest!
     createStockLocation(input: LocationInput!): StockLocation!
     createManualTransfer(input: TransferInput!): StockMove!
     # Null when the adjustment was a true no-op — nothing was recorded,

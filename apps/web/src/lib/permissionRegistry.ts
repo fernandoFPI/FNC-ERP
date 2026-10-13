@@ -435,6 +435,7 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
         permissions: [
           { key: 'inventory.products.view', get label() { return i18n.t('perm.reg.viewProducts', { defaultValue: "View Products" }) }, sortOrder: 400 },
           { key: 'inventory.products.edit', get label() { return i18n.t('perm.reg.manageProducts', { defaultValue: "Manage Products" }) }, sortOrder: 401 },
+          { key: 'inventory.products.approve_cost_change', get label() { return i18n.t('perm.reg.approveCostChanges', { defaultValue: "Approve Cost Changes" }) }, sortOrder: 402 },
         ],
       },
       {

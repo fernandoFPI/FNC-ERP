@@ -14,12 +14,29 @@ import { resolvers } from '../src/graphql/resolvers.js'
 
 const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
 const TEST_USER_EMAIL = 'stock-adjustment-cost-correction-test@fnc-erp.local'
+const REVIEWER_USER_EMAIL = 'stock-adjustment-cost-correction-reviewer@fnc-erp.local'
 const SKU_PREFIX = 'COSTCORRECTTEST-'
 
 let userId: string
+let reviewerId: string
 let warehouseId: string
 let virtualInId: string
 let ctx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
+let reviewerCtx: {
+  auth: { companyId: string; userId: string; role: string; module: string; sessionId: string }
+}
+
+// A correction big enough to trip company_price_tolerance parks for review
+// instead of applying immediately (see recordProductCostChange) — approve
+// it as a different user (no self-approval) to get the real end state.
+async function approveLatestPendingChange(productId: string): Promise<void> {
+  const pending = await pool.query<{ id: string }>(
+    `SELECT id FROM product_cost_change_requests WHERE product_id=$1 AND status='pending' ORDER BY created_at DESC LIMIT 1`,
+    [productId],
+  )
+  if (!pending.rows[0]) throw new Error('Expected a pending cost change request')
+  await resolvers.Mutation.approveProductCostChange(null, { id: pending.rows[0].id }, reviewerCtx as never)
+}
 
 async function makeProduct(suffix: string): Promise<string> {
   const sku = `${SKU_PREFIX}${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -84,6 +101,22 @@ beforeAll(async () => {
     auth: { companyId: TEST_COMPANY_ID, userId, role: 'system_admin', module: 'all', sessionId: 'cost-correction-test' },
   }
 
+  const reviewerR = await pool.query<{ id: string }>(
+    `INSERT INTO users (email, password_hash) VALUES ($1,'test-hash-not-used')
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash RETURNING id`,
+    [REVIEWER_USER_EMAIL],
+  )
+  reviewerId = reviewerR.rows[0]!.id
+  reviewerCtx = {
+    auth: {
+      companyId: TEST_COMPANY_ID,
+      userId: reviewerId,
+      role: 'system_admin',
+      module: 'all',
+      sessionId: 'cost-correction-test-reviewer',
+    },
+  }
+
   const wh = await pool.query<{ id: string }>(
     `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
     [TEST_COMPANY_ID],
@@ -103,7 +136,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanup()
-  await pool.query(`DELETE FROM users WHERE email=$1`, [TEST_USER_EMAIL])
+  await pool.query(`DELETE FROM users WHERE email IN ($1,$2)`, [TEST_USER_EMAIL, REVIEWER_USER_EMAIL])
   await pool.end()
 })
 
@@ -254,6 +287,10 @@ describe('createStockAdjustment — cost-only correction (same qty, new cost)', 
     )
     expect(afterMoves.rows[0]!.n).toBe(beforeMoves.rows[0]!.n)
 
+    // 99 -> 45 trips company_price_tolerance, so the product-level Cost
+    // fix parks for review instead of applying immediately — approve it to
+    // get the real end state.
+    await approveLatestPendingChange(productId)
     const product = await pool.query<{ standard_cost: string }>(
       `SELECT standard_cost FROM products WHERE id=$1`,
       [productId],

@@ -60,6 +60,16 @@ export const PRODUCT_QUERY = gql`
         changed_by_name
         changed_at
       }
+      pendingCostChanges {
+        id
+        old_cost
+        new_cost
+        currency_code
+        source_type
+        source_label
+        requested_by_name
+        created_at
+      }
     }
   }
 `
@@ -80,6 +90,49 @@ export const UPDATE_PRODUCT = gql`
       id
       sku
       name
+    }
+  }
+`
+
+export const PRODUCT_COST_CHANGE_REQUESTS_QUERY = gql`
+  query ProductCostChangeRequests($status: String) {
+    productCostChangeRequests(status: $status) {
+      id
+      product_id
+      product_name
+      product_name_ar
+      sku
+      old_cost
+      new_cost
+      currency_code
+      source_type
+      source_id
+      source_label
+      requested_by
+      requested_by_name
+      status
+      reviewed_by_name
+      reviewed_at
+      rejection_reason
+      created_at
+    }
+  }
+`
+
+export const APPROVE_PRODUCT_COST_CHANGE = gql`
+  mutation ApproveProductCostChange($id: ID!) {
+    approveProductCostChange(id: $id) {
+      id
+      status
+    }
+  }
+`
+
+export const REJECT_PRODUCT_COST_CHANGE = gql`
+  mutation RejectProductCostChange($id: ID!, $reason: String!) {
+    rejectProductCostChange(id: $id, reason: $reason) {
+      id
+      status
     }
   }
 `

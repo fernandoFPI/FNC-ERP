@@ -803,6 +803,12 @@ export const NAV_SECTIONS: NavSection[] = [
         permKeys: ['inventory.products.view'],
       },
       {
+        label: 'Cost Change Approvals',
+        icon: <Icon name="check-circle" />,
+        path: '/inventory/cost-approvals',
+        permKeys: ['inventory.products.approve_cost_change'],
+      },
+      {
         label: 'Locations',
         icon: <Icon name="map-pin" />,
         path: '/inventory/locations',

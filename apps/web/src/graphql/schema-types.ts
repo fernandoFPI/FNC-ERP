@@ -2277,6 +2277,7 @@ export type Mutation = {
   approvePOEditRequest: PoEditRequest;
   approvePaymentVoucher: PaymentVoucher;
   approvePayrollRun?: Maybe<PayrollRun>;
+  approveProductCostChange: ProductCostChangeRequest;
   approveProject: Project;
   approveRFQ: Project;
   approveRequisition: Requisition;
@@ -2514,6 +2515,7 @@ export type Mutation = {
   rejectPOToMarketPricing: PurchaseOrder;
   rejectPOVerificationToMarketPricing: PurchaseOrder;
   rejectPOVerificationToStorePricing: PurchaseOrder;
+  rejectProductCostChange: ProductCostChangeRequest;
   rejectRFQ: Project;
   rejectRequisitionApproval: Requisition;
   rejectRequisitionToInventoryCheck: Requisition;
@@ -2900,6 +2902,11 @@ export type MutationApprovePaymentVoucherArgs = {
 
 
 export type MutationApprovePayrollRunArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type MutationApproveProductCostChangeArgs = {
   id: Scalars['ID']['input'];
 };
 
@@ -4449,6 +4456,12 @@ export type MutationRejectPoVerificationToMarketPricingArgs = {
 export type MutationRejectPoVerificationToStorePricingArgs = {
   id: Scalars['ID']['input'];
   lineFlags: Array<LineFlagInput>;
+  reason: Scalars['String']['input'];
+};
+
+
+export type MutationRejectProductCostChangeArgs = {
+  id: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
 };
 
@@ -6400,6 +6413,7 @@ export type Product = {
   is_active: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
   name_ar?: Maybe<Scalars['String']['output']>;
+  pendingCostChanges?: Maybe<Array<ProductCostChangeRequest>>;
   qty_on_hand?: Maybe<Scalars['String']['output']>;
   reorder_point?: Maybe<Scalars['String']['output']>;
   reorder_qty?: Maybe<Scalars['String']['output']>;
@@ -6420,6 +6434,27 @@ export type ProductBalance = {
   qty_on_hand: Scalars['String']['output'];
   qty_reserved: Scalars['String']['output'];
   total_value: Scalars['String']['output'];
+};
+
+export type ProductCostChangeRequest = {
+  created_at: Scalars['String']['output'];
+  currency_code: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  new_cost: Scalars['String']['output'];
+  old_cost?: Maybe<Scalars['String']['output']>;
+  product_id: Scalars['ID']['output'];
+  product_name?: Maybe<Scalars['String']['output']>;
+  product_name_ar?: Maybe<Scalars['String']['output']>;
+  rejection_reason?: Maybe<Scalars['String']['output']>;
+  requested_by?: Maybe<Scalars['ID']['output']>;
+  requested_by_name?: Maybe<Scalars['String']['output']>;
+  reviewed_at?: Maybe<Scalars['String']['output']>;
+  reviewed_by_name?: Maybe<Scalars['String']['output']>;
+  sku?: Maybe<Scalars['String']['output']>;
+  source_id?: Maybe<Scalars['ID']['output']>;
+  source_label?: Maybe<Scalars['String']['output']>;
+  source_type: Scalars['String']['output'];
+  status: Scalars['String']['output'];
 };
 
 export type ProductCostHistoryEntry = {
@@ -7329,6 +7364,7 @@ export type Query = {
   poStockAvailability: Array<PoLineAvailability>;
   previewTransferPrice: TransferPricePreview;
   product?: Maybe<Product>;
+  productCostChangeRequests: Array<ProductCostChangeRequest>;
   products?: Maybe<Array<Maybe<Product>>>;
   profitLoss?: Maybe<ProfitLossReport>;
   project?: Maybe<Project>;
@@ -7992,6 +8028,11 @@ export type QueryPreviewTransferPriceArgs = {
 
 export type QueryProductArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryProductCostChangeRequestsArgs = {
+  status?: InputMaybe<Scalars['String']['input']>;
 };
 
 

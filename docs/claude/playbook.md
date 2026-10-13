@@ -163,3 +163,32 @@ Don't re-derive, check these first.
     "a posted run overlaps" with `overlapWarning.includes('Cannot')`; in Arabic the run could be created over a
     posted one. State the *kind* (`'posted' | 'overlap'`) and derive both the message and the guard from it
     (regression test `payroll.i18n.test.tsx`, runs in en and ar).
+
+26. **A new i18n key pasted into the wrong nested namespace silently falls back to the raw key.** Both locale
+    files are one giant object with many same-shaped sibling namespaces (`req.bought`, `req.detail`,
+    `po.detail`, `perm.reg`, …) sharing lots of identically-named leaf keys (`create`, `status`, `cancel`,
+    `couldNotPrepareUpload`…). Grepping for a neighboring key like `"couldNotPrepareUpload"` and inserting
+    right after it can land the new key in a *different* namespace than the one the component actually reads
+    from (`t('req.detail.coveredFromInventory')` resolved to nothing because the key got added under
+    `req.bought` instead — same mistake recurred for `reply`/`replyCount`, which real users hit live:
+    `req.detail.reply` literally printed on screen). i18next falls back to the raw key string with no error,
+    so this never fails a build or typecheck. Fix/detection: after adding a key, verify the EXACT namespace
+    object it landed in with a one-off Node script — `JSON.parse` both locale files, extract every
+    `t('a.b.key'` usage from the touched component via a `t\('a\.b\.([a-zA-Z0-9_]+)'` regex scan, and confirm
+    each resolves inside `en.a.b` / `ar.a.b` (treating an `_one`/`_other`/Arabic six-form suffix as present if
+    any `key_*` sibling exists) — not just that the string exists *somewhere* in the file. Do this for every
+    new key, not just the one the user happened to report.
+
+27. **A `query()` read for a mutation's return value, called from inside `withTransaction`'s own callback,
+    races the `COMMIT`.** `withTransaction(ctx, fn)` only runs `COMMIT` *after* `fn(client)` resolves
+    (`packages/db/src/transaction.ts`); `fn`'s own writes go through the transaction's dedicated `client`,
+    but the shared `query()` helper used for "fetch this row to return it" patterns (`getXForReturn(id)`)
+    runs on a *different* pooled connection. Calling `getXForReturn(id)` as the last line *inside* `fn` reads
+    on that other connection before the transaction committed, so under Postgres's default read-committed
+    isolation it sees the pre-write row — found live in `approveProductCostChange`, which returned a
+    `status: 'pending'` row immediately after the same function had just set it to `'approved'`, caught by a
+    test asserting the mutation's own return value (not just the DB state after). Fix: let `fn` return only
+    what's needed to build the follow-up query (or nothing), call `withTransaction(...)` without `return`ing
+    its result directly, and do the `getXForReturn(id)` read as a separate statement *after* `await
+    withTransaction(...)` has resolved. (A `getXForReturn` called with the transaction's own `client` instead
+    of the shared `query()` helper would also work, but changes that helper's signature everywhere it's used.)

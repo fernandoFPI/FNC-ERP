@@ -2119,6 +2119,21 @@ async function evaluateRequisitionCompletion(
   await reqTransition(client, reqId, 'sourcing', 'completed', 'complete', auth)
 }
 
+async function getProductCostChangeRequestForReturn(id: string): Promise<Record<string, unknown>> {
+  const r = await query(
+    `SELECT pccr.*, p.name AS product_name, p.name_ar AS product_name_ar, p.sku,
+            COALESCE(ru.first_name || ' ' || ru.last_name, ru.email) AS requested_by_name,
+            COALESCE(vu.first_name || ' ' || vu.last_name, vu.email) AS reviewed_by_name
+     FROM product_cost_change_requests pccr
+     JOIN products p ON p.id = pccr.product_id
+     LEFT JOIN users ru ON ru.id = pccr.requested_by
+     LEFT JOIN users vu ON vu.id = pccr.reviewed_by
+     WHERE pccr.id=$1`,
+    [id],
+  )
+  return r.rows[0]
+}
+
 async function getPOForReturn(poId: string): Promise<Record<string, unknown>> {
   const r = await query(
     `SELECT po.*, v.name AS vendor_name,
@@ -3953,6 +3968,54 @@ async function postCrossCompanyMaterialReturnMove(
 // (and no log entry) when there's no real new cost, or it matches what's
 // already there — avoids logging noise for a receipt line with no price
 // yet, or resubmitting the same number.
+// Applies the write this function used to always do unconditionally —
+// pulled out so both the immediate (within-tolerance) path and
+// approveProductCostChange's later, deferred path call the exact same code.
+async function applyProductCostChange(
+  client: PoolClient,
+  params: {
+    productId: string
+    oldCost: number | null
+    newCost: number
+    currencyCode: string
+    sourceType: string
+    sourceId?: string | null
+    sourceLabel?: string | null
+    userId: string | null
+  },
+): Promise<void> {
+  const { productId, oldCost, newCost, currencyCode, sourceType, sourceId, sourceLabel, userId } =
+    params
+  await client.query(`UPDATE products SET standard_cost=$1, cost_currency=$2 WHERE id=$3`, [
+    newCost,
+    currencyCode,
+    productId,
+  ])
+  await client.query(
+    `INSERT INTO product_cost_history (product_id, old_cost, new_cost, currency_code, source_type, source_id, source_label, changed_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [
+      productId,
+      oldCost,
+      newCost,
+      currencyCode,
+      sourceType,
+      sourceId ?? null,
+      sourceLabel ?? null,
+      userId,
+    ],
+  )
+}
+
+// A cost change big enough to trip company_price_tolerance (the same
+// tolerance table over_tolerance purchases already use — see
+// company_price_tolerance) no longer applies immediately: it parks a row
+// in product_cost_change_requests instead, and only a reviewer approving
+// it (approveProductCostChange) actually writes standard_cost +
+// product_cost_history. No tolerance row configured for this company+
+// currency is treated exactly like the existing over_tolerance check
+// treats it (recordLinePurchase) — nothing to compare against, so nothing
+// gets flagged; behavior is unchanged from before this function existed.
 async function recordProductCostChange(
   client: PoolClient,
   params: {
@@ -3970,18 +4033,55 @@ async function recordProductCostChange(
   const current = await client.query<{
     standard_cost: string | null
     cost_currency: string | null
-  }>(`SELECT standard_cost, cost_currency FROM products WHERE id=$1 FOR UPDATE`, [productId])
+    company_id: string
+  }>(`SELECT standard_cost, cost_currency, company_id FROM products WHERE id=$1 FOR UPDATE`, [
+    productId,
+  ])
   const oldCost =
     current.rows[0]?.standard_cost != null ? parseFloat(current.rows[0].standard_cost) : null
   const oldCurrency = current.rows[0]?.cost_currency ?? null
+  const companyId = current.rows[0]?.company_id
   if (oldCost === newCost && oldCurrency === currencyCode) return
-  await client.query(`UPDATE products SET standard_cost=$1, cost_currency=$2 WHERE id=$3`, [
-    newCost,
-    currencyCode,
-    productId,
-  ])
+
+  // No tolerance row configured for this company+currency means the same
+  // thing it means for the purchase-side over_tolerance check this mirrors
+  // (recordLinePurchase): nothing to compare against, so nothing gets
+  // flagged — a company that hasn't set up a tolerance policy sees no
+  // behavior change at all. A currency change is the same deal as
+  // recordLinePurchase's own guard: under the no-conversion policy there's
+  // no honest way to compare a magnitude in one currency against another,
+  // so a currency change is simply never flagged on the amount alone.
+  let overTolerance = false
+  if (oldCost != null && oldCost > 0 && oldCurrency === currencyCode && companyId) {
+    const tol = await client.query<{ tolerance_pct: string; tolerance_abs: string }>(
+      `SELECT tolerance_pct, tolerance_abs FROM company_price_tolerance WHERE company_id=$1 AND currency_code=$2`,
+      [companyId, currencyCode],
+    )
+    if (tol.rows[0]) {
+      const pctAllowance = oldCost * (parseFloat(tol.rows[0].tolerance_pct) / 100)
+      const absAllowance = parseFloat(tol.rows[0].tolerance_abs)
+      const allowance = Math.min(pctAllowance, absAllowance)
+      overTolerance = Math.abs(newCost - oldCost) > allowance
+    }
+  }
+
+  if (!overTolerance) {
+    await applyProductCostChange(client, {
+      productId,
+      oldCost,
+      newCost,
+      currencyCode,
+      sourceType,
+      sourceId: sourceId ?? null,
+      sourceLabel: sourceLabel ?? null,
+      userId,
+    })
+    return
+  }
+
   await client.query(
-    `INSERT INTO product_cost_history (product_id, old_cost, new_cost, currency_code, source_type, source_id, source_label, changed_by)
+    `INSERT INTO product_cost_change_requests
+       (product_id, old_cost, new_cost, currency_code, source_type, source_id, source_label, requested_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
     [
       productId,
@@ -10563,7 +10663,7 @@ export const resolvers = {
 
     product: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
-      const [prod, balances, costHistory] = await Promise.all([
+      const [prod, balances, costHistory, pendingCostChanges] = await Promise.all([
         query(
           `SELECT p.*,
                   (SELECT COUNT(*)>0 FROM stock_moves WHERE product_id=p.id) AS has_stock_moves
@@ -10586,9 +10686,48 @@ export const resolvers = {
            ORDER BY pch.changed_at DESC`,
           [args.id],
         ),
+        query(
+          `SELECT pccr.*, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS requested_by_name
+           FROM product_cost_change_requests pccr
+           LEFT JOIN users u ON u.id = pccr.requested_by
+           WHERE pccr.product_id=$1 AND pccr.status='pending'
+           ORDER BY pccr.created_at DESC`,
+          [args.id],
+        ),
       ])
       if (!prod.rows[0]) return null
-      return { ...prod.rows[0], balances: balances.rows, costHistory: costHistory.rows }
+      return {
+        ...prod.rows[0],
+        balances: balances.rows,
+        costHistory: costHistory.rows,
+        pendingCostChanges: pendingCostChanges.rows,
+      }
+    },
+
+    // Store keeper's (or admin's) review queue — every cost change big
+    // enough to trip company_price_tolerance, parked by recordProductCostChange
+    // instead of applying immediately. Defaults to the open queue; pass
+    // status to look at history instead.
+    productCostChangeRequests: async (
+      _: unknown,
+      args: { status?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'inventory.products.approve_cost_change', 'view')
+      const r = await query(
+        `SELECT pccr.*, p.name AS product_name, p.name_ar AS product_name_ar, p.sku,
+                COALESCE(ru.first_name || ' ' || ru.last_name, ru.email) AS requested_by_name,
+                COALESCE(vu.first_name || ' ' || vu.last_name, vu.email) AS reviewed_by_name
+         FROM product_cost_change_requests pccr
+         JOIN products p ON p.id = pccr.product_id
+         LEFT JOIN users ru ON ru.id = pccr.requested_by
+         LEFT JOIN users vu ON vu.id = pccr.reviewed_by
+         WHERE p.company_id=$1 AND pccr.status=$2
+         ORDER BY pccr.created_at DESC`,
+        [ctx.auth.companyId, args.status ?? 'pending'],
+      )
+      return r.rows
     },
 
     stockLocations: async (
@@ -13686,6 +13825,98 @@ export const resolvers = {
           return finalRes.rows[0]
         },
       )
+    },
+
+    // A cost change recordProductCostChange parked for review (over
+    // company_price_tolerance) actually lands here — applyProductCostChange
+    // does the exact same write an in-tolerance change would have done
+    // immediately. No self-approval, same rule approveTolerancePurchase
+    // already enforces for the same class of concern: whoever triggered
+    // the change can't be the one clearing it, regardless of role.
+    approveProductCostChange: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth
+      await requirePermGW(auth, 'inventory.products.approve_cost_change', 'edit')
+      await withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client) => {
+          const r = await client.query<{
+            id: string
+            product_id: string
+            old_cost: string | null
+            new_cost: string
+            currency_code: string
+            source_type: string
+            source_id: string | null
+            source_label: string | null
+            requested_by: string | null
+            status: string
+          }>(
+            `SELECT pccr.* FROM product_cost_change_requests pccr
+             JOIN products p ON p.id = pccr.product_id
+             WHERE pccr.id=$1 AND p.company_id=$2 FOR UPDATE`,
+            [args.id, auth.companyId],
+          )
+          const reqRow = r.rows[0]
+          if (!reqRow) throw new Error('Cost change request not found')
+          if (reqRow.status !== 'pending') throw new Error('This request has already been reviewed')
+          // No self-approval for an ordinary approver, same rule
+          // approveTolerancePurchase enforces for the same class of concern
+          // — but unlike that path, an admin IS allowed to clear their own,
+          // since a single-admin company would otherwise have no reviewer
+          // at all (explicit user choice, not the house default).
+          if (reqRow.requested_by === auth.userId && !isPermissionBypassGW(auth.role))
+            throw new Error('Someone other than whoever triggered this change must approve it')
+
+          await applyProductCostChange(client, {
+            productId: reqRow.product_id,
+            oldCost: reqRow.old_cost != null ? parseFloat(reqRow.old_cost) : null,
+            newCost: parseFloat(reqRow.new_cost),
+            currencyCode: reqRow.currency_code,
+            sourceType: reqRow.source_type,
+            sourceId: reqRow.source_id,
+            sourceLabel: reqRow.source_label,
+            userId: reqRow.requested_by,
+          })
+          await client.query(
+            `UPDATE product_cost_change_requests SET status='approved', reviewed_by=$1, reviewed_at=NOW() WHERE id=$2`,
+            [auth.userId, args.id],
+          )
+          void publishEntityChanged(auth.companyId, 'product', reqRow.product_id, 'updated')
+        },
+      )
+      // Reads back on a fresh connection once the transaction above has
+      // actually committed — withTransaction resolves only after COMMIT,
+      // but returning a query() read FROM INSIDE that callback would run on
+      // a different pooled connection than `client`, before the commit it's
+      // reading past actually lands.
+      return getProductCostChangeRequestForReturn(args.id)
+    },
+
+    rejectProductCostChange: async (
+      _: unknown,
+      args: { id: string; reason: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'inventory.products.approve_cost_change', 'edit')
+      if (!args.reason.trim()) throw new Error('reason is required')
+      const r = await query<{ requested_by: string | null; status: string }>(
+        `SELECT pccr.requested_by, pccr.status FROM product_cost_change_requests pccr
+         JOIN products p ON p.id = pccr.product_id
+         WHERE pccr.id=$1 AND p.company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
+      const reqRow = r.rows[0]
+      if (!reqRow) throw new Error('Cost change request not found')
+      if (reqRow.status !== 'pending') throw new Error('This request has already been reviewed')
+      if (reqRow.requested_by === ctx.auth.userId && !isPermissionBypassGW(ctx.auth.role))
+        throw new Error('Someone other than whoever triggered this change must approve it')
+      await query(
+        `UPDATE product_cost_change_requests SET status='rejected', reviewed_by=$1, reviewed_at=NOW(), rejection_reason=$2 WHERE id=$3`,
+        [ctx.auth.userId, args.reason, args.id],
+      )
+      return getProductCostChangeRequestForReturn(args.id)
     },
 
     // Store keeper resolves a pendingProductCatalogItems row by cataloging it

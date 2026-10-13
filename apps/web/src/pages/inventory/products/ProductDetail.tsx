@@ -11,6 +11,7 @@ import { Button } from '../../../components/ui/Button'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { usePermission } from '../../../hooks/usePermission'
 import type { ProductQuery, ProductQueryVariables } from '../../../graphql/generated'
 
 // Every product is valued at last-recorded-cost (see migration
@@ -41,6 +42,17 @@ interface ProductCostHistoryEntry {
   changed_at: string
 }
 
+interface PendingCostChange {
+  id: string
+  old_cost: string | null
+  new_cost: string
+  currency_code: string
+  source_type: string
+  source_label?: string | null
+  requested_by_name?: string | null
+  created_at: string
+}
+
 const COST_SOURCE_LABEL: Record<string, string> = {
   po_receipt: 'PO Receipt',
   po_market_pricing: 'PO Market Pricing',
@@ -56,6 +68,7 @@ export default function ProductDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
+  const { can } = usePermission()
 
   const { data, loading } = useQuery<ProductQuery, ProductQueryVariables>(PRODUCT_QUERY, {
     variables: { id: id ?? '' },
@@ -66,6 +79,7 @@ export default function ProductDetail() {
   const product = data?.product
   const balances: ProductBalance[] = product?.balances ?? []
   const costHistory: ProductCostHistoryEntry[] = product?.costHistory ?? []
+  const pendingCostChanges: PendingCostChange[] = product?.pendingCostChanges ?? []
 
   const totalOnHand = balances.reduce((s, b) => s + parseFloat(b.qty_on_hand), 0)
   const totalValue = balances.reduce((s, b) => s + parseFloat(b.total_value), 0)
@@ -314,6 +328,36 @@ export default function ProductDetail() {
         </div>
         <Table columns={balanceColumns} data={balances} rowKey="location_id" />
       </Card>
+
+      {pendingCostChanges.length > 0 && (
+        <Card
+          style={{
+            marginTop: '16px',
+            padding: '14px 16px',
+            borderInlineStart: `3px solid ${theme.warning}`,
+          }}
+        >
+          <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '6px' }}>
+            {t('inv.productDetail.pendingCostChangeBanner', { count: pendingCostChanges.length })}
+          </div>
+          {pendingCostChanges.map((p) => (
+            <div key={p.id} style={{ fontSize: '13px', color: theme.textSecondary }}>
+              {parseFloat(p.old_cost ?? '0').toLocaleString()} → {parseFloat(p.new_cost).toLocaleString()}{' '}
+              {p.currency_code} — {p.requested_by_name ?? ''}
+            </div>
+          ))}
+          {can('inventory.products.approve_cost_change', 'edit') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              style={{ marginTop: '8px' }}
+              onClick={() => navigate('/inventory/cost-approvals')}
+            >
+              {t('inv.productDetail.reviewPendingCostChange')}
+            </Button>
+          )}
+        </Card>
+      )}
 
       <Card style={{ marginTop: '16px' }}>
         <div

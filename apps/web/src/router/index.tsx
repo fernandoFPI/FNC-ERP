@@ -269,6 +269,7 @@ const MaterialReturnsPage = lazy(() => import('../pages/inventory/material-retur
 const StockBalancesPage = lazy(() => import('../pages/inventory/balances/StockBalancesPage'))
 const ProductsPage = lazy(() => import('../pages/inventory/products/ProductsPage'))
 const ProductDetail = lazy(() => import('../pages/inventory/products/ProductDetail'))
+const CostChangeApprovalsPage = lazy(() => import('../pages/inventory/products/CostChangeApprovalsPage'))
 const ProductForm = lazy(() => import('../pages/inventory/products/ProductForm'))
 const LocationsPage = lazy(() => import('../pages/inventory/locations/LocationsPage'))
 const StockMovesPage = lazy(() => import('../pages/inventory/moves/StockMovesPage'))
@@ -588,6 +589,10 @@ export const router = createBrowserRouter([
             element: withPerm('inventory.stock_moves.view', <StockBalancesPage />),
           },
           { path: 'products', element: withPerm('inventory.products.view', <ProductsPage />) },
+          {
+            path: 'cost-approvals',
+            element: withPerm('inventory.products.approve_cost_change', <CostChangeApprovalsPage />),
+          },
           {
             path: 'pending-catalog',
             element: withPerm('inventory.products.view', <PendingCatalogItemsPage />),

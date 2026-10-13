@@ -433,6 +433,11 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
         permissions: [
           { key: 'inventory.products.view', label: 'View Products', sortOrder: 400 },
           { key: 'inventory.products.edit', label: 'Manage Products', sortOrder: 401 },
+          {
+            key: 'inventory.products.approve_cost_change',
+            label: 'Approve Cost Changes',
+            sortOrder: 402,
+          },
         ],
       },
       {

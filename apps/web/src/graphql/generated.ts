@@ -1062,7 +1062,7 @@ export type ProductQueryVariables = Exact<{
 }>;
 
 
-export type ProductQuery = { product: { id: string, sku: string, name: string, name_ar: string | null, description: string | null, category: string | null, sub_category: string | null, uom: string, valuation_method: string, standard_cost: string | null, cost_currency: string | null, average_cost: string, is_active: boolean, reorder_point: string | null, reorder_qty: string | null, has_stock_moves: boolean | null, balances: Array<{ location_id: string, location_name: string | null, location_type: string | null, qty_on_hand: string, qty_reserved: string, available: string, average_cost: string, last_cost_currency: string, total_value: string }> | null, costHistory: Array<{ id: string, old_cost: string | null, new_cost: string, currency_code: string, source_type: string, source_label: string | null, changed_by_name: string | null, changed_at: string }> | null } | null };
+export type ProductQuery = { product: { id: string, sku: string, name: string, name_ar: string | null, description: string | null, category: string | null, sub_category: string | null, uom: string, valuation_method: string, standard_cost: string | null, cost_currency: string | null, average_cost: string, is_active: boolean, reorder_point: string | null, reorder_qty: string | null, has_stock_moves: boolean | null, balances: Array<{ location_id: string, location_name: string | null, location_type: string | null, qty_on_hand: string, qty_reserved: string, available: string, average_cost: string, last_cost_currency: string, total_value: string }> | null, costHistory: Array<{ id: string, old_cost: string | null, new_cost: string, currency_code: string, source_type: string, source_label: string | null, changed_by_name: string | null, changed_at: string }> | null, pendingCostChanges: Array<{ id: string, old_cost: string | null, new_cost: string, currency_code: string, source_type: string, source_label: string | null, requested_by_name: string | null, created_at: string }> | null } | null };
 
 export type CreateProductMutationVariables = Exact<{
   input: Types.ProductInput;
@@ -1078,6 +1078,28 @@ export type UpdateProductMutationVariables = Exact<{
 
 
 export type UpdateProductMutation = { updateProduct: { id: string, sku: string, name: string } };
+
+export type ProductCostChangeRequestsQueryVariables = Exact<{
+  status?: string | null | undefined;
+}>;
+
+
+export type ProductCostChangeRequestsQuery = { productCostChangeRequests: Array<{ id: string, product_id: string, product_name: string | null, product_name_ar: string | null, sku: string | null, old_cost: string | null, new_cost: string, currency_code: string, source_type: string, source_id: string | null, source_label: string | null, requested_by: string | null, requested_by_name: string | null, status: string, reviewed_by_name: string | null, reviewed_at: string | null, rejection_reason: string | null, created_at: string }> };
+
+export type ApproveProductCostChangeMutationVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type ApproveProductCostChangeMutation = { approveProductCostChange: { id: string, status: string } };
+
+export type RejectProductCostChangeMutationVariables = Exact<{
+  id: string | number;
+  reason: string;
+}>;
+
+
+export type RejectProductCostChangeMutation = { rejectProductCostChange: { id: string, status: string } };
 
 export type PendingProductCatalogItemsQueryVariables = Exact<{ [key: string]: never; }>;
 
