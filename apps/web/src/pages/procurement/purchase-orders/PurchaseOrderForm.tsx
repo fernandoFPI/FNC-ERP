@@ -155,7 +155,7 @@ export default function PurchaseOrderForm() {
     { fetchPolicy: 'cache-first' },
   )
   const companyRequiresJobsiteDelivery =
-    companiesData?.myCompanies.find((c) => c.id === currentCompanyId)?.requires_jobsite_delivery ??
+    companiesData?.myCompanies?.find((c) => c.id === currentCompanyId)?.requires_jobsite_delivery ??
     false
 
   const [form, setForm] = useState({
