@@ -14127,6 +14127,48 @@ export const resolvers = {
       )
     },
 
+    // Store keeper decides this pending item was never a real catalog
+    // product to begin with — a one-time service (hiring a taxi) or
+    // otherwise not inventory. po_lines.product_id simply stays null,
+    // same as any other free-text line already works today; nothing
+    // downstream needs it filled in. Unlike the other two resolutions,
+    // there's no stock_issuance/store_in completion step to run --
+    // deliberately: there was never a product to move stock against, so
+    // whatever quantity this line represented stays untracked in
+    // inventory, which is the whole point of calling it "not inventory."
+    dismissPendingCatalogItem: async (
+      _: unknown,
+      args: { id: string; reason?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (
+        !isPermissionBypassGW(ctx.auth.role) &&
+        !(await callerHasCompanyWideStoreKeeper(ctx.auth.userId, ctx.auth.companyId))
+      )
+        throw new Error('Company-wide Store Keeper position required')
+      const pendingRes = await query(
+        `SELECT id, description, po_line_id FROM pending_product_catalog_items WHERE id=$1 AND company_id=$2 AND status='pending'`,
+        [args.id, ctx.auth.companyId],
+      )
+      const pending = pendingRes.rows[0] as Record<string, unknown> | undefined
+      if (!pending) throw new Error('Pending catalog item not found (or already resolved)')
+
+      await query(
+        `UPDATE pending_product_catalog_items SET status='dismissed', dismiss_reason=$1, resolved_by=$2, resolved_at=NOW() WHERE id=$3`,
+        [args.reason?.trim() || null, ctx.auth.userId, args.id],
+      )
+      await logAudit({
+        userId: ctx.auth.userId,
+        companyId: ctx.auth.companyId,
+        action: 'CATALOG_DISMISS_PENDING_ITEM',
+        tableName: 'pending_product_catalog_items',
+        recordId: args.id,
+        newValues: { fromDescription: pending.description, poLineId: pending.po_line_id, reason: args.reason ?? null },
+      })
+      return true
+    },
+
     createStockLocation: async (
       _: unknown,
       args: { input: Record<string, unknown> },

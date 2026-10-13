@@ -2983,6 +2983,7 @@
     createStockAdjustment(input: StockAdjustmentInput!): StockMove
     createProductFromPendingCatalogItem(id: ID!, input: ProductInput!, companyId: ID): Product!
     linkPendingCatalogItemToProduct(id: ID!, productId: ID!, companyId: ID): Boolean!
+    dismissPendingCatalogItem(id: ID!, reason: String): Boolean!
   }
 
   # ── Phase 4: Projects ────────────────────────────────────────

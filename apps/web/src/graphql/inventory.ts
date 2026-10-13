@@ -171,6 +171,12 @@ export const LINK_PENDING_CATALOG_ITEM_TO_PRODUCT = gql`
   }
 `
 
+export const DISMISS_PENDING_CATALOG_ITEM = gql`
+  mutation DismissPendingCatalogItem($id: ID!, $reason: String) {
+    dismissPendingCatalogItem(id: $id, reason: $reason)
+  }
+`
+
 // Every company the CALLING user has an active role in — powers the
 // cross-company target picker on New Items to Catalog (a company with no
 // physical inventory of its own can resolve a pending item straight into

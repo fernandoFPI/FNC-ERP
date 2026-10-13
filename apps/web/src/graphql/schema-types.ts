@@ -2464,6 +2464,7 @@ export type Mutation = {
   detachFile: Scalars['Boolean']['output'];
   disableMFA: Scalars['Boolean']['output'];
   dismissDLQEntry: Scalars['Boolean']['output'];
+  dismissPendingCatalogItem: Scalars['Boolean']['output'];
   enableMFA: MfaSetup;
   ensureCashPurchaseVendor: Vendor;
   failPOAudit: PurchaseOrder;
@@ -4165,6 +4166,12 @@ export type MutationDisableMfaArgs = {
 export type MutationDismissDlqEntryArgs = {
   dlqId: Scalars['ID']['input'];
   notes: Scalars['String']['input'];
+};
+
+
+export type MutationDismissPendingCatalogItemArgs = {
+  id: Scalars['ID']['input'];
+  reason?: InputMaybe<Scalars['String']['input']>;
 };
 
 

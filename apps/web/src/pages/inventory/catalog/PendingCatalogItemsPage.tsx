@@ -6,6 +6,7 @@ import {
   PENDING_PRODUCT_CATALOG_ITEMS_QUERY,
   CREATE_PRODUCT_FROM_PENDING_CATALOG_ITEM,
   LINK_PENDING_CATALOG_ITEM_TO_PRODUCT,
+  DISMISS_PENDING_CATALOG_ITEM,
   PRODUCTS_QUERY,
   MY_COMPANIES_QUERY,
 } from '../../../graphql/inventory'
@@ -16,6 +17,7 @@ import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Select } from '../../../components/ui/Select'
 import { Input } from '../../../components/ui/Input'
+import { Textarea } from '../../../components/ui/Textarea'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Badge } from '../../../components/ui/Badge'
 import { EmptyState } from '../../../components/ui/EmptyState'
@@ -95,9 +97,11 @@ export default function PendingCatalogItemsPage() {
     CREATE_PRODUCT_FROM_PENDING_CATALOG_ITEM,
   )
   const [linkProduct, { loading: linking }] = useMutation(LINK_PENDING_CATALOG_ITEM_TO_PRODUCT)
+  const [dismissItem, { loading: dismissing }] = useMutation(DISMISS_PENDING_CATALOG_ITEM)
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [mode, setMode] = useState<'new' | 'link' | null>(null)
+  const [mode, setMode] = useState<'new' | 'link' | 'dismiss' | null>(null)
+  const [dismissReason, setDismissReason] = useState('')
   const [newForm, setNewForm] = useState({
     name: '',
     name_ar: '',
@@ -159,6 +163,12 @@ export default function PendingCatalogItemsPage() {
     setLinkProductId('')
   }
 
+  function openDismiss(item: PendingItem) {
+    setExpandedId(item.id)
+    setMode('dismiss')
+    setDismissReason('')
+  }
+
   function closeExpanded() {
     setExpandedId(null)
     setMode(null)
@@ -204,6 +214,19 @@ export default function PendingCatalogItemsPage() {
         },
       })
       addToast({ type: 'success', message: t('inv.catalog.linkedToExistingProduct') })
+      closeExpanded()
+      void refetch()
+    } catch (e: unknown) {
+      addToast({ type: 'error', message: (e as Error).message })
+    }
+  }
+
+  async function handleDismiss(item: PendingItem) {
+    try {
+      await dismissItem({
+        variables: { id: item.id, reason: dismissReason.trim() || undefined },
+      })
+      addToast({ type: 'success', message: t('inv.catalog.dismissed') })
       closeExpanded()
       void refetch()
     } catch (e: unknown) {
@@ -358,6 +381,9 @@ export default function PendingCatalogItemsPage() {
                   </div>
                   {!isExpanded && (
                     <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                      <Button variant="ghost" size="sm" onClick={() => { openDismiss(item); }}>
+                        {t('inv.catalog.notACatalogItem')}
+                      </Button>
                       <Button variant="secondary" size="sm" onClick={() => { openLink(item); }}>
                         {t('inv.catalog.linkExisting')}
                       </Button>
@@ -527,6 +553,39 @@ export default function PendingCatalogItemsPage() {
                         onClick={() => void handleLink(item)}
                       >
                         {t('inv.catalog.linkProduct')}
+                      </Button>
+                      <Button variant="ghost" onClick={closeExpanded}>
+                        {t('inv.catalog.cancel')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {isExpanded && mode === 'dismiss' && (
+                  <div
+                    style={{
+                      marginTop: '14px',
+                      paddingTop: '14px',
+                      borderTop: `1px solid ${theme.border}`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                      {t('inv.catalog.notACatalogItemHint')}
+                    </div>
+                    <Textarea
+                      label={t('inv.catalog.dismissReasonOptional')}
+                      value={dismissReason}
+                      onChange={(e) => {
+                        setDismissReason(e.target.value)
+                      }}
+                      rows={2}
+                    />
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <Button variant="primary" loading={dismissing} onClick={() => void handleDismiss(item)}>
+                        {t('inv.catalog.confirmDismiss')}
                       </Button>
                       <Button variant="ghost" onClick={closeExpanded}>
                         {t('inv.catalog.cancel')}

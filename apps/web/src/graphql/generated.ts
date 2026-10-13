@@ -1124,6 +1124,14 @@ export type LinkPendingCatalogItemToProductMutationVariables = Exact<{
 
 export type LinkPendingCatalogItemToProductMutation = { linkPendingCatalogItemToProduct: boolean };
 
+export type DismissPendingCatalogItemMutationVariables = Exact<{
+  id: string | number;
+  reason?: string | null | undefined;
+}>;
+
+
+export type DismissPendingCatalogItemMutation = { dismissPendingCatalogItem: boolean };
+
 export type MyCompaniesQueryVariables = Exact<{ [key: string]: never; }>;
 
 
