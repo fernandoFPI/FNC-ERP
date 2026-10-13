@@ -97,6 +97,16 @@ beforeAll(async () => {
     },
   }
 
+  // Deterministic tolerance for this suite regardless of what's already
+  // seeded for the test company — same pattern requisition-items-bought.test.ts
+  // already uses for the same reason (a fresh CI database has none at all).
+  await pool.query(
+    `INSERT INTO company_price_tolerance (company_id, currency_code, tolerance_pct, tolerance_abs, is_provisional)
+     VALUES ($1,'USD',5,20,true), ($1,'IQD',5,25000,true)
+     ON CONFLICT (company_id, currency_code) DO UPDATE SET tolerance_pct=5, tolerance_abs=EXCLUDED.tolerance_abs`,
+    [TEST_COMPANY_ID],
+  )
+
   await cleanup()
 })
 
