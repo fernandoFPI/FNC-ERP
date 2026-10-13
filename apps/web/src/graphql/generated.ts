@@ -1135,7 +1135,7 @@ export type DismissPendingCatalogItemMutation = { dismissPendingCatalogItem: boo
 export type MyCompaniesQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type MyCompaniesQuery = { myCompanies: Array<{ id: string, name: string }> };
+export type MyCompaniesQuery = { myCompanies: Array<{ id: string, name: string, requires_jobsite_delivery: boolean | null }> };
 
 export type StockLocationsQueryVariables = Exact<{
   type?: string | null | undefined;

@@ -3922,7 +3922,7 @@
     eliminated: Float!
   }
 
-  type CompanyRef { id: ID! name: String! }
+  type CompanyRef { id: ID! name: String! requires_jobsite_delivery: Boolean }
 
   type ConsolidatedPLResult {
     rows: [ConsolidatedRow!]!

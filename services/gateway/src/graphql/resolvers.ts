@@ -763,10 +763,21 @@ async function applyRequisitionEditChanges(
     'expected_delivery_date',
   ]
   if (changes.header && Object.keys(changes.header).length > 0) {
+    // A company that doesn't run its own inventory
+    // (requires_jobsite_delivery — see 301_requires_jobsite_delivery) has
+    // only one valid delivery_destination at all; an edit request can't
+    // move it away from 'jobsite', same as createRequisition never lets it
+    // start as anything else.
+    const companyRes = await client.query<{ requires_jobsite_delivery: boolean }>(
+      `SELECT c.requires_jobsite_delivery FROM requisitions r JOIN companies c ON c.id = r.company_id WHERE r.id=$1`,
+      [reqId],
+    )
+    const locksJobsite = companyRes.rows[0]?.requires_jobsite_delivery ?? false
     const sets: string[] = []
     const vals: unknown[] = []
     for (const [field, diff] of Object.entries(changes.header)) {
       if (!allowed.includes(field)) continue
+      if (field === 'delivery_destination' && locksJobsite) continue
       sets.push(`${field}=$${vals.length + 1}`)
       vals.push(diff.to)
     }
@@ -1125,6 +1136,18 @@ async function applyAdminPOCorrection(
       await assertNoVendorInvoiceHeaderConflict(client, poId)
     }
     if (field === 'delivery_destination') {
+      // A company that doesn't run its own inventory
+      // (requires_jobsite_delivery — see 301_requires_jobsite_delivery) has
+      // only one valid delivery_destination at all — not even an admin
+      // correction can move it to 'inventory'.
+      if (diff.to !== 'jobsite') {
+        const companyLock = await client.query<{ requires_jobsite_delivery: boolean }>(
+          `SELECT requires_jobsite_delivery FROM companies WHERE id=$1`,
+          [companyId],
+        )
+        if (companyLock.rows[0]?.requires_jobsite_delivery)
+          throw new Error('This company only delivers to the jobsite — it has no inventory of its own.')
+      }
       // Flipping inventory<->jobsite after either downstream path has
       // actually fired leaves records built for the old path with nothing
       // to reconcile them into the new one — only allow it before anything
@@ -3465,15 +3488,15 @@ async function getCallerCompaniesGW(auth: {
   userId: string
   companyId: string
   role: string
-}): Promise<{ id: string; name: string }[]> {
+}): Promise<{ id: string; name: string; requires_jobsite_delivery: boolean }[]> {
   if (auth.role === 'system_admin') {
-    const r = await query<{ id: string; name: string }>(
-      `SELECT id, name FROM companies ORDER BY name`,
+    const r = await query<{ id: string; name: string; requires_jobsite_delivery: boolean }>(
+      `SELECT id, name, requires_jobsite_delivery FROM companies ORDER BY name`,
     )
     return r.rows
   }
-  const r = await query<{ id: string; name: string }>(
-    `SELECT DISTINCT c.id, c.name FROM companies c
+  const r = await query<{ id: string; name: string; requires_jobsite_delivery: boolean }>(
+    `SELECT DISTINCT c.id, c.name, c.requires_jobsite_delivery FROM companies c
      WHERE c.id = $2
         OR EXISTS (
           SELECT 1 FROM user_company_roles ucr
@@ -12626,6 +12649,17 @@ export const resolvers = {
       )
       const baseCurrencyCode =
         (i.currency_code ?? companyCurrencyRes.rows[0]?.default_po_currency) || 'IQD'
+      // A company that doesn't run its own inventory (requires_jobsite_delivery
+      // — see 301_requires_jobsite_delivery) can't choose 'inventory' at all;
+      // every project line is forced to 'jobsite' regardless of what the
+      // form submitted.
+      const companyRes = await query<{ requires_jobsite_delivery: boolean }>(
+        `SELECT requires_jobsite_delivery FROM companies WHERE id=$1`,
+        [ctx.auth.companyId],
+      )
+      const deliveryDestination = companyRes.rows[0]?.requires_jobsite_delivery
+        ? 'jobsite'
+        : (i.delivery_destination ?? null)
       if (i.linkedProjectId) {
         const projCheck = await query(
           `SELECT status, is_rfq FROM projects WHERE id=$1 AND company_id=$2`,
@@ -12673,7 +12707,7 @@ export const resolvers = {
               i.branch_id ?? null,
               null, // assigned_buyer_user_id: no longer resolved at creation — see 'buyer' position
               baseCurrencyCode,
-              i.purpose === 'project' ? (i.delivery_destination ?? null) : null,
+              i.purpose === 'project' ? deliveryDestination : null,
             ],
           )
           const poRow = po.rows[0] as Record<string, unknown>
@@ -32152,7 +32186,7 @@ const phase5MutationResolvers = {
     // center prefers the project's own (Project Supply only) over the
     // branch's default; account has no purpose/branch-specific mapping in
     // the schema, so it's always the one company-wide default.
-    const [projectRow, branchRow, sysConfigRow] = await Promise.all([
+    const [projectRow, branchRow, sysConfigRow, companyRow] = await Promise.all([
       i.purpose === 'project' && i.project_id
         ? query<{ cost_center_id: string | null }>(
             `SELECT cost_center_id FROM projects WHERE id=$1 AND company_id=$2`,
@@ -32169,10 +32203,21 @@ const phase5MutationResolvers = {
         `SELECT default_unallocated_purchase_account_id FROM system_configuration WHERE company_id=$1`,
         [ctx.auth.companyId],
       ),
+      query<{ requires_jobsite_delivery: boolean }>(
+        `SELECT requires_jobsite_delivery FROM companies WHERE id=$1`,
+        [ctx.auth.companyId],
+      ),
     ])
     const defaultCostCenterId =
       projectRow.rows[0]?.cost_center_id ?? branchRow.rows[0]?.default_cost_center_id ?? null
     const defaultAccountId = sysConfigRow.rows[0]?.default_unallocated_purchase_account_id ?? null
+    // A company that doesn't run its own inventory (requires_jobsite_delivery
+    // — see 301_requires_jobsite_delivery) can't choose 'inventory' at all;
+    // every project line is forced to 'jobsite' regardless of what the form
+    // submitted.
+    const deliveryDestination = companyRow.rows[0]?.requires_jobsite_delivery
+      ? 'jobsite'
+      : (i.delivery_destination ?? null)
     const createdReq = await withTransaction(
       { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
       async (client) => {
@@ -32189,7 +32234,7 @@ const phase5MutationResolvers = {
             reqNum,
             i.project_id ?? null,
             i.purpose ?? 'stock',
-            i.purpose === 'project' ? (i.delivery_destination ?? null) : null,
+            i.purpose === 'project' ? deliveryDestination : null,
             priority,
             requireAuth(ctx).userId,
             i.assigned_receiver_id ?? null,

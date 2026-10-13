@@ -674,6 +674,7 @@ export type CompanyIntercoPricingSettings = {
 export type CompanyRef = {
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
+  requires_jobsite_delivery?: Maybe<Scalars['Boolean']['output']>;
 };
 
 export type CompanyUser = {

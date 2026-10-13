@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@apollo/client'
 import { CREATE_REQUISITION } from '../../../graphql/requisitions'
-import { PRODUCTS_QUERY } from '../../../graphql/inventory'
+import { PRODUCTS_QUERY, MY_COMPANIES_QUERY } from '../../../graphql/inventory'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
 import { MANUFACTURING_ORDERS_QUERY } from '../../../graphql/manufacturing'
 import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
@@ -22,7 +22,7 @@ import { LineItemEditor, type LineItemField } from '../../../components/ui/LineI
 import { useToastStore } from '../../../store/toastStore'
 import { useTourStore } from '../../../store/tourStore'
 import { api } from '../../../lib/axios'
-import type { AttachFileMutation, AttachFileMutationVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CreateRequisitionMutation, CreateRequisitionMutationVariables, EmployeesQuery, EmployeesQueryVariables, ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, RequestUploadUrlMutation, RequestUploadUrlMutationVariables } from '../../../graphql/generated'
+import type { AttachFileMutation, AttachFileMutationVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CreateRequisitionMutation, CreateRequisitionMutationVariables, EmployeesQuery, EmployeesQueryVariables, ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables, MyCompaniesQuery, MyCompaniesQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, RequestUploadUrlMutation, RequestUploadUrlMutationVariables } from '../../../graphql/generated'
 
 // Expense-purpose lines don't carry a product — they carry an expense
 // category, which resolves to a GL account server-side exactly the way
@@ -85,6 +85,18 @@ export default function RequisitionForm() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const currentCompanyId = useAuthStore((s) => s.user?.companyId ?? '')
+  // A company flagged requires_jobsite_delivery (see migration
+  // 301_requires_jobsite_delivery) has no inventory of its own — every
+  // project line goes straight to the jobsite, with no "Delivered to
+  // Inventory" choice at all. Mirrors what createRequisition itself
+  // already enforces server-side.
+  const { data: companiesData } = useQuery<MyCompaniesQuery, MyCompaniesQueryVariables>(
+    MY_COMPANIES_QUERY,
+    { fetchPolicy: 'cache-first' },
+  )
+  const companyRequiresJobsiteDelivery =
+    companiesData?.myCompanies.find((c) => c.id === currentCompanyId)?.requires_jobsite_delivery ??
+    false
   // Onboarding tour: the synthetic walkthrough has no real project/branch
   // to pick, so required-field validation is bypassed and the Project
   // picker disabled below — mirrors PurchaseOrderForm's own isTourMode
@@ -126,6 +138,10 @@ export default function RequisitionForm() {
       .then((r) => { setExpenseCategories(r.data); })
       .catch(() => { /* handled inline — line's category select just stays empty */ })
   }, [purpose, expenseCategories.length])
+
+  useEffect(() => {
+    if (companyRequiresJobsiteDelivery) setDeliveryDestination('jobsite')
+  }, [companyRequiresJobsiteDelivery])
 
   // Pre-fill from URL — mirrors PurchaseOrderForm's own ?projectId=/?moId=
   // handling, for entry points that already know which project or
@@ -740,12 +756,24 @@ export default function RequisitionForm() {
                 <Select
                   label={t('req.form.deliveryDestination')}
                   value={deliveryDestination}
+                  disabled={companyRequiresJobsiteDelivery}
                   onChange={(e) => { setDeliveryDestination(e.target.value as '' | 'inventory' | 'jobsite'); }}
                 >
-                  <option value="">{t('req.form.selectDestination')}</option>
-                  <option value="inventory">{t('req.form.deliveredToInventory')}</option>
-                  <option value="jobsite">{t('req.form.deliveredDirectlyToTheJobsite')}</option>
+                  {companyRequiresJobsiteDelivery ? (
+                    <option value="jobsite">{t('req.form.deliveredDirectlyToTheJobsite')}</option>
+                  ) : (
+                    <>
+                      <option value="">{t('req.form.selectDestination')}</option>
+                      <option value="inventory">{t('req.form.deliveredToInventory')}</option>
+                      <option value="jobsite">{t('req.form.deliveredDirectlyToTheJobsite')}</option>
+                    </>
+                  )}
                 </Select>
+                {companyRequiresJobsiteDelivery && (
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                    {t('req.form.thisCompanyHasNoInventoryOfItsOwn')}
+                  </div>
+                )}
               </div>
             </div>
           )}

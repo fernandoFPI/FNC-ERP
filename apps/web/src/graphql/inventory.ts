@@ -186,6 +186,7 @@ export const MY_COMPANIES_QUERY = gql`
     myCompanies {
       id
       name
+      requires_jobsite_delivery
     }
   }
 `

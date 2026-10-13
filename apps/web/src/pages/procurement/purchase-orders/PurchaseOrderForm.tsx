@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@apollo/client'
 import { CREATE_PO, PURCHASE_ORDERS_QUERY, PO_FX_RATES_QUERY } from '../../../graphql/procurement'
 import { VENDORS_QUERY } from '../../../graphql/procurement'
 import { ANALYTIC_ACCOUNTS_QUERY } from '../../../graphql/finance'
-import { PRODUCTS_QUERY } from '../../../graphql/inventory'
+import { PRODUCTS_QUERY, MY_COMPANIES_QUERY } from '../../../graphql/inventory'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
 import { MANUFACTURING_ORDERS_QUERY } from '../../../graphql/manufacturing'
 import { EMPLOYEES_QUERY } from '../../../graphql/hr'
@@ -21,7 +21,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 import { useTourStore } from '../../../store/tourStore'
-import type { AnalyticAccountsQuery, AnalyticAccountsQueryVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CreatePurchaseOrderMutation, CreatePurchaseOrderMutationVariables, EmployeesQuery, EmployeesQueryVariables, ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables, PoFxRatesQuery, PoFxRatesQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
+import type { AnalyticAccountsQuery, AnalyticAccountsQueryVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CreatePurchaseOrderMutation, CreatePurchaseOrderMutationVariables, EmployeesQuery, EmployeesQueryVariables, ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables, MyCompaniesQuery, MyCompaniesQueryVariables, PoFxRatesQuery, PoFxRatesQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
 
 interface POLine {
   product_id: string
@@ -145,6 +145,18 @@ export default function PurchaseOrderForm() {
 
   const currentCompanyId = useAuthStore((s) => s.user?.companyId ?? '')
   const formRef = useRef<HTMLFormElement>(null)
+  // A company flagged requires_jobsite_delivery (see migration
+  // 301_requires_jobsite_delivery) has no inventory of its own — every
+  // project line goes straight to the jobsite, with no "Delivered to
+  // Inventory" choice at all. Mirrors what createPurchaseOrder itself
+  // already enforces server-side.
+  const { data: companiesData } = useQuery<MyCompaniesQuery, MyCompaniesQueryVariables>(
+    MY_COMPANIES_QUERY,
+    { fetchPolicy: 'cache-first' },
+  )
+  const companyRequiresJobsiteDelivery =
+    companiesData?.myCompanies.find((c) => c.id === currentCompanyId)?.requires_jobsite_delivery ??
+    false
 
   const [form, setForm] = useState({
     vendor_id: '',
@@ -174,6 +186,10 @@ export default function PurchaseOrderForm() {
   const [currencyTouched, setCurrencyTouched] = useState(false)
 
   // Pre-fill from URL
+  useEffect(() => {
+    if (companyRequiresJobsiteDelivery) setDeliveryDestination('jobsite')
+  }, [companyRequiresJobsiteDelivery])
+
   useEffect(() => {
     const moId = searchParams.get('moId')
     const projectId = searchParams.get('projectId')
@@ -640,14 +656,26 @@ export default function PurchaseOrderForm() {
                     <Select
                       label="Delivery Destination *"
                       value={deliveryDestination}
+                      disabled={companyRequiresJobsiteDelivery}
                       onChange={(e) => {
                         setDeliveryDestination(e.target.value as '' | 'inventory' | 'jobsite')
                       }}
                     >
-                      <option value="">Select destination…</option>
-                      <option value="inventory">Delivered to inventory</option>
-                      <option value="jobsite">Delivered directly to the jobsite</option>
+                      {companyRequiresJobsiteDelivery ? (
+                        <option value="jobsite">Delivered directly to the jobsite</option>
+                      ) : (
+                        <>
+                          <option value="">Select destination…</option>
+                          <option value="inventory">Delivered to inventory</option>
+                          <option value="jobsite">Delivered directly to the jobsite</option>
+                        </>
+                      )}
                     </Select>
+                    {companyRequiresJobsiteDelivery && (
+                      <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                        This company has no inventory of its own.
+                      </div>
+                    )}
                   </div>
                 )}
                 {purpose === 'manufacturing' && (
