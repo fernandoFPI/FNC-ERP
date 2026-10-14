@@ -74,14 +74,27 @@ async function resolveLineGlAccount(
 
 // ─── Next claim number ────────────────────────────────────────────────────────
 
-async function nextClaimNumber(companyId: string): Promise<string> {
+// The highest existing EXP-YYYY-NNNN for this company and year, plus one —
+// deliberately not COUNT(*)+1. A count breaks as soon as rows leave the set
+// (claims moved to another company, deleted by hand): the count drops below
+// the highest number, count+1 lands on a number that already exists, and every
+// submit then fails on the (company_id, claim_number) unique key until the code
+// changes (Al Watanyia, Oct 2026: 25 claims, highest 0028, next 0026 taken).
+// Must run on the caller's transaction client: the advisory lock serialises
+// concurrent submits for one company and releases at COMMIT/ROLLBACK, so two
+// simultaneous submits can't both read the same maximum.
+async function nextClaimNumber(client: PoolClient, companyId: string): Promise<string> {
   const yr = new Date().getFullYear()
-  const res = await query(
-    `SELECT COUNT(*)+1 AS n FROM expense_claims
-     WHERE company_id=$1 AND claim_number LIKE $2`,
-    [companyId, `EXP-${yr}-%`],
+  await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+    `expense_claim_number:${companyId}`,
+  ])
+  const res = await client.query<{ n: number }>(
+    `SELECT COALESCE(MAX(substring(claim_number FROM '[0-9]+$')::int), 0) + 1 AS n
+     FROM expense_claims
+     WHERE company_id=$1 AND claim_number ~ $2`,
+    [companyId, `^EXP-${yr}-[0-9]+$`],
   )
-  const n = String(Number(firstRowOrThrow(res)['n'])).padStart(4, '0')
+  const n = String(firstRowOrThrow(res).n).padStart(4, '0')
   return `EXP-${yr}-${n}`
 }
 
@@ -412,7 +425,6 @@ expenseClaimsRouter.post(
   asyncHandler(async (req, res) => {
     try {
       const d = claimSchema.parse(req.body)
-      const claimNumber = await nextClaimNumber(getAuth(req).companyId)
       const totalAmount = d.lines.reduce((s, l) => s + l.amount, 0)
 
       const result = await withTransaction(
@@ -423,6 +435,7 @@ expenseClaimsRouter.post(
             getAuth(req).companyId,
             d.currency_code,
           )
+          const claimNumber = await nextClaimNumber(client, getAuth(req).companyId)
           const ecRes = await client.query(
             `INSERT INTO expense_claims
             (company_id, claim_number, employee_id, employee_name, description, currency_code, total_amount, reimbursement_account_id, project_id, notes, created_by)
@@ -479,7 +492,7 @@ expenseClaimsRouter.post(
         action: 'INSERT',
         tableName: 'expense_claims',
         recordId: result.id as string,
-        newValues: { claim_number: claimNumber, total_amount: totalAmount },
+        newValues: { claim_number: result.claim_number, total_amount: totalAmount },
       })
       sendOk(res, result, 201)
     } catch (err) {
@@ -522,7 +535,6 @@ const selfClaimSchema = z.object({
 expenseClaimsRouter.post('/request-self', asyncHandler(async (req, res) => {
   try {
     const d = selfClaimSchema.parse(req.body)
-    const claimNumber = await nextClaimNumber(getAuth(req).companyId)
     const result = await withTransaction(
       { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
       async (client) => {
@@ -539,6 +551,7 @@ expenseClaimsRouter.post('/request-self', asyncHandler(async (req, res) => {
         // POST /:id/post-payment.
         const totalAmount = d.lines.reduce((s, l) => s + l.amount, 0)
         const employeeName = `${emp['first_name'] as string} ${emp['last_name'] as string}`
+        const claimNumber = await nextClaimNumber(client, getAuth(req).companyId)
         const ecRes = await client.query(
           `INSERT INTO expense_claims
              (company_id, claim_number, employee_id, employee_name, description, currency_code,

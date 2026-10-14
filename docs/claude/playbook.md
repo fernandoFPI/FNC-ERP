@@ -192,3 +192,17 @@ Don't re-derive, check these first.
     its result directly, and do the `getXForReturn(id)` read as a separate statement *after* `await
     withTransaction(...)` has resolved. (A `getXForReturn` called with the transaction's own `client` instead
     of the shared `query()` helper would also work, but changes that helper's signature everywhere it's used.)
+
+28. **A document number derived from `COUNT(*)+1` breaks the moment rows leave the set.** `nextClaimNumber`
+    (`services/finance/src/routes/expense-claims.ts`) numbered expense claims as `COUNT(*)+1`. Three claims
+    (0023 to 0025) were moved from Al Watanyia to Nishtimani Yakam, leaving Al Watanyia with 25 claims but a
+    highest number of 0028. Count + 1 gave 0026, which already existed, so every submit in that company hit the
+    `(company_id, claim_number)` unique key and returned a generic 500 "Failed to submit expense claim". The route
+    catches everything into one message and the form shows only `error.message`, so the user saw no cause and the
+    server logged nothing. How to spot it: one company fails on every submit while others work; compare
+    `count(*)` with the highest suffix per company (`max_n > count`); the Network response carries
+    `error.details.code = 23505` with a `..._claim_number_key` constraint. Fix: take the highest existing suffix
+    plus one inside the submitting transaction under `pg_advisory_xact_lock` (regression test:
+    `services/finance/tests/expense-claim-numbering.test.ts`). The same `COUNT(*)+1` pattern is still in
+    `petty-cash.ts` (`nextReplenNumber`), the gateway resolvers and `worker/src/jobs/interco-stock-transfer.ts`;
+    check each before trusting it, and prefer `nextDocumentNumber` (a real sequence) for new document types.
