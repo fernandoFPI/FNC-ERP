@@ -10600,17 +10600,25 @@ export const resolvers = {
         const isAdmin = await hasProcurementAuthorityGW(auth)
         const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
         const isFinanceTeam = await isUserFinanceTeamGW(auth.userId, auth.companyId)
+        // A buyer position holder sees this PO at every stage, not just
+        // while it's sitting at items_bought (their own explicit choice —
+        // callerHasCurrentStagePositionGW's 'items_bought' case still exists
+        // below for a non-buyer-scoped caller, but is now redundant for
+        // anyone this already covers).
+        const isBuyer = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'buyer')
         const isLateStage = ['finance_audit', 'invoiced', 'completed'].includes(poStub.status)
         // Organizer is allowed to read a late-stage PO now (they created it —
         // shouldn't lose visibility once it reaches finance), but the Finance
         // Audit / Invoiced "Next Step" action panels stay finance-team/admin
         // only client-side (see callerIsFinanceTeam) — this gate gives them
         // read access, not audit/invoicing authority.
-        const canView = isLateStage
-          ? isAdmin || isFinanceTeam || isOrganizer
-          : isAdmin ||
-            isOrganizer ||
-            (await callerHasCurrentStagePositionGW(auth, args.id, poStub.status))
+        const canView =
+          isAdmin ||
+          isOrganizer ||
+          isBuyer ||
+          (isLateStage
+            ? isFinanceTeam
+            : await callerHasCurrentStagePositionGW(auth, args.id, poStub.status))
         if (!canView) {
           return {
             id: poStub.id,
