@@ -2909,6 +2909,20 @@ async function callerHasCurrentStagePositionGW(
   }
 }
 
+// Same gate purchaseOrder(id) uses to decide the viewerRestricted stub —
+// extracted so a second write-side check (addPOLogNote) can't drift from it
+// per playbook rule 24 (a hand-copied gate going stale). status must be the
+// PO's current status, already fetched by the caller.
+async function canViewPurchaseOrderGW(auth: GWAuth, poId: string, status: string): Promise<boolean> {
+  const isAdmin = await hasProcurementAuthorityGW(auth)
+  const isOrganizer = await userIsOrganizerGW(auth.userId, poId, auth.companyId)
+  const isBuyer = await userHasPositionGW(auth.userId, auth.companyId, poId, 'buyer')
+  const isLateStage = ['finance_audit', 'invoiced', 'completed'].includes(status)
+  if (isAdmin || isOrganizer || isBuyer) return true
+  if (isLateStage) return isUserFinanceTeamGW(auth.userId, auth.companyId)
+  return callerHasCurrentStagePositionGW(auth, poId, status)
+}
+
 // The full purchase-order shape (header + lines + receipts + approval log +
 // edit requests + caller-position flags) — extracted so purchaseOrder(id)
 // and purchaseOrderForAction(id) share one implementation instead of two
@@ -10597,28 +10611,12 @@ export const resolvers = {
         )
         if (!gateRow.rows[0]) return null
         const poStub = gateRow.rows[0]
-        const isAdmin = await hasProcurementAuthorityGW(auth)
-        const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
-        const isFinanceTeam = await isUserFinanceTeamGW(auth.userId, auth.companyId)
-        // A buyer position holder sees this PO at every stage, not just
-        // while it's sitting at items_bought (their own explicit choice —
-        // callerHasCurrentStagePositionGW's 'items_bought' case still exists
-        // below for a non-buyer-scoped caller, but is now redundant for
-        // anyone this already covers).
-        const isBuyer = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'buyer')
-        const isLateStage = ['finance_audit', 'invoiced', 'completed'].includes(poStub.status)
         // Organizer is allowed to read a late-stage PO now (they created it —
         // shouldn't lose visibility once it reaches finance), but the Finance
         // Audit / Invoiced "Next Step" action panels stay finance-team/admin
         // only client-side (see callerIsFinanceTeam) — this gate gives them
         // read access, not audit/invoicing authority.
-        const canView =
-          isAdmin ||
-          isOrganizer ||
-          isBuyer ||
-          (isLateStage
-            ? isFinanceTeam
-            : await callerHasCurrentStagePositionGW(auth, args.id, poStub.status))
+        const canView = await canViewPurchaseOrderGW(auth, args.id, poStub.status)
         if (!canView) {
           return {
             id: poStub.id,
@@ -13542,6 +13540,39 @@ export const resolvers = {
           return { ...(updated.rows[0] as Record<string, unknown>), lines: [], photos: [] }
         },
       )
+    },
+
+    // A free-text entry in the PO's Log tab, for anything that doesn't fit a
+    // status transition. Gated by the same canViewPurchaseOrderGW the detail
+    // page itself uses — if you can see this PO, you can leave a note on it;
+    // see that function's comment on why it's shared rather than re-derived.
+    addPOLogNote: async (_: unknown, args: { poId: string; note: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      const note = args.note.trim()
+      if (!note) throw new Error('Note text is required')
+      const poRow = await query<{ status: string }>(
+        `SELECT status FROM purchase_orders WHERE id=$1 AND company_id=$2`,
+        [args.poId, auth.companyId],
+      )
+      if (!poRow.rows[0]) throw new Error('Purchase order not found')
+      const canView = await canViewPurchaseOrderGW(auth, args.poId, poRow.rows[0].status)
+      if (!canView) throw new Error('Not authorized to view this purchase order')
+      const inserted = await query<{
+        id: string
+        action: string
+        notes: string
+        created_at: string
+      }>(
+        `INSERT INTO po_approval_log (po_id, from_status, to_status, actor_id, action, notes)
+         VALUES ($1,$2,$2,$3,'note',$4) RETURNING id, action, notes, created_at`,
+        [args.poId, poRow.rows[0].status, auth.userId, note],
+      )
+      const userRow = await query<{ user_email: string }>(
+        `SELECT COALESCE(first_name || ' ' || last_name, email) AS user_email FROM users WHERE id=$1`,
+        [auth.userId],
+      )
+      return { ...inserted.rows[0], user_email: userRow.rows[0]?.user_email ?? null }
     },
 
     // For PO lines delivered straight to a project's jobsite instead of

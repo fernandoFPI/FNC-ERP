@@ -2256,6 +2256,7 @@ export type Mutation = {
   addEngClientComment: EngClientComment;
   addMaterialIssueLine: MaterialIssueLine;
   addPOLineComment: PoLineComment;
+  addPOLogNote: PoApprovalLogEntry;
   addProjectMember: ProjectMember;
   addProjectTeamMember: ProjectTeamMember;
   addPunchPhoto: PunchPhoto;
@@ -2769,6 +2770,12 @@ export type MutationAddPoLineCommentArgs = {
   comment: Scalars['String']['input'];
   flag?: InputMaybe<Scalars['String']['input']>;
   lineId: Scalars['ID']['input'];
+  poId: Scalars['ID']['input'];
+};
+
+
+export type MutationAddPoLogNoteArgs = {
+  note: Scalars['String']['input'];
   poId: Scalars['ID']['input'];
 };
 

@@ -181,6 +181,8 @@
       "add": "إضافة",
       "addCommentN": "إضافة تعليق {{n}}",
       "addLine": "+ إضافة بند",
+      "addNote": "إضافة ملاحظة",
+      "addNotePlaceholder": "أضف ملاحظة إلى سجل أمر الشراء هذا…",
       "adding": "جارٍ الإضافة…",
       "addressedLabel": "تمت المعالجة — بانتظار التأكيد",
       "adminCorrection": "تصحيح المسؤول",

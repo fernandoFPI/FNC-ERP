@@ -1696,6 +1696,14 @@ export type ReverseReceiptMutationVariables = Exact<{
 
 export type ReverseReceiptMutation = { reverseReceipt: { id: string, status: string, reversed_at: string | null, reversal_reason: string | null, reversed_by_email: string | null } };
 
+export type AddPoLogNoteMutationVariables = Exact<{
+  poId: string | number;
+  note: string;
+}>;
+
+
+export type AddPoLogNoteMutation = { addPOLogNote: { id: string, action: string, user_email: string | null, notes: string | null, created_at: string } };
+
 export type RecordDirectDeliveryMutationVariables = Exact<{
   poId: string | number;
   input: Types.DirectDeliveryInput;

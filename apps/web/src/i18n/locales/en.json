@@ -161,6 +161,8 @@
       "add": "Add",
       "addCommentN": "Add Comment {{n}}",
       "addLine": "+ Add line",
+      "addNote": "Add Note",
+      "addNotePlaceholder": "Add a note to this PO's log…",
       "adding": "Adding…",
       "addressedLabel": "Addressed — awaiting confirmation",
       "adminCorrection": "Admin correction",

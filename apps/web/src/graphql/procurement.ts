@@ -260,6 +260,18 @@ export const REVERSE_RECEIPT = gql`
   }
 `
 
+export const ADD_PO_LOG_NOTE = gql`
+  mutation AddPOLogNote($poId: ID!, $note: String!) {
+    addPOLogNote(poId: $poId, note: $note) {
+      id
+      action
+      user_email
+      notes
+      created_at
+    }
+  }
+`
+
 export const RECORD_DIRECT_DELIVERY = gql`
   mutation RecordDirectDelivery($poId: ID!, $input: DirectDeliveryInput!) {
     recordDirectDelivery(poId: $poId, input: $input) {

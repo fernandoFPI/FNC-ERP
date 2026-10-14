@@ -2723,6 +2723,7 @@
     confirmReceipt(id: ID!): POReceipt!
     cancelReceipt(id: ID!): POReceipt!
     reverseReceipt(id: ID!, reason: String!): POReceipt!
+    addPOLogNote(poId: ID!, note: String!): POApprovalLogEntry!
     recordDirectDelivery(poId: ID!, input: DirectDeliveryInput!): DirectDeliveryResult!
     attachReceiptPhoto(receiptId: ID!, fileId: ID!, label: String): ReceiptPhoto!
   }

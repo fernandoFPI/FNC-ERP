@@ -44,6 +44,7 @@ import {
   PO_FX_RATES_QUERY,
   ADMIN_CORRECT_PO,
   RESOLVE_LINE_FLAG,
+  ADD_PO_LOG_NOTE,
 } from '../../../graphql/procurement'
 import { useAuthStore } from '../../../store/authStore'
 import { EMPLOYEES_QUERY, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
@@ -80,7 +81,7 @@ import {
   buildTourDemoPO,
   buildTourDemoStockAvailability,
 } from '../../../components/help/tourDemoPO'
-import type { AccountsQuery, AccountsQueryVariables, AddPoLineCommentMutation, AddPoLineCommentMutationVariables, AdminCorrectPoMutation, AdminCorrectPoMutationVariables, AdminSetPoStatusMutation, AdminSetPoStatusMutationVariables, AnalyticAccountsQuery, AnalyticAccountsQueryVariables, ApprovePoEditRequestMutation, ApprovePoEditRequestMutationVariables, ApprovePoMutation, ApprovePoMutationVariables, ApproveStockIssuanceMutation, ApproveStockIssuanceMutationVariables, CancelPoMutation, CancelPoMutationVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CompletePoMutation, CompletePoMutationVariables, ConfirmPoInventoryCheckMutation, ConfirmPoInventoryCheckMutationVariables, CostCentersQuery, CostCentersQueryVariables, DeletePoMutation, DeletePoMutationVariables, EmployeesQuery, EmployeesQueryVariables, EntityAttachmentsQuery, EntityAttachmentsQueryVariables, FailPoAuditMutation, FailPoAuditMutationVariables, FinishBuyingPoMutation, FinishBuyingPoMutationVariables, MarkPoLineBoughtMutation, MarkPoLineBoughtMutationVariables, PassPoAuditMutation, PassPoAuditMutationVariables, PoFxRatesQuery, PoFxRatesQueryVariables, PoStockAvailabilityQuery, PoStockAvailabilityQueryVariables, ProductsQuery, ProductsQueryVariables, PurchaseOrderLifecycleQuery, PurchaseOrderLifecycleQueryVariables, RejectPoEditRequestMutation, RejectPoEditRequestMutationVariables, RejectPoMutation, RejectPoMutationVariables, RejectPoToMarketPricingMutation, RejectPoToMarketPricingMutationVariables, RejectPoVerificationToMarketPricingMutation, RejectPoVerificationToMarketPricingMutationVariables, RejectPoVerificationToStorePricingMutation, RejectPoVerificationToStorePricingMutationVariables, ReopenPoMutation, ReopenPoMutationVariables, ResolveLineFlagMutation, ResolveLineFlagMutationVariables, ResolvePoLineCommentMutation, ResolvePoLineCommentMutationVariables, SendPoToAuditMutation, SendPoToAuditMutationVariables, SetPoFundingMutation, SetPoFundingMutationVariables, SetPoLineAccountingMutation, SetPoLineAccountingMutationVariables, SetPoLineActualPriceMutation, SetPoLineActualPriceMutationVariables, SetPoLineAuditStatusMutation, SetPoLineAuditStatusMutationVariables, SetPoPriorityMutation, SetPoPriorityMutationVariables, SetPoReceiverMutation, SetPoReceiverMutationVariables, SetPoVendorMutation, SetPoVendorMutationVariables, StockLocationsQuery, StockLocationsQueryVariables, SubmitPoEditRequestMutation, SubmitPoEditRequestMutationVariables, SubmitPoMarketPricingMutation, SubmitPoMarketPricingMutationVariables, SubmitPoPriceVerificationMutation, SubmitPoPriceVerificationMutationVariables, SubmitPoStorePricingMutation, SubmitPoStorePricingMutationVariables, SubmitPoToInventoryCheckMutation, SubmitPoToInventoryCheckMutationVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
+import type { AccountsQuery, AccountsQueryVariables, AddPoLineCommentMutation, AddPoLineCommentMutationVariables, AddPoLogNoteMutation, AddPoLogNoteMutationVariables, AdminCorrectPoMutation, AdminCorrectPoMutationVariables, AdminSetPoStatusMutation, AdminSetPoStatusMutationVariables, AnalyticAccountsQuery, AnalyticAccountsQueryVariables, ApprovePoEditRequestMutation, ApprovePoEditRequestMutationVariables, ApprovePoMutation, ApprovePoMutationVariables, ApproveStockIssuanceMutation, ApproveStockIssuanceMutationVariables, CancelPoMutation, CancelPoMutationVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CompletePoMutation, CompletePoMutationVariables, ConfirmPoInventoryCheckMutation, ConfirmPoInventoryCheckMutationVariables, CostCentersQuery, CostCentersQueryVariables, DeletePoMutation, DeletePoMutationVariables, EmployeesQuery, EmployeesQueryVariables, EntityAttachmentsQuery, EntityAttachmentsQueryVariables, FailPoAuditMutation, FailPoAuditMutationVariables, FinishBuyingPoMutation, FinishBuyingPoMutationVariables, MarkPoLineBoughtMutation, MarkPoLineBoughtMutationVariables, PassPoAuditMutation, PassPoAuditMutationVariables, PoFxRatesQuery, PoFxRatesQueryVariables, PoStockAvailabilityQuery, PoStockAvailabilityQueryVariables, ProductsQuery, ProductsQueryVariables, PurchaseOrderLifecycleQuery, PurchaseOrderLifecycleQueryVariables, RejectPoEditRequestMutation, RejectPoEditRequestMutationVariables, RejectPoMutation, RejectPoMutationVariables, RejectPoToMarketPricingMutation, RejectPoToMarketPricingMutationVariables, RejectPoVerificationToMarketPricingMutation, RejectPoVerificationToMarketPricingMutationVariables, RejectPoVerificationToStorePricingMutation, RejectPoVerificationToStorePricingMutationVariables, ReopenPoMutation, ReopenPoMutationVariables, ResolveLineFlagMutation, ResolveLineFlagMutationVariables, ResolvePoLineCommentMutation, ResolvePoLineCommentMutationVariables, SendPoToAuditMutation, SendPoToAuditMutationVariables, SetPoFundingMutation, SetPoFundingMutationVariables, SetPoLineAccountingMutation, SetPoLineAccountingMutationVariables, SetPoLineActualPriceMutation, SetPoLineActualPriceMutationVariables, SetPoLineAuditStatusMutation, SetPoLineAuditStatusMutationVariables, SetPoPriorityMutation, SetPoPriorityMutationVariables, SetPoReceiverMutation, SetPoReceiverMutationVariables, SetPoVendorMutation, SetPoVendorMutationVariables, StockLocationsQuery, StockLocationsQueryVariables, SubmitPoEditRequestMutation, SubmitPoEditRequestMutationVariables, SubmitPoMarketPricingMutation, SubmitPoMarketPricingMutationVariables, SubmitPoPriceVerificationMutation, SubmitPoPriceVerificationMutationVariables, SubmitPoStorePricingMutation, SubmitPoStorePricingMutationVariables, SubmitPoToInventoryCheckMutation, SubmitPoToInventoryCheckMutationVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
 
 export interface POLine {
   id: string
@@ -1049,6 +1050,14 @@ export default function PurchaseOrderDetail() {
     mutOpts,
   )
   const [approvePO, { loading: l8 }] = useMutation<ApprovePoMutation, ApprovePoMutationVariables>(APPROVE_PO, mutOpts)
+  const [logNoteText, setLogNoteText] = useState('')
+  const [addLogNote, { loading: addingLogNote }] = useMutation<AddPoLogNoteMutation, AddPoLogNoteMutationVariables>(ADD_PO_LOG_NOTE, {
+    onCompleted: () => {
+      setLogNoteText('')
+      void refetch()
+    },
+    onError: onErr,
+  })
   const [rejectPO, { loading: l6 }] = useMutation<RejectPoMutation, RejectPoMutationVariables>(REJECT_PO, {
     onCompleted: () => {
       setRejectReason('')
@@ -5681,6 +5690,33 @@ export default function PurchaseOrderDetail() {
               <IconDocument />
             </span>
             {t('po.detail.approvalLog')}
+          </div>
+          <div
+            style={{
+              padding: '14px 16px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+            }}
+          >
+            <Textarea
+              value={logNoteText}
+              onChange={(e) => setLogNoteText(e.target.value)}
+              placeholder={t('po.detail.addNotePlaceholder')}
+              rows={2}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                size="sm"
+                disabled={!logNoteText.trim() || addingLogNote}
+                onClick={() =>
+                  void addLogNote({ variables: { poId: po.id, note: logNoteText.trim() } })
+                }
+              >
+                {t('po.detail.addNote')}
+              </Button>
+            </div>
           </div>
           {po.notes && (
             <div
