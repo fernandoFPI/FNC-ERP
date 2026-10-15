@@ -206,3 +206,19 @@ Don't re-derive, check these first.
     `services/finance/tests/expense-claim-numbering.test.ts`). The same `COUNT(*)+1` pattern is still in
     `petty-cash.ts` (`nextReplenNumber`), the gateway resolvers and `worker/src/jobs/interco-stock-transfer.ts`;
     check each before trusting it, and prefer `nextDocumentNumber` (a real sequence) for new document types.
+
+29. **Removing a service can leave its web callers behind, silent, plus a status list that drifted.**
+    Commit 297fcf5 deleted the REST `services/procurement`, including `/procurement/purchase-orders/:id/returns`.
+    The three Returns screens (`PurchaseOrderDetail` Returns tab, `POReturnForm`, `POReturnDetail`) kept calling
+    it, and the list call ended in `.catch(() => { /* ignore */ })`, so the tab just looked empty instead of
+    failing. On top of that, the "Create Return" gate was a hard-coded status list
+    (`['received','invoiced','completed','payment_pending','closed']`) that had never been updated: `received` is
+    not a status any more and `goods_received` was missing, so a PO that had just received its goods (e.g.
+    NF-PO-2026-0083) could not start a return even before the missing backend mattered. Fix: returns are now
+    GraphQL in the gateway (`poReturns`, `createPOReturn`, …) and the web gate is one shared constant
+    (`PO_RETURNABLE_STATUSES` in `po-constants.ts`, mirrored in the gateway resolvers; change both together).
+    How to spot it: a feature whose list is "just empty" for everyone; grep `apps/*/src` for the removed
+    service's URL prefix, and for `.catch(() => {})` around an `api.get`. Before deleting a REST service, grep
+    for every caller including ones that swallow errors. Hard-coded status arrays in JSX are a drift risk: lift
+    them to a named constant next to the status vocabulary (`PO_STATUSES` / `CHILD_PO_STATUSES`).
+    Regression test: `services/gateway/tests/po-returns.test.ts`.
