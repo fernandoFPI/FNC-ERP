@@ -2719,6 +2719,12 @@ export default function RequisitionDetail() {
                           marketPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
                         const missing = raw === ''
                         const invalid = !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
+                        // What the vendor quote is for: the requested quantity less
+                        // whatever stock already covers (the same subtraction the
+                        // purchaseLines filter above uses).
+                        const requestedQty = parseFloat(l.qty) || 0
+                        const stockQty = parseFloat(String(l.qty_from_stock ?? '0')) || 0
+                        const buyQty = requestedQty - stockQty
                         return (
                           <div
                             key={l.id}
@@ -2730,13 +2736,52 @@ export default function RequisitionDetail() {
                           >
                             <div
                               style={{
-                                fontSize: '13px',
-                                fontWeight: 600,
-                                color: theme.textPrimary,
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                justifyContent: 'space-between',
+                                gap: '12px',
                                 marginBottom: '8px',
                               }}
                             >
-                              {l.description || l.product_name}
+                              <div
+                                style={{
+                                  fontSize: '13px',
+                                  fontWeight: 600,
+                                  color: theme.textPrimary,
+                                  minWidth: 0,
+                                }}
+                              >
+                                {l.description || l.product_name}
+                              </div>
+                              <div style={{ flexShrink: 0, textAlign: 'end' }}>
+                                <div
+                                  style={{
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    color: theme.accent,
+                                    background: theme.accentBg,
+                                    borderRadius: '6px',
+                                    padding: '2px 8px',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {t('req.detail.qtyToBuy')}: {fmtN(buyQty)} {l.uom ?? ''}
+                                </div>
+                                {stockQty > 0.0001 && (
+                                  <div
+                                    style={{
+                                      fontSize: '11px',
+                                      color: theme.textMuted,
+                                      marginTop: '2px',
+                                    }}
+                                  >
+                                    {t('req.detail.qtyRequestedStockNote', {
+                                      requested: fmtN(requestedQty),
+                                      stock: fmtN(stockQty),
+                                    })}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                               <div style={{ width: '140px' }}>

@@ -364,6 +364,39 @@ describe('RequisitionDetail', () => {
     expect(screen.getAllByPlaceholderText('0.00')).toHaveLength(1)
   })
 
+  // The vendor quote is for what still has to be bought, so each line card
+  // states that quantity (requested less what stock already covers).
+  it('market_pricing: shows the quantity to buy on each line card', async () => {
+    mockReq({
+      status: 'market_pricing',
+      callerHasMarketPricingPosition: true,
+      lines: [
+        { id: 'line-1', line_number: 1, description: 'Cement bags', product_id: 'prod-1', product_name: 'Cement', sku: 'CEM-1', qty: '5', uom: 'bag', currency_code: 'IQD', unit_price: '0', qty_from_stock: '0', store_price: null, market_price: null, verified_price: null, total: '0', purchases: [] },
+        { id: 'line-2', line_number: 2, description: 'Electricity fees', product_id: null, product_name: null, sku: null, qty: '12.5', uom: 'unit', currency_code: 'IQD', unit_price: '0', qty_from_stock: '0', store_price: null, market_price: null, verified_price: null, total: '0', purchases: [] },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByText('Qty to buy: 5 bag')).toBeInTheDocument()
+    expect(screen.getByText('Qty to buy: 12.5 unit')).toBeInTheDocument()
+    // nothing is covered from stock, so there's no "from stock" note
+    expect(screen.queryByText(/requested, .* from stock/i)).not.toBeInTheDocument()
+  })
+
+  it('market_pricing: a partly stock-covered line shows only what is left to buy, plus how it splits', async () => {
+    mockReq({
+      status: 'market_pricing',
+      callerHasMarketPricingPosition: true,
+      lines: [
+        { id: 'line-1', line_number: 1, description: 'Rebar 12mm', product_id: 'prod-2', product_name: 'Rebar', sku: 'REB-1', qty: '8', uom: 'unit', currency_code: 'IQD', unit_price: '0', qty_from_stock: '3', store_price: 10, market_price: null, verified_price: null, total: '0', purchases: [] },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByText('Qty to buy: 5 unit')).toBeInTheDocument()
+    expect(screen.getByText('8 requested, 3 from stock')).toBeInTheDocument()
+  })
+
   it('market_pricing: shows a clear message and a Continue button (no inputs) when every line is already covered from stock', async () => {
     const submitMock = vi.fn().mockResolvedValue({})
     mockUseMutation.mockReturnValue([submitMock, { loading: false }])
