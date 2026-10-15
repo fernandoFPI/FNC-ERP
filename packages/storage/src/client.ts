@@ -17,7 +17,9 @@ export async function getB2Client(): Promise<S3Client> {
   // scheme (e.g. copy-pasted hostname only) would otherwise fail silently —
   // the S3 SDK needs a full URL, not a bare host.
   const endpoint =
-    endpointRaw && !/^https?:\/\//i.test(endpointRaw) ? `https://${endpointRaw}` : (endpointRaw ?? '')
+    endpointRaw && !/^https?:\/\//i.test(endpointRaw)
+      ? `https://${endpointRaw}`
+      : (endpointRaw ?? '')
 
   return new S3Client({
     endpoint,
