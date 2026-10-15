@@ -1019,6 +1019,8 @@
       "enterAVerifiedPriceForEvery": "Enter a verified price for every line before submitting — a missing market price does not default to 0.",
       "enterReason": "Enter reason…",
       "enterTheCheckedVendorQuotePer": "Enter the checked vendor quote per line — this becomes the line's real price and currency.",
+      "qtyToBuy": "Qty to buy",
+      "qtyRequestedStockNote": "{{requested}} requested, {{stock}} from stock",
       "enterTheQuantityToTakeFrom": "Enter the quantity to take from stock for each line — the rest will be purchased.",
       "everyLineOnThisRequisitionHas": "Every line on this requisition has been resolved.",
       "expectedDelivery": "Expected Delivery",

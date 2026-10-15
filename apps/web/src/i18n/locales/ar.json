@@ -1095,6 +1095,8 @@
       "enterAVerifiedPriceForEvery": "أدخل سعرًا موثّقًا لكل بند قبل التقديم — سعر السوق المفقود لا يُعتبر 0 افتراضيًا.",
       "enterReason": "أدخل السبب…",
       "enterTheCheckedVendorQuotePer": "أدخل عرض سعر المورّد الذي تم التحقق منه لكل بند — يصبح هذا السعر والعملة الفعليين للبند.",
+      "qtyToBuy": "الكمية المطلوب شراؤها",
+      "qtyRequestedStockNote": "المطلوب {{requested}}، من المخزون {{stock}}",
       "enterTheQuantityToTakeFrom": "أدخل الكمية المراد سحبها من المخزون لكل بند — سيتم شراء الباقي.",
       "everyLineOnThisRequisitionHas": "تمت معالجة كل بند في طلب الشراء هذا.",
       "expectedDelivery": "تاريخ التسليم المتوقع",
