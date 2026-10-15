@@ -145,6 +145,7 @@ export const PURCHASE_ORDER_QUERY = gql`
         description
         qty
         unit_price
+        currency_code
         total
         uom
         qty_received
@@ -269,6 +270,110 @@ export const ADD_PO_LOG_NOTE = gql`
       notes
       created_at
     }
+  }
+`
+
+// ── PO Returns (vendor returns) ───────────────────────────────────────────────
+// Ported from the deleted services/procurement REST route; one fragment so the
+// list, detail and every action return the same shape.
+const PO_RETURN_FIELDS = gql`
+  fragment POReturnFields on POReturn {
+    id
+    po_id
+    po_number
+    vendor_name
+    return_number
+    return_type
+    status
+    notes
+    damage_description
+    total_returned_value
+    currency_code
+    created_by_email
+    approved_by_email
+    created_at
+    submitted_at
+    approved_at
+    credited_at
+    credit_note_reference
+    responsible_employee_id
+    responsible_employee_name
+    responsible_employee_number
+    deduct_from_salary
+    deduction_amount
+    deduction_request_id
+    deduction_status
+    deduction_applied_at
+    items {
+      id
+      po_line_id
+      description
+      quantity_returned
+      original_unit_price
+      assessed_unit_price
+      line_total
+      damage_notes
+    }
+  }
+`
+
+export const PO_RETURNS_QUERY = gql`
+  ${PO_RETURN_FIELDS}
+  query POReturns($poId: ID!) {
+    poReturns(poId: $poId) {
+      ...POReturnFields
+    }
+  }
+`
+
+export const PO_RETURN_QUERY = gql`
+  ${PO_RETURN_FIELDS}
+  query POReturn($id: ID!) {
+    poReturn(id: $id) {
+      ...POReturnFields
+    }
+  }
+`
+
+export const CREATE_PO_RETURN = gql`
+  ${PO_RETURN_FIELDS}
+  mutation CreatePOReturn($poId: ID!, $input: POReturnInput!) {
+    createPOReturn(poId: $poId, input: $input) {
+      ...POReturnFields
+    }
+  }
+`
+
+export const SUBMIT_PO_RETURN = gql`
+  ${PO_RETURN_FIELDS}
+  mutation SubmitPOReturn($id: ID!) {
+    submitPOReturn(id: $id) {
+      ...POReturnFields
+    }
+  }
+`
+
+export const APPROVE_PO_RETURN = gql`
+  ${PO_RETURN_FIELDS}
+  mutation ApprovePOReturn($id: ID!, $input: ApprovePOReturnInput) {
+    approvePOReturn(id: $id, input: $input) {
+      ...POReturnFields
+    }
+  }
+`
+
+export const CREDIT_PO_RETURN = gql`
+  ${PO_RETURN_FIELDS}
+  mutation CreditPOReturn($id: ID!, $creditNoteReference: String) {
+    creditPOReturn(id: $id, creditNoteReference: $creditNoteReference) {
+      ...POReturnFields
+    }
+  }
+`
+
+export const DELETE_PO_RETURN = gql`
+  mutation DeletePOReturn($id: ID!) {
+    deletePOReturn(id: $id)
   }
 `
 

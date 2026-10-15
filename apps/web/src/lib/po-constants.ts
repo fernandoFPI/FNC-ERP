@@ -42,6 +42,22 @@ export const CHILD_PO_STATUSES = [
 
 export const CHILD_PO_TERMINAL_STATUSES = ['closed', 'rejected', 'cancelled', 'deleted'] as const
 
+// Statuses a vendor return can be created from: goods have been received and
+// the PO isn't in Finance's audit (passing an audit needs every line fully
+// received, so a return mid-audit would change what Finance is checking).
+// Old vocabulary: goods_received, invoiced, completed. G1 child vocabulary:
+// goods_received, payment_pending, closed. One list for the Create Return
+// buttons and the return form so they can't drift apart; the gateway keeps its
+// own copy (PO_RETURNABLE_STATUSES in services/gateway/src/graphql/resolvers.ts)
+// — change both together.
+export const PO_RETURNABLE_STATUSES: readonly string[] = [
+  'goods_received',
+  'invoiced',
+  'completed',
+  'payment_pending',
+  'closed',
+]
+
 // Combined, de-duplicated list of every status a PO row can actually carry —
 // parent vocabulary (draft..completed) interleaved by sequence with the
 // child-PO-only statuses (bought, finance_review, payment_pending, closed).

@@ -1,7 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@apollo/client'
-import { PURCHASE_ORDER_QUERY } from '../../../graphql/procurement'
+import { useQuery, useMutation } from '@apollo/client'
+import { PURCHASE_ORDER_QUERY, CREATE_PO_RETURN } from '../../../graphql/procurement'
+import type {
+  CreatePoReturnMutation,
+  CreatePoReturnMutationVariables,
+} from '../../../graphql/generated'
+import { PO_RETURNABLE_STATUSES } from '../../../lib/po-constants'
 import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -26,6 +31,7 @@ interface ReturnItem {
   description: string
   quantity_returned: string
   original_unit_price: number
+  currency_code: string
   assessed_unit_price: string
   damage_notes: string
   max_qty: number
@@ -51,6 +57,9 @@ export default function POReturnForm() {
   const [damageDescription, setDamageDescription] = useState('')
   const [items, setItems] = useState<ReturnItem[]>([])
   const [saving, setSaving] = useState(false)
+  const [createReturn] = useMutation<CreatePoReturnMutation, CreatePoReturnMutationVariables>(
+    CREATE_PO_RETURN,
+  )
 
   // Photo upload state
   const [uploadedPhotos, setUploadedPhotos] = useState<UploadedPhoto[]>([])
@@ -84,6 +93,7 @@ export default function POReturnForm() {
         description: line.description,
         quantity_returned: '',
         original_unit_price: parseFloat(String(line.unit_price)),
+        currency_code: line.currency_code ?? po.currency_code,
         assessed_unit_price: stripZeros(line.unit_price),
         damage_notes: '',
         max_qty: parseFloat(String(line.qty_received ?? line.qty)),
@@ -186,6 +196,11 @@ export default function POReturnForm() {
           return `Assessed price for "${it.description}" cannot exceed original price`
       }
     }
+    // The server prices a return in the currency of its lines and never mixes
+    // currencies in one return (no cross-currency sums).
+    const currencies = new Set(selectedItems.map((it) => it.currency_code))
+    if (currencies.size > 1)
+      return `The selected lines are priced in different currencies (${[...currencies].join(', ')}) — create a separate return for each currency`
     if (returnType === 'damage' && !damageDescription.trim())
       return 'Damage description is required for damage returns'
     if (returnType === 'damage' && uploadedPhotos.length === 0)
@@ -202,28 +217,28 @@ export default function POReturnForm() {
 
     setSaving(true)
     try {
-      const payload: Record<string, unknown> = {
-        return_type: returnType,
-        notes: notes || undefined,
-        damage_description: returnType === 'damage' ? damageDescription : undefined,
-        currency_code: po?.currency_code ?? 'IQD',
-        items: selectedItems.map((it) => ({
-          po_line_id: it.po_line_id,
-          description: it.description,
-          quantity_returned: parseFloat(it.quantity_returned),
-          original_unit_price: it.original_unit_price,
-          assessed_unit_price:
-            returnType === 'full_refund'
-              ? it.original_unit_price
-              : parseFloat(it.assessed_unit_price),
-          damage_notes: it.damage_notes || undefined,
-        })),
-      }
-
-      const r = await api.post<{ id: string; return_number: string }>(
-        `/procurement/purchase-orders/${id}/returns`,
-        payload,
-      )
+      // Original price and currency are set by the server from each PO line;
+      // a full refund is assessed at the original price there too.
+      const res = await createReturn({
+        variables: {
+          poId: id ?? '',
+          input: {
+            return_type: returnType,
+            notes: notes || undefined,
+            damage_description: returnType === 'damage' ? damageDescription : undefined,
+            items: selectedItems.map((it) => ({
+              po_line_id: it.po_line_id,
+              description: it.description,
+              quantity_returned: parseFloat(it.quantity_returned),
+              assessed_unit_price:
+                returnType === 'damage' ? parseFloat(it.assessed_unit_price) : undefined,
+              damage_notes: returnType === 'damage' ? it.damage_notes || undefined : undefined,
+            })),
+          },
+        },
+      })
+      const created = res.data?.createPOReturn
+      if (!created) throw new Error('Return creation did not return a result')
 
       // Attach uploaded photos to the return
       if (uploadedPhotos.length > 0) {
@@ -233,7 +248,7 @@ export default function POReturnForm() {
               .post('/files/attach', {
                 fileId: p.file_id,
                 entityType: 'po_return',
-                entityId: r.data.id,
+                entityId: created.id,
               })
               .catch(() => {
                 /* ignore: one failed attachment link shouldn't block the return */
@@ -242,8 +257,8 @@ export default function POReturnForm() {
         )
       }
 
-      addToast({ type: 'success', message: `Return ${r.data.return_number} created` })
-      navigate(`/procurement/purchase-orders/${id}/returns/${r.data.id}`)
+      addToast({ type: 'success', message: `Return ${created.return_number} created` })
+      navigate(`/procurement/purchase-orders/${id}/returns/${created.id}`)
     } catch (e) {
       addToast({ type: 'error', message: apiErrMsg(e, 'Failed to create return') })
     } finally {
@@ -265,15 +280,13 @@ export default function POReturnForm() {
       </div>
     )
   }
-  // Mirrors the "Create Return" button's own gate (PurchaseOrderDetail.tsx) —
-  // that button already allows payment_pending/closed, so this page's check
-  // must too, or a PO at either of those statuses hits this error immediately
-  // after the button let the user in.
-  if (!['received', 'invoiced', 'completed', 'payment_pending', 'closed'].includes(po.status)) {
+  // Same list as the "Create Return" buttons (PurchaseOrderDetail.tsx), so a PO
+  // the button let the user in for never hits this error.
+  if (!PO_RETURNABLE_STATUSES.includes(po.status)) {
     return (
       <div style={{ padding: '40px', textAlign: 'center', color: theme.danger }}>
-        Returns can only be created for received, invoiced, completed, payment pending, or closed
-        POs.
+        Returns can only be created once goods have been received: goods received, invoiced,
+        completed, payment pending, or closed (not while the PO is in finance audit).
       </div>
     )
   }
@@ -529,7 +542,7 @@ export default function POReturnForm() {
                   </div>
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
                     Max returnable: {fmtN(item.max_qty)} &nbsp;·&nbsp; Original price:{' '}
-                    {po.currency_code} {fmtN(item.original_unit_price)}
+                    {item.currency_code} {fmtN(item.original_unit_price)}
                   </div>
                 </div>
               </div>
@@ -554,7 +567,7 @@ export default function POReturnForm() {
                   {returnType === 'damage' && (
                     <div>
                       <label style={labelStyle}>
-                        Assessed Unit Price ({po.currency_code})
+                        Assessed Unit Price ({item.currency_code})
                         <span style={{ fontWeight: 400, textTransform: 'none', marginLeft: '4px' }}>
                           ≤ {fmtN(item.original_unit_price)}
                         </span>
@@ -596,7 +609,7 @@ export default function POReturnForm() {
                       Line return value:{' '}
                     </span>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: theme.accent }}>
-                      {po.currency_code}{' '}
+                      {item.currency_code}{' '}
                       {fmtN(
                         (parseFloat(item.quantity_returned) || 0) *
                           (returnType === 'full_refund'
@@ -606,7 +619,7 @@ export default function POReturnForm() {
                     </span>
                     {returnType === 'damage' && parseFloat(item.quantity_returned) > 0 && (
                       <span style={{ fontSize: '11px', color: theme.danger, marginLeft: '12px' }}>
-                        Loss: {po.currency_code}{' '}
+                        Loss: {item.currency_code}{' '}
                         {fmtN(
                           (parseFloat(item.quantity_returned) || 0) *
                             (item.original_unit_price -
@@ -666,7 +679,8 @@ export default function POReturnForm() {
             <div
               style={{ fontSize: '16px', fontWeight: 700, color: theme.accent, marginTop: '2px' }}
             >
-              Total Return Value: {po.currency_code} {fmtN(totalReturned)}
+              Total Return Value: {selectedItems[0]?.currency_code ?? po.currency_code}{' '}
+              {fmtN(totalReturned)}
             </div>
           )}
           {returnType === 'damage' && uploadedPhotos.length === 0 && (

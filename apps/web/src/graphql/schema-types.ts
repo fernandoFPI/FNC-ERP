@@ -126,6 +126,12 @@ export type AnalyticAccount = {
   name: Scalars['String']['output'];
 };
 
+export type ApprovePoReturnInput = {
+  deduct_from_salary?: InputMaybe<Scalars['Boolean']['input']>;
+  deduction_amount?: InputMaybe<Scalars['Float']['input']>;
+  responsible_employee_id?: InputMaybe<Scalars['ID']['input']>;
+};
+
 export type AssignRoleInput = {
   company_id: Scalars['ID']['input'];
   module?: InputMaybe<Scalars['String']['input']>;
@@ -2277,6 +2283,7 @@ export type Mutation = {
   approveOvertimeRequest?: Maybe<OvertimeLog>;
   approvePO: PurchaseOrder;
   approvePOEditRequest: PoEditRequest;
+  approvePOReturn: PoReturn;
   approvePaymentVoucher: PaymentVoucher;
   approvePayrollRun?: Maybe<PayrollRun>;
   approveProductCostChange: ProductCostChangeRequest;
@@ -2366,6 +2373,7 @@ export type Mutation = {
   createMaterialReturn: MaterialReturn;
   createMeeting: Meeting;
   createMeetingAction: MeetingAction;
+  createPOReturn: PoReturn;
   createPaymentVoucher: PaymentVoucher;
   createPayrollRun?: Maybe<PayrollRun>;
   createProduct: Product;
@@ -2403,6 +2411,7 @@ export type Mutation = {
   createWBSNode: WbsNode;
   createWorkCenter: WorkCenter;
   createWorkLocation?: Maybe<WorkLocation>;
+  creditPOReturn: PoReturn;
   deactivateUser: UserDetail;
   deleteActivity: Scalars['Boolean']['output'];
   deleteBankAccount: Scalars['Boolean']['output'];
@@ -2441,6 +2450,7 @@ export type Mutation = {
   deleteMeetingAction: Scalars['Boolean']['output'];
   deleteNCRFile: Scalars['Boolean']['output'];
   deletePO: PurchaseOrder;
+  deletePOReturn: Scalars['Boolean']['output'];
   deleteProjectDrawing: Scalars['Boolean']['output'];
   deleteProjectITP: Scalars['Boolean']['output'];
   deleteProjectNCR: Scalars['Boolean']['output'];
@@ -2589,6 +2599,7 @@ export type Mutation = {
   submitPOEditRequest: PoEditRequest;
   submitPOMarketPricing: PurchaseOrder;
   submitPOPriceVerification: PurchaseOrder;
+  submitPOReturn: PoReturn;
   submitPOStorePricing: PurchaseOrder;
   submitPOToInventoryCheck: PurchaseOrder;
   submitProject: Project;
@@ -2902,6 +2913,12 @@ export type MutationApprovePoEditRequestArgs = {
   requestId: Scalars['ID']['input'];
   requisitionId?: InputMaybe<Scalars['ID']['input']>;
   reviewNotes?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type MutationApprovePoReturnArgs = {
+  id: Scalars['ID']['input'];
+  input?: InputMaybe<ApprovePoReturnInput>;
 };
 
 
@@ -3534,6 +3551,12 @@ export type MutationCreateMeetingActionArgs = {
 };
 
 
+export type MutationCreatePoReturnArgs = {
+  input: PoReturnInput;
+  poId: Scalars['ID']['input'];
+};
+
+
 export type MutationCreatePaymentVoucherArgs = {
   input: CreatePaymentVoucherInput;
 };
@@ -3847,6 +3870,12 @@ export type MutationCreateWorkLocationArgs = {
 };
 
 
+export type MutationCreditPoReturnArgs = {
+  creditNoteReference?: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationDeactivateUserArgs = {
   userId: Scalars['ID']['input'];
 };
@@ -4043,6 +4072,11 @@ export type MutationDeleteNcrFileArgs = {
 export type MutationDeletePoArgs = {
   id: Scalars['ID']['input'];
   reason?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type MutationDeletePoReturnArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -4893,6 +4927,11 @@ export type MutationSubmitPoPriceVerificationArgs = {
   id: Scalars['ID']['input'];
   lineAdjustments?: InputMaybe<Array<InputMaybe<PriceAdjustmentInput>>>;
   verificationNotes?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type MutationSubmitPoReturnArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -6222,6 +6261,62 @@ export type PoReceiptLine = {
   uom?: Maybe<Scalars['String']['output']>;
 };
 
+export type PoReturn = {
+  approved_at?: Maybe<Scalars['String']['output']>;
+  approved_by_email?: Maybe<Scalars['String']['output']>;
+  created_at: Scalars['String']['output'];
+  created_by_email?: Maybe<Scalars['String']['output']>;
+  credit_note_reference?: Maybe<Scalars['String']['output']>;
+  credited_at?: Maybe<Scalars['String']['output']>;
+  currency_code: Scalars['String']['output'];
+  damage_description?: Maybe<Scalars['String']['output']>;
+  deduct_from_salary: Scalars['Boolean']['output'];
+  deduction_amount?: Maybe<Scalars['String']['output']>;
+  deduction_applied_at?: Maybe<Scalars['String']['output']>;
+  deduction_request_id?: Maybe<Scalars['ID']['output']>;
+  deduction_status?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  items: Array<PoReturnItem>;
+  notes?: Maybe<Scalars['String']['output']>;
+  po_id: Scalars['ID']['output'];
+  po_number?: Maybe<Scalars['String']['output']>;
+  responsible_employee_id?: Maybe<Scalars['ID']['output']>;
+  responsible_employee_name?: Maybe<Scalars['String']['output']>;
+  responsible_employee_number?: Maybe<Scalars['String']['output']>;
+  return_number: Scalars['String']['output'];
+  return_type: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  submitted_at?: Maybe<Scalars['String']['output']>;
+  total_returned_value: Scalars['String']['output'];
+  vendor_name?: Maybe<Scalars['String']['output']>;
+};
+
+export type PoReturnInput = {
+  damage_description?: InputMaybe<Scalars['String']['input']>;
+  items: Array<PoReturnItemInput>;
+  notes?: InputMaybe<Scalars['String']['input']>;
+  return_type: Scalars['String']['input'];
+};
+
+export type PoReturnItem = {
+  assessed_unit_price: Scalars['String']['output'];
+  damage_notes?: Maybe<Scalars['String']['output']>;
+  description: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  line_total: Scalars['String']['output'];
+  original_unit_price: Scalars['String']['output'];
+  po_line_id?: Maybe<Scalars['ID']['output']>;
+  quantity_returned: Scalars['String']['output'];
+};
+
+export type PoReturnItemInput = {
+  assessed_unit_price?: InputMaybe<Scalars['Float']['input']>;
+  damage_notes?: InputMaybe<Scalars['String']['input']>;
+  description: Scalars['String']['input'];
+  po_line_id: Scalars['ID']['input'];
+  quantity_returned: Scalars['Float']['input'];
+};
+
 export type PaginationMeta = {
   limit: Scalars['Int']['output'];
   page: Scalars['Int']['output'];
@@ -7376,6 +7471,8 @@ export type Query = {
   poPositions: Array<PoPositionAssignment>;
   poReceipt?: Maybe<PoReceipt>;
   poReceipts: Array<PoReceipt>;
+  poReturn?: Maybe<PoReturn>;
+  poReturns: Array<PoReturn>;
   poStockAvailability: Array<PoLineAvailability>;
   previewTransferPrice: TransferPricePreview;
   product?: Maybe<Product>;
@@ -8024,6 +8121,16 @@ export type QueryPoPositionsArgs = {
 
 export type QueryPoReceiptArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryPoReturnArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryPoReturnsArgs = {
+  poId: Scalars['ID']['input'];
 };
 
 

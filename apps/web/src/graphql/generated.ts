@@ -1649,7 +1649,7 @@ export type PurchaseOrderQueryVariables = Exact<{
 }>;
 
 
-export type PurchaseOrderQuery = { purchaseOrder: { id: string, po_number: string, status: string, requisition_id: string | null, currency_code: string, total_amount: string, subtotal: string | null, tax_amount: string | null, vendor_id: string | null, vendor_name: string | null, analytic_account_id: string | null, analytic_account_name: string | null, expected_delivery_date: string | null, notes: string | null, created_by_email: string | null, created_at: string, fx_rate: string | null, pdf_path: string | null, assigned_to_email: string | null, assigned_receiver_name: string | null, branch_id: string | null, branch_name: string | null, purpose: string | null, delivery_destination: string | null, linkedProjectId: string | null, funding_source: string | null, funding_advance_id: string | null, funding_advance_number: string | null, funding_employee_name: string | null, lines: Array<{ id: string, product_id: string | null, product_name: string | null, sku: string | null, description: string | null, qty: string, unit_price: string, total: string, uom: string | null, qty_received: string | null, qty_from_stock: string | null, account_id: string | null, account_code: string | null, account_name: string | null, cost_center_id: string | null, cost_center_name: string | null, advance_settlement_id: string | null }> | null, receipts: Array<{ id: string, status: string, receipt_date: string | null, location_id: string | null, location_name: string | null, notes: string | null, received_by_email: string | null, received_by_name: string | null, received_from_name: string | null, location_notes: string | null, created_at: string | null, lines: Array<{ id: string | null, po_line_id: string, description: string | null, qty_received: string, actual_unit_price: string | null }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> }> | null, approval_log: Array<{ id: string, action: string, user_email: string | null, notes: string | null, created_at: string }> | null } | null };
+export type PurchaseOrderQuery = { purchaseOrder: { id: string, po_number: string, status: string, requisition_id: string | null, currency_code: string, total_amount: string, subtotal: string | null, tax_amount: string | null, vendor_id: string | null, vendor_name: string | null, analytic_account_id: string | null, analytic_account_name: string | null, expected_delivery_date: string | null, notes: string | null, created_by_email: string | null, created_at: string, fx_rate: string | null, pdf_path: string | null, assigned_to_email: string | null, assigned_receiver_name: string | null, branch_id: string | null, branch_name: string | null, purpose: string | null, delivery_destination: string | null, linkedProjectId: string | null, funding_source: string | null, funding_advance_id: string | null, funding_advance_number: string | null, funding_employee_name: string | null, lines: Array<{ id: string, product_id: string | null, product_name: string | null, sku: string | null, description: string | null, qty: string, unit_price: string, currency_code: string | null, total: string, uom: string | null, qty_received: string | null, qty_from_stock: string | null, account_id: string | null, account_code: string | null, account_name: string | null, cost_center_id: string | null, cost_center_name: string | null, advance_settlement_id: string | null }> | null, receipts: Array<{ id: string, status: string, receipt_date: string | null, location_id: string | null, location_name: string | null, notes: string | null, received_by_email: string | null, received_by_name: string | null, received_from_name: string | null, location_notes: string | null, created_at: string | null, lines: Array<{ id: string | null, po_line_id: string, description: string | null, qty_received: string, actual_unit_price: string | null }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> }> | null, approval_log: Array<{ id: string, action: string, user_email: string | null, notes: string | null, created_at: string }> | null } | null };
 
 export type CreatePurchaseOrderMutationVariables = Exact<{
   input: Types.PoInput;
@@ -1703,6 +1703,60 @@ export type AddPoLogNoteMutationVariables = Exact<{
 
 
 export type AddPoLogNoteMutation = { addPOLogNote: { id: string, action: string, user_email: string | null, notes: string | null, created_at: string } };
+
+export type PoReturnFieldsFragment = { id: string, po_id: string, po_number: string | null, vendor_name: string | null, return_number: string, return_type: string, status: string, notes: string | null, damage_description: string | null, total_returned_value: string, currency_code: string, created_by_email: string | null, approved_by_email: string | null, created_at: string, submitted_at: string | null, approved_at: string | null, credited_at: string | null, credit_note_reference: string | null, responsible_employee_id: string | null, responsible_employee_name: string | null, responsible_employee_number: string | null, deduct_from_salary: boolean, deduction_amount: string | null, deduction_request_id: string | null, deduction_status: string | null, deduction_applied_at: string | null, items: Array<{ id: string, po_line_id: string | null, description: string, quantity_returned: string, original_unit_price: string, assessed_unit_price: string, line_total: string, damage_notes: string | null }> };
+
+export type PoReturnsQueryVariables = Exact<{
+  poId: string | number;
+}>;
+
+
+export type PoReturnsQuery = { poReturns: Array<{ id: string, po_id: string, po_number: string | null, vendor_name: string | null, return_number: string, return_type: string, status: string, notes: string | null, damage_description: string | null, total_returned_value: string, currency_code: string, created_by_email: string | null, approved_by_email: string | null, created_at: string, submitted_at: string | null, approved_at: string | null, credited_at: string | null, credit_note_reference: string | null, responsible_employee_id: string | null, responsible_employee_name: string | null, responsible_employee_number: string | null, deduct_from_salary: boolean, deduction_amount: string | null, deduction_request_id: string | null, deduction_status: string | null, deduction_applied_at: string | null, items: Array<{ id: string, po_line_id: string | null, description: string, quantity_returned: string, original_unit_price: string, assessed_unit_price: string, line_total: string, damage_notes: string | null }> }> };
+
+export type PoReturnQueryVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type PoReturnQuery = { poReturn: { id: string, po_id: string, po_number: string | null, vendor_name: string | null, return_number: string, return_type: string, status: string, notes: string | null, damage_description: string | null, total_returned_value: string, currency_code: string, created_by_email: string | null, approved_by_email: string | null, created_at: string, submitted_at: string | null, approved_at: string | null, credited_at: string | null, credit_note_reference: string | null, responsible_employee_id: string | null, responsible_employee_name: string | null, responsible_employee_number: string | null, deduct_from_salary: boolean, deduction_amount: string | null, deduction_request_id: string | null, deduction_status: string | null, deduction_applied_at: string | null, items: Array<{ id: string, po_line_id: string | null, description: string, quantity_returned: string, original_unit_price: string, assessed_unit_price: string, line_total: string, damage_notes: string | null }> } | null };
+
+export type CreatePoReturnMutationVariables = Exact<{
+  poId: string | number;
+  input: Types.PoReturnInput;
+}>;
+
+
+export type CreatePoReturnMutation = { createPOReturn: { id: string, po_id: string, po_number: string | null, vendor_name: string | null, return_number: string, return_type: string, status: string, notes: string | null, damage_description: string | null, total_returned_value: string, currency_code: string, created_by_email: string | null, approved_by_email: string | null, created_at: string, submitted_at: string | null, approved_at: string | null, credited_at: string | null, credit_note_reference: string | null, responsible_employee_id: string | null, responsible_employee_name: string | null, responsible_employee_number: string | null, deduct_from_salary: boolean, deduction_amount: string | null, deduction_request_id: string | null, deduction_status: string | null, deduction_applied_at: string | null, items: Array<{ id: string, po_line_id: string | null, description: string, quantity_returned: string, original_unit_price: string, assessed_unit_price: string, line_total: string, damage_notes: string | null }> } };
+
+export type SubmitPoReturnMutationVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type SubmitPoReturnMutation = { submitPOReturn: { id: string, po_id: string, po_number: string | null, vendor_name: string | null, return_number: string, return_type: string, status: string, notes: string | null, damage_description: string | null, total_returned_value: string, currency_code: string, created_by_email: string | null, approved_by_email: string | null, created_at: string, submitted_at: string | null, approved_at: string | null, credited_at: string | null, credit_note_reference: string | null, responsible_employee_id: string | null, responsible_employee_name: string | null, responsible_employee_number: string | null, deduct_from_salary: boolean, deduction_amount: string | null, deduction_request_id: string | null, deduction_status: string | null, deduction_applied_at: string | null, items: Array<{ id: string, po_line_id: string | null, description: string, quantity_returned: string, original_unit_price: string, assessed_unit_price: string, line_total: string, damage_notes: string | null }> } };
+
+export type ApprovePoReturnMutationVariables = Exact<{
+  id: string | number;
+  input?: Types.ApprovePoReturnInput | null | undefined;
+}>;
+
+
+export type ApprovePoReturnMutation = { approvePOReturn: { id: string, po_id: string, po_number: string | null, vendor_name: string | null, return_number: string, return_type: string, status: string, notes: string | null, damage_description: string | null, total_returned_value: string, currency_code: string, created_by_email: string | null, approved_by_email: string | null, created_at: string, submitted_at: string | null, approved_at: string | null, credited_at: string | null, credit_note_reference: string | null, responsible_employee_id: string | null, responsible_employee_name: string | null, responsible_employee_number: string | null, deduct_from_salary: boolean, deduction_amount: string | null, deduction_request_id: string | null, deduction_status: string | null, deduction_applied_at: string | null, items: Array<{ id: string, po_line_id: string | null, description: string, quantity_returned: string, original_unit_price: string, assessed_unit_price: string, line_total: string, damage_notes: string | null }> } };
+
+export type CreditPoReturnMutationVariables = Exact<{
+  id: string | number;
+  creditNoteReference?: string | null | undefined;
+}>;
+
+
+export type CreditPoReturnMutation = { creditPOReturn: { id: string, po_id: string, po_number: string | null, vendor_name: string | null, return_number: string, return_type: string, status: string, notes: string | null, damage_description: string | null, total_returned_value: string, currency_code: string, created_by_email: string | null, approved_by_email: string | null, created_at: string, submitted_at: string | null, approved_at: string | null, credited_at: string | null, credit_note_reference: string | null, responsible_employee_id: string | null, responsible_employee_name: string | null, responsible_employee_number: string | null, deduct_from_salary: boolean, deduction_amount: string | null, deduction_request_id: string | null, deduction_status: string | null, deduction_applied_at: string | null, items: Array<{ id: string, po_line_id: string | null, description: string, quantity_returned: string, original_unit_price: string, assessed_unit_price: string, line_total: string, damage_notes: string | null }> } };
+
+export type DeletePoReturnMutationVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type DeletePoReturnMutation = { deletePOReturn: boolean };
 
 export type RecordDirectDeliveryMutationVariables = Exact<{
   poId: string | number;

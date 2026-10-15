@@ -1,5 +1,25 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useMutation } from '@apollo/client'
+import {
+  PO_RETURN_QUERY,
+  SUBMIT_PO_RETURN,
+  APPROVE_PO_RETURN,
+  CREDIT_PO_RETURN,
+  DELETE_PO_RETURN,
+} from '../../../graphql/procurement'
+import type {
+  PoReturnQuery,
+  PoReturnQueryVariables,
+  SubmitPoReturnMutation,
+  SubmitPoReturnMutationVariables,
+  ApprovePoReturnMutation,
+  ApprovePoReturnMutationVariables,
+  CreditPoReturnMutation,
+  CreditPoReturnMutationVariables,
+  DeletePoReturnMutation,
+  DeletePoReturnMutationVariables,
+} from '../../../graphql/generated'
 import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -79,8 +99,32 @@ export default function POReturnDetail() {
   const addToast = useToastStore((s) => s.addToast)
   const { can } = usePermission()
 
-  const [ret, setRet] = useState<POReturn | null>(null)
-  const [loading, setLoading] = useState(true)
+  // The REST routes this page used to call went away with services/procurement;
+  // the return and its actions now come from the gateway's GraphQL.
+  const {
+    data,
+    loading: queryLoading,
+    error: loadError,
+    refetch,
+  } = useQuery<PoReturnQuery, PoReturnQueryVariables>(PO_RETURN_QUERY, {
+    variables: { id: returnId ?? '' },
+    skip: !returnId,
+    fetchPolicy: 'cache-and-network',
+  })
+  const ret = (data?.poReturn ?? null) as POReturn | null
+  const loading = queryLoading && !ret
+  const [submitReturn] = useMutation<SubmitPoReturnMutation, SubmitPoReturnMutationVariables>(
+    SUBMIT_PO_RETURN,
+  )
+  const [approveReturn] = useMutation<ApprovePoReturnMutation, ApprovePoReturnMutationVariables>(
+    APPROVE_PO_RETURN,
+  )
+  const [creditReturn] = useMutation<CreditPoReturnMutation, CreditPoReturnMutationVariables>(
+    CREDIT_PO_RETURN,
+  )
+  const [deleteReturn] = useMutation<DeletePoReturnMutation, DeletePoReturnMutationVariables>(
+    DELETE_PO_RETURN,
+  )
   const [actionLoading, setActionLoading] = useState(false)
   const [creditRef, setCreditRef] = useState('')
   const [showCreditModal, setShowCreditModal] = useState(false)
@@ -108,28 +152,31 @@ export default function POReturnDetail() {
   } | null>(null)
   const [deductionAmount, setDeductionAmount] = useState('')
 
-  const load = useCallback(async () => {
-    if (!id || !returnId) return
-    try {
-      const r = await api.get<POReturn>(`/procurement/purchase-orders/${id}/returns/${returnId}`)
-      setRet(r.data)
-      // Load damage photos if damage return
-      if (r.data.return_type === 'damage') {
-        const p = await api
-          .get<DamagePhoto[]>(`/files/attachments?entityType=po_return&entityId=${r.data.id}`)
-          .catch(() => ({ data: [] as DamagePhoto[] }))
-        setPhotos(p.data)
-      }
-    } catch (e) {
-      addToast({ type: 'error', message: apiErrMsg(e, 'Failed to load return') })
-    } finally {
-      setLoading(false)
-    }
-  }, [id, returnId, addToast])
-
   useEffect(() => {
-    void load()
-  }, [load])
+    if (loadError) addToast({ type: 'error', message: apiErrMsg(loadError, 'Failed to load return') })
+  }, [loadError, addToast])
+
+  // Damage photos live in the generic attachments store, not in the return
+  const retId = ret?.id
+  const retType = ret?.return_type
+  useEffect(() => {
+    if (!retId || retType !== 'damage') {
+      setPhotos([])
+      return
+    }
+    let cancelled = false
+    api
+      .get<DamagePhoto[]>(`/files/attachments?entityType=po_return&entityId=${retId}`)
+      .then((r) => {
+        if (!cancelled) setPhotos(r.data)
+      })
+      .catch(() => {
+        if (!cancelled) setPhotos([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [retId, retType])
 
   // Employee search for approver
   useEffect(() => {
@@ -181,15 +228,20 @@ export default function POReturnDetail() {
 
     setActionLoading(true)
     try {
-      await api.post(`/procurement/purchase-orders/${id}/returns/${returnId}/approve`, {
-        responsible_employee_id:
-          hasResponsibleEmployee && selectedEmployee ? selectedEmployee.id : undefined,
-        deduct_from_salary: hasResponsibleEmployee && selectedEmployee ? true : false,
-        deduction_amount:
-          hasResponsibleEmployee && selectedEmployee ? parseFloat(deductionAmount) : undefined,
+      await approveReturn({
+        variables: {
+          id: returnId,
+          input: {
+            responsible_employee_id:
+              hasResponsibleEmployee && selectedEmployee ? selectedEmployee.id : undefined,
+            deduct_from_salary: hasResponsibleEmployee && selectedEmployee ? true : false,
+            deduction_amount:
+              hasResponsibleEmployee && selectedEmployee ? parseFloat(deductionAmount) : undefined,
+          },
+        },
       })
       addToast({ type: 'success', message: 'Return approved' })
-      await load()
+      await refetch()
     } catch (e) {
       addToast({ type: 'error', message: apiErrMsg(e, 'Failed to approve') })
     } finally {
@@ -201,9 +253,9 @@ export default function POReturnDetail() {
     if (!id || !returnId) return
     setActionLoading(true)
     try {
-      await api.post(`/procurement/purchase-orders/${id}/returns/${returnId}/submit`)
+      await submitReturn({ variables: { id: returnId } })
       addToast({ type: 'success', message: 'Return submitted successfully' })
-      await load()
+      await refetch()
     } catch (e) {
       addToast({ type: 'error', message: apiErrMsg(e, 'Failed to submit') })
     } finally {
@@ -215,12 +267,12 @@ export default function POReturnDetail() {
     if (!id || !returnId) return
     setActionLoading(true)
     try {
-      await api.post(`/procurement/purchase-orders/${id}/returns/${returnId}/credit`, {
-        credit_note_reference: creditRef || undefined,
+      await creditReturn({
+        variables: { id: returnId, creditNoteReference: creditRef || undefined },
       })
       addToast({ type: 'success', message: 'Return marked as credited' })
       setShowCreditModal(false)
-      await load()
+      await refetch()
     } catch (e) {
       addToast({ type: 'error', message: apiErrMsg(e, 'Failed to mark as credited') })
     } finally {
@@ -232,7 +284,7 @@ export default function POReturnDetail() {
     // keep separate from doSubmit/doApprove
     if (!id || !returnId || !confirm('Delete this draft return? This cannot be undone.')) return
     try {
-      await api.delete(`/procurement/purchase-orders/${id}/returns/${returnId}`)
+      await deleteReturn({ variables: { id: returnId } })
       addToast({ type: 'success', message: 'Return deleted' })
       navigate(`/procurement/purchase-orders/${id}`)
     } catch (e) {

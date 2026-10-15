@@ -45,6 +45,7 @@ import {
   ADMIN_CORRECT_PO,
   RESOLVE_LINE_FLAG,
   ADD_PO_LOG_NOTE,
+  PO_RETURNS_QUERY,
 } from '../../../graphql/procurement'
 import { useAuthStore } from '../../../store/authStore'
 import { EMPLOYEES_QUERY, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
@@ -68,7 +69,12 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
-import { getPOStatusVariant, getPOStatusLabel, getStatusesForPO } from '../../../lib/po-constants'
+import {
+  getPOStatusVariant,
+  getPOStatusLabel,
+  getStatusesForPO,
+  PO_RETURNABLE_STATUSES,
+} from '../../../lib/po-constants'
 import { useToastStore } from '../../../store/toastStore'
 import { api } from '../../../lib/axios'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
@@ -81,7 +87,7 @@ import {
   buildTourDemoPO,
   buildTourDemoStockAvailability,
 } from '../../../components/help/tourDemoPO'
-import type { AccountsQuery, AccountsQueryVariables, AddPoLineCommentMutation, AddPoLineCommentMutationVariables, AddPoLogNoteMutation, AddPoLogNoteMutationVariables, AdminCorrectPoMutation, AdminCorrectPoMutationVariables, AdminSetPoStatusMutation, AdminSetPoStatusMutationVariables, AnalyticAccountsQuery, AnalyticAccountsQueryVariables, ApprovePoEditRequestMutation, ApprovePoEditRequestMutationVariables, ApprovePoMutation, ApprovePoMutationVariables, ApproveStockIssuanceMutation, ApproveStockIssuanceMutationVariables, CancelPoMutation, CancelPoMutationVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CompletePoMutation, CompletePoMutationVariables, ConfirmPoInventoryCheckMutation, ConfirmPoInventoryCheckMutationVariables, CostCentersQuery, CostCentersQueryVariables, DeletePoMutation, DeletePoMutationVariables, EmployeesQuery, EmployeesQueryVariables, EntityAttachmentsQuery, EntityAttachmentsQueryVariables, FailPoAuditMutation, FailPoAuditMutationVariables, FinishBuyingPoMutation, FinishBuyingPoMutationVariables, MarkPoLineBoughtMutation, MarkPoLineBoughtMutationVariables, PassPoAuditMutation, PassPoAuditMutationVariables, PoFxRatesQuery, PoFxRatesQueryVariables, PoStockAvailabilityQuery, PoStockAvailabilityQueryVariables, ProductsQuery, ProductsQueryVariables, PurchaseOrderLifecycleQuery, PurchaseOrderLifecycleQueryVariables, RejectPoEditRequestMutation, RejectPoEditRequestMutationVariables, RejectPoMutation, RejectPoMutationVariables, RejectPoToMarketPricingMutation, RejectPoToMarketPricingMutationVariables, RejectPoVerificationToMarketPricingMutation, RejectPoVerificationToMarketPricingMutationVariables, RejectPoVerificationToStorePricingMutation, RejectPoVerificationToStorePricingMutationVariables, ReopenPoMutation, ReopenPoMutationVariables, ResolveLineFlagMutation, ResolveLineFlagMutationVariables, ResolvePoLineCommentMutation, ResolvePoLineCommentMutationVariables, SendPoToAuditMutation, SendPoToAuditMutationVariables, SetPoFundingMutation, SetPoFundingMutationVariables, SetPoLineAccountingMutation, SetPoLineAccountingMutationVariables, SetPoLineActualPriceMutation, SetPoLineActualPriceMutationVariables, SetPoLineAuditStatusMutation, SetPoLineAuditStatusMutationVariables, SetPoPriorityMutation, SetPoPriorityMutationVariables, SetPoReceiverMutation, SetPoReceiverMutationVariables, SetPoVendorMutation, SetPoVendorMutationVariables, StockLocationsQuery, StockLocationsQueryVariables, SubmitPoEditRequestMutation, SubmitPoEditRequestMutationVariables, SubmitPoMarketPricingMutation, SubmitPoMarketPricingMutationVariables, SubmitPoPriceVerificationMutation, SubmitPoPriceVerificationMutationVariables, SubmitPoStorePricingMutation, SubmitPoStorePricingMutationVariables, SubmitPoToInventoryCheckMutation, SubmitPoToInventoryCheckMutationVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
+import type { AccountsQuery, AccountsQueryVariables, AddPoLineCommentMutation, AddPoLineCommentMutationVariables, AddPoLogNoteMutation, AddPoLogNoteMutationVariables, AdminCorrectPoMutation, AdminCorrectPoMutationVariables, AdminSetPoStatusMutation, AdminSetPoStatusMutationVariables, AnalyticAccountsQuery, AnalyticAccountsQueryVariables, ApprovePoEditRequestMutation, ApprovePoEditRequestMutationVariables, ApprovePoMutation, ApprovePoMutationVariables, ApproveStockIssuanceMutation, ApproveStockIssuanceMutationVariables, CancelPoMutation, CancelPoMutationVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CompletePoMutation, CompletePoMutationVariables, ConfirmPoInventoryCheckMutation, ConfirmPoInventoryCheckMutationVariables, CostCentersQuery, CostCentersQueryVariables, DeletePoMutation, DeletePoMutationVariables, EmployeesQuery, EmployeesQueryVariables, EntityAttachmentsQuery, EntityAttachmentsQueryVariables, FailPoAuditMutation, FailPoAuditMutationVariables, FinishBuyingPoMutation, FinishBuyingPoMutationVariables, MarkPoLineBoughtMutation, MarkPoLineBoughtMutationVariables, PassPoAuditMutation, PassPoAuditMutationVariables, PoFxRatesQuery, PoFxRatesQueryVariables, PoReturnsQuery, PoReturnsQueryVariables, PoStockAvailabilityQuery, PoStockAvailabilityQueryVariables, ProductsQuery, ProductsQueryVariables, PurchaseOrderLifecycleQuery, PurchaseOrderLifecycleQueryVariables, RejectPoEditRequestMutation, RejectPoEditRequestMutationVariables, RejectPoMutation, RejectPoMutationVariables, RejectPoToMarketPricingMutation, RejectPoToMarketPricingMutationVariables, RejectPoVerificationToMarketPricingMutation, RejectPoVerificationToMarketPricingMutationVariables, RejectPoVerificationToStorePricingMutation, RejectPoVerificationToStorePricingMutationVariables, ReopenPoMutation, ReopenPoMutationVariables, ResolveLineFlagMutation, ResolveLineFlagMutationVariables, ResolvePoLineCommentMutation, ResolvePoLineCommentMutationVariables, SendPoToAuditMutation, SendPoToAuditMutationVariables, SetPoFundingMutation, SetPoFundingMutationVariables, SetPoLineAccountingMutation, SetPoLineAccountingMutationVariables, SetPoLineActualPriceMutation, SetPoLineActualPriceMutationVariables, SetPoLineAuditStatusMutation, SetPoLineAuditStatusMutationVariables, SetPoPriorityMutation, SetPoPriorityMutationVariables, SetPoReceiverMutation, SetPoReceiverMutationVariables, SetPoVendorMutation, SetPoVendorMutationVariables, StockLocationsQuery, StockLocationsQueryVariables, SubmitPoEditRequestMutation, SubmitPoEditRequestMutationVariables, SubmitPoMarketPricingMutation, SubmitPoMarketPricingMutationVariables, SubmitPoPriceVerificationMutation, SubmitPoPriceVerificationMutationVariables, SubmitPoStorePricingMutation, SubmitPoStorePricingMutationVariables, SubmitPoToInventoryCheckMutation, SubmitPoToInventoryCheckMutationVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
 
 export interface POLine {
   id: string
@@ -836,37 +842,14 @@ export default function PurchaseOrderDetail() {
   const [apInvoice, setApInvoice] = useState<
     { id: string; invoice_number: string; status: string } | null | undefined
   >(undefined)
-  const [poReturns, setPoReturns] = useState<
-    {
-      id: string
-      return_number: string
-      return_type: string
-      status: string
-      total_returned_value: string
-      currency_code: string
-    }[]
-  >([])
-
-  useEffect(() => {
-    if (!id) return
-    api
-      .get<
-        {
-          id: string
-          return_number: string
-          return_type: string
-          status: string
-          total_returned_value: string
-          currency_code: string
-        }[]
-      >(`/procurement/purchase-orders/${id}/returns`)
-      .then((r) => {
-        setPoReturns(Array.isArray(r.data) ? r.data : [])
-      })
-      .catch(() => {
-        /* ignore: returns list just stays empty if this fails */
-      })
-  }, [id])
+  // Vendor returns on this PO (Returns tab). The REST route this used to call
+  // went away with services/procurement; poReturns is its GraphQL replacement.
+  const { data: poReturnsData } = useQuery<PoReturnsQuery, PoReturnsQueryVariables>(PO_RETURNS_QUERY, {
+    variables: { poId: id ?? '' },
+    skip: !id,
+    fetchPolicy: 'cache-and-network',
+  })
+  const poReturns = poReturnsData?.poReturns ?? []
 
   interface RawComment {
     id: string
@@ -1659,7 +1642,7 @@ export default function PurchaseOrderDetail() {
                     {t('po.detail.createInvoice')}
                   </Button>
                 ) : null)}
-              {['received', 'invoiced', 'completed', 'payment_pending', 'closed'].includes(po.status) &&
+              {PO_RETURNABLE_STATUSES.includes(po.status) &&
                 can('procurement.po.edit', 'edit') && (
                   <Button
                     variant="secondary"
@@ -5591,7 +5574,7 @@ export default function PurchaseOrderDetail() {
 
       {activeTab === 'returns' && (
         <div>
-          {['received', 'invoiced', 'completed', 'payment_pending', 'closed'].includes(po.status) &&
+          {PO_RETURNABLE_STATUSES.includes(po.status) &&
             can('procurement.po.edit', 'edit') && (
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
                 <Button
