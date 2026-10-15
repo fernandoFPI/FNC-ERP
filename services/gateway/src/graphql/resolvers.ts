@@ -891,6 +891,21 @@ const ADMIN_CORRECTION_PO_STATUSES = [
   'finance_audit',
 ]
 
+// Statuses a vendor return (po_returns) can be created from: goods have been
+// received, and the PO isn't in the middle of Finance's audit — passPOAudit
+// requires every line fully received, so a return mid-audit would change
+// quantities Finance is checking. Old vocabulary: goods_received, invoiced,
+// completed; G1 child vocabulary: goods_received, payment_pending, closed.
+// Keep in step with PO_RETURNABLE_STATUSES in apps/web/src/lib/po-constants.ts
+// (the 'received' status the old copy listed no longer exists).
+const PO_RETURNABLE_STATUSES = [
+  'goods_received',
+  'invoiced',
+  'completed',
+  'payment_pending',
+  'closed',
+]
+
 interface StockMoveRow {
   id: string
   company_id: string
@@ -2921,6 +2936,159 @@ async function canViewPurchaseOrderGW(auth: GWAuth, poId: string, status: string
   if (isAdmin || isOrganizer || isBuyer) return true
   if (isLateStage) return isUserFinanceTeamGW(auth.userId, auth.companyId)
   return callerHasCurrentStagePositionGW(auth, poId, status)
+}
+
+// Trimmed text, or null when empty/absent — for optional free-text and id inputs.
+function trimToNullGW(s: string | null | undefined): string | null {
+  const t = s?.trim()
+  return t ? t : null
+}
+
+// ── PO Returns (vendor returns) ──────────────────────────────────────────────
+// Ported from the deleted services/procurement REST route (commit 297fcf5).
+// po_returns is a vendor/finance concept — goods sent back for a credit note,
+// no stock_moves — not to be confused with MaterialReturn (project material
+// coming back into our own inventory).
+
+interface POReturnItemRow {
+  id: string
+  return_id: string
+  po_line_id: string | null
+  description: string
+  quantity_returned: string
+  original_unit_price: string
+  assessed_unit_price: string
+  line_total: string
+  damage_notes: string | null
+}
+
+// Header + items for one return (by id) or every return on a PO (by poId),
+// scoped to the caller's company. Reads through the shared pool, so callers
+// that just wrote must call this AFTER their transaction commits (playbook
+// #27), never from inside withTransaction's callback.
+async function loadPOReturnsGW(
+  companyId: string,
+  filter: { id?: string; poId?: string },
+): Promise<Record<string, unknown>[]> {
+  const params: unknown[] = [companyId]
+  let where = 'r.company_id = $1'
+  if (filter.id) {
+    params.push(filter.id)
+    where += ` AND r.id = $${params.length}`
+  }
+  if (filter.poId) {
+    params.push(filter.poId)
+    where += ` AND r.po_id = $${params.length}`
+  }
+  const headers = await query<Record<string, unknown>>(
+    `SELECT r.id, r.po_id, po.po_number, v.name AS vendor_name, r.return_number,
+            r.return_type::text AS return_type, r.status::text AS status,
+            r.notes, r.damage_description, r.total_returned_value, r.currency_code,
+            cb.email AS created_by_email, ab.email AS approved_by_email,
+            r.created_at, r.submitted_at, r.approved_at, r.credited_at, r.credit_note_reference,
+            r.responsible_employee_id,
+            emp.first_name || ' ' || emp.last_name AS responsible_employee_name,
+            emp.employee_number AS responsible_employee_number,
+            r.deduct_from_salary, r.deduction_amount,
+            sdr.id AS deduction_request_id, sdr.status AS deduction_status,
+            sdr.applied_at AS deduction_applied_at
+     FROM po_returns r
+     JOIN purchase_orders po ON po.id = r.po_id
+     LEFT JOIN vendors v ON v.id = po.vendor_id
+     LEFT JOIN users cb ON cb.id = r.created_by
+     LEFT JOIN users ab ON ab.id = r.approved_by
+     LEFT JOIN employees emp ON emp.id = r.responsible_employee_id
+     LEFT JOIN LATERAL (
+       SELECT id, status, applied_at FROM salary_deduction_requests
+       WHERE source_type = 'po_return' AND source_id = r.id
+       ORDER BY created_at DESC LIMIT 1
+     ) sdr ON true
+     WHERE ${where}
+     ORDER BY r.created_at DESC`,
+    params,
+  )
+  if (headers.rows.length === 0) return []
+  const itemRows = await query<POReturnItemRow>(
+    `SELECT ri.id, ri.return_id, ri.po_line_id, ri.description, ri.quantity_returned,
+            ri.original_unit_price, ri.assessed_unit_price, ri.line_total, ri.damage_notes
+     FROM po_return_items ri
+     WHERE ri.return_id = ANY($1::uuid[])
+     ORDER BY ri.created_at, ri.id`,
+    [headers.rows.map((h) => h.id)],
+  )
+  const byReturn = new Map<string, POReturnItemRow[]>()
+  for (const it of itemRows.rows) {
+    const list = byReturn.get(it.return_id) ?? []
+    list.push(it)
+    byReturn.set(it.return_id, list)
+  }
+  return headers.rows.map((h) => ({ ...h, items: byReturn.get(h.id as string) ?? [] }))
+}
+
+// A return can only send back what was received, net of every other return
+// that is no longer a draft (submitted, approved or credited all count, so
+// two returns waiting for approval can't both claim the same units). Run
+// with the PO row already locked FOR UPDATE, so concurrent creates/submits
+// on one PO serialise. excludeReturnId lets submit ignore the return it is
+// itself about to move out of draft.
+async function assertPOReturnQtyWithinReceivedGW(
+  client: PoolClient,
+  poId: string,
+  wanted: Map<string, number>,
+  excludeReturnId: string | null,
+): Promise<void> {
+  const res = await client.query<{
+    id: string
+    description: string
+    available: string
+  }>(
+    `SELECT pl.id, pl.description,
+            pl.qty_received - COALESCE((
+              SELECT SUM(ri.quantity_returned)
+              FROM po_return_items ri
+              JOIN po_returns r ON r.id = ri.return_id
+              WHERE ri.po_line_id = pl.id
+                AND r.status <> 'draft'
+                AND ($3::uuid IS NULL OR r.id <> $3::uuid)
+            ), 0) AS available
+     FROM po_lines pl
+     WHERE pl.po_id = $1 AND pl.id = ANY($2::uuid[])`,
+    [poId, [...wanted.keys()], excludeReturnId],
+  )
+  for (const row of res.rows) {
+    const qty = wanted.get(row.id) ?? 0
+    const available = parseFloat(row.available)
+    if (qty > available + 0.0001) {
+      throw new Error(
+        `Return quantity for "${row.description}" exceeds the quantity received (${Math.max(available, 0)} available)`,
+      )
+    }
+  }
+}
+
+// RTN-<po number without its PO- prefix>, then -1, -2, … for later returns
+// on the same PO. Highest suffix plus one, not a row count — a count lands on
+// an existing number once a middle draft has been deleted (playbook #28).
+// Caller holds the PO row lock, so two creates on one PO can't pick the same.
+async function nextPOReturnNumberGW(
+  client: PoolClient,
+  companyId: string,
+  poNumber: string,
+): Promise<string> {
+  const base = `RTN-${poNumber.replace(/^PO-/i, '')}`
+  const res = await client.query<{ return_number: string }>(
+    `SELECT return_number FROM po_returns
+     WHERE company_id = $1 AND (return_number = $2 OR return_number LIKE $3)`,
+    [companyId, base, `${base.replace(/[\\%_]/g, '\\$&')}-%`],
+  )
+  const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const suffixRe = new RegExp(`^${escaped}(?:-(\\d+))?$`)
+  let highest = -1
+  for (const row of res.rows) {
+    const m = suffixRe.exec(row.return_number)
+    if (m) highest = Math.max(highest, m[1] ? parseInt(m[1], 10) : 0)
+  }
+  return highest < 0 ? base : `${base}-${highest + 1}`
 }
 
 // The full purchase-order shape (header + lines + receipts + approval log +
@@ -10662,6 +10830,21 @@ export const resolvers = {
       }
     },
 
+    // Vendor returns on a PO, newest first, items included. Same gate the
+    // deleted REST route had (procurement.po.view); scoped to the caller's
+    // company, so a PO id from another company just returns [].
+    poReturns: async (_: unknown, args: { poId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'procurement.po.view', 'view')
+      return loadPOReturnsGW(ctx.auth.companyId, { poId: args.poId })
+    },
+
+    poReturn: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'procurement.po.view', 'view')
+      return (await loadPOReturnsGW(ctx.auth.companyId, { id: args.id }))[0] ?? null
+    },
+
     // Ported from the deleted services/procurement REST route (GET
     // /:id/line-comments).
     // `poId` also accepts a requisition id — po_lines.requisition_id is
@@ -13573,6 +13756,365 @@ export const resolvers = {
         [auth.userId],
       )
       return { ...inserted.rows[0], user_email: userRow.rows[0]?.user_email ?? null }
+    },
+
+    // ── PO Returns ─────────────────────────────────────────────────────────
+    // Ported from the deleted services/procurement REST route. Permission keys
+    // are the old route's: create / submit / delete = procurement.po.edit,
+    // approve = procurement.po.approve, credit = finance.ap.edit. Each
+    // transition's UPDATE names the status it expects, so a double click
+    // moves a return once.
+
+    createPOReturn: async (
+      _: unknown,
+      args: {
+        poId: string
+        input: {
+          return_type: string
+          notes?: string | null
+          damage_description?: string | null
+          items: {
+            po_line_id: string
+            description: string
+            quantity_returned: number
+            assessed_unit_price?: number | null
+            damage_notes?: string | null
+          }[]
+        }
+      },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      await requirePermGW(auth, 'procurement.po.edit', 'edit')
+      const { input } = args
+      if (input.return_type !== 'full_refund' && input.return_type !== 'damage')
+        throw new Error("return_type must be 'full_refund' or 'damage'")
+      const isDamage = input.return_type === 'damage'
+      if (input.items.length === 0) throw new Error('At least one item is required')
+      if (isDamage && !input.damage_description?.trim())
+        throw new Error('Damage description is required for damage returns')
+      const wanted = new Map<string, number>()
+      for (const item of input.items) {
+        const label = item.description.trim() ? item.description : 'an item'
+        if (!item.description.trim() || item.description.length > 500)
+          throw new Error('Each item needs a description of at most 500 characters')
+        if (!Number.isFinite(item.quantity_returned) || item.quantity_returned <= 0)
+          throw new Error(`Enter a valid quantity for "${label}"`)
+        if (isDamage) {
+          const a = item.assessed_unit_price
+          if (a == null || !Number.isFinite(a) || a < 0)
+            throw new Error(`Enter a valid assessed price for "${label}"`)
+        }
+        wanted.set(item.po_line_id, (wanted.get(item.po_line_id) ?? 0) + item.quantity_returned)
+      }
+
+      const returnId = await withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client) => {
+          // The PO row lock serialises concurrent creates/submits on one PO,
+          // so the quantity check below and the return number are race-free.
+          const poRes = await client.query<{ id: string; po_number: string; status: string }>(
+            `SELECT id, po_number, status FROM purchase_orders
+             WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+            [args.poId, auth.companyId],
+          )
+          const po = poRes.rows[0] as { id: string; po_number: string; status: string } | undefined
+          if (!po) throw new Error('Purchase order not found')
+          if (!PO_RETURNABLE_STATUSES.includes(po.status))
+            throw new Error(
+              `Returns can only be created once goods are received and the PO is not in finance audit (this PO is '${po.status}')`,
+            )
+
+          // Prices and currency come from the PO line, never from the client.
+          const lineRes = await client.query<{
+            id: string
+            unit_price: string
+            currency_code: string
+          }>(
+            `SELECT id, unit_price, currency_code FROM po_lines
+             WHERE po_id=$1 AND id = ANY($2::uuid[])`,
+            [args.poId, [...wanted.keys()]],
+          )
+          if (lineRes.rows.length !== wanted.size)
+            throw new Error('One or more items are not lines of this purchase order')
+          const currencies = new Set(lineRes.rows.map((l) => l.currency_code))
+          if (currencies.size > 1)
+            throw new Error(
+              `The selected lines are priced in different currencies (${[...currencies].join(', ')}) — create a separate return for each currency`,
+            )
+          const currency = [...currencies][0]
+          const lineById = new Map(lineRes.rows.map((l) => [l.id, l]))
+          const lineFor = (id: string) => {
+            const l = lineById.get(id)
+            if (!l) throw new Error('One or more items are not lines of this purchase order')
+            return l
+          }
+
+          await assertPOReturnQtyWithinReceivedGW(client, args.poId, wanted, null)
+
+          for (const item of input.items) {
+            if (!isDamage) continue
+            const original = Math.round(parseFloat(lineFor(item.po_line_id).unit_price) * 10000)
+            if (Math.round((item.assessed_unit_price ?? 0) * 10000) > original)
+              throw new Error(`Assessed price cannot exceed the original price for "${item.description}"`)
+          }
+
+          const returnNumber = await nextPOReturnNumberGW(client, auth.companyId, po.po_number)
+          const ret = await client.query<{ id: string }>(
+            `INSERT INTO po_returns
+               (company_id, po_id, return_number, return_type, status, notes,
+                damage_description, currency_code, created_by)
+             VALUES ($1,$2,$3,$4::po_return_type,'draft',$5,$6,$7,$8)
+             RETURNING id`,
+            [
+              auth.companyId,
+              args.poId,
+              returnNumber,
+              input.return_type,
+              trimToNullGW(input.notes),
+              isDamage ? trimToNullGW(input.damage_description) : null,
+              currency,
+              auth.userId,
+            ],
+          )
+          const id = firstRowOrThrow(ret).id
+          for (const item of input.items) {
+            const line = lineFor(item.po_line_id)
+            await client.query(
+              `INSERT INTO po_return_items
+                 (return_id, po_line_id, description, quantity_returned,
+                  original_unit_price, assessed_unit_price, damage_notes)
+               VALUES ($1,$2,$3,$4,$5::numeric,
+                       CASE WHEN $8 THEN $5::numeric ELSE $6::numeric END,
+                       $7)`,
+              [
+                id,
+                item.po_line_id,
+                item.description.trim(),
+                item.quantity_returned,
+                line.unit_price,
+                item.assessed_unit_price ?? null,
+                isDamage ? trimToNullGW(item.damage_notes) : null,
+                !isDamage,
+              ],
+            )
+          }
+          await logAudit({
+            action: 'po_return.created',
+            tableName: 'po_returns',
+            recordId: id,
+            userId: auth.userId,
+            companyId: auth.companyId,
+            newValues: { return_number: returnNumber, return_type: input.return_type },
+            client,
+          })
+          return id
+        },
+      )
+      return (await loadPOReturnsGW(auth.companyId, { id: returnId }))[0]
+    },
+
+    submitPOReturn: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      await requirePermGW(auth, 'procurement.po.edit', 'edit')
+      await withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client) => {
+          // Lock order is always PO then return, matching createPOReturn.
+          const head = await client.query<{ po_id: string }>(
+            `SELECT po_id FROM po_returns WHERE id=$1 AND company_id=$2`,
+            [args.id, auth.companyId],
+          )
+          if (!head.rows[0]) throw new Error('Return not found')
+          const poId = head.rows[0].po_id
+          await client.query(`SELECT id FROM purchase_orders WHERE id=$1 FOR UPDATE`, [poId])
+          const cur = await client.query<{ status: string }>(
+            `SELECT status::text AS status FROM po_returns
+             WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+            [args.id, auth.companyId],
+          )
+          if (cur.rows[0]?.status !== 'draft') throw new Error('Return is not in draft status')
+
+          // Drafts don't count against what was received, so two drafts can
+          // each ask for the full quantity — settle that here, where this
+          // one starts counting.
+          const items = await client.query<{ po_line_id: string; qty: string }>(
+            `SELECT po_line_id, SUM(quantity_returned) AS qty FROM po_return_items
+             WHERE return_id=$1 AND po_line_id IS NOT NULL GROUP BY po_line_id`,
+            [args.id],
+          )
+          if (items.rows.length === 0) throw new Error('A return needs at least one item')
+          await assertPOReturnQtyWithinReceivedGW(
+            client,
+            poId,
+            new Map(items.rows.map((r) => [r.po_line_id, parseFloat(r.qty)])),
+            args.id,
+          )
+
+          await client.query(
+            `UPDATE po_returns
+             SET status='submitted', submitted_by=$1, submitted_at=now(), updated_at=now()
+             WHERE id=$2 AND status='draft'`,
+            [auth.userId, args.id],
+          )
+          await logAudit({
+            action: 'po_return.submitted',
+            tableName: 'po_returns',
+            recordId: args.id,
+            userId: auth.userId,
+            companyId: auth.companyId,
+            client,
+          })
+        },
+      )
+      return (await loadPOReturnsGW(auth.companyId, { id: args.id }))[0]
+    },
+
+    approvePOReturn: async (
+      _: unknown,
+      args: {
+        id: string
+        input?: {
+          responsible_employee_id?: string | null
+          deduct_from_salary?: boolean | null
+          deduction_amount?: number | null
+        } | null
+      },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      await requirePermGW(auth, 'procurement.po.approve', 'approve')
+      const employeeId = trimToNullGW(args.input?.responsible_employee_id)
+      const deduct = Boolean(args.input?.deduct_from_salary)
+      const amount = args.input?.deduction_amount ?? null
+      if (deduct && !employeeId) throw new Error('Select the responsible employee')
+      if (deduct && (amount == null || !Number.isFinite(amount) || amount <= 0))
+        throw new Error('Enter a valid deduction amount')
+
+      await withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client) => {
+          const cur = await client.query<{
+            status: string
+            return_type: string
+            return_number: string
+            currency_code: string
+            damage_description: string | null
+          }>(
+            `SELECT status::text AS status, return_type::text AS return_type, return_number,
+                    currency_code, damage_description
+             FROM po_returns WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+            [args.id, auth.companyId],
+          )
+          const ret = cur.rows[0] as (typeof cur.rows)[number] | undefined
+          if (!ret) throw new Error('Return not found')
+          if (ret.status !== 'submitted') throw new Error('Return is not in submitted status')
+
+          if (employeeId) {
+            if (ret.return_type !== 'damage')
+              throw new Error('Only a damage return can name a responsible employee')
+            // Payroll only processes active employees, so a deduction against
+            // anyone else would sit pending forever.
+            const emp = await client.query(
+              `SELECT 1 FROM employees WHERE id=$1 AND company_id=$2 AND status='active'`,
+              [employeeId, auth.companyId],
+            )
+            if (!emp.rows[0]) throw new Error('Responsible employee not found or not active')
+            await client.query(
+              `UPDATE po_returns
+               SET responsible_employee_id=$1, deduct_from_salary=$2, deduction_amount=$3, updated_at=now()
+               WHERE id=$4`,
+              [employeeId, deduct, deduct ? amount : null, args.id],
+            )
+          }
+
+          await client.query(
+            `UPDATE po_returns
+             SET status='approved', approved_by=$1, approved_at=now(), updated_at=now()
+             WHERE id=$2 AND status='submitted'`,
+            [auth.userId, args.id],
+          )
+
+          if (employeeId && deduct) {
+            await client.query(
+              `INSERT INTO salary_deduction_requests
+                 (company_id, employee_id, source_type, source_id, amount, currency_code, reason, created_by)
+               VALUES ($1,$2,'po_return',$3,$4,$5,$6,$7)`,
+              [
+                auth.companyId,
+                employeeId,
+                args.id,
+                amount,
+                ret.currency_code,
+                `Damage return ${ret.return_number}${ret.damage_description ? `: ${ret.damage_description.substring(0, 100)}` : ''}`,
+                auth.userId,
+              ],
+            )
+          }
+          await logAudit({
+            action: 'po_return.approved',
+            tableName: 'po_returns',
+            recordId: args.id,
+            userId: auth.userId,
+            companyId: auth.companyId,
+            client,
+          })
+        },
+      )
+      return (await loadPOReturnsGW(auth.companyId, { id: args.id }))[0]
+    },
+
+    creditPOReturn: async (
+      _: unknown,
+      args: { id: string; creditNoteReference?: string | null },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      await requirePermGW(auth, 'finance.ap.edit', 'edit')
+      const ref = trimToNullGW(args.creditNoteReference)
+      if (ref && ref.length > 100)
+        throw new Error('Credit note reference can be at most 100 characters')
+      const r = await query(
+        `UPDATE po_returns
+         SET status='credited', credited_by=$1, credited_at=now(),
+             credit_note_reference=$2, updated_at=now()
+         WHERE id=$3 AND company_id=$4 AND status='approved'
+         RETURNING id`,
+        [auth.userId, ref, args.id, auth.companyId],
+      )
+      if (!r.rows[0]) throw new Error('Return is not in approved status')
+      await logAudit({
+        action: 'po_return.credited',
+        tableName: 'po_returns',
+        recordId: args.id,
+        userId: auth.userId,
+        companyId: auth.companyId,
+        newValues: { credit_note_reference: ref },
+      })
+      return (await loadPOReturnsGW(auth.companyId, { id: args.id }))[0]
+    },
+
+    deletePOReturn: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      await requirePermGW(auth, 'procurement.po.edit', 'edit')
+      const r = await query(
+        `DELETE FROM po_returns WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING id`,
+        [args.id, auth.companyId],
+      )
+      if (!r.rows[0]) throw new Error('Only draft returns can be deleted')
+      await logAudit({
+        action: 'po_return.deleted',
+        tableName: 'po_returns',
+        recordId: args.id,
+        userId: auth.userId,
+        companyId: auth.companyId,
+      })
+      return true
     },
 
     // For PO lines delivered straight to a project's jobsite instead of

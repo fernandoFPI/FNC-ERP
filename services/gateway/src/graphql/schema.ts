@@ -2728,6 +2728,89 @@
     attachReceiptPhoto(receiptId: ID!, fileId: ID!, label: String): ReceiptPhoto!
   }
 
+  # ── PO Returns (goods sent back to the vendor) ───────────────
+  # Ported from the deleted services/procurement REST route. Not to be
+  # confused with MaterialReturn (unused project material coming back into
+  # our own inventory). Money and quantities are strings (pg NUMERIC), same
+  # as POLine.
+  type POReturnItem {
+    id: ID!
+    po_line_id: ID
+    description: String!
+    quantity_returned: String!
+    original_unit_price: String!
+    assessed_unit_price: String!
+    line_total: String!
+    damage_notes: String
+  }
+
+  type POReturn {
+    id: ID!
+    po_id: ID!
+    po_number: String
+    vendor_name: String
+    return_number: String!
+    return_type: String!
+    status: String!
+    notes: String
+    damage_description: String
+    total_returned_value: String!
+    currency_code: String!
+    created_by_email: String
+    approved_by_email: String
+    created_at: String!
+    submitted_at: String
+    approved_at: String
+    credited_at: String
+    credit_note_reference: String
+    responsible_employee_id: ID
+    responsible_employee_name: String
+    responsible_employee_number: String
+    deduct_from_salary: Boolean!
+    deduction_amount: String
+    deduction_request_id: ID
+    deduction_status: String
+    deduction_applied_at: String
+    items: [POReturnItem!]!
+  }
+
+  # The server prices each item from its PO line (original = the line's
+  # unit price; full_refund assesses at original) and takes the currency
+  # from the PO line, so neither is accepted from the client.
+  input POReturnItemInput {
+    po_line_id: ID!
+    description: String!
+    quantity_returned: Float!
+    assessed_unit_price: Float
+    damage_notes: String
+  }
+
+  input POReturnInput {
+    return_type: String!
+    notes: String
+    damage_description: String
+    items: [POReturnItemInput!]!
+  }
+
+  input ApprovePOReturnInput {
+    responsible_employee_id: ID
+    deduct_from_salary: Boolean
+    deduction_amount: Float
+  }
+
+  extend type Query {
+    poReturns(poId: ID!): [POReturn!]!
+    poReturn(id: ID!): POReturn
+  }
+
+  extend type Mutation {
+    createPOReturn(poId: ID!, input: POReturnInput!): POReturn!
+    submitPOReturn(id: ID!): POReturn!
+    approvePOReturn(id: ID!, input: ApprovePOReturnInput): POReturn!
+    creditPOReturn(id: ID!, creditNoteReference: String): POReturn!
+    deletePOReturn(id: ID!): Boolean!
+  }
+
   # ── Phase 2: Inventory ───────────────────────────────────────
 
   extend type Product {
