@@ -8,12 +8,14 @@ import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { BarChart } from '../../../components/charts/BarChart'
+import { TabBar } from '../../../components/ui/TabBar'
 import type { ProfitLossQuery, ProfitLossQueryVariables } from '../../../graphql/generated'
 
 interface PLLine {
   account_id: string
   code: string
   name: string
+  currency_code: string
   amount: string
 }
 
@@ -26,6 +28,7 @@ export default function ProfitLoss() {
   const [fromDate, setFromDate] = useState(firstOfYear)
   const [toDate, setToDate] = useState(today)
   const [queried, setQueried] = useState(false)
+  const [currency, setCurrency] = useState<string | null>(null)
 
   const { data, loading, refetch } = useQuery<ProfitLossQuery, ProfitLossQueryVariables>(PROFIT_LOSS_QUERY, {
     variables: { fromDate, toDate },
@@ -34,8 +37,25 @@ export default function ProfitLoss() {
   })
 
   const report = data?.profitLoss
-  const revenue: PLLine[] = report?.revenue ?? []
-  const expenses: PLLine[] = report?.expenses ?? []
+  const allRevenue: PLLine[] = report?.revenue ?? []
+  const allExpenses: PLLine[] = report?.expenses ?? []
+  // Never blended across currencies (no currency exchange anywhere) — a
+  // selector picks which currency's figures are shown.
+  const currencies = [
+    ...new Set([...allRevenue, ...allExpenses].map((l) => l.currency_code)),
+  ].sort()
+  const activeCurrency = currency ?? currencies[0] ?? 'IQD'
+  const revenue = allRevenue.filter((l) => l.currency_code === activeCurrency)
+  const expenses = allExpenses.filter((l) => l.currency_code === activeCurrency)
+  const totalRevenueForCurrency = parseFloat(
+    report?.totalRevenue.find((c) => c.currency_code === activeCurrency)?.amount ?? '0',
+  )
+  const totalExpensesForCurrency = parseFloat(
+    report?.totalExpenses.find((c) => c.currency_code === activeCurrency)?.amount ?? '0',
+  )
+  const netProfitForCurrency = parseFloat(
+    report?.netProfit.find((c) => c.currency_code === activeCurrency)?.amount ?? '0',
+  )
 
   function run() {
     if (queried) void refetch()
@@ -44,9 +64,9 @@ export default function ProfitLoss() {
 
   const chartData = report
     ? [
-        { label: t('fin.pl.revenue'), value: parseFloat(report.totalRevenue) },
-        { label: t('fin.pl.expenses'), value: parseFloat(report.totalExpenses) },
-        { label: t('fin.pl.netProfit'), value: parseFloat(report.netProfit) },
+        { label: t('fin.pl.revenue'), value: totalRevenueForCurrency },
+        { label: t('fin.pl.expenses'), value: totalExpensesForCurrency },
+        { label: t('fin.pl.netProfit'), value: netProfitForCurrency },
       ]
     : []
 
@@ -145,6 +165,16 @@ export default function ProfitLoss() {
         </div>
       </Card>
 
+      {currencies.length > 1 && (
+        <Card style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={currencies.map((c) => ({ key: c, label: c }))}
+            active={activeCurrency}
+            onChange={setCurrency}
+          />
+        </Card>
+      )}
+
       {report && (
         <>
           {chartData.length > 0 && (
@@ -182,10 +212,10 @@ export default function ProfitLoss() {
                 <span
                   style={{
                     fontFamily: 'monospace',
-                    color: parseFloat(report.netProfit) >= 0 ? theme.success : theme.danger,
+                    color: netProfitForCurrency >= 0 ? theme.success : theme.danger,
                   }}
                 >
-                  {parseFloat(report.netProfit).toLocaleString()}
+                  {netProfitForCurrency.toLocaleString()}
                 </span>
               </div>
             </div>

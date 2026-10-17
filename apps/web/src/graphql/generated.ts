@@ -385,12 +385,13 @@ export type AccountLedgerQueryVariables = Exact<{
   accountId: string | number;
   fromDate?: string | null | undefined;
   toDate?: string | null | undefined;
+  currencyCode?: string | null | undefined;
   page?: number | null | undefined;
   limit?: number | null | undefined;
 }>;
 
 
-export type AccountLedgerQuery = { accountLedger: { total: number, page: number, limit: number, totalDebit: string, totalCredit: string, netBalance: string, items: Array<{ id: string, date: string, reference: string | null, description: string | null, debit: string, credit: string, running_balance: string, journal_entry_id: string }> } | null };
+export type AccountLedgerQuery = { accountLedger: { total: number, page: number, limit: number, currencyCode: string, availableCurrencies: Array<string>, totalDebit: string, totalCredit: string, netBalance: string, items: Array<{ id: string, date: string, reference: string | null, description: string | null, currency_code: string, debit: string, credit: string, running_balance: string, journal_entry_id: string }> } | null };
 
 export type JournalEntriesQueryVariables = Exact<{
   status?: string | null | undefined;
@@ -573,7 +574,7 @@ export type TrialBalanceQueryVariables = Exact<{
 }>;
 
 
-export type TrialBalanceQuery = { trialBalance: Array<{ id: string, code: string, name: string, account_type: string, total_debit: string, total_credit: string, balance: string } | null> | null };
+export type TrialBalanceQuery = { trialBalance: Array<{ id: string, code: string, name: string, account_type: string, currency_code: string, total_debit: string, total_credit: string, balance: string } | null> | null };
 
 export type ProfitLossQueryVariables = Exact<{
   fromDate: string;
@@ -582,14 +583,14 @@ export type ProfitLossQueryVariables = Exact<{
 }>;
 
 
-export type ProfitLossQuery = { profitLoss: { totalRevenue: string, totalExpenses: string, netProfit: string, revenue: Array<{ account_id: string, code: string, name: string, amount: string }>, expenses: Array<{ account_id: string, code: string, name: string, amount: string }> } | null };
+export type ProfitLossQuery = { profitLoss: { revenue: Array<{ account_id: string, code: string, name: string, currency_code: string, amount: string }>, expenses: Array<{ account_id: string, code: string, name: string, currency_code: string, amount: string }>, totalRevenue: Array<{ currency_code: string, amount: string }>, totalExpenses: Array<{ currency_code: string, amount: string }>, netProfit: Array<{ currency_code: string, amount: string }> } | null };
 
 export type BalanceSheetQueryVariables = Exact<{
   asOfDate: string;
 }>;
 
 
-export type BalanceSheetQuery = { balanceSheet: { retainedEarnings: string, totalAssets: string, totalLiabilities: string, totalEquity: string, isBalanced: boolean, assets: Array<{ account_id: string, code: string, name: string, amount: string }>, liabilities: Array<{ account_id: string, code: string, name: string, amount: string }>, equity: Array<{ account_id: string, code: string, name: string, amount: string }> } | null };
+export type BalanceSheetQuery = { balanceSheet: { isBalanced: boolean, assets: Array<{ account_id: string, code: string, name: string, currency_code: string, amount: string }>, liabilities: Array<{ account_id: string, code: string, name: string, currency_code: string, amount: string }>, equity: Array<{ account_id: string, code: string, name: string, currency_code: string, amount: string }>, retainedEarnings: Array<{ currency_code: string, amount: string }>, totalAssets: Array<{ currency_code: string, amount: string }>, totalLiabilities: Array<{ currency_code: string, amount: string }>, totalEquity: Array<{ currency_code: string, amount: string }> } | null };
 
 export type AnalyticAccountsQueryVariables = Exact<{ [key: string]: never; }>;
 

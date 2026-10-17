@@ -47,6 +47,7 @@ export type AccountInput = {
 
 export type AccountLedgerLine = {
   credit: Scalars['String']['output'];
+  currency_code: Scalars['String']['output'];
   date: Scalars['String']['output'];
   debit: Scalars['String']['output'];
   description?: Maybe<Scalars['String']['output']>;
@@ -57,6 +58,8 @@ export type AccountLedgerLine = {
 };
 
 export type AccountLedgerPage = {
+  availableCurrencies: Array<Scalars['String']['output']>;
+  currencyCode: Scalars['String']['output'];
   items: Array<AccountLedgerLine>;
   limit: Scalars['Int']['output'];
   netBalance: Scalars['String']['output'];
@@ -289,6 +292,7 @@ export type BsLine = {
   account_id: Scalars['ID']['output'];
   amount: Scalars['String']['output'];
   code: Scalars['String']['output'];
+  currency_code: Scalars['String']['output'];
   name: Scalars['String']['output'];
 };
 
@@ -297,10 +301,10 @@ export type BalanceSheetReport = {
   equity: Array<BsLine>;
   isBalanced: Scalars['Boolean']['output'];
   liabilities: Array<BsLine>;
-  retainedEarnings: Scalars['String']['output'];
-  totalAssets: Scalars['String']['output'];
-  totalEquity: Scalars['String']['output'];
-  totalLiabilities: Scalars['String']['output'];
+  retainedEarnings: Array<CurrencyAmount>;
+  totalAssets: Array<CurrencyAmount>;
+  totalEquity: Array<CurrencyAmount>;
+  totalLiabilities: Array<CurrencyAmount>;
 };
 
 export type BankAccount = {
@@ -888,6 +892,11 @@ export type CreateUserInput = {
   password?: InputMaybe<Scalars['String']['input']>;
   role?: InputMaybe<Scalars['String']['input']>;
   send_invitation?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+export type CurrencyAmount = {
+  amount: Scalars['String']['output'];
+  currency_code: Scalars['String']['output'];
 };
 
 export type DlqEntry = {
@@ -6020,6 +6029,7 @@ export type PlLine = {
   account_id: Scalars['ID']['output'];
   amount: Scalars['String']['output'];
   code: Scalars['String']['output'];
+  currency_code: Scalars['String']['output'];
   name: Scalars['String']['output'];
 };
 
@@ -6597,10 +6607,10 @@ export type ProductInput = {
 
 export type ProfitLossReport = {
   expenses: Array<PlLine>;
-  netProfit: Scalars['String']['output'];
+  netProfit: Array<CurrencyAmount>;
   revenue: Array<PlLine>;
-  totalExpenses: Scalars['String']['output'];
-  totalRevenue: Scalars['String']['output'];
+  totalExpenses: Array<CurrencyAmount>;
+  totalRevenue: Array<CurrencyAmount>;
 };
 
 export type Project = {
@@ -7587,6 +7597,7 @@ export type QueryAccountArgs = {
 
 export type QueryAccountLedgerArgs = {
   accountId: Scalars['ID']['input'];
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
   fromDate?: InputMaybe<Scalars['String']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
   page?: InputMaybe<Scalars['Int']['input']>;
@@ -9478,6 +9489,7 @@ export type TrialBalanceLine = {
   account_type: Scalars['String']['output'];
   balance: Scalars['String']['output'];
   code: Scalars['String']['output'];
+  currency_code: Scalars['String']['output'];
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
   total_credit: Scalars['String']['output'];

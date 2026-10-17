@@ -375,6 +375,7 @@
     code: String!
     name: String!
     account_type: String!
+    currency_code: String!
     total_debit: String!
     total_credit: String!
     balance: String!
@@ -1974,6 +1975,7 @@
     date: String!
     reference: String
     description: String
+    currency_code: String!
     debit: String!
     credit: String!
     running_balance: String!
@@ -1985,6 +1987,8 @@
     total: Int!
     page: Int!
     limit: Int!
+    currencyCode: String!
+    availableCurrencies: [String!]!
     totalDebit: String!
     totalCredit: String!
     netBalance: String!
@@ -2010,25 +2014,32 @@
     closed_at: String
   }
 
+  type CurrencyAmount {
+    currency_code: String!
+    amount: String!
+  }
+
   type PLLine {
     account_id: ID!
     code: String!
     name: String!
+    currency_code: String!
     amount: String!
   }
 
   type ProfitLossReport {
     revenue: [PLLine!]!
     expenses: [PLLine!]!
-    totalRevenue: String!
-    totalExpenses: String!
-    netProfit: String!
+    totalRevenue: [CurrencyAmount!]!
+    totalExpenses: [CurrencyAmount!]!
+    netProfit: [CurrencyAmount!]!
   }
 
   type BSLine {
     account_id: ID!
     code: String!
     name: String!
+    currency_code: String!
     amount: String!
   }
 
@@ -2036,10 +2047,10 @@
     assets: [BSLine!]!
     liabilities: [BSLine!]!
     equity: [BSLine!]!
-    retainedEarnings: String!
-    totalAssets: String!
-    totalLiabilities: String!
-    totalEquity: String!
+    retainedEarnings: [CurrencyAmount!]!
+    totalAssets: [CurrencyAmount!]!
+    totalLiabilities: [CurrencyAmount!]!
+    totalEquity: [CurrencyAmount!]!
     isBalanced: Boolean!
   }
 
@@ -2104,7 +2115,7 @@
 
   extend type Query {
     account(id: ID!): Account
-    accountLedger(accountId: ID!, fromDate: String, toDate: String, page: Int, limit: Int): AccountLedgerPage
+    accountLedger(accountId: ID!, fromDate: String, toDate: String, currencyCode: String, page: Int, limit: Int): AccountLedgerPage
     journalEntry(id: ID!): JournalEntry
     # tableName is restricted server-side to an explicit allow-list — never
     # trust it as a free-form lookup key into audit_log, which spans every

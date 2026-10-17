@@ -11,6 +11,7 @@ import { Table } from '../../../components/ui/Table'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { Button } from '../../../components/ui/Button'
 import { DatePicker } from '../../../components/ui/DatePicker'
+import { TabBar } from '../../../components/ui/TabBar'
 import type { AccountLedgerQuery, AccountLedgerQueryVariables, AccountQuery, AccountQueryVariables } from '../../../graphql/generated'
 
 interface LedgerLine {
@@ -18,6 +19,7 @@ interface LedgerLine {
   date: string
   reference?: string | null
   description?: string | null
+  currency_code: string
   debit: string
   credit: string
   running_balance: string
@@ -34,6 +36,7 @@ export default function AccountLedger() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [page, setPage] = useState(1)
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
 
   const { data: accountData } = useQuery<AccountQuery, AccountQueryVariables>(ACCOUNT_QUERY, { variables: { id: id ?? '' }, skip: !id })
   const { data, loading } = useQuery<AccountLedgerQuery, AccountLedgerQueryVariables>(ACCOUNT_LEDGER_QUERY, {
@@ -41,6 +44,7 @@ export default function AccountLedger() {
       accountId: id ?? '',
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
+      currencyCode,
       page,
       limit: PAGE_SIZE,
     },
@@ -52,6 +56,11 @@ export default function AccountLedger() {
   const ledger = data?.accountLedger
   const items: LedgerLine[] = ledger?.items ?? []
   const total = ledger?.total ?? 0
+  // Server picks the account's own currency when none is chosen — this is
+  // that resolved currency, for AmountDisplay, kept in sync with a
+  // selector built from every currency the account has actually posted in.
+  const displayCurrency = ledger?.currencyCode ?? 'IQD'
+  const availableCurrencies = ledger?.availableCurrencies ?? []
 
   const columns: Column<LedgerLine>[] = [
     {
@@ -92,7 +101,7 @@ export default function AccountLedger() {
       header: t('fin.ledger.debit'),
       render: (r) =>
         parseFloat(r.debit) > 0 ? (
-          <AmountDisplay amount={parseFloat(r.debit)} currency="IQD" />
+          <AmountDisplay amount={parseFloat(r.debit)} currency={r.currency_code} />
         ) : (
           <span style={{ color: theme.textMuted }}>—</span>
         ),
@@ -102,7 +111,7 @@ export default function AccountLedger() {
       header: t('fin.ledger.credit'),
       render: (r) =>
         parseFloat(r.credit) > 0 ? (
-          <AmountDisplay amount={parseFloat(r.credit)} currency="IQD" />
+          <AmountDisplay amount={parseFloat(r.credit)} currency={r.currency_code} />
         ) : (
           <span style={{ color: theme.textMuted }}>—</span>
         ),
@@ -111,7 +120,7 @@ export default function AccountLedger() {
       key: 'running_balance',
       header: t('fin.ledger.balance'),
       render: (r) => (
-        <AmountDisplay amount={parseFloat(r.running_balance)} currency="IQD" colored />
+        <AmountDisplay amount={parseFloat(r.running_balance)} currency={r.currency_code} colored />
       ),
     },
   ]
@@ -126,7 +135,20 @@ export default function AccountLedger() {
         backPath="/finance/accounts"
       />
 
-      <Card style={{ marginTop: '20px' }}>
+      {availableCurrencies.length > 1 && (
+        <Card style={{ marginTop: '20px' }}>
+          <TabBar
+            tabs={availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={displayCurrency}
+            onChange={(c) => {
+              setCurrencyCode(c)
+              setPage(1)
+            }}
+          />
+        </Card>
+      )}
+
+      <Card style={{ marginTop: availableCurrencies.length > 1 ? '12px' : '20px' }}>
         {/* Date filters */}
         <div
           style={{

@@ -2942,6 +2942,19 @@ async function canViewPurchaseOrderGW(auth: GWAuth, poId: string, status: string
   return callerHasCurrentStagePositionGW(auth, poId, status)
 }
 
+// Phase 2 (no currency exchange anywhere): collapses a list of
+// {currency_code, amount} rows into one summed amount per currency,
+// instead of a single blended scalar across every currency.
+function sumByCurrencyGW(
+  rows: { currency_code: string; amount: string }[],
+): { currency_code: string; amount: number }[] {
+  const byCurrency = new Map<string, number>()
+  for (const r of rows) {
+    byCurrency.set(r.currency_code, (byCurrency.get(r.currency_code) ?? 0) + parseFloat(r.amount))
+  }
+  return [...byCurrency.entries()].map(([currency_code, amount]) => ({ currency_code, amount }))
+}
+
 // Trimmed text, or null when empty/absent — for optional free-text and id inputs.
 function trimToNullGW(s: string | null | undefined): string | null {
   const t = s?.trim()
@@ -6518,23 +6531,32 @@ export const resolvers = {
       return result.rows
     },
 
+    // G3/G4: previously summed debit/credit across every currency into one
+    // blended figure, dropped inactive accounts outright (even ones with
+    // real posted history), and joined journal_lines directly instead of
+    // going through the shared posted-only view. Now one row per
+    // (account, currency) that has activity — a company-currency account
+    // with no activity at all still gets a zero row so the report doesn't
+    // silently drop it.
     trialBalance: async (_: unknown, args: { as_of_date?: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
       await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
       const params: unknown[] = [ctx.auth.companyId]
-      const dateFilter = args.as_of_date ? `AND je.entry_date <= $2` : ''
+      const dateFilter = args.as_of_date ? `AND vb.entry_date <= $2` : ''
       if (args.as_of_date) params.push(args.as_of_date)
       const result = await query(
         `SELECT coa.id, coa.code, coa.name, coa.account_type,
-                COALESCE(SUM(jl.debit),0) AS total_debit,
-                COALESCE(SUM(jl.credit),0) AS total_credit,
-                COALESCE(SUM(jl.debit - jl.credit),0) AS balance
+                COALESCE(vb.currency_code, co.currency_code) AS currency_code,
+                COALESCE(SUM(vb.debit),0) AS total_debit,
+                COALESCE(SUM(vb.credit),0) AS total_credit,
+                COALESCE(SUM(vb.debit - vb.credit),0) AS balance
          FROM chart_of_accounts coa
-         LEFT JOIN journal_lines jl ON jl.account_id = coa.id
-         LEFT JOIN journal_entries je ON je.id = jl.journal_entry_id
-           AND je.company_id = $1 AND je.status = 'posted' ${dateFilter}
-         WHERE coa.company_id = $1 AND coa.is_active = true
-         GROUP BY coa.id, coa.code, coa.name, coa.account_type ORDER BY coa.code`,
+         JOIN companies co ON co.id = coa.company_id
+         LEFT JOIN v_posted_journal_balances_by_currency vb
+           ON vb.account_id = coa.id AND vb.company_id = coa.company_id ${dateFilter}
+         WHERE coa.company_id = $1 AND (coa.is_active = true OR vb.account_id IS NOT NULL)
+         GROUP BY coa.id, coa.code, coa.name, coa.account_type, COALESCE(vb.currency_code, co.currency_code)
+         ORDER BY coa.code, currency_code`,
         params,
       )
       return result.rows
@@ -10027,12 +10049,19 @@ export const resolvers = {
       return r.rows[0] ?? null
     },
 
+    // G3/G4: totals and the running balance previously summed raw
+    // debit-credit across every currency an account has ever posted in.
+    // Now scoped to one currency per call — explicit currencyCode, or the
+    // account's own declared currency by default — with the account's
+    // full set of currencies-with-activity returned so the UI can offer a
+    // selector rather than silently picking one.
     accountLedger: async (
       _: unknown,
       args: {
         accountId: string
         fromDate?: string
         toDate?: string
+        currencyCode?: string
         page?: number
         limit?: number
       },
@@ -10043,9 +10072,30 @@ export const resolvers = {
       const page = Math.max(1, args.page ?? 1)
       const lim = Math.min(200, args.limit ?? 50)
       const offset = (page - 1) * lim
-      const conditions: string[] = ['jl.account_id=$1', 'je.company_id=$2', "je.status='posted'"]
-      const params: unknown[] = [args.accountId, ctx.auth.companyId]
-      let idx = 3
+
+      const availableCurrenciesRes = await query<{ currency_code: string }>(
+        `SELECT DISTINCT currency_code FROM v_posted_journal_balances_by_currency
+         WHERE account_id=$1 AND company_id=$2 ORDER BY currency_code`,
+        [args.accountId, ctx.auth.companyId],
+      )
+      const availableCurrencies = availableCurrenciesRes.rows.map((r) => r.currency_code)
+      let currencyCode = args.currencyCode
+      if (!currencyCode) {
+        const acctRes = await query<{ currency_code: string }>(
+          `SELECT currency_code FROM chart_of_accounts WHERE id=$1`,
+          [args.accountId],
+        )
+        currencyCode = acctRes.rows[0]?.currency_code ?? 'IQD'
+      }
+
+      const conditions: string[] = [
+        'jl.account_id=$1',
+        'je.company_id=$2',
+        "je.status='posted'",
+        'jl.currency_code=$3',
+      ]
+      const params: unknown[] = [args.accountId, ctx.auth.companyId, currencyCode]
+      let idx = 4
       if (args.fromDate) {
         conditions.push(`je.entry_date>=$${idx++}`)
         params.push(args.fromDate)
@@ -10057,7 +10107,7 @@ export const resolvers = {
       const where = conditions.join(' AND ')
       const [rows, totals, cnt] = await Promise.all([
         query(
-          `SELECT jl.id, je.entry_date AS date, je.reference, jl.description,
+          `SELECT jl.id, je.entry_date AS date, je.reference, jl.description, jl.currency_code,
                   jl.debit, jl.credit, je.id AS journal_entry_id,
                   SUM(jl.debit - jl.credit) OVER (ORDER BY je.entry_date, je.id ROWS UNBOUNDED PRECEDING) AS running_balance
            FROM journal_lines jl JOIN journal_entries je ON je.id=jl.journal_entry_id
@@ -10081,6 +10131,8 @@ export const resolvers = {
         total: Number(cnt.rows[0]?.total ?? 0),
         page,
         limit: lim,
+        currencyCode,
+        availableCurrencies,
         totalDebit: String(t.total_debit ?? '0'),
         totalCredit: String(t.total_credit ?? '0'),
         netBalance: String(t.net_balance ?? '0'),
@@ -10294,6 +10346,10 @@ export const resolvers = {
       ).rows
     },
 
+    // G3: previously summed credit-debit across every currency into one
+    // blended revenue/expense figure. Now grouped by currency throughout;
+    // totals are per-currency (no currency exchange anywhere — see
+    // finance-fix-plan.md policy).
     profitLoss: async (
       _: unknown,
       args: { fromDate: string; toDate: string; costCenterId?: string },
@@ -10309,14 +10365,21 @@ export const resolvers = {
       }
       const rows = (
         await query(
-          `SELECT coa.id AS account_id, coa.code, coa.name, coa.account_type,
-                  SUM(jl.credit - jl.debit) AS amount
+          // G3: previously SUM(credit-debit) for BOTH account types —
+          // correct for revenue (credit-normal) but wrong for expense
+          // (debit-normal), which made a normal debit-balance expense's
+          // "amount" negative, so `netProfit = totalRevenue - totalExpenses`
+          // actually ADDED expenses to revenue instead of subtracting them.
+          `SELECT coa.id AS account_id, coa.code, coa.name, coa.account_type, jl.currency_code,
+                  SUM(CASE WHEN coa.account_type = 'revenue' THEN jl.credit - jl.debit
+                           ELSE jl.debit - jl.credit END) AS amount
            FROM journal_lines jl
            JOIN journal_entries je ON je.id=jl.journal_entry_id
            JOIN chart_of_accounts coa ON coa.id=jl.account_id
            WHERE je.company_id=$1 AND je.entry_date>=$2 AND je.entry_date<=$3
              AND je.status='posted' AND coa.account_type IN ('revenue','expense')${costFilter}
-           GROUP BY coa.id, coa.code, coa.name, coa.account_type ORDER BY coa.code`,
+           GROUP BY coa.id, coa.code, coa.name, coa.account_type, jl.currency_code
+           ORDER BY coa.code, jl.currency_code`,
           params,
         )
       ).rows as {
@@ -10324,36 +10387,53 @@ export const resolvers = {
         code: string
         name: string
         account_type: string
+        currency_code: string
         amount: string
       }[]
       const revenue = rows.filter((r) => r.account_type === 'revenue')
       const expenses = rows.filter((r) => r.account_type === 'expense')
-      const totalRevenue = revenue.reduce((s, r) => s + parseFloat(r.amount), 0)
-      const totalExpenses = expenses.reduce((s, r) => s + parseFloat(r.amount), 0)
+      const revenueByCurrency = sumByCurrencyGW(revenue)
+      const expensesByCurrency = sumByCurrencyGW(expenses)
+      const allCurrencies = new Set<string>([
+        ...revenueByCurrency.map((c) => c.currency_code),
+        ...expensesByCurrency.map((c) => c.currency_code),
+      ])
+      // Both are now positive magnitudes (revenue credit-debit, expense
+      // debit-credit), so net profit is the ordinary revenue - expenses.
+      const netProfitByCurrency = [...allCurrencies].map((currency_code) => ({
+        currency_code,
+        amount: String(
+          (revenueByCurrency.find((r) => r.currency_code === currency_code)?.amount ?? 0) -
+            (expensesByCurrency.find((r) => r.currency_code === currency_code)?.amount ?? 0),
+        ),
+      }))
       return {
         revenue,
         expenses,
-        totalRevenue: String(totalRevenue),
-        totalExpenses: String(totalExpenses),
-        netProfit: String(totalRevenue - totalExpenses),
+        totalRevenue: revenueByCurrency.map((c) => ({ ...c, amount: String(c.amount) })),
+        totalExpenses: expensesByCurrency.map((c) => ({ ...c, amount: String(c.amount) })),
+        netProfit: netProfitByCurrency,
       }
     },
 
+    // G3/G19: previously converted every line to amount_company_currency
+    // (IQD) to blend into one number — direct policy violation now ("no
+    // currency exchange anywhere"). Raw debit/credit per currency instead;
+    // isBalanced checks each currency independently.
     balanceSheet: async (_: unknown, args: { asOfDate: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
       const params = [ctx.auth.companyId, args.asOfDate]
 
-      // Use amount_company_currency (IQD base) for FX-consistent totals.
       // Assets are debit-normal (debit adds, credit subtracts).
       // Liabilities/equity are credit-normal (credit adds, debit subtracts).
       const bsRows = (
         await query(
-          `SELECT coa.id AS account_id, coa.code, coa.name, coa.account_type,
+          `SELECT coa.id AS account_id, coa.code, coa.name, coa.account_type, jl.currency_code,
                 COALESCE(SUM(
                   CASE WHEN coa.account_type = 'asset'
-                       THEN CASE WHEN jl.debit > 0 THEN jl.amount_company_currency ELSE -jl.amount_company_currency END
-                       ELSE CASE WHEN jl.credit > 0 THEN jl.amount_company_currency ELSE -jl.amount_company_currency END
+                       THEN jl.debit - jl.credit
+                       ELSE jl.credit - jl.debit
                   END
                 ), 0) AS amount
          FROM journal_lines jl
@@ -10361,7 +10441,8 @@ export const resolvers = {
          JOIN chart_of_accounts coa ON coa.id = jl.account_id
          WHERE je.company_id = $1 AND je.entry_date <= $2 AND je.status = 'posted'
            AND coa.account_type IN ('asset','liability','equity')
-         GROUP BY coa.id, coa.code, coa.name, coa.account_type ORDER BY coa.code`,
+         GROUP BY coa.id, coa.code, coa.name, coa.account_type, jl.currency_code
+         ORDER BY coa.code, jl.currency_code`,
           params,
         )
       ).rows as {
@@ -10369,47 +10450,68 @@ export const resolvers = {
         code: string
         name: string
         account_type: string
+        currency_code: string
         amount: string
       }[]
 
-      // Retained earnings = net of all revenue (credit-normal) and expense (debit-normal) accounts.
-      // Revenue credits increase retained earnings; expense debits decrease it.
+      // Retained earnings = net credit effect of every revenue/expense
+      // line (credit-debit for both — a revenue credit and an expense's
+      // *absence* of debit both increase it the same way), per currency.
       const reRes = await query(
-        `SELECT COALESCE(SUM(
-           CASE
-             WHEN coa.account_type = 'revenue'
-               THEN CASE WHEN jl.credit > 0 THEN jl.amount_company_currency ELSE -jl.amount_company_currency END
-             WHEN coa.account_type = 'expense'
-               THEN CASE WHEN jl.debit  > 0 THEN -jl.amount_company_currency ELSE jl.amount_company_currency END
-           END
-         ), 0) AS retained_earnings
+        `SELECT jl.currency_code, COALESCE(SUM(jl.credit - jl.debit), 0) AS retained_earnings
          FROM journal_lines jl
          JOIN journal_entries je ON je.id = jl.journal_entry_id
          JOIN chart_of_accounts coa ON coa.id = jl.account_id
          WHERE je.company_id = $1 AND je.entry_date <= $2 AND je.status = 'posted'
-           AND coa.account_type IN ('revenue','expense')`,
+           AND coa.account_type IN ('revenue','expense')
+         GROUP BY jl.currency_code`,
         params,
       )
-      const retainedEarnings = parseFloat(String(reRes.rows[0]?.retained_earnings ?? 0))
+      const retainedEarningsByCurrency = new Map(
+        reRes.rows.map((r) => [r.currency_code as string, parseFloat(String(r.retained_earnings))]),
+      )
 
       const assets = bsRows.filter((r) => r.account_type === 'asset')
       const liabilities = bsRows.filter((r) => r.account_type === 'liability')
       const equity = bsRows.filter((r) => r.account_type === 'equity')
 
-      const totalAssets = assets.reduce((s, r) => s + parseFloat(r.amount), 0)
-      const totalLiabilities = liabilities.reduce((s, r) => s + parseFloat(r.amount), 0)
-      const totalEquityAccts = equity.reduce((s, r) => s + parseFloat(r.amount), 0)
-      const totalEquity = totalEquityAccts + retainedEarnings
+      const totalAssetsByCurrency = sumByCurrencyGW(assets)
+      const totalLiabilitiesByCurrency = sumByCurrencyGW(liabilities)
+      const totalEquityAcctsByCurrency = sumByCurrencyGW(equity)
+
+      const allCurrencies = new Set<string>([
+        ...totalAssetsByCurrency.map((c) => c.currency_code),
+        ...totalLiabilitiesByCurrency.map((c) => c.currency_code),
+        ...totalEquityAcctsByCurrency.map((c) => c.currency_code),
+        ...retainedEarningsByCurrency.keys(),
+      ])
+      const totalEquityByCurrency = [...allCurrencies].map((currency_code) => ({
+        currency_code,
+        amount:
+          (totalEquityAcctsByCurrency.find((c) => c.currency_code === currency_code)?.amount ?? 0) +
+          (retainedEarningsByCurrency.get(currency_code) ?? 0),
+      }))
+
+      const isBalanced = [...allCurrencies].every((currency_code) => {
+        const totalAssets = totalAssetsByCurrency.find((c) => c.currency_code === currency_code)?.amount ?? 0
+        const totalLiabilities =
+          totalLiabilitiesByCurrency.find((c) => c.currency_code === currency_code)?.amount ?? 0
+        const totalEquity = totalEquityByCurrency.find((c) => c.currency_code === currency_code)?.amount ?? 0
+        return Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 1
+      })
 
       return {
         assets,
         liabilities,
         equity,
-        retainedEarnings: String(retainedEarnings),
-        totalAssets: String(totalAssets),
-        totalLiabilities: String(totalLiabilities),
-        totalEquity: String(totalEquity),
-        isBalanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 1,
+        retainedEarnings: [...retainedEarningsByCurrency.entries()].map(([currency_code, amount]) => ({
+          currency_code,
+          amount: String(amount),
+        })),
+        totalAssets: totalAssetsByCurrency.map((c) => ({ ...c, amount: String(c.amount) })),
+        totalLiabilities: totalLiabilitiesByCurrency.map((c) => ({ ...c, amount: String(c.amount) })),
+        totalEquity: totalEquityByCurrency.map((c) => ({ ...c, amount: String(c.amount) })),
+        isBalanced,
       }
     },
 

@@ -61,6 +61,7 @@ export const ACCOUNT_LEDGER_QUERY = gql`
     $accountId: ID!
     $fromDate: String
     $toDate: String
+    $currencyCode: String
     $page: Int
     $limit: Int
   ) {
@@ -68,6 +69,7 @@ export const ACCOUNT_LEDGER_QUERY = gql`
       accountId: $accountId
       fromDate: $fromDate
       toDate: $toDate
+      currencyCode: $currencyCode
       page: $page
       limit: $limit
     ) {
@@ -76,6 +78,7 @@ export const ACCOUNT_LEDGER_QUERY = gql`
         date
         reference
         description
+        currency_code
         debit
         credit
         running_balance
@@ -84,6 +87,8 @@ export const ACCOUNT_LEDGER_QUERY = gql`
       total
       page
       limit
+      currencyCode
+      availableCurrencies
       totalDebit
       totalCredit
       netBalance
@@ -459,6 +464,7 @@ export const TRIAL_BALANCE_QUERY = gql`
       code
       name
       account_type
+      currency_code
       total_debit
       total_credit
       balance
@@ -473,17 +479,28 @@ export const PROFIT_LOSS_QUERY = gql`
         account_id
         code
         name
+        currency_code
         amount
       }
       expenses {
         account_id
         code
         name
+        currency_code
         amount
       }
-      totalRevenue
-      totalExpenses
-      netProfit
+      totalRevenue {
+        currency_code
+        amount
+      }
+      totalExpenses {
+        currency_code
+        amount
+      }
+      netProfit {
+        currency_code
+        amount
+      }
     }
   }
 `
@@ -495,24 +512,39 @@ export const BALANCE_SHEET_QUERY = gql`
         account_id
         code
         name
+        currency_code
         amount
       }
       liabilities {
         account_id
         code
         name
+        currency_code
         amount
       }
       equity {
         account_id
         code
         name
+        currency_code
         amount
       }
-      retainedEarnings
-      totalAssets
-      totalLiabilities
-      totalEquity
+      retainedEarnings {
+        currency_code
+        amount
+      }
+      totalAssets {
+        currency_code
+        amount
+      }
+      totalLiabilities {
+        currency_code
+        amount
+      }
+      totalEquity {
+        currency_code
+        amount
+      }
       isBalanced
     }
   }
