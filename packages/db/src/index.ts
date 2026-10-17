@@ -49,3 +49,12 @@ export {
   JOB_NAMES,
 } from './job-runs.js'
 export type { JobRun, JobSummary } from './job-runs.js'
+export {
+  resolvePostingAccount,
+  listCompanyPostingAccounts,
+  upsertCompanyPostingAccount,
+  deleteCompanyPostingAccount,
+  PostingAccountNotConfiguredError,
+  POSTING_ACCOUNT_ROLES,
+} from './posting-accounts.js'
+export type { PostingAccountRole, CompanyPostingAccount } from './posting-accounts.js'
