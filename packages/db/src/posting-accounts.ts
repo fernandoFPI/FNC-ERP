@@ -24,6 +24,7 @@ export const POSTING_ACCOUNT_ROLES = [
 export type PostingAccountRole = (typeof POSTING_ACCOUNT_ROLES)[number]
 
 export interface CompanyPostingAccount {
+  id: string
   company_id: string
   role: PostingAccountRole
   currency_code: string | null
@@ -77,7 +78,7 @@ export async function resolvePostingAccount(
 
 export async function listCompanyPostingAccounts(companyId: string): Promise<CompanyPostingAccount[]> {
   const result = await pool.query<CompanyPostingAccount>(
-    `SELECT cpa.company_id, cpa.role, cpa.currency_code, cpa.account_id,
+    `SELECT cpa.id, cpa.company_id, cpa.role, cpa.currency_code, cpa.account_id,
             a.code AS account_code, a.name AS account_name, cpa.updated_at
      FROM company_posting_accounts cpa
      JOIN chart_of_accounts a ON a.id = cpa.account_id
@@ -124,7 +125,7 @@ export async function upsertCompanyPostingAccount(
   )
   const id = firstRowOrThrow(result).id as string
   const full = await pool.query<CompanyPostingAccount>(
-    `SELECT cpa.company_id, cpa.role, cpa.currency_code, cpa.account_id,
+    `SELECT cpa.id, cpa.company_id, cpa.role, cpa.currency_code, cpa.account_id,
             a.code AS account_code, a.name AS account_name, cpa.updated_at
      FROM company_posting_accounts cpa
      JOIN chart_of_accounts a ON a.id = cpa.account_id

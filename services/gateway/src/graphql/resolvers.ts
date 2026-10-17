@@ -10,6 +10,11 @@
   PRODUCT_CATEGORY_SKU_PREFIXES,
   getProductStoreCategoryPrefix,
   firstRowOrThrow,
+  resolvePostingAccount,
+  listCompanyPostingAccounts,
+  upsertCompanyPostingAccount,
+  deleteCompanyPostingAccount,
+  PostingAccountNotConfiguredError,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { notifyProjectFileUploadGW, notifyProjectEventGW } from '../lib/projectNotify.js'
@@ -2261,17 +2266,16 @@ async function postPOCompletionJournal(
   const poNumber = String(po.po_number)
   const analyticAccountId = String(po.analytic_account_id)
 
-  const expAcctRes = await client.query(
-    `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND account_type='expense' AND is_active=true ORDER BY code ASC LIMIT 1`,
-    [companyId],
-  )
-  const apAcctRes = await client.query(
-    `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND account_type='liability' AND is_active=true ORDER BY code ASC LIMIT 1`,
-    [companyId],
-  )
-  const expAccountId = expAcctRes.rows[0]?.id as string | undefined
-  const apAccountId = apAcctRes.rows[0]?.id as string | undefined
-  if (!expAccountId || !apAccountId) return // no GL accounts configured, skip silently
+  // Previously picked "the first active expense/liability account" and
+  // silently returned with no journal at all — no log, no error — if
+  // neither existed. Project cost then just never showed up, with no
+  // trace of why (G1/G2). Now resolves the company's configured role and
+  // throws POSTING_ACCOUNT_NOT_CONFIGURED instead, same as every other
+  // producer.
+  const expAccountId = await resolvePostingAccount(companyId, 'expense_default', {
+    currencyCode: currencyCode,
+  })
+  const apAccountId = await resolvePostingAccount(companyId, 'ap', { currencyCode: currencyCode })
 
   const je = await client.query(
     `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by)
@@ -27001,47 +27005,41 @@ export const resolvers = {
               // flows into project_cost_actuals via trg_sync_project_costs (keyed on analytic_account_id).
               const projectAnalyticAccountId = linkedMR.project_analytic_account_id as string | null
               if (projectAnalyticAccountId && actualCost > 0) {
-                const costAcctRes = await client.query(
-                  `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND account_type='expense' AND is_active=true ORDER BY code ASC LIMIT 1`,
-                  [auth.companyId],
-                )
-                const invAcctRes = await client.query(
-                  `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND account_type='asset' AND name ILIKE '%inventory%' AND is_active=true ORDER BY code ASC LIMIT 1`,
-                  [auth.companyId],
-                )
-                const costAccountId = costAcctRes.rows[0]?.id as string | undefined
-                const invAccountId = invAcctRes.rows[0]?.id as string | undefined
-                if (costAccountId && invAccountId) {
-                  const moNumber = String(mo.mo_number ?? args.id)
-                  const je = await client.query(
-                    `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by)
+                // Previously "first active expense account" / "first active
+                // asset account whose name contains 'inventory'", with no
+                // else branch at all — the cost just silently never posted
+                // if neither guess matched (G1/G2).
+                const costAccountId = await resolvePostingAccount(auth.companyId, 'expense_default')
+                const invAccountId = await resolvePostingAccount(auth.companyId, 'inventory')
+                const moNumber = String(mo.mo_number ?? args.id)
+                const je = await client.query(
+                  `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by)
                    VALUES ($1,$2,$3,CURRENT_DATE,'draft','mo_completion',$4,$5) RETURNING id`,
-                    [
-                      auth.companyId,
-                      `MO-${moNumber}-COST`,
-                      `Manufacturing cost: MO ${moNumber}`,
-                      args.id,
-                      auth.userId,
-                    ],
-                  )
-                  const jeId = je.rows[0].id as string
-                  await client.query(
-                    `INSERT INTO journal_lines (journal_entry_id,account_id,analytic_account_id,description,debit,credit,amount_company_currency)
+                  [
+                    auth.companyId,
+                    `MO-${moNumber}-COST`,
+                    `Manufacturing cost: MO ${moNumber}`,
+                    args.id,
+                    auth.userId,
+                  ],
+                )
+                const jeId = je.rows[0].id as string
+                await client.query(
+                  `INSERT INTO journal_lines (journal_entry_id,account_id,analytic_account_id,description,debit,credit,amount_company_currency)
                    VALUES ($1,$2,$3,$4,$5,0,$5)`,
-                    [
-                      jeId,
-                      costAccountId,
-                      projectAnalyticAccountId,
-                      `Project cost from MO ${moNumber}`,
-                      actualCost,
-                    ],
-                  )
-                  await client.query(
-                    `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency)
+                  [
+                    jeId,
+                    costAccountId,
+                    projectAnalyticAccountId,
+                    `Project cost from MO ${moNumber}`,
+                    actualCost,
+                  ],
+                )
+                await client.query(
+                  `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency)
                    VALUES ($1,$2,$3,0,$4,$4)`,
-                    [jeId, invAccountId, `Inventory consumed for MO ${moNumber}`, actualCost],
-                  )
-                }
+                  [jeId, invAccountId, `Inventory consumed for MO ${moNumber}`, actualCost],
+                )
               }
             }
           }
@@ -37148,21 +37146,22 @@ const phase5MutationResolvers = {
         const fromAmountCompanyCurrency = amount * fromRate
         const toAmountCompanyCurrency = amount * toRate
 
-        const receivableRes = await client.query(
-          `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND name ILIKE 'Intercompany Receivable' AND is_active=true ORDER BY code ASC LIMIT 1`,
-          [fromCompanyId],
-        )
-        const receivableAccountId = receivableRes.rows[0]?.id as string | undefined
-        if (!receivableAccountId)
-          throw new Error('From-company has no Intercompany Receivable account configured')
-
-        const payableRes = await client.query(
-          `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND name ILIKE 'Intercompany Payable' AND is_active=true ORDER BY code ASC LIMIT 1`,
-          [toCompanyId],
-        )
-        const payableAccountId = payableRes.rows[0]?.id as string | undefined
-        if (!payableAccountId)
-          throw new Error('To-company has no Intercompany Payable account configured')
+        // tx.from_account_id/to_account_id are each company's own explicitly
+        // selected posting account, already required non-null above — the
+        // previous code ignored them in favour of a second, independent
+        // (and fragile — matching the account NAME verbatim) guess. Now the
+        // already-validated selection is passed straight through as the
+        // resolver's override, with the company's configured default only
+        // as a fallback if that per-transaction selection ever becomes
+        // optional (G1/G2).
+        const receivableAccountId = await resolvePostingAccount(fromCompanyId, 'interco_receivable', {
+          currencyCode: fromCompanyCurrency,
+          lineOverrideAccountId: tx.from_account_id as string | null,
+        })
+        const payableAccountId = await resolvePostingAccount(toCompanyId, 'interco_payable', {
+          currencyCode: toCompanyCurrency,
+          lineOverrideAccountId: tx.to_account_id as string | null,
+        })
 
         const fromJe = await client.query(
           `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by)

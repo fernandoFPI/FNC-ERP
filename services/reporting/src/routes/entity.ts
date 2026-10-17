@@ -135,6 +135,13 @@ entityRouter.get(
         ),
 
         // Non-cash asset changes: increase in asset = use of cash (negate debit-credit)
+        // G1/G2: excluding only code '11%' missed every BANK-categorized
+        // account (1220-1225 — Banks, Bank Accounts IQD/USD, Short-term
+        // Deposits, Cheques Under Collection all sit under '12%'), so a
+        // bank balance movement was double-counted here as a "non-cash
+        // asset change" while also being excluded from the cash
+        // reconciliation below. account_category is the actual
+        // classification (migration 236), not the account code.
         query(
           `SELECT coa.code, coa.name,
                 -(COALESCE(SUM(jl.debit-jl.credit),0)) AS cash_impact
@@ -143,7 +150,7 @@ entityRouter.get(
          JOIN journal_entries je ON je.id = jl.journal_entry_id
          WHERE je.company_id=$1 AND je.status='posted'
            AND coa.account_type='asset'
-           AND coa.code NOT LIKE '11%'
+           AND (coa.account_category IS NULL OR coa.account_category NOT IN ('CASH','BANK'))
            AND je.entry_date BETWEEN $2 AND $3
          GROUP BY coa.id, coa.code, coa.name
          HAVING COALESCE(SUM(jl.debit-jl.credit),0) <> 0
@@ -183,7 +190,8 @@ entityRouter.get(
           [companyId, fromDate, toDate],
         ),
 
-        // Opening and closing cash balances (accounts with code 11*)
+        // Opening and closing cash balances — by account_category, not a
+        // code prefix (G1/G2; see note above the non-cash-asset query).
         query(
           `SELECT
            COALESCE(SUM(jl.debit-jl.credit) FILTER (WHERE je.entry_date < $2), 0) AS opening_balance,
@@ -192,7 +200,7 @@ entityRouter.get(
          JOIN journal_lines jl ON jl.account_id = coa.id
          JOIN journal_entries je ON je.id = jl.journal_entry_id
          WHERE je.company_id=$1 AND je.status='posted'
-           AND coa.code LIKE '11%'`,
+           AND coa.account_category IN ('CASH','BANK')`,
           [companyId, fromDate, toDate],
         ),
       ])

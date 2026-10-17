@@ -2,6 +2,7 @@ import express, { type Express } from 'express'
 import { requireAuth } from '@fnc-erp/auth'
 import { buildHealthStatus, asyncHandler } from '@fnc-erp/db'
 import { accountsRouter } from './routes/accounts.js'
+import { postingAccountsRouter } from './routes/posting-accounts.js'
 import { costCentersRouter } from './routes/costcenters.js'
 import { analyticRouter } from './routes/analytic.js'
 import { fxRatesRouter } from './routes/fxrates.js'
@@ -38,6 +39,7 @@ export function createApp(): Express {
   app.use(requireAuth())
 
   app.use('/finance/accounts', accountsRouter)
+  app.use('/finance/posting-accounts', postingAccountsRouter)
   app.use('/finance/cost-centers', costCentersRouter)
   app.use('/finance/analytic-accounts', analyticRouter)
   app.use('/finance/fx-rates', fxRatesRouter)

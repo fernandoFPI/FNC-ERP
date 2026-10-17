@@ -1,4 +1,4 @@
-import { pool, withIntercoTransaction, firstRowOrThrow } from '@fnc-erp/db'
+import { pool, withIntercoTransaction, firstRowOrThrow, resolvePostingAccount } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { resolveTransferPrice, TransferPricingError } from '@fnc-erp/fx'
 
@@ -124,38 +124,14 @@ export async function executeIntercoStockTransfer(
     const seq = String(seqRow.rows[0]?.cnt ?? '1').padStart(4, '0')
     const transferNumber = `IST-${prefix}-${year}-${seq}`
 
-    // ── Get GL accounts (both companies) ──────────────────────
-    await switchContext(from_company_id)
-    const fromAccounts = await client.query<{ id: string; code: string }>(
-      `SELECT id, code FROM chart_of_accounts
-       WHERE company_id=$1 AND is_active=true
-         AND (code='1300' OR code='2400')
-       ORDER BY code`,
-      [from_company_id],
-    )
-    const fromInventoryAccount = fromAccounts.rows.find((a) => a.code === '1300')
-    const fromIntercoPayable = fromAccounts.rows.find((a) => a.code === '2400')
-    if (!fromInventoryAccount || !fromIntercoPayable) {
-      throw new Error(
-        `Company ${from_company_id} is missing required GL accounts (1300 Inventory, 2400 Interco Payable)`,
-      )
-    }
+    // ── Get GL accounts (both companies) — company_posting_accounts has
+    // no RLS, so these reads don't need switchContext (G1/G2: previously
+    // exact codes 1300/2400/1700, which don't exist under the new chart).
+    const fromInventoryAccountId = await resolvePostingAccount(from_company_id, 'inventory')
+    const fromIntercoPayableId = await resolvePostingAccount(from_company_id, 'interco_payable')
 
-    await switchContext(to_company_id)
-    const toAccounts = await client.query<{ id: string; code: string }>(
-      `SELECT id, code FROM chart_of_accounts
-       WHERE company_id=$1 AND is_active=true
-         AND (code='1300' OR code='1700')
-       ORDER BY code`,
-      [to_company_id],
-    )
-    const toInventoryAccount = toAccounts.rows.find((a) => a.code === '1300')
-    const toIntercoReceivable = toAccounts.rows.find((a) => a.code === '1700')
-    if (!toInventoryAccount || !toIntercoReceivable) {
-      throw new Error(
-        `Company ${to_company_id} is missing required GL accounts (1300 Inventory, 1700 Interco Receivable)`,
-      )
-    }
+    const toInventoryAccountId = await resolvePostingAccount(to_company_id, 'inventory')
+    const toIntercoReceivableId = await resolvePostingAccount(to_company_id, 'interco_receivable')
 
     // ── Get virtual locations ──────────────────────────────────
     await switchContext(from_company_id)
@@ -392,7 +368,7 @@ export async function executeIntercoStockTransfer(
       `INSERT INTO journal_lines
          (journal_entry_id, account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
        VALUES ($1,$2,$3,0,'IQD',1,$3), ($1,$4,0,$3,'IQD',1,$3)`,
-      [fromEntryId, fromIntercoPayable.id, totalTransferValue, fromInventoryAccount.id],
+      [fromEntryId, fromIntercoPayableId, totalTransferValue, fromInventoryAccountId],
     )
 
     // ── TO company journal: inventory arrives, interco receivable ─
@@ -421,10 +397,10 @@ export async function executeIntercoStockTransfer(
        VALUES ($1,$2,$3,$4,0,'IQD',1,$4), ($1,$5,NULL,0,$4,'IQD',1,$4)`,
       [
         toEntryId,
-        toInventoryAccount.id,
+        toInventoryAccountId,
         analyticAccountId,
         totalTransferValue,
-        toIntercoReceivable.id,
+        toIntercoReceivableId,
       ],
     )
     // analytic_account_id on the debit line triggers sync_project_cost_actuals

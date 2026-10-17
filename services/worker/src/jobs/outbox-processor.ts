@@ -4,6 +4,7 @@ import {
   isEmailEnabled,
   withSystemTransaction,
   firstRowOrThrow,
+  resolvePostingAccount,
 } from '@fnc-erp/db'
 import { env } from '@fnc-erp/config'
 import { logger } from '@fnc-erp/logger'
@@ -730,18 +731,23 @@ async function createInvoiceJournal(p: InvoiceJournalPayload): Promise<void> {
   const retentionAmount = parseFloat(String(p.retention_amount))
   const netPayable = parseFloat(String(p.net_payable))
 
-  const accounts = await pool.query<{ id: string; code: string }>(
-    `SELECT id, code FROM chart_of_accounts WHERE company_id=$1 AND is_active=true
-     AND (code LIKE '12%' OR code LIKE '22%' OR code LIKE '41%') ORDER BY code`,
-    [p.company_id],
-  )
-
-  const arAccount = accounts.rows.find((a) => a['code'].startsWith('12'))
-  const retentionAccount = accounts.rows.find((a) => a['code'].startsWith('22'))
-  const revenueAccount = accounts.rows.find((a) => a['code'].startsWith('41'))
-  if (!arAccount || !revenueAccount) {
-    throw new Error(`Missing required GL accounts for company ${p.company_id}`)
-  }
+  const arAccountId = await resolvePostingAccount(p.company_id, 'ar', {
+    currencyCode: p.currency_code,
+  })
+  const revenueAccountId = await resolvePostingAccount(p.company_id, 'revenue_project', {
+    currencyCode: p.currency_code,
+  })
+  // Only resolved (and required) when this invoice actually has a retention
+  // line — a company that never retains on project invoices shouldn't need
+  // this role configured. Previously: silently skipped when no account
+  // matched prefix '22', leaving the journal unbalanced by retentionAmount
+  // with no error (G1/G2).
+  const retentionAccountId =
+    retentionAmount > 0
+      ? await resolvePostingAccount(p.company_id, 'retention_receivable', {
+          currencyCode: p.currency_code,
+        })
+      : null
 
   // Look up project's analytic account to tag on revenue line
   const invRes = await pool.query<{ analytic_account_id: string | null; invoice_number: string }>(
@@ -780,21 +786,21 @@ async function createInvoiceJournal(p: InvoiceJournalPayload): Promise<void> {
       await client.query(
         `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
          VALUES ($1,$2,$3,0,$4,$5,ROUND($3::numeric*$5::numeric,4))`,
-        [id, arAccount['id'], netPayable, p.currency_code, fxRate],
+        [id, arAccountId, netPayable, p.currency_code, fxRate],
       )
     }
-    if (retentionAmount > 0 && retentionAccount) {
+    if (retentionAmount > 0 && retentionAccountId) {
       await client.query(
         `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
          VALUES ($1,$2,$3,0,$4,$5,ROUND($3::numeric*$5::numeric,4))`,
-        [id, retentionAccount['id'], retentionAmount, p.currency_code, fxRate],
+        [id, retentionAccountId, retentionAmount, p.currency_code, fxRate],
       )
     }
     // CR: Revenue — tag with project analytic account so it shows up in project journal
     await client.query(
       `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
        VALUES ($1,$2,$3,0,$4,$5,$6,ROUND($4::numeric*$6::numeric,4))`,
-      [id, revenueAccount['id'], analyticAccountId, grossTotal, p.currency_code, fxRate],
+      [id, revenueAccountId, analyticAccountId, grossTotal, p.currency_code, fxRate],
     )
 
     await client.query(`UPDATE project_invoices SET journal_entry_id=$1 WHERE id=$2`, [
@@ -839,17 +845,17 @@ async function createPOCompletionJournal(p: POCompletionJournalPayload): Promise
   const poNumber = String(po['po_number'])
   const analyticAccountId = String(po['analytic_account_id'])
 
-  const expAcctRes = await pool.query<{ id: string }>(
-    `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND account_type='expense' AND is_active=true ORDER BY code ASC LIMIT 1`,
-    [p.company_id],
-  )
-  const apAcctRes = await pool.query<{ id: string }>(
-    `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND account_type='liability' AND is_active=true ORDER BY code ASC LIMIT 1`,
-    [p.company_id],
-  )
-  const expAccountId = expAcctRes.rows[0]?.id
-  const apAccountId = apAcctRes.rows[0]?.id
-  if (!expAccountId || !apAccountId) return // no GL accounts configured, skip silently
+  // Note: nothing in the codebase currently enqueues PO_COMPLETION_JOURNAL_REQUESTED
+  // (the gateway's completePO writes this journal directly — see
+  // postPOCompletionJournal in resolvers.ts) — this handler is effectively
+  // dead, but it's fixed anyway so it doesn't ship the same silent-skip bug
+  // if it's ever revived.
+  const expAccountId = await resolvePostingAccount(p.company_id, 'expense_default', {
+    currencyCode: currencyCode,
+  })
+  const apAccountId = await resolvePostingAccount(p.company_id, 'ap', {
+    currencyCode: currencyCode,
+  })
 
   const createdBy = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = createdBy.rows[0]?.['id'] ?? ''
@@ -906,20 +912,12 @@ async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {
   const whtAmount = p.wht_applies ? parseFloat(String(p.wht_amount ?? 0)) : 0
   const arCredit = cashAmount + whtAmount // total AR cleared = cash + WHT portion
 
-  const accounts = await pool.query<{ id: string; code: string }>(
-    `SELECT id, code FROM chart_of_accounts WHERE company_id=$1 AND is_active=true
-     AND (code LIKE '11%' OR code LIKE '12%' OR code LIKE '13%'
-          OR code LIKE '23%' OR code LIKE '61%') ORDER BY code`,
-    [p.company_id],
-  )
-  const cashAccount = accounts.rows.find((a) => a['code'].startsWith('11'))
-  const arAccount = accounts.rows.find((a) => a['code'].startsWith('12'))
-  const whtRecoverable = accounts.rows.find((a) => a['code'] === '1390')
-  const whtPayable = accounts.rows.find((a) => a['code'] === '2390')
-  const whtExpense = accounts.rows.find((a) => a['code'] === '6100')
-  if (!cashAccount || !arAccount) {
-    throw new Error(`Missing cash/AR accounts for company ${p.company_id}`)
-  }
+  const cashAccountId = await resolvePostingAccount(p.company_id, 'cash', {
+    currencyCode: p.currency_code,
+  })
+  const arAccountId = await resolvePostingAccount(p.company_id, 'ar', {
+    currencyCode: p.currency_code,
+  })
 
   const createdBy = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = createdBy.rows[0]?.['id'] ?? ''
@@ -937,48 +935,59 @@ async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {
       await client.query(
         `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
          VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3)`,
-        [id, cashAccount['id'], cashAmount, p.currency_code, arAccount['id']],
+        [id, cashAccountId, cashAmount, p.currency_code, arAccountId],
       )
-    } else if (p.wht_scenario === 'client_withholds' && whtRecoverable) {
-      // Scenario A: Dr Cash + Dr WHT Recoverable / Cr AR (full gross)
+    } else if (p.wht_scenario === 'client_withholds') {
+      // Scenario A: Dr Cash + Dr WHT Recoverable / Cr AR (full gross).
+      // Previously fell back to the simple Dr Cash/Cr AR case — silently
+      // dropping the WHT recoverable entirely — whenever no account
+      // matched exact code '1390'; now throws POSTING_ACCOUNT_NOT_CONFIGURED
+      // instead (G1/G2).
+      const whtRecoverableId = await resolvePostingAccount(p.company_id, 'wht_recoverable', {
+        currencyCode: p.currency_code,
+      })
       await client.query(
         `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
          VALUES ($1,$2,$3,0,$4,$3), ($1,$5,$6,0,$4,$6), ($1,$7,0,$8,$4,$8)`,
         [
           id,
-          cashAccount['id'],
+          cashAccountId,
           cashAmount,
           p.currency_code,
-          whtRecoverable['id'],
+          whtRecoverableId,
           whtAmount,
-          arAccount['id'],
+          arAccountId,
           arCredit,
         ],
       )
-    } else if (p.wht_scenario === 'fnc_pays' && whtPayable && whtExpense) {
-      // Scenario B: Dr Cash / Cr AR, AND Dr WHT Expense / Cr WHT Payable
+    } else if (p.wht_scenario === 'fnc_pays') {
+      // Scenario B: Dr Cash / Cr AR, AND Dr WHT Expense / Cr WHT Payable.
+      // Same fix as above — previously silently dropped the WHT expense/
+      // payable pair when '2390' or '6100' were missing (confirmed absent
+      // under the new chart on prod).
+      const whtExpenseId = await resolvePostingAccount(p.company_id, 'wht_expense', {
+        currencyCode: p.currency_code,
+      })
+      const whtPayableId = await resolvePostingAccount(p.company_id, 'wht_payable', {
+        currencyCode: p.currency_code,
+      })
       await client.query(
         `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
          VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3),
                 ($1,$6,$7,0,$4,$7), ($1,$8,0,$7,$4,$7)`,
         [
           id,
-          cashAccount['id'],
+          cashAccountId,
           cashAmount,
           p.currency_code,
-          arAccount['id'],
-          whtExpense['id'],
+          arAccountId,
+          whtExpenseId,
           whtAmount,
-          whtPayable['id'],
+          whtPayableId,
         ],
       )
     } else {
-      // Fallback: simple Dr Cash / Cr AR (WHT accounts not seeded yet)
-      await client.query(
-        `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-         VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3)`,
-        [id, cashAccount['id'], cashAmount, p.currency_code, arAccount['id']],
-      )
+      throw new Error(`Unknown wht_scenario '${p.wht_scenario}' for invoice payment ${p.invoice_id}`)
     }
     return id
   })
@@ -993,20 +1002,12 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
   const totalAmount = parseFloat(String(p.total_amount))
   if (totalAmount <= 0) return
 
-  const accounts = await pool.query<{ id: string; code: string }>(
-    `SELECT id, code FROM chart_of_accounts WHERE company_id=$1 AND is_active=true
-     AND (code LIKE '20%' OR code LIKE '21%' OR code LIKE '50%' OR code LIKE '51%') ORDER BY code`,
-    [p.company_id],
-  )
-  const apAccount = accounts.rows.find(
-    (a) => a['code'].startsWith('20') || a['code'].startsWith('21'),
-  )
-  const expenseAccount = accounts.rows.find(
-    (a) => a['code'].startsWith('50') || a['code'].startsWith('51'),
-  )
-  if (!apAccount || !expenseAccount) {
-    throw new Error(`Missing AP/expense GL accounts for company ${p.company_id}`)
-  }
+  const apAccountId = await resolvePostingAccount(p.company_id, 'ap', {
+    currencyCode: p.currency_code,
+  })
+  const expenseAccountId = await resolvePostingAccount(p.company_id, 'expense_default', {
+    currencyCode: p.currency_code,
+  })
 
   // Re-query cost_center_id/analytic_account_id rather than trusting a payload
   // snapshot — matches the pattern used elsewhere (e.g. createInvoiceJournal
@@ -1052,13 +1053,13 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
        VALUES ($1,$2,$3,$4,$5,0,$6,$7,ROUND($5::numeric*$7::numeric,4)), ($1,$8,NULL,NULL,0,$5,$6,$7,ROUND($5::numeric*$7::numeric,4))`,
       [
         id,
-        expenseAccount['id'],
+        expenseAccountId,
         analyticAccountId,
         costCenterId,
         totalAmount,
         p.currency_code,
         fxRate,
-        apAccount['id'],
+        apAccountId,
       ],
     )
     return id
@@ -1080,20 +1081,21 @@ async function createVendorPaymentJournal(p: VendorPaymentJournalPayload): Promi
       : 0
   const apDebit = paymentAmount + proportionalWht
 
-  const accounts = await pool.query<{ id: string; code: string }>(
-    `SELECT id, code FROM chart_of_accounts WHERE company_id=$1 AND is_active=true
-     AND (code LIKE '11%' OR code LIKE '20%' OR code LIKE '21%' OR code LIKE '23%') ORDER BY code`,
-    [p.companyId],
-  )
-  const cashAccount = accounts.rows.find((a) => a['code'].startsWith('11'))
-  const apAccount = accounts.rows.find(
-    (a) => a['code'].startsWith('20') || a['code'].startsWith('21'),
-  )
-  const whtPayable = accounts.rows.find((a) => a['code'] === '2390')
-
-  if (!cashAccount || !apAccount) {
-    throw new Error(`Missing cash/AP accounts for company ${p.companyId}`)
-  }
+  const cashAccountId = await resolvePostingAccount(p.companyId, 'cash', {
+    currencyCode: p.currencyCode,
+  })
+  const apAccountId = await resolvePostingAccount(p.companyId, 'ap', {
+    currencyCode: p.currencyCode,
+  })
+  // Resolved (and required) only when this payment actually carries a
+  // proportional WHT share — previously fell back to the simple Dr AP/Cr
+  // Cash case, silently dropping the WHT payable credit, whenever no
+  // account matched exact code '2390' (confirmed absent on prod under the
+  // new chart — G1/G2).
+  const whtPayableId =
+    p.whtApplies && proportionalWht > 0
+      ? await resolvePostingAccount(p.companyId, 'wht_payable', { currencyCode: p.currencyCode })
+      : null
 
   const sysUser = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = sysUser.rows[0]?.['id'] ?? ''
@@ -1106,12 +1108,12 @@ async function createVendorPaymentJournal(p: VendorPaymentJournalPayload): Promi
     )
     const id = firstRowOrThrow(jeResult)['id']
 
-    if (!p.whtApplies || proportionalWht === 0 || !whtPayable) {
+    if (!whtPayableId) {
       // Simple: Dr AP / Cr Cash
       await client.query(
         `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
          VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3)`,
-        [id, apAccount['id'], paymentAmount, p.currencyCode, cashAccount['id']],
+        [id, apAccountId, paymentAmount, p.currencyCode, cashAccountId],
       )
     } else {
       // Proportional WHT: Dr AP (payment + proportional WHT) / Cr Cash (payment) / Cr WHT Payable (proportional WHT)
@@ -1120,12 +1122,12 @@ async function createVendorPaymentJournal(p: VendorPaymentJournalPayload): Promi
          VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$6,$4,$6), ($1,$7,0,$8,$4,$8)`,
         [
           id,
-          apAccount['id'],
+          apAccountId,
           apDebit,
           p.currencyCode,
-          cashAccount['id'],
+          cashAccountId,
           paymentAmount,
-          whtPayable['id'],
+          whtPayableId,
           proportionalWht,
         ],
       )
@@ -1170,22 +1172,11 @@ async function createMOJournal(p: MOJournalPayload): Promise<void> {
   const actualCost = parseFloat(String(p.actual_cost))
   if (actualCost <= 0) return
 
-  // WIP / Finished Goods account (13x), Raw Materials / WIP expense (51x or 50x)
-  const accounts = await pool.query<{ id: string; code: string }>(
-    `SELECT id, code FROM chart_of_accounts
-     WHERE company_id=$1 AND is_active=true
-       AND (code LIKE '13%' OR code LIKE '51%' OR code LIKE '50%')
-     ORDER BY code`,
-    [p.company_id],
-  )
-  const inventoryAccount = accounts.rows.find((a) => a['code'].startsWith('13'))
-  const costAccount =
-    accounts.rows.find((a) => a['code'].startsWith('51')) ??
-    accounts.rows.find((a) => a['code'].startsWith('50'))
-
-  if (!inventoryAccount || !costAccount) {
-    throw new Error(`Missing inventory/cost GL accounts for company ${p.company_id}`)
-  }
+  // Note: like createPOCompletionJournal above, nothing currently enqueues
+  // MO_JOURNAL_REQUESTED (completeMO in resolvers.ts writes this journal
+  // directly) — fixed anyway so it's not a trap if revived.
+  const inventoryAccountId = await resolvePostingAccount(p.company_id, 'inventory')
+  const costAccountId = await resolvePostingAccount(p.company_id, 'expense_default')
 
   const sysUser = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = sysUser.rows[0]?.['id'] ?? ''
@@ -1204,7 +1195,7 @@ async function createMOJournal(p: MOJournalPayload): Promise<void> {
     await client.query(
       `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
        VALUES ($1,$2,$3,0,'IQD',$3), ($1,$4,0,$3,'IQD',$3)`,
-      [id, inventoryAccount['id'], actualCost, costAccount['id']],
+      [id, inventoryAccountId, actualCost, costAccountId],
     )
 
     await client.query(`UPDATE manufacturing_orders SET journal_entry_id=$1 WHERE id=$2`, [
@@ -1229,23 +1220,13 @@ async function createRentalInvoiceJournal(p: RentalInvoiceJournalPayload): Promi
   const amount = parseFloat(String(p.amount))
   if (amount <= 0) return
 
-  // AR account (12x), Rental Revenue fallback (42x or 41x)
-  const accounts = await pool.query<{ id: string; code: string }>(
-    `SELECT id, code FROM chart_of_accounts
-     WHERE company_id=$1 AND is_active=true
-       AND (code LIKE '12%' OR code LIKE '42%' OR code LIKE '41%')
-     ORDER BY code`,
-    [p.company_id],
-  )
-  const arAccount = accounts.rows.find((a) => a['code'].startsWith('12'))
-  const revenueAccount = p.revenue_account_id
-    ? { id: p.revenue_account_id }
-    : (accounts.rows.find((a) => a['code'].startsWith('42')) ??
-      accounts.rows.find((a) => a['code'].startsWith('41')))
-
-  if (!arAccount || !revenueAccount) {
-    throw new Error(`Missing AR/revenue GL accounts for company ${p.company_id}`)
-  }
+  const arAccountId = await resolvePostingAccount(p.company_id, 'ar')
+  // The contract's own revenue_account_id, when set, still wins over the
+  // company default — same precedence as before, now via the resolver's
+  // lineOverrideAccountId rather than a second prefix guess.
+  const revenueAccountId = await resolvePostingAccount(p.company_id, 'revenue_rental', {
+    lineOverrideAccountId: p.revenue_account_id ?? null,
+  })
 
   const sysUser = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = sysUser.rows[0]?.['id'] ?? ''
@@ -1267,12 +1248,12 @@ async function createRentalInvoiceJournal(p: RentalInvoiceJournalPayload): Promi
     await client.query(
       `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
        VALUES ($1,$2,$3,0,'IQD',$3)`,
-      [id, arAccount['id'], amount],
+      [id, arAccountId, amount],
     )
     await client.query(
       `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, debit, credit, currency_code, amount_company_currency)
        VALUES ($1,$2,$3,0,$4,'IQD',$4)`,
-      [id, revenueAccount['id'], p.analytic_account_id ?? null, amount],
+      [id, revenueAccountId, p.analytic_account_id ?? null, amount],
     )
 
     await client.query(`UPDATE rental_invoices SET journal_entry_id=$1 WHERE id=$2`, [
@@ -1284,7 +1265,10 @@ async function createRentalInvoiceJournal(p: RentalInvoiceJournalPayload): Promi
   log.info({ jeId, invoiceId: p.invoice_id }, 'rental invoice GL journal created')
 }
 
-interface PayrollJournalPayload {
+// Exported so tests can call this producer directly rather than going
+// through the shared, priority-ordered service_outbox poll — see
+// payroll-journal-posting-accounts.test.ts.
+export interface PayrollJournalPayload {
   payroll_run_id: string
   company_id: string
   period_name: string
@@ -1294,7 +1278,7 @@ interface PayrollJournalPayload {
   end_date: string
 }
 
-async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
+export async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
   const totalGross = parseFloat(String(p.total_gross))
   const totalNet = parseFloat(String(p.total_net))
   const totalDeductions = parseFloat(String(p.total_deductions))
@@ -1319,25 +1303,13 @@ async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
     return
   }
 
-  // Required GL accounts: 60x expense, 26x net-salaries payable, 25x tax/SS payable
-  // (2400 is reserved for Intercompany Payable across all companies)
-  const accounts = await pool.query<{ id: string; code: string }>(
-    `SELECT id, code FROM chart_of_accounts
-     WHERE company_id = $1 AND is_active = true
-       AND (code LIKE '60%' OR code LIKE '26%' OR code LIKE '25%')
-     ORDER BY code`,
-    [p.company_id],
-  )
-  const salaryExpense = accounts.rows.find((a) => a['code'].startsWith('60'))
-  const salariesPayable = accounts.rows.find((a) => a['code'].startsWith('26'))
-  const taxSSPayable = accounts.rows.find((a) => a['code'].startsWith('25'))
-
-  if (!salaryExpense || !salariesPayable || !taxSSPayable) {
-    throw new Error(
-      `Missing payroll GL accounts for company ${p.company_id} — ` +
-        `need 60x (salary expense), 26x (accrued salaries payable), 25x (payroll tax/SS payable)`,
-    )
-  }
+  // Confirmed live on prod: prefix 26 matches nothing under the new chart
+  // (migrations 244/248), and 60/25 both resolve to header accounts — this
+  // hard-failed every payroll run before the chart cutover was accounted
+  // for (G1/G2).
+  const salaryExpenseId = await resolvePostingAccount(p.company_id, 'expense_default')
+  const salariesPayableId = await resolvePostingAccount(p.company_id, 'salaries_payable')
+  const taxSSPayableId = await resolvePostingAccount(p.company_id, 'payroll_tax_payable')
 
   const sysUser = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = sysUser.rows[0]?.['id'] ?? ''
@@ -1363,11 +1335,11 @@ async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
               ($1, $6, 0,  $7,  'IQD', $7)`,
       [
         id,
-        salaryExpense['id'],
+        salaryExpenseId,
         totalGross,
-        salariesPayable['id'],
+        salariesPayableId,
         totalNet,
-        taxSSPayable['id'],
+        taxSSPayableId,
         totalDeductions,
       ],
     )
