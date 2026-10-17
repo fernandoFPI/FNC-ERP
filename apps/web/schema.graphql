@@ -3993,6 +3993,8 @@
   type ProjectScatter { id: ID! name: String! budget: Float! marginPct: Float! actualCost: Float! status: String! client_name: String }
 
   type ExecutiveDashboardData {
+    currencyCode: String!
+    availableCurrencies: [String!]!
     totalRevenue: Float!
     totalCosts: Float!
     netProfit: Float!
@@ -4307,7 +4309,7 @@
   input PreferencesInput { themePreference: String dateFormat: String numberFormat: String notificationPreferences: JSON }
 
   extend type Query {
-    executiveDashboard: ExecutiveDashboardData!
+    executiveDashboard(currencyCode: String): ExecutiveDashboardData!
     consolidatedPL(fromDate: String!, toDate: String!, showEliminations: Boolean): ConsolidatedPLResult!
     consolidatedBS(asOfDate: String!, showEliminations: Boolean): ConsolidatedBSResult!
     projectProfitabilityReport(companyId: ID, status: [String], projectType: String, fromDate: String, toDate: String): [ProjectProfitRow!]!

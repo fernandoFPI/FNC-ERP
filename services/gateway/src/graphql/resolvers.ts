@@ -29069,9 +29069,38 @@ function companyRowToDetail(row: Record<string, unknown>) {
 }
 
 const phase5QueryResolvers = {
-  executiveDashboard: async (_: unknown, __: unknown, ctx: GQLContext) => {
+  // G-exec (0.1 sweep #1, the most severe finding): every one of these 8
+  // sub-queries used to SUM(credit-debit)/SUM(debit-credit)/SUM(pca.amount)
+  // across every currency into one blended figure on the home page every
+  // user sees first. Rather than return a parallel per-currency structure
+  // for 8 differently-shaped pieces, the whole dashboard now takes one
+  // currencyCode (defaulting to the caller's own company currency) and
+  // reports in just that currency — same pattern as accountLedger's
+  // currencyCode/availableCurrencies — with a selector to switch it.
+  executiveDashboard: async (
+    _: unknown,
+    args: { currencyCode?: string },
+    ctx: GQLContext,
+  ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const cid = ctx.auth.companyId
+
+    const availableCurrenciesRes = await query<{ currency_code: string }>(
+      `SELECT DISTINCT currency_code FROM v_posted_journal_balances_by_currency WHERE company_id=$1
+       UNION SELECT DISTINCT currency_code FROM purchase_orders WHERE company_id=$1
+       ORDER BY 1`,
+      [cid],
+    )
+    const availableCurrencies = availableCurrenciesRes.rows.map((r) => r.currency_code)
+    let currencyCode = args.currencyCode
+    if (!currencyCode) {
+      const companyRes = await query<{ currency_code: string }>(
+        `SELECT currency_code FROM companies WHERE id=$1`,
+        [cid],
+      )
+      currencyCode = companyRes.rows[0]?.currency_code ?? 'IQD'
+    }
+
     const [
       revenueRes,
       costsRes,
@@ -29090,10 +29119,10 @@ const phase5QueryResolvers = {
          FROM journal_lines jl
          JOIN journal_entries je ON je.id = jl.journal_entry_id
          JOIN chart_of_accounts coa ON coa.id = jl.account_id
-         WHERE je.company_id=$1 AND je.status='posted'
+         WHERE je.company_id=$1 AND je.status='posted' AND jl.currency_code=$2
            AND coa.account_type IN ('revenue','income')
            AND je.entry_date >= date_trunc('month', CURRENT_DATE)`,
-        [cid],
+        [cid, currencyCode],
       ),
       // Costs: debit-side of expense accounts this month
       query(
@@ -29101,10 +29130,10 @@ const phase5QueryResolvers = {
          FROM journal_lines jl
          JOIN journal_entries je ON je.id = jl.journal_entry_id
          JOIN chart_of_accounts coa ON coa.id = jl.account_id
-         WHERE je.company_id=$1 AND je.status='posted'
+         WHERE je.company_id=$1 AND je.status='posted' AND jl.currency_code=$2
            AND coa.account_type IN ('expense','cost')
            AND je.entry_date >= date_trunc('month', CURRENT_DATE)`,
-        [cid],
+        [cid, currencyCode],
       ),
       query(
         `SELECT COUNT(*) AS cnt, COALESCE(SUM(budget_amount),0) AS budget FROM projects WHERE company_id=$1 AND status='active'`,
@@ -29112,8 +29141,8 @@ const phase5QueryResolvers = {
       ),
       query(`SELECT COUNT(*) AS cnt FROM employees WHERE company_id=$1 AND status='active'`, [cid]),
       query(
-        `SELECT COALESCE(SUM(total_amount),0) AS total FROM purchase_orders WHERE company_id=$1 AND status IN ('draft','submitted','approved')`,
-        [cid],
+        `SELECT COALESCE(SUM(total_amount),0) AS total FROM purchase_orders WHERE company_id=$1 AND status IN ('draft','submitted','approved') AND currency_code=$2`,
+        [cid, currencyCode],
       ),
       // 6-month revenue + cost trend
       query(
@@ -29123,11 +29152,11 @@ const phase5QueryResolvers = {
          FROM generate_series(date_trunc('month', CURRENT_DATE - INTERVAL '5 months'), date_trunc('month', CURRENT_DATE), INTERVAL '1 month') AS m(month)
          LEFT JOIN journal_entries je ON je.company_id=$1 AND je.status='posted'
            AND date_trunc('month', je.entry_date) = m.month
-         LEFT JOIN journal_lines jl ON jl.journal_entry_id = je.id
+         LEFT JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.currency_code=$2
          LEFT JOIN chart_of_accounts coa ON coa.id = jl.account_id
            AND coa.account_type IN ('revenue','income','expense','cost')
          GROUP BY m.month ORDER BY m.month`,
-        [cid],
+        [cid, currencyCode],
       ),
       // Entity breakdown: all companies, revenue + costs this month
       query(
@@ -29137,11 +29166,11 @@ const phase5QueryResolvers = {
          FROM companies c
          LEFT JOIN journal_entries je ON je.company_id=c.id AND je.status='posted'
            AND je.entry_date >= date_trunc('month', CURRENT_DATE)
-         LEFT JOIN journal_lines jl ON jl.journal_entry_id=je.id
+         LEFT JOIN journal_lines jl ON jl.journal_entry_id=je.id AND jl.currency_code=$1
          LEFT JOIN chart_of_accounts coa ON coa.id=jl.account_id
            AND coa.account_type IN ('revenue','income','expense','cost')
          GROUP BY c.id, c.name ORDER BY c.name`,
-        [],
+        [currencyCode],
       ),
       // Revenue by entity, 6-month trend
       query(
@@ -29151,13 +29180,18 @@ const phase5QueryResolvers = {
          CROSS JOIN generate_series(date_trunc('month', CURRENT_DATE - INTERVAL '5 months'), date_trunc('month', CURRENT_DATE), INTERVAL '1 month') AS m(month)
          LEFT JOIN journal_entries je ON je.company_id=c.id AND je.status='posted'
            AND date_trunc('month', je.entry_date)=m.month
-         LEFT JOIN journal_lines jl ON jl.journal_entry_id=je.id
+         LEFT JOIN journal_lines jl ON jl.journal_entry_id=je.id AND jl.currency_code=$1
          LEFT JOIN chart_of_accounts coa ON coa.id=jl.account_id
            AND coa.account_type IN ('revenue','income')
          GROUP BY c.name, m.month ORDER BY m.month, c.name`,
-        [],
+        [currencyCode],
       ),
-      // Project profitability scatter: active + completed projects, actual cost from cost_actuals
+      // Project profitability scatter: active + completed projects, actual
+      // cost from the per-currency cost view, filtered to the selected
+      // currency (budget_amount is assumed to be in the project's/
+      // company's own currency — comparing it against a different
+      // currency's actual cost is exactly the kind of conversion D2 is
+      // meant to settle, not something to guess at here).
       query(
         `SELECT p.id, p.name, COALESCE(p.budget_amount,0) AS budget,
                 COALESCE(SUM(pca.amount),0) AS actual_cost, p.status,
@@ -29166,11 +29200,11 @@ const phase5QueryResolvers = {
                      THEN ((COALESCE(p.budget_amount,0) - COALESCE(SUM(pca.amount),0)) / p.budget_amount) * 100
                      ELSE 0 END AS margin_pct
          FROM projects p
-         LEFT JOIN project_cost_actuals pca ON pca.project_id=p.id
+         LEFT JOIN v_project_cost_by_currency pca ON pca.project_id=p.id AND pca.currency_code=$1
          WHERE p.status IN ('active','completed')
          GROUP BY p.id, p.name, p.budget_amount, p.status, p.client_name
          ORDER BY p.budget_amount DESC NULLS LAST LIMIT 60`,
-        [],
+        [currencyCode],
       ),
       // Headcount per company
       query(
@@ -29235,6 +29269,8 @@ const phase5QueryResolvers = {
     }))
 
     return {
+      currencyCode,
+      availableCurrencies,
       totalRevenue,
       totalCosts,
       netProfit: totalRevenue - totalCosts,

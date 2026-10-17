@@ -1,8 +1,10 @@
 import { gql } from '@apollo/client'
 
 export const EXECUTIVE_DASHBOARD_QUERY = gql`
-  query ExecutiveDashboard {
-    executiveDashboard {
+  query ExecutiveDashboard($currencyCode: String) {
+    executiveDashboard(currencyCode: $currencyCode) {
+      currencyCode
+      availableCurrencies
       totalRevenue
       totalCosts
       netProfit

@@ -1359,7 +1359,9 @@ export type EventConfigInput = {
 
 export type ExecutiveDashboardData = {
   activeProjects: Scalars['Int']['output'];
+  availableCurrencies: Array<Scalars['String']['output']>;
   costsTrend: Array<RevenueTrendPoint>;
+  currencyCode: Scalars['String']['output'];
   entityBreakdown: Array<EntityBreakdown>;
   netProfit: Scalars['Float']['output'];
   openPOsValue: Scalars['Float']['output'];
@@ -7833,6 +7835,11 @@ export type QueryEquipmentAssetArgs = {
 export type QueryEquipmentAssetsArgs = {
   category?: InputMaybe<Scalars['String']['input']>;
   status?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryExecutiveDashboardArgs = {
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
 };
 
 

@@ -36,10 +36,12 @@ vi.mock('recharts', () => ({
 }))
 
 const executiveMock = {
-  request: { query: EXECUTIVE_DASHBOARD_QUERY, variables: {} },
+  request: { query: EXECUTIVE_DASHBOARD_QUERY, variables: { currencyCode: undefined } },
   result: {
     data: {
       executiveDashboard: {
+        currencyCode: 'IQD',
+        availableCurrencies: ['IQD'],
         totalRevenue: 5000000,
         totalCosts: 3600000,
         netProfit: 1400000,

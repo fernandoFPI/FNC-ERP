@@ -5312,10 +5312,12 @@ export type OverdueMaintenanceCountQueryVariables = Exact<{ [key: string]: never
 
 export type OverdueMaintenanceCountQuery = { overdueMaintenanceCount: number };
 
-export type ExecutiveDashboardQueryVariables = Exact<{ [key: string]: never; }>;
+export type ExecutiveDashboardQueryVariables = Exact<{
+  currencyCode?: string | null | undefined;
+}>;
 
 
-export type ExecutiveDashboardQuery = { executiveDashboard: { totalRevenue: number, totalCosts: number, netProfit: number, activeProjects: number, totalProjectBudget: number, totalHeadcount: number, openPOsValue: number, revenueTrend: Array<{ period: string, value: number }>, costsTrend: Array<{ period: string, value: number }>, profitTrend: Array<{ period: string, value: number }>, entityBreakdown: Array<{ companyId: string, companyName: string, revenueThisMonth: number, costThisMonth: number, netThisMonth: number, headcount: number }>, revenueByEntityMonthly: Array<{ month: string, yakam: number, factory: number, watanyia: number }>, projectProfitabilityScatter: Array<{ id: string, name: string, budget: number, marginPct: number, actualCost: number, status: string, client_name: string | null }> } };
+export type ExecutiveDashboardQuery = { executiveDashboard: { currencyCode: string, availableCurrencies: Array<string>, totalRevenue: number, totalCosts: number, netProfit: number, activeProjects: number, totalProjectBudget: number, totalHeadcount: number, openPOsValue: number, revenueTrend: Array<{ period: string, value: number }>, costsTrend: Array<{ period: string, value: number }>, profitTrend: Array<{ period: string, value: number }>, entityBreakdown: Array<{ companyId: string, companyName: string, revenueThisMonth: number, costThisMonth: number, netThisMonth: number, headcount: number }>, revenueByEntityMonthly: Array<{ month: string, yakam: number, factory: number, watanyia: number }>, projectProfitabilityScatter: Array<{ id: string, name: string, budget: number, marginPct: number, actualCost: number, status: string, client_name: string | null }> } };
 
 export type ConsolidatedPlQueryVariables = Exact<{
   fromDate: string;

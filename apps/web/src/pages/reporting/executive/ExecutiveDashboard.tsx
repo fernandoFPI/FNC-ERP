@@ -1,4 +1,5 @@
 ﻿import { useTranslation } from 'react-i18next'
+import { useState } from 'react'
 import { enumLabel } from '../../../i18n'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -10,6 +11,7 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { Button } from '../../../components/ui/Button'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { Grid } from '../../../components/ui/Grid'
+import { TabBar } from '../../../components/ui/TabBar'
 import { EXECUTIVE_DASHBOARD_QUERY } from '../../../graphql/reporting'
 import { formatNumber } from '../../../lib/format'
 import { usePagePadding } from '../../../hooks/usePagePadding'
@@ -58,6 +60,8 @@ interface ProjectScatter {
 
 interface ExecutiveDashboardData {
   executiveDashboard: {
+    currencyCode: string
+    availableCurrencies: string[]
     totalRevenue: number
     totalCosts: number
     netProfit: number
@@ -142,9 +146,16 @@ export default function ExecutiveDashboard() {
   const { t } = useTranslation()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
-  const { data, loading, refetch } = useQuery<ExecutiveDashboardData>(EXECUTIVE_DASHBOARD_QUERY)
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
+  const { data, loading, refetch } = useQuery<ExecutiveDashboardData>(EXECUTIVE_DASHBOARD_QUERY, {
+    variables: { currencyCode },
+  })
 
   const d = data?.executiveDashboard
+  // Every figure on this page is in this one currency at a time — never
+  // blended across currencies (no currency exchange anywhere policy).
+  const displayCurrency = d?.currencyCode ?? 'IQD'
+  const fmtM = (value: number) => `${(value / 1000000).toFixed(2)}M ${displayCurrency}`
 
   const scatterData = (d?.projectProfitabilityScatter ?? []).map((p) => ({
     ...p,
@@ -170,28 +181,38 @@ export default function ExecutiveDashboard() {
         }
       />
 
+      {(d?.availableCurrencies.length ?? 0) > 1 && (
+        <Card style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={d!.availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={displayCurrency}
+            onChange={setCurrencyCode}
+          />
+        </Card>
+      )}
+
       {/* KPI Row */}
       <Grid cols={6} tabletCols={3} phoneCols={2} gap={14} style={{ marginBottom: '24px' }}>
         <KPITrendCard
           label={t('rep.exec.totalRevenue')}
-          value={d ? `$${(d.totalRevenue / 1000000).toFixed(2)}M` : '—'}
+          value={d ? fmtM(d.totalRevenue) : '—'}
           trendData={d?.revenueTrend ?? []}
           delta={computeDelta(d?.revenueTrend ?? [])}
-          previousValue={prevValue(d?.revenueTrend ?? [], (v) => `$${(v / 1000000).toFixed(2)}M`)}
+          previousValue={prevValue(d?.revenueTrend ?? [], fmtM)}
         />
         <KPITrendCard
           label={t('rep.exec.totalCosts')}
-          value={d ? `$${(d.totalCosts / 1000000).toFixed(2)}M` : '—'}
+          value={d ? fmtM(d.totalCosts) : '—'}
           trendData={d?.costsTrend ?? []}
           delta={computeDelta(d?.costsTrend ?? [])}
-          previousValue={prevValue(d?.costsTrend ?? [], (v) => `$${(v / 1000000).toFixed(2)}M`)}
+          previousValue={prevValue(d?.costsTrend ?? [], fmtM)}
         />
         <KPITrendCard
           label={t('rep.exec.netProfit')}
-          value={d ? `$${(d.netProfit / 1000000).toFixed(2)}M` : '—'}
+          value={d ? fmtM(d.netProfit) : '—'}
           trendData={d?.profitTrend ?? []}
           delta={computeDelta(d?.profitTrend ?? [])}
-          previousValue={prevValue(d?.profitTrend ?? [], (v) => `$${(v / 1000000).toFixed(2)}M`)}
+          previousValue={prevValue(d?.profitTrend ?? [], fmtM)}
         />
         <KPITrendCard
           label={t('rep.exec.activeProjects')}
@@ -206,7 +227,7 @@ export default function ExecutiveDashboard() {
         />
         <KPITrendCard
           label={t('rep.exec.openPosValue')}
-          value={d ? `$${(d.openPOsValue / 1000000).toFixed(2)}M` : '—'}
+          value={d ? fmtM(d.openPOsValue) : '—'}
           trendData={[]}
           sparkline={false}
         />
@@ -256,7 +277,7 @@ export default function ExecutiveDashboard() {
                   >
                     {t('rep.exec.revenue')}
                   </p>
-                  <AmountDisplay amount={entity.revenueThisMonth} currency="USD" size="sm" />
+                  <AmountDisplay amount={entity.revenueThisMonth} currency={displayCurrency} size="sm" />
                 </div>
                 <div>
                   <p
@@ -270,7 +291,7 @@ export default function ExecutiveDashboard() {
                   >
                     {t('rep.exec.costs')}
                   </p>
-                  <AmountDisplay amount={entity.costThisMonth} currency="USD" size="sm" />
+                  <AmountDisplay amount={entity.costThisMonth} currency={displayCurrency} size="sm" />
                 </div>
                 <div>
                   <p
