@@ -253,6 +253,7 @@ import {
   CONTRACT_BILLING_METHODS,
   DEFAULT_CONTRACT_BILLING_METHOD,
 } from '../../../lib/contractBilling'
+import { CONTRACT_STATUSES } from '../../../lib/contractStatus'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
@@ -22124,9 +22125,8 @@ interface ContractMgmtProps {
 const CONTRACT_STATUS_STYLE: Record<string, { bg: string; color: string; border: string }> = {
   draft: { bg: '#f9fafb', color: '#6b7280', border: '#e5e7eb' },
   active: { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
-  suspended: { bg: '#fffbeb', color: '#92400e', border: '#fde68a' },
   completed: { bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' },
-  terminated: { bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
+  cancelled: { bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
 }
 
 const INVOICE_STATUS_STYLE: Record<string, { bg: string; color: string; border: string }> = {
@@ -22181,7 +22181,6 @@ function invoiceStatusBadge(status: string) {
   )
 }
 
-const CONTRACT_STATUS_LIST = ['draft', 'active', 'suspended', 'completed', 'terminated']
 const CURRENCIES = ['USD', 'SAR', 'AED', 'EUR', 'GBP', 'QAR', 'KWD', 'BHD', 'OMR', 'EGP']
 
 function ContractManagementTab({
@@ -22688,7 +22687,7 @@ function ContractManagementTab({
               onChange={(e) => { setCForm((f) => ({ ...f, status: e.target.value })); }}
               style={inputStyle}
             >
-              {CONTRACT_STATUS_LIST.map((s) => (
+              {CONTRACT_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {s.charAt(0).toUpperCase() + s.slice(1)}
                 </option>
