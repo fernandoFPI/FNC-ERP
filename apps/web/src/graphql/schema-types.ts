@@ -2252,7 +2252,7 @@ export type MilestoneInput = {
   currencyCode?: InputMaybe<Scalars['String']['input']>;
   description?: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
-  sequence?: InputMaybe<Scalars['Int']['input']>;
+  sequence?: InputMaybe<Scalars['Float']['input']>;
 };
 
 export type MonthlyEntityTrend = {
@@ -7071,7 +7071,7 @@ export type ProjectMilestone = {
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
   reachedAt?: Maybe<Scalars['String']['output']>;
-  sequence: Scalars['Int']['output'];
+  sequence: Scalars['Float']['output'];
   status: Scalars['String']['output'];
 };
 

@@ -12,7 +12,7 @@ export const milestonesRouter: IRouter = Router({ mergeParams: true })
 const MilestoneSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
-  sequence: z.number().int().min(0).default(0),
+  sequence: z.number().min(0).default(0),
   billable_amount: z.number().positive(),
   currency_code: z.string().length(3).default('IQD'),
   stage_id: z.string().uuid().optional(),

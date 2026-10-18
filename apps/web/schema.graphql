@@ -1306,7 +1306,7 @@
   type ProjectMilestone {
     id: ID!
     name: String!
-    sequence: Int!
+    sequence: Float!
     billableAmount: Float!
     currencyCode: String!
     status: String!
@@ -1315,7 +1315,7 @@
 
   input MilestoneInput {
     name: String!
-    sequence: Int
+    sequence: Float
     billableAmount: Float!
     currencyCode: String
     description: String

@@ -9028,7 +9028,7 @@ export const resolvers = {
         milestones: milestones.rows.map((m: Record<string, unknown>) => ({
           id: m.id,
           name: m.name,
-          sequence: m.sequence,
+          sequence: parseFloat(String(m.sequence)),
           billableAmount: parseFloat(String(m.billable_amount)),
           currencyCode: String(m.currency_code).trim(),
           status: m.status,
@@ -11852,7 +11852,7 @@ export const resolvers = {
       return {
         id: m.id,
         name: m.name,
-        sequence: m.sequence,
+        sequence: parseFloat(String(m.sequence)),
         billableAmount: parseFloat(String(m.billable_amount)),
         currencyCode: String(m.currency_code).trim(),
         status: m.status,
@@ -11902,7 +11902,7 @@ export const resolvers = {
       return {
         id: m.id,
         name: m.name,
-        sequence: m.sequence,
+        sequence: parseFloat(String(m.sequence)),
         billableAmount: parseFloat(String(m.billable_amount)),
         currencyCode: String(m.currency_code).trim(),
         status: m.status,
@@ -11946,7 +11946,7 @@ export const resolvers = {
       return {
         id: m.id,
         name: m.name,
-        sequence: m.sequence,
+        sequence: parseFloat(String(m.sequence)),
         billableAmount: parseFloat(String(m.billable_amount)),
         currencyCode: String(m.currency_code).trim(),
         status: m.status,

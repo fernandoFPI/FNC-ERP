@@ -23330,7 +23330,8 @@ function ContractManagementTab({
                 <label style={labelStyle}>{t('proj.detail.sequence')}</label>
                 <input
                   type="number"
-                  min={1}
+                  min={0}
+                  step="0.01"
                   value={msForm.sequence}
                   onChange={(e) => { setMsForm((f) => ({ ...f, sequence: Number(e.target.value) })); }}
                   style={inputStyle}

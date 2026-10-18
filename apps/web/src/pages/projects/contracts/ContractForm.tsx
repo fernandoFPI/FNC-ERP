@@ -197,7 +197,7 @@ export default function ContractForm() {
           contractId: id ?? '',
           input: {
             name: newMilestone.name.trim(),
-            sequence: parseInt(newMilestone.sequence) || 0,
+            sequence: parseFloat(newMilestone.sequence) || 0,
             billableAmount: parseFloat(newMilestone.billableAmount),
             currencyCode: newMilestone.currencyCode,
           },
@@ -222,7 +222,7 @@ export default function ContractForm() {
           id: m.id,
           input: {
             name: m.name,
-            sequence: parseInt(m.sequence) || 0,
+            sequence: parseFloat(m.sequence) || 0,
             billableAmount: parseFloat(m.billableAmount),
             currencyCode: m.currencyCode,
           },
@@ -282,6 +282,7 @@ export default function ContractForm() {
         return isPending ? (
           <input
             type="number"
+            step="0.01"
             value={m.sequence}
             onChange={(e) => {
               setMilestones((ms) =>
@@ -741,6 +742,7 @@ export default function ContractForm() {
                   </label>
                   <input
                     type="number"
+                    step="0.01"
                     placeholder="0"
                     value={newMilestone.sequence}
                     onChange={(e) => {
