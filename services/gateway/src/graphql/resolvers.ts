@@ -18,7 +18,10 @@
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { notifyProjectFileUploadGW, notifyProjectEventGW } from '../lib/projectNotify.js'
-import { resolveBillingMethod } from '../lib/contractBilling.js'
+import {
+  resolveContractBillingMethod,
+  resolveInvoiceBillingMethod,
+} from '../lib/contractBilling.js'
 import {
   sendEmail,
   renderMeetingInvitationEmail,
@@ -25871,7 +25874,7 @@ export const resolvers = {
       const billingMethod =
         i.defaultBillingMethod == null
           ? 'fixed_lump_sum'
-          : resolveBillingMethod(i.defaultBillingMethod)
+          : resolveContractBillingMethod(i.defaultBillingMethod)
       const r = await query(
         `INSERT INTO project_contracts (company_id,project_id,contract_number,contract_name,client_name,
            contract_value,currency_code,default_billing_method,default_margin_pct,retention_pct,contract_date,status,created_by)
@@ -25923,7 +25926,7 @@ export const resolvers = {
       const i = args.input
       // Not sent -> leave the stored method alone; sent but unknown -> rejected.
       const billingMethod =
-        i.defaultBillingMethod != null ? resolveBillingMethod(i.defaultBillingMethod) : null
+        i.defaultBillingMethod != null ? resolveContractBillingMethod(i.defaultBillingMethod) : null
       const r = await query(
         `UPDATE project_contracts SET contract_name=COALESCE($3,contract_name), client_name=COALESCE($4,client_name),
            contract_value=COALESCE($5,contract_value), default_billing_method=COALESCE($6,default_billing_method),
@@ -26069,7 +26072,7 @@ export const resolvers = {
       const i = args.input
 
       // UI values (fixed / time_material / percentage ...) -> DB CHECK constraint values.
-      const billingMethod = resolveBillingMethod(i.billingMethod)
+      const billingMethod = resolveInvoiceBillingMethod(i.billingMethod)
 
       const createdInvoice = await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },

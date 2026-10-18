@@ -1,14 +1,25 @@
-// Billing method validation in the project contract and invoice resolvers.
-// Regression: the resolvers mapped the incoming value through a lookup table with
-// `?? 'fixed_lump_sum'` as the fallback, so a form that offered a value the system
-// can't store (remeasure, unit_rate, hybrid, ...) saved without error and the
-// billing method "never changed". Unknown values are now rejected with a clear
-// error and the stored value is left alone. Real-Postgres pattern, nothing mocked,
-// so the stored default_billing_method is read back from the table itself.
+// Billing method and status handling in the project contract and invoice resolvers.
+//
+// Regression 1: the resolvers mapped the incoming billing method through a lookup
+// table with `?? 'fixed_lump_sum'` as the fallback, so a form that offered a value
+// the system can't store saved without error and the billing method "never
+// changed". Unknown values are now rejected with a clear error and the stored value
+// is left alone.
+//
+// Contracts may also be tagged remeasure / unit_rate / hybrid (migration 306);
+// invoices may not, because the invoicing engine can only bill four methods.
+//
+// Real-Postgres pattern, nothing mocked, so the stored values are read back from
+// the table itself. Needs migration 306 applied to the test database.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
-import { resolveBillingMethod, BILLING_METHODS } from '../src/lib/contractBilling.js'
+import {
+  resolveContractBillingMethod,
+  resolveInvoiceBillingMethod,
+  CONTRACT_BILLING_METHODS,
+  INVOICE_BILLING_METHODS,
+} from '../src/lib/contractBilling.js'
 
 const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
 const EMAIL = 'contract-billing-method-test@fnc-erp.local'
@@ -28,12 +39,12 @@ const admin = () =>
     },
   }) as never
 
-async function storedMethod(contractId: string): Promise<string> {
-  const r = await pool.query<{ default_billing_method: string }>(
-    `SELECT default_billing_method FROM project_contracts WHERE id=$1`,
+async function stored(contractId: string): Promise<{ method: string; status: string }> {
+  const r = await pool.query<{ default_billing_method: string; status: string }>(
+    `SELECT default_billing_method, status FROM project_contracts WHERE id=$1`,
     [contractId],
   )
-  return r.rows[0]!.default_billing_method
+  return { method: r.rows[0]!.default_billing_method, status: r.rows[0]!.status }
 }
 
 async function createContract(defaultBillingMethod?: string): Promise<string> {
@@ -52,6 +63,17 @@ async function createContract(defaultBillingMethod?: string): Promise<string> {
     admin(),
   )) as { id: string }
   return c.id
+}
+
+const update = (id: string, input: Record<string, unknown>) =>
+  resolvers.Mutation.updateProjectContract(null, { id, input } as never, admin())
+
+async function countContracts(): Promise<number> {
+  const r = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM project_contracts WHERE company_id=$1 AND contract_name=$2`,
+    [TEST_COMPANY_ID, CONTRACT_NAME],
+  )
+  return r.rows[0]!.n
 }
 
 async function cleanup(): Promise<void> {
@@ -86,101 +108,123 @@ afterAll(async () => {
   await pool.end()
 })
 
-describe('resolveBillingMethod', () => {
-  it('maps the four stored values and the older UI spellings', () => {
-    for (const m of BILLING_METHODS) expect(resolveBillingMethod(m)).toBe(m)
-    expect(resolveBillingMethod('fixed')).toBe('fixed_lump_sum')
-    expect(resolveBillingMethod('time_material')).toBe('cost_plus')
-    expect(resolveBillingMethod('percentage')).toBe('progress')
+describe('resolveContractBillingMethod', () => {
+  it('accepts the seven contract methods and maps the older UI spellings', () => {
+    expect([...CONTRACT_BILLING_METHODS].sort()).toEqual([
+      'cost_plus',
+      'fixed_lump_sum',
+      'hybrid',
+      'milestone',
+      'progress',
+      'remeasure',
+      'unit_rate',
+    ])
+    for (const m of CONTRACT_BILLING_METHODS) expect(resolveContractBillingMethod(m)).toBe(m)
+    expect(resolveContractBillingMethod('fixed')).toBe('fixed_lump_sum')
+    expect(resolveContractBillingMethod('time_material')).toBe('cost_plus')
+    expect(resolveContractBillingMethod('percentage')).toBe('progress')
   })
 
-  it.each(['remeasure', 'unit_rate', 'milestone_based', 'hybrid', 'lump_sum', '', 'undefined'])(
+  it.each(['lump_sum', 'milestone_based', 'Hybrid', '', 'undefined'])(
     'rejects %j, naming the allowed values',
     (bad) => {
-      expect(() => resolveBillingMethod(bad)).toThrow(/Unknown billing method/)
-      expect(() => resolveBillingMethod(bad)).toThrow(
-        /fixed_lump_sum, milestone, cost_plus, progress/,
-      )
+      expect(() => resolveContractBillingMethod(bad)).toThrow(/Unknown billing method/)
+      expect(() => resolveContractBillingMethod(bad)).toThrow(/remeasure, unit_rate, hybrid/)
     },
   )
 
   it('rejects non-string input', () => {
-    expect(() => resolveBillingMethod(undefined)).toThrow(/Unknown billing method/)
-    expect(() => resolveBillingMethod(42)).toThrow(/Unknown billing method/)
+    expect(() => resolveContractBillingMethod(undefined)).toThrow(/Unknown billing method/)
+    expect(() => resolveContractBillingMethod(42)).toThrow(/Unknown billing method/)
   })
 })
 
-describe('updateProjectContract billing method', () => {
-  it.each(['milestone', 'cost_plus', 'progress', 'fixed_lump_sum'])('stores %s', async (method) => {
+describe('resolveInvoiceBillingMethod', () => {
+  it('accepts only the four invoice methods and maps the older UI spellings', () => {
+    for (const m of INVOICE_BILLING_METHODS) expect(resolveInvoiceBillingMethod(m)).toBe(m)
+    expect(resolveInvoiceBillingMethod('fixed')).toBe('fixed_lump_sum')
+    expect(resolveInvoiceBillingMethod('time_material')).toBe('cost_plus')
+    expect(resolveInvoiceBillingMethod('percentage')).toBe('progress')
+  })
+
+  it.each(['remeasure', 'unit_rate', 'hybrid', 'lump_sum'])(
+    'rejects %j: it is not something the invoicing engine can bill',
+    (bad) => {
+      expect(() => resolveInvoiceBillingMethod(bad)).toThrow(/Unknown billing method/)
+      expect(() => resolveInvoiceBillingMethod(bad)).toThrow(
+        /fixed_lump_sum, milestone, cost_plus, progress\./,
+      )
+    },
+  )
+})
+
+describe('updateProjectContract', () => {
+  it.each([...CONTRACT_BILLING_METHODS])('stores billing method %s', async (method) => {
     const id = await createContract('fixed_lump_sum')
-    await resolvers.Mutation.updateProjectContract(
-      null,
-      { id, input: { defaultBillingMethod: method } } as never,
-      admin(),
-    )
-    expect(await storedMethod(id)).toBe(method)
+    await update(id, { defaultBillingMethod: method })
+    expect((await stored(id)).method).toBe(method)
   })
 
   it('rejects an unknown method and leaves the stored one untouched (no silent fallback)', async () => {
-    const id = await createContract('milestone')
-    await expect(
-      resolvers.Mutation.updateProjectContract(
-        null,
-        { id, input: { defaultBillingMethod: 'remeasure' } } as never,
-        admin(),
-      ),
-    ).rejects.toThrow(/Unknown billing method "remeasure"/)
-    expect(await storedMethod(id)).toBe('milestone')
+    const id = await createContract('unit_rate')
+    await expect(update(id, { defaultBillingMethod: 'milestone_based' })).rejects.toThrow(
+      /Unknown billing method "milestone_based"/,
+    )
+    expect((await stored(id)).method).toBe('unit_rate')
   })
 
   it('leaves the stored method alone when none is sent', async () => {
-    const id = await createContract('cost_plus')
-    await resolvers.Mutation.updateProjectContract(
-      null,
-      { id, input: { contractName: CONTRACT_NAME } } as never,
-      admin(),
-    )
-    expect(await storedMethod(id)).toBe('cost_plus')
+    const id = await createContract('hybrid')
+    await update(id, { contractName: CONTRACT_NAME })
+    expect((await stored(id)).method).toBe('hybrid')
   })
+
+  it.each(['draft', 'active', 'completed', 'cancelled'])(
+    'stores contract status %s (the four the database allows)',
+    async (status) => {
+      const id = await createContract('milestone')
+      await update(id, { status })
+      expect((await stored(id)).status).toBe(status)
+    },
+  )
 })
 
-describe('createProjectContract billing method', () => {
-  it('defaults to fixed_lump_sum when none is sent', async () => {
-    expect(await storedMethod(await createContract())).toBe('fixed_lump_sum')
+describe('createProjectContract', () => {
+  it('defaults to fixed_lump_sum when no method is sent', async () => {
+    expect((await stored(await createContract())).method).toBe('fixed_lump_sum')
   })
 
-  it('stores the method it was given', async () => {
-    expect(await storedMethod(await createContract('progress'))).toBe('progress')
-  })
+  it.each(['progress', 'remeasure', 'unit_rate', 'hybrid'])(
+    'stores the method it was given: %s',
+    async (m) => {
+      expect((await stored(await createContract(m))).method).toBe(m)
+    },
+  )
 
   it('rejects an unknown method instead of storing fixed_lump_sum, and creates nothing', async () => {
-    const before = await pool.query(
-      `SELECT count(*)::int AS n FROM project_contracts WHERE company_id=$1 AND contract_name=$2`,
-      [TEST_COMPANY_ID, CONTRACT_NAME],
-    )
-    await expect(createContract('hybrid')).rejects.toThrow(/Unknown billing method "hybrid"/)
-    const after = await pool.query(
-      `SELECT count(*)::int AS n FROM project_contracts WHERE company_id=$1 AND contract_name=$2`,
-      [TEST_COMPANY_ID, CONTRACT_NAME],
-    )
-    expect(after.rows[0].n).toBe(before.rows[0].n)
+    const before = await countContracts()
+    await expect(createContract('lump_sum')).rejects.toThrow(/Unknown billing method "lump_sum"/)
+    expect(await countContracts()).toBe(before)
   })
 })
 
-describe('createProjectInvoice billing method', () => {
-  it('rejects an unknown method before writing anything', async () => {
-    const contractId = await createContract('milestone')
-    await expect(
-      resolvers.Mutation.createProjectInvoice(
-        null,
-        { contractId, input: { billingMethod: 'unit_rate', lines: [] } } as never,
-        admin(),
-      ),
-    ).rejects.toThrow(/Unknown billing method "unit_rate"/)
-    const inv = await pool.query(
-      `SELECT count(*)::int AS n FROM project_invoices WHERE contract_id=$1`,
-      [contractId],
-    )
-    expect(inv.rows[0].n).toBe(0)
-  })
+describe('createProjectInvoice', () => {
+  it.each(['unit_rate', 'hybrid', 'remeasure'])(
+    'rejects %s before writing anything: contract-level types cannot be invoiced as such',
+    async (method) => {
+      const contractId = await createContract('milestone')
+      await expect(
+        resolvers.Mutation.createProjectInvoice(
+          null,
+          { contractId, input: { billingMethod: method, lines: [] } } as never,
+          admin(),
+        ),
+      ).rejects.toThrow(new RegExp(`Unknown billing method "${method}"`))
+      const inv = await pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM project_invoices WHERE contract_id=$1`,
+        [contractId],
+      )
+      expect(inv.rows[0]!.n).toBe(0)
+    },
+  )
 })

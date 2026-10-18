@@ -237,8 +237,13 @@ Don't re-derive, check these first.
     pins it to the DB's four values and fails if either form defines its own again
     (`apps/web/src/lib/__tests__/contractBilling.test.ts`). Related to #24 and #29 (parallel lists drifting).
     The silent fallback itself is gone too: `createProjectContract`, `updateProjectContract` and
-    `createProjectInvoice` now go through `resolveBillingMethod` (`services/gateway/src/lib/contractBilling.ts`),
-    which rejects an unknown value with a clear error naming the allowed ones instead of storing
-    `fixed_lump_sum` (`services/gateway/tests/contract-billing-method.test.ts`, real Postgres). Same class, not
-    yet fixed: the inline form's contract status list also offers `suspended` and `terminated`, which
-    `project_contracts.status` (CHECK: draft/active/completed/cancelled) rejects.
+    `createProjectInvoice` now go through `resolveContractBillingMethod` / `resolveInvoiceBillingMethod`
+    (`services/gateway/src/lib/contractBilling.ts`), which reject an unknown value with a clear error naming the
+    allowed ones instead of storing `fixed_lump_sum` (`services/gateway/tests/contract-billing-method.test.ts`,
+    real Postgres). Same class, same form: its contract status list offered `suspended` and `terminated`, which
+    `project_contracts.status` (CHECK: draft/active/completed/cancelled) rejects, so picking either failed on
+    save; it now uses `lib/contractStatus.ts`. Contracts can also now be tagged `remeasure` / `unit_rate` /
+    `hybrid` (migration 306, contract level only): `project_invoices.billing_method` still allows only the
+    four methods `packages/billing` can build lines for, so those three are labels, not invoice types, and the
+    invoice resolver rejects them. Widen BOTH the CHECK and the resolver list together, and check what reads
+    the column before assuming a new value does anything.

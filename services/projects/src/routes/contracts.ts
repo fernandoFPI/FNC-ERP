@@ -18,7 +18,15 @@ const ContractSchema = z.object({
   contract_value: z.number().positive(),
   currency_code: z.string().length(3).default('IQD'),
   default_billing_method: z
-    .enum(['milestone', 'progress', 'cost_plus', 'fixed_lump_sum'])
+    .enum([
+      'milestone',
+      'progress',
+      'cost_plus',
+      'fixed_lump_sum',
+      'remeasure',
+      'unit_rate',
+      'hybrid',
+    ])
     .default('milestone'),
   default_margin_pct: z.number().min(0).max(1).default(0),
   payment_terms_days: z.number().int().min(0).default(30),
