@@ -236,5 +236,9 @@ Don't re-derive, check these first.
     resolver. Fix: one shared list in `apps/web/src/lib/contractBilling.ts`, used by both forms, with a test that
     pins it to the DB's four values and fails if either form defines its own again
     (`apps/web/src/lib/__tests__/contractBilling.test.ts`). Related to #24 and #29 (parallel lists drifting).
-    Still open: the resolver's silent fallback itself (`resolvers.ts` `billingMethodMap`) would hide the next
-    mismatch; rejecting unknown values would make it loud, but is a behaviour change to decide separately.
+    The silent fallback itself is gone too: `createProjectContract`, `updateProjectContract` and
+    `createProjectInvoice` now go through `resolveBillingMethod` (`services/gateway/src/lib/contractBilling.ts`),
+    which rejects an unknown value with a clear error naming the allowed ones instead of storing
+    `fixed_lump_sum` (`services/gateway/tests/contract-billing-method.test.ts`, real Postgres). Same class, not
+    yet fixed: the inline form's contract status list also offers `suspended` and `terminated`, which
+    `project_contracts.status` (CHECK: draft/active/completed/cancelled) rejects.
