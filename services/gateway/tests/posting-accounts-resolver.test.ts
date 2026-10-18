@@ -21,6 +21,8 @@ let leafAccountA1: string
 let leafAccountA2: string
 let headerAccountA: string
 let leafAccountB: string
+// Set only when this suite had to create its own header account (see beforeAll).
+let createdHeaderAccountId: string | null = null
 
 async function cleanup(): Promise<void> {
   await pool.query(`DELETE FROM company_posting_accounts WHERE company_id IN ($1,$2)`, [
@@ -44,11 +46,24 @@ beforeAll(async () => {
   leafAccountA1 = leafA.rows[0]!.id
   leafAccountA2 = leafA.rows[1]!.id
 
+  // The v1.0 chart's header accounts only exist where migrations 244/248 ran
+  // against existing companies. A database built fresh from migrations + seeds
+  // (CI) has leaf accounts only, so create a throwaway header in that case.
   const headerA = await pool.query<{ id: string }>(
     `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND is_header=true LIMIT 1`,
     [COMPANY_A],
   )
-  headerAccountA = headerA.rows[0]!.id
+  if (headerA.rows[0]) {
+    headerAccountA = headerA.rows[0].id
+  } else {
+    const made = await pool.query<{ id: string }>(
+      `INSERT INTO chart_of_accounts (company_id, code, name, account_type, is_header, is_postable)
+       VALUES ($1,'9990','Posting accounts test header','asset',true,false) RETURNING id`,
+      [COMPANY_A],
+    )
+    headerAccountA = made.rows[0]!.id
+    createdHeaderAccountId = headerAccountA
+  }
 
   const leafB = await pool.query<{ id: string }>(
     `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND is_postable=true AND is_active=true LIMIT 1`,
@@ -61,6 +76,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanup()
+  if (createdHeaderAccountId) {
+    await pool.query(`DELETE FROM chart_of_accounts WHERE id=$1`, [createdHeaderAccountId])
+  }
   await pool.query(`DELETE FROM users WHERE email=$1`, [TEST_USER_EMAIL])
   await pool.end()
 })
