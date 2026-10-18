@@ -249,6 +249,10 @@ import { StageEditDrawer } from '../../../components/projects/StageEditDrawer'
 import { ManufacturingRequestForm } from '../components/ManufacturingRequestForm'
 import { formatCurrency } from '../../../lib/format'
 import { api } from '../../../lib/axios'
+import {
+  CONTRACT_BILLING_METHODS,
+  DEFAULT_CONTRACT_BILLING_METHOD,
+} from '../../../lib/contractBilling'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
@@ -22177,14 +22181,6 @@ function invoiceStatusBadge(status: string) {
   )
 }
 
-const CONTRACT_BILLING_METHODS = [
-  'lump_sum',
-  'remeasure',
-  'cost_plus',
-  'unit_rate',
-  'milestone_based',
-  'hybrid',
-]
 const CONTRACT_STATUS_LIST = ['draft', 'active', 'suspended', 'completed', 'terminated']
 const CURRENCIES = ['USD', 'SAR', 'AED', 'EUR', 'GBP', 'QAR', 'KWD', 'BHD', 'OMR', 'EGP']
 
@@ -22231,7 +22227,7 @@ function ContractManagementTab({
     clientName: projectClientName ?? '',
     contractValue: '',
     currencyCode: projectCurrency ?? 'USD',
-    defaultBillingMethod: 'lump_sum',
+    defaultBillingMethod: DEFAULT_CONTRACT_BILLING_METHOD,
     retentionPct: '10',
     status: 'draft',
   })
@@ -22323,7 +22319,7 @@ function ContractManagementTab({
       clientName: projectClientName ?? '',
       contractValue: '',
       currencyCode: projectCurrency ?? 'USD',
-      defaultBillingMethod: 'lump_sum',
+      defaultBillingMethod: DEFAULT_CONTRACT_BILLING_METHOD,
       retentionPct: '10',
       status: 'draft',
     })
@@ -22666,8 +22662,8 @@ function ContractManagementTab({
                 style={inputStyle}
               >
                 {CONTRACT_BILLING_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {m.replace(/_/g, ' ')}
+                  <option key={m.value} value={m.value}>
+                    {m.label}
                   </option>
                 ))}
               </select>

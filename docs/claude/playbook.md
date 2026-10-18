@@ -222,3 +222,19 @@ Don't re-derive, check these first.
     for every caller including ones that swallow errors. Hard-coded status arrays in JSX are a drift risk: lift
     them to a named constant next to the status vocabulary (`PO_STATUSES` / `CHILD_PO_STATUSES`).
     Regression test: `services/gateway/tests/po-returns.test.ts`.
+
+30. **A web option list that drifts from what the backend accepts, behind a silent fallback, looks like "the
+    dropdown doesn't change".** ProjectDetail's inline contract form (Contract Management tab) carried its own
+    billing-method list (`lump_sum`, `remeasure`, `unit_rate`, `milestone_based`, `hybrid`), separate from the
+    standalone `ContractForm`'s. The database only accepts four values (`project_contracts.default_billing_method`
+    CHECK, migration 021), and the gateway's `updateProjectContract` maps the incoming value through a table with
+    `?? 'fixed_lump_sum'` as the fallback, so every value it didn't recognise was saved as fixed lump sum with no
+    error. The user saw the billing method "not changing" (screenshot: always "fixed lump sum"). Edit also
+    pre-selected the wrong option, because the stored value (`milestone`, `progress`, `fixed_lump_sum`) wasn't in
+    the dropdown at all. How to spot it: a select that saves without error but reads back as one fixed value; two
+    forms for one entity with their own hard-coded option arrays; a `?? default` fallback on a value map in a
+    resolver. Fix: one shared list in `apps/web/src/lib/contractBilling.ts`, used by both forms, with a test that
+    pins it to the DB's four values and fails if either form defines its own again
+    (`apps/web/src/lib/__tests__/contractBilling.test.ts`). Related to #24 and #29 (parallel lists drifting).
+    Still open: the resolver's silent fallback itself (`resolvers.ts` `billingMethodMap`) would hide the next
+    mismatch; rejecting unknown values would make it loud, but is a behaviour change to decide separately.

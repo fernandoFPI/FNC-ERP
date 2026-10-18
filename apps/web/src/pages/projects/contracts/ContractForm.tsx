@@ -1,4 +1,3 @@
-import i18n from '../../../i18n'
 import { Trans, useTranslation } from 'react-i18next'
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -22,14 +21,11 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
+import {
+  CONTRACT_BILLING_METHODS,
+  DEFAULT_CONTRACT_BILLING_METHOD,
+} from '../../../lib/contractBilling'
 import type { CreateContractMilestoneMutation, CreateContractMilestoneMutationVariables, CreateProjectContractMutation, CreateProjectContractMutationVariables, DeleteContractMilestoneMutation, DeleteContractMilestoneMutationVariables, ProjectContractQuery, ProjectContractQueryVariables, ProjectsQuery, ProjectsQueryVariables, UpdateContractMilestoneMutation, UpdateContractMilestoneMutationVariables, UpdateProjectContractMutation, UpdateProjectContractMutationVariables } from '../../../graphql/generated'
-
-const BILLING_METHODS: { value: string; label: string }[] = [
-  { value: 'fixed_lump_sum', get label() { return i18n.t('proj.contractForm.fixedLumpSum', { defaultValue: "Fixed Lump Sum" }) } },
-  { value: 'milestone', get label() { return i18n.t('proj.contractForm.milestone', { defaultValue: "Milestone" }) } },
-  { value: 'cost_plus', get label() { return i18n.t('proj.contractForm.costPlusTimeMaterial', { defaultValue: "Cost Plus (Time & Material)" }) } },
-  { value: 'progress', get label() { return i18n.t('proj.contractForm.progressPercentage', { defaultValue: "Progress (Percentage)" }) } },
-]
 
 const CURRENCIES = [
   { value: 'IQD', label: 'IQD' },
@@ -105,7 +101,7 @@ export default function ContractForm() {
     clientName: '',
     contractValue: '',
     currencyCode: 'IQD',
-    defaultBillingMethod: 'fixed_lump_sum',
+    defaultBillingMethod: DEFAULT_CONTRACT_BILLING_METHOD,
     defaultMarginPct: '0',
     retentionPct: '0',
     status: 'draft',
@@ -631,7 +627,7 @@ export default function ContractForm() {
               onChange={(v) => {
                 setForm((f) => ({ ...f, defaultBillingMethod: v }))
               }}
-              options={BILLING_METHODS}
+              options={CONTRACT_BILLING_METHODS}
             />
           </div>
 
