@@ -1517,6 +1517,8 @@
       "uploading": "جارٍ الرفع…",
       "usedForAnyLineBelowWith": "يُستخدم لأي بند أدناه ليس له مستلِم خاص",
       "vendor": "المورّد:",
+      "vendorReceiptOnFile": "إيصال المورّد (مرفوع من المشتري)",
+      "vendorReceiptOnFileHint": "رفع المشتري إيصال المورّد عند الشراء، لذا لا حاجة لإضافة شيء هنا. أضف نسخة أخرى فقط إن توفرت لديك.",
       "vendorReceiptRequired": "إيصال المورّد (مطلوب)",
       "whichEmployeeDeliveredHandedOverThese": "أي موظف سلّم هذه البضاعة (اختياري)",
       "youAreReceiving": "أنت تستلم <strong>{{received}}</strong> من أصل {{total}} مادة"

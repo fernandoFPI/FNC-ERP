@@ -1417,6 +1417,8 @@
       "uploading": "Uploading…",
       "usedForAnyLineBelowWith": "Used for any line below with no receiver of its own",
       "vendor": "Vendor:",
+      "vendorReceiptOnFile": "Vendor Receipt (on file from the buyer)",
+      "vendorReceiptOnFileHint": "The buyer already uploaded the vendor's receipt when this was bought, so nothing more is needed here. Add another copy only if you have one.",
       "vendorReceiptRequired": "Vendor Receipt (required)",
       "whichEmployeeDeliveredHandedOverThese": "Which employee delivered / handed over these goods (optional)",
       "youAreReceiving": "You are receiving <strong>{{received}}</strong> of {{total}} items"

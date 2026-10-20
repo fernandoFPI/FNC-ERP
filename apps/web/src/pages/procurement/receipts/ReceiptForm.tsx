@@ -12,7 +12,12 @@ import {
 } from '../../../graphql/procurement'
 import { TOUR_DEMO_PO_ID, buildTourDemoReceiptPO } from '../../../components/help/tourDemoPO'
 import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
-import { EMPLOYEES_QUERY, ATTACH_FILE } from '../../../graphql/hr'
+import { EMPLOYEES_QUERY, ATTACH_FILE, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
+import { hasBuyerReceipt } from '../../../lib/buyerReceipt'
+import type {
+  EntityAttachmentsQuery,
+  EntityAttachmentsQueryVariables,
+} from '../../../graphql/generated'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -290,6 +295,18 @@ export default function ReceiptForm() {
   // choice, since the from-stock portion's auto Store Out already has to
   // know this at PO approval time, long before anyone reaches receiving.
   const isJobsite = po?.purpose === 'project' && po.delivery_destination === 'jobsite'
+  // The buyer normally uploads the vendor receipt when they buy (requisition's
+  // Items Bought stage), so a jobsite delivery must not demand a second copy.
+  // Same rule, same helper, as the Store In detail page (lib/buyerReceipt.ts).
+  const { data: buyerReceiptData } = useQuery<
+    EntityAttachmentsQuery,
+    EntityAttachmentsQueryVariables
+  >(ENTITY_ATTACHMENTS_QUERY, {
+    variables: { entityType: 'purchase_order', entityId: id ?? '' },
+    skip: !isJobsite || !id || isTourDemo,
+    fetchPolicy: 'cache-and-network',
+  })
+  const buyerReceiptOnFile = hasBuyerReceipt(buyerReceiptData?.entityAttachments)
   const locations = locationsData?.stockLocations ?? []
   const employees: {
     id: string
@@ -587,7 +604,8 @@ export default function ReceiptForm() {
       return
     }
     if (isJobsite) {
-      const hasVendorReceipt = pendingPhotos.some((p) => p.kind === 'vendor_receipt')
+      const hasVendorReceipt =
+        buyerReceiptOnFile || pendingPhotos.some((p) => p.kind === 'vendor_receipt')
       const hasMaterials = pendingPhotos.some((p) => p.kind === 'materials')
       if (!hasVendorReceipt || !hasMaterials) {
         const missing = [
@@ -1184,11 +1202,15 @@ export default function ReceiptForm() {
                     data-tour="po-jobsite-photos"
                     style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}
                   >
-                    {t('receipt.form.vendorReceiptRequired')}
+                    {buyerReceiptOnFile
+                      ? t('receipt.form.vendorReceiptOnFile')
+                      : t('receipt.form.vendorReceiptRequired')}
                   </div>
                   {renderPhotoGrid('vendor_receipt')}
                   <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                    {t('receipt.form.photoScanOrPdfOfThe')}
+                    {buyerReceiptOnFile
+                      ? t('receipt.form.vendorReceiptOnFileHint')
+                      : t('receipt.form.photoScanOrPdfOfThe')}
                   </div>
                 </Card>
 

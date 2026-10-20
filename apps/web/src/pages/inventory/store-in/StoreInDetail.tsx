@@ -11,6 +11,7 @@ import {
   ATTACH_RECEIPT_PHOTO,
 } from '../../../graphql/procurement'
 import { DETACH_FILE, FILE_DOWNLOAD_URL_QUERY, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
+import { hasBuyerReceipt as hasBuyerReceiptIn } from '../../../lib/buyerReceipt'
 import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -168,25 +169,9 @@ export default function StoreInDetail() {
     skip: !receipt?.po_id,
     fetchPolicy: 'cache-and-network',
   })
-  // Mirrors confirmReceipt's own acceptance rule exactly (gateway
-  // resolvers.ts) — NOT just "any attachment exists". A plain
-  // entityAttachments('purchase_order', poId) union also includes this
-  // page's unrelated "Delivery Photos" uploader (PurchaseOrderDetail.tsx,
-  // category 'attachment', no status gating), which used to make this
-  // flag true — and Confirm enabled — even with no real vendor receipt
-  // anywhere, so the backend rejected it right after. A direct-PO
-  // attachment (sourceEntityType 'purchase_order') only counts with
-  // category 'po_receipt_document'; a G1 child PO's per-vendor purchase
-  // receipt (sourceEntityType 'po_line_purchase', attached during the
-  // requisition's Items Bought stage) counts regardless of category,
-  // since that flow never writes 'po_receipt_document' at all.
-  const hasBuyerReceipt = (
-    (buyerReceiptData?.entityAttachments as
-      | { sourceEntityType?: string; file?: { category?: string } }[]
-      | undefined) ?? []
-  ).some(
-    (a) => a.sourceEntityType === 'po_line_purchase' || a.file?.category === 'po_receipt_document',
-  )
+  // The acceptance rule (mirrors confirmReceipt's own) lives in lib/buyerReceipt.ts,
+  // shared with the jobsite delivery form so the two can't drift apart.
+  const hasBuyerReceipt = hasBuyerReceiptIn(buyerReceiptData?.entityAttachments)
 
   const [attachReceiptPhoto] = useMutation<
     AttachReceiptPhotoMutation,

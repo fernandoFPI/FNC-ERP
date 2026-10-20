@@ -247,3 +247,18 @@ Don't re-derive, check these first.
     four methods `packages/billing` can build lines for, so those three are labels, not invoice types, and the
     invoice resolver rejects them. Widen BOTH the CHECK and the resolver list together, and check what reads
     the column before assuming a new value does anything.
+
+31. **A requirement fixed on one of two paths still bites on the other (vendor receipt asked for twice).**
+    In a G1 requisition the buyer uploads the vendor's receipt while sourcing (Items Bought stores it per
+    purchase: entity `po_line_purchase`, category `attachment`). At receiving, the Store In detail page and the
+    server's `confirmReceipt` were taught to accept that, but the jobsite delivery form
+    (`ReceiptForm.tsx`, project PO with `delivery_destination='jobsite'`, which skips Store In) still demanded
+    a fresh "Vendor receipt (required)" photo, so users uploaded the same receipt twice (REQ-2026-0001 /
+    NY-PO-2026-0026). The jobsite path's server mutation `recordDirectDelivery` checks no receipt at all, so only
+    the form enforced it. How to spot it: a user "has to upload X again" after a stage change; grep every
+    place that asks for the same document (`po_receipt_document`, `vendor_receipt`) and compare their rules.
+    Fix: one shared rule, `hasBuyerReceipt` in `apps/web/src/lib/buyerReceipt.ts`, used by both pages (it counts a
+    `po_line_purchase` attachment, or category `po_receipt_document`, and deliberately not the PO page's
+    "Delivery Photos", category `attachment` on the PO itself); the buyer's receipt now fully satisfies the
+    requirement and the form says so. Tests: `lib/__tests__/buyerReceipt.test.ts` and
+    `pages/procurement/receipts/__tests__/ReceiptForm.test.tsx`. Related to #23 (two paths for one thing).
