@@ -232,8 +232,8 @@ export const RECORD_RECEIPT = gql`
 `
 
 export const CONFIRM_RECEIPT = gql`
-  mutation ConfirmReceipt($id: ID!) {
-    confirmReceipt(id: $id) {
+  mutation ConfirmReceipt($id: ID!, $bypassPhotos: Boolean, $bypassReason: String) {
+    confirmReceipt(id: $id, bypassPhotos: $bypassPhotos, bypassReason: $bypassReason) {
       id
       status
     }

@@ -22,6 +22,7 @@ import {
   resolveContractBillingMethod,
   resolveInvoiceBillingMethod,
 } from '../lib/contractBilling.js'
+import { resolvePhotoBypass } from '../lib/receiptPhotoBypass.js'
 import {
   sendEmail,
   renderMeetingInvitationEmail,
@@ -13229,8 +13230,16 @@ export const resolvers = {
     // immediately. Requires both required photo categories to already be
     // attached (enforced here too, not just in the UI, since this is the
     // real physical/financial commit point).
-    confirmReceipt: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    confirmReceipt: async (
+      _: unknown,
+      args: { id: string; bypassPhotos?: boolean | null; bypassReason?: string | null },
+      ctx: GQLContext,
+    ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      // System-admin-only override of the photo requirement below (see
+      // lib/receiptPhotoBypass.ts). Validated up front so a bad request fails before
+      // any work, and so a non-admin can never reach the skip.
+      const bypass = resolvePhotoBypass(ctx.auth.role, args.bypassPhotos, args.bypassReason)
       if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
         const isReceiver = await callerIsAssignedReceiverForReceiptGW(ctx.auth as GWAuth, args.id)
         const isStoreKeeper =
@@ -13264,8 +13273,12 @@ export const resolvers = {
           const categories = new Set(
             photoCheck.rows.map((r) => (r as Record<string, unknown>).category as string),
           )
+          // What a system admin's override actually skipped (empty when every photo
+          // was already there, in which case nothing is logged as an override).
+          const skippedPhotos: string[] = []
           if (!categories.has('po_receipt_photo')) {
-            throw new Error('Attach a materials photo before confirming this receipt')
+            if (!bypass) throw new Error('Attach a materials photo before confirming this receipt')
+            skippedPhotos.push('materials photo')
           }
           // The vendor receipt is normally uploaded earlier, by the buyer
           // during items_bought, straight onto the PO (entity_type
@@ -13293,9 +13306,12 @@ export const resolvers = {
               [receipt.po_id],
             )
             if (!buyerReceiptCheck.rows[0]) {
-              throw new Error(
-                'Attach the vendor receipt (from the buyer, or here) before confirming this receipt',
-              )
+              if (!bypass) {
+                throw new Error(
+                  'Attach the vendor receipt (from the buyer, or here) before confirming this receipt',
+                )
+              }
+              skippedPhotos.push('vendor receipt')
             }
           }
 
@@ -13497,6 +13513,31 @@ export const resolvers = {
             `UPDATE po_receipts SET status='confirmed', confirmed_at=NOW() WHERE id=$1 RETURNING *`,
             [args.id],
           )
+          if (bypass && skippedPhotos.length > 0) {
+            const poNow = await client.query<{ status: string }>(
+              `SELECT status FROM purchase_orders WHERE id=$1`,
+              [receipt.po_id],
+            )
+            const skipped = skippedPhotos.join(' and ')
+            await client.query(
+              `INSERT INTO po_approval_log (po_id, from_status, to_status, actor_id, action, notes) VALUES ($1,$2,$2,$3,'receipt_photos_bypassed',$4)`,
+              [
+                receipt.po_id,
+                poNow.rows[0]?.status ?? (receipt.po_status as string),
+                requireAuth(ctx).userId,
+                `Receipt ${receipt.receipt_number as string} confirmed without the ${skipped} (system admin override) — ${bypass.reason}`,
+              ],
+            )
+            await logAudit({
+              userId: requireAuth(ctx).userId,
+              companyId: requireAuth(ctx).companyId,
+              action: 'receipt_photos_bypassed',
+              tableName: 'po_receipts',
+              recordId: args.id,
+              newValues: { skipped: skippedPhotos, reason: bypass.reason },
+              client,
+            })
+          }
           return { ...(updated.rows[0] as Record<string, unknown>), lines: [], photos: [] }
         },
       )
@@ -14240,11 +14281,21 @@ export const resolvers = {
           received_date: string
           notes?: string
           lines: { po_line_id: string; qty_received: number; actual_unit_price?: number }[]
+          bypassPhotos?: boolean | null
+          bypassReason?: string | null
         }
       },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      // The photo requirement for a jobsite delivery is enforced by the web form
+      // only (nothing here checks photos), so a system admin skipping it can't be
+      // detected, only declared. Validate who may declare it, and record it below.
+      const bypass = resolvePhotoBypass(
+        ctx.auth.role,
+        args.input.bypassPhotos,
+        args.input.bypassReason,
+      )
       if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
         const isReceiver = await callerIsAssignedReceiverGW(ctx.auth as GWAuth, args.poId)
         if (!isReceiver) {
@@ -14349,7 +14400,28 @@ export const resolvers = {
           const updated = await client.query(`SELECT status FROM purchase_orders WHERE id=$1`, [
             args.poId,
           ])
-          return { poId: args.poId, status: (updated.rows[0] as Record<string, unknown>).status }
+          const statusNow = (updated.rows[0] as Record<string, unknown>).status as string
+          if (bypass) {
+            await client.query(
+              `INSERT INTO po_approval_log (po_id, from_status, to_status, actor_id, action, notes) VALUES ($1,$2,$2,$3,'receipt_photos_bypassed',$4)`,
+              [
+                args.poId,
+                statusNow,
+                requireAuth(ctx).userId,
+                `Jobsite delivery recorded without the vendor receipt and/or materials photo (system admin override) — ${bypass.reason}`,
+              ],
+            )
+            await logAudit({
+              userId: requireAuth(ctx).userId,
+              companyId: requireAuth(ctx).companyId,
+              action: 'receipt_photos_bypassed',
+              tableName: 'purchase_orders',
+              recordId: args.poId,
+              newValues: { kind: 'direct_delivery', reason: bypass.reason },
+              client,
+            })
+          }
+          return { poId: args.poId, status: statusNow }
         },
       )
     },

@@ -262,3 +262,20 @@ Don't re-derive, check these first.
     "Delivery Photos", category `attachment` on the PO itself); the buyer's receipt now fully satisfies the
     requirement and the form says so. Tests: `lib/__tests__/buyerReceipt.test.ts` and
     `pages/procurement/receipts/__tests__/ReceiptForm.test.tsx`. Related to #23 (two paths for one thing).
+
+32. **A UI-only bypass of a server-enforced check is a button that still gets refused; a bypass of a check the
+    server never made can't be proven, only declared.** Goods receipts need a vendor receipt and a materials
+    photo. `confirmReceipt` (Store In) rejects without them, so an admin "skip photos" button alone would have
+    been refused by the server; the jobsite delivery path is the opposite, its photo rule exists only in
+    `ReceiptForm.tsx` and `recordDirectDelivery` checks nothing. The admin override
+    (`feat/receipt-photo-admin-bypass`) therefore enforces the role and reason on the server for both
+    (`services/gateway/src/lib/receiptPhotoBypass.ts`: `system_admin` only, not `company_admin`; reason required;
+    max 500 chars) and records every use in `po_approval_log` (action `receipt_photos_bypassed`, shown on the PO
+    Log tab) and `audit_log`. `confirmReceipt` logs only what was actually skipped (nothing if both photos were
+    present); for a jobsite delivery the server can only record that an admin declared it. How to spot a
+    half-done override: grep where the rule is enforced (server mutation vs form) before adding a way around it,
+    and make the escape hatch role-checked where the rule is enforced. Web control:
+    `components/procurement/AdminPhotoBypass.tsx`, shown only to `system_admin` and only while a photo is
+    missing. Tests: `services/gateway/tests/receipt-photo-bypass.test.ts` (real Postgres),
+    `pages/inventory/store-in/__tests__/StoreInDetail.test.tsx`, `pages/procurement/receipts/__tests__/ReceiptForm.test.tsx`.
+    Note the hidden-input `Checkbox` is invisible to `getByRole('checkbox')`; use `getByLabelText`.

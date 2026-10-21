@@ -1009,6 +1009,8 @@ export type DependencyImportInput = {
 };
 
 export type DirectDeliveryInput = {
+  bypassPhotos?: InputMaybe<Scalars['Boolean']['input']>;
+  bypassReason?: InputMaybe<Scalars['String']['input']>;
   lines: Array<ReceiptLineInput>;
   notes?: InputMaybe<Scalars['String']['input']>;
   received_date: Scalars['String']['input'];
@@ -3199,6 +3201,8 @@ export type MutationConfirmPoInventoryCheckArgs = {
 
 
 export type MutationConfirmReceiptArgs = {
+  bypassPhotos?: InputMaybe<Scalars['Boolean']['input']>;
+  bypassReason?: InputMaybe<Scalars['String']['input']>;
   id: Scalars['ID']['input'];
 };
 

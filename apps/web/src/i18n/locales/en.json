@@ -1342,6 +1342,12 @@
     }
   },
   "receipt": {
+    "bypass": {
+      "hint": "System admin only. The receipt is confirmed without the vendor receipt and materials photos, and your name and reason are recorded in the PO log.",
+      "label": "Admin override: continue without photos",
+      "reasonLabel": "Reason (required)",
+      "reasonPlaceholder": "Why are the photos not being attached?"
+    },
     "form": {
       "aPhotoOfMaterials": "a photo of the materials delivered",
       "addAnyAdditionalNotesAboutThis": "Add any additional notes about this receipt (damage, condition, packaging, etc.)",

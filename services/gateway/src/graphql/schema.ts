@@ -2691,6 +2691,10 @@
     received_date: String!
     notes: String
     lines: [ReceiptLineInput!]!
+    # system_admin only; see confirmReceipt. The web form requires the photos itself, so this only
+    # records that an administrator chose to skip them.
+    bypassPhotos: Boolean
+    bypassReason: String
   }
 
   type DirectDeliveryResult {
@@ -2731,7 +2735,9 @@
     createPurchaseOrder(input: POInput!): PurchaseOrder!
     updatePurchaseOrder(id: ID!, input: POInput!): PurchaseOrder!
     recordReceipt(poId: ID!, input: ReceiptInput!): POReceipt!
-    confirmReceipt(id: ID!): POReceipt!
+    # bypassPhotos/bypassReason: system_admin only. Confirms without the vendor receipt / materials photos;
+    # a reason is required and the override is logged (po_approval_log + audit_log).
+    confirmReceipt(id: ID!, bypassPhotos: Boolean, bypassReason: String): POReceipt!
     cancelReceipt(id: ID!): POReceipt!
     reverseReceipt(id: ID!, reason: String!): POReceipt!
     addPOLogNote(poId: ID!, note: String!): POApprovalLogEntry!

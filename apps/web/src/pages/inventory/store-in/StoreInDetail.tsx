@@ -12,6 +12,11 @@ import {
 } from '../../../graphql/procurement'
 import { DETACH_FILE, FILE_DOWNLOAD_URL_QUERY, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
 import { hasBuyerReceipt as hasBuyerReceiptIn } from '../../../lib/buyerReceipt'
+import {
+  AdminPhotoBypass,
+  photoBypassReady,
+  useIsSystemAdmin,
+} from '../../../components/procurement/AdminPhotoBypass'
 import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -146,6 +151,10 @@ export default function StoreInDetail() {
   const [reverseReason, setReverseReason] = useState('')
   const [dragOverKind, setDragOverKind] = useState<PhotoKind | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // System-admin-only override of the photo requirement; the server enforces the role.
+  const isSystemAdmin = useIsSystemAdmin()
+  const [bypassPhotos, setBypassPhotos] = useState(false)
+  const [bypassReason, setBypassReason] = useState('')
   const [cancelOpen, setCancelOpen] = useState(false)
 
   const { data, loading, error, refetch } = useQuery<PoReceiptQuery, PoReceiptQueryVariables>(
@@ -245,7 +254,10 @@ export default function StoreInDetail() {
   const isDraft = receipt.status === 'draft'
   const hasDocPhoto = receipt.photos.some((p) => p.category === 'po_receipt_document')
   const hasMaterialsPhoto = receipt.photos.some((p) => p.category === 'po_receipt_photo')
-  const canConfirm = (hasDocPhoto || hasBuyerReceipt) && hasMaterialsPhoto
+  const photosComplete = (hasDocPhoto || hasBuyerReceipt) && hasMaterialsPhoto
+  // A system admin can confirm without the photos by ticking the override and giving a reason.
+  const bypassing = isSystemAdmin && !photosComplete && photoBypassReady(bypassPhotos, bypassReason)
+  const canConfirm = photosComplete || bypassing
 
   function openCamera(kind: PhotoKind) {
     captureKindRef.current = kind
@@ -705,6 +717,14 @@ export default function StoreInDetail() {
                   : t('inv.storeInDetail.attachAMaterialsPhotoBeforeConfirming')}
             </div>
           )}
+          {isSystemAdmin && !photosComplete && (
+            <AdminPhotoBypass
+              enabled={bypassPhotos}
+              reason={bypassReason}
+              onEnabledChange={setBypassPhotos}
+              onReasonChange={setBypassReason}
+            />
+          )}
         </Card>
       )}
 
@@ -739,7 +759,11 @@ export default function StoreInDetail() {
           setConfirmOpen(false)
         }}
         onConfirm={() => {
-          void confirmReceipt({ variables: { id: receipt.id } })
+          void confirmReceipt({
+            variables: bypassing
+              ? { id: receipt.id, bypassPhotos: true, bypassReason: bypassReason.trim() }
+              : { id: receipt.id },
+          })
         }}
         title={t('inv.storeInDetail.confirmReceipt')}
         message={t('inv.storeInDetail.confirmingWillAddTheseItemsTo')}

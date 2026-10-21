@@ -8,10 +8,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
-import { PURCHASE_ORDER_QUERY } from '../../../../graphql/procurement'
+import { PURCHASE_ORDER_QUERY, RECORD_DIRECT_DELIVERY } from '../../../../graphql/procurement'
 import { ENTITY_ATTACHMENTS_QUERY } from '../../../../graphql/hr'
 import type * as ApolloClientModule from '@apollo/client'
 
+const auth = vi.hoisted(() => ({ role: 'user' }))
 const mockUseQuery = vi.fn()
 const mockUseMutation = vi.fn()
 const addToast = vi.fn<[{ type: string; message: string }], undefined>()
@@ -31,8 +32,9 @@ vi.mock('../../../../store/toastStore', () => ({
 }))
 
 vi.mock('../../../../store/authStore', () => ({
-  useAuthStore: (selector: (s: { user: { id: string; companyId: string } }) => unknown) =>
-    selector({ user: { id: 'user-1', companyId: 'company-1' } }),
+  useAuthStore: (
+    selector: (s: { user: { id: string; companyId: string; role: string } }) => unknown,
+  ) => selector({ user: { id: 'user-1', companyId: 'company-1', role: auth.role } }),
 }))
 
 const jobsitePO = {
@@ -105,9 +107,28 @@ function submitWithNoPhotos(container: HTMLElement): string {
   return addToast.mock.calls.at(-1)?.[0].message ?? ''
 }
 
+const recordDirectDelivery = vi.fn<
+  [{ variables: { input: Record<string, unknown> } }],
+  Promise<unknown>
+>()
+
+// The input the form sent on its first (only) recordDirectDelivery call.
+function sentInput(): Record<string, unknown> {
+  const call = recordDirectDelivery.mock.calls.at(0)
+  if (!call) throw new Error('recordDirectDelivery was not called')
+  return call[0].variables.input
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
-  mockUseMutation.mockReturnValue([vi.fn().mockResolvedValue({ data: {} }), { loading: false }])
+  auth.role = 'user'
+  recordDirectDelivery.mockResolvedValue({
+    data: { recordDirectDelivery: { poId: 'po-1', status: 'goods_received' } },
+  })
+  mockUseMutation.mockImplementation((doc: unknown) => [
+    doc === RECORD_DIRECT_DELIVERY ? recordDirectDelivery : vi.fn().mockResolvedValue({ data: {} }),
+    { loading: false },
+  ])
 })
 
 describe('ReceiptForm: jobsite delivery and the vendor receipt', () => {
@@ -136,5 +157,65 @@ describe('ReceiptForm: jobsite delivery and the vendor receipt', () => {
     const { container } = await renderForm()
     expect(screen.getByText('Vendor Receipt (required)')).toBeInTheDocument()
     expect(submitWithNoPhotos(container)).toMatch(/vendor receipt/i)
+  })
+})
+
+describe('ReceiptForm: system-admin override of the photo requirement (jobsite delivery)', () => {
+  const overrideBox = () => screen.getByLabelText(/admin override/i)
+  const typeReason = (v: string) =>
+    fireEvent.change(screen.getByPlaceholderText(/why are the photos/i), { target: { value: v } })
+
+  it('offers the override to a system admin only', async () => {
+    mockData([])
+    auth.role = 'system_admin'
+    await renderForm()
+    expect(overrideBox()).toBeInTheDocument()
+  })
+
+  it.each(['company_admin', 'module_admin', 'user'])('does not offer it to %s', async (role) => {
+    mockData([])
+    auth.role = role
+    await renderForm()
+    expect(screen.queryByLabelText(/admin override/i)).not.toBeInTheDocument()
+  })
+
+  it('still blocks a system admin who has ticked the override but gave no reason', async () => {
+    mockData([])
+    auth.role = 'system_admin'
+    const { container } = await renderForm()
+    fireEvent.click(overrideBox())
+    const message = submitWithNoPhotos(container)
+    expect(message).toMatch(/vendor receipt/i)
+    expect(recordDirectDelivery).not.toHaveBeenCalled()
+  })
+
+  it('lets a system admin record the delivery with no photos, sending the reason to the server', async () => {
+    mockData([])
+    auth.role = 'system_admin'
+    const { container } = await renderForm()
+    fireEvent.click(overrideBox())
+    typeReason('  Delivery note only, photos lost  ')
+    submitWithNoPhotos(container)
+    await vi.waitFor(() => {
+      expect(recordDirectDelivery).toHaveBeenCalledTimes(1)
+    })
+    const input = sentInput()
+    expect(input.bypassPhotos).toBe(true)
+    expect(input.bypassReason).toBe('Delivery note only, photos lost')
+  })
+
+  it('declares the override when only the materials photo is missing (buyer receipt already on file)', async () => {
+    // buyer's receipt covers the vendor receipt, but the materials photo is missing -> a real skip
+    mockData([buyersPurchaseReceipt])
+    auth.role = 'system_admin'
+    const { container } = await renderForm()
+    fireEvent.click(overrideBox())
+    typeReason('no camera on site')
+    submitWithNoPhotos(container)
+    await vi.waitFor(() => {
+      expect(recordDirectDelivery).toHaveBeenCalledTimes(1)
+    })
+    const input = sentInput()
+    expect(input.bypassPhotos).toBe(true)
   })
 })

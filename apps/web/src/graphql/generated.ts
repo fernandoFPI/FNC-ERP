@@ -1677,6 +1677,8 @@ export type RecordReceiptMutation = { recordReceipt: { id: string, status: strin
 
 export type ConfirmReceiptMutationVariables = Exact<{
   id: string | number;
+  bypassPhotos?: boolean | null | undefined;
+  bypassReason?: string | null | undefined;
 }>;
 
 

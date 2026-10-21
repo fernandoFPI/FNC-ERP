@@ -14,6 +14,11 @@ import { TOUR_DEMO_PO_ID, buildTourDemoReceiptPO } from '../../../components/hel
 import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { EMPLOYEES_QUERY, ATTACH_FILE, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
 import { hasBuyerReceipt } from '../../../lib/buyerReceipt'
+import {
+  AdminPhotoBypass,
+  photoBypassReady,
+  useIsSystemAdmin,
+} from '../../../components/procurement/AdminPhotoBypass'
 import type {
   EntityAttachmentsQuery,
   EntityAttachmentsQueryVariables,
@@ -307,6 +312,12 @@ export default function ReceiptForm() {
     fetchPolicy: 'cache-and-network',
   })
   const buyerReceiptOnFile = hasBuyerReceipt(buyerReceiptData?.entityAttachments)
+  // System-admin-only override of the photo requirement for a jobsite delivery; the
+  // server checks the role and records the reason (receiptPhotoBypass.ts).
+  const isSystemAdmin = useIsSystemAdmin()
+  const [bypassPhotos, setBypassPhotos] = useState(false)
+  const [bypassReason, setBypassReason] = useState('')
+  const bypassReady = isSystemAdmin && photoBypassReady(bypassPhotos, bypassReason)
   const locations = locationsData?.stockLocations ?? []
   const employees: {
     id: string
@@ -603,11 +614,12 @@ export default function ReceiptForm() {
       addToast({ type: 'error', message: t('receipt.form.selectAtLeastOneItemYou') })
       return
     }
+    const hasVendorReceipt =
+      buyerReceiptOnFile || pendingPhotos.some((p) => p.kind === 'vendor_receipt')
+    const hasMaterials = pendingPhotos.some((p) => p.kind === 'materials')
+    const photosSkipped = isJobsite && (!hasVendorReceipt || !hasMaterials)
     if (isJobsite) {
-      const hasVendorReceipt =
-        buyerReceiptOnFile || pendingPhotos.some((p) => p.kind === 'vendor_receipt')
-      const hasMaterials = pendingPhotos.some((p) => p.kind === 'materials')
-      if (!hasVendorReceipt || !hasMaterials) {
+      if (photosSkipped && !bypassReady) {
         const missing = [
           !hasVendorReceipt ? t('receipt.form.theVendorReceipt') : null,
           !hasMaterials ? t('receipt.form.aPhotoOfMaterials') : null,
@@ -635,6 +647,10 @@ export default function ReceiptForm() {
                   po_line_id: l.po_line_id,
                   qty_received: parseFloat(l.qty_to_receive),
                 })),
+                // Only declare the override when a photo really was skipped.
+                ...(bypassReady && photosSkipped
+                  ? { bypassPhotos: true, bypassReason: bypassReason.trim() }
+                  : {}),
               },
             },
           })
@@ -1223,6 +1239,15 @@ export default function ReceiptForm() {
                     {t('receipt.form.photoOfTheDeliveredGoodsAt')}
                   </div>
                 </Card>
+
+                {isSystemAdmin && (
+                  <AdminPhotoBypass
+                    enabled={bypassPhotos}
+                    reason={bypassReason}
+                    onEnabledChange={setBypassPhotos}
+                    onReasonChange={setBypassReason}
+                  />
+                )}
               </>
             )}
           </div>
