@@ -6563,6 +6563,7 @@ export type ProductBalance = {
 };
 
 export type ProductCostChangeRequest = {
+  can_review?: Maybe<Scalars['Boolean']['output']>;
   created_at: Scalars['String']['output'];
   currency_code: Scalars['String']['output'];
   id: Scalars['ID']['output'];
@@ -6575,6 +6576,7 @@ export type ProductCostChangeRequest = {
   requested_by?: Maybe<Scalars['ID']['output']>;
   requested_by_name?: Maybe<Scalars['String']['output']>;
   reviewed_at?: Maybe<Scalars['String']['output']>;
+  reviewed_by?: Maybe<Scalars['ID']['output']>;
   reviewed_by_name?: Maybe<Scalars['String']['output']>;
   sku?: Maybe<Scalars['String']['output']>;
   source_id?: Maybe<Scalars['ID']['output']>;

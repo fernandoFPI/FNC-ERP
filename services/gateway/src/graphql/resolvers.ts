@@ -2209,6 +2209,25 @@ async function callerHasCompanyWideStoreKeeper(
   return r.rows.length > 0
 }
 
+// Who may approve or reject a product cost change they triggered themselves.
+// Anyone else needs a different reviewer, so a cost change that looks like a
+// mistake never clears on the say-so of whoever made it. Admins are exempt (a
+// single-admin company would have no reviewer at all) and so is the company-wide
+// Store Keeper, who raises most of these through stock adjustments and is often the
+// only non-admin holding the approve permission. A Store Keeper position scoped to
+// a branch, department or project does not count, same as every other
+// stock-adjustment gate. approveProductCostChange, rejectProductCostChange and the
+// queue's per-row can_review flag all ask this one function, so the buttons the
+// page shows can never disagree with what the mutations accept.
+async function canReviewOwnCostChangeGW(auth: {
+  role: string
+  userId: string
+  companyId: string
+}): Promise<boolean> {
+  if (isPermissionBypassGW(auth.role)) return true
+  return callerHasCompanyWideStoreKeeper(auth.userId, auth.companyId)
+}
+
 // Post a journal entry when a project-linked PO is completed so that the cost
 // flows into project_cost_actuals via trg_sync_project_costs.
 async function postPOCompletionJournal(
@@ -11025,7 +11044,17 @@ export const resolvers = {
          ORDER BY pccr.created_at DESC`,
         [ctx.auth.companyId, args.status ?? 'pending'],
       )
-      return r.rows
+      // can_review is false only for a request the caller raised themselves and
+      // isn't exempt from clearing (see canReviewOwnCostChangeGW). It is the same
+      // check the approve/reject mutations make, so the page can disable the
+      // buttons from it instead of keeping its own copy of the rule. The
+      // approve-permission level is still the page's own gate.
+      const callerId = ctx.auth.userId
+      const mayReviewOwn = await canReviewOwnCostChangeGW(ctx.auth)
+      return r.rows.map((row) => ({
+        ...row,
+        can_review: row.requested_by !== callerId || mayReviewOwn,
+      }))
     },
 
     stockLocations: async (
@@ -14602,9 +14631,10 @@ export const resolvers = {
     // A cost change recordProductCostChange parked for review (over
     // company_price_tolerance) actually lands here — applyProductCostChange
     // does the exact same write an in-tolerance change would have done
-    // immediately. No self-approval, same rule approveTolerancePurchase
-    // already enforces for the same class of concern: whoever triggered
-    // the change can't be the one clearing it, regardless of role.
+    // immediately. No self-approval for an ordinary approver, same rule
+    // approveTolerancePurchase enforces for the same class of concern;
+    // canReviewOwnCostChangeGW lists who is exempt (admins and the
+    // company-wide Store Keeper).
     approveProductCostChange: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const auth = ctx.auth
@@ -14632,12 +14662,10 @@ export const resolvers = {
           const reqRow = r.rows[0]
           if (!reqRow) throw new Error('Cost change request not found')
           if (reqRow.status !== 'pending') throw new Error('This request has already been reviewed')
-          // No self-approval for an ordinary approver, same rule
-          // approveTolerancePurchase enforces for the same class of concern
-          // — but unlike that path, an admin IS allowed to clear their own,
-          // since a single-admin company would otherwise have no reviewer
-          // at all (explicit user choice, not the house default).
-          if (reqRow.requested_by === auth.userId && !isPermissionBypassGW(auth.role))
+          // Unlike approveTolerancePurchase, whoever triggered it may clear
+          // their own when canReviewOwnCostChangeGW says so (explicit user
+          // choice, not the house default).
+          if (reqRow.requested_by === auth.userId && !(await canReviewOwnCostChangeGW(auth)))
             throw new Error('Someone other than whoever triggered this change must approve it')
 
           await applyProductCostChange(client, {
@@ -14682,7 +14710,7 @@ export const resolvers = {
       const reqRow = r.rows[0]
       if (!reqRow) throw new Error('Cost change request not found')
       if (reqRow.status !== 'pending') throw new Error('This request has already been reviewed')
-      if (reqRow.requested_by === ctx.auth.userId && !isPermissionBypassGW(ctx.auth.role))
+      if (reqRow.requested_by === ctx.auth.userId && !(await canReviewOwnCostChangeGW(ctx.auth)))
         throw new Error('Someone other than whoever triggered this change must approve it')
       await query(
         `UPDATE product_cost_change_requests SET status='rejected', reviewed_by=$1, reviewed_at=NOW(), rejection_reason=$2 WHERE id=$3`,

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   PRODUCT_COST_CHANGE_REQUESTS_QUERY,
@@ -17,7 +17,6 @@ import type {
 } from '../../../graphql/generated'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
-import { useAuthStore } from '../../../store/authStore'
 import { useToastStore } from '../../../store/toastStore'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -27,7 +26,9 @@ import { Select } from '../../../components/ui/Select'
 import { Modal } from '../../../components/ui/Modal'
 import { Textarea } from '../../../components/ui/Textarea'
 import { EmptyState } from '../../../components/ui/EmptyState'
-import { enumLabel, useIsRtl } from '../../../i18n'
+import { formatDateTime } from '../../../components/procurement/ListKit'
+import { costChangeSourcePath, isCostChangeSourceType } from '../../../lib/costChangeSource'
+import { enumLabel } from '../../../i18n'
 
 const fmtN = (n: string | number | null | undefined) =>
   parseFloat(String(n ?? 0)).toLocaleString('en-US', {
@@ -41,20 +42,14 @@ const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger
   rejected: 'danger',
 }
 
-// po_receipt/catalog_link both carry a PO id as source_id — the only two
-// source types with anything a "vendor receipt" could mean; every other
-// trigger (market pricing, stock adjustments, a manual edit) has no
-// receipt concept at all.
-const PO_LINKED_SOURCE_TYPES = new Set(['po_receipt', 'catalog_link'])
+type CostRequest = ProductCostChangeRequestsQuery['productCostChangeRequests'][number]
 
 export default function CostChangeApprovalsPage() {
   const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
-  const isRtl = useIsRtl()
   const addToast = useToastStore((s) => s.addToast)
-  const { can, isSystemLevel } = usePermission()
-  const currentUserId = useAuthStore((s) => s.user?.id)
+  const { can } = usePermission()
   const canApprove = can('inventory.products.approve_cost_change', 'edit')
 
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending')
@@ -73,6 +68,23 @@ export default function CostChangeApprovalsPage() {
   const onErr = (err: Error) => {
     addToast({ type: 'error', message: err.message })
   }
+
+  // What rejecting leaves in place. Only the product's own cost is held back: the
+  // receipt, price, adjustment or edit that produced the request has already been
+  // saved (recordProductCostChange parks nothing else), so each source says which
+  // of its own effects stay.
+  const rejectionOutcome = (r: CostRequest): string => {
+    const head =
+      r.old_cost != null
+        ? t('inv.costApprovals.ifRejectedCost', {
+            cost: `${fmtN(r.old_cost)} ${r.currency_code}`,
+          })
+        : t('inv.costApprovals.ifRejectedNoCost')
+    return isCostChangeSourceType(r.source_type)
+      ? `${head} ${t(`inv.costApprovals.source.${r.source_type}.ifRejected`)}`
+      : head
+  }
+  const rejectTargetRequest = requests.find((x) => x.id === rejectTarget)
 
   const [approve, { loading: approving }] = useMutation<
     ApproveProductCostChangeMutation,
@@ -133,10 +145,13 @@ export default function CostChangeApprovalsPage() {
         const oldCost = r.old_cost != null ? parseFloat(r.old_cost) : null
         const newCost = parseFloat(r.new_cost)
         const pctChange = oldCost && oldCost > 0 ? ((newCost - oldCost) / oldCost) * 100 : null
-        // Mirrors the backend's own exception exactly: an admin may clear
-        // their own request (a single-admin company would otherwise have no
-        // reviewer at all); anyone else still needs a different approver.
-        const isOwnRequest = r.requested_by === currentUserId && !isSystemLevel
+        // The server decides who may clear their own request (admins and the
+        // company-wide Store Keeper may; anyone else needs a different reviewer)
+        // and sends the answer per row, so this page keeps no copy of that rule.
+        const needsAnotherReviewer = r.can_review === false
+        // Reviewed by the person who raised it: say so, so an auditor can spot it.
+        const reviewedByRequester = r.reviewed_by != null && r.reviewed_by === r.requested_by
+        const sourcePath = costChangeSourcePath(r.source_type, r.source_id)
         return (
           <Card key={r.id} style={{ padding: '16px 20px', marginBottom: '12px' }}>
             <div
@@ -160,8 +175,15 @@ export default function CostChangeApprovalsPage() {
                     navigate(`/inventory/products/${r.product_id}`)
                   }}
                 >
-                  {r.product_name}
-                  {isRtl && r.product_name_ar ? ` / ${r.product_name_ar}` : ''}
+                  <bdi>{r.product_name}</bdi>
+                  {r.product_name_ar && r.product_name_ar !== r.product_name && (
+                    <>
+                      {' / '}
+                      <bdi dir="rtl" lang="ar">
+                        {r.product_name_ar}
+                      </bdi>
+                    </>
+                  )}
                 </div>
                 <div style={{ fontSize: '12px', color: theme.textMuted }}>{r.sku}</div>
               </div>
@@ -189,36 +211,113 @@ export default function CostChangeApprovalsPage() {
               )}
             </div>
 
-            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '8px' }}>
-              {t('inv.costApprovals.sourceLine', {
-                source: r.source_label ?? enumLabel(r.source_type),
-                requester: r.requested_by_name ?? t('inv.costApprovals.unknownUser'),
-              })}
-              {PO_LINKED_SOURCE_TYPES.has(r.source_type) && r.source_id && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'max-content minmax(0, 1fr)',
+                columnGap: '14px',
+                rowGap: '6px',
+                marginTop: '12px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: `1px solid ${theme.border}`,
+                background: theme.bgCanvas,
+                fontSize: '12px',
+                color: theme.textSecondary,
+              }}
+            >
+              <span style={{ color: theme.textMuted }}>{t('inv.costApprovals.labelSource')}</span>
+              <div>
+                <span style={{ fontWeight: 600, color: theme.textPrimary }}>
+                  {t(`inv.productDetail.costSourceOpts.${r.source_type}`, {
+                    defaultValue: enumLabel(r.source_type),
+                  })}
+                </span>
+                {sourcePath && (
+                  <>
+                    {' · '}
+                    <Link to={sourcePath} style={{ color: theme.accent, fontWeight: 600 }}>
+                      {r.source_label ?? t('inv.costApprovals.viewSource')}
+                    </Link>
+                  </>
+                )}
+                {isCostChangeSourceType(r.source_type) && (
+                  <div style={{ marginTop: '2px' }}>
+                    {t(`inv.costApprovals.source.${r.source_type}.what`)}
+                  </div>
+                )}
+              </div>
+
+              <span style={{ color: theme.textMuted }}>
+                {t('inv.costApprovals.labelRequested')}
+              </span>
+              <span>
+                {r.requested_by_name ?? t('inv.costApprovals.unknownUser')}
+                {' · '}
+                {formatDateTime(r.created_at)}
+              </span>
+
+              {r.status === 'pending' && (
                 <>
-                  {' — '}
-                  <span
-                    style={{ color: theme.accent, cursor: 'pointer' }}
-                    onClick={() => {
-                      navigate(`/procurement/purchase-orders/${r.source_id}`)
-                    }}
-                  >
-                    {t('inv.costApprovals.viewPurchaseOrder')}
+                  <span style={{ color: theme.textMuted }}>
+                    {t('inv.costApprovals.labelIfApproved')}
                   </span>
+                  <span>
+                    {t('inv.costApprovals.ifApproved', {
+                      cost: `${fmtN(r.new_cost)} ${r.currency_code}`,
+                    })}
+                  </span>
+                  <span style={{ color: theme.textMuted }}>
+                    {t('inv.costApprovals.labelIfRejected')}
+                  </span>
+                  <span>{rejectionOutcome(r)}</span>
+                </>
+              )}
+
+              {r.status === 'approved' && r.reviewed_by_name && (
+                <>
+                  <span style={{ color: theme.textMuted }}>
+                    {t('inv.costApprovals.labelReviewed')}
+                  </span>
+                  <div style={{ color: theme.success }}>
+                    {t('inv.costApprovals.approvedBy', { name: r.reviewed_by_name })}
+                    {r.reviewed_at ? ` · ${formatDateTime(r.reviewed_at)}` : ''}
+                    {reviewedByRequester && (
+                      <div style={{ marginTop: '2px', color: theme.textMuted }}>
+                        {t('inv.costApprovals.reviewedByRequester')}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {r.status === 'rejected' && (
+                <>
+                  <span style={{ color: theme.textMuted }}>
+                    {t('inv.costApprovals.labelReviewed')}
+                  </span>
+                  <div style={{ color: theme.danger }}>
+                    {r.reviewed_by_name
+                      ? t('inv.costApprovals.rejectedBy', { name: r.reviewed_by_name })
+                      : t('inv.costApprovals.rejectedLabel')}
+                    {r.reviewed_at ? ` · ${formatDateTime(r.reviewed_at)}` : ''}
+                    {reviewedByRequester && (
+                      <div style={{ marginTop: '2px', color: theme.textMuted }}>
+                        {t('inv.costApprovals.reviewedByRequester')}
+                      </div>
+                    )}
+                    {r.rejection_reason && (
+                      <div style={{ marginTop: '2px' }}>
+                        {t('inv.costApprovals.rejectedReason', { reason: r.rejection_reason })}
+                      </div>
+                    )}
+                  </div>
+                  <span style={{ color: theme.textMuted }}>
+                    {t('inv.costApprovals.labelOutcome')}
+                  </span>
+                  <span>{rejectionOutcome(r)}</span>
                 </>
               )}
             </div>
-
-            {r.status === 'rejected' && r.rejection_reason && (
-              <div style={{ fontSize: '12px', color: theme.danger, marginTop: '6px' }}>
-                {t('inv.costApprovals.rejectedReason', { reason: r.rejection_reason })}
-              </div>
-            )}
-            {r.status === 'approved' && r.reviewed_by_name && (
-              <div style={{ fontSize: '12px', color: theme.success, marginTop: '6px' }}>
-                {t('inv.costApprovals.approvedBy', { name: r.reviewed_by_name })}
-              </div>
-            )}
 
             {r.status === 'pending' && (
               <div
@@ -233,7 +332,7 @@ export default function CostChangeApprovalsPage() {
                   variant="primary"
                   size="sm"
                   loading={approving}
-                  disabled={!canApprove || isOwnRequest}
+                  disabled={!canApprove || needsAnotherReviewer}
                   onClick={() => void approve({ variables: { id: r.id } })}
                 >
                   {t('inv.costApprovals.approve')}
@@ -242,14 +341,14 @@ export default function CostChangeApprovalsPage() {
                   variant="ghost"
                   size="sm"
                   style={{ color: theme.danger }}
-                  disabled={!canApprove || isOwnRequest}
+                  disabled={!canApprove || needsAnotherReviewer}
                   onClick={() => {
                     setRejectTarget(r.id)
                   }}
                 >
                   {t('inv.costApprovals.reject')}
                 </Button>
-                {isOwnRequest && (
+                {needsAnotherReviewer && (
                   <span style={{ fontSize: '12px', color: theme.textMuted }}>
                     {t('inv.costApprovals.needsADifferentApprover')}
                   </span>
@@ -293,6 +392,11 @@ export default function CostChangeApprovalsPage() {
           </>
         }
       >
+        {rejectTargetRequest && (
+          <p style={{ margin: '0 0 12px', fontSize: '13px', color: theme.textSecondary }}>
+            {rejectionOutcome(rejectTargetRequest)}
+          </p>
+        )}
         <Textarea
           label={t('inv.costApprovals.rejectionReason')}
           value={rejectReason}

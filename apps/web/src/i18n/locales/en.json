@@ -1539,18 +1539,59 @@
       "emptyOtherMessage": "No requests match this filter.",
       "emptyPendingMessage": "No cost changes are waiting for review.",
       "emptyTitle": "Nothing here",
+      "ifApproved": "The product's cost becomes {{cost}}, and the change is recorded in its cost history.",
+      "ifRejectedCost": "The product's cost stays at {{cost}}.",
+      "ifRejectedNoCost": "The product's cost stays unset.",
+      "labelIfApproved": "If approved",
+      "labelIfRejected": "If rejected",
+      "labelOutcome": "Left as is",
+      "labelRequested": "Requested by",
+      "labelReviewed": "Reviewed",
+      "labelSource": "Source",
       "needsADifferentApprover": "Needs a different approver",
       "reject": "Reject",
       "rejectTitle": "Reject this cost change",
       "rejected": "Cost change rejected",
+      "rejectedBy": "Rejected by {{name}}",
+      "rejectedLabel": "Rejected",
       "rejectedReason": "Rejected — {{reason}}",
       "rejectionReason": "Rejection reason",
-      "sourceLine": "{{source}} — requested by {{requester}}",
+      "reviewedByRequester": "Reviewed by the person who raised it",
+      "source": {
+        "catalog_link": {
+          "what": "A received item with no catalog match was linked to this product, bringing the price it was bought at.",
+          "ifRejected": "The item stays linked to the product."
+        },
+        "cost_correction": {
+          "what": "A cost-only correction made in Stock Adjustments, with no change in quantity.",
+          "ifRejected": "The correction stays posted on that stock location; only the product's cost is left unchanged."
+        },
+        "manual_edit": {
+          "what": "The Cost field was changed on the product's edit page.",
+          "ifRejected": "Other changes saved with that edit stay, and any stock location that had no cost recorded keeps the cost it was given."
+        },
+        "po_market_pricing": {
+          "what": "The market price entered while pricing this purchase order.",
+          "ifRejected": "The price stays on the purchase order."
+        },
+        "po_receipt": {
+          "what": "Goods were received on this purchase order at this unit price.",
+          "ifRejected": "The goods receipt itself is not undone."
+        },
+        "requisition_market_pricing": {
+          "what": "The market price entered while pricing this requisition.",
+          "ifRejected": "The price stays on the requisition."
+        },
+        "stock_adjustment": {
+          "what": "A stock adjustment where a new unit cost was entered for this item.",
+          "ifRejected": "The stock adjustment stays posted, and the stock location keeps the cost entered on it."
+        }
+      },
       "status": "Status",
-      "subtitle": "A cost change big enough to look like a mistake waits here until someone other than whoever triggered it reviews it.",
+      "subtitle": "A cost change big enough to look like a mistake waits here for review. Whoever triggered it can't review it themselves, except admins and the company's Store Keeper.",
       "title": "Cost Change Approvals",
       "unknownUser": "unknown user",
-      "viewPurchaseOrder": "View purchase order"
+      "viewSource": "View source"
     },
     "locations": {
       "active": "Active",

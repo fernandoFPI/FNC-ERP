@@ -111,10 +111,12 @@ export const PRODUCT_COST_CHANGE_REQUESTS_QUERY = gql`
       requested_by
       requested_by_name
       status
+      reviewed_by
       reviewed_by_name
       reviewed_at
       rejection_reason
       created_at
+      can_review
     }
   }
 `

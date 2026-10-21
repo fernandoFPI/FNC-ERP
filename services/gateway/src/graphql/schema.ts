@@ -2879,10 +2879,15 @@
     requested_by: ID
     requested_by_name: String
     status: String!
+    reviewed_by: ID
     reviewed_by_name: String
     reviewed_at: String
     rejection_reason: String
     created_at: String!
+    # Only set by the productCostChangeRequests queue (it depends on who is asking):
+    # false when the caller raised this request themselves and isn't allowed to
+    # clear their own (admins and the company-wide Store Keeper are).
+    can_review: Boolean
   }
 
   extend type StockBalance {

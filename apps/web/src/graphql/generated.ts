@@ -1085,7 +1085,7 @@ export type ProductCostChangeRequestsQueryVariables = Exact<{
 }>;
 
 
-export type ProductCostChangeRequestsQuery = { productCostChangeRequests: Array<{ id: string, product_id: string, product_name: string | null, product_name_ar: string | null, sku: string | null, old_cost: string | null, new_cost: string, currency_code: string, source_type: string, source_id: string | null, source_label: string | null, requested_by: string | null, requested_by_name: string | null, status: string, reviewed_by_name: string | null, reviewed_at: string | null, rejection_reason: string | null, created_at: string }> };
+export type ProductCostChangeRequestsQuery = { productCostChangeRequests: Array<{ id: string, product_id: string, product_name: string | null, product_name_ar: string | null, sku: string | null, old_cost: string | null, new_cost: string, currency_code: string, source_type: string, source_id: string | null, source_label: string | null, requested_by: string | null, requested_by_name: string | null, status: string, reviewed_by: string | null, reviewed_by_name: string | null, reviewed_at: string | null, rejection_reason: string | null, created_at: string, can_review: boolean | null }> };
 
 export type ApproveProductCostChangeMutationVariables = Exact<{
   id: string | number;
