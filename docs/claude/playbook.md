@@ -313,3 +313,18 @@ Don't re-derive, check these first.
     (`services/gateway/src/lib/contractRows.ts`) so they cannot drift (regression test
     `services/gateway/tests/project-contracts-list.test.ts`, including a list-versus-detail parity check). Same family
     as #24, #29 and #30 (two code paths for one thing).
+
+35. **A test that polls for "the first row" of a multi-row, fire-and-forget write passes on a small database and fails
+    on a big one.** `requisition-approval-notification-prefs.test.ts` waited until `service_outbox` held at least one
+    row for the requisition, then asserted the opted-in admin was in it. The notifier
+    (`notifyDeptHeadsAndAdminsForRequisitionGW`) is `void`-fired and inserts one row per recipient, one `await`ed
+    INSERT after another, and its admin query is every active `system_admin` in the whole database. With a few admins
+    the loop finishes inside the poll's first 100 ms sleep, so the test passed locally every time; on CI's freshly
+    seeded database, with many more, the second poll caught the loop half-written (`expected [ Array(1) ] to include
+    '<uuid>'`) and failed on 3 of 4 dev runs, then went green on a re-run, which is why it looked flaky. Reproduced
+    locally by inserting 80 extra active system_admins (fails 2 of 3), and confirmed fixed by the same padding
+    (passes 5 of 5). How to spot it: a failure whose message shows a list one element long where you expected a
+    specific member; a poll that returns on `rows.length > 0`; a test that only fails where the shared DB holds more
+    fixture users. Fix: poll until the row count stops changing between two polls, not until the first row appears.
+    Left alone on purpose: that admin query has no `company_id` filter, so a requisition notifies the system_admins
+    of every company; whether that is intended for platform admins is a product decision, not a test fix.

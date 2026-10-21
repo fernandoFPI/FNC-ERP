@@ -61,10 +61,16 @@ async function makeReqAtPendingApproval() {
 }
 
 // The notify call is `void`-fired, not awaited by verifyRequisitionPrices —
-// poll briefly for its service_outbox rows instead of assuming they exist
-// the instant the mutation returns.
-async function waitForOutboxRows(requisitionId: string, timeoutMs = 3000): Promise<{ userId: string }[]> {
+// poll for its service_outbox rows instead of assuming they exist the instant the
+// mutation returns. It inserts one row per recipient, one after another, and its
+// admin query covers every active system_admin in the database, so "at least one
+// row" can be a half-finished loop: on a database with many admins the opted-in
+// one was not written yet (CI failed this test that way, and so did a local run
+// padded with 80 extra admins). Wait until the count stops growing between two
+// polls instead.
+async function waitForOutboxRows(requisitionId: string, timeoutMs = 5000): Promise<{ userId: string }[]> {
   const deadline = Date.now() + timeoutMs
+  let lastCount = -1
   for (;;) {
     const r = await pool.query<{ payload: { userId: string } }>(
       `SELECT payload FROM service_outbox
@@ -72,9 +78,11 @@ async function waitForOutboxRows(requisitionId: string, timeoutMs = 3000): Promi
          AND payload->>'requisitionId' = $1`,
       [requisitionId],
     )
-    if (r.rows.length > 0 || Date.now() > deadline) {
+    const settled = r.rows.length > 0 && r.rows.length === lastCount
+    if (settled || Date.now() > deadline) {
       return r.rows.map((row) => ({ userId: row.payload.userId }))
     }
+    lastCount = r.rows.length
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
 }
