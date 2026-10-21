@@ -279,3 +279,20 @@ Don't re-derive, check these first.
     missing. Tests: `services/gateway/tests/receipt-photo-bypass.test.ts` (real Postgres),
     `pages/inventory/store-in/__tests__/StoreInDetail.test.tsx`, `pages/procurement/receipts/__tests__/ReceiptForm.test.tsx`.
     Note the hidden-input `Checkbox` is invisible to `getByRole('checkbox')`; use `getByLabelText`.
+
+33. **A deny-list of "post" statuses silently auto-approves every status added after it was written.** The gate
+    deciding whether a PO edit request needs an admin (`POST_APPROVAL_PO_STATUSES`) listed the post-approval
+    statuses and let everything else auto-apply. It dates from Aug 2026; the requisition-split child POs (Sept:
+    `bought`, `finance_review`, `payment_pending`, `closed`) were never added, so an edit to a child PO in Finance
+    review, including quantities and prices, was applied by the requester with no review: the row reads
+    "approved", reviewed by the requester, "Auto-applied — PO not yet approved" (NY-PO-2026-0042, qty 1 to 2). 12
+    edits on 10 POs between 6 and 21 Oct, among them `unit_price` 0.75 to 750, 300000 to 30000, USD to IQD and
+    `qty_ordered` 4.7 to 40.7. Same family as #29 (a status list that drifted) but with the opposite, unsafe default.
+    How to spot it: an approval gate written as a list of statuses that REQUIRE review, so a new status passes by
+    omission; grep `po_edit_requests` for `reviewed_by = requested_by` with review_notes "Auto-applied", and
+    `po_approval_log` `edit_applied` rows whose `from_status` is a post-approval status. Fix: invert it to an
+    allow-list of the pre-approval statuses that may auto-apply (`AUTO_APPLY_PO_STATUSES`,
+    `services/gateway/src/lib/poEditApproval.ts`), so an unknown or future status needs approval by default; the
+    test reads every status from the `purchase_orders_status_check` constraint and fails until a new one is
+    classified (`services/gateway/tests/po-edit-request-approval-gate.test.ts`, real Postgres). The requisition
+    equivalent (`POST_APPROVAL_REQUISITION_STATUSES`) is complete today but is still a deny-list.

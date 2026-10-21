@@ -293,9 +293,9 @@ describe('applyPOEditChanges qty_from_stock delta (Site 1, edit-request path)', 
 
     const poId = await makePO('inventory_check')
     // qty_ordered(10) > qtyFromStock(4) below — needs purchase, so the PO
-    // lands on market_pricing (not a POST_APPROVAL_PO_STATUSES status),
-    // which is what makes submitPOEditRequest auto-apply immediately
-    // instead of queuing for approval.
+    // lands on market_pricing (a pre-approval status in
+    // AUTO_APPLY_PO_STATUSES), which is what makes submitPOEditRequest
+    // auto-apply immediately instead of queuing for approval.
     const lineId = await makePOLine(poId, productId, 10)
 
     await resolvers.Mutation.confirmPOInventoryCheck(

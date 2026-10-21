@@ -23,6 +23,7 @@ import {
   resolveInvoiceBillingMethod,
 } from '../lib/contractBilling.js'
 import { resolvePhotoBypass } from '../lib/receiptPhotoBypass.js'
+import { poEditNeedsApproval } from '../lib/poEditApproval.js'
 import {
   sendEmail,
   renderMeetingInvitationEmail,
@@ -264,30 +265,6 @@ function getOrCreate<K, V>(map: Map<K, V>, key: K, factory: () => V): V {
   map.set(key, created)
   return created
 }
-
-// A PO is editable directly (no edit-request approval needed) up until it's been
-// approved — the state machine has no transition back from these statuses to an
-// earlier stage, so this is a reliable, one-way gate. 'ready_to_issue' is included
-// because 100%-stock-covered POs skip 'approved' entirely (inventory_check →
-// ready_to_issue → completed via approve_stock_issuance) — that transition is
-// itself the approval for that fast path.
-//
-// 'cancelled' is included too even though it's reachable from both pre- and
-// post-approval statuses (CANCELLABLE covers everything from 'draft' onward) —
-// the current status alone can't tell those two cases apart, so this errs
-// conservative and keeps requiring approval rather than risk silently
-// auto-applying an edit to a PO that actually had been approved before it was
-// cancelled.
-const POST_APPROVAL_PO_STATUSES = [
-  'approved',
-  'ready_to_issue',
-  'items_bought',
-  'goods_received',
-  'finance_audit',
-  'invoiced',
-  'completed',
-  'cancelled',
-]
 
 // Releases whatever's left of a from-stock reservation for a specific set
 // of po_lines rows that are about to be DELETEd by an edit-request removal
@@ -732,8 +709,8 @@ async function applyPOEditChanges(
   }
 }
 
-// G1 Phase 3 Milestone A — requisition equivalent of POST_APPROVAL_PO_STATUSES,
-// same reasoning: once a requisition has been approved, an edit needs
+// G1 Phase 3 Milestone A — requisition equivalent of the PO rule in
+// lib/poEditApproval.ts, same reasoning: once a requisition has been approved, an edit needs
 // review rather than auto-applying. 'rejected' is included for the same
 // conservative reason the PO list includes 'cancelled' — the current
 // status alone can't tell "cancelled before approval" from "cancelled
@@ -32650,7 +32627,7 @@ const phase5MutationResolvers = {
     // A PO that hasn't been approved yet doesn't need admin sign-off to change —
     // apply it immediately, but still record it as an (auto-approved) edit request
     // so the "Edit requests" tab keeps a full, honest audit trail either way.
-    if (!POST_APPROVAL_PO_STATUSES.includes(poStatus)) {
+    if (!poEditNeedsApproval(poStatus)) {
       const client = await pool.connect()
       let row: Record<string, unknown>
       try {
