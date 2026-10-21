@@ -296,3 +296,20 @@ Don't re-derive, check these first.
     test reads every status from the `purchase_orders_status_check` constraint and fails until a new one is
     classified (`services/gateway/tests/po-edit-request-approval-gate.test.ts`, real Postgres). The requisition
     equivalent (`POST_APPROVAL_REQUISITION_STATUSES`) is complete today but is still a deny-list.
+
+34. **A list resolver that hard-codes `[]` for a child collection makes the screen look "not working" while the data
+    saves fine.** The project's Contract Management tab reads the `projectContracts` list query, whose resolver
+    returned `milestones: []` and `invoices: []` without ever querying the tables (since the initial commit). Adding
+    a milestone worked (row in `project_milestones`, refetch ran) but the tab said "No milestones defined" and its
+    Invoices box was always empty; the Edit / Mark reached / Delete actions could never be used. Production held 2
+    milestones and 5 invoices it could not display. The standalone contract page worked because it uses the
+    single-contract query (`projectContract`), which does load them. How to spot it: "I saved it and it isn't
+    there" where the row IS in the table; grep the resolvers for `: [],` literals on a field the page renders, and
+    compare the list resolver with the detail resolver for the same type. Related: the mutation responses
+    (`createProjectContract`, `updateProjectContract`, ...) also return `milestones: []`; they are not rendered, but
+    Apollo merges the response into the cached contract by id, so any new screen reading those fields right after a
+    mutation would flash empty. Fix: the list loads milestones and invoices for every returned contract in two
+    `= ANY($1)` queries (not one per contract), and both resolvers map rows through one shared helper
+    (`services/gateway/src/lib/contractRows.ts`) so they cannot drift (regression test
+    `services/gateway/tests/project-contracts-list.test.ts`, including a list-versus-detail parity check). Same family
+    as #24, #29 and #30 (two code paths for one thing).

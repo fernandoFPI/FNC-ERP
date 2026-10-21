@@ -24,6 +24,7 @@ import {
 } from '../lib/contractBilling.js'
 import { resolvePhotoBypass } from '../lib/receiptPhotoBypass.js'
 import { poEditNeedsApproval } from '../lib/poEditApproval.js'
+import { mapContractMilestone, mapContractInvoice, groupByContract } from '../lib/contractRows.js'
 import {
   sendEmail,
   renderMeetingInvitationEmail,
@@ -8942,6 +8943,24 @@ export const resolvers = {
         createdByName: rv.created_by_name ?? null,
         createdAt: rv.created_at,
       })
+      // Milestones and invoices for every contract returned, in two queries in total
+      // (the ids are already limited to this company's contracts above). This used to
+      // return empty arrays, so the project's Contract Management tab, which reads
+      // this query, never showed either.
+      const [milestoneRows, invoiceRows] = ids.length
+        ? await Promise.all([
+            query(
+              `SELECT * FROM project_milestones WHERE contract_id = ANY($1) ORDER BY sequence, created_at`,
+              [ids],
+            ),
+            query(
+              `SELECT * FROM project_invoices WHERE contract_id = ANY($1) ORDER BY created_at DESC`,
+              [ids],
+            ),
+          ])
+        : [{ rows: [] }, { rows: [] }]
+      const milestonesByContract = groupByContract(milestoneRows.rows as Record<string, unknown>[])
+      const invoicesByContract = groupByContract(invoiceRows.rows as Record<string, unknown>[])
       return rows.map((r) => ({
         id: r.id,
         projectId: r.project_id,
@@ -8960,8 +8979,8 @@ export const resolvers = {
         totalInvoiced: parseFloat(String(r.total_invoiced)),
         totalPaid: parseFloat(String(r.total_paid)),
         outstanding: parseFloat(String(r.total_invoiced)) - parseFloat(String(r.total_paid)),
-        milestones: [],
-        invoices: [],
+        milestones: (milestonesByContract.get(String(r.id)) ?? []).map(mapContractMilestone),
+        invoices: (invoicesByContract.get(String(r.id)) ?? []).map(mapContractInvoice),
         revisions: (revsByContract.get(String(r.id)) ?? []).map(mapRev),
       }))
     },
@@ -9003,29 +9022,8 @@ export const resolvers = {
         totalInvoiced: parseFloat(String(r.total_invoiced)),
         totalPaid: parseFloat(String(r.total_paid)),
         outstanding: parseFloat(String(r.total_invoiced)) - parseFloat(String(r.total_paid)),
-        milestones: milestones.rows.map((m: Record<string, unknown>) => ({
-          id: m.id,
-          name: m.name,
-          sequence: parseFloat(String(m.sequence)),
-          billableAmount: parseFloat(String(m.billable_amount)),
-          currencyCode: String(m.currency_code).trim(),
-          status: m.status,
-          reachedAt: m.reached_at ?? null,
-        })),
-        invoices: invoices.rows.map((i: Record<string, unknown>) => ({
-          id: i.id,
-          invoiceNumber: i.invoice_number,
-          billingMethod: i.billing_method,
-          displayMode: i.display_mode,
-          grossTotal: parseFloat(String(i.gross_total)),
-          retentionAmount: parseFloat(String(i.retention_amount)),
-          netPayable: parseFloat(String(i.net_payable)),
-          status: i.status,
-          invoiceDate: i.invoice_date,
-          dueDate: i.due_date,
-          lines: [],
-          payments: [],
-        })),
+        milestones: milestones.rows.map(mapContractMilestone),
+        invoices: invoices.rows.map(mapContractInvoice),
       }
     },
 
