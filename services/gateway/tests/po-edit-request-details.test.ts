@@ -25,11 +25,13 @@ const SKU_PREFIX = 'PEDTEST-'
 const PO_PREFIX = 'PEDTEST-PO-'
 
 const line = (over: Partial<PoLineSnapshot> & { id: string }): PoLineSnapshot => ({
+  line_number: 1,
   description: 'Cable 3x2.5',
   qty_ordered: '12.0000',
   unit_price: '4500.0000',
   uom: 'm',
   currency_code: 'IQD',
+  total_price: '54000.0000',
   ...over,
 })
 
@@ -42,17 +44,45 @@ describe('recordLineNamesInEditChanges (pure)', () => {
           removed: ['b'],
         },
       },
-      [line({ id: 'a' }), line({ id: 'b', description: 'Junction box', qty_ordered: '3', unit_price: '900', uom: 'ea' })],
+      [line({ id: 'a' }), line({ id: 'b', line_number: 2, description: 'Junction box', qty_ordered: '3', unit_price: '900', uom: 'ea' })],
     )
     expect(out.lines?.edited?.[0]).toMatchObject({ id: 'a', field: 'qty_ordered', description: 'Cable 3x2.5' })
     expect(out.lines?.removed?.[0]).toEqual({
       id: 'b',
+      line_number: 2,
       description: 'Junction box',
       qty: 3,
       unit_price: 900,
       uom: 'ea',
       currency_code: 'IQD',
     })
+  })
+
+  it("records each touched line as it was, with its index, so the history can show 'line 2' later", () => {
+    const out = recordLineNamesInEditChanges(
+      { lines: { edited: [{ id: 'a' }, { id: 'a' }], removed: ['b'] } },
+      [
+        line({ id: 'a', line_number: 1 }),
+        line({ id: 'b', line_number: 2, description: 'Junction box', qty_ordered: '3', unit_price: '900', uom: 'ea', total_price: '2700' }),
+        line({ id: 'c', line_number: 3 }), // not touched
+      ],
+    ) as { touched?: { id: string; line_number: number; description: string | null; qty: number; unit_price: number; total: number }[] }
+    expect(out.touched?.map((t) => t.id)).toEqual(['a', 'b']) // once each, in order, no untouched line
+    expect(out.touched?.[1]).toEqual({
+      id: 'b',
+      line_number: 2,
+      description: 'Junction box',
+      qty: 3,
+      unit_price: 900,
+      uom: 'ea',
+      currency_code: 'IQD',
+      total: 2700,
+    })
+  })
+
+  it('adds no touched list when no listed line is on the PO', () => {
+    const out = recordLineNamesInEditChanges({ lines: { removed: ['ghost'] } }, [line({ id: 'a' })])
+    expect(out).not.toHaveProperty('touched')
   })
 
   it('keeps what the caller already recorded', () => {

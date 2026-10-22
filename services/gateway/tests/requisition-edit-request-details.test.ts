@@ -192,3 +192,61 @@ describe('the auto-apply note', () => {
     expect(isAutoAppliedEditRequest(row.rows[0]!)).toBe(true)
   })
 })
+
+describe('the money effect of a requisition edit request', () => {
+  interface Impact {
+    totals: { currency_code: string; before: string; after: string }[]
+    lines: { id: string; line_number: number | null; before: number | null; after: number | null }[]
+    failure?: string | null
+  }
+  const impactFor = async (requestId: string, role = 'system_admin', userId = adminId): Promise<Impact | null> =>
+    (await resolvers.Query.poEditRequestImpact(null, { requestId } as never, ctxFor(userId, role))) as Impact | null
+  const sumTotals = async (reqId: string): Promise<number> =>
+    parseFloat(
+      (await pool.query<{ t: string }>(`SELECT COALESCE(SUM(total_price),0)::text AS t FROM po_lines WHERE requisition_id=$1`, [reqId])).rows[0]!.t,
+    )
+
+  it('dry-runs a pending removal and leaves the requisition untouched', async () => {
+    const { reqId, boxId } = await makeRequisition('approved')
+    const res = await submit(reqId, { lines: { removed: [boxId] } })
+    const totalBefore = await sumTotals(reqId)
+    const linesBefore = (await pool.query(`SELECT count(*)::int AS n FROM po_lines WHERE requisition_id=$1`, [reqId])).rows[0]!.n
+
+    const i = (await impactFor(res.id))!
+    expect(parseFloat(i.totals[0]!.before)).toBe(totalBefore)
+    expect(parseFloat(i.totals[0]!.after)).toBe(totalBefore - 2700)
+    expect(i.lines).toMatchObject([{ id: boxId, before: 2700, after: null }])
+
+    expect(await sumTotals(reqId)).toBe(totalBefore)
+    expect((await pool.query(`SELECT count(*)::int AS n FROM po_lines WHERE requisition_id=$1`, [reqId])).rows[0]!.n).toBe(linesBefore)
+  })
+
+  it('gives the totals that approving it then produces, and keeps them with the request', async () => {
+    const { reqId, cableId, boxId } = await makeRequisition('approved')
+    const res = await submit(reqId, {
+      lines: { edited: [{ id: cableId, field: 'qty_ordered', from: 12, to: 20 }], removed: [boxId] },
+    })
+    const predicted = (await impactFor(res.id))!
+    await resolvers.Mutation.approvePOEditRequest(null, { requisitionId: reqId, requestId: res.id } as never, ctxFor(adminId, 'system_admin'))
+    expect(await sumTotals(reqId)).toBe(parseFloat(predicted.totals[0]!.after))
+
+    const afterwards = (await impactFor(res.id))!
+    expect(afterwards.totals).toEqual(predicted.totals)
+  })
+
+  it('shows reviewers the impact and nobody else', async () => {
+    const { reqId, boxId } = await makeRequisition('approved')
+    const res = await submit(reqId, { lines: { removed: [boxId] } })
+    expect(await impactFor(res.id, 'company_admin')).not.toBeNull()
+    expect(await impactFor(res.id, 'user', requesterId)).toBeNull()
+  })
+
+  it('records the impact of an edit applied straight away on a requisition not yet approved', async () => {
+    const { reqId, boxId } = await makeRequisition('draft')
+    const before = await sumTotals(reqId)
+    const res = await submit(reqId, { lines: { removed: [boxId] } })
+    const i = (await impactFor(res.id))!
+    expect(parseFloat(i.totals[0]!.before)).toBe(before)
+    expect(parseFloat(i.totals[0]!.after)).toBe(before - 2700)
+  })
+})

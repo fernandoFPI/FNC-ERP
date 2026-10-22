@@ -1,18 +1,27 @@
-// One entry in a PO's Edit Request History: who asked and when, what exactly changed (by
-// line name, not by id), why it is waiting, and what approving or rejecting it does.
+// One entry in a PO's (or requisition's) Edit Request History: who asked and when, the reason
+// they gave, exactly what changed on which line (index, name, details, how far a price or
+// quantity moved), what it does to the totals, and who reviewed it.
 // The review controls live here too, so the card is the whole story of a request.
 import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useQuery } from '@apollo/client'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { enumLabel } from '../../i18n'
 import { formatDateTime } from './ListKit'
+import { PO_EDIT_REQUEST_IMPACT_QUERY } from '../../graphql/procurement'
+import type {
+  PoEditRequestImpactQuery,
+  PoEditRequestImpactQueryVariables,
+} from '../../graphql/generated'
 import {
   describeEditChanges,
   formatEditNumber,
   formatEditValue,
+  toImpactView,
   type CurrentLine,
+  type LineDetails,
 } from '../../lib/poEditChanges'
 
 export interface EditRequestView {
@@ -34,9 +43,8 @@ export interface EditRequestView {
 
 interface Props {
   request: EditRequestView
-  /** The PO's lines as they are now: names a bare line id recorded by an older request. */
+  /** The PO's lines as they are now: names (and indexes) a request recorded without them. */
   currentLines: CurrentLine[]
-  /** Whatever is typed in the reason box goes along as the review note, as it always has. */
   onApprove: (requestId: string, reviewNotes?: string) => void
   onReject: (requestId: string, reason: string) => void
   approving?: boolean
@@ -51,10 +59,11 @@ interface Props {
   flush?: boolean
 }
 
-// Entries shown before the rest are folded behind "Show all": a request that adds 22
+// Entries shown before the rest are folded behind "Show more": a request that adds 22
 // lines would otherwise push the Approve button off the screen.
 const COLLAPSED_ENTRIES = 6
 
+// priority and delivery destination are stored as codes ('emergency', 'jobsite')
 const ENUM_FIELDS = new Set(['priority', 'delivery_destination'])
 
 const STATUS_VARIANT: Record<string, 'warning' | 'success' | 'danger'> = {
@@ -81,20 +90,67 @@ export function EditRequestCard({
   const [showAll, setShowAll] = useState(false)
 
   const summary = describeEditChanges(er.changes, currentLines)
+
+  // A pending request's effect on the totals is worked out by the server (the real approval
+  // logic, rolled back) and only for reviewers; a reviewed one carries what was recorded.
+  const pending = er.status === 'pending'
+  const { data: impactData, loading: impactLoading } = useQuery<
+    PoEditRequestImpactQuery,
+    PoEditRequestImpactQueryVariables
+  >(PO_EDIT_REQUEST_IMPACT_QUERY, {
+    variables: { requestId: er.id },
+    skip: !pending,
+    fetchPolicy: 'network-only',
+  })
+  const impact = pending ? toImpactView(impactData?.poEditRequestImpact) : summary.impact
+
   // The strings that name the PO have a `_requisition` variant; i18next picks it from `context`.
   const context = kind === 'requisition' ? 'requisition' : undefined
   const fieldLabel = (field: string) =>
     t(`po.editReq.field.${field}`, { defaultValue: field.replace(/_/g, ' ') })
   const person = (name?: string | null, email?: string | null) =>
     name ?? email ?? t('po.editReq.unknownUser')
+  const lineName = (name: string | null) =>
+    name ? <bdi>{name}</bdi> : t('po.editReq.lineNotOnPo', { context })
 
   const muted: CSSProperties = { color: theme.textMuted }
-  // priority and delivery destination are stored as codes ('emergency', 'jobsite')
   const displayValue = (field: string, value: unknown) =>
     ENUM_FIELDS.has(field) && typeof value === 'string' && value !== ''
       ? enumLabel(value)
       : formatEditValue(field, value)
-  const diffRow = (field: string, from: unknown, to: unknown, key: string): ReactNode => (
+  const money = (n: number, currency?: string | null) =>
+    `${formatEditNumber(n)}${currency ? ` ${currency}` : ''}`
+  const pctBadge = (pct: number | null) =>
+    pct === null || Math.abs(pct) < 0.05 ? null : (
+      <Badge variant={pct > 0 ? 'warning' : 'neutral'}>
+        {pct > 0 ? '+' : ''}
+        {pct.toFixed(1)}%
+      </Badge>
+    )
+
+  // "12 m × 4,500 IQD = 54,000 IQD": the line as it was.
+  const lineDetails = (d: LineDetails | null): string => {
+    if (!d) return ''
+    const qty = d.qty !== null ? `${formatEditNumber(d.qty)}${d.uom ? ` ${d.uom}` : ''}` : ''
+    const price = d.unitPrice !== null ? money(d.unitPrice, d.currency) : ''
+    const total = d.total !== null && d.total !== 0 ? ` = ${money(d.total, d.currency)}` : ''
+    return [qty, price].filter(Boolean).join(' × ') + total
+  }
+
+  const lineHeading = (n: number | null, name: string | null): ReactNode => (
+    <>
+      {n !== null && <span style={muted}>#{n} · </span>}
+      {lineName(name)}
+    </>
+  )
+
+  const diffRow = (
+    field: string,
+    from: unknown,
+    to: unknown,
+    pct: number | null,
+    key: string,
+  ): ReactNode => (
     <div
       key={key}
       style={{ display: 'flex', gap: '8px', alignItems: 'baseline', flexWrap: 'wrap' }}
@@ -105,29 +161,32 @@ export function EditRequestCard({
       </bdi>
       <span style={muted}>→</span>
       <bdi style={{ color: theme.accent }}>{displayValue(field, to)}</bdi>
+      {pctBadge(pct)}
     </div>
   )
-  const detail = (
-    qty: number | null,
-    uom: string | null,
-    price: number | null,
-    currency: string | null,
-  ) =>
-    [
-      qty !== null ? `${formatEditNumber(qty)}${uom ? ` ${uom}` : ''}` : null,
-      price !== null
-        ? t('po.editReq.each', {
-            price: `${formatEditNumber(price)}${currency ? ` ${currency}` : ''}`,
-          })
-        : null,
-    ]
-      .filter(Boolean)
-      .join(' · ')
+
+  const lineTotalRow = (lineId: string): ReactNode => {
+    const l = impact?.lines.find((x) => x.id === lineId)
+    if (l?.before == null || l.after == null) return null
+    return (
+      <div
+        key={`lt-${lineId}`}
+        style={{ display: 'flex', gap: '8px', alignItems: 'baseline', flexWrap: 'wrap' }}
+      >
+        <span style={{ ...muted, minWidth: '120px' }}>{t('po.editReq.lineTotal')}</span>
+        <bdi style={{ color: theme.danger, textDecoration: 'line-through' }}>
+          {money(l.before, l.currency)}
+        </bdi>
+        <span style={muted}>→</span>
+        <bdi style={{ color: theme.accent }}>{money(l.after, l.currency)}</bdi>
+      </div>
+    )
+  }
 
   const entries: { key: string; node: ReactNode }[] = [
     ...summary.header.map((h) => ({
       key: `h-${h.field}`,
-      node: diffRow(h.field, h.from, h.to, `h-${h.field}`),
+      node: diffRow(h.field, h.from, h.to, null, `h-${h.field}`),
     })),
     ...summary.edited.map((line, i) => ({
       key: `e-${line.lineId}-${i}`,
@@ -137,8 +196,9 @@ export function EditRequestCard({
           style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}
         >
           <span style={{ fontWeight: 600, color: theme.textPrimary }}>
-            {line.name ? <bdi>{line.name}</bdi> : t('po.editReq.lineNotOnPo', { context })}
+            {lineHeading(line.lineNumber, line.name)}
           </span>
+          {line.details && <span style={muted}>{lineDetails(line.details)}</span>}
           <div
             style={{
               display: 'flex',
@@ -148,8 +208,9 @@ export function EditRequestCard({
             }}
           >
             {line.changes.map((c, j) =>
-              diffRow(c.field, c.from, c.to, `e-${line.lineId}-${i}-${j}`),
+              diffRow(c.field, c.from, c.to, c.pct, `e-${line.lineId}-${i}-${j}`),
             )}
+            {lineTotalRow(line.lineId)}
           </div>
         </div>
       ),
@@ -161,7 +222,15 @@ export function EditRequestCard({
           <span style={{ color: theme.accent, fontWeight: 600 }}>
             + {line.description ? <bdi>{line.description}</bdi> : t('po.editReq.newLine')}
           </span>{' '}
-          <span style={muted}>{detail(line.qty, line.uom, line.unitPrice, line.currency)}</span>
+          <span style={muted}>
+            {lineDetails({
+              qty: line.qty,
+              unitPrice: line.unitPrice,
+              uom: line.uom,
+              currency: line.currency,
+              total: null,
+            })}
+          </span>
         </div>
       ),
     })),
@@ -170,11 +239,11 @@ export function EditRequestCard({
       node: (
         <div key={`r-${line.lineId}-${i}`}>
           <span style={{ color: theme.danger, fontWeight: 600 }}>
-            − {line.name ? <bdi>{line.name}</bdi> : t('po.editReq.lineNotOnPo', { context })}
+            − {lineHeading(line.lineNumber, line.name)}
           </span>{' '}
           <span style={muted}>
-            {line.name
-              ? detail(line.qty, line.uom, line.unitPrice, line.currency)
+            {(line.name ?? line.details)
+              ? lineDetails(line.details)
               : t('po.editReq.nameNotRecorded')}
           </span>
         </div>
@@ -193,6 +262,7 @@ export function EditRequestCard({
   const reviewedAt = er.reviewed_at ? ` · ${formatDateTime(er.reviewed_at)}` : ''
 
   const label = (key: string) => <span style={muted}>{t(key)}</span>
+  const showImpactRow = impact !== null || (pending && impactLoading)
 
   return (
     <div
@@ -226,7 +296,7 @@ export function EditRequestCard({
           display: 'grid',
           gridTemplateColumns: 'max-content minmax(0, 1fr)',
           columnGap: '14px',
-          rowGap: '6px',
+          rowGap: '8px',
           padding: '10px 12px',
           borderRadius: '8px',
           border: `1px solid ${theme.border}`,
@@ -235,8 +305,17 @@ export function EditRequestCard({
           color: theme.textSecondary,
         }}
       >
+        {label('po.editReq.labelReason')}
+        {er.request_notes ? (
+          <span style={{ fontStyle: 'italic', color: theme.textPrimary }}>
+            “{er.request_notes}”
+          </span>
+        ) : (
+          <span style={muted}>{t('po.editReq.noReasonGiven')}</span>
+        )}
+
         {label('po.editReq.labelChanges')}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {visibleEntries.length === 0 && <span style={muted}>{t('po.editReq.noDetail')}</span>}
           {visibleEntries.map((e) => e.node)}
           {hiddenCount > 0 && (
@@ -263,55 +342,93 @@ export function EditRequestCard({
           )}
         </div>
 
-        {er.request_notes && (
+        {showImpactRow && (
           <>
-            {label('po.editReq.labelReason')}
-            <span style={{ fontStyle: 'italic' }}>“{er.request_notes}”</span>
+            {label('po.editReq.labelImpact')}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {impact === null && <span style={muted}>{t('po.editReq.impactLoading')}</span>}
+              {impact?.failure && (
+                <span style={{ color: theme.danger }}>
+                  {t('po.editReq.impactFailure', { message: impact.failure })}
+                </span>
+              )}
+              {impact && !impact.failure && impact.totals.every((x) => x.delta === 0) && (
+                <span style={muted}>{t('po.editReq.noTotalChange')}</span>
+              )}
+              {impact &&
+                !impact.failure &&
+                impact.totals
+                  .filter((x) => x.delta !== 0)
+                  .map((x) => (
+                    <div
+                      key={x.currency}
+                      style={{
+                        display: 'flex',
+                        gap: '8px',
+                        alignItems: 'baseline',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <span style={{ ...muted, minWidth: '120px' }}>
+                        {t('po.editReq.totalLabel', { context })}
+                      </span>
+                      <bdi style={{ color: theme.danger, textDecoration: 'line-through' }}>
+                        {money(x.before)}
+                      </bdi>
+                      <span style={muted}>→</span>
+                      <bdi style={{ color: theme.textPrimary, fontWeight: 600 }}>
+                        {money(x.after, x.currency)}
+                      </bdi>
+                      <bdi
+                        style={{
+                          color: x.delta > 0 ? theme.warning : theme.success,
+                          fontWeight: 600,
+                        }}
+                      >
+                        ({x.delta > 0 ? '+' : '−'}
+                        {formatEditNumber(Math.abs(x.delta))})
+                      </bdi>
+                    </div>
+                  ))}
+            </div>
           </>
         )}
 
-        {label('po.editReq.labelReview')}
-        <div>
-          {er.status === 'pending' && <span>{t('po.editReq.waitingForReview', { context })}</span>}
-          {er.auto_applied && <span>{t('po.editReq.appliedAutomatically', { context })}</span>}
-          {er.status === 'approved' && !er.auto_applied && (
-            <span style={{ color: theme.success }}>
-              {t('po.editReq.approvedBy', { name: reviewer })}
-              {reviewedAt}
-            </span>
-          )}
-          {er.status === 'rejected' && (
-            <span style={{ color: theme.danger }}>
-              {t('po.editReq.rejectedBy', { name: reviewer })}
-              {reviewedAt}
-            </span>
-          )}
-          {er.status !== 'pending' && !er.auto_applied && er.review_notes && (
-            <div style={{ marginTop: '2px' }}>
-              {er.status === 'rejected'
-                ? t('po.editReq.rejectedReason', { reason: er.review_notes })
-                : `“${er.review_notes}”`}
-            </div>
-          )}
-          {reviewedByRequester && (
-            <div style={{ marginTop: '2px', ...muted }}>{t('po.editReq.reviewedByRequester')}</div>
-          )}
-        </div>
-
-        {er.status === 'pending' && (
+        {er.status !== 'pending' && (
           <>
-            {label('po.editReq.labelIfApproved')}
-            <span>
-              {t('po.editReq.ifApproved', { context })}
-              {summary.removed.length > 0 && ` ${t('po.editReq.ifApprovedRemoved')}`}
-            </span>
-            {label('po.editReq.labelIfRejected')}
-            <span>{t('po.editReq.ifRejected', { context })}</span>
+            {label('po.editReq.labelReviewed')}
+            <div>
+              {er.auto_applied && <span>{t('po.editReq.appliedAutomatically', { context })}</span>}
+              {er.status === 'approved' && !er.auto_applied && (
+                <span style={{ color: theme.success }}>
+                  {t('po.editReq.approvedBy', { name: reviewer })}
+                  {reviewedAt}
+                </span>
+              )}
+              {er.status === 'rejected' && (
+                <span style={{ color: theme.danger }}>
+                  {t('po.editReq.rejectedBy', { name: reviewer })}
+                  {reviewedAt}
+                </span>
+              )}
+              {!er.auto_applied && er.review_notes && (
+                <div style={{ marginTop: '2px' }}>
+                  {er.status === 'rejected'
+                    ? t('po.editReq.rejectedReason', { reason: er.review_notes })
+                    : `“${er.review_notes}”`}
+                </div>
+              )}
+              {reviewedByRequester && (
+                <div style={{ marginTop: '2px', ...muted }}>
+                  {t('po.editReq.reviewedByRequester')}
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
 
-      {er.status === 'pending' && canReview && (
+      {pending && canReview && (
         <div
           style={{
             display: 'flex',

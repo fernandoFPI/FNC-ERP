@@ -139,6 +139,7 @@ export const PURCHASE_ORDER_QUERY = gql`
       funding_employee_name
       lines {
         id
+        line_number
         product_id
         product_name
         sku
@@ -696,6 +697,29 @@ export const PO_LIFECYCLE_QUERY = gql`
         created_at
         auto_applied
       }
+    }
+  }
+`
+
+// The money effect of an edit request: dry-run for a pending one (reviewers only), as recorded
+// for a reviewed one. Null when it is not available.
+export const PO_EDIT_REQUEST_IMPACT_QUERY = gql`
+  query POEditRequestImpact($requestId: ID!) {
+    poEditRequestImpact(requestId: $requestId) {
+      totals {
+        currency_code
+        before
+        after
+      }
+      lines {
+        id
+        line_number
+        description
+        currency_code
+        before
+        after
+      }
+      failure
     }
   }
 `

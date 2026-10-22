@@ -1,16 +1,26 @@
-// The Edit Request History card on a PO. It used to show "line qty ordered 1.0000 → 540" and
-// "− 1 line removed" with no way to tell which line, the requester's email only, and no hint of
-// what approving or rejecting would do. Now it names the lines, the people and the time, says why
-// the request is waiting, and what each choice leaves behind.
-import { describe, it, expect, vi, afterEach } from 'vitest'
+// The Edit Request History card on a PO or requisition. It used to show "line qty ordered
+// 1.0000 → 540" and "− 1 line removed" with no way to tell which line, the requester's email only,
+// and (in its first rework) generic "if approved / if rejected" sentences that said nothing about
+// the request in front of the reviewer. It now shows what matters about THIS request: the reason
+// given, each change under its line's index and details with how far it moved, what it does to the
+// totals, and who reviewed it.
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import type * as ApolloClientModule from '@apollo/client'
 import { ThemeProvider } from '../../../theme/ThemeContext'
 import i18n from '../../../i18n'
+import { PO_EDIT_REQUEST_IMPACT_QUERY } from '../../../graphql/procurement'
 import { EditRequestCard, type EditRequestView } from '../EditRequestCard'
 
+const mockUseQuery = vi.fn()
+vi.mock('@apollo/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof ApolloClientModule>()
+  return { ...actual, useQuery: (...args: unknown[]): unknown => mockUseQuery(...args) }
+})
+
 const onPo = [
-  { id: 'cable', description: 'Cable 3x2.5' },
-  { id: 'box', description: 'Junction box' },
+  { id: 'cable', description: 'Cable 3x2.5', line_number: 1 },
+  { id: 'box', description: 'Junction box', line_number: 2 },
 ]
 
 function request(over: Partial<EditRequestView> = {}): EditRequestView {
@@ -33,6 +43,15 @@ function request(over: Partial<EditRequestView> = {}): EditRequestView {
   }
 }
 
+// What the gateway answers for a pending request's impact; undefined = no answer.
+function answerImpact(impact: unknown, loading = false) {
+  mockUseQuery.mockImplementation((doc: unknown, opts?: { skip?: boolean }) => {
+    if (doc === PO_EDIT_REQUEST_IMPACT_QUERY && !opts?.skip)
+      return { data: impact === undefined ? undefined : { poEditRequestImpact: impact }, loading }
+    return { data: undefined, loading: false }
+  })
+}
+
 function renderCard(
   er: EditRequestView,
   extra: Partial<Parameters<typeof EditRequestCard>[0]> = {},
@@ -53,30 +72,102 @@ function renderCard(
   return { onApprove, onReject }
 }
 
+beforeEach(() => {
+  vi.clearAllMocks()
+  answerImpact(undefined)
+})
+
 afterEach(async () => {
   await i18n.changeLanguage('en')
 })
 
-describe('EditRequestCard: what changed', () => {
-  it('names the removed line instead of just counting it', () => {
-    renderCard(request())
-    expect(screen.getByText('Junction box')).toBeInTheDocument()
-    expect(screen.getByText(/−/)).toBeInTheDocument()
-    expect(screen.getByText('1 change')).toBeInTheDocument()
+const touchedCable = {
+  id: 'cable',
+  line_number: 1,
+  description: 'Cable 3x2.5',
+  qty: 12,
+  unit_price: 4500,
+  uom: 'm',
+  currency_code: 'IQD',
+  total: 54000,
+}
+
+describe('EditRequestCard: the reason', () => {
+  it('shows the reason the requester gave', () => {
+    renderCard(request({ request_notes: 'Supplier cancelled the box' }))
+    expect(screen.getByText('Reason for the change')).toBeInTheDocument()
+    expect(screen.getByText(/Supplier cancelled the box/)).toBeInTheDocument()
   })
 
-  it('shows what a removed line was: quantity and price, when they were recorded', () => {
+  it('says so when no reason was given, instead of leaving a gap', () => {
+    renderCard(request())
+    expect(screen.getByText('No reason was given.')).toBeInTheDocument()
+  })
+})
+
+describe('EditRequestCard: which line, and what changed on it', () => {
+  it("shows the line's index and name with its details as they were", () => {
     renderCard(
       request({
-        status: 'approved',
+        changes: JSON.stringify({
+          touched: [touchedCable],
+          lines: { edited: [{ id: 'cable', field: 'qty_ordered', from: '12.0000', to: 20 }] },
+        }),
+      }),
+    )
+    expect(screen.getByText(/#1/)).toBeInTheDocument()
+    expect(screen.getByText('Cable 3x2.5')).toBeInTheDocument()
+    expect(screen.getByText('12 m × 4,500 IQD = 54,000 IQD')).toBeInTheDocument()
+    expect(screen.getByText('Quantity')).toBeInTheDocument()
+    expect(screen.getByText('12')).toBeInTheDocument() // 12.0000 -> 12
+    expect(screen.getByText('20')).toBeInTheDocument()
+    expect(screen.queryByText(/line qty ordered/)).toBeNull()
+  })
+
+  it('shows how far a quantity or price moved', () => {
+    renderCard(
+      request({
+        changes: JSON.stringify({
+          touched: [touchedCable],
+          lines: {
+            edited: [
+              { id: 'cable', field: 'qty_ordered', from: 12, to: 20 },
+              { id: 'cable', field: 'unit_price', from: 9000, to: 4000 },
+              { id: 'cable', field: 'uom', from: 'm', to: 'ft' },
+            ],
+          },
+        }),
+      }),
+    )
+    expect(screen.getByText('+66.7%')).toBeInTheDocument()
+    expect(screen.getByText('-55.6%')).toBeInTheDocument()
+    expect(screen.getAllByText(/%$/)).toHaveLength(2) // the unit change has no percentage
+  })
+
+  it('takes the index of an older request from the lines still on the PO', () => {
+    renderCard(
+      request({
+        changes: JSON.stringify({
+          lines: { edited: [{ id: 'box', field: 'qty_ordered', from: 3, to: 4 }] },
+        }),
+      }),
+    )
+    expect(screen.getByText(/#2/)).toBeInTheDocument()
+    expect(screen.getByText('Junction box')).toBeInTheDocument()
+  })
+
+  it('shows a removed line with its index, name and what it was', () => {
+    renderCard(
+      request({
         changes: JSON.stringify({
           lines: {
             removed: [
               {
-                id: 'x',
-                description: 'Valve 2"',
-                qty: 4,
-                unit_price: 12500,
+                id: 'box',
+                line_number: 2,
+                description: 'Junction box',
+                qty: 3,
+                unit_price: 900,
                 uom: 'ea',
                 currency_code: 'IQD',
               },
@@ -85,8 +176,15 @@ describe('EditRequestCard: what changed', () => {
         }),
       }),
     )
-    expect(screen.getByText('Valve 2"')).toBeInTheDocument()
-    expect(screen.getByText('4 ea · 12,500 IQD each')).toBeInTheDocument()
+    expect(screen.getByText(/#2/)).toBeInTheDocument()
+    expect(screen.getByText('Junction box')).toBeInTheDocument()
+    expect(screen.getByText('3 ea × 900 IQD')).toBeInTheDocument()
+  })
+
+  it('names a removed line a pending request only knew by id, from the PO', () => {
+    renderCard(request())
+    expect(screen.getByText('Junction box')).toBeInTheDocument()
+    expect(screen.getByText('1 change')).toBeInTheDocument()
   })
 
   it('says so when a line is gone and its name was never recorded', () => {
@@ -95,39 +193,6 @@ describe('EditRequestCard: what changed', () => {
     )
     expect(screen.getByText(/A line that is no longer on this PO/)).toBeInTheDocument()
     expect(screen.getByText('(name was not recorded)')).toBeInTheDocument()
-  })
-
-  it('shows an edit under the line it is about, with readable fields and numbers', () => {
-    renderCard(
-      request({
-        status: 'approved',
-        changes: JSON.stringify({
-          lines: {
-            edited: [
-              { id: 'cable', field: 'qty_ordered', from: '1.0000', to: 540 },
-              { id: 'cable', field: 'unit_price', from: '4500.0000', to: 4800 },
-            ],
-          },
-        }),
-      }),
-    )
-    expect(screen.getByText('Cable 3x2.5')).toBeInTheDocument()
-    expect(screen.getByText('Quantity')).toBeInTheDocument()
-    expect(screen.getByText('Unit price')).toBeInTheDocument()
-    expect(screen.getByText('1')).toBeInTheDocument() // 1.0000 -> 1
-    expect(screen.getByText('540')).toBeInTheDocument()
-    expect(screen.getByText('4,500')).toBeInTheDocument()
-    expect(screen.queryByText(/line qty ordered/)).toBeNull()
-  })
-
-  it('shows header changes with a readable label', () => {
-    renderCard(
-      request({
-        changes: JSON.stringify({ header: { notes: { from: '', to: 'deliver to gate 2' } } }),
-      }),
-    )
-    expect(screen.getByText('Notes')).toBeInTheDocument()
-    expect(screen.getByText('deliver to gate 2')).toBeInTheDocument()
   })
 
   it('shows added lines with their quantity and price', () => {
@@ -139,7 +204,17 @@ describe('EditRequestCard: what changed', () => {
       }),
     )
     expect(screen.getByText('Cable tie')).toBeInTheDocument()
-    expect(screen.getByText('100 ea · 25 each')).toBeInTheDocument()
+    expect(screen.getByText('100 ea × 25')).toBeInTheDocument()
+  })
+
+  it('shows header changes with a readable label', () => {
+    renderCard(
+      request({
+        changes: JSON.stringify({ header: { notes: { from: '', to: 'deliver to gate 2' } } }),
+      }),
+    )
+    expect(screen.getByText('Notes')).toBeInTheDocument()
+    expect(screen.getByText('deliver to gate 2')).toBeInTheDocument()
   })
 
   it('folds a long request behind "Show more" so Approve stays on screen, and unfolds it', () => {
@@ -164,7 +239,126 @@ describe('EditRequestCard: what changed', () => {
   })
 })
 
-describe('EditRequestCard: who, when and why', () => {
+describe('EditRequestCard: the effect on the totals', () => {
+  const changes = JSON.stringify({
+    touched: [touchedCable],
+    lines: { edited: [{ id: 'cable', field: 'qty_ordered', from: 12, to: 20 }] },
+  })
+  const impact = {
+    totals: [
+      { currency_code: 'IQD', before: '56700.0000', after: '92700.0000' },
+      { currency_code: 'USD', before: '100.0000', after: '100.0000' },
+    ],
+    lines: [
+      {
+        id: 'cable',
+        line_number: 1,
+        description: 'Cable 3x2.5',
+        currency_code: 'IQD',
+        before: 54000,
+        after: 90000,
+      },
+    ],
+    failure: null,
+  }
+
+  it('shows the total before and after for each currency that changes, and the line total', () => {
+    answerImpact(impact)
+    renderCard(request({ changes }))
+    expect(screen.getByText('Effect on total')).toBeInTheDocument()
+    expect(screen.getByText('PO total')).toBeInTheDocument()
+    expect(screen.getByText('56,700')).toBeInTheDocument()
+    expect(screen.getByText('92,700 IQD')).toBeInTheDocument()
+    expect(screen.getByText('(+36,000)')).toBeInTheDocument()
+    expect(screen.getByText('Line total')).toBeInTheDocument()
+    expect(screen.getByText('54,000 IQD')).toBeInTheDocument()
+    expect(screen.getByText('90,000 IQD')).toBeInTheDocument()
+    expect(screen.queryByText(/USD/)).toBeNull() // that currency did not change
+  })
+
+  it('shows a decrease as a decrease', () => {
+    answerImpact({
+      totals: [{ currency_code: 'IQD', before: '56700', after: '54000' }],
+      lines: [],
+      failure: null,
+    })
+    renderCard(request())
+    expect(screen.getByText('(−2,700)')).toBeInTheDocument()
+  })
+
+  it('asks the server only for a pending request', () => {
+    renderCard(request({ status: 'approved' }))
+    expect(mockUseQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ skip: true }),
+    )
+  })
+
+  it('says approving would fail, and why, instead of showing totals', () => {
+    answerImpact({ totals: [], lines: [], failure: 'No PO exchange rate configured for USD → IQD' })
+    renderCard(request())
+    expect(
+      screen.getByText(/Approving this would fail right now: No PO exchange rate configured/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('PO total')).toBeNull()
+  })
+
+  it('says the totals do not change when nothing moves', () => {
+    answerImpact({
+      totals: [{ currency_code: 'IQD', before: '100', after: '100' }],
+      lines: [],
+      failure: null,
+    })
+    renderCard(request())
+    expect(screen.getByText('The totals do not change.')).toBeInTheDocument()
+  })
+
+  it('says it is working it out while the server answers', () => {
+    answerImpact(undefined, true)
+    renderCard(request())
+    expect(screen.getByText('Working out the effect on the total…')).toBeInTheDocument()
+  })
+
+  it('shows nothing about the total when the server has none (a non-reviewer)', () => {
+    answerImpact(null)
+    renderCard(request())
+    expect(screen.queryByText('Effect on total')).toBeNull()
+    expect(screen.queryByText('Working out the effect on the total…')).toBeNull()
+  })
+
+  it('shows the impact recorded with a reviewed request', () => {
+    renderCard(
+      request({
+        status: 'approved',
+        reviewed_by: 'u-nadia',
+        reviewed_by_name: 'Nadia Saleh',
+        changes: JSON.stringify({
+          impact: {
+            totals: [{ currency_code: 'IQD', before: '56700', after: '54000' }],
+            lines: [],
+          },
+          lines: { removed: ['box'] },
+        }),
+      }),
+    )
+    expect(screen.getByText('Effect on total')).toBeInTheDocument()
+    expect(screen.getByText('(−2,700)')).toBeInTheDocument()
+  })
+})
+
+describe('EditRequestCard: the generic rows are gone', () => {
+  it('does not repeat what every edit request does', () => {
+    answerImpact({ totals: [], lines: [], failure: null })
+    renderCard(request())
+    for (const text of ['If approved', 'If rejected', 'Review'])
+      expect(screen.queryByText(text)).toBeNull()
+    expect(document.body.textContent).not.toMatch(
+      /totals are recalculated|stays exactly as it is|already approved need an admin/,
+    )
+  })
+})
+
+describe('EditRequestCard: who and when', () => {
   it("shows the requester's name and the time, not just an email", () => {
     renderCard(request())
     expect(screen.getByText('Yazin Nasser')).toBeInTheDocument()
@@ -175,17 +369,6 @@ describe('EditRequestCard: who, when and why', () => {
   it('falls back to the email when there is no name', () => {
     renderCard(request({ requested_by_name: null }))
     expect(screen.getByText('yazin@npbsco.com')).toBeInTheDocument()
-  })
-
-  it('shows the reason the requester gave', () => {
-    renderCard(request({ request_notes: 'Supplier cancelled the box' }))
-    expect(screen.getByText(/Supplier cancelled the box/)).toBeInTheDocument()
-  })
-
-  it('explains why a pending request is waiting, and that it blocks another one', () => {
-    renderCard(request())
-    expect(screen.getByText(/already approved need an admin's review/)).toBeInTheDocument()
-    expect(screen.getByText(/No other edit request can be submitted/)).toBeInTheDocument()
   })
 
   it('says an auto-applied request needed no review instead of showing the raw note', () => {
@@ -246,30 +429,18 @@ describe('EditRequestCard: who, when and why', () => {
     )
     expect(screen.getByText('Reviewed by the person who raised it')).toBeInTheDocument()
   })
+
+  it('shows no reviewer row while it is pending', () => {
+    renderCard(request())
+    expect(screen.queryByText('Reviewed')).toBeNull()
+  })
 })
 
 describe('EditRequestCard: approving and rejecting', () => {
-  it('says what approving and rejecting do, only while it is pending', () => {
-    renderCard(request())
-    expect(screen.getByText('If approved')).toBeInTheDocument()
-    expect(screen.getByText(/totals are recalculated/)).toBeInTheDocument()
-    expect(
-      screen.getByText(/Removed lines are deleted, and any stock reserved for them is released/),
-    ).toBeInTheDocument()
-    expect(screen.getByText('If rejected')).toBeInTheDocument()
-    expect(screen.getByText(/stays exactly as it is/)).toBeInTheDocument()
-  })
-
-  it('does not mention removed lines when none are removed', () => {
-    renderCard(request({ changes: JSON.stringify({ header: { notes: { from: '', to: 'x' } } }) }))
-    expect(screen.queryByText(/Removed lines are deleted/)).toBeNull()
-  })
-
-  it('has no controls and no "if" rows once reviewed', () => {
+  it('has no controls once reviewed', () => {
     renderCard(request({ status: 'approved', reviewed_by: 'u-n', reviewed_by_name: 'N' }))
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull()
-    expect(screen.queryByText('If approved')).toBeNull()
   })
 
   it('approves with no note when the box is empty, and passes a typed note along', () => {
@@ -300,116 +471,150 @@ describe('EditRequestCard: approving and rejecting', () => {
   })
 })
 
-describe('EditRequestCard: Arabic', () => {
-  it('shows the details in Arabic without any raw translation keys', async () => {
-    await i18n.changeLanguage('ar')
-    renderCard(request({ request_notes: 'سبب' }))
-    expect(screen.getByText('عند الموافقة')).toBeInTheDocument()
-    expect(screen.getByText('عند الرفض')).toBeInTheDocument()
-    expect(screen.getByText('Junction box')).toBeInTheDocument()
-    expect(document.body.textContent).not.toMatch(/po\.editReq\./)
-  })
-
-  it('has an Arabic string for every key and every field label', () => {
-    const fields = [
-      'notes',
-      'expected_delivery_date',
-      'description',
-      'qty_ordered',
-      'qty_from_stock',
-      'unit_price',
-      'actual_unit_price',
-      'store_price',
-      'store_price_currency',
-      'uom',
-      'currency_code',
-      'vendor_id',
-      'analytic_account_id',
-    ]
-    for (const f of fields) {
-      expect(i18n.exists(`po.editReq.field.${f}`, { lng: 'ar', fallbackLng: false }), f).toBe(true)
-    }
-  })
-})
-
 describe('EditRequestCard: on a requisition', () => {
   it('says "requisition" wherever a PO would say "PO"', () => {
-    renderCard(request({ changes: JSON.stringify({ lines: { removed: ['gone'] } }) }), { kind: 'requisition' })
-    expect(screen.getByText(/Edits to a requisition that is already approved/)).toBeInTheDocument()
-    expect(screen.getByText(/applied to this requisition/)).toBeInTheDocument()
-    expect(screen.getByText(/The requisition stays exactly as it is/)).toBeInTheDocument()
+    answerImpact({
+      totals: [{ currency_code: 'IQD', before: '100', after: '60' }],
+      lines: [],
+      failure: null,
+    })
+    renderCard(request({ changes: JSON.stringify({ lines: { removed: ['gone'] } }) }), {
+      kind: 'requisition',
+    })
+    expect(screen.getByText('Requisition total')).toBeInTheDocument()
     expect(screen.getByText(/A line that is no longer on this requisition/)).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/\bPO\b/)
   })
 
   it('says an auto-applied requisition edit needed no review', () => {
     renderCard(
-      request({ status: 'approved', auto_applied: true, reviewed_by: 'u-yazin', reviewed_at: '2026-10-22T12:00:00Z' }),
+      request({
+        status: 'approved',
+        auto_applied: true,
+        reviewed_by: 'u-yazin',
+        reviewed_at: '2026-10-22T12:00:00Z',
+      }),
       { kind: 'requisition' },
     )
     expect(screen.getByText(/the requisition had not been approved yet/)).toBeInTheDocument()
   })
 
-  it('keeps the PO wording for a PO', () => {
-    renderCard(request())
-    expect(screen.getByText(/Edits to a PO that is already approved/)).toBeInTheDocument()
-    expect(document.body.textContent).not.toMatch(/requisition/i)
-  })
-
-  it('hides Approve and Reject from someone who may not review, but still explains the request', () => {
-    renderCard(request(), { kind: 'requisition', canReview: false })
+  it('hides Approve and Reject from someone who may not review, but still shows the request', () => {
+    renderCard(request({ request_notes: 'Why' }), { kind: 'requisition', canReview: false })
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull()
     expect(screen.queryByPlaceholderText('Rejection reason (required)')).toBeNull()
-    expect(screen.getByText('If approved')).toBeInTheDocument()
+    expect(screen.getByText(/Why/)).toBeInTheDocument()
   })
 
-  it('shows Approve and Reject by default', () => {
-    renderCard(request(), { kind: 'requisition' })
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument()
-  })
-
-  it('shows priority and delivery destination by name, with readable labels', async () => {
-    const changes = JSON.stringify({
-      header: {
-        priority: { from: 'low', to: 'emergency' },
-        delivery_destination: { from: 'warehouse', to: 'jobsite' },
-      },
-    })
-    renderCard(request({ changes }), { kind: 'requisition' })
+  it('shows priority and delivery destination by name, with readable labels', () => {
+    renderCard(
+      request({
+        changes: JSON.stringify({
+          header: {
+            priority: { from: 'low', to: 'emergency' },
+            delivery_destination: { from: 'warehouse', to: 'jobsite' },
+          },
+        }),
+      }),
+      { kind: 'requisition' },
+    )
     expect(screen.getByText('Priority')).toBeInTheDocument()
     expect(screen.getByText('Delivery destination')).toBeInTheDocument()
     expect(screen.getByText('emergency')).toBeInTheDocument()
   })
+})
 
-  it('translates those header values in Arabic', async () => {
+describe('EditRequestCard: Arabic', () => {
+  it('shows the card in Arabic without any raw translation keys', async () => {
     await i18n.changeLanguage('ar')
-    const changes = JSON.stringify({ header: { priority: { from: 'low', to: 'emergency' } } })
-    renderCard(request({ changes }), { kind: 'requisition' })
+    answerImpact({
+      totals: [{ currency_code: 'IQD', before: '100', after: '60' }],
+      lines: [],
+      failure: null,
+    })
+    renderCard(request({ request_notes: 'سبب' }))
+    expect(screen.getByText('سبب التعديل')).toBeInTheDocument()
+    expect(screen.getByText('الأثر على الإجمالي')).toBeInTheDocument()
+    expect(screen.getByText('إجمالي أمر الشراء')).toBeInTheDocument()
+    expect(screen.getByText('Junction box')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/po\.editReq\./)
+  })
+
+  it('reads as a requisition, not a PO', async () => {
+    await i18n.changeLanguage('ar')
+    answerImpact({
+      totals: [{ currency_code: 'IQD', before: '100', after: '60' }],
+      lines: [],
+      failure: null,
+    })
+    renderCard(request(), { kind: 'requisition' })
+    expect(screen.getByText('إجمالي طلب الشراء')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/أمر الشراء/)
+  })
+
+  it('translates the priority values', async () => {
+    await i18n.changeLanguage('ar')
+    renderCard(
+      request({
+        changes: JSON.stringify({ header: { priority: { from: 'low', to: 'emergency' } } }),
+      }),
+      { kind: 'requisition' },
+    )
     expect(screen.getByText('منخفضة')).toBeInTheDocument()
     expect(screen.getByText('طارئ')).toBeInTheDocument()
     expect(screen.getByText('الأولوية')).toBeInTheDocument()
   })
 
-  it('reads in Arabic as a requisition, not a PO', async () => {
-    await i18n.changeLanguage('ar')
-    renderCard(request(), { kind: 'requisition' })
-    expect(screen.getAllByText(/طلب الشراء/).length).toBeGreaterThan(0)
-    expect(document.body.textContent).not.toMatch(/أمر الشراء/)
-    expect(document.body.textContent).not.toMatch(/po\.editReq\./)
-  })
-
-  it('has every requisition variant and extra field label in both languages', () => {
+  it('has every string in both languages, including the requisition wording and every field label', () => {
     const keys = [
-      ...['waitingForReview', 'appliedAutomatically', 'ifApproved', 'ifRejected', 'lineNotOnPo'].map(
-        (k) => `po.editReq.${k}_requisition`,
-      ),
-      ...['priority', 'delivery_destination', 'branch_id'].map((f) => `po.editReq.field.${f}`),
-    ]
+      'labelReason',
+      'labelChanges',
+      'labelImpact',
+      'labelReviewed',
+      'noReasonGiven',
+      'noDetail',
+      'noTotalChange',
+      'impactLoading',
+      'impactFailure',
+      'lineTotal',
+      'newLine',
+      'nameNotRecorded',
+      'showAll',
+      'showFewer',
+      'approvedBy',
+      'rejectedBy',
+      'rejectedReason',
+      'reviewedByRequester',
+      'unknownUser',
+      'appliedAutomatically',
+      'appliedAutomatically_requisition',
+      'lineNotOnPo',
+      'lineNotOnPo_requisition',
+      'totalLabel',
+      'totalLabel_requisition',
+      ...[
+        'notes',
+        'expected_delivery_date',
+        'description',
+        'qty_ordered',
+        'qty_from_stock',
+        'unit_price',
+        'actual_unit_price',
+        'store_price',
+        'store_price_currency',
+        'uom',
+        'currency_code',
+        'vendor_id',
+        'analytic_account_id',
+        'priority',
+        'delivery_destination',
+        'branch_id',
+      ].map((f) => `field.${f}`),
+    ].map((k) => `po.editReq.${k}`)
     for (const lng of ['en', 'ar']) {
-      for (const key of keys) {
+      for (const key of keys)
         expect(i18n.exists(key, { lng, fallbackLng: false }), `${lng} ${key}`).toBe(true)
-      }
     }
   })
 })

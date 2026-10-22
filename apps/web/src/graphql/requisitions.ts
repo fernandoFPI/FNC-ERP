@@ -107,6 +107,7 @@ export const REQUISITION_QUERY = gql`
       }
       lines {
         id
+        line_number
         description
         product_id
         product_name

@@ -2171,6 +2171,8 @@
 
   type POLine {
     id: ID!
+    # 1-based position of the line on its PO / requisition (po_lines.line_number).
+    line_number: Int
     product_id: ID
     product_name: String
     product_name_ar: String
@@ -2377,6 +2379,27 @@
     user_email: String
     notes: String
     created_at: String!
+  }
+
+  type EditImpactTotal {
+    currency_code: String!
+    before: String!
+    after: String!
+  }
+
+  type EditImpactLine {
+    id: ID!
+    line_number: Int
+    description: String
+    currency_code: String!
+    before: Float
+    after: Float
+  }
+
+  type EditRequestImpact {
+    totals: [EditImpactTotal!]!
+    lines: [EditImpactLine!]!
+    failure: String
   }
 
   type POEditRequest {
@@ -3055,6 +3078,9 @@
   extend type Query {
     product(id: ID!): Product
     productCostChangeRequests(status: String): [ProductCostChangeRequest!]!
+    # Money effect of an edit request on a PO or requisition: dry-run for a pending one,
+    # as recorded for a reviewed one. Null when unavailable or the caller is not a reviewer.
+    poEditRequestImpact(requestId: ID!): EditRequestImpact
     stockLocations(type: String, isActive: Boolean, companyId: ID): [StockLocation!]!
     # The group's central-warehouse company's own real locations (never the
     # caller's own) — lets any company's Material Return picker offer it as

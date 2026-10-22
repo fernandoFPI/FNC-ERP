@@ -352,6 +352,17 @@ Don't re-derive, check these first.
     `requisition-edit-request-details.test.ts` (real Postgres), `apps/web/src/lib/__tests__/poEditChanges.test.ts`,
     `components/procurement/__tests__/EditRequestCard.test.tsx`. Both the PO and the requisition page render the one
     `EditRequestCard`.
+    The card also shows what a request does to the totals, and that number is never re-computed (see #6 for what
+    happens when it is): a pending request is dry-run by really applying it with `applyPOEditChanges` /
+    `applyRequisitionEditChanges` inside a transaction that is always rolled back, reading every line's stored
+    `total_price` before and after (`dryRunEditImpact`, `lib/poEditImpact.ts`); a reviewed request keeps the same
+    before/after snapshot taken around the real apply (`changes.impact`). To preview "what would this do" without a
+    second copy of the arithmetic, run the real code and roll back; it also returns the real error when approving would
+    fail (no stock source, no exchange rate, a line already bought against). The apply functions must touch the database
+    only through their own client for this to be safe: check that before reusing the trick on another action. A first
+    version of this card copied the Cost Change Approvals panel (source / if approved / if rejected) onto edit requests
+    with generic sentences that said nothing about the request being reviewed; ask what the reviewer has to decide, not
+    what a neighbouring screen shows.
 
 37. **`eslint --fix` on a legacy file reformats the whole file.** Most of `apps/web` was never run through prettier
     (`PurchaseOrderDetail.tsx` alone reports ~5,000 prettier findings), and ESLint runs prettier as a rule, so

@@ -4,10 +4,11 @@
 // ids. That was fine while the request was pending (the line still exists), but an
 // approved removal deletes the line, so the Edit Request History could only ever say
 // "1 line removed" and an edit only "line qty ordered 1 -> 540", with no way to tell
-// which line. The name is therefore written into the payload when the request is
-// submitted, while the line still exists. applyPOEditChanges already accepts a
-// removal as either a bare id or an object, and an edit's optional `description`
-// was already in its type, so nothing that reads the payload changes behaviour.
+// which line. The line's index, name and details are therefore written into the
+// payload when the request is submitted, while the line still exists.
+// applyPOEditChanges already accepts a removal as either a bare id or an object, and
+// an edit's optional `description` was already in its type, so nothing that reads the
+// payload changes behaviour; the extra keys (`touched`, `impact`) are ignored by it.
 
 // Written as the review note when an edit on a not-yet-approved PO is applied
 // straight away. One constant: the INSERT that writes it and the query that
@@ -26,23 +27,38 @@ export function isAutoAppliedEditRequest(r: Record<string, unknown>): boolean {
 
 export interface PoLineSnapshot {
   id: string
+  line_number: string | number | null
   description: string | null
   qty_ordered: string | number
   unit_price: string | number
   uom: string | null
   currency_code: string | null
+  total_price: string | number | null
 }
 
 type RemovedEntry =
   | string
   | {
       id: string
+      line_number?: number
       description?: string
       qty?: number
       unit_price?: number
       uom?: string
       currency_code?: string
     }
+
+// A touched line as it was when the request was submitted.
+export interface TouchedLine {
+  id: string
+  line_number: number
+  description: string | null
+  qty: number
+  unit_price: number
+  uom: string | null
+  currency_code: string | null
+  total: number
+}
 
 interface NameableChanges {
   lines?: {
@@ -51,10 +67,15 @@ interface NameableChanges {
   }
 }
 
-// Returns a copy of `changes` with each edited line's description, and each removed
-// line's description / quantity / price / unit, filled in from the lines as they are
-// right now. Anything already recorded is kept, and a line id that is not on the PO
-// is left exactly as it came.
+const toNumber = (v: string | number | null | undefined): number => {
+  const n = typeof v === 'number' ? v : parseFloat(String(v ?? 0))
+  return Number.isFinite(n) ? n : 0
+}
+
+// Returns a copy of `changes` with each edited line's description, each removed line's
+// index / description / quantity / price / unit, and a `touched` list holding every
+// edited or removed line as it is right now. Anything already recorded is kept, and a
+// line id that is not on the PO is left exactly as it came.
 export function recordLineNamesInEditChanges<T extends NameableChanges>(
   changes: T,
   lines: PoLineSnapshot[],
@@ -74,9 +95,10 @@ export function recordLineNamesInEditChanges<T extends NameableChanges>(
     if (!line) return entry
     const snapshot: Exclude<RemovedEntry, string> = {
       id,
-      qty: parseFloat(String(line.qty_ordered)),
-      unit_price: parseFloat(String(line.unit_price)),
+      qty: toNumber(line.qty_ordered),
+      unit_price: toNumber(line.unit_price),
     }
+    if (line.line_number != null) snapshot.line_number = toNumber(line.line_number)
     if (line.description) snapshot.description = line.description
     if (line.uom) snapshot.uom = line.uom
     if (line.currency_code) snapshot.currency_code = line.currency_code
@@ -84,8 +106,33 @@ export function recordLineNamesInEditChanges<T extends NameableChanges>(
     return typeof entry === 'string' ? snapshot : { ...snapshot, ...entry }
   })
 
+  const touchedIds = [
+    ...new Set([
+      ...(edited ?? []).map((e) => e.id),
+      ...(removed ?? []).map((r) => (typeof r === 'string' ? r : r.id)),
+    ]),
+  ]
+  const touched: TouchedLine[] = touchedIds.flatMap((id) => {
+    const l = byId.get(id)
+    return l
+      ? [
+          {
+            id,
+            line_number: toNumber(l.line_number),
+            description: l.description,
+            qty: toNumber(l.qty_ordered),
+            unit_price: toNumber(l.unit_price),
+            uom: l.uom,
+            currency_code: l.currency_code,
+            total: toNumber(l.total_price),
+          },
+        ]
+      : []
+  })
+
   return {
     ...changes,
+    ...(touched.length > 0 ? { touched } : {}),
     lines: {
       ...lineChanges,
       ...(edited ? { edited } : {}),

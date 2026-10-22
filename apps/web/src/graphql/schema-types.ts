@@ -1092,6 +1092,27 @@ export type EvmData = {
   vac: Scalars['Float']['output'];
 };
 
+export type EditImpactLine = {
+  after?: Maybe<Scalars['Float']['output']>;
+  before?: Maybe<Scalars['Float']['output']>;
+  currency_code: Scalars['String']['output'];
+  description?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  line_number?: Maybe<Scalars['Int']['output']>;
+};
+
+export type EditImpactTotal = {
+  after: Scalars['String']['output'];
+  before: Scalars['String']['output'];
+  currency_code: Scalars['String']['output'];
+};
+
+export type EditRequestImpact = {
+  failure?: Maybe<Scalars['String']['output']>;
+  lines: Array<EditImpactLine>;
+  totals: Array<EditImpactTotal>;
+};
+
 export type Employee = {
   advance_control_account_code?: Maybe<Scalars['String']['output']>;
   advance_control_account_id?: Maybe<Scalars['ID']['output']>;
@@ -6125,6 +6146,7 @@ export type PoLine = {
   in_stock?: Maybe<Scalars['Boolean']['output']>;
   initial_unit_price?: Maybe<Scalars['String']['output']>;
   is_bought?: Maybe<Scalars['Boolean']['output']>;
+  line_number?: Maybe<Scalars['Int']['output']>;
   market_price?: Maybe<Scalars['String']['output']>;
   market_price_currency?: Maybe<Scalars['String']['output']>;
   origin_line_id?: Maybe<Scalars['ID']['output']>;
@@ -7489,6 +7511,7 @@ export type Query = {
   payslip?: Maybe<Payslip>;
   payslips?: Maybe<Array<Maybe<Payslip>>>;
   pendingProductCatalogItems: Array<PendingProductCatalogItem>;
+  poEditRequestImpact?: Maybe<EditRequestImpact>;
   poFxRates: PoFxRatesResult;
   poLineComments: Array<PoLineComment>;
   poPositions: Array<PoPositionAssignment>;
@@ -8133,6 +8156,11 @@ export type QueryPayslipArgs = {
 export type QueryPayslipsArgs = {
   employee_id?: InputMaybe<Scalars['ID']['input']>;
   payroll_run_id?: InputMaybe<Scalars['ID']['input']>;
+};
+
+
+export type QueryPoEditRequestImpactArgs = {
+  requestId: Scalars['ID']['input'];
 };
 
 

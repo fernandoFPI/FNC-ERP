@@ -31,6 +31,12 @@ import {
   recordLineNamesInEditChanges,
   type PoLineSnapshot,
 } from '../lib/poEditChanges.js'
+import {
+  buildEditImpact,
+  snapshotEditLines,
+  type EditImpact,
+  type EditScope,
+} from '../lib/poEditImpact.js'
 import { mapContractMilestone, mapContractInvoice, groupByContract } from '../lib/contractRows.js'
 import {
   sendEmail,
@@ -170,6 +176,7 @@ type RemovedLineEntry =
   | string
   | {
       id: string
+      line_number?: number
       description?: string
       qty?: number
       unit_price?: number
@@ -876,6 +883,62 @@ async function applyRequisitionEditChanges(
   await releaseLineStockReservations(client, removedLineIds)
   for (const lineId of removedLineIds) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND requisition_id=$2`, [lineId, reqId])
+  }
+}
+
+// Applies an edit request for real and keeps its money effect with it (changes.impact):
+// every line's stored total_price is read just before and just after the real apply,
+// inside the same transaction, so the history shows what actually happened to the
+// totals (see lib/poEditImpact.ts for why nothing here re-computes them).
+async function applyEditRecordingImpact(
+  client: PoolClient,
+  scope: EditScope,
+  changes: EditChanges,
+  requestId: string,
+): Promise<void> {
+  const before = await snapshotEditLines(client, scope)
+  if ('poId' in scope) await applyPOEditChanges(client, scope.poId, changes)
+  else await applyRequisitionEditChanges(client, scope.requisitionId, changes)
+  const after = await snapshotEditLines(client, scope)
+  await client.query(
+    `UPDATE po_edit_requests SET changes = jsonb_set(changes, '{impact}', $2::jsonb) WHERE id=$1`,
+    [requestId, JSON.stringify(buildEditImpact(before, after))],
+  )
+}
+
+// What approving a pending request would do to the totals: the real apply, run inside a
+// transaction that is always rolled back, so quantity / price / from-stock / currency
+// rules are exactly the ones approval uses. If the apply would fail (not enough stock,
+// no exchange rate, a line already bought against) the reason is returned instead.
+// Returns null when the database was too busy to answer in a couple of seconds: better to
+// show nothing than to claim a failure that is only a lock wait.
+async function dryRunEditImpact(
+  scope: EditScope,
+  changes: EditChanges,
+): Promise<EditImpact | null> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(`SET LOCAL lock_timeout = '2s'`)
+    await client.query(`SET LOCAL statement_timeout = '8s'`)
+    const before = await snapshotEditLines(client, scope)
+    await client.query('SAVEPOINT dry_run')
+    try {
+      if ('poId' in scope) await applyPOEditChanges(client, scope.poId, changes)
+      else await applyRequisitionEditChanges(client, scope.requisitionId, changes)
+    } catch (e) {
+      const code = (e as { code?: string }).code
+      if (code === '55P03' || code === '57014') return null
+      await client.query('ROLLBACK TO SAVEPOINT dry_run')
+      return {
+        ...buildEditImpact(before, before),
+        failure: e instanceof Error ? e.message : String(e),
+      }
+    }
+    return buildEditImpact(before, await snapshotEditLines(client, scope))
+  } finally {
+    await client.query('ROLLBACK').catch(() => undefined)
+    client.release()
   }
 }
 
@@ -3164,7 +3227,7 @@ async function fetchFullPurchaseOrderGW(
     ),
     query(
       `SELECT pol.id, pol.po_id, pol.description, pol.product_id, pol.qty_ordered AS qty,
-              pol.qty_received, pol.unit_price, pol.initial_unit_price, pol.total_price AS total, pol.currency_code, pol.uom,
+              pol.line_number, pol.qty_received, pol.unit_price, pol.initial_unit_price, pol.total_price AS total, pol.currency_code, pol.uom,
               pol.requested_currency_code, pol.fx_rate_to_base,
               pol.actual_unit_price,
               pol.store_price, pol.store_price_currency,
@@ -10586,7 +10649,7 @@ export const resolvers = {
         ),
         query(
           `SELECT pol.id, pol.requisition_id, pol.po_id, pol.description, pol.product_id, pol.qty_ordered AS qty,
-                  pol.qty_received, pol.unit_price, pol.initial_unit_price, pol.total_price AS total, pol.currency_code, pol.uom,
+                  pol.line_number, pol.qty_received, pol.unit_price, pol.initial_unit_price, pol.total_price AS total, pol.currency_code, pol.uom,
                   pol.requested_currency_code, pol.fx_rate_to_base,
                   pol.actual_unit_price,
                   pol.store_price, pol.store_price_currency,
@@ -11047,6 +11110,40 @@ export const resolvers = {
         costHistory: costHistory.rows,
         pendingCostChanges: pendingCostChanges.rows,
       }
+    },
+
+    // The money effect of an edit request, for the Edit Request History card. A pending
+    // request is dry-run (the real apply, rolled back) so the numbers are what approving
+    // would do right now; a reviewed one returns what was recorded when it was applied.
+    // Dry-running reads and briefly locks the PO's lines, so it is limited to the people
+    // who can review a request, not everyone who can open the PO.
+    poEditRequestImpact: async (_: unknown, args: { requestId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) return null
+      const r = await query<{
+        status: string
+        changes: EditChanges & { impact?: EditImpact }
+        po_id: string | null
+        requisition_id: string | null
+        company_id: string | null
+      }>(
+        `SELECT er.status, er.changes, er.po_id, er.requisition_id,
+                COALESCE(po.company_id, rq.company_id) AS company_id
+         FROM po_edit_requests er
+         LEFT JOIN purchase_orders po ON po.id = er.po_id
+         LEFT JOIN requisitions rq ON rq.id = er.requisition_id
+         WHERE er.id = $1`,
+        [args.requestId],
+      )
+      const row = r.rows.at(0)
+      if (!row || row.company_id !== ctx.auth.companyId) return null
+      if (row.status !== 'pending') return row.changes.impact ?? null
+      if (!['system_admin', 'company_admin', 'module_admin'].includes(ctx.auth.role)) return null
+      const scope: EditScope | null = row.po_id
+        ? { poId: row.po_id }
+        : row.requisition_id
+          ? { requisitionId: row.requisition_id }
+          : null
+      return scope ? dryRunEditImpact(scope, row.changes) : null
     },
 
     // Store keeper's (or admin's) review queue — every cost change big
@@ -32577,7 +32674,7 @@ const phase5MutationResolvers = {
       // Same as the PO branch below: write each touched line's name into the payload
       // now, while the line still exists (an approved removal deletes it).
       const reqLines = await query<PoLineSnapshot>(
-        `SELECT id, description, qty_ordered, unit_price, uom, currency_code FROM po_lines WHERE requisition_id=$1`,
+        `SELECT id, line_number, description, qty_ordered, unit_price, uom, currency_code, total_price FROM po_lines WHERE requisition_id=$1`,
         [reqId],
       )
       changesObj = recordLineNamesInEditChanges(changesObj as EditChanges, reqLines.rows)
@@ -32599,7 +32696,12 @@ const phase5MutationResolvers = {
             ],
           )
           row = ins.rows[0] as Record<string, unknown>
-          await applyRequisitionEditChanges(client, reqId, changesObj as EditChanges)
+          await applyEditRecordingImpact(
+            client,
+            { requisitionId: reqId },
+            changesObj as EditChanges,
+            String(row.id),
+          )
           const changeSummary = buildEditChangeSummary(changesObj as EditChanges)
           await client.query(
             `INSERT INTO requisition_approval_log (requisition_id,from_status,to_status,action,actor_id,notes,actor_position) VALUES ($1,$2,$2,'edit_applied',$3,$4,NULL)`,
@@ -32696,7 +32798,7 @@ const phase5MutationResolvers = {
     // exists: an approved removal deletes it, and the history could then never say
     // which line it was (see lib/poEditChanges.ts).
     const poLines = await query<PoLineSnapshot>(
-      `SELECT id, description, qty_ordered, unit_price, uom, currency_code FROM po_lines WHERE po_id=$1`,
+      `SELECT id, line_number, description, qty_ordered, unit_price, uom, currency_code, total_price FROM po_lines WHERE po_id=$1`,
       [args.id],
     )
     changesObj = recordLineNamesInEditChanges(changesObj as EditChanges, poLines.rows)
@@ -32721,7 +32823,12 @@ const phase5MutationResolvers = {
           ],
         )
         row = ins.rows[0] as Record<string, unknown>
-        await applyPOEditChanges(client, args.id, changesObj as EditChanges)
+        await applyEditRecordingImpact(
+          client,
+          { poId: args.id },
+          changesObj as EditChanges,
+          String(row.id),
+        )
         const changeSummary = buildEditChangeSummary(changesObj as EditChanges)
         await client.query(
           `INSERT INTO po_approval_log (po_id,from_status,to_status,actor_id,action,notes) VALUES ($1,$2,$2,$3,'edit_applied',$4)`,
@@ -32780,7 +32887,7 @@ const phase5MutationResolvers = {
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
-        await applyRequisitionEditChanges(client, reqId, changes)
+        await applyEditRecordingImpact(client, { requisitionId: reqId }, changes, args.requestId)
         await client.query(
           `UPDATE po_edit_requests SET status='approved',reviewed_by=$1,review_notes=$2,reviewed_at=NOW() WHERE id=$3`,
           [ctx.auth.userId, args.reviewNotes ?? null, args.requestId],
@@ -32822,7 +32929,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await applyPOEditChanges(client, args.id, changes)
+      await applyEditRecordingImpact(client, { poId: args.id }, changes, args.requestId)
       await client.query(
         `UPDATE po_edit_requests SET status='approved',reviewed_by=$1,review_notes=$2,reviewed_at=NOW() WHERE id=$3`,
         [ctx.auth.userId, args.reviewNotes ?? null, args.requestId],
