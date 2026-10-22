@@ -39,6 +39,7 @@ import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
+import { EditRequestCard } from '../../../components/procurement/EditRequestCard'
 import { Button } from '../../../components/ui/Button'
 import { StatusBar } from '../../../components/ui/StatusBar'
 import { TabBar } from '../../../components/ui/TabBar'
@@ -184,11 +185,16 @@ interface EditRequest {
   status: string
   changes: string
   request_notes?: string | null
+  requested_by?: string | null
   requested_by_email?: string | null
+  requested_by_name?: string | null
+  reviewed_by?: string | null
   reviewed_by_email?: string | null
+  reviewed_by_name?: string | null
   review_notes?: string | null
   reviewed_at?: string | null
   created_at: string
+  auto_applied?: boolean | null
 }
 
 // Fields kept in step with applyRequisitionEditChanges' own whitelist
@@ -665,7 +671,6 @@ export default function RequisitionDetail() {
   const printIframeRef = useRef<HTMLIFrameElement>(null)
   const [activeTab, setActiveTab] = useState<Tab>('lines')
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
-  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
 
   // Separate from the inventory_check-only products query elsewhere on this
   // page — a line can be added to an edit request from any status, not just
@@ -1940,246 +1945,28 @@ export default function RequisitionDetail() {
                       >
                         {t('req.detail.history')}
                       </div>
-                      {(req.edit_requests ?? []).map((er) => {
-                        // removed/edited may still be the pre-snapshot shapes
-                        // (a plain id string; an edited entry with no
-                        // `description`) on any edit request submitted before
-                        // this detail was added — rendered below with a
-                        // fallback to the bare id/field rather than crashing.
-                        const parsed = JSON.parse(er.changes) as {
-                          header?: Record<string, { from: unknown; to: unknown }>
-                          lines?: {
-                            edited?: {
-                              id: string
-                              field: string
-                              from: unknown
-                              to: unknown
-                              description?: string
-                            }[]
-                            added?: {
-                              description?: string
-                              qty?: number
-                              unit_price?: number
-                              uom?: string
-                            }[]
-                            removed?: (
-                              | string
-                              | {
-                                  id: string
-                                  description?: string
-                                  qty?: number
-                                  unit_price?: number
-                                  uom?: string
-                                }
-                            )[]
-                          }
-                        }
-                        const headerChanges = Object.entries(parsed.header ?? {})
-                        const editedLines = parsed.lines?.edited ?? []
-                        const addedLines = parsed.lines?.added ?? []
-                        const removedLines = parsed.lines?.removed ?? []
-                        const totalChanges =
-                          headerChanges.length +
-                          editedLines.length +
-                          addedLines.length +
-                          removedLines.length
-                        return (
-                          <div
-                            key={er.id}
-                            style={{ padding: '14px 0', borderTop: `1px solid ${theme.border}` }}
-                          >
-                            <div
-                              style={{
-                                display: 'flex',
-                                gap: '10px',
-                                alignItems: 'center',
-                                marginBottom: '8px',
-                                flexWrap: 'wrap',
-                              }}
-                            >
-                              <Badge
-                                variant={
-                                  er.status === 'approved'
-                                    ? 'success'
-                                    : er.status === 'rejected'
-                                      ? 'danger'
-                                      : 'warning'
-                                }
-                              >
-                                {er.status}
-                              </Badge>
-                              <span style={{ fontSize: '13px', color: theme.textPrimary }}>
-                                {er.requested_by_email}
-                              </span>
-                              <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                {er.created_at.slice(0, 16).replace('T', ' ')}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: '12px',
-                                  color: theme.textMuted,
-                                  marginInlineStart: 'auto',
-                                }}
-                              >
-                                {t('req.detail.changesCount', { count: totalChanges })}
-                              </span>
-                            </div>
-
-                            <div
-                              style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '4px',
-                                fontSize: '12px',
-                                marginBottom: '10px',
-                              }}
-                            >
-                              {headerChanges.map(([field, diff]) => (
-                                <div
-                                  key={field}
-                                  style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
-                                >
-                                  <span style={{ color: theme.textMuted, minWidth: '110px' }}>
-                                    {field.replace(/_/g, ' ')}
-                                  </span>
-                                  <span
-                                    style={{ color: theme.danger, textDecoration: 'line-through' }}
-                                  >
-                                    {String(diff.from ?? '—') || '—'}
-                                  </span>
-                                  <span style={{ color: theme.textMuted }}>→</span>
-                                  <span style={{ color: theme.accent }}>
-                                    {String(diff.to ?? '—') || '—'}
-                                  </span>
-                                </div>
-                              ))}
-                              {editedLines.map((e, i) => (
-                                <div
-                                  key={i}
-                                  style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
-                                >
-                                  <span style={{ color: theme.textPrimary, minWidth: '160px' }}>
-                                    {e.description ?? e.id} — {e.field.replace(/_/g, ' ')}
-                                  </span>
-                                  <span
-                                    style={{ color: theme.danger, textDecoration: 'line-through' }}
-                                  >
-                                    {String(e.from ?? '—')}
-                                  </span>
-                                  <span style={{ color: theme.textMuted }}>→</span>
-                                  <span style={{ color: theme.accent }}>{String(e.to ?? '—')}</span>
-                                </div>
-                              ))}
-                              {addedLines.map((l, i) => (
-                                <div key={i} style={{ color: theme.accent }}>
-                                  + {l.description ?? t('req.detail.newLine')}
-                                  {l.qty != null && ` — ${t('req.detail.qtyPrefix', { qty: l.qty })}`}
-                                  {l.unit_price != null && ` @ ${l.unit_price}`}
-                                  {l.uom && ` ${l.uom}`}
-                                </div>
-                              ))}
-                              {removedLines.map((r, i) => {
-                                const snapshot = typeof r === 'string' ? null : r
-                                return (
-                                  <div key={i} style={{ color: theme.danger }}>
-                                    {snapshot ? (
-                                      <>
-                                        − {snapshot.description || t('req.detail.aLine')}
-                                        {snapshot.qty != null && ` — ${t('req.detail.qtyPrefix', { qty: snapshot.qty })}`}
-                                        {snapshot.unit_price != null && ` @ ${snapshot.unit_price}`}
-                                        {snapshot.uom && ` ${snapshot.uom}`}
-                                      </>
-                                    ) : (
-                                      t('req.detail.lineRemovedNoDetail')
-                                    )}
-                                  </div>
-                                )
-                              })}
-                            </div>
-
-                            {er.request_notes && (
-                              <div
-                                style={{
-                                  fontSize: '12px',
-                                  color: theme.textMuted,
-                                  fontStyle: 'italic',
-                                  marginBottom: '8px',
-                                }}
-                              >
-                                "{er.request_notes}"
-                              </div>
-                            )}
-
-                            {er.status !== 'pending' && (
-                              <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                                {t('req.detail.reviewedBy', {
-                                  status: getRequisitionStatusLabel(
-                                    er.status === 'approved' ? 'approved' : 'rejected',
-                                  ),
-                                  email: er.reviewed_by_email,
-                                  date: er.reviewed_at?.slice(0, 16).replace('T', ' '),
-                                })}
-                                {er.review_notes && ` — "${er.review_notes}"`}
-                              </div>
-                            )}
-
-                            {er.status === 'pending' && isSystemLevel && (
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  gap: '8px',
-                                  alignItems: 'flex-start',
-                                  flexWrap: 'wrap',
-                                }}
-                              >
-                                <Button
-                                  size="sm"
-                                  variant="primary"
-                                  loading={leApprove}
-                                  onClick={() =>
-                                    void approveEditRequest({
-                                      variables: {
-                                        requisitionId: req.id,
-                                        requestId: er.id,
-                                        reviewNotes: reviewNotes[er.id] || undefined,
-                                      },
-                                    })
-                                  }
-                                >
-                                  {t('req.detail.approve')}
-                                </Button>
-                                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                  <input
-                                    value={reviewNotes[er.id] ?? ''}
-                                    onChange={(e) => {
-                                      setReviewNotes((p) => ({ ...p, [er.id]: e.target.value }))
-                                    }}
-                                    placeholder={t('req.detail.rejectionReasonRequired')}
-                                    style={{ ...inputStyle, width: '220px' }}
-                                  />
-                                  <Button
-                                    size="sm"
-                                    variant="danger"
-                                    loading={leReject}
-                                    disabled={!reviewNotes[er.id]?.trim()}
-                                    onClick={() =>
-                                      void rejectEditRequest({
-                                        variables: {
-                                          requisitionId: req.id,
-                                          requestId: er.id,
-                                          reviewNotes: reviewNotes[er.id] ?? '',
-                                        },
-                                      })
-                                    }
-                                  >
-                                    {t('req.detail.reject')}
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
+                      {(req.edit_requests ?? []).map((er) => (
+                        <EditRequestCard
+                          key={er.id}
+                          kind="requisition"
+                          flush
+                          request={er}
+                          currentLines={req.lines}
+                          canReview={isSystemLevel}
+                          approving={leApprove}
+                          rejecting={leReject}
+                          onApprove={(requestId, notes) => {
+                            void approveEditRequest({
+                              variables: { requisitionId: req.id, requestId, reviewNotes: notes },
+                            })
+                          }}
+                          onReject={(requestId, notes) => {
+                            void rejectEditRequest({
+                              variables: { requisitionId: req.id, requestId, reviewNotes: notes },
+                            })
+                          }}
+                        />
+                      ))}
                     </Card>
                   )}
                 </div>

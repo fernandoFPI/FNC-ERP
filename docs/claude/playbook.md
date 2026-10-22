@@ -328,3 +328,36 @@ Don't re-derive, check these first.
     fixture users. Fix: poll until the row count stops changing between two polls, not until the first row appears.
     Left alone on purpose: that admin query has no `company_id` filter, so a requisition notifies the system_admins
     of every company; whether that is intended for platform admins is a product decision, not a test fix.
+
+36. **A history record that stores only the ids of rows it then deletes can never say which row it was.** A PO edit
+    request kept `changes.lines.removed` as bare line ids and its line edits with no line name. While the request is
+    pending the line still exists, but approving a removal deletes the `po_lines` row, so the Edit Request History could
+    only ever say "1 line removed" or "line qty ordered 1.0000 → 540", with no way to tell which line (21 of the 24
+    removals already on production are unrecoverable). The reader code and the payload type already supported names
+    (`description` on edits, objects on removals) but nothing wrote them, so it looked like a display problem. How to
+    spot it: an audit/history entry that shows counts or ids, for rows whose action deletes or rewrites the thing it
+    points at; query the stored JSON for how many entries are a bare string (`jsonb_typeof(e) = 'string'`). Fix: write
+    the name, quantity and price into the payload at submission, while the row exists
+    (`services/gateway/src/lib/poEditChanges.ts`), and make the reader handle every generation of payload that is already
+    stored (`apps/web/src/lib/poEditChanges.ts`); old rows whose line is gone stay unnamed and the card says so.
+    Related: an "auto-applied" request was recognised only by its English review note; the note is now one constant
+    shared by the INSERT and the `auto_applied` flag the API returns, so the page never matches on message text (#25f).
+    The requisition side had a worse case of the same payload-shape mismatch: its form sends a removed line as an
+    object (`{ id, description, qty, ... }`), and the post-approval guard in `submitPOEditRequest` put those objects
+    straight into a `pl.id = ANY($1)` uuid query, so removing a line from an already-approved requisition failed at
+    submit with `invalid input syntax for type uuid: "{"id":...}"` and never reached the review queue. Fixed with
+    `removedLineId`. When a payload field is typed as a union (`string | object`), grep every consumer of it, not just
+    the function that applies it.
+    Regression tests: `services/gateway/tests/po-edit-request-details.test.ts` and
+    `requisition-edit-request-details.test.ts` (real Postgres), `apps/web/src/lib/__tests__/poEditChanges.test.ts`,
+    `components/procurement/__tests__/EditRequestCard.test.tsx`. Both the PO and the requisition page render the one
+    `EditRequestCard`.
+
+37. **`eslint --fix` on a legacy file reformats the whole file.** Most of `apps/web` was never run through prettier
+    (`PurchaseOrderDetail.tsx` alone reports ~5,000 prettier findings), and ESLint runs prettier as a rule, so
+    `eslint --fix` on a file you only meant to touch in one place rewrote ~10,000 lines (and once reformatted an
+    unrelated query in `graphql/inventory.ts`). Use `--fix` only on files you created. For an existing file, lint
+    without `--fix` and look only at findings inside your own changed line ranges (`git diff -U0` hunks), then fix those
+    by hand. On this Windows checkout (`core.autocrlf=true`) also pass
+    `--rule '{"prettier/prettier":["error",{"endOfLine":"auto"}]}'`, otherwise every line reports `Delete ␍`.
+    Check `git diff --stat` after any auto-fixer: a one-line change that shows thousands of lines is the tell.

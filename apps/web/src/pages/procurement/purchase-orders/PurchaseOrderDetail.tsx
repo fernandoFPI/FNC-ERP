@@ -61,6 +61,7 @@ import { useRecordLock } from '../../../hooks/useRecordLock'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
+import { EditRequestCard } from '../../../components/procurement/EditRequestCard'
 import { EntityAttachments } from '../../../components/inventory/EntityAttachments'
 import { Button, StickyActionBar } from '../../../components/ui/Button'
 import { StatusBar } from '../../../components/ui/StatusBar'
@@ -292,11 +293,16 @@ interface POEditRequest {
   status: string
   changes: string
   request_notes?: string | null
+  requested_by?: string | null
   requested_by_email?: string | null
+  requested_by_name?: string | null
+  reviewed_by?: string | null
   reviewed_by_email?: string | null
+  reviewed_by_name?: string | null
   review_notes?: string | null
   reviewed_at?: string | null
   created_at: string
+  auto_applied?: boolean | null
 }
 
 // Draft shape for the system_admin-only "Admin correction" tab — mirrors
@@ -735,7 +741,6 @@ export default function PurchaseOrderDetail() {
       keywords: p.name_ar ?? undefined,
     })),
   ]
-  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [adminPoStatus, setAdminPoStatus] = useState('')
   const [showActionsPanel, setShowActionsPanel] = useState(false)
   const [confirmDeletePO, setConfirmDeletePO] = useState(false)
@@ -1163,7 +1168,6 @@ export default function PurchaseOrderDetail() {
   })
   const [approveEditRequest, { loading: leA }] = useMutation<ApprovePoEditRequestMutation, ApprovePoEditRequestMutationVariables>(APPROVE_PO_EDIT_REQUEST, {
     onCompleted: () => {
-      setReviewNotes({})
       void refetch()
     },
     onError: (e) => {
@@ -1172,7 +1176,6 @@ export default function PurchaseOrderDetail() {
   })
   const [rejectEditRequest, { loading: leJ }] = useMutation<RejectPoEditRequestMutation, RejectPoEditRequestMutationVariables>(REJECT_PO_EDIT_REQUEST, {
     onCompleted: () => {
-      setReviewNotes({})
       void refetch()
     },
     onError: (e) => {
@@ -6364,212 +6367,26 @@ export default function PurchaseOrderDetail() {
                       {t('po.detail.noEditRequestsYet')}
                     </div>
                   )}
-                  {(po.edit_requests ?? []).map((er) => {
-                    let parsed: {
-                      header?: Record<string, { from: unknown; to: unknown }>
-                      lines?: { edited?: unknown[]; added?: unknown[]; removed?: string[] }
-                    } = {}
-                    try {
-                      parsed = JSON.parse(er.changes) as typeof parsed
-                    } catch {
-                      /* ignore */
-                    }
-                    const headerChanges = Object.entries(parsed.header ?? {})
-                    const editedLines = parsed.lines?.edited ?? []
-                    const addedLines = parsed.lines?.added ?? []
-                    const removedLines = parsed.lines?.removed ?? []
-                    const totalChanges =
-                      headerChanges.length +
-                      editedLines.length +
-                      addedLines.length +
-                      removedLines.length
-
-                    return (
-                      <div
-                        key={er.id}
-                        style={{
-                          borderBottom: `1px solid ${theme.border}22`,
-                          padding: '16px 20px',
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            marginBottom: '10px',
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <Badge
-                            variant={
-                              er.status === 'approved'
-                                ? 'success'
-                                : er.status === 'rejected'
-                                  ? 'danger'
-                                  : 'warning'
-                            }
-                          >
-                            {er.status}
-                          </Badge>
-                          <span style={{ fontSize: '13px', color: theme.textPrimary }}>
-                            {er.requested_by_email}
-                          </span>
-                          <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                            {er.created_at.slice(0, 16).replace('T', ' ')}
-                          </span>
-                          <span
-                            style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}
-                          >
-                            {t('po.detail.changesCount', { count: totalChanges })}
-                          </span>
-                        </div>
-
-                        {/* Diff summary */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '4px',
-                            fontSize: '12px',
-                            marginBottom: '10px',
-                          }}
-                        >
-                          {headerChanges.map(([field, diff]) => (
-                            <div
-                              key={field}
-                              style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
-                            >
-                              <span style={{ color: theme.textMuted, minWidth: '140px' }}>
-                                {field.replace(/_/g, ' ')}
-                              </span>
-                              <span style={{ color: theme.danger, textDecoration: 'line-through' }}>
-                                {String(diff.from || '—')}
-                              </span>
-                              <span style={{ color: theme.textMuted }}>→</span>
-                              <span style={{ color: theme.accent }}>{String(diff.to || '—')}</span>
-                            </div>
-                          ))}
-                          {(
-                            editedLines as {
-                              id: string
-                              field: string
-                              from: unknown
-                              to: unknown
-                            }[]
-                          ).map((e, i) => (
-                            <div
-                              key={i}
-                              style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
-                            >
-                              <span style={{ color: theme.textMuted, minWidth: '140px' }}>
-                                {t('po.detail.editedLineField', { field: e.field.replace(/_/g, ' ') })}
-                              </span>
-                              <span style={{ color: theme.danger, textDecoration: 'line-through' }}>
-                                {String(e.from ?? '—')}
-                              </span>
-                              <span style={{ color: theme.textMuted }}>→</span>
-                              <span style={{ color: theme.accent }}>{String(e.to ?? '—')}</span>
-                            </div>
-                          ))}
-                          {addedLines.length > 0 && (
-                            <div style={{ color: theme.accent }}>
-                              {t('po.detail.linesAdded', { count: addedLines.length })}
-                            </div>
-                          )}
-                          {removedLines.length > 0 && (
-                            <div style={{ color: theme.danger }}>
-                              {t('po.detail.linesRemoved', { count: removedLines.length })}
-                            </div>
-                          )}
-                        </div>
-
-                        {er.request_notes && (
-                          <div
-                            style={{
-                              fontSize: '12px',
-                              color: theme.textMuted,
-                              fontStyle: 'italic',
-                              marginBottom: '8px',
-                            }}
-                          >
-                            "{er.request_notes}"
-                          </div>
-                        )}
-
-                        {/* Reviewed info */}
-                        {er.status !== 'pending' && (
-                          <div
-                            style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '0' }}
-                          >
-                            {t('po.detail.reviewedBy', {
-                              status: getPOStatusLabel(er.status === 'approved' ? 'approved' : 'rejected'),
-                              email: er.reviewed_by_email,
-                              date: er.reviewed_at?.slice(0, 16).replace('T', ' '),
-                            })}
-                            {er.review_notes && ` — "${er.review_notes}"`}
-                          </div>
-                        )}
-
-                        {/* Admin approve/reject */}
-                        {er.status === 'pending' && (
-                          <div
-                            style={{
-                              display: 'flex',
-                              gap: '8px',
-                              alignItems: 'flex-start',
-                              flexWrap: 'wrap',
-                            }}
-                          >
-                            <Button
-                              size="sm"
-                              variant="primary"
-                              style={PRIMARY_CTA_STYLE}
-                              loading={leA}
-                              onClick={() =>
-                                void approveEditRequest({
-                                  variables: {
-                                    id: po.id,
-                                    requestId: er.id,
-                                    reviewNotes: reviewNotes[er.id] || undefined,
-                                  },
-                                })
-                              }
-                            >
-                              {t('po.detail.approve')}
-                            </Button>
-                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                              <input
-                                value={reviewNotes[er.id] ?? ''}
-                                onChange={(e) => {
-                                  setReviewNotes((p) => ({ ...p, [er.id]: e.target.value }))
-                                }}
-                                placeholder={t('po.detail.rejectionReasonRequired')}
-                                style={{ ...inputStyle, width: '240px' }}
-                              />
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                loading={leJ}
-                                disabled={!reviewNotes[er.id]?.trim()}
-                                onClick={() =>
-                                  void rejectEditRequest({
-                                    variables: {
-                                      id: po.id,
-                                      requestId: er.id,
-                                      reviewNotes: reviewNotes[er.id] ?? '',
-                                    },
-                                  })
-                                }
-                              >
-                                {t('po.detail.reject')}
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {(po.edit_requests ?? []).map((er) => (
+                    <EditRequestCard
+                      key={er.id}
+                      request={er}
+                      currentLines={po.lines}
+                      primaryStyle={PRIMARY_CTA_STYLE}
+                      approving={leA}
+                      rejecting={leJ}
+                      onApprove={(requestId, notes) => {
+                        void approveEditRequest({
+                          variables: { id: po.id, requestId, reviewNotes: notes },
+                        })
+                      }}
+                      onReject={(requestId, notes) => {
+                        void rejectEditRequest({
+                          variables: { id: po.id, requestId, reviewNotes: notes },
+                        })
+                      }}
+                    />
+                  ))}
                 </Card>
               </fieldset>
             </div>

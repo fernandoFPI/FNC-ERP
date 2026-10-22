@@ -6048,16 +6048,21 @@ export type PoApprovalLogEntry = {
 };
 
 export type PoEditRequest = {
+  auto_applied?: Maybe<Scalars['Boolean']['output']>;
   changes: Scalars['String']['output'];
   created_at: Scalars['String']['output'];
   id: Scalars['ID']['output'];
   po_id?: Maybe<Scalars['ID']['output']>;
   request_notes?: Maybe<Scalars['String']['output']>;
+  requested_by?: Maybe<Scalars['ID']['output']>;
   requested_by_email?: Maybe<Scalars['String']['output']>;
+  requested_by_name?: Maybe<Scalars['String']['output']>;
   requisition_id?: Maybe<Scalars['ID']['output']>;
   review_notes?: Maybe<Scalars['String']['output']>;
   reviewed_at?: Maybe<Scalars['String']['output']>;
+  reviewed_by?: Maybe<Scalars['ID']['output']>;
   reviewed_by_email?: Maybe<Scalars['String']['output']>;
+  reviewed_by_name?: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
 };
 

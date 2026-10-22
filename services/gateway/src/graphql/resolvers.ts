@@ -24,6 +24,13 @@ import {
 } from '../lib/contractBilling.js'
 import { resolvePhotoBypass } from '../lib/receiptPhotoBypass.js'
 import { poEditNeedsApproval } from '../lib/poEditApproval.js'
+import {
+  AUTO_APPLIED_REQUISITION_REVIEW_NOTE,
+  AUTO_APPLIED_REVIEW_NOTE,
+  isAutoAppliedEditRequest,
+  recordLineNamesInEditChanges,
+  type PoLineSnapshot,
+} from '../lib/poEditChanges.js'
 import { mapContractMilestone, mapContractInvoice, groupByContract } from '../lib/contractRows.js'
 import {
   sendEmail,
@@ -159,7 +166,16 @@ interface GWAuth {
 // snapshot can still come from. A bare string id is also accepted: any
 // edit request already pending when this shape shipped was submitted by
 // older frontend code that never captured one.
-type RemovedLineEntry = string | { id: string; description?: string; qty?: number; unit_price?: number; uom?: string }
+type RemovedLineEntry =
+  | string
+  | {
+      id: string
+      description?: string
+      qty?: number
+      unit_price?: number
+      uom?: string
+      currency_code?: string
+    }
 
 function removedLineId(r: RemovedLineEntry): string {
   return typeof r === 'string' ? r : r.id
@@ -3264,14 +3280,20 @@ async function fetchFullPurchaseOrderGW(
   let editRequests: unknown[] = []
   try {
     const er = await query(
-      `SELECT er.*, req.email AS requested_by_email, rev.email AS reviewed_by_email
+      `SELECT er.*, req.email AS requested_by_email, rev.email AS reviewed_by_email,
+              COALESCE(req.first_name || ' ' || req.last_name, req.email) AS requested_by_name,
+              COALESCE(rev.first_name || ' ' || rev.last_name, rev.email) AS reviewed_by_name
        FROM po_edit_requests er
        JOIN users req ON req.id = er.requested_by
        LEFT JOIN users rev ON rev.id = er.reviewed_by
        WHERE er.po_id = $1 ORDER BY er.created_at DESC`,
       [id],
     )
-    editRequests = er.rows.map((r) => ({ ...r, changes: JSON.stringify(r.changes) }))
+    editRequests = er.rows.map((r) => ({
+      ...r,
+      changes: JSON.stringify(r.changes),
+      auto_applied: isAutoAppliedEditRequest(r),
+    }))
   } catch {
     /* ignore if table absent */
   }
@@ -10630,7 +10652,9 @@ export const resolvers = {
         // purchaseOrderForAction's own edit_requests fetch exactly, scoped
         // to requisition_id instead of po_id.
         query(
-          `SELECT er.*, req.email AS requested_by_email, rev.email AS reviewed_by_email
+          `SELECT er.*, req.email AS requested_by_email, rev.email AS reviewed_by_email,
+                  COALESCE(req.first_name || ' ' || req.last_name, req.email) AS requested_by_name,
+                  COALESCE(rev.first_name || ' ' || rev.last_name, rev.email) AS reviewed_by_name
            FROM po_edit_requests er
            JOIN users req ON req.id = er.requested_by
            LEFT JOIN users rev ON rev.id = er.reviewed_by
@@ -10705,7 +10729,11 @@ export const resolvers = {
         lines: lines.rows,
         approval_log: approvals.rows,
         currencyTotals,
-        edit_requests: editRequests.rows.map((r) => ({ ...r, changes: JSON.stringify(r.changes) })),
+        edit_requests: editRequests.rows.map((r) => ({
+          ...r,
+          changes: JSON.stringify(r.changes),
+          auto_applied: isAutoAppliedEditRequest(r),
+        })),
         callerHasStoreKeeperPosition,
         callerHasStorePricingPosition,
         callerHasMarketPricingPosition,
@@ -32546,6 +32574,14 @@ const phase5MutationResolvers = {
           'A pending edit request already exists. It must be approved or rejected first.',
         )
 
+      // Same as the PO branch below: write each touched line's name into the payload
+      // now, while the line still exists (an approved removal deletes it).
+      const reqLines = await query<PoLineSnapshot>(
+        `SELECT id, description, qty_ordered, unit_price, uom, currency_code FROM po_lines WHERE requisition_id=$1`,
+        [reqId],
+      )
+      changesObj = recordLineNamesInEditChanges(changesObj as EditChanges, reqLines.rows)
+
       if (!POST_APPROVAL_REQUISITION_STATUSES.includes(reqStatus)) {
         const client = await pool.connect()
         let row: Record<string, unknown>
@@ -32553,8 +32589,14 @@ const phase5MutationResolvers = {
           await client.query('BEGIN')
           const ins = await client.query(
             `INSERT INTO po_edit_requests (requisition_id, requested_by, changes, request_notes, status, reviewed_by, review_notes, reviewed_at)
-             VALUES ($1,$2,$3,$4,'approved',$2,'Auto-applied — requisition not yet approved',NOW()) RETURNING *`,
-            [reqId, ctx.auth.userId, JSON.stringify(changesObj), args.notes ?? null],
+             VALUES ($1,$2,$3,$4,'approved',$2,$5,NOW()) RETURNING *`,
+            [
+              reqId,
+              ctx.auth.userId,
+              JSON.stringify(changesObj),
+              args.notes ?? null,
+              AUTO_APPLIED_REQUISITION_REVIEW_NOTE,
+            ],
           )
           row = ins.rows[0] as Record<string, unknown>
           await applyRequisitionEditChanges(client, reqId, changesObj as EditChanges)
@@ -32573,7 +32615,7 @@ const phase5MutationResolvers = {
         const usr = await query(`SELECT email FROM users WHERE id=$1`, [ctx.auth.userId])
         return {
           ...row,
-          changes: args.changes,
+          changes: JSON.stringify(changesObj),
           requested_by_email: usr.rows[0]?.email ?? null,
           reviewed_by_email: usr.rows[0]?.email ?? null,
         }
@@ -32587,7 +32629,7 @@ const phase5MutationResolvers = {
       const touchedForGuard = [
         ...new Set([
           ...(changesForGuard.lines?.edited ?? []).map((e) => e.id),
-          ...(changesForGuard.lines?.removed ?? []),
+          ...(changesForGuard.lines?.removed ?? []).map(removedLineId),
         ]),
       ]
       if (touchedForGuard.length > 0) {
@@ -32614,7 +32656,7 @@ const phase5MutationResolvers = {
       const usr = await query(`SELECT email FROM users WHERE id=$1`, [ctx.auth.userId])
       return {
         ...row,
-        changes: args.changes,
+        changes: JSON.stringify(changesObj),
         requested_by_email: usr.rows[0]?.email ?? null,
         reviewed_by_email: null,
       }
@@ -32650,6 +32692,15 @@ const phase5MutationResolvers = {
         'A pending edit request already exists. It must be approved or rejected first.',
       )
 
+    // Write each touched line's name into the payload now, while the line still
+    // exists: an approved removal deletes it, and the history could then never say
+    // which line it was (see lib/poEditChanges.ts).
+    const poLines = await query<PoLineSnapshot>(
+      `SELECT id, description, qty_ordered, unit_price, uom, currency_code FROM po_lines WHERE po_id=$1`,
+      [args.id],
+    )
+    changesObj = recordLineNamesInEditChanges(changesObj as EditChanges, poLines.rows)
+
     // A PO that hasn't been approved yet doesn't need admin sign-off to change —
     // apply it immediately, but still record it as an (auto-approved) edit request
     // so the "Edit requests" tab keeps a full, honest audit trail either way.
@@ -32660,8 +32711,14 @@ const phase5MutationResolvers = {
         await client.query('BEGIN')
         const ins = await client.query(
           `INSERT INTO po_edit_requests (po_id, requested_by, changes, request_notes, status, reviewed_by, review_notes, reviewed_at)
-           VALUES ($1,$2,$3,$4,'approved',$2,'Auto-applied — PO not yet approved',NOW()) RETURNING *`,
-          [args.id, ctx.auth.userId, JSON.stringify(changesObj), args.notes ?? null],
+           VALUES ($1,$2,$3,$4,'approved',$2,$5,NOW()) RETURNING *`,
+          [
+            args.id,
+            ctx.auth.userId,
+            JSON.stringify(changesObj),
+            args.notes ?? null,
+            AUTO_APPLIED_REVIEW_NOTE,
+          ],
         )
         row = ins.rows[0] as Record<string, unknown>
         await applyPOEditChanges(client, args.id, changesObj as EditChanges)
@@ -32680,7 +32737,7 @@ const phase5MutationResolvers = {
       const usr = await query(`SELECT email FROM users WHERE id=$1`, [ctx.auth.userId])
       return {
         ...row,
-        changes: args.changes,
+        changes: JSON.stringify(changesObj),
         requested_by_email: usr.rows[0]?.email ?? null,
         reviewed_by_email: usr.rows[0]?.email ?? null,
       }
@@ -32695,7 +32752,7 @@ const phase5MutationResolvers = {
     const usr = await query(`SELECT email FROM users WHERE id=$1`, [ctx.auth.userId])
     return {
       ...row,
-      changes: args.changes,
+      changes: JSON.stringify(changesObj),
       requested_by_email: usr.rows[0]?.email ?? null,
       reviewed_by_email: null,
     }

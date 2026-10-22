@@ -2386,14 +2386,21 @@
     # ID! to ID here since a requisition-scoped row has it NULL.
     po_id: ID
     requisition_id: ID
+    requested_by: ID
     requested_by_email: String
+    requested_by_name: String
     status: String!
     changes: String!
     request_notes: String
+    reviewed_by: ID
     reviewed_by_email: String
+    reviewed_by_name: String
     review_notes: String
     reviewed_at: String
     created_at: String!
+    # True for a request applied on submission because the PO had not been approved
+    # yet (no one reviewed it). Only set by the purchase order queries.
+    auto_applied: Boolean
   }
 
   extend type PurchaseOrder {

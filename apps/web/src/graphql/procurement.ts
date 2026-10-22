@@ -685,11 +685,16 @@ export const PO_LIFECYCLE_QUERY = gql`
         status
         changes
         request_notes
+        requested_by
         requested_by_email
+        requested_by_name
+        reviewed_by
         reviewed_by_email
+        reviewed_by_name
         review_notes
         reviewed_at
         created_at
+        auto_applied
       }
     }
   }
