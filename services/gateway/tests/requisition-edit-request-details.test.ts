@@ -201,9 +201,17 @@ describe('the money effect of a requisition edit request', () => {
   }
   const impactFor = async (requestId: string, role = 'system_admin', userId = adminId): Promise<Impact | null> =>
     (await resolvers.Query.poEditRequestImpact(null, { requestId } as never, ctxFor(userId, role))) as Impact | null
+  // currency-safe: test-only assertion helper, scoped to this one
+  // requisition's own lines (all created by makeRequisition above, in one
+  // currency) -- not a pattern any production resolver uses.
   const sumTotals = async (reqId: string): Promise<number> =>
     parseFloat(
-      (await pool.query<{ t: string }>(`SELECT COALESCE(SUM(total_price),0)::text AS t FROM po_lines WHERE requisition_id=$1`, [reqId])).rows[0]!.t,
+      (
+        await pool.query<{ t: string }>(
+          `SELECT COALESCE(SUM(total_price),0)::text AS t FROM po_lines WHERE requisition_id=$1 -- currency-safe: test-only, scoped to one requisition's own lines`,
+          [reqId],
+        )
+      ).rows[0]!.t,
     )
 
   it('dry-runs a pending removal and leaves the requisition untouched', async () => {
