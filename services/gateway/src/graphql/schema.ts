@@ -467,7 +467,11 @@
     vendor_name: String
     status: String!
     priority: String!
-    total_amount: String!
+    # NULL for a PO whose lines span more than one currency, and for a PO with
+    # no lines (recalcPOTotalsGW, migration 308): there is no single correct
+    # figure. Read currencyTotals for the real per-currency amounts. Declared
+    # non-null before this, which made the executor null the whole PO.
+    total_amount: String
     currency_code: String!
     project_id: ID
     organizer_id: ID

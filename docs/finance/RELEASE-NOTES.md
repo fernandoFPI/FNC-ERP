@@ -15,7 +15,12 @@ changes; it does not repeat or summarize that table.
 
 - **Purchase orders**: a PO whose lines span more than one currency no
   longer shows a single (wrong) total — `subtotal`/`total_amount` are
-  blank for that PO instead of a blended number (D10).
+  blank for that PO instead of a blended number (D10). Every screen shows one
+  total per currency for it instead (list, detail, price-verification panel,
+  requisition child POs, vendor page, dashboard queue, preview). The GraphQL
+  field `PurchaseOrder.total_amount` is nullable for this reason; as first
+  released it was still non-null, which made such a PO fail to load — fixed in
+  the follow-up hotfix, regression test `po-mixed-currency-graphql.test.ts`.
 - **Reports**: Trial Balance, Profit & Loss, Balance Sheet, Consolidated
   reports, AP/AR dashboards, WHT Payable, Payroll Tax Report, Cash Flow,
   and the executive dashboard all show one figure per currency instead of
@@ -55,6 +60,30 @@ worker and gateway call `resolvePostingAccount(companyId, role)` and
 no account configured for that company. Until every role below has a
 row, the matching document types fail to post with that error on every
 attempt (visible in the Outbox Monitor as a stuck/failed event).
+
+**Three user actions fail on the spot instead, not through the Outbox:**
+completing a project purchase order (`completePO`), approving the stock
+issuance of a project PO that is fully covered from stock
+(`approveStockIssuance`), and completing a manufacturing order that is linked
+to a project (`completeMO`). Each posts its cost journal inside the same
+transaction as the status change. With the map empty the click fails with
+`POSTING_ACCOUNT_NOT_CONFIGURED: <role>`, the whole action rolls back, and the
+PO stays in its previous status (`invoiced`, `payment_pending` or
+`ready_to_issue`).
+
+- `completePO` and `approveStockIssuance` need exactly two roles, set for the
+  **project's** company (not the user's): `expense_default` (an active,
+  postable expense account: the debit side, tagged to the project so it lands
+  in project cost) and `ap` (an active, postable payables account: the credit
+  side). A company-wide default (currency left blank) covers every currency;
+  a per-currency row is only needed to post USD to a different account. They
+  only run for a project PO that has an analytic account and is not
+  advance-funded; any other PO skips the lookup. The journals are created as
+  drafts, so Finance still posts them.
+- `completeMO` needs `expense_default` and `inventory`.
+- The system checks that the account belongs to the company, is active and is
+  postable. It does not check the account type, so choosing an expense account
+  for `expense_default` and a payables account for `ap` is Finance's call.
 
 **This release adds the missing piece**: Finance → Journals & Accounts →
 **Posting Accounts** (`finance.accounts.edit`). One row per role, a
@@ -117,25 +146,38 @@ confirmed the three real companies' row counts were untouched.
 
 ## Rollback
 
-Code only — these migrations are forward-only, same as every other
-migration in this project; there is no down-migration.
+**There is no code-only rollback past migration 309.** Do not run
+`scripts/rollback.sh` to a commit from before this release (`b543243`) on its
+own, and do not treat the previous code as compatible with the new schema.
 
-1. Restore the pre-push production backup taken before this deploy
-   (`scripts/backup-db.sh`'s output, or the deploy pipeline's own backup
-   step) **only if the migrations themselves need undoing** — rolling
-   back code alone does not require this, since nothing in this release
-   drops a column or deletes data irreversibly.
-2. Redeploy the previous commit (`scripts/rollback.sh [sha]` on the VPS,
-   or push and let the normal deploy pipeline run) to revert the
-   application code.
-3. Confirm the old code still works against the *new* schema before
-   rolling back code only, without restoring the backup — `project_budgets`,
-   the nullable PO total columns, and the rewritten
-   `v_project_profitability` view are all backward-compatible additions
-   (nothing the old code read was removed or renamed), so a code-only
-   rollback should be safe; verify on a copy first if in doubt, per the
-   project's own "dev-only verification of a migration is not enough"
-   rule.
+Why: migrations are forward-only (no down-migration), and
+`scripts/rollback.sh` reverts application code only. It deliberately runs no
+`pnpm migrate`. The previous code does not run against the new schema:
+
+- **309** drops `fx_to_budget()`. The previous release's `project` query calls
+  it (commit `64c0ed4`, `resolvers.ts`), so every project detail page would
+  fail on the old code.
+- **308** lets `purchase_orders.subtotal` / `total_amount` be NULL (a PO with
+  lines in more than one currency, or with no lines). The old code declares
+  `PurchaseOrder.total_amount` non-null, so those POs fail to load, and one
+  mixed-currency child PO nulls a requisition's whole Child POs list.
+- **305** reshapes `v_project_profitability` to one row per project and
+  currency; the old consumers assume one row per project.
+
+What to do instead:
+
+1. **Fix forward (preferred).** Hotfix on `dev`, then push to `production`:
+   the deploy pipeline runs its test gate and deploys.
+2. **Only if fixing forward is impossible:** restore a database dump taken
+   *before* the migrations ran, then redeploy the old commit. This discards
+   every write made since that dump. `.github/workflows/deploy.yml` has **no
+   backup step**; a dump exists only if `scripts/backup-db.sh` was run
+   (manually or from cron). Check the newest dump's timestamp is earlier than
+   the deploy before relying on it, and take a fresh dump of the current
+   state first so nothing is lost for good.
+
+An earlier revision of this section called a code-only rollback safe and
+referred to "the deploy pipeline's own backup step". Both were wrong.
 
 ## Minor, noticed while re-verifying, not fixed
 
@@ -148,6 +190,33 @@ not chased down here.
 
 ## Open items carried to the next release
 
+- **TOP PRIORITY — cross-company `completePO` / `poTransition`.** Found while
+  auditing this release; it is not a currency bug and predates it. Confirmed by
+  reading the code, **not yet reproduced with a test** (the first step of the fix
+  is a failing two-company test). `completePO` loads the PO with
+  `WHERE id=$1` and no `company_id` (`resolvers.ts`, `completePO`), and its
+  permission check (`hasFinanceApprovalGW(auth.userId, auth.companyId, …)`)
+  only looks at the *caller's* company. `approveStockIssuance` loads the PO the
+  same way. `poTransition` — shared by 27 call sites — reads and updates the PO
+  with `WHERE id=$1 FOR UPDATE` and never checks the company either. So a
+  finance approver in company A who has a company B PO id can complete it, and
+  `postPOCompletionJournal` then posts a draft journal into company B's books.
+  The id is a UUID, which makes it hard to guess but is not an authorization
+  check, and it breaks the project's multi-tenancy hard rule. Fix: add the
+  caller's `company_id` to the lookups in `completePO`, `approveStockIssuance`
+  and `poTransition` (pass the company in), audit the other 26 `poTransition`
+  callers for the same gap, and cover it with a two-company test.
+- **Next — mixed-currency POs are under-counted in project totals.** Since
+  migration 308 a mixed-currency PO has `total_amount` NULL, and three readers
+  still sum it by the PO's *header* currency, so such a PO drops out:
+  the project page's `recent_pos` JSON (`resolvers.ts` `project` query,
+  `'total_amount', po.total_amount`) feeding the approved/pending PO sums in
+  `ProjectDetail.tsx` (`hdrApprAmt` / `hdrPendAmt`); the committed-cost join
+  `po_c` in the same query (`SUM(total_amount) … GROUP BY currency_code`),
+  which makes `committedCosts` low and `budgetRemaining` too high; and the
+  executive dashboard's pending-PO KPI (`SUM(total_amount) … AND
+  currency_code=$2`). Fix: read `getPOCurrencyTotals` / `po_lines` grouped by
+  the *line* currency instead of `purchase_orders.total_amount`.
 - **bid_cost_items**: assessed, not fixed. A real per-currency fix
   cascades through 6 call sites, `computeBidPricing`, and the
   `BidCommercialSummary` GraphQL type's non-nullable `Float` fields — real

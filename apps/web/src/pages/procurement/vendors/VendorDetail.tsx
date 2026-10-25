@@ -7,6 +7,7 @@ import { VENDOR_QUERY, PURCHASE_ORDERS_QUERY } from '../../../graphql/procuremen
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
 import { api } from '../../../lib/axios'
+import { poTotalEntries } from '../../../lib/poTotals'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
@@ -21,8 +22,10 @@ interface PurchaseOrder {
   id: string
   po_number: string
   status: string
-  total_amount: string
+  // NULL for a mixed-currency PO -- show currencyTotals (poTotalEntries).
+  total_amount: string | null
   currency_code: string
+  currencyTotals?: { currency_code: string; subtotal: string; line_count: number }[] | null
   created_at: string
 }
 
@@ -133,9 +136,17 @@ export default function VendorDetail() {
     {
       key: 'total_amount',
       header: t('vendor.detail.amount'),
-      render: (p) => (
-        <AmountDisplay amount={parseFloat(p.total_amount)} currency={p.currency_code} />
-      ),
+      render: (p) => {
+        const entries = poTotalEntries(p)
+        if (entries.length === 0) return <span>—</span>
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {entries.map((e) => (
+              <AmountDisplay key={e.currencyCode} amount={e.amount} currency={e.currencyCode} />
+            ))}
+          </div>
+        )
+      },
     },
     {
       key: 'created_at',

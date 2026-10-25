@@ -7455,7 +7455,7 @@ export type PurchaseOrder = {
   submitted_at?: Maybe<Scalars['String']['output']>;
   subtotal?: Maybe<Scalars['String']['output']>;
   tax_amount?: Maybe<Scalars['String']['output']>;
-  total_amount: Scalars['String']['output'];
+  total_amount?: Maybe<Scalars['String']['output']>;
   updated_at: Scalars['String']['output'];
   vendor_id?: Maybe<Scalars['ID']['output']>;
   vendor_name?: Maybe<Scalars['String']['output']>;

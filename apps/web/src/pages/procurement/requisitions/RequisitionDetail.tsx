@@ -58,6 +58,7 @@ import {
   getRequisitionStatusLabel,
 } from '../../../lib/requisition-constants'
 import { getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
+import { poTotalEntries } from '../../../lib/poTotals'
 import { useToastStore } from '../../../store/toastStore'
 import type {
   ApproveRequisitionEditRequestMutation,
@@ -258,8 +259,11 @@ interface ChildPO {
   status: string
   vendor_id?: string | null
   vendor_name?: string | null
-  total_amount: string
+  // NULL once the child PO spans more than one currency (migration 308);
+  // currencyTotals is what to show.
+  total_amount: string | null
   currency_code: string
+  currencyTotals?: { currency_code: string; subtotal: string; line_count: number }[] | null
   created_at: string
 }
 
@@ -3106,11 +3110,26 @@ export default function RequisitionDetail() {
                   {
                     key: 'total_amount',
                     header: t('req.detail.total'),
-                    render: (c: ChildPO) => (
-                      <span style={{ fontSize: '13px' }}>
-                        {fmtN(c.total_amount)} {c.currency_code}
-                      </span>
-                    ),
+                    render: (c: ChildPO) => {
+                      const entries = poTotalEntries(c)
+                      if (entries.length === 0) return <span style={{ fontSize: '13px' }}>—</span>
+                      return (
+                        <span
+                          style={{
+                            fontSize: '13px',
+                            display: 'inline-flex',
+                            flexDirection: 'column',
+                            gap: '2px',
+                          }}
+                        >
+                          {entries.map((e) => (
+                            <span key={e.currencyCode}>
+                              {fmtN(e.amount)} {e.currencyCode}
+                            </span>
+                          ))}
+                        </span>
+                      )
+                    },
                   },
                 ]}
                 data={children}

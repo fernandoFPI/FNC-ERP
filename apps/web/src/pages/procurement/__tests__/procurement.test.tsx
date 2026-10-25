@@ -192,6 +192,29 @@ describe('PurchaseOrderDetail', () => {
   // (mark-line-bought checkboxes + Finish Buying), whose mutations reject
   // any PO not literally in status 'items_bought' — a real dead end found
   // via manual click-through on a live requisition.
+  // Regression (D10): a mixed-currency PO has total_amount NULL. The
+  // price-verification panel did parseFloat(String(null)) -> "NaN" and labelled
+  // the figure with the base currency. It must show one line per currency.
+  it('price_verification: a mixed-currency PO (NULL total_amount) shows one total per currency, never NaN', async () => {
+    mockPO('price_verification', {
+      currency_code: 'IQD',
+      base_currency_code: 'IQD',
+      total_amount: null,
+      subtotal: null,
+      currencyTotals: [
+        { currency_code: 'IQD', subtotal: '200.0000', line_count: 1 },
+        { currency_code: 'USD', subtotal: '30.0000', line_count: 1 },
+      ],
+    })
+    const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
+    wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
+    expect(screen.getAllByText(/200\s+IQD/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/30\s+USD/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument()
+    // never blended into one figure
+    expect(screen.queryByText(/230/)).not.toBeInTheDocument()
+  })
+
   it('shows Record Receipt (not the items-bought checklist) for a bought child PO', async () => {
     mockPO('bought', { requisition_id: 'req-1' })
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default

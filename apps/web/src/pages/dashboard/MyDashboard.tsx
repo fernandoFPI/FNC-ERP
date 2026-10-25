@@ -16,6 +16,7 @@ import { useAuthStore } from '../../store/authStore'
 import { usePermission } from '../../hooks/usePermission'
 import { usePagePadding } from '../../hooks/usePagePadding'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
+import { poTotalEntries } from '../../lib/poTotals'
 
 const MY_DASHBOARD_QUERY = gql`
   query MyDashboard($companyId: ID!) {
@@ -25,6 +26,11 @@ const MY_DASHBOARD_QUERY = gql`
       status
       currency_code
       total_amount
+      currencyTotals {
+        currency_code
+        subtotal
+        line_count
+      }
       vendor_name
     }
     myProjects(companyId: $companyId) {
@@ -48,7 +54,9 @@ interface MyPO {
   po_number: string
   status: string
   currency_code: string
-  total_amount: number
+  // NULL for a mixed-currency PO -- show currencyTotals (poTotalEntries).
+  total_amount: string | null
+  currencyTotals?: { currency_code: string; subtotal: string; line_count: number }[] | null
   vendor_name: string | null
 }
 
@@ -203,8 +211,19 @@ export default function MyDashboard() {
                 {
                   key: 'total_amount',
                   header: t('dash.my.amount'),
-                  render: (row) =>
-                    formatCurrency(Number(row.total_amount), String(row.currency_code ?? currency)),
+                  render: (row) => {
+                    const entries = poTotalEntries(row as unknown as MyPO)
+                    if (entries.length === 0) return <span>—</span>
+                    return (
+                      <span style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
+                        {entries.map((e) => (
+                          <span key={e.currencyCode}>
+                            {formatCurrency(e.amount, e.currencyCode)}
+                          </span>
+                        ))}
+                      </span>
+                    )
+                  },
                 },
                 {
                   key: 'status',

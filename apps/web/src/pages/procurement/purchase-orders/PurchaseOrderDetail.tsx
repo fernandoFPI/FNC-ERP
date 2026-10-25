@@ -83,6 +83,7 @@ import { Input } from '../../../components/ui/Input'
 import { Textarea } from '../../../components/ui/Textarea'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { buildPurchaseOrderHTML } from '../../../lib/poHtml'
+import { poTotalEntries } from '../../../lib/poTotals'
 import {
   TOUR_DEMO_PO_ID,
   buildTourDemoPO,
@@ -191,7 +192,9 @@ export interface PO {
   viewerRestricted?: boolean | null
   currency_code: string
   base_currency_code: string | null
-  total_amount: string
+  // NULL for a mixed-currency or line-less PO (migration 308) -- read
+  // currencyTotals (via poTotalEntries) for what to display.
+  total_amount: string | null
   subtotal: string | null
   currencyTotals: { currency_code: string; subtotal: string; line_count: number }[]
   vendor_id?: string | null
@@ -3035,6 +3038,7 @@ export default function PurchaseOrderDetail() {
               {po.status === 'price_verification' &&
                 (() => {
                   const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
+                  const totalEntries = poTotalEntries(po)
                   return (
                     <div
                       data-tour="po-price-verification"
@@ -3063,12 +3067,30 @@ export default function PurchaseOrderDetail() {
                         }}
                       >
                         <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('po.detail.total')}</span>
-                        <span style={{ fontSize: '15px', fontWeight: 700, color: theme.textPrimary }}>
-                          {parseFloat(String(po.total_amount)).toLocaleString('en-US', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 2,
-                          })}{' '}
-                          {po.base_currency_code}
+                        {/* One line per currency: total_amount is NULL for a mixed-currency
+                            PO, and never was in the base currency once nothing is converted. */}
+                        <span
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'flex-end',
+                            gap: '2px',
+                            fontSize: '15px',
+                            fontWeight: 700,
+                            color: theme.textPrimary,
+                          }}
+                        >
+                          {totalEntries.length === 0
+                            ? '—'
+                            : totalEntries.map((e) => (
+                                <span key={e.currencyCode}>
+                                  {e.amount.toLocaleString('en-US', {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 2,
+                                  })}{' '}
+                                  {e.currencyCode}
+                                </span>
+                              ))}
                         </span>
                       </div>
                       {purchaseLines.map((line) => {
@@ -7772,8 +7794,15 @@ export default function PurchaseOrderDetail() {
                   created_at: po.created_at,
                   expected_delivery_date: po.expected_delivery_date,
                   currency_code: po.currency_code,
-                  total_amount: parseFloat(po.total_amount),
-                  subtotal: po.subtotal != null ? parseFloat(po.subtotal) : parseFloat(po.total_amount),
+                  // The print layout reads currencyTotals below; these two are
+                  // only the legacy single-figure fields, 0 when there is none.
+                  total_amount: po.total_amount != null ? parseFloat(po.total_amount) : 0,
+                  subtotal:
+                    po.subtotal != null
+                      ? parseFloat(po.subtotal)
+                      : po.total_amount != null
+                        ? parseFloat(po.total_amount)
+                        : 0,
                   vendor_name: po.vendor_name,
                   created_by_email: po.created_by_email,
                   companyName: po.company_name,

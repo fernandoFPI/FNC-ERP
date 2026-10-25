@@ -372,3 +372,31 @@ Don't re-derive, check these first.
     by hand. On this Windows checkout (`core.autocrlf=true`) also pass
     `--rule '{"prettier/prettier":["error",{"endOfLine":"auto"}]}'`, otherwise every line reports `Delete ␍`.
     Check `git diff --stat` after any auto-fixer: a one-line change that shows thousands of lines is the tell.
+
+38. **Making a column nullable without checking the GraphQL type that exposes it.** Migration 308 dropped NOT
+    NULL on `purchase_orders.subtotal`/`total_amount` and `recalcPOTotalsGW` began writing NULL for a
+    mixed-currency or line-less PO, but `PurchaseOrder.total_amount` stayed `String!`. GraphQL does not return a
+    NULL for a non-null field: it nulls the nearest nullable parent. `purchaseOrder(id)` and `myPOQueue` came
+    back `null`, a row of `purchaseOrders` became `null` (the web filters null rows, so the PO silently
+    vanished from the list), and `requisitionChildPurchaseOrders` is `[PurchaseOrder!]!`, so ONE mixed child PO
+    nulled the requisition's whole Child POs list. It shipped because every gateway test calls the resolver
+    functions directly (`resolvers.Query.purchaseOrder(...)`), which never runs the schema's nullability
+    checks, and the web tests mock Apollo. How to spot it: a migration that drops NOT NULL, or any new code path
+    that can write NULL; then grep `schema.ts` for the field and every `!` on it, and `[Type!]!` lists that
+    return it. Fix: make the field nullable and read the per-currency figure instead (`lib/poTotals.ts` on the
+    web is the one place that decides what to show). Test it at the GraphQL layer:
+    `services/gateway/tests/po-mixed-currency-graphql.test.ts` runs the real `ApolloServer({ typeDefs,
+    resolvers }).executeOperation` against real Postgres with the selection sets the web sends. Do not build the
+    schema yourself with `graphql()` + `makeExecutableSchema` in a vitest file: it loads two copies of `graphql`
+    (`Cannot use GraphQLSchema ... from another module or realm`). Related to #14 (tests that skip the layer the
+    bug lives in) and #34 (a screen that looks empty while the data is fine).
+
+39. **A rollback note that says "backward-compatible" without checking what the migration removes.** The
+    release notes called a code-only rollback safe because "nothing the old code read was removed or renamed".
+    Migration 309 drops `fx_to_budget()`, which the previous release's `project` query calls, so rolling the code
+    back would have broken every project page; it also said the deploy pipeline had a backup step, and
+    `deploy.yml` has none. How to spot it: for every `DROP` / `RENAME` / `SET NOT NULL` / view rewrite in a
+    migration, `git grep` the PREVIOUS release's commit for the name (`git grep -n fx_to_budget <prev-sha>`).
+    If anything uses it, the rollback section must say "no code-only rollback past migration N" and name the
+    only real options (fix forward, or restore a dump taken before the migration). Confirm a backup claim in the
+    workflow file, not in the notes.

@@ -99,12 +99,13 @@ function baseReq(overrides: Record<string, unknown> = {}) {
 function mockReq(
   overrides: Record<string, unknown> = {},
   availability: Record<string, unknown>[] = [],
+  childPOs: Record<string, unknown>[] = [],
 ) {
   mockUseQuery.mockImplementation((doc: unknown, opts?: { variables?: Record<string, unknown> }) => {
     const opName = (doc as { definitions?: { kind?: string; name?: { value?: string } }[] }).definitions?.find((d) => d.kind === 'OperationDefinition')?.name
       ?.value
     if (opName === 'RequisitionChildPurchaseOrders') {
-      return { data: { requisitionChildPurchaseOrders: [] }, loading: false, refetch: vi.fn() }
+      return { data: { requisitionChildPurchaseOrders: childPOs }, loading: false, refetch: vi.fn() }
     }
     if (opName === 'RequisitionStockAvailability') {
       return { data: { requisitionStockAvailability: availability }, loading: false, refetch: vi.fn() }
@@ -523,6 +524,50 @@ describe('RequisitionDetail', () => {
     const RequisitionDetail = (await import('../RequisitionDetail')).default
     wrap(<RequisitionDetail />)
     expect(screen.getByText(/waiting on every line to resolve/i)).toBeInTheDocument()
+  })
+
+  // Regression (D10): a child PO whose lines span two currencies has
+  // total_amount NULL. The Child POs table showed a misleading "0 IQD" there
+  // (and, before the schema fix, the whole list errored). One line per
+  // currency, never summed.
+  it('sourcing: a mixed-currency child PO shows one total per currency, not NaN', async () => {
+    const children = [
+      {
+        id: 'po-mixed',
+        po_number: 'PO-MIXED-1',
+        status: 'bought',
+        vendor_id: 'v-1',
+        vendor_name: 'Acme',
+        total_amount: null,
+        currency_code: 'IQD',
+        currencyTotals: [
+          { currency_code: 'IQD', subtotal: '50.0000', line_count: 1 },
+          { currency_code: 'USD', subtotal: '5.0000', line_count: 1 },
+        ],
+        created_at: '2026-01-16T10:00:00.000Z',
+      },
+      {
+        id: 'po-single',
+        po_number: 'PO-SINGLE-1',
+        status: 'bought',
+        vendor_id: 'v-2',
+        vendor_name: 'Beta',
+        total_amount: '70.0000',
+        currency_code: 'IQD',
+        currencyTotals: [{ currency_code: 'IQD', subtotal: '70.0000', line_count: 1 }],
+        created_at: '2026-01-16T10:00:00.000Z',
+      },
+    ]
+    mockReq({ status: 'sourcing' }, [], children)
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByText('PO-MIXED-1')).toBeInTheDocument()
+    expect(screen.getByText('PO-SINGLE-1')).toBeInTheDocument()
+    expect(screen.getByText(/^50\s+IQD$/)).toBeInTheDocument()
+    expect(screen.getByText(/^5\s+USD$/)).toBeInTheDocument()
+    expect(screen.getByText(/^70\s+IQD$/)).toBeInTheDocument()
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^55\b/)).not.toBeInTheDocument()
   })
 
   it('completed: shows the completed confirmation', async () => {

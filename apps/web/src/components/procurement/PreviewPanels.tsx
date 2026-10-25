@@ -9,6 +9,7 @@ import { PO_LIFECYCLE_QUERY, VENDOR_QUERY } from '../../graphql/procurement'
 import { REQUISITION_QUERY } from '../../graphql/requisitions'
 import { ENTITY_ATTACHMENTS_QUERY } from '../../graphql/hr'
 import { usePermission } from '../../hooks/usePermission'
+import { poTotalsText } from '../../lib/poTotals'
 import {
   Icon,
   InfoCard,
@@ -270,10 +271,9 @@ export function POPreviewPanel({
 
   const totalText = (() => {
     if (!canSeeTotals || restricted || !po) return null
-    if (po.currencyTotals.length > 0) {
-      return po.currencyTotals.map((c) => money(c.subtotal, c.currency_code)).join(' + ')
-    }
-    return money(po.total_amount, po.currency_code)
+    // total_amount is NULL for a mixed-currency or line-less PO; per-currency
+    // figures come from currencyTotals (lib/poTotals).
+    return poTotalsText(po, (amount, ccy) => money(amount, ccy))
   })()
 
   const tabs = ['Details', 'Items', 'Approval History', 'Attachments']

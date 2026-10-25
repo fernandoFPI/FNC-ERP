@@ -236,6 +236,11 @@ export const REQUISITION_CHILD_POS_QUERY = gql`
       vendor_name
       total_amount
       currency_code
+      currencyTotals {
+        currency_code
+        subtotal
+        line_count
+      }
       created_at
     }
   }

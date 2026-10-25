@@ -86,7 +86,7 @@ interface PurchaseOrder {
   vendor_id: string | null
   status: string
   priority: string
-  total_amount: string
+  total_amount: string | null
   viewerCanSeeTotals?: boolean | null
   currency_code: string
   // D10: one entry per currency actually used by this PO's lines — never
