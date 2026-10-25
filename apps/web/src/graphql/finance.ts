@@ -569,3 +569,61 @@ export const COST_CENTERS_QUERY = gql`
     }
   }
 `
+
+// G1/G2: the posting-account map every automated journal producer
+// resolves through instead of guessing a GL account by an old chart-code
+// prefix. Always scoped server-side to the caller's own company.
+export const POSTING_ACCOUNT_ROLES_QUERY = gql`
+  query PostingAccountRoles {
+    postingAccountRoles
+  }
+`
+
+export const COMPANY_POSTING_ACCOUNTS_QUERY = gql`
+  query CompanyPostingAccounts {
+    companyPostingAccounts {
+      id
+      role
+      currencyCode
+      accountId
+      accountCode
+      accountName
+      updatedAt
+    }
+  }
+`
+
+export const POSTING_ACCOUNT_READINESS_QUERY = gql`
+  query PostingAccountReadiness {
+    postingAccountReadiness {
+      allConfigured
+      missingRoles
+      roles {
+        role
+        configured
+        hasDefault
+        currencies
+      }
+    }
+  }
+`
+
+export const UPSERT_COMPANY_POSTING_ACCOUNT = gql`
+  mutation UpsertCompanyPostingAccount($role: String!, $currencyCode: String, $accountId: ID!) {
+    upsertCompanyPostingAccount(role: $role, currencyCode: $currencyCode, accountId: $accountId) {
+      id
+      role
+      currencyCode
+      accountId
+      accountCode
+      accountName
+      updatedAt
+    }
+  }
+`
+
+export const DELETE_COMPANY_POSTING_ACCOUNT = gql`
+  mutation DeleteCompanyPostingAccount($role: String!, $currencyCode: String) {
+    deleteCompanyPostingAccount(role: $role, currencyCode: $currencyCode)
+  }
+`

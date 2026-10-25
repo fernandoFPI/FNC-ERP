@@ -4,8 +4,6 @@ import type { IRouter } from 'express'
 import { z } from 'zod'
 import { pool, query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
-import { getRate } from '@fnc-erp/fx'
-import { checkRateStaleness } from '@fnc-erp/fx/staleness'
 import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
@@ -19,7 +17,6 @@ const JournalLineSchema = z.object({
   debit: z.number().min(0).default(0),
   credit: z.number().min(0).default(0),
   currency_code: z.string().length(3).default('IQD'),
-  fx_rate: z.number().positive().optional(),
 })
 
 const CreateJournalSchema = z.object({
@@ -27,7 +24,6 @@ const CreateJournalSchema = z.object({
   description: z.string().optional(),
   entry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   lines: z.array(JournalLineSchema).min(2),
-  force_stale_rate: z.boolean().default(false),
 })
 
 journalsRouter.get('/', requirePermission('finance.journals.view', 'view'), asyncHandler(async (req, res) => {
@@ -100,7 +96,7 @@ journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asy
     return
   }
 
-  const { reference, description, entry_date, lines, force_stale_rate } = parsed.data
+  const { reference, description, entry_date, lines } = parsed.data
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -135,12 +131,11 @@ journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asy
       }
     }
 
-    // Validate and compute fx amounts
-    let totalDebitCompany = 0
-    let totalCreditCompany = 0
-    const processedLines: { line: (typeof lines)[number]; rate: number; amountCompany: number }[] =
-      []
-
+    // No currency exchange anywhere: amounts are entered and stored in
+    // each line's own currency_code, never converted. There is no single
+    // blended total to check — each currency present in the entry must
+    // independently balance (its own debits = its own credits).
+    const totalsByCurrency = new Map<string, { debit: number; credit: number }>()
     for (const line of lines) {
       if (line.debit > 0 && line.credit > 0) {
         await client.query('ROLLBACK')
@@ -152,73 +147,24 @@ journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asy
         sendError(res, 400, 'INVALID_LINE', 'A journal line must have either debit or credit > 0')
         return
       }
-
-      let rate = line.fx_rate ?? 1
-      if (line.currency_code !== 'IQD' && !line.fx_rate) {
-        rate = await getRate(line.currency_code, 'IQD', new Date(entry_date))
-      }
-
-      const amount = line.debit > 0 ? line.debit : line.credit
-      const amountCompany = Math.round(amount * rate * 10000) / 10000
-
-      if (line.debit > 0) totalDebitCompany += amountCompany
-      else totalCreditCompany += amountCompany
-
-      processedLines.push({ line, rate, amountCompany })
+      const t = totalsByCurrency.get(line.currency_code) ?? { debit: 0, credit: 0 }
+      t.debit += line.debit
+      t.credit += line.credit
+      totalsByCurrency.set(line.currency_code, t)
     }
 
-    // ── FX staleness check ──────────────────────────────────
-    const foreignPairs = [
-      ...new Set(
-        lines
-          .filter((l) => l.currency_code !== 'IQD')
-          .map((l) => JSON.stringify({ from: l.currency_code, to: 'IQD' })),
-      ),
-    ].map((s) => JSON.parse(s) as { from: string; to: string })
-
-    if (foreignPairs.length > 0) {
-      const stalenessStatuses = await checkRateStaleness(companyId, foreignPairs)
-      const criticalPairs = stalenessStatuses.filter(
-        (s) => s.status === 'critical' || s.status === 'missing',
-      )
-      const warnPairs = stalenessStatuses.filter((s) => s.status === 'warn')
-
-      if (criticalPairs.length > 0 && !force_stale_rate) {
+    // Double-entry balance check, per currency (allow small floating point tolerance)
+    for (const [currencyCode, t] of totalsByCurrency) {
+      if (Math.abs(t.debit - t.credit) > 0.01) {
         await client.query('ROLLBACK')
         sendError(
           res,
           422,
-          'STALE_FX_RATE',
-          `Exchange rate for ${criticalPairs.map((p) => p.currencyPair).join(', ')} is critically stale ` +
-            `(${criticalPairs[0]?.ageHours ?? 'unknown'} hours old). ` +
-            `Update the rate first or pass force_stale_rate=true to proceed anyway.`,
-          { stalePairs: criticalPairs, canForce: true },
+          'UNBALANCED_ENTRY',
+          `Journal entry is not balanced in ${currencyCode}. Debits: ${t.debit.toFixed(4)}, Credits: ${t.credit.toFixed(4)}`,
         )
         return
       }
-
-      // Attach non-blocking warnings — retrieved after commit for the response
-      if (warnPairs.length > 0 || (criticalPairs.length > 0 && force_stale_rate)) {
-        const allStalePairs = [...criticalPairs, ...warnPairs]
-        res.locals['_fxWarnings'] = allStalePairs.map((p) => ({
-          code: 'STALE_FX_RATE_WARNING',
-          message: p.message,
-          pair: p.currencyPair,
-          ageHours: p.ageHours,
-        }))
-      }
-    }
-
-    // Double-entry balance check (allow small floating point tolerance)
-    if (Math.abs(totalDebitCompany - totalCreditCompany) > 0.01) {
-      await client.query('ROLLBACK')
-      sendError(
-        res,
-        422,
-        'UNBALANCED_ENTRY',
-        `Journal entry is not balanced. Debits: ${totalDebitCompany.toFixed(4)}, Credits: ${totalCreditCompany.toFixed(4)}`,
-      )
-      return
     }
 
     // Create journal entry
@@ -229,13 +175,16 @@ journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asy
     )
     const je = firstRowOrThrow(jeResult)
 
-    // Insert lines
-    for (const { line, rate, amountCompany } of processedLines) {
+    // Insert lines — amount_company_currency is retired; it's set equal to
+    // the line's own amount (fx_rate left at its column default of 1), the
+    // same no-conversion convention every other journal producer uses.
+    for (const line of lines) {
+      const amount = line.debit > 0 ? line.debit : line.credit
       await client.query(
         `INSERT INTO journal_lines
            (journal_entry_id, account_id, analytic_account_id, cost_center_id,
-            description, debit, credit, currency_code, fx_rate, amount_company_currency)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+            description, debit, credit, currency_code, amount_company_currency)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [
           je.id,
           line.account_id,
@@ -245,8 +194,7 @@ journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asy
           line.debit,
           line.credit,
           line.currency_code,
-          rate,
-          amountCompany,
+          amount,
         ],
       )
     }
@@ -269,10 +217,7 @@ journalsRouter.post('/', requirePermission('finance.journals.edit', 'edit'), asy
     const fullLines = await query('SELECT * FROM journal_lines WHERE journal_entry_id = $1', [
       je.id,
     ])
-    const fxWarnings = res.locals['_fxWarnings'] as unknown[] | undefined
-    const payload: Record<string, unknown> = { ...fullJe.rows[0], lines: fullLines.rows }
-    if (fxWarnings && fxWarnings.length > 0) payload['warnings'] = fxWarnings
-    sendOk(res, payload, 201)
+    sendOk(res, { ...fullJe.rows[0], lines: fullLines.rows }, 201)
   } catch (err) {
     await client.query('ROLLBACK')
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create journal entry', err)

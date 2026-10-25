@@ -21,7 +21,7 @@ beforeAll(async () => {
     [TEST_USER_EMAIL],
   )
   userId = userR.rows[0]!.id
-  ctx = { auth: { companyId: '00000000-0000-0000-0000-000000000001', userId, role: 'user', module: 'all', sessionId: 'prefs-test' } }
+  ctx = { auth: { companyId: 'f0000000-0000-0000-0000-000000000009', userId, role: 'user', module: 'all', sessionId: 'prefs-test' } }
 })
 
 afterAll(async () => {

@@ -8,6 +8,7 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { api } from '../../../lib/axios'
+import { formatCurrency } from '../../../lib/format'
 import { usePermission } from '../../../hooks/usePermission'
 
 interface BudgetLine {
@@ -49,6 +50,7 @@ interface VsActualResult {
   period_to: string
   rows: VsActualRow[]
   totals: { budget: number; actual: number; variance: number }
+  outsideBudgetCurrency: { currencyCode: string; amount: number }[]
 }
 
 interface GLAccount {
@@ -796,6 +798,30 @@ export default function BudgetDetail() {
                   </tr>
                 </tfoot>
               </table>
+
+              {vsActual.outsideBudgetCurrency.length > 0 && (
+                <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${theme.border}` }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textPrimary, marginBottom: '4px' }}>
+                    {t('fin.budgetDetail.outsideBudgetCurrency')}
+                  </div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>
+                    {t('fin.budgetDetail.outsideBudgetCurrencyNote', { currency: vsActual.budget.currency_code })}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                    {vsActual.outsideBudgetCurrency.map((c) => (
+                      <div
+                        key={c.currencyCode}
+                        style={{
+                          background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '8px',
+                          padding: '8px 12px', fontSize: '12px', fontFamily: 'monospace',
+                        }}
+                      >
+                        {formatCurrency(c.amount, c.currencyCode)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </Card>

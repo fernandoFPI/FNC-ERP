@@ -21,7 +21,7 @@ import {
   INVOICE_BILLING_METHODS,
 } from '../src/lib/contractBilling.js'
 
-const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
+const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const EMAIL = 'contract-billing-method-test@fnc-erp.local'
 const PROJECT_CODE = 'CBMTEST-PRJ'
 const CONTRACT_NAME = 'CBMTEST contract'

@@ -17,6 +17,12 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 
+interface CurrencyTotal {
+  currency_code: string
+  total_debits: string
+  total_credits: string
+}
+
 interface AnalyticAccount {
   id: string
   code: string
@@ -26,8 +32,7 @@ interface AnalyticAccount {
   cost_center_name?: string
   is_active: boolean
   journal_line_count: number
-  total_debits: string
-  total_credits: string
+  currency_totals: CurrencyTotal[]
   project_id?: string
   project_name?: string
   project_status?: string
@@ -152,8 +157,13 @@ export default function AnalyticAccountsPage() {
     }
   }
 
-  const balance = (aa: AnalyticAccount) =>
-    parseFloat(aa.total_debits) - parseFloat(aa.total_credits)
+  // No-conversion policy: an account with lines in more than one currency
+  // has no single balance, debit, or credit total — one value per currency.
+  const balancesByCurrency = (aa: AnalyticAccount) =>
+    aa.currency_totals.map((ct) => ({
+      currency_code: ct.currency_code,
+      balance: parseFloat(ct.total_debits) - parseFloat(ct.total_credits),
+    }))
 
   const columns: Column<AnalyticAccount>[] = [
     {
@@ -204,32 +214,55 @@ export default function AnalyticAccountsPage() {
       key: 'total_debits',
       header: t('fin.analytic.debits'),
       mobilePriority: 5,
-      render: (aa) => (
-        <AmountDisplay amount={parseFloat(aa.total_debits)} currency="IQD" size="sm" />
-      ),
+      render: (aa) =>
+        aa.currency_totals.length === 0 ? (
+          '—'
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {aa.currency_totals.map((ct) => (
+              <AmountDisplay key={ct.currency_code} amount={parseFloat(ct.total_debits)} currency={ct.currency_code} size="sm" />
+            ))}
+          </div>
+        ),
     },
     {
       key: 'total_credits',
       header: t('fin.analytic.credits'),
       mobilePriority: 6,
-      render: (aa) => (
-        <AmountDisplay amount={parseFloat(aa.total_credits)} currency="IQD" size="sm" />
-      ),
+      render: (aa) =>
+        aa.currency_totals.length === 0 ? (
+          '—'
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {aa.currency_totals.map((ct) => (
+              <AmountDisplay key={ct.currency_code} amount={parseFloat(ct.total_credits)} currency={ct.currency_code} size="sm" />
+            ))}
+          </div>
+        ),
     },
     {
       key: 'balance',
       header: t('fin.analytic.balance'),
       mobilePriority: 2,
       render: (aa) => {
-        const bal = balance(aa)
+        const balances = balancesByCurrency(aa)
+        if (balances.length === 0) return '—'
         return (
-          <span style={{ color: bal >= 0 ? theme.textPrimary : theme.danger, fontWeight: 500 }}>
-            {Math.abs(bal).toLocaleString('en-US', {
-              minimumFractionDigits: 0,
-              maximumFractionDigits: 0,
-            })}
-            {bal < 0 ? ' Cr' : ''}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {balances.map(({ currency_code, balance: bal }) => (
+              <span
+                key={currency_code}
+                style={{ color: bal >= 0 ? theme.textPrimary : theme.danger, fontWeight: 500 }}
+              >
+                {Math.abs(bal).toLocaleString('en-US', {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
+                })}{' '}
+                {currency_code}
+                {bal < 0 ? ' Cr' : ''}
+              </span>
+            ))}
+          </div>
         )
       },
     },

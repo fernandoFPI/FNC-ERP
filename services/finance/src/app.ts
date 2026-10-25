@@ -8,7 +8,6 @@ import { analyticRouter } from './routes/analytic.js'
 import { fxRatesRouter } from './routes/fxrates.js'
 import { fxAdminRouter } from './routes/fx-admin.js'
 import { journalsRouter } from './routes/journals.js'
-import { reportsRouter } from './routes/reports.js'
 import { periodsRouter } from './routes/periods.js'
 import { vendorInvoicesRouter } from './routes/vendor-invoices.js'
 import { arRouter } from './routes/ar.js'
@@ -19,7 +18,6 @@ import { bankRouter } from './routes/bank.js'
 import { paymentTermsRouter } from './routes/payment-terms.js'
 import { retentionRouter } from './routes/retention.js'
 import { budgetRouter } from './routes/budget.js'
-import { revaluationRouter } from './routes/revaluation.js'
 import { expenseClaimsRouter } from './routes/expense-claims.js'
 import { pettyCashRouter } from './routes/petty-cash.js'
 import { employeeAdvancesRouter } from './routes/employee-advances.js'
@@ -45,7 +43,6 @@ export function createApp(): Express {
   app.use('/finance/fx-rates', fxRatesRouter)
   app.use('/finance/fx-rates', fxAdminRouter)
   app.use('/finance/journals', journalsRouter)
-  app.use('/finance/reports', reportsRouter)
   app.use('/finance/periods', periodsRouter)
   app.use('/finance/vendor-invoices', vendorInvoicesRouter)
   app.use('/finance/ar', arRouter)
@@ -56,7 +53,9 @@ export function createApp(): Express {
   app.use('/finance/payment-terms', paymentTermsRouter)
   app.use('/finance/retention', retentionRouter)
   app.use('/finance/budget', budgetRouter)
-  app.use('/finance/revaluation', revaluationRouter)
+  // FX Revaluation disabled (Phase 5 of the currency fix plan): nothing
+  // is converted anymore, so there's nothing to revalue. routes/revaluation.ts
+  // and its tables stay for the later drop release, just unmounted.
   app.use('/finance/expense-claims', expenseClaimsRouter)
   app.use('/finance/petty-cash', pettyCashRouter)
   app.use('/finance/advances', employeeAdvancesRouter)

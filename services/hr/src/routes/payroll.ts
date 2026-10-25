@@ -201,11 +201,18 @@ payrollRouter.post(
             const incomeTax = Math.round(grossSalary * incomeTaxPct * 10000) / 10000
             const socialSecurity = Math.round(baseSalary * ssPct * 10000) / 10000
 
-            // Apply any pending salary deduction requests for this employee
+            // Apply any pending salary deduction requests for this employee,
+            // same currency as this payslip only. A deduction can be
+            // created in a different currency (e.g. a PO-return damage
+            // deduction inherits the return's own currency_code, which has
+            // no relation to the employee's payroll currency) -- summing it
+            // in here unconverted would silently corrupt net_salary.
+            // A mismatched-currency deduction is left 'pending' rather than
+            // applied or converted.
             const deductionResult = await client.query<{ id: string; amount: string }>(
               `SELECT id, amount FROM salary_deduction_requests
-             WHERE employee_id=$1 AND company_id=$2 AND status='pending'`,
-              [emp.id, companyId],
+             WHERE employee_id=$1 AND company_id=$2 AND status='pending' AND currency_code=$3`,
+              [emp.id, companyId, emp.currency_code],
             )
             const otherDeductions = deductionResult.rows.reduce(
               (sum, d) => sum + parseFloat(d.amount),

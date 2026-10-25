@@ -60,9 +60,19 @@ export default function JournalForm() {
       label: `${a.code} — ${a.name}`,
     }))
 
-  const totalDebit = lines.reduce((s, l) => s + parseFloat(l.debit || '0'), 0)
-  const totalCredit = lines.reduce((s, l) => s + parseFloat(l.credit || '0'), 0)
-  const isBalanced = Math.abs(totalDebit - totalCredit) < 0.001
+  // No currency exchange anywhere: each currency present must
+  // independently balance — there's no single blended total to check.
+  const balancesByCurrency = new Map<string, { debit: number; credit: number }>()
+  for (const l of lines) {
+    const tot = balancesByCurrency.get(l.currency_code) ?? { debit: 0, credit: 0 }
+    tot.debit += parseFloat(l.debit || '0')
+    tot.credit += parseFloat(l.credit || '0')
+    balancesByCurrency.set(l.currency_code, tot)
+  }
+  const unbalancedCurrencies = [...balancesByCurrency.entries()].filter(
+    ([, tot]) => Math.abs(tot.debit - tot.credit) >= 0.001,
+  )
+  const isBalanced = unbalancedCurrencies.length === 0
 
   function updateLine(i: number, field: keyof JournalLine, value: string) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, [field]: value } : l)))
@@ -96,7 +106,6 @@ export default function JournalForm() {
             currency_code: l.currency_code,
             debit: parseFloat(l.debit || '0'),
             credit: parseFloat(l.credit || '0'),
-            fx_rate: 1,
           })),
       }
       await createEntry({
@@ -234,14 +243,37 @@ export default function JournalForm() {
                     {t('fin.jrnForm.totals')}
                   </span>
                 ),
-                debit: <AmountDisplay amount={totalDebit} currency="IQD" />,
-                credit: <AmountDisplay amount={totalCredit} currency="IQD" />,
+                debit: (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {[...balancesByCurrency.entries()].map(([ccy, tot]) => (
+                      <AmountDisplay key={ccy} amount={tot.debit} currency={ccy} />
+                    ))}
+                  </div>
+                ),
+                credit: (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {[...balancesByCurrency.entries()].map(([ccy, tot]) => (
+                      <AmountDisplay key={ccy} amount={tot.credit} currency={ccy} />
+                    ))}
+                  </div>
+                ),
               }}
             />
           </div>
 
-          {!isBalanced && totalDebit + totalCredit > 0 && (
-            <div style={{ color: theme.danger, fontSize: '13px', marginTop: '8px' }}>{t('fin.jrnForm.entryIsNotBalancedDifference', { value: Math.abs(totalDebit - totalCredit).toLocaleString() })}</div>
+          {unbalancedCurrencies.length > 0 && (
+            <div style={{ color: theme.danger, fontSize: '13px', marginTop: '8px' }}>
+              {unbalancedCurrencies
+                .map(([ccy, tot]) =>
+                  tot.debit + tot.credit > 0
+                    ? t('fin.jrnForm.entryIsNotBalancedDifference', {
+                        value: `${Math.abs(tot.debit - tot.credit).toLocaleString()} ${ccy}`,
+                      })
+                    : null,
+                )
+                .filter(Boolean)
+                .join(' / ')}
+            </div>
           )}
 
           <div style={{ marginTop: '12px' }}>

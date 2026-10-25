@@ -6,6 +6,7 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { TabBar } from '../../../components/ui/TabBar'
 import { api } from '../../../lib/axios'
 
 interface CashFlowLine {
@@ -23,6 +24,8 @@ interface CashFlowSection {
 
 interface CashFlowData {
   period: { from: string; to: string }
+  currencyCode: string
+  availableCurrencies: string[]
   operating: CashFlowSection
   investing: CashFlowSection
   financing: CashFlowSection
@@ -133,13 +136,14 @@ export default function CashFlowStatement() {
   const [data, setData] = useState<CashFlowData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
 
-  async function load(from: string, to: string) {
+  async function load(from: string, to: string, currency?: string) {
     setLoading(true)
     setError(null)
     try {
       const r = await api.get<CashFlowData>('/reporting/cash-flow', {
-        params: { from_date: from, to_date: to },
+        params: { from_date: from, to_date: to, currency_code: currency },
       })
       setData(r.data)
     } catch {
@@ -151,7 +155,12 @@ export default function CashFlowStatement() {
 
   function handleApply() {
     setApplied({ from: fromDate, to: toDate })
-    void load(fromDate, toDate)
+    void load(fromDate, toDate, currencyCode)
+  }
+
+  function handleCurrencyChange(c: string) {
+    setCurrencyCode(c)
+    void load(applied.from, applied.to, c)
   }
 
   const inputStyle = {
@@ -165,6 +174,7 @@ export default function CashFlowStatement() {
   }
 
   const s = data?.summary
+  const displayCurrency = data?.currencyCode ?? 'IQD'
 
   return (
     <div style={{ padding: '24px' }}>
@@ -172,11 +182,21 @@ export default function CashFlowStatement() {
         title={t('rep.cashFlow.cashFlowStatement')}
         subtitle={t('rep.cashFlow.indirectMethodOperatingInvestingFinancingAct')}
         actions={
-          <Button variant="ghost" size="sm" onClick={() => void load(applied.from, applied.to)}>
+          <Button variant="ghost" size="sm" onClick={() => void load(applied.from, applied.to, currencyCode)}>
             {t('rep.cashFlow.refresh')}
           </Button>
         }
       />
+
+      {(data?.availableCurrencies.length ?? 0) > 1 && (
+        <Card padding="none" style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={data!.availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={displayCurrency}
+            onChange={handleCurrencyChange}
+          />
+        </Card>
+      )}
 
       {/* Filter Panel */}
       <Card padding="sm" style={{ marginBottom: '20px' }}>
@@ -212,7 +232,7 @@ export default function CashFlowStatement() {
                   {t('rep.cashFlow.netChangeInCash')}
                 </p>
                 <Badge variant={s.net_change_in_cash >= 0 ? 'success' : 'danger'}>
-                  <AmountDisplay amount={s.net_change_in_cash} currency="IQD" size="sm" />
+                  <AmountDisplay amount={s.net_change_in_cash} currency={displayCurrency} size="sm" />
                 </Badge>
               </div>
             </div>
@@ -240,25 +260,25 @@ export default function CashFlowStatement() {
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               {t('rep.cashFlow.openingCash')}
             </p>
-            <AmountDisplay amount={s.opening_cash_balance} currency="IQD" size="md" />
+            <AmountDisplay amount={s.opening_cash_balance} currency={displayCurrency} size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               {t('rep.cashFlow.closingCash')}
             </p>
-            <AmountDisplay amount={s.closing_cash_balance} currency="IQD" size="md" />
+            <AmountDisplay amount={s.closing_cash_balance} currency={displayCurrency} size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               {t('rep.cashFlow.fromOperations')}
             </p>
-            <AmountDisplay amount={data.operating.total} currency="IQD" size="md" colored />
+            <AmountDisplay amount={data.operating.total} currency={displayCurrency} size="md" colored />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               {t('rep.cashFlow.fromFinancing')}
             </p>
-            <AmountDisplay amount={data.financing.total} currency="IQD" size="md" colored />
+            <AmountDisplay amount={data.financing.total} currency={displayCurrency} size="md" colored />
           </Card>
         </div>
       )}

@@ -11,6 +11,7 @@ import { FilterBar } from '../../../components/ui/FilterBar'
 import { Grid } from '../../../components/ui/Grid'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import { TabBar } from '../../../components/ui/TabBar'
 import { PAYROLL_TAX_REPORT_QUERY } from '../../../graphql/reporting'
 
 interface PayrollTaxRow {
@@ -27,6 +28,8 @@ interface PayrollTaxRow {
 interface PayrollTaxData {
   payrollTaxReport: {
     rows: PayrollTaxRow[]
+    currencyCode: string
+    availableCurrencies: string[]
   }
 }
 
@@ -38,13 +41,15 @@ export default function PayrollTaxReport() {
 
   const [fromDate, setFromDate] = useState(firstOfMonth)
   const [toDate, setToDate] = useState(today)
-  const [companyId] = useState('1')
   const [search, setSearch] = useState('')
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
 
   const { data, loading, refetch } = useQuery<PayrollTaxData>(PAYROLL_TAX_REPORT_QUERY, {
-    variables: { fromDate, toDate, companyId },
+    variables: { fromDate, toDate, currencyCode },
   })
 
+  const displayCurrency = data?.payrollTaxReport.currencyCode ?? 'IQD'
+  const availableCurrencies = data?.payrollTaxReport.availableCurrencies ?? []
   const rows = (data?.payrollTaxReport.rows ?? []).filter(
     (r) =>
       !search ||
@@ -83,13 +88,13 @@ export default function PayrollTaxReport() {
       key: 'grossPay',
       header: t('rep.payrollTax.grossPay'),
       mobilePriority: 4,
-      render: (row) => <AmountDisplay amount={row.grossPay} currency="IQD" size="sm" />,
+      render: (row) => <AmountDisplay amount={row.grossPay} currency={displayCurrency} size="sm" />,
     },
     {
       key: 'taxableIncome',
       header: t('rep.payrollTax.taxableIncome'),
       mobilePriority: 5,
-      render: (row) => <AmountDisplay amount={row.taxableIncome} currency="IQD" size="sm" />,
+      render: (row) => <AmountDisplay amount={row.taxableIncome} currency={displayCurrency} size="sm" />,
     },
     {
       key: 'incomeTaxWithheld',
@@ -97,7 +102,7 @@ export default function PayrollTaxReport() {
       mobilePriority: 1,
       render: (row) => (
         <span style={{ color: theme.warning }}>
-          <AmountDisplay amount={row.incomeTaxWithheld} currency="IQD" size="sm" />
+          <AmountDisplay amount={row.incomeTaxWithheld} currency={displayCurrency} size="sm" />
         </span>
       ),
     },
@@ -107,7 +112,7 @@ export default function PayrollTaxReport() {
       mobilePriority: 2,
       render: (row) => (
         <span style={{ color: theme.info }}>
-          <AmountDisplay amount={row.socialSecurity} currency="IQD" size="sm" />
+          <AmountDisplay amount={row.socialSecurity} currency={displayCurrency} size="sm" />
         </span>
       ),
     },
@@ -117,7 +122,7 @@ export default function PayrollTaxReport() {
       mobilePriority: 3,
       render: (row) => (
         <span style={{ fontWeight: 500 }}>
-          <AmountDisplay amount={row.netPay} currency="IQD" size="sm" />
+          <AmountDisplay amount={row.netPay} currency={displayCurrency} size="sm" />
         </span>
       ),
     },
@@ -141,6 +146,16 @@ export default function PayrollTaxReport() {
         }
       />
 
+      {availableCurrencies.length > 1 && (
+        <Card padding="none" style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={displayCurrency}
+            onChange={setCurrencyCode}
+          />
+        </Card>
+      )}
+
       <Card padding="sm" style={{ marginBottom: '16px' }}>
         <FilterBar
           search={{ value: search, onChange: setSearch, placeholder: t('rep.payrollTax.searchEmployee') }}
@@ -159,19 +174,19 @@ export default function PayrollTaxReport() {
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               {t('rep.payrollTax.totalGrossPay')}
             </p>
-            <AmountDisplay amount={totalGross} currency="IQD" size="md" />
+            <AmountDisplay amount={totalGross} currency={displayCurrency} size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               {t('rep.payrollTax.incomeTaxWithheld')}
             </p>
-            <AmountDisplay amount={totalIncomeTax} currency="IQD" size="md" />
+            <AmountDisplay amount={totalIncomeTax} currency={displayCurrency} size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               {t('rep.payrollTax.socialSecurity')}
             </p>
-            <AmountDisplay amount={totalSS} currency="IQD" size="md" />
+            <AmountDisplay amount={totalSS} currency={displayCurrency} size="md" />
           </Card>
         </Grid>
       )}

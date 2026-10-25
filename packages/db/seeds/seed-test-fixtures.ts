@@ -8,11 +8,19 @@
 // at the exact same time. Within one service, fileParallelism:false
 // already stops its own test *files* from interleaving — this is the
 // other half, stopping different *services* from colliding with each
-// other. gateway keeps company 001 (Nishtimani Yakam) — it's already
-// isolated by being the only consumer left on that id, and rewriting its
-// ~10 requisition/PO test files (each hardcoding the literal UUID
-// throughout, not routed through a shared setup.ts constant) for no
-// behavioral gain wasn't worth it.
+// other.
+//
+// gateway (GATEWAY/GATEWAY_B) joined this list after the fact: its ~40
+// test files hardcoded the literal company 001/002 UUIDs directly
+// (Nishtimani Yakam / Nishtimani Factory) rather than routing through a
+// shared setup.ts constant. That was fine until these UUIDs stopped being
+// synthetic placeholders and became real production companies once a
+// real production copy entered the test loop (fnc_erp_prodcopy) — running
+// gateway's suite against a copy of production would insert and delete
+// rows against a real company's real data. GATEWAY is the single-company
+// fixture every test that only needs "a company" now uses; GATEWAY_B is
+// the second company for the handful of tests that need two (interco,
+// cross-tenant leak checks).
 //
 // Deliberately NOT part of run-seeds.ts's pipeline — these are synthetic,
 // test-only companies with no business meaning, and must never be
@@ -50,6 +58,8 @@ const SERVICE_COMPANIES = [
   { key: 'PROJECTS', id: 'f0000000-0000-0000-0000-000000000006', workLocationId: 'f0000001-0000-0000-0000-000000000006', name: 'TEST-FIXTURE-PROJECTS' },
   { key: 'RENTAL', id: 'f0000000-0000-0000-0000-000000000007', workLocationId: 'f0000001-0000-0000-0000-000000000007', name: 'TEST-FIXTURE-RENTAL' },
   { key: 'REPORTING', id: 'f0000000-0000-0000-0000-000000000008', workLocationId: 'f0000001-0000-0000-0000-000000000008', name: 'TEST-FIXTURE-REPORTING' },
+  { key: 'GATEWAY', id: 'f0000000-0000-0000-0000-000000000009', workLocationId: 'f0000001-0000-0000-0000-000000000009', name: 'TEST-FIXTURE-GATEWAY' },
+  { key: 'GATEWAY_B', id: 'f0000000-0000-0000-0000-000000000010', workLocationId: 'f0000001-0000-0000-0000-000000000010', name: 'TEST-FIXTURE-GATEWAY-B' },
 ] as const
 
 // Exported so each service's tests/setup.ts can import its own id directly

@@ -18,6 +18,7 @@ import { EmptyState } from '../../../components/ui/EmptyState'
 import { Grid } from '../../../components/ui/Grid'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import { TabBar } from '../../../components/ui/TabBar'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 
 interface APSummary {
@@ -30,6 +31,8 @@ interface APSummary {
   overdue_count: number
   pending_approval_count: number
   paid_this_month: string
+  currencyCode: string
+  availableCurrencies: string[]
 }
 
 interface VendorInvoice {
@@ -83,11 +86,13 @@ function AgingBar({
   amount,
   total,
   color,
+  currency,
 }: {
   label: string
   amount: number
   total: number
   color: string
+  currency: string
 }) {
   const { t } = useTranslation()
   const { theme } = useTheme()
@@ -103,7 +108,7 @@ function AgingBar({
         }}
       >
         <span style={{ color: theme.textSecondary }}>{label}</span>
-        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{t('fin.apDash.iqd', { amt: fmtAmt(amount) })}</span>
+        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{t('fin.apDash.iqd', { currency, amt: fmtAmt(amount) })}</span>
       </div>
       <div style={{ height: '6px', borderRadius: '3px', background: theme.bgSurfaceHover }}>
         <div
@@ -132,6 +137,8 @@ export default function APDashboard() {
 
   const [summary, setSummary] = useState<APSummary | null>(null)
   const [invoices, setInvoices] = useState<VendorInvoice[]>([])
+  const [availableCurrencies, setAvailableCurrencies] = useState<string[]>([])
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -141,13 +148,18 @@ export default function APDashboard() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
+      const summaryParams = currencyCode ? { currency_code: currencyCode } : {}
+      const invoiceParams: Record<string, string> = {}
+      if (statusFilter) invoiceParams.status = statusFilter
+      if (currencyCode) invoiceParams.currency_code = currencyCode
       const [sumRes, invRes] = await Promise.all([
-        api.get<APSummary>('/finance/vendor-invoices/ap-summary'),
+        api.get<APSummary>('/finance/vendor-invoices/ap-summary', { params: summaryParams }),
         api.get<{ items: VendorInvoice[] } | VendorInvoice[]>('/finance/vendor-invoices', {
-          params: statusFilter ? { status: statusFilter } : undefined,
+          params: invoiceParams,
         }),
       ])
       setSummary(sumRes.data)
+      setAvailableCurrencies(sumRes.data.availableCurrencies ?? [])
       const raw = invRes.data as unknown
       if (Array.isArray(raw)) setInvoices(raw as VendorInvoice[])
       else setInvoices((raw as { items?: VendorInvoice[] }).items ?? [])
@@ -156,7 +168,7 @@ export default function APDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [addToast, statusFilter])
+  }, [addToast, statusFilter, currencyCode])
 
   useEffect(() => {
     void fetchData()
@@ -178,6 +190,7 @@ export default function APDashboard() {
   }
 
   const s = summary
+  const displayCurrency = s?.currencyCode ?? 'IQD'
   const totalOutstanding = parseFloat(s?.total_outstanding ?? '0')
   const b0 = parseFloat(s?.bucket_0_30 ?? '0')
   const b31 = parseFloat(s?.bucket_31_60 ?? '0')
@@ -336,12 +349,22 @@ export default function APDashboard() {
         }
       />
 
+      {availableCurrencies.length > 1 && (
+        <Card padding="none" style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={displayCurrency}
+            onChange={setCurrencyCode}
+          />
+        </Card>
+      )}
+
       {/* KPI row */}
       <Grid cols={4} tabletCols={2} phoneCols={2} gap={14} style={{ marginBottom: '24px' }}>
         {[
           {
             label: t('fin.apDash.totalOutstanding'),
-            value: `IQD ${fmtAmt(totalOutstanding)}`,
+            value: `${displayCurrency} ${fmtAmt(totalOutstanding)}`,
             color: totalOutstanding > 0 ? theme.danger : theme.textPrimary,
           },
           {
@@ -356,12 +379,12 @@ export default function APDashboard() {
           {
             label: t('fin.apDash.overdue'),
             value: `${s?.overdue_count ?? 0}`,
-            sub: t('fin.apDash.iqdOverdue', { amt: fmtAmt(b31 + b61 + b90) }),
+            sub: t('fin.apDash.iqdOverdue', { currency: displayCurrency, amt: fmtAmt(b31 + b61 + b90) }),
             color: (s?.overdue_count ?? 0) > 0 ? theme.danger : theme.textPrimary,
           },
           {
             label: t('fin.apDash.paidThisMonth'),
-            value: `IQD ${fmtAmt(s?.paid_this_month ?? 0)}`,
+            value: `${displayCurrency} ${fmtAmt(s?.paid_this_month ?? 0)}`,
             color: theme.success,
           },
         ].map((kpi, i) => (
@@ -425,20 +448,29 @@ export default function APDashboard() {
               amount={b0}
               total={totalOutstanding}
               color={theme.success}
+              currency={displayCurrency}
             />
             <AgingBar
               label={t('fin.apDash.3160Days')}
               amount={b31}
               total={totalOutstanding}
               color={theme.warning}
+              currency={displayCurrency}
             />
             <AgingBar
               label={t('fin.apDash.6190Days')}
               amount={b61}
               total={totalOutstanding}
               color={theme.danger}
+              currency={displayCurrency}
             />
-            <AgingBar label={t('fin.apDash.over90Days')} amount={b90} total={totalOutstanding} color="#dc2626" />
+            <AgingBar
+              label={t('fin.apDash.over90Days')}
+              amount={b90}
+              total={totalOutstanding}
+              color="#dc2626"
+              currency={displayCurrency}
+            />
           </>
         )}
       </Card>
@@ -536,7 +568,12 @@ export default function APDashboard() {
         title={t('fin.apDash.approveVendorInvoice')}
         message={
           approvingInv
-            ? t('fin.apDash.approveInvoiceFromForIqd', { invoice_number: approvingInv.invoice_number, vendor_name: approvingInv.vendor_name, amt: fmtAmt(approvingInv.net_payable) })
+            ? t('fin.apDash.approveInvoiceFromForIqd', {
+                invoice_number: approvingInv.invoice_number,
+                vendor_name: approvingInv.vendor_name,
+                currency: approvingInv.currency_code,
+                amt: fmtAmt(approvingInv.net_payable),
+              })
             : ''
         }
         confirmLabel={t('fin.apDash.approve')}

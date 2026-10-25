@@ -143,7 +143,13 @@ describe('Project lifecycle', () => {
     const pid = (createRes.body.data as { id: string }).id
     const res = await request(app).get(`/projects/${pid}/profitability`).set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
-    expect(res.body.data).toHaveProperty('project_id')
-    expect(res.body.data).toHaveProperty('budget_remaining')
+    // One row per currency with activity (migration 305) -- a brand-new
+    // project with no cost_actuals yet still gets exactly one row (its
+    // currency_code is null, not one row per every possible currency).
+    expect(Array.isArray(res.body.data)).toBe(true)
+    expect(res.body.data).toHaveLength(1)
+    expect(res.body.data[0]).toHaveProperty('project_id')
+    expect(res.body.data[0]).toHaveProperty('budget_remaining')
+    expect(res.body.data[0].budget_remaining).toBe('10000000.0000')
   })
 })

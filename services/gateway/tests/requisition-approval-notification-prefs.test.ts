@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers, resolveRequisitionApprovalRecipients } from '../src/graphql/resolvers.js'
 
-const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
+const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const TEST_USER_EMAIL = 'g1-req-notify-prefs-test@fnc-erp.local'
 const OPTED_IN_ADMIN_EMAIL = 'g1-req-notify-prefs-admin-in@fnc-erp.local'
 const OPTED_OUT_ADMIN_EMAIL = 'g1-req-notify-prefs-admin-out@fnc-erp.local'

@@ -17,8 +17,6 @@ interface JournalLine {
   debit: string
   credit: string
   currency_code: string
-  fx_rate: string
-  amount_company_currency: string
   account_name: string
   account_code: string
   reference: string
@@ -27,19 +25,23 @@ interface JournalLine {
   je_status: string
 }
 
+interface CurrencyTotal {
+  currency_code: string
+  total_debits: string
+  total_credits: string
+}
+
 interface AccountDetail {
   id: string
   code: string
   name: string
   is_active: boolean
   journal_line_count: number
-  total_debits: string
-  total_credits: string
+  currency_totals: CurrencyTotal[]
   project_id?: string
   project_name?: string
   project_status?: string
   project_budget_currency?: string
-  project_fx_rate?: string
   lines: JournalLine[]
 }
 
@@ -98,16 +100,6 @@ export default function AnalyticAccountDetail() {
       </div>
     )
 
-  const totalDebitsIQD = parseFloat(account.total_debits)
-  const totalCreditsIQD = parseFloat(account.total_credits)
-  const balance = totalDebitsIQD - totalCreditsIQD
-
-  const projCurrency = account.project_budget_currency?.trim()
-  const projFxRate = parseFloat(account.project_fx_rate ?? '0')
-  const showDual = !!projCurrency && projCurrency !== 'IQD' && projFxRate > 0
-
-  const toProj = (iqd: number) => (projFxRate > 0 ? iqd / projFxRate : 0)
-
   return (
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
       <PageHeader
@@ -131,11 +123,13 @@ export default function AnalyticAccountDetail() {
         }
       />
 
-      {/* KPI row */}
+      {/* KPI row — one card per currency actually used by this account's
+          journal lines (no-conversion policy: there's no single "the
+          total" once more than one currency is involved). */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
           gap: '12px',
           marginBottom: '20px',
         }}
@@ -148,41 +142,30 @@ export default function AnalyticAccountDetail() {
             {account.journal_line_count.toLocaleString()}
           </div>
         </Card>
-        {[
-          { label: t('fin.analyticDetail.totalDebits'), iqd: totalDebitsIQD },
-          { label: t('fin.analyticDetail.totalCredits'), iqd: totalCreditsIQD },
-          { label: t('fin.analyticDetail.balanceDrCr'), iqd: Math.abs(balance), suffix: balance < 0 ? ' Cr' : '' },
-        ].map(({ label, iqd, suffix = '' }) => (
-          <Card key={label} padding="sm">
-            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-              {label}
-            </div>
-            <div
-              style={{
-                fontWeight: 700,
-                fontSize: '15px',
-                color: theme.textPrimary,
-                fontFamily: 'monospace',
-              }}
-            >
-              {formatCurrency(iqd, 'IQD')}
-              {suffix}
-            </div>
-            {showDual && (
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: theme.accent,
-                  fontFamily: 'monospace',
-                  marginTop: '2px',
-                }}
-              >
-                {formatCurrency(toProj(iqd), projCurrency)}
-                {suffix}
+        {account.currency_totals.map((ct) => {
+          const debit = parseFloat(ct.total_debits)
+          const credit = parseFloat(ct.total_credits)
+          const balance = debit - credit
+          return (
+            <Card key={ct.currency_code} padding="sm">
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
+                {ct.currency_code}
               </div>
-            )}
-          </Card>
-        ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontFamily: 'monospace', fontSize: '13px' }}>
+                <span style={{ color: theme.textPrimary }}>
+                  {t('fin.analyticDetail.totalDebits')}: {formatCurrency(debit, ct.currency_code)}
+                </span>
+                <span style={{ color: theme.textPrimary }}>
+                  {t('fin.analyticDetail.totalCredits')}: {formatCurrency(credit, ct.currency_code)}
+                </span>
+                <span style={{ color: theme.textPrimary, fontWeight: 700 }}>
+                  {t('fin.analyticDetail.balanceDrCr')}: {formatCurrency(Math.abs(balance), ct.currency_code)}
+                  {balance < 0 ? ' Cr' : ''}
+                </span>
+              </div>
+            </Card>
+          )
+        })}
       </div>
 
       {/* Linked project */}
@@ -265,7 +248,6 @@ export default function AnalyticAccountDetail() {
                   t('fin.analyticDetail.description'),
                   t('fin.analyticDetail.source'),
                   t('fin.analyticDetail.amountOrig'),
-                  t('fin.analyticDetail.iqdEquiv'),
                   t('fin.analyticDetail.status'),
                 ].map((h) => (
                   <th
@@ -334,36 +316,22 @@ export default function AnalyticAccountDetail() {
                       const amt = isDebit ? parseFloat(line.debit) : parseFloat(line.credit)
                       const cur = line.currency_code.trim() || 'IQD'
                       return (
-                        <>
-                          <span style={{ color: isCredit ? theme.success : theme.textPrimary }}>
-                            <AmountDisplay amount={amt} currency={cur} size="sm" />
-                            {isCredit && (
-                              <span
-                                style={{
-                                  fontSize: '10px',
-                                  marginInlineStart: '3px',
-                                  color: theme.success,
-                                }}
-                              >
-                                {t('fin.analyticDetail.cr')}
-                              </span>
-                            )}
-                          </span>
-                          {cur !== 'IQD' && parseFloat(line.fx_rate) !== 1 && (
-                            <div style={{ fontSize: '10px', color: theme.textMuted }}>
-                              @ {parseFloat(line.fx_rate).toFixed(4)}
-                            </div>
+                        <span style={{ color: isCredit ? theme.success : theme.textPrimary }}>
+                          <AmountDisplay amount={amt} currency={cur} size="sm" />
+                          {isCredit && (
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                marginInlineStart: '3px',
+                                color: theme.success,
+                              }}
+                            >
+                              {t('fin.analyticDetail.cr')}
+                            </span>
                           )}
-                        </>
+                        </span>
                       )
                     })()}
-                  </td>
-                  <td style={{ padding: '8px 12px', textAlign: 'end' }}>
-                    <AmountDisplay
-                      amount={parseFloat(line.amount_company_currency)}
-                      currency="IQD"
-                      size="sm"
-                    />
                   </td>
                   <td style={{ padding: '8px 12px' }}>
                     <Badge

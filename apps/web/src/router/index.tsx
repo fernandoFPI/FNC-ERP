@@ -17,6 +17,7 @@ const DashboardPage = lazy(() => import('../pages/dashboard/DashboardPage'))
 // Finance
 const FinanceLayout = lazy(() => import('../pages/finance/FinanceLayout'))
 const AccountsPage = lazy(() => import('../pages/finance/accounts/AccountsPage'))
+const PostingAccountsPage = lazy(() => import('../pages/finance/posting-accounts/PostingAccountsPage'))
 const AccountForm = lazy(() => import('../pages/finance/accounts/AccountForm'))
 const AccountLedger = lazy(() => import('../pages/finance/accounts/AccountLedger'))
 const JournalsPage = lazy(() => import('../pages/finance/journals/JournalsPage'))
@@ -57,7 +58,6 @@ const RetentionPage = lazy(() => import('../pages/finance/retention/RetentionPag
 const RetentionDetail = lazy(() => import('../pages/finance/retention/RetentionDetail'))
 const BudgetPage = lazy(() => import('../pages/finance/budget/BudgetPage'))
 const BudgetDetail = lazy(() => import('../pages/finance/budget/BudgetDetail'))
-const RevaluationPage = lazy(() => import('../pages/finance/revaluation/RevaluationPage'))
 const ExpenseClaimDetail = lazy(() => import('../pages/finance/expenses/ExpenseClaimDetail'))
 const ExpenseClaimDashboard = lazy(
   () => import('../pages/finance/expenses/ExpenseClaimDashboard'),
@@ -381,6 +381,10 @@ export const router = createBrowserRouter([
             path: 'accounts/:id/ledger',
             element: withPerm('finance.accounts.view', <AccountLedger />),
           },
+          {
+            path: 'posting-accounts',
+            element: withPerm('finance.accounts.edit', <PostingAccountsPage />, 'edit'),
+          },
           { path: 'journals', element: withPerm('finance.journals.view', <JournalsPage />) },
           {
             path: 'journals/new',
@@ -469,10 +473,10 @@ export const router = createBrowserRouter([
           },
           { path: 'budget', element: withPerm('finance.budget.view', <BudgetPage />) },
           { path: 'budget/:id', element: withPerm('finance.budget.view', <BudgetDetail />) },
-          {
-            path: 'revaluation',
-            element: withPerm('finance.revaluation.view', <RevaluationPage />),
-          },
+          // FX Revaluation route disabled (Phase 5 of the currency fix
+          // plan) -- nothing is converted anymore, so there's nothing to
+          // revalue. RevaluationPage.tsx stays on disk for the later drop
+          // release, just unrouted.
           // There's no standalone "Expense Claims" list page — claims are
           // filed from, and listed alongside, Requisitions (see
           // RequisitionForm.tsx's request-self flow). Topbar's breadcrumb

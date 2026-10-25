@@ -7,6 +7,7 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { TabBar } from '../../../components/ui/TabBar'
 import { api } from '../../../lib/axios'
 
 interface DashboardAdvance {
@@ -26,6 +27,7 @@ interface DashboardAdvance {
 interface EmployeeRollup {
   employee_id: string
   employee_name: string
+  currency_code: string
   advance_count: number
   total_issued: number
   total_settled: number
@@ -36,6 +38,8 @@ interface EmployeeRollup {
 interface Dashboard {
   advances: DashboardAdvance[]
   by_employee: EmployeeRollup[]
+  currencyCode: string
+  availableCurrencies: string[]
 }
 
 const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | 'warning'> = {
@@ -49,23 +53,27 @@ export default function EmployeeAdvanceDashboard() {
   const navigate = useNavigate()
   const [data, setData] = useState<Dashboard | null>(null)
   const [loading, setLoading] = useState(true)
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await api.get<Dashboard>('/finance/advances/dashboard')
+      const res = await api.get<Dashboard>('/finance/advances/dashboard', {
+        params: currencyCode ? { currency_code: currencyCode } : {},
+      })
       setData(res.data)
     } catch {
       /* handled */
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [currencyCode])
 
   useEffect(() => {
     void load()
   }, [load])
 
+  const displayCurrency = data?.currencyCode ?? 'IQD'
   const totalOutstanding = data?.advances.reduce((s, a) => s + Number(a.outstanding_amount), 0) ?? 0
   const employeeCount = data?.by_employee.length ?? 0
   const advanceCount = data?.advances.length ?? 0
@@ -93,6 +101,16 @@ export default function EmployeeAdvanceDashboard() {
         }
       />
 
+      {(data?.availableCurrencies.length ?? 0) > 1 && (
+        <Card padding="none" style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={data!.availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={displayCurrency}
+            onChange={setCurrencyCode}
+          />
+        </Card>
+      )}
+
       <div
         style={{
           display: 'grid',
@@ -105,7 +123,7 @@ export default function EmployeeAdvanceDashboard() {
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
             {t('fin.advDash.totalOutstanding')}
           </p>
-          <AmountDisplay amount={totalOutstanding} currency="IQD" size="md" colored />
+          <AmountDisplay amount={totalOutstanding} currency={displayCurrency} size="md" colored />
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -193,18 +211,18 @@ export default function EmployeeAdvanceDashboard() {
                     {e.advance_count}
                   </td>
                   <td style={{ padding: '9px 12px', textAlign: 'end' }}>
-                    <AmountDisplay amount={Number(e.total_issued)} currency="IQD" size="sm" />
+                    <AmountDisplay amount={Number(e.total_issued)} currency={e.currency_code} size="sm" />
                   </td>
                   <td style={{ padding: '9px 12px', textAlign: 'end' }}>
-                    <AmountDisplay amount={Number(e.total_settled)} currency="IQD" size="sm" />
+                    <AmountDisplay amount={Number(e.total_settled)} currency={e.currency_code} size="sm" />
                   </td>
                   <td style={{ padding: '9px 12px', textAlign: 'end' }}>
-                    <AmountDisplay amount={Number(e.total_returned)} currency="IQD" size="sm" />
+                    <AmountDisplay amount={Number(e.total_returned)} currency={e.currency_code} size="sm" />
                   </td>
                   <td style={{ padding: '9px 12px', textAlign: 'end' }}>
                     <AmountDisplay
                       amount={Number(e.total_outstanding)}
-                      currency="IQD"
+                      currency={e.currency_code}
                       size="sm"
                       colored
                     />

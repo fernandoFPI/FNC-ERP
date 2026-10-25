@@ -13,6 +13,27 @@ export const expenseClaimsRouter: Router = Router()
 // 422 instead of a generic 500. Mirrors employee-advances.ts's AdvanceConfigError.
 export class ExpenseConfigError extends Error {}
 
+// 0.1 sweep: /summary used to sum expense_claims straight across every
+// currency_code, unlike its own sibling /dashboard below (which already
+// groups by currency_code). Resolves which currency to report in
+// (explicit ?currency_code, else the company's own) plus every currency
+// with real claim activity.
+async function resolveExpenseClaimsCurrency(
+  companyId: string,
+  requested: string | undefined,
+): Promise<{ currencyCode: string; availableCurrencies: string[] }> {
+  const availableRes = await query<{ currency_code: string }>(
+    `SELECT DISTINCT currency_code FROM expense_claims WHERE company_id=$1 ORDER BY 1`,
+    [companyId],
+  )
+  const availableCurrencies = availableRes.rows.map((r) => r.currency_code)
+  if (requested) return { currencyCode: requested, availableCurrencies }
+  const companyRes = await query<{ currency_code: string }>(`SELECT currency_code FROM companies WHERE id=$1`, [
+    companyId,
+  ])
+  return { currencyCode: companyRes.rows[0]?.currency_code ?? 'IQD', availableCurrencies }
+}
+
 // ─── Account auto-resolution ────────────────────────────────────────────────
 //
 // Reimbursement account is picked by currency, reusing the same
@@ -238,6 +259,11 @@ expenseClaimsRouter.get(
   requirePermission('finance.expenses.view', 'view'),
   asyncHandler(async (req, res) => {
     try {
+      const companyId = getAuth(req).companyId
+      const { currencyCode, availableCurrencies } = await resolveExpenseClaimsCurrency(
+        companyId,
+        req.query['currency_code'] as string | undefined,
+      )
       const r = await query(
         `SELECT
          COUNT(*) FILTER (WHERE status='draft')                AS draft_count,
@@ -246,10 +272,10 @@ expenseClaimsRouter.get(
          COALESCE(SUM(total_amount) FILTER (WHERE status='submitted'),0) AS pending_amount,
          COALESCE(SUM(total_amount) FILTER (WHERE status='posted'),0)    AS posted_amount,
          COALESCE(SUM(total_amount) FILTER (WHERE status='paid'),0)      AS paid_amount
-       FROM expense_claims WHERE company_id=$1`,
-        [getAuth(req).companyId],
+       FROM expense_claims WHERE company_id=$1 AND currency_code=$2`,
+        [companyId, currencyCode],
       )
-      sendOk(res, r.rows[0])
+      sendOk(res, { ...r.rows[0], currencyCode, availableCurrencies })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load summary', err)
     }

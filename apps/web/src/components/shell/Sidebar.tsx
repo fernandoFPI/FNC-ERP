@@ -648,6 +648,15 @@ export const NAV_SECTIONS: NavSection[] = [
             path: '/finance/journals',
             permKeys: ['finance.journals.view'],
           },
+          {
+            // G1/G2: which GL account every automated journal producer
+            // resolves through per role, instead of a guessed chart-code
+            // prefix. View-gated here (same as Chart of Accounts); the
+            // page itself requires finance.accounts.edit to change anything.
+            label: 'Posting Accounts',
+            path: '/finance/posting-accounts',
+            permKeys: ['finance.accounts.view'],
+          },
         ],
       },
       {
@@ -709,15 +718,14 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Assets & Budgets',
         icon: <Icon name="trending-up" />,
         path: '_f_assets',
-        permKeys: ['finance.assets.view', 'finance.budget.view', 'finance.revaluation.view'],
+        // FX Revaluation disabled (Phase 5 of the currency fix plan):
+        // nothing is converted anymore, so there's nothing left to
+        // revalue. Its tables/routes stay, menu entry removed. See
+        // RevaluationPage.tsx / services/finance/src/routes/revaluation.ts.
+        permKeys: ['finance.assets.view', 'finance.budget.view'],
         children: [
           { label: 'Fixed Assets', path: '/finance/assets', permKeys: ['finance.assets.view'] },
           { label: 'GL Budgets', path: '/finance/budget', permKeys: ['finance.budget.view'] },
-          {
-            label: 'FX Revaluation',
-            path: '/finance/revaluation',
-            permKeys: ['finance.revaluation.view'],
-          },
         ],
       },
       {

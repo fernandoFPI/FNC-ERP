@@ -681,6 +681,16 @@ export type CompanyIntercoPricingSettings = {
   updatedByEmail?: Maybe<Scalars['String']['output']>;
 };
 
+export type CompanyPostingAccount = {
+  accountCode: Scalars['String']['output'];
+  accountId: Scalars['ID']['output'];
+  accountName: Scalars['String']['output'];
+  currencyCode?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  role: Scalars['String']['output'];
+  updatedAt: Scalars['String']['output'];
+};
+
 export type CompanyRef = {
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
@@ -726,6 +736,7 @@ export type ConditionReportInput = {
 };
 
 export type ConsolidatedBsResult = {
+  availableCurrencies: Array<Scalars['String']['output']>;
   companies: Array<CompanyRef>;
   currency: Scalars['String']['output'];
   isBalanced: Scalars['Boolean']['output'];
@@ -736,6 +747,7 @@ export type ConsolidatedBsResult = {
 };
 
 export type ConsolidatedPlResult = {
+  availableCurrencies: Array<Scalars['String']['output']>;
   companies: Array<CompanyRef>;
   currency: Scalars['String']['output'];
   netProfit: Scalars['Float']['output'];
@@ -750,10 +762,12 @@ export type ConsolidatedRow = {
   accountType: Scalars['String']['output'];
   companies: Scalars['JSON']['output'];
   consolidated: Scalars['Float']['output'];
+  currency_code?: Maybe<Scalars['String']['output']>;
   eliminated: Scalars['Float']['output'];
 };
 
 export type ConsolidatedTbResult = {
+  availableCurrencies: Array<Scalars['String']['output']>;
   companies: Array<CompanyRef>;
   currency: Scalars['String']['output'];
   isBalanced: Scalars['Boolean']['output'];
@@ -818,7 +832,9 @@ export type CostCode = {
 };
 
 export type CostControlSummary = {
+  availableCurrencies: Array<Scalars['String']['output']>;
   byCategory: Array<CategoryCostSummary>;
+  currencyCode: Scalars['String']['output'];
   outstandingReceivable: Scalars['Float']['output'];
   percentConsumed: Scalars['Float']['output'];
   totalActual: Scalars['Float']['output'];
@@ -1835,7 +1851,6 @@ export type JournalLineInput = {
   currency_code?: InputMaybe<Scalars['String']['input']>;
   debit: Scalars['Float']['input'];
   description?: InputMaybe<Scalars['String']['input']>;
-  fx_rate?: InputMaybe<Scalars['Float']['input']>;
 };
 
 export type JournalLinkedPo = {
@@ -2297,6 +2312,7 @@ export type Mutation = {
   addMaterialIssueLine: MaterialIssueLine;
   addPOLineComment: PoLineComment;
   addPOLogNote: PoApprovalLogEntry;
+  addProjectBudget: Scalars['JSON']['output'];
   addProjectMember: ProjectMember;
   addProjectTeamMember: ProjectTeamMember;
   addPunchPhoto: PunchPhoto;
@@ -2459,6 +2475,7 @@ export type Mutation = {
   deleteClientDocument: Scalars['Boolean']['output'];
   deleteCommittedCost: Scalars['Boolean']['output'];
   deleteCompanyBranch: Scalars['Boolean']['output'];
+  deleteCompanyPostingAccount: Scalars['Boolean']['output'];
   deleteContractMilestone: Scalars['Boolean']['output'];
   deleteCostCode: Scalars['Boolean']['output'];
   deleteDailyReport: Scalars['Boolean']['output'];
@@ -2575,6 +2592,7 @@ export type Mutation = {
   /** Explicitly release a lock you hold (navigating away, closing the editor, saving). */
   releaseLock: Scalars['Boolean']['output'];
   removePOPosition: Scalars['Boolean']['output'];
+  removeProjectBudget: Scalars['Boolean']['output'];
   removeProjectMember: Scalars['Boolean']['output'];
   removeProjectTeamMember: Scalars['Boolean']['output'];
   removeResourceAssignment: Scalars['Boolean']['output'];
@@ -2738,6 +2756,7 @@ export type Mutation = {
   uploadTQFile: ProjectTq;
   upsertBidCostItems: Array<BidCostItem>;
   upsertCashFlowPeriod: CashFlowPeriod;
+  upsertCompanyPostingAccount: CompanyPostingAccount;
   upsertCostForecast: CostForecast;
   upsertDistributionEntry: DocDistributionEntry;
   upsertFXRate: FxRate;
@@ -2822,6 +2841,13 @@ export type MutationAddPoLineCommentArgs = {
 export type MutationAddPoLogNoteArgs = {
   note: Scalars['String']['input'];
   poId: Scalars['ID']['input'];
+};
+
+
+export type MutationAddProjectBudgetArgs = {
+  amount: Scalars['Float']['input'];
+  currencyCode: Scalars['String']['input'];
+  projectId: Scalars['ID']['input'];
 };
 
 
@@ -3979,6 +4005,12 @@ export type MutationDeleteCompanyBranchArgs = {
 };
 
 
+export type MutationDeleteCompanyPostingAccountArgs = {
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
+  role: Scalars['String']['input'];
+};
+
+
 export type MutationDeleteContractMilestoneArgs = {
   id: Scalars['ID']['input'];
 };
@@ -4618,6 +4650,11 @@ export type MutationReleaseLockArgs = {
 
 
 export type MutationRemovePoPositionArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type MutationRemoveProjectBudgetArgs = {
   id: Scalars['ID']['input'];
 };
 
@@ -5859,6 +5896,13 @@ export type MutationUpsertCashFlowPeriodArgs = {
 };
 
 
+export type MutationUpsertCompanyPostingAccountArgs = {
+  accountId: Scalars['ID']['input'];
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
+  role: Scalars['String']['input'];
+};
+
+
 export type MutationUpsertCostForecastArgs = {
   costCodeId?: InputMaybe<Scalars['ID']['input']>;
   eacAmount: Scalars['Float']['input'];
@@ -6469,6 +6513,8 @@ export type PayrollRunInput = {
 };
 
 export type PayrollTaxReport = {
+  availableCurrencies: Array<Scalars['String']['output']>;
+  currencyCode: Scalars['String']['output'];
   rows: Array<PayrollTaxRow>;
 };
 
@@ -6529,6 +6575,19 @@ export type PeriodInput = {
 export type PermissionsChangedEvent = {
   companyId: Scalars['ID']['output'];
   userId: Scalars['ID']['output'];
+};
+
+export type PostingAccountReadiness = {
+  allConfigured: Scalars['Boolean']['output'];
+  missingRoles: Array<Scalars['String']['output']>;
+  roles: Array<PostingAccountRoleStatus>;
+};
+
+export type PostingAccountRoleStatus = {
+  configured: Scalars['Boolean']['output'];
+  currencies: Array<Scalars['String']['output']>;
+  hasDefault: Scalars['Boolean']['output'];
+  role: Scalars['String']['output'];
 };
 
 export type PreferencesInput = {
@@ -6656,6 +6715,7 @@ export type Project = {
   approvedAt?: Maybe<Scalars['String']['output']>;
   budgetAmount?: Maybe<Scalars['Float']['output']>;
   budgetCurrency?: Maybe<Scalars['String']['output']>;
+  budgets?: Maybe<Scalars['JSON']['output']>;
   cancelReason?: Maybe<Scalars['String']['output']>;
   cancelledAt?: Maybe<Scalars['String']['output']>;
   clientContact?: Maybe<Scalars['String']['output']>;
@@ -6713,7 +6773,6 @@ export type Project = {
   submittedAt?: Maybe<Scalars['String']['output']>;
   team?: Maybe<Scalars['JSON']['output']>;
   teamCount?: Maybe<Scalars['Int']['output']>;
-  totalCosts?: Maybe<Scalars['Float']['output']>;
   updatedAt?: Maybe<Scalars['String']['output']>;
 };
 
@@ -7137,6 +7196,7 @@ export type ProjectProfitRow = {
   code: Scalars['String']['output'];
   companyName: Scalars['String']['output'];
   costBreakdown: Array<CostBreakdownItem>;
+  currencyCode?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   margin: Scalars['Float']['output'];
   marginPct: Scalars['Float']['output'];
@@ -7148,8 +7208,9 @@ export type ProjectProfitRow = {
 
 export type ProjectProfitabilityRow = {
   budget_amount: Scalars['String']['output'];
-  budget_remaining: Scalars['String']['output'];
+  budget_remaining?: Maybe<Scalars['String']['output']>;
   code: Scalars['String']['output'];
+  currency_code?: Maybe<Scalars['String']['output']>;
   gross_margin: Scalars['String']['output'];
   name: Scalars['String']['output'];
   project_id: Scalars['ID']['output'];
@@ -7432,6 +7493,7 @@ export type Query = {
   company?: Maybe<CompanyDetail>;
   companyBranches: Array<CompanyBranch>;
   companyIntercoPricingSettings?: Maybe<CompanyIntercoPricingSettings>;
+  companyPostingAccounts: Array<CompanyPostingAccount>;
   companyUsers: Array<CompanyUser>;
   consolidatedBS: ConsolidatedBsResult;
   consolidatedPL: ConsolidatedPlResult;
@@ -7520,6 +7582,8 @@ export type Query = {
   poReturn?: Maybe<PoReturn>;
   poReturns: Array<PoReturn>;
   poStockAvailability: Array<PoLineAvailability>;
+  postingAccountReadiness: PostingAccountReadiness;
+  postingAccountRoles: Array<Scalars['String']['output']>;
   previewTransferPrice: TransferPricePreview;
   product?: Maybe<Product>;
   productCostChangeRequests: Array<ProductCostChangeRequest>;
@@ -7785,11 +7849,13 @@ export type QueryCompanyUsersArgs = {
 
 export type QueryConsolidatedBsArgs = {
   asOfDate: Scalars['String']['input'];
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
   showEliminations?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
 export type QueryConsolidatedPlArgs = {
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
   fromDate: Scalars['String']['input'];
   showEliminations?: InputMaybe<Scalars['Boolean']['input']>;
   toDate: Scalars['String']['input'];
@@ -7798,11 +7864,13 @@ export type QueryConsolidatedPlArgs = {
 
 export type QueryConsolidatedTrialBalanceArgs = {
   asOfDate: Scalars['String']['input'];
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
 };
 
 
 export type QueryDashboardKpIsArgs = {
   companyId: Scalars['ID']['input'];
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -7890,7 +7958,7 @@ export type QueryFindEmployeeAcrossCompaniesArgs = {
 
 export type QueryFxExposureReportArgs = {
   asOfDate: Scalars['String']['input'];
-  companyId: Scalars['ID']['input'];
+  companyId?: InputMaybe<Scalars['ID']['input']>;
 };
 
 
@@ -8142,7 +8210,8 @@ export type QueryPayrollRunsArgs = {
 
 
 export type QueryPayrollTaxReportArgs = {
-  companyId: Scalars['ID']['input'];
+  companyId?: InputMaybe<Scalars['ID']['input']>;
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
   fromDate: Scalars['String']['input'];
   toDate: Scalars['String']['input'];
 };
@@ -8276,6 +8345,7 @@ export type QueryProjectContractsArgs = {
 
 
 export type QueryProjectCostCodesArgs = {
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
   projectId: Scalars['ID']['input'];
 };
 
@@ -8286,6 +8356,7 @@ export type QueryProjectCostForecastArgs = {
 
 
 export type QueryProjectCostSummaryArgs = {
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
   projectId: Scalars['ID']['input'];
 };
 
@@ -8612,6 +8683,7 @@ export type QueryReturnableMaterialIssueLinesArgs = {
 
 export type QueryRevenueVsTargetArgs = {
   companyId: Scalars['ID']['input'];
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -8638,6 +8710,7 @@ export type QueryRoleTemplateArgs = {
 
 export type QuerySpendByCategoryArgs = {
   companyId: Scalars['ID']['input'];
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -8728,7 +8801,8 @@ export type QueryVendorArgs = {
 
 
 export type QueryWhtReportArgs = {
-  companyId: Scalars['ID']['input'];
+  companyId?: InputMaybe<Scalars['ID']['input']>;
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
   fromDate: Scalars['String']['input'];
   toDate: Scalars['String']['input'];
 };
@@ -8990,6 +9064,7 @@ export type RentalInvoice = {
   billing_period_end: Scalars['String']['output'];
   billing_period_start: Scalars['String']['output'];
   contract_id: Scalars['ID']['output'];
+  currency_code: Scalars['String']['output'];
   days_billed: Scalars['Float']['output'];
   due_date: Scalars['String']['output'];
   id: Scalars['ID']['output'];
@@ -9806,6 +9881,8 @@ export type WbsNode = {
 };
 
 export type WhtReport = {
+  availableCurrencies: Array<Scalars['String']['output']>;
+  currencyCode: Scalars['String']['output'];
   rows: Array<WhtRow>;
   totalPaymentsSubjectToWHT: Scalars['Float']['output'];
   totalWHT: Scalars['Float']['output'];

@@ -32,6 +32,32 @@ async function recordStatusChange(
   )
 }
 
+// D2 (currency fix plan): keeps projects.budget_amount/budget_currency in
+// sync with the project_budgets primary row (migration 309) -- same
+// upsertPrimaryProjectBudget the gateway's createProject/createRFQ/
+// updateProject use, ported here since this REST route has its own
+// independent INSERT/UPDATE on projects (playbook #6/#23: two writers of
+// the same thing drift apart if only one gets fixed).
+async function upsertPrimaryProjectBudget(
+  exec: (text: string, params: unknown[]) => Promise<unknown>,
+  projectId: string,
+  currencyCode: string,
+  amount: number,
+): Promise<void> {
+  await exec(
+    `UPDATE project_budgets SET is_primary = false, updated_at = NOW()
+     WHERE project_id = $1 AND is_primary = true AND currency_code != $2`,
+    [projectId, currencyCode],
+  )
+  await exec(
+    `INSERT INTO project_budgets (project_id, currency_code, budget_amount, is_primary)
+     VALUES ($1, $2, $3, true)
+     ON CONFLICT (project_id, currency_code)
+     DO UPDATE SET budget_amount = EXCLUDED.budget_amount, is_primary = true, updated_at = NOW()`,
+    [projectId, currencyCode, amount],
+  )
+}
+
 async function transitionProject(
   projectId: string,
   companyId: string,
@@ -251,6 +277,7 @@ projectsRouter.get('/', requirePermission('projects.view', 'view'), async (req, 
         `SELECT
           p.*,
           e.first_name || ' ' || e.last_name AS manager_name,
+          -- currency-safe: completion_pct is a schedule percentage, not money
           COALESCE(ROUND(AVG(ps.completion_pct))::integer, 0) AS overall_completion_pct,
           COUNT(ps.id) FILTER (WHERE ps.status = 'completed') AS stages_completed,
           COUNT(ps.id) AS stages_total,
@@ -260,14 +287,12 @@ projectsRouter.get('/', requirePermission('projects.view', 'view'), async (req, 
             ORDER BY ps2.sequence LIMIT 1
           ) AS current_stage_name,
           COUNT(DISTINCT pm.id) FILTER (WHERE pm.is_active = true) AS team_count,
-          COUNT(DISTINCT po.id) FILTER (WHERE po.status NOT IN ('completed','deleted')) AS open_po_count,
-          COALESCE(SUM(pca.amount), 0) AS total_costs
+          COUNT(DISTINCT po.id) FILTER (WHERE po.status NOT IN ('completed','deleted')) AS open_po_count
         FROM projects p
         LEFT JOIN employees e ON e.id = p.project_manager_id
         LEFT JOIN project_stages ps ON ps.project_id = p.id
         LEFT JOIN project_members pm ON pm.project_id = p.id
         LEFT JOIN purchase_orders po ON po.project_id = p.id
-        LEFT JOIN project_cost_actuals pca ON pca.project_id = p.id
         ${where}
         GROUP BY p.id, e.first_name, e.last_name
         ORDER BY p.created_at DESC
@@ -314,6 +339,7 @@ projectsRouter.get('/:id', requirePermission('projects.view', 'view'), async (re
         c.name AS company_name,
         aa.name AS analytic_account_name,
         cc.name AS cost_center_name,
+        -- currency-safe: completion_pct is a schedule percentage, not money
         COALESCE(ROUND(AVG(ps.completion_pct))::integer, 0) AS overall_completion_pct,
         COALESCE(
           json_agg(
@@ -349,9 +375,14 @@ projectsRouter.get('/:id', requirePermission('projects.view', 'view'), async (re
           '[]'
         ) AS team,
         COALESCE(
-          (SELECT json_build_object('total', SUM(amount))
-           FROM project_cost_actuals WHERE project_id = p.id),
-          '{"total":0}'::json
+          (SELECT json_agg(json_build_object('currencyCode', t.currency_code, 'total', t.total) ORDER BY t.currency_code)
+           FROM (
+             SELECT currency_code, SUM(amount) AS total
+             FROM v_project_cost_by_currency
+             WHERE project_id = p.id
+             GROUP BY currency_code
+           ) t),
+          '[]'
         ) AS cost_summary,
         COALESCE(
           (SELECT json_agg(po_data) FROM (
@@ -476,6 +507,13 @@ projectsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req,
 
       const row = project.rows[0] as Record<string, unknown>
 
+      await upsertPrimaryProjectBudget(
+        (text, params) => client.query(text, params),
+        row['id'] as string,
+        String(b['budget_currency'] ?? 'IQD'),
+        Number(b['budget_amount'] ?? 0),
+      )
+
       // Insert inline budget lines if provided
       const budgetLines = b['budget_lines'] as Array<Record<string, unknown>> | undefined
       if (Array.isArray(budgetLines) && budgetLines.length > 0) {
@@ -529,7 +567,7 @@ projectsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (re
 
     const b = req.body as Record<string, unknown>
 
-    await query(
+    const updated = await query(
       `UPDATE projects SET
         name                   = COALESCE($1,  name),
         description            = COALESCE($2,  description),
@@ -551,7 +589,8 @@ projectsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (re
         cost_center_id         = COALESCE($18, cost_center_id),
         remarks                = COALESCE($19, remarks),
         updated_at             = NOW()
-      WHERE id = $20 AND company_id = $21`,
+      WHERE id = $20 AND company_id = $21
+      RETURNING budget_amount, budget_currency`,
       [
         b['name'] ?? null,
         b['description'] ?? null,
@@ -576,6 +615,18 @@ projectsRouter.put('/:id', requirePermission('projects.edit', 'edit'), async (re
         companyId,
       ],
     )
+
+    if (b['budget_amount'] != null || b['budget_currency'] != null) {
+      const row = updated.rows[0] as Record<string, unknown> | undefined
+      if (row) {
+        await upsertPrimaryProjectBudget(
+          query,
+          id,
+          String(row['budget_currency'] ?? 'IQD'),
+          Number(row['budget_amount'] ?? 0),
+        )
+      }
+    }
 
     await logAudit({
       userId,
@@ -1318,13 +1369,25 @@ projectsRouter.get('/:id/budget', requirePermission('projects.view', 'view'), as
       companyId,
     ])
     if (!proj.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
+    // Previously one blind SUM(pca.amount) per category, no currency
+    // split -- now via v_project_cost_by_currency (migration 304), one
+    // row per category+currency; variance only computed for the
+    // currency matching the budget line's own (comparing a different
+    // currency's actual cost against this budgeted_amount would be a
+    // conversion, which is the same open D2 question as project-level
+    // margin, not something to guess at here).
     const result = await query(
-      `SELECT bl.category, bl.budgeted_amount,
-              COALESCE(SUM(pca.amount),0) AS actual_amount,
-              bl.budgeted_amount - COALESCE(SUM(pca.amount),0) AS variance
+      `SELECT bl.category, bl.budgeted_amount, bl.currency_code AS budget_line_currency,
+              pca.currency_code,
+              COALESCE(pca.amount,0) AS actual_amount,
+              CASE WHEN pca.currency_code IS NULL OR pca.currency_code = bl.currency_code
+                THEN bl.budgeted_amount - COALESCE(pca.amount,0) ELSE NULL END AS variance
        FROM project_budget_lines bl
-       LEFT JOIN project_cost_actuals pca ON pca.project_id = bl.project_id AND pca.cost_category = bl.category
-       WHERE bl.project_id = $1 GROUP BY bl.id, bl.category, bl.budgeted_amount ORDER BY bl.category`,
+       LEFT JOIN (
+         SELECT project_id, cost_category, currency_code, SUM(amount) AS amount
+         FROM v_project_cost_by_currency GROUP BY project_id, cost_category, currency_code
+       ) pca ON pca.project_id = bl.project_id AND pca.cost_category = bl.category
+       WHERE bl.project_id = $1 ORDER BY bl.category, pca.currency_code`,
       [id],
     )
     sendOk(res, result.rows)
@@ -1383,12 +1446,18 @@ projectsRouter.get(
     try {
       const companyId = getAuth(req).companyId
       const id = requireParam(req, 'id')
+      // v_project_profitability now has one row per (project, currency) with
+      // activity (migration 305) -- no caller found for this REST route
+      // (the live Project Profitability page uses the GraphQL
+      // projectProfitabilityReport query instead), but returning only
+      // rows[0] would arbitrarily drop every other currency's figures, so
+      // fixed to return the whole array rather than leave that trap in place.
       const result = await query(
         `SELECT * FROM v_project_profitability WHERE project_id = $1 AND company_id = $2`,
         [id, companyId],
       )
-      if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
-      sendOk(res, result.rows[0])
+      if (result.rows.length === 0) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
+      sendOk(res, result.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch profitability', err)
     }

@@ -15,7 +15,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
 
-const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
+const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const ADMIN_EMAIL = 'project-admin-override-admin-test@fnc-erp.local'
 const MODADMIN_EMAIL = 'project-admin-override-modadmin-test@fnc-erp.local'
 const PROJECT_CODE_PREFIX = 'PAOTEST-'

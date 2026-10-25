@@ -52,8 +52,8 @@ export const EXECUTIVE_DASHBOARD_QUERY = gql`
 `
 
 export const CONSOLIDATED_PL_QUERY = gql`
-  query ConsolidatedPL($fromDate: String!, $toDate: String!, $showEliminations: Boolean) {
-    consolidatedPL(fromDate: $fromDate, toDate: $toDate, showEliminations: $showEliminations) {
+  query ConsolidatedPL($fromDate: String!, $toDate: String!, $showEliminations: Boolean, $currencyCode: String) {
+    consolidatedPL(fromDate: $fromDate, toDate: $toDate, showEliminations: $showEliminations, currencyCode: $currencyCode) {
       rows {
         accountType
         accountCode
@@ -67,6 +67,7 @@ export const CONSOLIDATED_PL_QUERY = gql`
         name
       }
       currency
+      availableCurrencies
       totalRevenue
       totalExpenses
       netProfit
@@ -75,8 +76,8 @@ export const CONSOLIDATED_PL_QUERY = gql`
 `
 
 export const CONSOLIDATED_BS_QUERY = gql`
-  query ConsolidatedBS($asOfDate: String!, $showEliminations: Boolean) {
-    consolidatedBS(asOfDate: $asOfDate, showEliminations: $showEliminations) {
+  query ConsolidatedBS($asOfDate: String!, $showEliminations: Boolean, $currencyCode: String) {
+    consolidatedBS(asOfDate: $asOfDate, showEliminations: $showEliminations, currencyCode: $currencyCode) {
       rows {
         accountType
         accountCode
@@ -90,6 +91,7 @@ export const CONSOLIDATED_BS_QUERY = gql`
         name
       }
       currency
+      availableCurrencies
       totalAssets
       totalLiabilities
       totalEquity
@@ -99,8 +101,8 @@ export const CONSOLIDATED_BS_QUERY = gql`
 `
 
 export const CONSOLIDATED_TB_QUERY = gql`
-  query ConsolidatedTrialBalance($asOfDate: String!) {
-    consolidatedTrialBalance(asOfDate: $asOfDate) {
+  query ConsolidatedTrialBalance($asOfDate: String!, $currencyCode: String) {
+    consolidatedTrialBalance(asOfDate: $asOfDate, currencyCode: $currencyCode) {
       rows {
         accountType
         accountCode
@@ -114,6 +116,7 @@ export const CONSOLIDATED_TB_QUERY = gql`
         name
       }
       currency
+      availableCurrencies
       totalDebits
       totalCredits
       isBalanced
@@ -140,6 +143,7 @@ export const PROJECT_PROFITABILITY_QUERY = gql`
       code
       name
       projectType
+      currencyCode
       companyName
       budget
       actualCost
@@ -240,8 +244,8 @@ export const INVENTORY_VALUATION_QUERY = gql`
 `
 
 export const WHT_REPORT_QUERY = gql`
-  query WHTReport($fromDate: String!, $toDate: String!, $companyId: ID!) {
-    whtReport(fromDate: $fromDate, toDate: $toDate, companyId: $companyId) {
+  query WHTReport($fromDate: String!, $toDate: String!, $companyId: ID, $currencyCode: String) {
+    whtReport(fromDate: $fromDate, toDate: $toDate, companyId: $companyId, currencyCode: $currencyCode) {
       rows {
         vendorName
         taxId
@@ -254,12 +258,14 @@ export const WHT_REPORT_QUERY = gql`
       totalWHT
       vendorCount
       totalPaymentsSubjectToWHT
+      currencyCode
+      availableCurrencies
     }
   }
 `
 
 export const FX_EXPOSURE_QUERY = gql`
-  query FXExposureReport($asOfDate: String!, $companyId: ID!) {
+  query FXExposureReport($asOfDate: String!, $companyId: ID) {
     fxExposureReport(asOfDate: $asOfDate, companyId: $companyId) {
       rows {
         currency
@@ -275,8 +281,8 @@ export const FX_EXPOSURE_QUERY = gql`
 `
 
 export const PAYROLL_TAX_REPORT_QUERY = gql`
-  query PayrollTaxReport($fromDate: String!, $toDate: String!, $companyId: ID!) {
-    payrollTaxReport(fromDate: $fromDate, toDate: $toDate, companyId: $companyId) {
+  query PayrollTaxReport($fromDate: String!, $toDate: String!, $companyId: ID, $currencyCode: String) {
+    payrollTaxReport(fromDate: $fromDate, toDate: $toDate, companyId: $companyId, currencyCode: $currencyCode) {
       rows {
         employeeName
         employeeNumber
@@ -287,6 +293,8 @@ export const PAYROLL_TAX_REPORT_QUERY = gql`
         socialSecurity
         netPay
       }
+      currencyCode
+      availableCurrencies
     }
   }
 `

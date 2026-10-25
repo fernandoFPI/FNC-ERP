@@ -29,6 +29,8 @@ interface Summary {
   active_count: number
   total_outstanding: number
   settled_count: number
+  currencyCode: string
+  availableCurrencies: string[]
 }
 
 interface Employee {
@@ -188,7 +190,7 @@ export default function EmployeeAdvancesPage() {
             <p style={{ fontSize: '22px', fontWeight: 700, color: '#3b82f6' }}>
               {summary.pending_count}
             </p>
-            <AmountDisplay amount={Number(summary.pending_amount)} currency="IQD" size="sm" />
+            <AmountDisplay amount={Number(summary.pending_amount)} currency={summary.currencyCode} size="sm" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -204,7 +206,7 @@ export default function EmployeeAdvancesPage() {
             </p>
             <AmountDisplay
               amount={Number(summary.total_outstanding)}
-              currency="IQD"
+              currency={summary.currencyCode}
               size="md"
               colored
             />

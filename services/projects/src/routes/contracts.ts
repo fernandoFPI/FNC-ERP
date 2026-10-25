@@ -46,7 +46,8 @@ contractsRouter.get('/', requirePermission('projects.view', 'view'), async (req,
     const limit = Math.min(100, parseInt((req.query['limit'] as string) || '20'))
     const offset = (page - 1) * limit
 
-    let sql = `SELECT pc.*,
+    let sql = `-- currency-safe: both scoped to one contract, which has one currency_code
+               SELECT pc.*,
                       COALESCE((SELECT SUM(pi.gross_total) FROM project_invoices pi
                                 WHERE pi.contract_id=pc.id AND pi.status != 'cancelled'),0) AS total_invoiced,
                       COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip
@@ -84,7 +85,8 @@ contractsRouter.get('/:id', requirePermission('projects.view', 'view'), async (r
     const [milestones, invoices] = await Promise.all([
       query('SELECT * FROM project_milestones WHERE contract_id=$1 ORDER BY sequence', [id]),
       query(
-        `SELECT pi.*, COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip WHERE pip.invoice_id=pi.id),0) AS total_paid
+        `-- currency-safe: scoped to one invoice, which has one currency_code
+         SELECT pi.*, COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip WHERE pip.invoice_id=pi.id),0) AS total_paid
              FROM project_invoices pi WHERE pi.contract_id=$1 ORDER BY pi.created_at DESC`,
         [id],
       ),

@@ -48,3 +48,7 @@ odoo_deb_extracted/
 
 # Deploy pipeline: marks the last commit SHA that passed post-deploy health checks
 .last-good-deploy
+
+# Production-copy comparison artifacts (docs/claude/playbook.md D10 / fnc_erp_prodcopy) — contain real company/employee data
+docs/finance/prodcopy-*
+docs/finance/d10-po-comparison.md

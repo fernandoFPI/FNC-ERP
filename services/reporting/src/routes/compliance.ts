@@ -7,13 +7,39 @@ import { requirePermission } from '@fnc-erp/permissions'
 
 export const complianceRouter: IRouter = Router()
 
+// G22 (0.1 sweep #4): wht-payable summed vendor_invoices straight across
+// every currency_code, counted every invoice status (not just approved
+// ones -- a confirmed liability), and used total_amount (which also
+// includes other taxes) instead of subtotal as the WHT base. Resolves
+// which currency to report in (explicit ?currency_code, else the
+// company's own) plus every currency with real WHT activity.
+async function resolveWhtCurrency(
+  companyId: string,
+  requested: string | undefined,
+): Promise<{ currencyCode: string; availableCurrencies: string[] }> {
+  const availableRes = await query<{ currency_code: string }>(
+    `SELECT DISTINCT currency_code FROM vendor_invoices WHERE company_id=$1 AND wht_amount > 0 ORDER BY 1`,
+    [companyId],
+  )
+  const availableCurrencies = availableRes.rows.map((r) => r.currency_code)
+  if (requested) return { currencyCode: requested, availableCurrencies }
+  const companyRes = await query<{ currency_code: string }>(`SELECT currency_code FROM companies WHERE id=$1`, [
+    companyId,
+  ])
+  return { currencyCode: companyRes.rows[0]?.currency_code ?? 'IQD', availableCurrencies }
+}
+
 // GET /reporting/compliance/withholding-tax?company_id&from_date&to_date
 complianceRouter.get(
   '/withholding-tax',
   requirePermission('reporting.compliance.view', 'view'),
   async (req, res) => {
     try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
+      // Multi-tenancy: company_id is always the caller's own session company,
+      // never a client-supplied value -- a query-string company_id used to
+      // be honored ahead of the session's, letting any caller with this
+      // route's permission read another company's compliance data.
+      const companyId = getAuth(req).companyId
       const { from_date, to_date } = req.query
       const params: unknown[] = [companyId]
       let idx = 2
@@ -49,8 +75,22 @@ complianceRouter.get(
   requirePermission('finance.ap.view', 'view'),
   async (req, res) => {
     try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
+      // Multi-tenancy: company_id is always the caller's own session company,
+      // never a client-supplied value -- a query-string company_id used to
+      // be honored ahead of the session's, letting any caller with this
+      // route's permission read another company's compliance data. This is
+      // the live route behind WHTPayablePage.tsx (the other four routes in
+      // this file have no frontend caller today) -- an exploitable
+      // cross-tenant leak, not just a theoretical one.
+      const companyId = getAuth(req).companyId
       const year = new Date().getFullYear()
+      const { currencyCode, availableCurrencies } = await resolveWhtCurrency(
+        companyId,
+        req.query['currency_code'] as string | undefined,
+      )
+      // approved invoices only: draft/submitted aren't a confirmed
+      // liability yet, rejected/cancelled never were.
+      const APPROVED_STATUSES = `('approved','partially_paid','paid')`
 
       const [summaryRes, monthlyRes, vendorRes] = await Promise.all([
         query(
@@ -61,37 +101,43 @@ complianceRouter.get(
          FROM vendor_invoices vi
          WHERE vi.company_id = $1
            AND EXTRACT(YEAR FROM vi.invoice_date) = $2
-           AND vi.wht_amount > 0`,
-          [companyId, year],
+           AND vi.wht_amount > 0
+           AND vi.currency_code = $3
+           AND vi.status IN ${APPROVED_STATUSES}`,
+          [companyId, year, currencyCode],
         ),
         query(
           `SELECT
            EXTRACT(MONTH FROM vi.invoice_date)::int  AS month,
-           COALESCE(SUM(vi.total_amount), 0)         AS payments_subject_to_wht,
+           COALESCE(SUM(vi.subtotal), 0)              AS payments_subject_to_wht,
            COALESCE(SUM(vi.wht_amount), 0)           AS wht_amount
          FROM vendor_invoices vi
          WHERE vi.company_id = $1
            AND EXTRACT(YEAR FROM vi.invoice_date) = $2
            AND vi.wht_amount > 0
+           AND vi.currency_code = $3
+           AND vi.status IN ${APPROVED_STATUSES}
          GROUP BY month
          ORDER BY month`,
-          [companyId, year],
+          [companyId, year, currencyCode],
         ),
         query(
           `SELECT
            v.name                                    AS vendor_name,
            COUNT(*)::int                             AS invoice_count,
            COALESCE(SUM(vi.wht_amount), 0)           AS total_wht,
-           COALESCE(SUM(vi.total_amount), 0)         AS total_payments
+           COALESCE(SUM(vi.subtotal), 0)              AS total_payments
          FROM vendor_invoices vi
          JOIN vendors v ON v.id = vi.vendor_id
          WHERE vi.company_id = $1
            AND EXTRACT(YEAR FROM vi.invoice_date) = $2
            AND vi.wht_amount > 0
+           AND vi.currency_code = $3
+           AND vi.status IN ${APPROVED_STATUSES}
          GROUP BY v.id, v.name
          ORDER BY total_wht DESC
          LIMIT 10`,
-          [companyId, year],
+          [companyId, year, currencyCode],
         ),
       ])
 
@@ -107,6 +153,8 @@ complianceRouter.get(
         invoice_count: s.invoice_count,
         monthly: monthlyRes.rows,
         top_vendors: vendorRes.rows,
+        currencyCode,
+        availableCurrencies,
       })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load WHT payable summary', err)
@@ -120,7 +168,11 @@ complianceRouter.get(
   requirePermission('reporting.compliance.view', 'view'),
   async (req, res) => {
     try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
+      // Multi-tenancy: company_id is always the caller's own session company,
+      // never a client-supplied value -- a query-string company_id used to
+      // be honored ahead of the session's, letting any caller with this
+      // route's permission read another company's compliance data.
+      const companyId = getAuth(req).companyId
       const asOfDate = req.query['as_of_date'] as string | undefined
       const dateClause = asOfDate ? `AND je.entry_date <= '${asOfDate}'` : ''
       const result = await query(
@@ -157,7 +209,11 @@ complianceRouter.get(
   requirePermission('reporting.compliance.view', 'view'),
   async (req, res) => {
     try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
+      // Multi-tenancy: company_id is always the caller's own session company,
+      // never a client-supplied value -- a query-string company_id used to
+      // be honored ahead of the session's, letting any caller with this
+      // route's permission read another company's compliance data.
+      const companyId = getAuth(req).companyId
       const { from_date, to_date } = req.query
       const params: unknown[] = [companyId]
       let idx = 2
@@ -194,7 +250,11 @@ complianceRouter.get(
   requirePermission('reporting.compliance.view', 'view'),
   async (req, res) => {
     try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
+      // Multi-tenancy: company_id is always the caller's own session company,
+      // never a client-supplied value -- a query-string company_id used to
+      // be honored ahead of the session's, letting any caller with this
+      // route's permission read another company's compliance data.
+      const companyId = getAuth(req).companyId
       const result = await query(
         `SELECT p.sku, p.name AS product_name, sl.name AS location_name,
               sb.qty_on_hand, sb.average_cost,

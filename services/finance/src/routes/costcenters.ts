@@ -70,8 +70,24 @@ costCentersRouter.get(
         u2.email AS default_recharge_fulfiller_email_2,
         parent.code AS parent_code, parent.name AS parent_name,
         COUNT(DISTINCT jl.id)::integer AS journal_line_count,
-        COALESCE(SUM(CASE WHEN jl.debit > 0 THEN jl.amount_company_currency ELSE 0 END), 0) AS total_debits,
-        COALESCE(SUM(CASE WHEN jl.credit > 0 THEN jl.amount_company_currency ELSE 0 END), 0) AS total_credits
+        -- The truth of a line is currency_code + raw debit/credit --
+        -- amount_company_currency is retired (see analytic.ts for why).
+        COALESCE(
+          (SELECT json_agg(json_build_object(
+             'currency_code', t.currency_code,
+             'total_debits', t.total_debits,
+             'total_credits', t.total_credits
+           ) ORDER BY t.currency_code)
+           FROM (
+             SELECT jl2.currency_code,
+                    COALESCE(SUM(CASE WHEN jl2.debit > 0 THEN jl2.debit ELSE 0 END), 0) AS total_debits,
+                    COALESCE(SUM(CASE WHEN jl2.credit > 0 THEN jl2.credit ELSE 0 END), 0) AS total_credits
+             FROM journal_lines jl2
+             WHERE jl2.cost_center_id = cc.id
+             GROUP BY jl2.currency_code
+           ) t),
+          '[]'
+        ) AS currency_totals
       FROM cost_centers cc
       LEFT JOIN cost_centers parent ON parent.id = cc.parent_id
       LEFT JOIN users u ON u.id = cc.default_recharge_fulfiller_id
@@ -90,7 +106,6 @@ costCentersRouter.get(
       const linesRes = await query(
         `
       SELECT jl.id, jl.description, jl.debit, jl.credit, jl.currency_code,
-             jl.fx_rate, jl.amount_company_currency,
              je.reference, je.entry_date AS je_date, je.source_type, je.status AS je_status,
              coa.name AS account_name, coa.code AS account_code
       FROM journal_lines jl

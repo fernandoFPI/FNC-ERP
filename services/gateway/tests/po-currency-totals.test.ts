@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
 
-const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
+const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const TEST_USER_EMAIL = 'po-currency-totals-test@fnc-erp.local'
 const SKU_PREFIX = 'POCCYTEST-'
 const PO_PREFIX = 'POCCYTEST-PO-'
@@ -165,5 +165,53 @@ describe('purchaseOrder(id).currencyTotals', () => {
     }
     expect(result.viewerRestricted).toBe(true)
     expect(result.currencyTotals).toEqual([])
+  })
+})
+
+describe('PurchaseOrder.currencyTotals field resolver', () => {
+  // D10: the purchaseOrders list resolver redacts total_amount to '0' for a
+  // caller without procurement authority or finance-team membership
+  // (canSeeTotals) — the generic currencyTotals field resolver falls back
+  // to a live, ungated getPOCurrencyTotals query whenever a row doesn't
+  // already carry its own currencyTotals, so purchaseOrders must set it to
+  // [] explicitly for a restricted row, or that fallback would hand the
+  // real per-currency breakdown to someone total_amount was just hidden
+  // from.
+  it('purchaseOrders list keeps currencyTotals redacted to [] for a caller without canSeeTotals', async () => {
+    const productA = await makeProduct('list-restricted')
+    const poId = await makePO()
+    await makePOLine(poId, 1, productA, 2, 100)
+
+    const rows = (await resolvers.Query.purchaseOrders(
+      null,
+      {},
+      unauthorizedCtx as never,
+    )) as { id: string; total_amount: string; currencyTotals: unknown[] }[]
+    const row = rows.find((r) => r.id === poId)!
+    expect(row.total_amount).toBe('0')
+    expect(row.currencyTotals).toEqual([])
+  })
+
+  it('falls back to a live per-currency query when a row has no currencyTotals of its own (list/queue shape)', async () => {
+    const productA = await makeProduct('field-resolver-fallback')
+    const poId = await makePO()
+    await makePOLine(poId, 1, productA, 2, 100) // 200 IQD
+
+    const totals = (await resolvers.PurchaseOrder.currencyTotals({ id: poId } as never)) as {
+      currency_code: string
+      subtotal: string
+    }[]
+    expect(totals).toHaveLength(1)
+    expect(totals[0]!.currency_code).toBe('IQD')
+    expect(parseFloat(totals[0]!.subtotal)).toBe(200)
+  })
+
+  it('returns a row-provided currencyTotals as-is instead of re-querying', async () => {
+    const stub = [{ currency_code: 'USD', subtotal: '999', line_count: 1 }]
+    const totals = await resolvers.PurchaseOrder.currencyTotals({
+      id: 'does-not-matter',
+      currencyTotals: stub,
+    } as never)
+    expect(totals).toBe(stub)
   })
 })

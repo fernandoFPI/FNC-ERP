@@ -11,13 +11,14 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import { TabBar } from '../../../components/ui/TabBar'
 import { CONSOLIDATED_BS_QUERY } from '../../../graphql/reporting'
 
 interface BSRow {
   accountType: string
   accountCode: string
   accountName: string
-  companies: number[]
+  companies: Record<string, number>
   consolidated: number
   eliminated: number
 }
@@ -36,6 +37,7 @@ interface BSData {
     rows: BSRow[]
     companies: Company[]
     currency: string
+    availableCurrencies: string[]
     totalAssets: number
     totalLiabilities: number
     totalEquity: number
@@ -49,10 +51,11 @@ export default function ConsolidatedBS() {
   const today = new Date().toISOString().slice(0, 10)
   const [asOfDate, setAsOfDate] = useState(today)
   const [showEliminations, setShowEliminations] = useState(false)
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
   const [applied, setApplied] = useState({ asOfDate: today, showEliminations: false })
 
   const { data, loading, refetch } = useQuery<BSData>(CONSOLIDATED_BS_QUERY, {
-    variables: { asOfDate: applied.asOfDate, showEliminations: applied.showEliminations },
+    variables: { asOfDate: applied.asOfDate, showEliminations: applied.showEliminations, currencyCode },
   })
 
   const d = data?.consolidatedBS
@@ -94,7 +97,7 @@ export default function ConsolidatedBS() {
     header: c.name,
     mobilePriority: 1 + ci,
     render: (row) => (
-      <AmountDisplay amount={row.companies[ci]} currency={d?.currency ?? t('rep.consBs.iqd')} size="sm" />
+      <AmountDisplay amount={row.companies[c.id] ?? 0} currency={d?.currency ?? t('rep.consBs.iqd')} size="sm" />
     ),
   }))
 
@@ -157,6 +160,16 @@ export default function ConsolidatedBS() {
           </Button>
         }
       />
+
+      {(d?.availableCurrencies.length ?? 0) > 1 && (
+        <Card padding="none" style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={d!.availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={d!.currency}
+            onChange={setCurrencyCode}
+          />
+        </Card>
+      )}
 
       {/* Filter Panel */}
       <Card padding="sm" style={{ marginBottom: '20px' }}>

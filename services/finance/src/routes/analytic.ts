@@ -39,8 +39,27 @@ analyticRouter.get(
         p.name AS project_name,
         p.status AS project_status,
         COUNT(DISTINCT jl.id)::integer AS journal_line_count,
-        COALESCE(SUM(CASE WHEN jl.debit > 0 THEN jl.amount_company_currency ELSE 0 END), 0) AS total_debits,
-        COALESCE(SUM(CASE WHEN jl.credit > 0 THEN jl.amount_company_currency ELSE 0 END), 0) AS total_credits
+        -- The truth of a line is currency_code + raw debit/credit --
+        -- amount_company_currency is retired (it was a real FX conversion
+        -- for manual entries only, just the native amount restated for
+        -- every automated producer, so blending it across both kinds of
+        -- line meant nothing). One entry per currency actually used.
+        COALESCE(
+          (SELECT json_agg(json_build_object(
+             'currency_code', t.currency_code,
+             'total_debits', t.total_debits,
+             'total_credits', t.total_credits
+           ) ORDER BY t.currency_code)
+           FROM (
+             SELECT jl2.currency_code,
+                    COALESCE(SUM(CASE WHEN jl2.debit > 0 THEN jl2.debit ELSE 0 END), 0) AS total_debits,
+                    COALESCE(SUM(CASE WHEN jl2.credit > 0 THEN jl2.credit ELSE 0 END), 0) AS total_credits
+             FROM journal_lines jl2
+             WHERE jl2.analytic_account_id = aa.id
+             GROUP BY jl2.currency_code
+           ) t),
+          '[]'
+        ) AS currency_totals
       FROM analytic_accounts aa
       LEFT JOIN projects p ON p.analytic_account_id = aa.id AND p.company_id = aa.company_id
       LEFT JOIN journal_lines jl ON jl.analytic_account_id = aa.id
@@ -68,12 +87,25 @@ analyticRouter.get(
       SELECT aa.*,
         p.id AS project_id, p.name AS project_name, p.status AS project_status,
         p.budget_currency AS project_budget_currency,
-        (SELECT rate FROM fx_rates
-         WHERE from_currency = p.budget_currency AND to_currency = 'IQD'
-         ORDER BY rate_date DESC LIMIT 1) AS project_fx_rate,
         COUNT(DISTINCT jl.id)::integer AS journal_line_count,
-        COALESCE(SUM(CASE WHEN jl.debit > 0 THEN jl.amount_company_currency ELSE 0 END), 0) AS total_debits,
-        COALESCE(SUM(CASE WHEN jl.credit > 0 THEN jl.amount_company_currency ELSE 0 END), 0) AS total_credits
+        -- See the list route's comment: amount_company_currency is retired,
+        -- the real per-currency breakdown lives here instead.
+        COALESCE(
+          (SELECT json_agg(json_build_object(
+             'currency_code', t.currency_code,
+             'total_debits', t.total_debits,
+             'total_credits', t.total_credits
+           ) ORDER BY t.currency_code)
+           FROM (
+             SELECT jl2.currency_code,
+                    COALESCE(SUM(CASE WHEN jl2.debit > 0 THEN jl2.debit ELSE 0 END), 0) AS total_debits,
+                    COALESCE(SUM(CASE WHEN jl2.credit > 0 THEN jl2.credit ELSE 0 END), 0) AS total_credits
+             FROM journal_lines jl2
+             WHERE jl2.analytic_account_id = aa.id
+             GROUP BY jl2.currency_code
+           ) t),
+          '[]'
+        ) AS currency_totals
       FROM analytic_accounts aa
       LEFT JOIN projects p ON p.analytic_account_id = aa.id AND p.company_id = aa.company_id
       LEFT JOIN journal_lines jl ON jl.analytic_account_id = aa.id
@@ -90,7 +122,6 @@ analyticRouter.get(
       const linesRes = await query(
         `
       SELECT jl.id, jl.description, jl.debit, jl.credit, jl.currency_code,
-             jl.fx_rate, jl.amount_company_currency,
              je.reference, je.entry_date AS je_date, je.source_type, je.status AS je_status,
              coa.name AS account_name, coa.code AS account_code
       FROM journal_lines jl

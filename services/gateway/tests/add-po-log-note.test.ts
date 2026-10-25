@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
 
-const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
+const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const ORGANIZER_EMAIL = 'add-po-log-note-organizer@fnc-erp.local'
 const UNAUTHORIZED_EMAIL = 'add-po-log-note-unauth@fnc-erp.local'
 const PO_PREFIX = 'ADDLOGNOTETEST-PO-'

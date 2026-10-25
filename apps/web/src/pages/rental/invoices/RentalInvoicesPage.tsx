@@ -19,6 +19,7 @@ interface RentalInvoice {
   days_billed: number
   rate_amount: number
   total_amount: number
+  currency_code: string
   whtApplies: boolean
   whtScenario?: string | null
   whtRate: number
@@ -66,12 +67,12 @@ export default function RentalInvoicesPage() {
     {
       key: 'rate_amount',
       header: t('rental.invoices.dailyRate'),
-      render: (inv) => <AmountDisplay amount={inv.rate_amount} currency="IQD" />,
+      render: (inv) => <AmountDisplay amount={inv.rate_amount} currency={inv.currency_code} />,
     },
     {
       key: 'total_amount',
       header: t('rental.invoices.total'),
-      render: (inv) => <AmountDisplay amount={inv.total_amount} currency="IQD" />,
+      render: (inv) => <AmountDisplay amount={inv.total_amount} currency={inv.currency_code} />,
     },
     {
       key: 'whtAmount',
@@ -84,7 +85,7 @@ export default function RentalInvoicesPage() {
               color: inv.whtScenario === 'client_withholds' ? '#2563eb' : '#d97706',
             }}
           >
-            {(inv.whtRate * 100).toFixed(1)}% · {inv.whtAmount.toLocaleString()} IQD
+            {(inv.whtRate * 100).toFixed(1)}% · {inv.whtAmount.toLocaleString()} {inv.currency_code}
             <br />
             <span style={{ fontSize: '10px', opacity: 0.75 }}>
               {inv.whtScenario === 'client_withholds' ? t('rental.invoices.clientPaysTax') : t('rental.invoices.fncPaysTax')}
@@ -126,10 +127,18 @@ export default function RentalInvoicesPage() {
     },
   ]
 
-  const totalOutstanding = invoices
+  // Each invoice carries its own currency_code (rental_invoices has no
+  // single project-level currency to default to) -- scoped to whichever
+  // currency most of these invoices are actually in, same "pick one,
+  // don't convert" pattern used elsewhere, rather than blending them.
+  const invCcyCounts = new Map<string, number>()
+  for (const i of invoices) invCcyCounts.set(i.currency_code, (invCcyCounts.get(i.currency_code) ?? 0) + 1)
+  const invCcy = [...invCcyCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'IQD'
+  const invoicesInCcy = invoices.filter((i) => i.currency_code === invCcy)
+  const totalOutstanding = invoicesInCcy
     .filter((i) => i.status !== 'paid')
     .reduce((s, i) => s + i.total_amount, 0)
-  const totalPaid = invoices
+  const totalPaid = invoicesInCcy
     .filter((i) => i.status === 'paid')
     .reduce((s, i) => s + i.total_amount, 0)
 
@@ -149,11 +158,11 @@ export default function RentalInvoicesPage() {
           <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
             {t('rental.invoices.outstanding')}
           </div>
-          <AmountDisplay amount={totalOutstanding} currency="IQD" />
+          <AmountDisplay amount={totalOutstanding} currency={invCcy} />
         </Card>
         <Card style={{ padding: '16px' }}>
           <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>{t('rental.invoices.paid')}</div>
-          <AmountDisplay amount={totalPaid} currency="IQD" />
+          <AmountDisplay amount={totalPaid} currency={invCcy} />
         </Card>
       </div>
       <Card>

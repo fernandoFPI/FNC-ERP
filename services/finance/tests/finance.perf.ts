@@ -81,17 +81,6 @@ describe('Finance service — performance', () => {
     expect(stats.p95).toBeLessThan(150)
   })
 
-  it('GET /finance/reports/trial-balance — P95 < 300ms (aggregation)', async () => {
-    const stats = await measure(async () => {
-      const t = Date.now()
-      const res = await request(app).get('/finance/reports/trial-balance').set('Authorization', `Bearer ${token}`)
-      expect(res.status).toBe(200)
-      return Date.now() - t
-    })
-    log('GET /finance/reports/trial-balance', stats)
-    expect(stats.p95).toBeLessThan(300)
-  })
-
   it('concurrent: 8 simultaneous GET /finance/accounts — all complete < 500ms', async () => {
     await request(app).get('/finance/accounts').set('Authorization', `Bearer ${token}`)
 

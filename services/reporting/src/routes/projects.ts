@@ -43,24 +43,30 @@ projectsReportRouter.get(
       const companyId = getAuth(req).companyId
       const id = requireParam(req, 'id')
 
+      // No caller found for this route (ProjectProfitabilityReport.tsx uses
+      // the GraphQL projectProfitabilityReport query instead) -- fixed
+      // anyway, same as every other currency-blind site in this audit.
+      // budgetVsActual and costTimeline both grouped by currency_code now
+      // (previously one blind SUM(pca.amount) each); project is no longer
+      // assumed to be exactly one row (migration 305 -- one per currency).
       const [project, budgetVsActual, costTimeline, mos, rentalContracts] = await Promise.all([
         query('SELECT * FROM v_project_profitability WHERE project_id=$1 AND company_id=$2', [
           id,
           companyId,
         ]),
         query(
-          `SELECT bl.category, bl.budgeted_amount,
+          `SELECT bl.category, bl.budgeted_amount, pca.currency_code,
                 COALESCE(SUM(CASE WHEN pca.amount>0 THEN pca.amount ELSE 0 END),0) AS actual_costs
          FROM project_budget_lines bl
-         LEFT JOIN project_cost_actuals pca ON pca.project_id=bl.project_id AND pca.cost_category=bl.category
-         WHERE bl.project_id=$1 GROUP BY bl.id, bl.category, bl.budgeted_amount`,
+         LEFT JOIN v_project_cost_by_currency pca ON pca.project_id=bl.project_id AND pca.cost_category=bl.category
+         WHERE bl.project_id=$1 GROUP BY bl.id, bl.category, bl.budgeted_amount, pca.currency_code`,
           [id],
         ),
         query(
-          `SELECT DATE_TRUNC('month', entry_date) AS month, source_type,
+          `SELECT DATE_TRUNC('month', entry_date) AS month, source_type, currency_code,
                 SUM(CASE WHEN amount>0 THEN amount ELSE 0 END) AS costs
-         FROM project_cost_actuals WHERE project_id=$1
-         GROUP BY month, source_type ORDER BY month`,
+         FROM v_project_cost_by_currency WHERE project_id=$1
+         GROUP BY month, source_type, currency_code ORDER BY month`,
           [id],
         ),
         query(
@@ -73,9 +79,9 @@ projectsReportRouter.get(
         ),
       ])
 
-      if (!project.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
+      if (project.rows.length === 0) return sendError(res, 404, 'NOT_FOUND', 'Project not found')
       sendOk(res, {
-        ...project.rows[0],
+        profitability: project.rows,
         budget_vs_actual: budgetVsActual.rows,
         cost_timeline: costTimeline.rows,
         manufacturing_orders: mos.rows,

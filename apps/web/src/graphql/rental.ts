@@ -180,6 +180,7 @@ export const RENTAL_INVOICES_QUERY = gql`
       days_billed
       rate_amount
       total_amount
+      currency_code
       whtApplies
       whtScenario
       whtRate

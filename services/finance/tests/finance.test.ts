@@ -287,14 +287,3 @@ describe('Journal entries', () => {
   })
 })
 
-// ── Reports ───────────────────────────────────────────────────────────────────
-
-describe('GET /finance/reports/trial-balance', () => {
-  it('returns trial balance data', async () => {
-    const res = await request(app)
-      .get('/finance/reports/trial-balance')
-      .set('Authorization', `Bearer ${token}`)
-    expect(res.status).toBe(200)
-    expect(Array.isArray(res.body.data)).toBe(true)
-  })
-})

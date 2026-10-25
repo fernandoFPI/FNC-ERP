@@ -7,104 +7,6 @@ import { requirePermission } from '@fnc-erp/permissions'
 
 export const entityRouter: IRouter = Router()
 
-// GET /reporting/trial-balance?company_id&as_of_date
-entityRouter.get(
-  '/trial-balance',
-  requirePermission('reporting.financial.view', 'view'),
-  async (req, res) => {
-    try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
-      const asOfDate = req.query['as_of_date'] as string | undefined
-      const dateClause = asOfDate ? `AND je.entry_date <= '${asOfDate}'` : ''
-      const result = await query(
-        `SELECT coa.id, coa.code, coa.name, coa.account_type,
-              COALESCE(SUM(jl.debit),0) AS total_debit,
-              COALESCE(SUM(jl.credit),0) AS total_credit,
-              COALESCE(SUM(jl.debit-jl.credit),0) AS balance
-       FROM chart_of_accounts coa
-       LEFT JOIN journal_lines jl ON jl.account_id = coa.id
-       LEFT JOIN journal_entries je ON je.id = jl.journal_entry_id
-         AND je.company_id = $1 AND je.status = 'posted' ${dateClause}
-       WHERE coa.company_id = $1 AND coa.is_active = true
-       GROUP BY coa.id, coa.code, coa.name, coa.account_type
-       ORDER BY coa.code`,
-        [companyId],
-      )
-      sendOk(res, result.rows)
-    } catch (err) {
-      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to generate trial balance', err)
-    }
-  },
-)
-
-// GET /reporting/profit-loss?company_id&from_date&to_date
-entityRouter.get(
-  '/profit-loss',
-  requirePermission('reporting.financial.view', 'view'),
-  async (req, res) => {
-    try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
-      const { from_date, to_date } = req.query
-      let dateClause = `je.company_id = $1 AND je.status = 'posted'`
-      const params: unknown[] = [companyId]
-      let idx = 2
-      if (from_date) {
-        dateClause += ` AND je.entry_date >= $${idx++}`
-        params.push(from_date)
-      }
-      if (to_date) {
-        dateClause += ` AND je.entry_date <= $${idx++}`
-        params.push(to_date)
-      }
-      const result = await query(
-        `SELECT coa.code, coa.name, coa.account_type,
-              COALESCE(SUM(jl.debit),0) AS total_debit,
-              COALESCE(SUM(jl.credit),0) AS total_credit,
-              CASE WHEN coa.account_type='revenue' THEN COALESCE(SUM(jl.credit-jl.debit),0)
-                   ELSE COALESCE(SUM(jl.debit-jl.credit),0) END AS net_amount
-       FROM chart_of_accounts coa
-       JOIN journal_lines jl ON jl.account_id = coa.id
-       JOIN journal_entries je ON je.id = jl.journal_entry_id
-       WHERE ${dateClause} AND coa.account_type IN ('revenue','expense')
-       GROUP BY coa.id, coa.code, coa.name, coa.account_type
-       ORDER BY coa.account_type, coa.code`,
-        params,
-      )
-      sendOk(res, result.rows)
-    } catch (err) {
-      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to generate P&L', err)
-    }
-  },
-)
-
-// GET /reporting/balance-sheet?company_id&as_of_date
-entityRouter.get(
-  '/balance-sheet',
-  requirePermission('reporting.financial.view', 'view'),
-  async (req, res) => {
-    try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
-      const asOfDate = req.query['as_of_date'] as string | undefined
-      const dateClause = asOfDate ? `AND je.entry_date <= '${asOfDate}'` : ''
-      const result = await query(
-        `SELECT coa.code, coa.name, coa.account_type,
-              COALESCE(SUM(jl.debit-jl.credit),0) AS balance
-       FROM chart_of_accounts coa
-       LEFT JOIN journal_lines jl ON jl.account_id = coa.id
-       LEFT JOIN journal_entries je ON je.id = jl.journal_entry_id
-         AND je.company_id = $1 AND je.status = 'posted' ${dateClause}
-       WHERE coa.company_id = $1 AND coa.account_type IN ('asset','liability','equity')
-       GROUP BY coa.id, coa.code, coa.name, coa.account_type
-       ORDER BY coa.account_type, coa.code`,
-        [companyId],
-      )
-      sendOk(res, result.rows)
-    } catch (err) {
-      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to generate balance sheet', err)
-    }
-  },
-)
-
 // GET /reporting/cash-flow?company_id&from_date&to_date
 // Indirect method: Net Income → working capital adjustments → investing → financing
 entityRouter.get(
@@ -112,11 +14,36 @@ entityRouter.get(
   requirePermission('reporting.financial.view', 'view'),
   async (req, res) => {
     try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
+      // Multi-tenancy: company_id is always the caller's own session company,
+      // never a client-supplied value -- a query-string company_id used to
+      // be honored ahead of the session's, letting any caller with this
+      // route's permission read another company's financial reports.
+      const companyId = getAuth(req).companyId
       const fromDate =
         (req.query['from_date'] as string) ??
         new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10)
       const toDate = (req.query['to_date'] as string) ?? new Date().toISOString().slice(0, 10)
+
+      // 0.1 sweep: every sub-query below summed jl.debit/jl.credit straight
+      // across every currency_code, and the operating/investing/financing
+      // totals (and the activities-vs-cash `validated` cross-check) were
+      // built on those blended sums. Resolves which currency to report in
+      // (else the company's own) plus every currency with real journal
+      // activity, same pattern used across the rest of this sweep.
+      const availableCurrenciesRes = await query<{ currency_code: string }>(
+        `SELECT DISTINCT jl.currency_code
+         FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
+         WHERE je.company_id=$1 AND je.status='posted' ORDER BY 1`,
+        [companyId],
+      )
+      const availableCurrencies = availableCurrenciesRes.rows.map((r) => r.currency_code)
+      let currencyCode = req.query['currency_code'] as string | undefined
+      if (!currencyCode) {
+        const companyRes = await query<{ currency_code: string }>(`SELECT currency_code FROM companies WHERE id=$1`, [
+          companyId,
+        ])
+        currencyCode = companyRes.rows[0]?.currency_code ?? 'IQD'
+      }
 
       const [netIncomeRes, assetRes, liabilityRes, equityRes, cashRes] = await Promise.all([
         // Net income for the period
@@ -130,8 +57,9 @@ entityRouter.get(
          JOIN journal_entries je ON je.id = jl.journal_entry_id
          WHERE je.company_id=$1 AND je.status='posted'
            AND coa.account_type IN ('revenue','expense')
-           AND je.entry_date BETWEEN $2 AND $3`,
-          [companyId, fromDate, toDate],
+           AND je.entry_date BETWEEN $2 AND $3
+           AND jl.currency_code=$4`,
+          [companyId, fromDate, toDate, currencyCode],
         ),
 
         // Non-cash asset changes: increase in asset = use of cash (negate debit-credit)
@@ -152,10 +80,11 @@ entityRouter.get(
            AND coa.account_type='asset'
            AND (coa.account_category IS NULL OR coa.account_category NOT IN ('CASH','BANK'))
            AND je.entry_date BETWEEN $2 AND $3
+           AND jl.currency_code=$4
          GROUP BY coa.id, coa.code, coa.name
          HAVING COALESCE(SUM(jl.debit-jl.credit),0) <> 0
          ORDER BY coa.code`,
-          [companyId, fromDate, toDate],
+          [companyId, fromDate, toDate, currencyCode],
         ),
 
         // Liability changes: increase in liability = source of cash
@@ -168,10 +97,11 @@ entityRouter.get(
          WHERE je.company_id=$1 AND je.status='posted'
            AND coa.account_type='liability'
            AND je.entry_date BETWEEN $2 AND $3
+           AND jl.currency_code=$4
          GROUP BY coa.id, coa.code, coa.name
          HAVING COALESCE(SUM(jl.credit-jl.debit),0) <> 0
          ORDER BY coa.code`,
-          [companyId, fromDate, toDate],
+          [companyId, fromDate, toDate, currencyCode],
         ),
 
         // Equity changes (financing activities)
@@ -184,10 +114,11 @@ entityRouter.get(
          WHERE je.company_id=$1 AND je.status='posted'
            AND coa.account_type='equity'
            AND je.entry_date BETWEEN $2 AND $3
+           AND jl.currency_code=$4
          GROUP BY coa.id, coa.code, coa.name
          HAVING COALESCE(SUM(jl.credit-jl.debit),0) <> 0
          ORDER BY coa.code`,
-          [companyId, fromDate, toDate],
+          [companyId, fromDate, toDate, currencyCode],
         ),
 
         // Opening and closing cash balances — by account_category, not a
@@ -200,8 +131,9 @@ entityRouter.get(
          JOIN journal_lines jl ON jl.account_id = coa.id
          JOIN journal_entries je ON je.id = jl.journal_entry_id
          WHERE je.company_id=$1 AND je.status='posted'
-           AND coa.account_category IN ('CASH','BANK')`,
-          [companyId, fromDate, toDate],
+           AND coa.account_category IN ('CASH','BANK')
+           AND jl.currency_code=$4`,
+          [companyId, fromDate, toDate, currencyCode],
         ),
       ])
 
@@ -230,6 +162,8 @@ entityRouter.get(
 
       sendOk(res, {
         period: { from: fromDate, to: toDate },
+        currencyCode,
+        availableCurrencies,
         operating: {
           label: 'Cash Flows from Operating Activities',
           lines: [

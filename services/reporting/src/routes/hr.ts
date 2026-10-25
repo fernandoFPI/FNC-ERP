@@ -13,7 +13,11 @@ hrReportRouter.get(
   requirePermission('reporting.operational.view', 'view'),
   async (req, res) => {
     try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
+      // Multi-tenancy: company_id is always the caller's own session company,
+      // never a client-supplied value -- a query-string company_id used to
+      // be honored ahead of the session's, letting any caller with this
+      // route's permission read another company's reports.
+      const companyId = getAuth(req).companyId
       const { from_date, to_date } = req.query
       const params: unknown[] = [companyId]
       let idx = 2
@@ -27,7 +31,7 @@ hrReportRouter.get(
         params.push(to_date)
       }
       const result = await query(
-        `SELECT pr.period_name, pr.start_date, pr.end_date,
+        `SELECT pr.period_name, pr.start_date, pr.end_date, ps.currency_code,
               SUM(ps.gross_salary) AS total_gross,
               SUM(ps.net_salary) AS total_net,
               SUM(ps.income_tax) AS total_income_tax,
@@ -36,8 +40,8 @@ hrReportRouter.get(
        FROM payslips ps
        JOIN payroll_runs pr ON pr.id = ps.payroll_run_id
        WHERE ${dateClause}
-       GROUP BY pr.id, pr.period_name, pr.start_date, pr.end_date
-       ORDER BY pr.start_date DESC`,
+       GROUP BY pr.id, pr.period_name, pr.start_date, pr.end_date, ps.currency_code
+       ORDER BY pr.start_date DESC, ps.currency_code`,
         params,
       )
       sendOk(res, result.rows)
@@ -53,7 +57,11 @@ hrReportRouter.get(
   requirePermission('reporting.operational.view', 'view'),
   async (req, res) => {
     try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
+      // Multi-tenancy: company_id is always the caller's own session company,
+      // never a client-supplied value -- a query-string company_id used to
+      // be honored ahead of the session's, letting any caller with this
+      // route's permission read another company's reports.
+      const companyId = getAuth(req).companyId
       const { from_date, to_date, department_id } = req.query
       const params: unknown[] = [companyId]
       let idx = 2
@@ -94,7 +102,11 @@ hrReportRouter.get(
   requirePermission('reporting.operational.view', 'view'),
   async (req, res) => {
     try {
-      const companyId = (req.query['company_id'] as string) || getAuth(req).companyId
+      // Multi-tenancy: company_id is always the caller's own session company,
+      // never a client-supplied value -- a query-string company_id used to
+      // be honored ahead of the session's, letting any caller with this
+      // route's permission read another company's reports.
+      const companyId = getAuth(req).companyId
       const asOfDate = req.query['as_of_date'] as string | undefined
       const dateClause = asOfDate ? `AND e.hire_date <= '${asOfDate}'` : ''
       const result = await query(

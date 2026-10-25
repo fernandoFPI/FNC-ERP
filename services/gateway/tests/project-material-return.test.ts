@@ -9,7 +9,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
 
-const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
+const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const TEST_USER_EMAIL = 'material-return-test@fnc-erp.local'
 const SKU_PREFIX = 'MRETTEST-'
 const PO_PREFIX = 'MRETTEST-PO-'
@@ -402,7 +402,11 @@ describe('createMaterialReturn', () => {
     expect(parseFloat(costActuals.rows[1]!.amount)).toBe(-36)
 
     const netMaterialsCost = await pool.query<{ total: string }>(
-      `SELECT SUM(amount) AS total FROM project_cost_actuals WHERE project_id=$1`,
+      `-- currency-safe: this test's fixture only ever posts stock_issue/
+       -- material_return rows, which are last-cost/single-currency by
+       -- domain design (docs/claude/domain.md) -- not a general proof that
+       -- project_cost_actuals is safe to sum across all source_types.
+       SELECT SUM(amount) AS total FROM project_cost_actuals WHERE project_id=$1`,
       [projectId],
     )
     expect(parseFloat(netMaterialsCost.rows[0]!.total)).toBe(60) // 96 - 36
@@ -835,7 +839,11 @@ describe('cancelMaterialIssue interaction with existing returns', () => {
     )
     expect(status.rows[0]!.status).toBe('issued')
     const total = await pool.query<{ total: string }>(
-      `SELECT SUM(amount) AS total FROM project_cost_actuals WHERE project_id=$1`,
+      `-- currency-safe: this test's fixture only ever posts stock_issue/
+       -- material_return rows, which are last-cost/single-currency by
+       -- domain design (docs/claude/domain.md) -- not a general proof that
+       -- project_cost_actuals is safe to sum across all source_types.
+       SELECT SUM(amount) AS total FROM project_cost_actuals WHERE project_id=$1`,
       [projectId],
     )
     expect(parseFloat(total.rows[0]!.total)).toBe(30) // 50 issued - 20 returned

@@ -20,7 +20,8 @@ const budgetSchema = z.object({
 budgetRouter.get('/', requirePermission('finance.budget.view', 'view'), asyncHandler(async (req, res) => {
   try {
     const r = await query(
-      `SELECT b.*,
+      `-- currency-safe: grouped by b.id (one budget), which has one currency_code
+       SELECT b.*,
               COUNT(bl.id)::INT AS line_count,
               COALESCE(SUM(bl.amount),0) AS total_budget
        FROM gl_budgets b
@@ -290,41 +291,71 @@ budgetRouter.get(
       const pFrom = period_from ?? `${yearStr}-01`
       const pTo = period_to ?? `${yearStr}-12`
 
+      // G15: budget and actual are aggregated in separate subqueries (each
+      // pre-collapsed to one row per account) before being joined together.
+      // The previous single-pass join matched every journal line against
+      // EVERY gl_budget_lines row sharing that account_id, with no period
+      // condition on the join itself -- a budget with more than one period
+      // row per account (the common case; gl_budget_lines is normally one
+      // row per account per month) multiplied actual_amount by however many
+      // of that account's budget-line periods fell inside pFrom..pTo. Also
+      // adds `je.status = 'posted'` (G15: posted only), missing entirely
+      // before.
       const r = await query(
-        `SELECT
-         a.id          AS account_id,
-         a.code        AS account_code,
-         a.name        AS account_name,
-         a.account_type,
-         COALESCE(SUM(bl.amount), 0) AS budget_amount,
-         COALESCE(SUM(
-           CASE WHEN jl.currency_code = $5
-                THEN jl.debit - jl.credit
-                ELSE (jl.debit - jl.credit) * COALESCE(fr.rate, 1) END
-         ), 0) AS actual_amount
-       FROM gl_budget_lines bl
-       JOIN chart_of_accounts a ON a.id = bl.account_id
-       LEFT JOIN (
-         SELECT jl.account_id, jl.currency_code, jl.debit, jl.credit, je.entry_date
+        `WITH budget_sub AS (
+           SELECT bl.account_id, COALESCE(SUM(bl.amount), 0) AS budget_amount
+           FROM gl_budget_lines bl
+           WHERE bl.budget_id = $2 AND bl.period BETWEEN $3 AND $4 AND bl.company_id = $1
+           GROUP BY bl.account_id
+         ),
+         -- D2-adjacent (currency fix plan): actual_amount used to convert
+         -- every other-currency line into the budget's own currency via
+         -- fx_rate, which is real currency exchange -- forbidden by the
+         -- no-currency-exchange policy. Now filtered to the budget's own
+         -- currency_code only; a line in any other currency shows up in
+         -- outsideBudgetCurrency below instead, raw and unconverted, never
+         -- blended into this account's budget-vs-actual comparison.
+         actual_sub AS (
+           SELECT jl.account_id,
+                  COALESCE(SUM(jl.debit - jl.credit), 0) AS actual_amount
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.journal_entry_id
+           WHERE je.company_id = $1
+             AND je.status = 'posted'
+             AND jl.currency_code = $5
+             AND TO_CHAR(je.entry_date, 'YYYY-MM') BETWEEN $3 AND $4
+             AND jl.account_id IN (SELECT account_id FROM budget_sub)
+           GROUP BY jl.account_id
+         )
+         SELECT
+           a.id   AS account_id,
+           a.code AS account_code,
+           a.name AS account_name,
+           a.account_type,
+           bs.budget_amount,
+           COALESCE(acs.actual_amount, 0) AS actual_amount
+         FROM budget_sub bs
+         JOIN chart_of_accounts a ON a.id = bs.account_id
+         LEFT JOIN actual_sub acs ON acs.account_id = bs.account_id
+         ORDER BY a.code`,
+        [getAuth(req).companyId, req.params['id'], pFrom, pTo, budget['currency_code']],
+      )
+
+      // Activity against this budget's own accounts, in every currency
+      // OTHER than the budget's -- excluded from actual_amount/variance
+      // above entirely, surfaced here raw and per-currency instead of
+      // being converted and blended into the main comparison.
+      const outsideBudgetCurrency = await query(
+        `SELECT jl.currency_code, COALESCE(SUM(jl.debit - jl.credit), 0) AS amount
          FROM journal_lines jl
          JOIN journal_entries je ON je.id = jl.journal_entry_id
          WHERE je.company_id = $1
+           AND je.status = 'posted'
+           AND jl.currency_code != $5
            AND TO_CHAR(je.entry_date, 'YYYY-MM') BETWEEN $3 AND $4
-       ) jl ON jl.account_id = bl.account_id
-       LEFT JOIN fx_rates fr
-              ON fr.from_currency = jl.currency_code
-             AND fr.to_currency   = $5
-             AND fr.rate_date = (
-               SELECT MAX(rate_date) FROM fx_rates
-               WHERE from_currency = jl.currency_code
-                 AND to_currency   = $5
-                 AND rate_date    <= DATE_TRUNC('month', jl.entry_date) + INTERVAL '1 month - 1 day'
-             )
-       WHERE bl.budget_id = $2
-         AND bl.period BETWEEN $3 AND $4
-         AND bl.company_id = $1
-       GROUP BY a.id, a.code, a.name, a.account_type
-       ORDER BY a.code`,
+           AND jl.account_id IN (SELECT account_id FROM gl_budget_lines WHERE budget_id = $2 AND period BETWEEN $3 AND $4 AND company_id = $1)
+         GROUP BY jl.currency_code
+         ORDER BY jl.currency_code`,
         [getAuth(req).companyId, req.params['id'], pFrom, pTo, budget['currency_code']],
       )
 
@@ -359,6 +390,10 @@ budgetRouter.get(
           actual: rows.reduce((s, r) => s + r.actual_amount, 0),
           variance: rows.reduce((s, r) => s + r.variance, 0),
         },
+        outsideBudgetCurrency: outsideBudgetCurrency.rows.map((row) => ({
+          currencyCode: row['currency_code'],
+          amount: Number(row['amount']),
+        })),
       })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to compute budget vs actual', err)

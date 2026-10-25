@@ -113,9 +113,18 @@ const inventoryMock = {
 }
 
 const whtMock = {
-  request: { query: WHT_REPORT_QUERY, variables: { fromDate: '', toDate: '', companyId: '' } },
+  request: { query: WHT_REPORT_QUERY, variables: { fromDate: '', toDate: '' } },
   result: {
-    data: { whtReport: { rows: [], totalWHT: 0, vendorCount: 0, totalPaymentsSubjectToWHT: 0 } },
+    data: {
+      whtReport: {
+        rows: [],
+        totalWHT: 0,
+        vendorCount: 0,
+        totalPaymentsSubjectToWHT: 0,
+        currencyCode: 'IQD',
+        availableCurrencies: ['IQD'],
+      },
+    },
   },
 }
 

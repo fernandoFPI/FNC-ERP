@@ -16,6 +16,26 @@ export const employeeAdvancesRouter: Router = Router()
 // `details: err` pattern silently serializes to `{}` on the client.
 export class AdvanceConfigError extends Error {}
 
+// 0.1 sweep: /summary and /dashboard both used to sum employee_advances
+// straight across every currency_code. Resolves which currency to report
+// in (explicit ?currency_code, else the company's own) plus every
+// currency with real advance activity.
+async function resolveAdvancesCurrency(
+  companyId: string,
+  requested: string | undefined,
+): Promise<{ currencyCode: string; availableCurrencies: string[] }> {
+  const availableRes = await query<{ currency_code: string }>(
+    `SELECT DISTINCT currency_code FROM employee_advances WHERE company_id=$1 ORDER BY 1`,
+    [companyId],
+  )
+  const availableCurrencies = availableRes.rows.map((r) => r.currency_code)
+  if (requested) return { currencyCode: requested, availableCurrencies }
+  const companyRes = await query<{ currency_code: string }>(`SELECT currency_code FROM companies WHERE id=$1`, [
+    companyId,
+  ])
+  return { currencyCode: companyRes.rows[0]?.currency_code ?? 'IQD', availableCurrencies }
+}
+
 // ─── Account auto-resolution ────────────────────────────────────────────────
 //
 // Cash account is picked by currency (one designated account per currency
@@ -178,6 +198,11 @@ employeeAdvancesRouter.get(
   requirePermission('finance.advances.view', 'view'),
   asyncHandler(async (req, res) => {
     try {
+      const companyId = getAuth(req).companyId
+      const { currencyCode, availableCurrencies } = await resolveAdvancesCurrency(
+        companyId,
+        req.query['currency_code'] as string | undefined,
+      )
       const r = await query(
         `SELECT
            COUNT(*) FILTER (WHERE status='pending_approval') AS pending_count,
@@ -185,10 +210,10 @@ employeeAdvancesRouter.get(
            COUNT(*) FILTER (WHERE status IN ('approved','partially_settled')) AS active_count,
            COALESCE(SUM(outstanding_amount) FILTER (WHERE status IN ('approved','partially_settled')), 0) AS total_outstanding,
            COUNT(*) FILTER (WHERE status='settled') AS settled_count
-         FROM employee_advances WHERE company_id=$1`,
-        [getAuth(req).companyId],
+         FROM employee_advances WHERE company_id=$1 AND currency_code=$2`,
+        [companyId, currencyCode],
       )
-      sendOk(res, r.rows[0])
+      sendOk(res, { ...r.rows[0], currencyCode, availableCurrencies })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load summary', err)
     }
@@ -775,7 +800,9 @@ employeeAdvancesRouter.get(
         return
       }
       const r = await query(
-        `WITH events AS (
+        `-- currency-safe: every event here is scoped to one employee_advances
+         -- row (a.id=$1 / advance_id=$1), which has one currency_code
+         WITH events AS (
            SELECT 'issuance' AS type, a.id AS ref_id, a.advance_number AS reference,
                   a.approved_at AS date, a.amount AS amount, NULL::TEXT AS description
            FROM employee_advances a WHERE a.id=$1 AND a.approved_at IS NOT NULL
@@ -849,30 +876,45 @@ employeeAdvancesRouter.get(
   requirePermission('finance.advances.view', 'view'),
   asyncHandler(async (req, res) => {
     try {
+      const companyId = getAuth(req).companyId
+      const { currencyCode, availableCurrencies } = await resolveAdvancesCurrency(
+        companyId,
+        req.query['currency_code'] as string | undefined,
+      )
       const [advances, byEmployee] = await Promise.all([
         query(
           `SELECT id, advance_number, employee_id, employee_name, amount, settled_amount,
                   returned_amount, outstanding_amount, currency_code, status, approved_at
            FROM employee_advances
-           WHERE company_id=$1 AND status IN ('approved','partially_settled')
+           WHERE company_id=$1 AND status IN ('approved','partially_settled') AND currency_code=$2
            ORDER BY outstanding_amount DESC`,
-          [getAuth(req).companyId],
+          [companyId, currencyCode],
         ),
+        // Grouped by currency_code too, not just employee -- same reasoning
+        // as expense-claims.ts's /dashboard: summing an employee's advances
+        // regardless of currency would silently blend them. Filtered to one
+        // currency here rather than returning every currency per employee,
+        // to match this page's single-currency-view KPIs above it.
         query(
-          `SELECT employee_id, employee_name,
+          `SELECT employee_id, employee_name, currency_code,
                   COUNT(*)::INT AS advance_count,
                   COALESCE(SUM(amount),0) AS total_issued,
                   COALESCE(SUM(settled_amount),0) AS total_settled,
                   COALESCE(SUM(returned_amount),0) AS total_returned,
                   COALESCE(SUM(outstanding_amount),0) AS total_outstanding
            FROM employee_advances
-           WHERE company_id=$1 AND status IN ('approved','partially_settled')
-           GROUP BY employee_id, employee_name
+           WHERE company_id=$1 AND status IN ('approved','partially_settled') AND currency_code=$2
+           GROUP BY employee_id, employee_name, currency_code
            ORDER BY total_outstanding DESC`,
-          [getAuth(req).companyId],
+          [companyId, currencyCode],
         ),
       ])
-      sendOk(res, { advances: advances.rows, by_employee: byEmployee.rows })
+      sendOk(res, {
+        advances: advances.rows,
+        by_employee: byEmployee.rows,
+        currencyCode,
+        availableCurrencies,
+      })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load dashboard', err)
     }

@@ -11,6 +11,7 @@ import { EmptyState } from '../../../components/ui/EmptyState'
 import { Grid } from '../../../components/ui/Grid'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import { TabBar } from '../../../components/ui/TabBar'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -27,6 +28,8 @@ interface WHTPayableSummary {
     total_wht: string
     total_payments: string
   }[]
+  currencyCode: string
+  availableCurrencies: string[]
 }
 
 function fmtAmt(val: number | string) {
@@ -50,11 +53,15 @@ export default function WHTPayablePage() {
   const activeCompany = useCompanyStore((s) => s.activeCompany)
   const [data, setData] = useState<WHTPayableSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
+  const displayCurrency = data?.currencyCode ?? 'IQD'
 
   async function load() {
     setLoading(true)
     try {
-      const res = await api.get<WHTPayableSummary>('/reporting/compliance/wht-payable')
+      const res = await api.get<WHTPayableSummary>('/reporting/compliance/wht-payable', {
+        params: currencyCode ? { currency_code: currencyCode } : {},
+      })
       setData(res.data)
     } catch {
       /* silent */
@@ -65,7 +72,7 @@ export default function WHTPayablePage() {
 
   useEffect(() => {
     void load()
-  }, [activeCompany?.id])
+  }, [activeCompany?.id, currencyCode])
 
   const monthly =
     data?.monthly.map((m) => ({
@@ -92,7 +99,7 @@ export default function WHTPayablePage() {
       key: 'payments_subject_to_wht',
       header: t('fin.wht.paymentsSubjectToWht'),
       render: (row) => (
-        <AmountDisplay amount={row.payments_subject_to_wht} currency="IQD" size="sm" />
+        <AmountDisplay amount={row.payments_subject_to_wht} currency={displayCurrency} size="sm" />
       ),
     },
     {
@@ -100,7 +107,7 @@ export default function WHTPayablePage() {
       header: t('fin.wht.whtAmount'),
       render: (row) => (
         <span style={{ fontWeight: 600, color: theme.warning }}>
-          <AmountDisplay amount={row.wht_amount} currency="IQD" size="sm" />
+          <AmountDisplay amount={row.wht_amount} currency={displayCurrency} size="sm" />
         </span>
       ),
     },
@@ -129,6 +136,16 @@ export default function WHTPayablePage() {
         }
       />
 
+      {(data?.availableCurrencies.length ?? 0) > 1 && (
+        <Card padding="none" style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={data!.availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={displayCurrency}
+            onChange={setCurrencyCode}
+          />
+        </Card>
+      )}
+
       {/* KPI cards */}
       <Grid cols={3} tabletCols={2} phoneCols={1} gap={14} style={{ marginBottom: '24px' }}>
         <Card padding="md">
@@ -147,7 +164,7 @@ export default function WHTPayablePage() {
               >
                 {t('fin.wht.totalWhtPayableYtd')}
               </p>
-              <AmountDisplay amount={data?.total_wht_payable ?? 0} currency="IQD" size="lg" />
+              <AmountDisplay amount={data?.total_wht_payable ?? 0} currency={displayCurrency} size="lg" />
               <p style={{ fontSize: '11px', color: theme.warning, marginTop: '4px' }}>
                 {t('fin.wht.dueToTaxAuthority')}
               </p>
@@ -243,7 +260,7 @@ export default function WHTPayablePage() {
                     }}
                   >
                     <div
-                      title={t('fin.wht.iqd', { value: MONTHS[month - 1], amt: fmtAmt(wht) })}
+                      title={t('fin.wht.iqd', { value: MONTHS[month - 1], currency: displayCurrency, amt: fmtAmt(wht) })}
                       style={{
                         width: '100%',
                         height: `${Math.max(pct, wht > 0 ? 4 : 0)}%`,
@@ -309,7 +326,7 @@ export default function WHTPayablePage() {
                         {v.invoice_count}
                       </td>
                       <td style={{ padding: '7px 8px', fontWeight: 600, color: theme.warning }}>
-                        <AmountDisplay amount={parseFloat(v.total_wht)} currency="IQD" size="sm" />
+                        <AmountDisplay amount={parseFloat(v.total_wht)} currency={displayCurrency} size="sm" />
                       </td>
                     </tr>
                   ))}

@@ -14,6 +14,7 @@ import { EmptyState } from '../../../components/ui/EmptyState'
 import { Grid } from '../../../components/ui/Grid'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import { TabBar } from '../../../components/ui/TabBar'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { usePagePadding } from '../../../hooks/usePagePadding'
@@ -29,6 +30,8 @@ interface ARSummary {
   open_count: number
   overdue_count: number
   collected_this_month?: string
+  currencyCode: string
+  availableCurrencies: string[]
 }
 
 interface ARInvoice {
@@ -56,6 +59,12 @@ interface ARByClient {
   overdue_amount: string
 }
 
+interface ARByClientResponse {
+  rows: ARByClient[]
+  currencyCode: string
+  availableCurrencies: string[]
+}
+
 function fmtAmt(val: string | number | undefined) {
   return parseFloat(String(val ?? 0)).toLocaleString('en-US', {
     minimumFractionDigits: 0,
@@ -68,11 +77,13 @@ function AgingBar({
   amount,
   total,
   color,
+  currency,
 }: {
   label: string
   amount: number
   total: number
   color: string
+  currency: string
 }) {
   const { t } = useTranslation()
   const { theme } = useTheme()
@@ -89,7 +100,7 @@ function AgingBar({
       >
         <span style={{ color: theme.textSecondary }}>{label}</span>
         <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
-          {t('fin.arDash.iqd3')} {fmtAmt(amount)} &nbsp;
+          {t('fin.arDash.iqd3', { currency })} {fmtAmt(amount)} &nbsp;
           <span style={{ color: theme.textMuted }}>({pct.toFixed(0)}%)</span>
         </span>
       </div>
@@ -147,6 +158,8 @@ export default function ARDashboard() {
   const [invoices, setInvoices] = useState<ARInvoice[]>([])
   const [byClient, setByClient] = useState<ARByClient[]>([])
   const [whtRecoverable, setWhtRecoverable] = useState<number>(0)
+  const [availableCurrencies, setAvailableCurrencies] = useState<string[]>([])
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [sourceFilter, setSourceFilter] = useState('')
@@ -158,20 +171,22 @@ export default function ARDashboard() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
+      const params = currencyCode ? { currency_code: currencyCode } : {}
       const [summaryRes, clientRes, whtRes] = await Promise.all([
-        api.get<ARSummary>('/finance/ar/summary'),
-        api.get<ARByClient[]>('/finance/ar/by-client'),
-        api.get<{ wht_recoverable: number }>('/finance/ar/wht-recoverable'),
+        api.get<ARSummary>('/finance/ar/summary', { params }),
+        api.get<ARByClientResponse>('/finance/ar/by-client', { params }),
+        api.get<{ wht_recoverable: number }>('/finance/ar/wht-recoverable', { params }),
       ])
       setSummary(summaryRes.data)
-      setByClient(clientRes.data)
+      setByClient(clientRes.data.rows)
+      setAvailableCurrencies(summaryRes.data.availableCurrencies ?? [])
       setWhtRecoverable(whtRes.data.wht_recoverable)
     } catch {
       addToast({ type: 'error', message: t('fin.arDash.failedToLoadArData') })
     } finally {
       setLoading(false)
     }
-  }, [addToast])
+  }, [addToast, currencyCode])
 
   const fetchInvoices = useCallback(async () => {
     try {
@@ -179,6 +194,7 @@ export default function ARDashboard() {
       if (sourceFilter) params.source_type = sourceFilter
       if (overdueOnly) params.overdue = 'true'
       if (selectedClient) params.client_name = selectedClient
+      if (currencyCode) params.currency_code = currencyCode
       const res = await api.get<{ items?: ARInvoice[]; data?: ARInvoice[] }>(
         '/finance/ar/invoices',
         { params },
@@ -194,7 +210,7 @@ export default function ARDashboard() {
     } catch {
       /* silent */
     }
-  }, [page, sourceFilter, overdueOnly, selectedClient])
+  }, [page, sourceFilter, overdueOnly, selectedClient, currencyCode])
 
   useEffect(() => {
     void fetchAll()
@@ -204,6 +220,7 @@ export default function ARDashboard() {
   }, [fetchInvoices])
 
   const s = summary
+  const displayCurrency = s?.currencyCode ?? 'IQD'
   const totalOutstanding = parseFloat(s?.total_outstanding ?? '0')
   const b0 = parseFloat(s?.bucket_0_30 ?? '0')
   const b31 = parseFloat(s?.bucket_31_60 ?? '0')
@@ -269,7 +286,7 @@ export default function ARDashboard() {
       header: t('fin.arDash.outstanding'),
       mobilePriority: 1,
       render: (c) => (
-        <AmountDisplay amount={parseFloat(c.total_outstanding)} currency="IQD" size="sm" />
+        <AmountDisplay amount={parseFloat(c.total_outstanding)} currency={displayCurrency} size="sm" />
       ),
     },
     {
@@ -386,13 +403,23 @@ export default function ARDashboard() {
         subtitle={t('fin.arDash.asOfToday', { value: activeCompany?.name ?? '' })}
       />
 
+      {availableCurrencies.length > 1 && (
+        <Card padding="none" style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={displayCurrency}
+            onChange={setCurrencyCode}
+          />
+        </Card>
+      )}
+
       {/* KPI row */}
       <Grid cols={5} tabletCols={3} phoneCols={2} gap={14} style={{ marginBottom: '24px' }}>
         {[
           {
             label: t('fin.arDash.totalOutstanding'),
-            value: `IQD ${fmtAmt(totalOutstanding)}`,
-            sub: t('fin.arDash.iqdCollectedThisMonth', { amt: fmtAmt(collectedThisMonth) }),
+            value: `${displayCurrency} ${fmtAmt(totalOutstanding)}`,
+            sub: t('fin.arDash.iqdCollectedThisMonth', { currency: displayCurrency, amt: fmtAmt(collectedThisMonth) }),
             color: theme.info,
           },
           {
@@ -403,18 +430,18 @@ export default function ARDashboard() {
           },
           {
             label: t('fin.arDash.overdueAmount'),
-            value: `IQD ${fmtAmt(b31 + b61 + b90)}`,
+            value: `${displayCurrency} ${fmtAmt(b31 + b61 + b90)}`,
             sub: t('fin.arDash.acrossInvoices', { value: s?.overdue_count ?? 0 }),
             color: b31 + b61 + b90 > 0 ? theme.danger : theme.textMuted,
           },
           {
             label: t('fin.arDash.collectedThisMonth'),
-            value: `IQD ${fmtAmt(collectedThisMonth)}`,
+            value: `${displayCurrency} ${fmtAmt(collectedThisMonth)}`,
             color: theme.success,
           },
           {
             label: t('fin.arDash.whtRecoverableYtd'),
-            value: `IQD ${fmtAmt(whtRecoverable)}`,
+            value: `${displayCurrency} ${fmtAmt(whtRecoverable)}`,
             sub: t('fin.arDash.clientWithheldWhtThisYear'),
             color: theme.accent,
           },
@@ -484,24 +511,28 @@ export default function ARDashboard() {
                 amount={b0}
                 total={totalOutstanding}
                 color={theme.success}
+                currency={displayCurrency}
               />
               <AgingBar
                 label={t('fin.arDash.3160Days')}
                 amount={b31}
                 total={totalOutstanding}
                 color={theme.warning}
+                currency={displayCurrency}
               />
               <AgingBar
                 label={t('fin.arDash.6190Days')}
                 amount={b61}
                 total={totalOutstanding}
                 color={theme.danger}
+                currency={displayCurrency}
               />
               <AgingBar
                 label={t('fin.arDash.over90Days')}
                 amount={b90}
                 total={totalOutstanding}
                 color="#dc2626"
+                currency={displayCurrency}
               />
               <div
                 style={{
@@ -513,7 +544,7 @@ export default function ARDashboard() {
                   color: theme.textSecondary,
                 }}
               >
-                <strong>{t('fin.arDash.iqd', { amt: fmtAmt(totalOutstanding) })}</strong> total outstanding
+                <strong>{t('fin.arDash.iqd', { currency: displayCurrency, amt: fmtAmt(totalOutstanding) })}</strong> total outstanding
               </div>
             </>
           )}
@@ -549,7 +580,7 @@ export default function ARDashboard() {
                         <Cell fill={theme.warning} />
                       </Pie>
                       <Tooltip
-                        formatter={(v) => [`IQD ${fmtAmt(v as number)}`, '']}
+                        formatter={(v) => [`${displayCurrency} ${fmtAmt(v as number)}`, '']}
                         contentStyle={{
                           background: theme.bgSurface,
                           border: `1px solid ${theme.border}`,
@@ -577,7 +608,7 @@ export default function ARDashboard() {
                     />
                     {t('fin.arDash.projectInvoices')}
                   </span>
-                  <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{t('fin.arDash.iqd2', { amt: fmtAmt(projectTotal), length: projectInvs.length })}</span>
+                  <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{t('fin.arDash.iqd2', { currency: displayCurrency, amt: fmtAmt(projectTotal), length: projectInvs.length })}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -592,7 +623,7 @@ export default function ARDashboard() {
                     />
                     {t('fin.arDash.rentalInvoices')}
                   </span>
-                  <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{t('fin.arDash.iqd2', { amt: fmtAmt(rentalTotal), length: rentalInvs.length })}</span>
+                  <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{t('fin.arDash.iqd2', { currency: displayCurrency, amt: fmtAmt(rentalTotal), length: rentalInvs.length })}</span>
                 </div>
               </div>
             </>

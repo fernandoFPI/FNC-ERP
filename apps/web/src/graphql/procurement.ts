@@ -83,6 +83,11 @@ export const PURCHASE_ORDERS_QUERY = gql`
       total_amount
       viewerCanSeeTotals
       currency_code
+      currencyTotals {
+        currency_code
+        subtotal
+        line_count
+      }
       created_at
       analytic_account_id
       expected_delivery_date

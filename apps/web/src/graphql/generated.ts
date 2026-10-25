@@ -602,6 +602,38 @@ export type CostCentersQueryVariables = Exact<{ [key: string]: never; }>;
 
 export type CostCentersQuery = { costCenters: Array<{ id: string, name: string, code: string }> };
 
+export type PostingAccountRolesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PostingAccountRolesQuery = { postingAccountRoles: Array<string> };
+
+export type CompanyPostingAccountsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type CompanyPostingAccountsQuery = { companyPostingAccounts: Array<{ id: string, role: string, currencyCode: string | null, accountId: string, accountCode: string, accountName: string, updatedAt: string }> };
+
+export type PostingAccountReadinessQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PostingAccountReadinessQuery = { postingAccountReadiness: { allConfigured: boolean, missingRoles: Array<string>, roles: Array<{ role: string, configured: boolean, hasDefault: boolean, currencies: Array<string> }> } };
+
+export type UpsertCompanyPostingAccountMutationVariables = Exact<{
+  role: string;
+  currencyCode?: string | null | undefined;
+  accountId: string | number;
+}>;
+
+
+export type UpsertCompanyPostingAccountMutation = { upsertCompanyPostingAccount: { id: string, role: string, currencyCode: string | null, accountId: string, accountCode: string, accountName: string, updatedAt: string } };
+
+export type DeleteCompanyPostingAccountMutationVariables = Exact<{
+  role: string;
+  currencyCode?: string | null | undefined;
+}>;
+
+
+export type DeleteCompanyPostingAccountMutation = { deleteCompanyPostingAccount: boolean };
+
 export type EmployeesQueryVariables = Exact<{
   department_id?: string | number | null | undefined;
   is_active?: boolean | null | undefined;
@@ -1643,7 +1675,7 @@ export type PurchaseOrdersQueryVariables = Exact<{
 }>;
 
 
-export type PurchaseOrdersQuery = { purchaseOrders: Array<{ id: string, po_number: string, vendor_name: string | null, vendor_id: string | null, status: string, priority: string, total_amount: string, viewerCanSeeTotals: boolean | null, currency_code: string, created_at: string, analytic_account_id: string | null, expected_delivery_date: string | null, assigned_to_email: string | null, organizerName: string | null, invoice_count: number, project_id: string | null, projectCode: string | null, projectName: string | null, requisitionNumber: string | null, branch_id: string | null, branch_name: string | null, itemSearchText: string | null } | null> | null };
+export type PurchaseOrdersQuery = { purchaseOrders: Array<{ id: string, po_number: string, vendor_name: string | null, vendor_id: string | null, status: string, priority: string, total_amount: string, viewerCanSeeTotals: boolean | null, currency_code: string, created_at: string, analytic_account_id: string | null, expected_delivery_date: string | null, assigned_to_email: string | null, organizerName: string | null, invoice_count: number, project_id: string | null, projectCode: string | null, projectName: string | null, requisitionNumber: string | null, branch_id: string | null, branch_name: string | null, itemSearchText: string | null, currencyTotals: Array<{ currency_code: string, subtotal: string, line_count: number }> } | null> | null };
 
 export type PurchaseOrderQueryVariables = Exact<{
   id: string | number;
@@ -2173,7 +2205,7 @@ export type ResolvePoLineCommentMutationVariables = Exact<{
 
 export type ResolvePoLineCommentMutation = { resolvePOLineComment: { id: string, resolved: boolean, resolved_at: string | null } };
 
-export type ProjectFieldsFragment = { id: string, code: string, name: string, description: string | null, projectType: string, status: string, rfqNumber: string | null, contractName: string | null, projectLocation: string | null, projectValue: number | null, projectValueCurrency: string | null, clientName: string | null, clientContact: string | null, managerId: string | null, managerName: string | null, plannedStartDate: string | null, plannedEndDate: string | null, budgetAmount: number | null, budgetCurrency: string | null, holdReason: string | null, cancelReason: string | null, receivingDate: string | null, submissionDate: string | null, submissionTime: string | null, siteVisitDate: string | null, siteVisitTime: string | null, questionDate: string | null, questionTime: string | null, submittedAt: string | null, approvedAt: string | null, completedAt: string | null, cancelledAt: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, stagesCompleted: number | null, stagesTotal: number | null, currentStageName: string | null, analyticAccountId: string | null, analyticAccountName: string | null, allowedActions: Array<string> | null, lifecyclePhase: string | null, clientDocCount: number | null, rfqLineCount: number | null, openOverdueRfiCount: number | null, openSafetyIncidentCount: number | null, overdueCorrectiveActionCount: number | null, isRfq: boolean, rfqEstimatedCost: number | null, rfqOutcome: string | null, rfqOutcomeReason: string | null, costSummary: unknown, stages: unknown, team: unknown, statusHistory: unknown, activityLog: unknown, recentPos: unknown, createdAt: string, updatedAt: string | null };
+export type ProjectFieldsFragment = { id: string, code: string, name: string, description: string | null, projectType: string, status: string, rfqNumber: string | null, contractName: string | null, projectLocation: string | null, projectValue: number | null, projectValueCurrency: string | null, clientName: string | null, clientContact: string | null, managerId: string | null, managerName: string | null, plannedStartDate: string | null, plannedEndDate: string | null, budgetAmount: number | null, budgetCurrency: string | null, budgets: unknown, holdReason: string | null, cancelReason: string | null, receivingDate: string | null, submissionDate: string | null, submissionTime: string | null, siteVisitDate: string | null, siteVisitTime: string | null, questionDate: string | null, questionTime: string | null, submittedAt: string | null, approvedAt: string | null, completedAt: string | null, cancelledAt: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, stagesCompleted: number | null, stagesTotal: number | null, currentStageName: string | null, analyticAccountId: string | null, analyticAccountName: string | null, allowedActions: Array<string> | null, lifecyclePhase: string | null, clientDocCount: number | null, rfqLineCount: number | null, openOverdueRfiCount: number | null, openSafetyIncidentCount: number | null, overdueCorrectiveActionCount: number | null, isRfq: boolean, rfqEstimatedCost: number | null, rfqOutcome: string | null, rfqOutcomeReason: string | null, costSummary: unknown, stages: unknown, team: unknown, statusHistory: unknown, activityLog: unknown, recentPos: unknown, createdAt: string, updatedAt: string | null };
 
 export type ProjectsQueryVariables = Exact<{
   status?: Array<string | null | undefined> | string | null | undefined;
@@ -2194,7 +2226,7 @@ export type ProjectQueryVariables = Exact<{
 }>;
 
 
-export type ProjectQuery = { project: { id: string, code: string, name: string, description: string | null, projectType: string, status: string, rfqNumber: string | null, contractName: string | null, projectLocation: string | null, projectValue: number | null, projectValueCurrency: string | null, clientName: string | null, clientContact: string | null, managerId: string | null, managerName: string | null, plannedStartDate: string | null, plannedEndDate: string | null, budgetAmount: number | null, budgetCurrency: string | null, holdReason: string | null, cancelReason: string | null, receivingDate: string | null, submissionDate: string | null, submissionTime: string | null, siteVisitDate: string | null, siteVisitTime: string | null, questionDate: string | null, questionTime: string | null, submittedAt: string | null, approvedAt: string | null, completedAt: string | null, cancelledAt: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, stagesCompleted: number | null, stagesTotal: number | null, currentStageName: string | null, analyticAccountId: string | null, analyticAccountName: string | null, allowedActions: Array<string> | null, lifecyclePhase: string | null, clientDocCount: number | null, rfqLineCount: number | null, openOverdueRfiCount: number | null, openSafetyIncidentCount: number | null, overdueCorrectiveActionCount: number | null, isRfq: boolean, rfqEstimatedCost: number | null, rfqOutcome: string | null, rfqOutcomeReason: string | null, costSummary: unknown, stages: unknown, team: unknown, statusHistory: unknown, activityLog: unknown, recentPos: unknown, createdAt: string, updatedAt: string | null } | null };
+export type ProjectQuery = { project: { id: string, code: string, name: string, description: string | null, projectType: string, status: string, rfqNumber: string | null, contractName: string | null, projectLocation: string | null, projectValue: number | null, projectValueCurrency: string | null, clientName: string | null, clientContact: string | null, managerId: string | null, managerName: string | null, plannedStartDate: string | null, plannedEndDate: string | null, budgetAmount: number | null, budgetCurrency: string | null, budgets: unknown, holdReason: string | null, cancelReason: string | null, receivingDate: string | null, submissionDate: string | null, submissionTime: string | null, siteVisitDate: string | null, siteVisitTime: string | null, questionDate: string | null, questionTime: string | null, submittedAt: string | null, approvedAt: string | null, completedAt: string | null, cancelledAt: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, stagesCompleted: number | null, stagesTotal: number | null, currentStageName: string | null, analyticAccountId: string | null, analyticAccountName: string | null, allowedActions: Array<string> | null, lifecyclePhase: string | null, clientDocCount: number | null, rfqLineCount: number | null, openOverdueRfiCount: number | null, openSafetyIncidentCount: number | null, overdueCorrectiveActionCount: number | null, isRfq: boolean, rfqEstimatedCost: number | null, rfqOutcome: string | null, rfqOutcomeReason: string | null, costSummary: unknown, stages: unknown, team: unknown, statusHistory: unknown, activityLog: unknown, recentPos: unknown, createdAt: string, updatedAt: string | null } | null };
 
 export type LifecycleConfigQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2316,6 +2348,22 @@ export type UpdateProjectMutationVariables = Exact<{
 
 
 export type UpdateProjectMutation = { updateProject: { id: string, code: string, name: string, status: string, projectValue: number | null, budgetAmount: number | null, overallCompletionPct: number | null, allowedActions: Array<string> | null } };
+
+export type AddProjectBudgetMutationVariables = Exact<{
+  projectId: string | number;
+  currencyCode: string;
+  amount: number;
+}>;
+
+
+export type AddProjectBudgetMutation = { addProjectBudget: unknown };
+
+export type RemoveProjectBudgetMutationVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type RemoveProjectBudgetMutation = { removeProjectBudget: boolean };
 
 export type StartProjectMutationVariables = Exact<{
   id: string | number;
@@ -3978,7 +4026,7 @@ export type ProjectCostSummaryQueryVariables = Exact<{
 }>;
 
 
-export type ProjectCostSummaryQuery = { projectCostSummary: { totalBudget: number, totalCommitted: number, totalActual: number, totalForecastEAC: number, totalRemaining: number, totalVariance: number, percentConsumed: number, totalBilled: number, totalCertified: number, totalPaidByClient: number, totalRetentionHeld: number, outstandingReceivable: number, byCategory: Array<{ category: string, budgetAmount: number, committedAmount: number, actualAmount: number, forecastEAC: number, variance: number }> } };
+export type ProjectCostSummaryQuery = { projectCostSummary: { totalBudget: number, totalCommitted: number, totalActual: number, totalForecastEAC: number, totalRemaining: number, totalVariance: number, percentConsumed: number, totalBilled: number, totalCertified: number, totalPaidByClient: number, totalRetentionHeld: number, outstandingReceivable: number, currencyCode: string, availableCurrencies: Array<string>, byCategory: Array<{ category: string, budgetAmount: number, committedAmount: number, actualAmount: number, forecastEAC: number, variance: number }> } };
 
 export type CreateCostCodeMutationVariables = Exact<{
   projectId: string | number;
@@ -5229,7 +5277,7 @@ export type RentalInvoicesQueryVariables = Exact<{
 }>;
 
 
-export type RentalInvoicesQuery = { rentalInvoices: Array<{ id: string, invoice_number: string, billing_period_start: string, billing_period_end: string, days_billed: number, rate_amount: number, total_amount: number, whtApplies: boolean, whtScenario: string | null, whtRate: number, whtAmount: number, status: string, invoice_date: string, due_date: string, paid_at: string | null }> };
+export type RentalInvoicesQuery = { rentalInvoices: Array<{ id: string, invoice_number: string, billing_period_start: string, billing_period_end: string, days_billed: number, rate_amount: number, total_amount: number, currency_code: string, whtApplies: boolean, whtScenario: string | null, whtRate: number, whtAmount: number, status: string, invoice_date: string, due_date: string, paid_at: string | null }> };
 
 export type CreateEquipmentAssetMutationVariables = Exact<{
   input: Types.EquipmentAssetInput;
@@ -5332,25 +5380,28 @@ export type ConsolidatedPlQueryVariables = Exact<{
   fromDate: string;
   toDate: string;
   showEliminations?: boolean | null | undefined;
+  currencyCode?: string | null | undefined;
 }>;
 
 
-export type ConsolidatedPlQuery = { consolidatedPL: { currency: string, totalRevenue: number, totalExpenses: number, netProfit: number, rows: Array<{ accountType: string, accountCode: string, accountName: string, companies: unknown, consolidated: number, eliminated: number }>, companies: Array<{ id: string, name: string }> } };
+export type ConsolidatedPlQuery = { consolidatedPL: { currency: string, availableCurrencies: Array<string>, totalRevenue: number, totalExpenses: number, netProfit: number, rows: Array<{ accountType: string, accountCode: string, accountName: string, companies: unknown, consolidated: number, eliminated: number }>, companies: Array<{ id: string, name: string }> } };
 
 export type ConsolidatedBsQueryVariables = Exact<{
   asOfDate: string;
   showEliminations?: boolean | null | undefined;
+  currencyCode?: string | null | undefined;
 }>;
 
 
-export type ConsolidatedBsQuery = { consolidatedBS: { currency: string, totalAssets: number, totalLiabilities: number, totalEquity: number, isBalanced: boolean, rows: Array<{ accountType: string, accountCode: string, accountName: string, companies: unknown, consolidated: number, eliminated: number }>, companies: Array<{ id: string, name: string }> } };
+export type ConsolidatedBsQuery = { consolidatedBS: { currency: string, availableCurrencies: Array<string>, totalAssets: number, totalLiabilities: number, totalEquity: number, isBalanced: boolean, rows: Array<{ accountType: string, accountCode: string, accountName: string, companies: unknown, consolidated: number, eliminated: number }>, companies: Array<{ id: string, name: string }> } };
 
 export type ConsolidatedTrialBalanceQueryVariables = Exact<{
   asOfDate: string;
+  currencyCode?: string | null | undefined;
 }>;
 
 
-export type ConsolidatedTrialBalanceQuery = { consolidatedTrialBalance: { currency: string, totalDebits: number, totalCredits: number, isBalanced: boolean, rows: Array<{ accountType: string, accountCode: string, accountName: string, companies: unknown, consolidated: number, eliminated: number }>, companies: Array<{ id: string, name: string }> } };
+export type ConsolidatedTrialBalanceQuery = { consolidatedTrialBalance: { currency: string, availableCurrencies: Array<string>, totalDebits: number, totalCredits: number, isBalanced: boolean, rows: Array<{ accountType: string, accountCode: string, accountName: string, companies: unknown, consolidated: number, eliminated: number }>, companies: Array<{ id: string, name: string }> } };
 
 export type ProjectProfitabilityReportQueryVariables = Exact<{
   companyId?: string | number | null | undefined;
@@ -5361,7 +5412,7 @@ export type ProjectProfitabilityReportQueryVariables = Exact<{
 }>;
 
 
-export type ProjectProfitabilityReportQuery = { projectProfitabilityReport: Array<{ id: string, code: string, name: string, projectType: string | null, companyName: string, budget: number, actualCost: number, revenue: number, margin: number, marginPct: number, status: string, costBreakdown: Array<{ key: string, label: string, amount: number }> }> };
+export type ProjectProfitabilityReportQuery = { projectProfitabilityReport: Array<{ id: string, code: string, name: string, projectType: string | null, currencyCode: string | null, companyName: string, budget: number, actualCost: number, revenue: number, margin: number, marginPct: number, status: string, costBreakdown: Array<{ key: string, label: string, amount: number }> }> };
 
 export type PayrollCostReportQueryVariables = Exact<{
   fromDate: string;
@@ -5394,15 +5445,16 @@ export type InventoryValuationReportQuery = { inventoryValuationReport: { totalV
 export type WhtReportQueryVariables = Exact<{
   fromDate: string;
   toDate: string;
-  companyId: string | number;
+  companyId?: string | number | null | undefined;
+  currencyCode?: string | null | undefined;
 }>;
 
 
-export type WhtReportQuery = { whtReport: { totalWHT: number, vendorCount: number, totalPaymentsSubjectToWHT: number, rows: Array<{ vendorName: string, taxId: string | null, whtType: string, rate: number, paymentAmount: number, whtAmount: number, period: string }> } };
+export type WhtReportQuery = { whtReport: { totalWHT: number, vendorCount: number, totalPaymentsSubjectToWHT: number, currencyCode: string, availableCurrencies: Array<string>, rows: Array<{ vendorName: string, taxId: string | null, whtType: string, rate: number, paymentAmount: number, whtAmount: number, period: string }> } };
 
 export type FxExposureReportQueryVariables = Exact<{
   asOfDate: string;
-  companyId: string | number;
+  companyId?: string | number | null | undefined;
 }>;
 
 
@@ -5411,11 +5463,12 @@ export type FxExposureReportQuery = { fxExposureReport: { totalIQDExposure: numb
 export type PayrollTaxReportQueryVariables = Exact<{
   fromDate: string;
   toDate: string;
-  companyId: string | number;
+  companyId?: string | number | null | undefined;
+  currencyCode?: string | null | undefined;
 }>;
 
 
-export type PayrollTaxReportQuery = { payrollTaxReport: { rows: Array<{ employeeName: string, employeeNumber: string, period: string, grossPay: number, taxableIncome: number, incomeTaxWithheld: number, socialSecurity: number, netPay: number }> } };
+export type PayrollTaxReportQuery = { payrollTaxReport: { currencyCode: string, availableCurrencies: Array<string>, rows: Array<{ employeeName: string, employeeNumber: string, period: string, grossPay: number, taxableIncome: number, incomeTaxWithheld: number, socialSecurity: number, netPay: number }> } };
 
 export type CreateRequisitionMutationVariables = Exact<{
   input: Types.RequisitionInput;

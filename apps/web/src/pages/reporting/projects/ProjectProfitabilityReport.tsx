@@ -25,6 +25,7 @@ interface ProjectRow {
   code: string
   name: string
   projectType: string
+  currencyCode: string | null
   companyName: string
   budget: number
   actualCost: number
@@ -33,6 +34,7 @@ interface ProjectRow {
   marginPct: number
   status: string
   costBreakdown: CostBreakdown[]
+  rowKey?: string
 }
 
 interface ProjectProfitabilityData {
@@ -80,12 +82,17 @@ export default function ProjectProfitabilityReport() {
     },
   )
 
-  const rows = (data?.projectProfitabilityReport ?? []).filter(
-    (r) =>
-      !search ||
-      r.name.toLowerCase().includes(search.toLowerCase()) ||
-      r.code.toLowerCase().includes(search.toLowerCase()),
-  )
+  // A project can have more than one row now -- one per currency it has
+  // real activity in (no currency exchange anywhere policy) -- so `id`
+  // alone is no longer a unique React/table key.
+  const rows = (data?.projectProfitabilityReport ?? [])
+    .filter(
+      (r) =>
+        !search ||
+        r.name.toLowerCase().includes(search.toLowerCase()) ||
+        r.code.toLowerCase().includes(search.toLowerCase()),
+    )
+    .map((r) => ({ ...r, rowKey: `${r.id}-${r.currencyCode ?? 'none'}` }))
 
   const columns: Column<ProjectRow>[] = [
     {
@@ -119,28 +126,34 @@ export default function ProjectProfitabilityReport() {
       ),
     },
     {
+      key: 'currencyCode',
+      header: t('rep.projProfit.currency'),
+      mobilePriority: 8,
+      render: (row) => <Badge variant="neutral" size="sm">{row.currencyCode ?? '—'}</Badge>,
+    },
+    {
       key: 'budget',
       header: t('rep.projProfit.budget'),
       mobilePriority: 5,
-      render: (row) => <AmountDisplay amount={row.budget} currency="USD" size="sm" />,
+      render: (row) => <AmountDisplay amount={row.budget} currency={row.currencyCode ?? 'IQD'} size="sm" />,
     },
     {
       key: 'actualCost',
       header: t('rep.projProfit.actualCost'),
       mobilePriority: 6,
-      render: (row) => <AmountDisplay amount={row.actualCost} currency="USD" size="sm" />,
+      render: (row) => <AmountDisplay amount={row.actualCost} currency={row.currencyCode ?? 'IQD'} size="sm" />,
     },
     {
       key: 'revenue',
       header: t('rep.projProfit.revenue'),
       mobilePriority: 4,
-      render: (row) => <AmountDisplay amount={row.revenue} currency="USD" size="sm" />,
+      render: (row) => <AmountDisplay amount={row.revenue} currency={row.currencyCode ?? 'IQD'} size="sm" />,
     },
     {
       key: 'margin',
       header: t('rep.projProfit.margin'),
       mobilePriority: 3,
-      render: (row) => <AmountDisplay amount={row.margin} currency="USD" size="sm" colored />,
+      render: (row) => <AmountDisplay amount={row.margin} currency={row.currencyCode ?? 'IQD'} size="sm" colored />,
     },
     {
       key: 'marginPct',
@@ -184,10 +197,10 @@ export default function ProjectProfitabilityReport() {
           }}
           onClick={(e) => {
             e.stopPropagation()
-            setExpandedId(expandedId === row.id ? null : row.id)
+            setExpandedId(expandedId === row.rowKey ? null : row.rowKey ?? row.id)
           }}
         >
-          {expandedId === row.id ? t('rep.projProfit.hide') : t('rep.projProfit.costs')}
+          {expandedId === row.rowKey ? t('rep.projProfit.hide') : t('rep.projProfit.costs')}
         </button>
       ),
     },
@@ -252,9 +265,9 @@ export default function ProjectProfitabilityReport() {
           <Table
             columns={columns}
             data={rows}
-            rowKey="id"
+            rowKey="rowKey"
             renderExpanded={(row) =>
-              expandedId === row.id ? (
+              expandedId === row.rowKey ? (
                 <div>
                   <p
                     style={{
@@ -275,7 +288,7 @@ export default function ProjectProfitabilityReport() {
                         style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
                       >
                         <span style={{ fontSize: '11px', color: theme.textMuted }}>{cb.label}</span>
-                        <AmountDisplay amount={cb.amount} currency="USD" size="sm" />
+                        <AmountDisplay amount={cb.amount} currency={row.currencyCode ?? 'IQD'} size="sm" />
                       </div>
                     ))}
                   </div>

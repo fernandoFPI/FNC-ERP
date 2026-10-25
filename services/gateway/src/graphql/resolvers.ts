@@ -15,6 +15,8 @@
   upsertCompanyPostingAccount,
   deleteCompanyPostingAccount,
   PostingAccountNotConfiguredError,
+  POSTING_ACCOUNT_ROLES,
+  type PostingAccountRole,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { notifyProjectFileUploadGW, notifyProjectEventGW } from '../lib/projectNotify.js'
@@ -312,6 +314,7 @@ async function releaseLineStockReservations(client: PoolClient, lineIds: string[
             pl.qty_from_stock - COALESCE(issued.qty_issued_confirmed, 0) AS remaining
      FROM po_lines pl
      LEFT JOIN (
+       -- currency-safe: qty_issued is a stock quantity, not money
        SELECT pmil.po_line_id, SUM(pmil.qty_issued) AS qty_issued_confirmed
        FROM project_material_issue_lines pmil
        JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
@@ -721,15 +724,7 @@ async function applyPOEditChanges(
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND po_id=$2`, [lineId, poId])
   }
   if (changes.lines) {
-    // Converted the same way as recalcPO — see that function's comment.
-    await client.query(
-      `UPDATE purchase_orders
-       SET subtotal=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
-           total_amount=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
-           updated_at=NOW()
-       WHERE id=$1`,
-      [poId],
-    )
+    await recalcPOTotalsGW(client, poId)
   }
 }
 
@@ -2148,6 +2143,7 @@ async function releaseRequisitionStockReservations(
             pl.qty_from_stock - COALESCE(issued.qty_issued_confirmed, 0) AS remaining
      FROM po_lines pl
      LEFT JOIN (
+       -- currency-safe: qty_issued is a stock quantity, not money
        SELECT pmil.po_line_id, SUM(pmil.qty_issued) AS qty_issued_confirmed
        FROM project_material_issue_lines pmil
        JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
@@ -2208,6 +2204,7 @@ async function evaluateRequisitionCompletion(
        AND pl.closed_at IS NULL
        AND (
          (pl.po_id IS NULL AND pl.qty_from_stock > COALESCE((
+           -- currency-safe: qty_issued is a stock quantity, not money
            SELECT SUM(pmil.qty_issued) FROM project_material_issue_lines pmil
            JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
            WHERE pmil.po_line_id = pl.id AND pmi.status = 'issued'
@@ -2309,14 +2306,27 @@ async function canReviewOwnCostChangeGW(auth: {
 
 // Post a journal entry when a project-linked PO is completed so that the cost
 // flows into project_cost_actuals via trg_sync_project_costs.
+//
+// D10: a PO can carry lines in more than one currency_code, and there's no
+// single converted total to post under the no-currency-exchange policy —
+// so this posts one fully self-contained journal_entries row PER currency
+// present on the PO (one Dr expense / Cr AP pair each), all linked back to
+// the same PO via journal_po_links. No fx_rate lookup, no conversion:
+// amount_company_currency is set equal to the line's own amount (fx_rate
+// left at its column default of 1), the same convention already used by
+// every other no-conversion journal producer in this file (retention.ts,
+// bank.ts, assets.ts, employee-advances.ts, …) for a non-base currency.
+// This journal is still the interim one — G17 (the double-accrual with the
+// AP invoice) stays open until the GRNI change in Phase 7 replaces
+// po_completion posting entirely.
 async function postPOCompletionJournal(
   client: PoolClient,
   poId: string,
   actorId: string,
 ): Promise<void> {
   const poRes = await client.query(
-    `SELECT po.id, po.po_number, po.project_id, po.total_amount, po.currency_code,
-            po.fx_rate, po.funding_source, p.analytic_account_id, p.company_id AS project_company_id
+    `SELECT po.id, po.po_number, po.project_id, po.funding_source,
+            p.analytic_account_id, p.company_id AS project_company_id
      FROM purchase_orders po
      LEFT JOIN projects p ON p.id = po.project_id
      WHERE po.id = $1`,
@@ -2328,78 +2338,70 @@ async function postPOCompletionJournal(
   // (services/finance/src/routes/employee-advances.ts), not a vendor AP
   // entry — posting one here would be a phantom payable no one will ever pay.
   if (po.funding_source === 'employee_advance') return
-  const totalAmount = parseFloat(String(po.total_amount ?? 0))
-  if (totalAmount <= 0) return
+
+  const currencyTotals = (await getPOCurrencyTotals(client, poId)).filter(
+    (t) => parseFloat(t.subtotal) !== 0,
+  )
+  if (currencyTotals.length === 0) return
 
   const companyId = String(po.project_company_id)
-  const currencyCode = String(po.currency_code ?? 'IQD')
-  let fxRate = 1.0
-  if (currencyCode !== 'IQD') {
-    const fxRes = await client.query(
-      `SELECT rate FROM fx_rates
-       WHERE from_currency = $1 AND to_currency = 'IQD'
-       ORDER BY rate_date DESC LIMIT 1`,
-      [currencyCode],
-    )
-    fxRate = fxRes.rows[0] ? parseFloat(String(fxRes.rows[0].rate)) : 1.0
-  }
-  const amountCompanyCurrency = totalAmount * fxRate
   const poNumber = String(po.po_number)
   const analyticAccountId = String(po.analytic_account_id)
 
-  // Previously picked "the first active expense/liability account" and
-  // silently returned with no journal at all — no log, no error — if
-  // neither existed. Project cost then just never showed up, with no
-  // trace of why (G1/G2). Now resolves the company's configured role and
-  // throws POSTING_ACCOUNT_NOT_CONFIGURED instead, same as every other
-  // producer.
-  const expAccountId = await resolvePostingAccount(companyId, 'expense_default', {
-    currencyCode: currencyCode,
-  })
-  const apAccountId = await resolvePostingAccount(companyId, 'ap', { currencyCode: currencyCode })
+  for (const ct of currencyTotals) {
+    const amount = parseFloat(ct.subtotal)
+    // Previously picked "the first active expense/liability account" and
+    // silently returned with no journal at all — no log, no error — if
+    // neither existed. Project cost then just never showed up, with no
+    // trace of why (G1/G2). Now resolves the company's configured role and
+    // throws POSTING_ACCOUNT_NOT_CONFIGURED instead, same as every other
+    // producer.
+    const expAccountId = await resolvePostingAccount(companyId, 'expense_default', {
+      currencyCode: ct.currency_code,
+    })
+    const apAccountId = await resolvePostingAccount(companyId, 'ap', {
+      currencyCode: ct.currency_code,
+    })
 
-  const je = await client.query(
-    `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by)
-     VALUES ($1,$2,$3,CURRENT_DATE,'draft','po_completion',$4,$5) RETURNING id`,
-    [companyId, `PO-${poNumber}-COST`, `Project cost from PO ${poNumber}`, poId, actorId],
-  )
-  const jeId = je.rows[0].id as string
+    const je = await client.query(
+      `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by)
+       VALUES ($1,$2,$3,CURRENT_DATE,'draft','po_completion',$4,$5) RETURNING id`,
+      [
+        companyId,
+        `PO-${poNumber}-COST-${ct.currency_code}`,
+        `Project cost from PO ${poNumber} (${ct.currency_code})`,
+        poId,
+        actorId,
+      ],
+    )
+    const jeId = je.rows[0].id as string
 
-  // Link this journal to the source PO
-  await client.query(
-    `INSERT INTO journal_po_links (journal_entry_id, po_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
-    [jeId, poId],
-  )
+    // Link this journal to the source PO
+    await client.query(
+      `INSERT INTO journal_po_links (journal_entry_id, po_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+      [jeId, poId],
+    )
 
-  // Dr. Project Expense (tagged with analytic account → triggers trg_sync_project_costs)
-  await client.query(
-    `INSERT INTO journal_lines (journal_entry_id,account_id,analytic_account_id,description,debit,credit,currency_code,fx_rate,amount_company_currency)
-     VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8)`,
-    [
-      jeId,
-      expAccountId,
-      analyticAccountId,
-      `Project expense from PO ${poNumber}`,
-      totalAmount,
-      currencyCode,
-      fxRate,
-      amountCompanyCurrency,
-    ],
-  )
-  // Cr. Accounts Payable
-  await client.query(
-    `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,currency_code,fx_rate,amount_company_currency)
-     VALUES ($1,$2,$3,0,$4,$5,$6,$7)`,
-    [
-      jeId,
-      apAccountId,
-      `Payable for PO ${poNumber}`,
-      totalAmount,
-      currencyCode,
-      fxRate,
-      amountCompanyCurrency,
-    ],
-  )
+    // Dr. Project Expense (tagged with analytic account → triggers trg_sync_project_costs)
+    await client.query(
+      `INSERT INTO journal_lines (journal_entry_id,account_id,analytic_account_id,description,debit,credit,currency_code,amount_company_currency)
+       VALUES ($1,$2,$3,$4,$5,0,$6,$5)`,
+      [
+        jeId,
+        expAccountId,
+        analyticAccountId,
+        `Project expense from PO ${poNumber}`,
+        amount,
+        ct.currency_code,
+      ],
+    )
+    // Cr. Accounts Payable
+    await client.query(
+      `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,currency_code,amount_company_currency)
+       VALUES ($1,$2,$3,0,$4,$5,$4)`,
+      [jeId, apAccountId, `Payable for PO ${poNumber}`, amount, ct.currency_code],
+    )
+  }
 }
 
 // Auto-creates a draft Store Out for every po_lines row with qty_from_stock > 0
@@ -2777,6 +2779,7 @@ async function releasePOStockReservations(client: PoolClient, poId: string): Pro
             pl.qty_from_stock - COALESCE(issued.qty_issued_confirmed, 0) AS remaining
      FROM po_lines pl
      LEFT JOIN (
+       -- currency-safe: qty_issued is a stock quantity, not money
        SELECT pmil.po_line_id, SUM(pmil.qty_issued) AS qty_issued_confirmed
        FROM project_material_issue_lines pmil
        JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
@@ -3142,6 +3145,7 @@ async function assertPOReturnQtyWithinReceivedGW(
   }>(
     `SELECT pl.id, pl.description,
             pl.qty_received - COALESCE((
+              -- currency-safe: quantity_returned is a quantity, not money
               SELECT SUM(ri.quantity_returned)
               FROM po_return_items ri
               JOIN po_returns r ON r.id = ri.return_id
@@ -3763,6 +3767,17 @@ function resolveReportCompanyIdGW(
     throw new Error("Forbidden: cannot view another company's data")
   }
   return cid
+}
+
+// For small dashboard widgets that just need one currency to read
+// (no selector UI, no availableCurrencies list) -- defaults to the
+// company's own currency_code when the caller doesn't pass one.
+async function resolveCompanyDefaultCurrencyGW(companyId: string, requested: string | undefined): Promise<string> {
+  if (requested) return requested
+  const companyRes = await query<{ currency_code: string }>(`SELECT currency_code FROM companies WHERE id=$1`, [
+    companyId,
+  ])
+  return companyRes.rows[0]?.currency_code ?? 'IQD'
 }
 
 // Every company the caller has an active user_company_roles row in, plus
@@ -4405,22 +4420,220 @@ async function recordProductCostChange(
   )
 }
 
-async function recalcPO(client: PoolClient, poId: string): Promise<void> {
-  // Each line's total_price is in that line's own currency_code; fx_rate_to_base
-  // (set when the line is priced — see submitPOMarketPricing) converts it into
-  // the PO's base_currency_code before summing, so the header total is always a
-  // real, correctly-converted number even when lines were quoted in different
-  // currencies. Lines not yet priced (fx_rate_to_base still NULL) are treated as
-  // already-in-base-currency (rate 1) — the common, same-currency case needs no
-  // configuration at all.
-  await client.query(
-    `UPDATE purchase_orders
-     SET subtotal=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
-         total_amount=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
-         updated_at=NOW()
-     WHERE id=$1`,
+// D10: accepts either a transaction's PoolClient or the shared query()
+// helper, so the one recalc helper below works from both a transactional
+// write path and a plain non-transactional mutation.
+type PoQueryExecutor = PoolClient | typeof query
+
+async function execPOSql<R extends Record<string, unknown> = Record<string, unknown>>(
+  exec: PoQueryExecutor,
+  text: string,
+  params?: unknown[],
+): Promise<{ rows: R[] }> {
+  return typeof exec === 'function' ? exec<R>(text, params) : exec.query<R>(text, params)
+}
+
+// D10: one entry per currency actually used by this PO's lines — same
+// no-conversion policy and shape as getRequisitionCurrencyTotals, scoped
+// to po_id instead of requisition_id. The single source of truth for
+// PurchaseOrder.currencyTotals (see the field resolver below) and for
+// recalcPOTotalsGW's own write path.
+async function getPOCurrencyTotals(
+  exec: PoQueryExecutor,
+  poId: string,
+): Promise<{ currency_code: string; subtotal: string; line_count: number }[]> {
+  const r = await execPOSql<{ currency_code: string; subtotal: string; line_count: string }>(
+    exec,
+    `SELECT currency_code, COALESCE(SUM(total_price), 0) AS subtotal, COUNT(*) AS line_count
+     FROM po_lines WHERE po_id = $1
+     GROUP BY currency_code
+     ORDER BY currency_code`,
     [poId],
   )
+  return r.rows.map((row) => ({ ...row, line_count: parseInt(row.line_count, 10) }))
+}
+
+// D10: shared by every write path that used to recompute purchase_orders.
+// subtotal/total_amount (recalcPO, applyPOEditChanges, setPOLineActualPrice,
+// and finishBuyingRequisition's child-PO fork) -- previously three of them
+// multiplied by fx_rate_to_base to force a single converted figure, and the
+// fourth (the fork) did a plain SUM across whatever currencies happened to
+// be on a vendor's lines. Both are the no-currency-exchange policy
+// violation this repo's own CLAUDE.md names. subtotal/total_amount are
+// filled only when every one of this PO's lines shares one currency_code;
+// a genuinely mixed-currency PO gets NULL in both -- there's no single
+// correct number to put there. The real breakdown lives in
+// PurchaseOrder.currencyTotals, which callers should read instead of
+// assuming subtotal/total_amount is ever meaningful on its own.
+async function recalcPOTotalsGW(
+  exec: PoQueryExecutor,
+  poId: string,
+): Promise<{ currency_code: string; subtotal: string; line_count: number }[]> {
+  const totals = await getPOCurrencyTotals(exec, poId)
+  const single = totals.length === 1 ? totals[0].subtotal : null
+  await execPOSql(
+    exec,
+    `UPDATE purchase_orders SET subtotal=$1, total_amount=$1, updated_at=NOW() WHERE id=$2`,
+    [single, poId],
+  )
+  return totals
+}
+
+async function recalcPO(client: PoolClient, poId: string): Promise<void> {
+  await recalcPOTotalsGW(client, poId)
+}
+
+// ── Consolidated reporting helper ───────────────────────────────
+interface ConsolidatedGroupRow {
+  accountType: string
+  accountCode: string
+  accountName: string
+  currency_code: string
+  companies: Record<string, number>
+  consolidated: number
+  eliminated: number
+  totalDebit: number
+  totalCredit: number
+}
+
+// D10/no-currency-exchange policy: consolidation is a sum ACROSS COMPANIES,
+// for ONE currency at a time, with no fx_rate anywhere. Groups by each
+// local chart_of_accounts row's group_account_id (migrations 235/236) so
+// "the same conceptual account" at different companies (each with its own,
+// independent chart_of_accounts rows and local codes) sums together under
+// one shared group-account code/name. A local account with no
+// group_account_id mapping gets its own row instead of being silently
+// dropped or wrongly combined with another company's same-numbered local
+// account.
+//
+// whereClause must already include je.status='posted' and whatever date
+// condition the caller needs; it must NOT include a currency_code or
+// company_id filter — this helper owns both (currency_code is applied
+// here via its own placeholder; there is deliberately no company_id
+// filter at all, matching the only prior implementation's behavior:
+// every company in the system is included, no selection mechanism exists
+// today). params are whatever whereClause's own placeholders need, in
+// order; currencyCode is appended as the next placeholder automatically.
+async function getConsolidatedGroupTotals(
+  whereClause: string,
+  params: unknown[],
+  currencyCode: string,
+): Promise<ConsolidatedGroupRow[]> {
+  const ccyIdx = params.length + 1
+  const r = await query<{
+    account_type: string
+    account_code: string
+    account_name: string
+    company_id: string
+    local_account_id: string
+    group_account_id: string | null
+    debit: string
+    credit: string
+  }>(
+    `SELECT
+       COALESCE(gcoa.account_type, coa.account_type) AS account_type,
+       COALESCE(gcoa.code, coa.code) AS account_code,
+       COALESCE(gcoa.name, coa.name) AS account_name,
+       je.company_id, coa.id AS local_account_id, coa.group_account_id,
+       SUM(jl.debit) AS debit, SUM(jl.credit) AS credit
+     FROM journal_lines jl
+     JOIN journal_entries je ON je.id = jl.journal_entry_id
+     JOIN chart_of_accounts coa ON coa.id = jl.account_id
+     LEFT JOIN group_chart_of_accounts gcoa ON gcoa.id = coa.group_account_id
+     WHERE ${whereClause} AND jl.currency_code = $${ccyIdx}
+     GROUP BY COALESCE(gcoa.account_type, coa.account_type), COALESCE(gcoa.code, coa.code),
+              COALESCE(gcoa.name, coa.name), je.company_id, coa.id, coa.group_account_id
+     ORDER BY account_code`,
+    [...params, currencyCode],
+  )
+
+  // Rows combine across companies only when they share a real
+  // group_account_id mapping. An unmapped local account is keyed by its
+  // own (company, account) identity instead of its bare code — two
+  // different companies' own, independent local charts can easily land
+  // on the same code (e.g. both using '5100') without that meaning
+  // anything shared, and combining them on that coincidence would be
+  // exactly the kind of cross-company miscount this helper exists to
+  // prevent. groupCodeIndex lets eliminations (below) find the three
+  // known group rows by their real group code regardless of how many
+  // unmapped local rows share that same string.
+  const byAccount = new Map<string, ConsolidatedGroupRow>()
+  const groupCodeIndex = new Map<string, ConsolidatedGroupRow>()
+  for (const row of r.rows) {
+    const key = row.group_account_id ? `group:${row.group_account_id}` : `local:${row.company_id}:${row.local_account_id}`
+    let acc = byAccount.get(key)
+    if (!acc) {
+      acc = {
+        accountType: row.account_type,
+        accountCode: row.account_code,
+        accountName: row.account_name,
+        currency_code: currencyCode,
+        companies: {},
+        consolidated: 0,
+        eliminated: 0,
+        totalDebit: 0,
+        totalCredit: 0,
+      }
+      byAccount.set(key, acc)
+      if (row.group_account_id) groupCodeIndex.set(row.account_code, acc)
+    }
+    const debit = parseFloat(row.debit)
+    const credit = parseFloat(row.credit)
+    const net = debit - credit
+    acc.companies[row.company_id] = (acc.companies[row.company_id] ?? 0) + net
+    acc.consolidated += net
+    acc.totalDebit += debit
+    acc.totalCredit += credit
+  }
+
+  // Interco eliminations, per currency: the group chart's seed (migration
+  // 235) has dedicated Intercompany Receivable (1160) / Intercompany
+  // Payable (2140) / Intercompany-Other Revenue (4900) accounts for
+  // exactly this purpose — an intercompany transaction has nowhere else to
+  // post. Netting the posted, same-currency elimination total against
+  // those three GROUP rows (never an unmapped local row that happens to
+  // share the same code) is the one mapping this schema actually supports.
+  const elimRes = await query<{ total: string }>(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM v_interco_eliminations WHERE currency_code = $1`,
+    [currencyCode],
+  )
+  const eliminatedTotal = parseFloat(elimRes.rows[0]?.total ?? '0')
+  if (eliminatedTotal !== 0) {
+    for (const code of ['1160', '2140', '4900']) {
+      const acc = groupCodeIndex.get(code)
+      if (acc) acc.eliminated = eliminatedTotal
+    }
+  }
+
+  return [...byAccount.values()]
+}
+
+// All companies in the system — no selection mechanism exists (the only
+// prior implementation included every company, unconditionally).
+async function getConsolidationCompanies(): Promise<
+  { id: string; name: string; requires_jobsite_delivery: boolean }[]
+> {
+  const r = await query<{ id: string; name: string; requires_jobsite_delivery: boolean }>(
+    `SELECT id, name, requires_jobsite_delivery FROM companies ORDER BY name`,
+  )
+  return r.rows
+}
+
+async function getConsolidationAvailableCurrencies(): Promise<string[]> {
+  const r = await query<{ currency_code: string }>(
+    `SELECT DISTINCT jl.currency_code
+     FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
+     WHERE je.status = 'posted' ORDER BY 1`,
+  )
+  return r.rows.map((row) => row.currency_code)
+}
+
+async function getConsolidationDefaultCurrency(requested: string | undefined): Promise<string> {
+  if (requested) return requested
+  const r = await query<{ currency_code: string }>(
+    `SELECT currency_code FROM companies ORDER BY created_at ASC LIMIT 1`,
+  )
+  return r.rows[0]?.currency_code ?? 'IQD'
 }
 
 // ── Project helpers ────────────────────────────────────────────
@@ -5568,7 +5781,6 @@ function projectRowToGQL(row: Record<string, unknown>): Record<string, unknown> 
     stagesCompleted: row.stages_completed != null ? parseInt(String(row.stages_completed)) : 0,
     stagesTotal: row.stages_total != null ? parseInt(String(row.stages_total)) : 0,
     currentStageName: row.current_stage_name,
-    totalCosts: row.total_costs != null ? parseFloat(String(row.total_costs)) : 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     allowedActions: projectStateMachine.allowedActions(row.status as never),
@@ -5588,7 +5800,46 @@ function projectRowToGQL(row: Record<string, unknown>): Record<string, unknown> 
       row.rfq_estimated_cost != null ? parseFloat(String(row.rfq_estimated_cost)) : null,
     rfqOutcome: row.rfq_outcome ?? null,
     rfqOutcomeReason: row.rfq_outcome_reason ?? null,
+    budgets: row.budgets ?? [],
   }
+}
+
+// D2: every budget this project has, one row per currency (see migration
+// 309). createProject/createRFQ/updateProject keep exactly one is_primary
+// row in sync with projects.budget_amount/budget_currency; addProjectBudget
+// adds the rest for the rare multi-currency case.
+const PROJECT_BUDGETS_SUBQUERY = `COALESCE(
+            (SELECT json_agg(json_build_object(
+               'id', pb.id, 'currencyCode', pb.currency_code,
+               'amount', pb.budget_amount, 'isPrimary', pb.is_primary
+             ) ORDER BY pb.is_primary DESC, pb.currency_code)
+             FROM project_budgets pb WHERE pb.project_id = p.id),
+            '[]'
+          ) AS budgets`
+
+// Keeps projects.budget_amount/budget_currency (read by mobile-sync, the
+// REST project-detail route, and this same row for display) in sync with
+// the project_budgets primary row (read by costSummary/the dashboard
+// scatter) inside the same transaction as the create/update -- the two
+// must never drift, or one becomes a stale duplicate of the other (see
+// playbook #23).
+async function upsertPrimaryProjectBudget(
+  projectId: string,
+  currencyCode: string,
+  amount: number,
+): Promise<void> {
+  await query(
+    `UPDATE project_budgets SET is_primary = false, updated_at = NOW()
+     WHERE project_id = $1 AND is_primary = true AND currency_code != $2`,
+    [projectId, currencyCode],
+  )
+  await query(
+    `INSERT INTO project_budgets (project_id, currency_code, budget_amount, is_primary)
+     VALUES ($1, $2, $3, true)
+     ON CONFLICT (project_id, currency_code)
+     DO UPDATE SET budget_amount = EXCLUDED.budget_amount, is_primary = true, updated_at = NOW()`,
+    [projectId, currencyCode, amount],
+  )
 }
 
 function activityToGQL(r: Record<string, unknown>): Record<string, unknown> {
@@ -5648,6 +5899,26 @@ function engDocToGQL(
     clientCommentCount: Number(row.client_comment_count ?? 0),
     openClientCommentCount: Number(row.open_client_comment_count ?? 0),
   }
+}
+
+// Shared across all 6 bid-pricing call sites (bidCommercialSummary query +
+// updateBidCommercialSummary/submitBidForApproval/approveBid/rejectBid/
+// reviseBid mutations) -- used to be copy-pasted into each one (playbook
+// #6: "money total recomputed in several places"). Assumes every
+// bid_cost_items row for a project shares one currency_code; this table
+// allows per-row currency (default 'USD') and nothing currently enforces
+// that assumption, but a bid produces exactly one bidPrice in one
+// currency, so a genuinely mixed-currency bid's cost items would need a
+// real product decision (reject the mix at entry time? convert, which
+// the no-currency-exchange policy forbids?) before this total means
+// anything -- not something to silently guess at here. No project in
+// this codebase's data has ever actually had mixed-currency cost items.
+async function getBidDirectCostTotalGW(projectId: string): Promise<number> {
+  const costsR = await query<{ total: string }>(
+    `SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`,
+    [projectId],
+  )
+  return Number(costsR.rows[0]?.total ?? 0)
 }
 
 // Shared bid pricing formula (mirrors the client-side calc in BiddingTab and the
@@ -6588,16 +6859,21 @@ export const resolvers = {
       if (!ctx.auth) return []
       await requirePermGW(ctx.auth, 'finance.journals.view', 'view')
       const { status, from_date, to_date } = args
-      let sql = `SELECT je.*,
-                   COALESCE(SUM(CASE WHEN jl.debit > 0 THEN jl.debit ELSE 0 END), 0) AS total_debit,
-                   COALESCE(SUM(CASE WHEN jl.credit > 0 THEN jl.credit ELSE 0 END), 0) AS total_credit,
-                   COALESCE(
-                     (SELECT jl2.currency_code FROM journal_lines jl2
-                      WHERE jl2.journal_entry_id = je.id AND jl2.debit > 0
-                      GROUP BY jl2.currency_code ORDER BY SUM(jl2.debit) DESC LIMIT 1),
-                     'IQD'
-                   ) AS payment_currency
-                 FROM journal_entries je LEFT JOIN journal_lines jl ON jl.journal_entry_id=je.id
+      // amount_company_currency is retired -- total_debit/total_credit are
+      // the raw, unconverted SUM(debit)/SUM(credit) of each entry's own
+      // lines, and payment_currency names that one currency, only when
+      // every line of the entry shares it (same convention as
+      // recalcPOTotalsGW) -- NULL for all three otherwise, never a blind
+      // cross-currency blend or an arbitrary "biggest line" label pick.
+      let sql = `-- currency-safe: NULL unless every line of the entry shares one currency_code (COUNT(DISTINCT)=1), never a cross-currency blend
+                 SELECT je.*,
+                   (SELECT CASE WHEN COUNT(DISTINCT jl2.currency_code) = 1 THEN SUM(jl2.debit) ELSE NULL END
+                    FROM journal_lines jl2 WHERE jl2.journal_entry_id = je.id) AS total_debit,
+                   (SELECT CASE WHEN COUNT(DISTINCT jl2.currency_code) = 1 THEN SUM(jl2.credit) ELSE NULL END
+                    FROM journal_lines jl2 WHERE jl2.journal_entry_id = je.id) AS total_credit,
+                   (SELECT CASE WHEN COUNT(DISTINCT jl2.currency_code) = 1 THEN MIN(jl2.currency_code) ELSE NULL END
+                    FROM journal_lines jl2 WHERE jl2.journal_entry_id = je.id) AS payment_currency
+                 FROM journal_entries je
                  WHERE je.company_id = $1`
       const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
@@ -6613,7 +6889,7 @@ export const resolvers = {
         sql += ` AND je.entry_date <= $${idx++}`
         params.push(to_date)
       }
-      sql += ' GROUP BY je.id ORDER BY je.entry_date DESC LIMIT 100'
+      sql += ' ORDER BY je.entry_date DESC LIMIT 100'
       const result = await query(sql, params)
       return result.rows
     },
@@ -6690,7 +6966,8 @@ export const resolvers = {
       const centralWarehouseQtySql = args.includeCentralWarehouse
         ? ` OR sl.company_id IN (SELECT id FROM companies WHERE is_central_warehouse)`
         : ''
-      let sql = `SELECT p.*,
+      let sql = `-- currency-safe: qty_on_hand is a stock quantity, not money
+                 SELECT p.*,
                    COALESCE(SUM(CASE WHEN (sl.company_id = $1${centralWarehouseQtySql}) AND sl.type NOT IN ('virtual_in','virtual_out') THEN sb.qty_on_hand ELSE 0 END), 0) AS qty_on_hand
                  FROM products p
                  LEFT JOIN stock_balances sb ON sb.product_id = p.id
@@ -6760,6 +7037,7 @@ export const resolvers = {
            p.name                                             AS "productName",
            pol.description                                    AS description,
            pol.qty_ordered                                    AS "qtyRequired",
+           -- currency-safe: qty_on_hand/qty_reserved are stock quantities, not money
            COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0)                  AS "qtyOnHand",
            -- Not floored at 0 — a genuinely negative available quantity
            -- (more reserved than actually on hand) should surface as
@@ -6880,6 +7158,7 @@ export const resolvers = {
            p.name                                             AS "productName",
            pol.description                                    AS description,
            pol.qty_ordered                                    AS "qtyRequired",
+           -- currency-safe: qty_on_hand/qty_reserved are stock quantities, not money
            COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0)                  AS "qtyOnHand",
            (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0)) AS "qtyAvailable",
            (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0))
@@ -6996,7 +7275,8 @@ export const resolvers = {
 
           const [aggRes, byLocationRes] = await Promise.all([
             query<{ qtyOnHand: string; qtyAvailable: string }>(
-              `SELECT
+              `-- currency-safe: qty_on_hand/qty_reserved are stock quantities, not money
+               SELECT
                  COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) AS "qtyOnHand",
                  (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0)) AS "qtyAvailable"
                FROM stock_balances sb
@@ -7061,6 +7341,7 @@ export const resolvers = {
            p.name                                  AS "productName",
            bl.uom,
            bl.qty_required * mo.qty_planned / b.qty_produced AS "qtyRequired",
+           -- currency-safe: qty_on_hand/qty_reserved are stock quantities, not money
            COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0)        AS "qtyOnHand",
            GREATEST(COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END),0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END),0), 0) AS "qtyAvailable",
            GREATEST(bl.qty_required * mo.qty_planned / b.qty_produced
@@ -7177,6 +7458,13 @@ export const resolvers = {
         ...(r as Record<string, unknown>),
         total_amount: canSeeTotals ? (r as Record<string, unknown>).total_amount : '0',
         viewerCanSeeTotals: canSeeTotals,
+        // D10: PurchaseOrder.currencyTotals falls back to a live,
+        // ungated getPOCurrencyTotals query whenever a row doesn't already
+        // carry its own currencyTotals (see that field resolver) — without
+        // this, a caller with canSeeTotals=false would still get the real
+        // per-currency breakdown through this field even though
+        // total_amount above is redacted to '0' for them.
+        currencyTotals: canSeeTotals ? undefined : [],
       }))
     },
 
@@ -8376,18 +8664,17 @@ export const resolvers = {
         query(
           `SELECT p.*,
             e.first_name || ' ' || e.last_name AS manager_name,
+            -- currency-safe: completion_pct is a schedule percentage, not money
             COALESCE(ROUND(AVG(ps.completion_pct))::integer, 0) AS overall_completion_pct,
             COUNT(ps.id) FILTER (WHERE ps.status = 'completed') AS stages_completed,
             COUNT(ps.id) AS stages_total,
             COUNT(DISTINCT pm.id) FILTER (WHERE pm.is_active = true) AS team_count,
-            COUNT(DISTINCT po.id) FILTER (WHERE po.status NOT IN ('completed','deleted')) AS open_po_count,
-            COALESCE(SUM(pca.amount), 0) AS total_costs
+            COUNT(DISTINCT po.id) FILTER (WHERE po.status NOT IN ('completed','deleted')) AS open_po_count
           FROM projects p
           LEFT JOIN employees e ON e.id = p.project_manager_id
           LEFT JOIN project_stages ps ON ps.project_id = p.id
           LEFT JOIN project_members pm ON pm.project_id = p.id
           LEFT JOIN purchase_orders po ON po.project_id = p.id
-          LEFT JOIN project_cost_actuals pca ON pca.project_id = p.id
           ${where}
           GROUP BY p.id, e.first_name, e.last_name
           ORDER BY p.created_at DESC
@@ -8413,6 +8700,7 @@ export const resolvers = {
           e.id AS manager_employee_id,
           c.name AS company_name,
           aa.name AS analytic_account_name,
+          -- currency-safe: completion_pct is a schedule percentage, not money
           COALESCE(ROUND(AVG(ps.completion_pct))::integer, 0) AS overall_completion_pct,
           (SELECT COUNT(*) FROM project_members pm2 WHERE pm2.project_id = p.id AND pm2.is_active = true)::integer AS team_count,
           (SELECT COUNT(*) FROM purchase_orders po2 WHERE po2.project_id = p.id AND po2.status NOT IN ('completed','deleted'))::integer AS open_po_count,
@@ -8484,67 +8772,62 @@ export const resolvers = {
              WHERE po.project_id = p.id),
             '[]'
           ) AS recent_pos,
-          (SELECT json_build_object(
-             'currencyCode',            p.budget_currency,
-             'grossMarginCurrencyCode', p.project_value_currency,
-             'budgetAmount',    p.budget_amount,
-             'actualCosts',     COALESCE(SUM(pca.amount * fx_to_budget(pca.currency_code, p.budget_currency)), 0),
-             'equipmentRentalCosts', COALESCE(SUM(pca.amount * fx_to_budget(pca.currency_code, p.budget_currency)) FILTER (WHERE pca.cost_category = 'equipment_rental'), 0),
-             'storeCosts', COALESCE((
-               SELECT SUM(
-                 pol.store_price * pol.qty_from_stock
-                 * fx_to_budget(COALESCE(pol.store_price_currency, 'IQD'), p.budget_currency)
-               )
-               FROM po_lines pol
-               JOIN purchase_orders po_s ON po_s.id = pol.po_id
-               WHERE po_s.project_id = p.id
-                 AND pol.in_stock = true
-                 AND COALESCE(pol.store_price, 0) > 0
-                 AND COALESCE(pol.qty_from_stock, 0) > 0
-                 AND po_s.status NOT IN ('completed','deleted','cancelled')
-             ), 0),
-             'committedCosts',  (
-               COALESCE((
-                 SELECT SUM(po3.total_amount * fx_to_budget(po3.currency_code, p.budget_currency))
-                 FROM purchase_orders po3 WHERE po3.project_id = p.id AND po3.status NOT IN ('completed','deleted')
-               ), 0)
-               + COALESCE((
-                 SELECT SUM(
-                   pol2.store_price * pol2.qty_from_stock
-                   * fx_to_budget(COALESCE(pol2.store_price_currency, 'IQD'), p.budget_currency)
-                 )
-                 FROM po_lines pol2
-                 JOIN purchase_orders po4 ON po4.id = pol2.po_id
-                 WHERE po4.project_id = p.id
-                   AND pol2.in_stock = true
-                   AND COALESCE(pol2.store_price, 0) > 0
-                   AND COALESCE(pol2.qty_from_stock, 0) > 0
-                   AND po4.status NOT IN ('completed','deleted','cancelled')
-               ), 0)
-             ),
-             'budgetRemaining', p.budget_amount
-               - COALESCE(SUM(pca.amount * fx_to_budget(pca.currency_code, p.budget_currency)), 0)
-               - COALESCE((
-                   SELECT SUM(po3b.total_amount * fx_to_budget(po3b.currency_code, p.budget_currency))
-                   FROM purchase_orders po3b WHERE po3b.project_id = p.id AND po3b.status NOT IN ('completed','deleted')
-                 ), 0)
-               - COALESCE((
-                   SELECT SUM(
-                     pol3.store_price * pol3.qty_from_stock
-                     * fx_to_budget(COALESCE(pol3.store_price_currency, 'IQD'), p.budget_currency)
-                   )
-                   FROM po_lines pol3
-                   JOIN purchase_orders po5 ON po5.id = pol3.po_id
-                   WHERE po5.project_id = p.id
-                     AND pol3.in_stock = true
-                     AND COALESCE(pol3.store_price, 0) > 0
-                     AND COALESCE(pol3.qty_from_stock, 0) > 0
-                     AND po5.status NOT IN ('completed','deleted','cancelled')
-                 ), 0),
-             'grossMargin',     p.project_value
-               - COALESCE(SUM(pca.amount * fx_to_budget(pca.currency_code, p.project_value_currency)), 0)
-           )
-           FROM project_cost_actuals pca WHERE pca.project_id = p.id
+          ${PROJECT_BUDGETS_SUBQUERY},
+          -- D2: one entry per currency with budget and/or cost activity.
+          -- actualCosts reads v_project_cost_by_currency (migration 304 --
+          -- posted-journal-aware, unlike the raw project_cost_actuals this
+          -- replaced), never converted into any other currency.
+          -- budgetRemaining/grossMargin are NULL ("no budget"/"no margin")
+          -- for a currency with no matching project_budgets row, or that
+          -- isn't projectValueCurrency, rather than a converted guess.
+          COALESCE(
+            (SELECT json_agg(json_build_object(
+               'currencyCode', ccy.currency_code,
+               'budgetAmount', pb.budget_amount,
+               'actualCosts', COALESCE(ac.amount, 0),
+               'equipmentRentalCosts', COALESCE(ac_eq.amount, 0),
+               'storeCosts', COALESCE(sc.amount, 0),
+               'committedCosts', COALESCE(po_c.amount, 0) + COALESCE(sc.amount, 0),
+               'budgetRemaining', CASE WHEN pb.id IS NOT NULL
+                 THEN pb.budget_amount - COALESCE(ac.amount, 0) - COALESCE(po_c.amount, 0) - COALESCE(sc.amount, 0)
+                 ELSE NULL END,
+               'grossMargin', CASE WHEN ccy.currency_code = p.project_value_currency
+                 THEN p.project_value - COALESCE(ac.amount, 0) ELSE NULL END
+             ) ORDER BY ccy.currency_code)
+             FROM (
+               SELECT currency_code FROM project_budgets WHERE project_id = p.id
+               UNION SELECT currency_code FROM v_project_cost_by_currency WHERE project_id = p.id
+               UNION SELECT currency_code FROM purchase_orders WHERE project_id = p.id AND status NOT IN ('completed','deleted')
+               UNION SELECT COALESCE(pol0.store_price_currency, 'IQD') FROM po_lines pol0
+                      JOIN purchase_orders po0 ON po0.id = pol0.po_id
+                      WHERE po0.project_id = p.id AND pol0.in_stock = true
+                        AND COALESCE(pol0.store_price, 0) > 0 AND COALESCE(pol0.qty_from_stock, 0) > 0
+                        AND po0.status NOT IN ('completed','deleted','cancelled')
+             ) ccy
+             LEFT JOIN project_budgets pb ON pb.project_id = p.id AND pb.currency_code = ccy.currency_code
+             LEFT JOIN (
+               SELECT currency_code, SUM(amount) AS amount FROM v_project_cost_by_currency
+               WHERE project_id = p.id GROUP BY currency_code
+             ) ac ON ac.currency_code = ccy.currency_code
+             LEFT JOIN (
+               SELECT currency_code, SUM(amount) AS amount FROM v_project_cost_by_currency
+               WHERE project_id = p.id AND cost_category = 'equipment_rental' GROUP BY currency_code
+             ) ac_eq ON ac_eq.currency_code = ccy.currency_code
+             LEFT JOIN (
+               SELECT currency_code, SUM(total_amount) AS amount FROM purchase_orders
+               WHERE project_id = p.id AND status NOT IN ('completed','deleted') GROUP BY currency_code
+             ) po_c ON po_c.currency_code = ccy.currency_code
+             LEFT JOIN (
+               SELECT COALESCE(pol1.store_price_currency, 'IQD') AS currency_code,
+                      SUM(pol1.store_price * pol1.qty_from_stock) AS amount
+               FROM po_lines pol1 JOIN purchase_orders po1 ON po1.id = pol1.po_id
+               WHERE po1.project_id = p.id AND pol1.in_stock = true
+                 AND COALESCE(pol1.store_price, 0) > 0 AND COALESCE(pol1.qty_from_stock, 0) > 0
+                 AND po1.status NOT IN ('completed','deleted','cancelled')
+               GROUP BY COALESCE(pol1.store_price_currency, 'IQD')
+             ) sc ON sc.currency_code = ccy.currency_code
+            ),
+            '[]'
           ) AS cost_summary
         FROM projects p
         LEFT JOIN employees e ON e.id = p.project_manager_id
@@ -8561,7 +8844,7 @@ export const resolvers = {
         ...projectRowToGQL(row),
         team: row.team ?? [],
         recentPos: row.recent_pos ?? [],
-        costSummary: row.cost_summary ?? null,
+        costSummary: row.cost_summary ?? [],
         statusHistory: row.status_history ?? [],
         activityLog: row.activity_log ?? [],
       }
@@ -8741,94 +9024,6 @@ export const resolvers = {
       return (await query(sql, params)).rows
     },
 
-    // Interco stock transfers
-    intercoStockTransfers: async (
-      _: unknown,
-      args: { fromCompanyId?: string; toCompanyId?: string; status?: string },
-      ctx: GQLContext,
-    ) => {
-      if (!ctx.auth) return []
-      let sql = `SELECT ist.*, fc.name AS from_company_name, tc.name AS to_company_name,
-                        COALESCE((SELECT SUM(istl.total_transfer_value) FROM interco_stock_transfer_lines istl WHERE istl.transfer_id=ist.id),0) AS total_transfer_value
-                 FROM interco_stock_transfers ist
-                 JOIN companies fc ON fc.id=ist.from_company_id
-                 JOIN companies tc ON tc.id=ist.to_company_id
-                 WHERE (ist.from_company_id=$1 OR ist.to_company_id=$1)`
-      const params: unknown[] = [ctx.auth.companyId]
-      let idx = 2
-      if (args.fromCompanyId) {
-        sql += ` AND ist.from_company_id=$${idx++}`
-        params.push(args.fromCompanyId)
-      }
-      if (args.toCompanyId) {
-        sql += ` AND ist.to_company_id=$${idx++}`
-        params.push(args.toCompanyId)
-      }
-      if (args.status) {
-        sql += ` AND ist.status=$${idx++}`
-        params.push(args.status)
-      }
-      sql += ' ORDER BY ist.created_at DESC LIMIT 100'
-      return (await query(sql, params)).rows.map((r: Record<string, unknown>) => ({
-        id: r.id,
-        transferNumber: r.transfer_number,
-        fromCompanyId: r.from_company_id,
-        toCompanyId: r.to_company_id,
-        fromCompanyName: r.from_company_name,
-        toCompanyName: r.to_company_name,
-        transferDate: r.transfer_date,
-        pricingMethod: r.pricing_method,
-        status: r.status,
-        totalTransferValue: parseFloat(String(r.total_transfer_value)),
-        lines: [],
-      }))
-    },
-
-    intercoStockTransfer: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) return null
-      const t = await query(
-        `SELECT ist.*, fc.name AS from_company_name, tc.name AS to_company_name
-         FROM interco_stock_transfers ist
-         JOIN companies fc ON fc.id=ist.from_company_id
-         JOIN companies tc ON tc.id=ist.to_company_id
-         WHERE ist.id=$1 AND (ist.from_company_id=$2 OR ist.to_company_id=$2)`,
-        [args.id, ctx.auth.companyId],
-      )
-      if (!t.rows[0]) return null
-      const r = t.rows[0] as Record<string, unknown>
-      const lines = await query(
-        `SELECT istl.*, p.name AS product_name FROM interco_stock_transfer_lines istl
-         JOIN products p ON p.id=istl.product_id WHERE istl.transfer_id=$1`,
-        [args.id],
-      )
-      return {
-        id: r.id,
-        transferNumber: r.transfer_number,
-        fromCompanyId: r.from_company_id,
-        toCompanyId: r.to_company_id,
-        fromCompanyName: r.from_company_name,
-        toCompanyName: r.to_company_name,
-        transferDate: r.transfer_date,
-        pricingMethod: r.pricing_method,
-        status: r.status,
-        totalTransferValue: lines.rows.reduce(
-          (s, l) => s + parseFloat(String((l as Record<string, unknown>).total_transfer_value)),
-          0,
-        ),
-        lines: lines.rows.map((l: Record<string, unknown>) => ({
-          id: l.id,
-          productId: l.product_id,
-          productName: l.product_name,
-          qty: parseFloat(String(l.qty)),
-          avcoAtTransfer: parseFloat(String(l.avco_at_transfer)),
-          transferPrice: parseFloat(String(l.transfer_price)),
-          markupPctApplied:
-            l.markup_pct_applied != null ? parseFloat(String(l.markup_pct_applied)) : null,
-          totalTransferValue: parseFloat(String(l.total_transfer_value)),
-        })),
-      }
-    },
-
     previewTransferPrice: async (
       _: unknown,
       args: {
@@ -9002,6 +9197,7 @@ export const resolvers = {
       if (!ctx.auth) return []
       await requirePermGW(ctx.auth, 'projects.contracts.view', 'view')
       let sql = `SELECT pc.*, p.code AS project_code, p.name AS project_name,
+                        -- currency-safe: both scoped to one contract, which has one currency_code
                         COALESCE((SELECT SUM(pi.gross_total) FROM project_invoices pi WHERE pi.contract_id=pc.id AND pi.status!='cancelled'),0) AS total_invoiced,
                         COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip JOIN project_invoices pi2 ON pi2.id=pip.invoice_id WHERE pi2.contract_id=pc.id),0) AS total_paid
                  FROM project_contracts pc JOIN projects p ON p.id = pc.project_id WHERE pc.company_id=$1`
@@ -9094,6 +9290,7 @@ export const resolvers = {
       await requirePermGW(ctx.auth, 'projects.contracts.view', 'view')
       const c = await query(
         `SELECT pc.*, p.code AS project_code, p.name AS project_name,
+                -- currency-safe: both scoped to one contract, which has one currency_code
                 COALESCE((SELECT SUM(pi.gross_total) FROM project_invoices pi WHERE pi.contract_id=pc.id AND pi.status!='cancelled'),0) AS total_invoiced,
                 COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip JOIN project_invoices pi2 ON pi2.id=pip.invoice_id WHERE pi2.contract_id=pc.id),0) AS total_paid
          FROM project_contracts pc JOIN projects p ON p.id = pc.project_id WHERE pc.id=$1 AND pc.company_id=$2`,
@@ -9104,7 +9301,8 @@ export const resolvers = {
       const [milestones, invoices] = await Promise.all([
         query('SELECT * FROM project_milestones WHERE contract_id=$1 ORDER BY sequence', [args.id]),
         query(
-          `SELECT pi.*, COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip WHERE pip.invoice_id=pi.id),0) AS total_paid
+          `-- currency-safe: scoped to one invoice, which has one currency_code
+           SELECT pi.*, COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip WHERE pip.invoice_id=pi.id),0) AS total_paid
                FROM project_invoices pi WHERE pi.contract_id=$1 ORDER BY pi.created_at DESC`,
           [args.id],
         ),
@@ -9533,6 +9731,7 @@ export const resolvers = {
                 pmi.po_id, po.po_number,
                 pmil.product_id, prod.name AS product_name, prod.sku, prod.uom,
                 pmil.qty_issued, pmil.unit_cost,
+                -- currency-safe: qty_returned_so_far is a quantity, not money
                 COALESCE(ret.qty_returned_so_far, 0) AS qty_returned_so_far,
                 pmil.qty_issued - COALESCE(ret.qty_returned_so_far, 0) AS qty_returnable,
                 pmil.to_location_id AS from_location_id, loc.name AS from_location_name
@@ -9629,6 +9828,7 @@ export const resolvers = {
          JOIN purchase_orders po ON po.id = pl.po_id
          JOIN products prod ON prod.id = pl.product_id
          LEFT JOIN (
+           -- currency-safe: grouped by source_id (one po_line), which has one currency_code
            SELECT source_id AS po_line_id, SUM(amount) AS direct_cost
            FROM project_cost_actuals WHERE source_type='po_direct_delivery'
            GROUP BY source_id
@@ -10089,31 +10289,6 @@ export const resolvers = {
       }))
     },
 
-    consolidatedTrialBalance: async (_: unknown, args: { asOfDate?: string }, ctx: GQLContext) => {
-      if (!ctx.auth) return []
-      await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
-      const params: unknown[] = []
-      const dateClause = args.asOfDate ? `AND je.entry_date <= $1` : ''
-      if (args.asOfDate) params.push(args.asOfDate)
-      return (
-        await query(
-          `SELECT coa.account_type, coa.code AS account_code, coa.name AS account_name,
-                c.id AS company_id, c.name AS company_name,
-                SUM(jl.debit*jl.fx_rate) AS total_debit_iqd,
-                SUM(jl.credit*jl.fx_rate) AS total_credit_iqd,
-                SUM((jl.debit-jl.credit)*jl.fx_rate) AS balance_iqd
-         FROM journal_lines jl
-         JOIN journal_entries je ON je.id=jl.journal_entry_id
-         JOIN chart_of_accounts coa ON coa.id=jl.account_id
-         JOIN companies c ON c.id=je.company_id
-         WHERE je.status='posted' ${dateClause}
-         GROUP BY coa.account_type, coa.code, coa.name, c.id, c.name
-         ORDER BY coa.code`,
-          params,
-        )
-      ).rows
-    },
-
     // ── Phase 2: Finance queries ─────────────────────────────────
 
     account: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -10191,7 +10366,10 @@ export const resolvers = {
       const where = conditions.join(' AND ')
       const [rows, totals, cnt] = await Promise.all([
         query(
-          `SELECT jl.id, je.entry_date AS date, je.reference, jl.description, jl.currency_code,
+          `-- currency-safe: \${where} always includes jl.currency_code=$3,
+           -- built above from 'conditions' -- accountLedger resolves/
+           -- requires one currencyCode before this runs.
+           SELECT jl.id, je.entry_date AS date, je.reference, jl.description, jl.currency_code,
                   jl.debit, jl.credit, je.id AS journal_entry_id,
                   SUM(jl.debit - jl.credit) OVER (ORDER BY je.entry_date, je.id ROWS UNBOUNDED PRECEDING) AS running_balance
            FROM journal_lines jl JOIN journal_entries je ON je.id=jl.journal_entry_id
@@ -10199,7 +10377,10 @@ export const resolvers = {
           [...params, lim, offset],
         ),
         query(
-          `SELECT COALESCE(SUM(jl.debit),0) AS total_debit, COALESCE(SUM(jl.credit),0) AS total_credit,
+          `-- currency-safe: \${where} always includes jl.currency_code=$3,
+           -- built above from 'conditions' -- accountLedger resolves/
+           -- requires one currencyCode before this runs.
+           SELECT COALESCE(SUM(jl.debit),0) AS total_debit, COALESCE(SUM(jl.credit),0) AS total_credit,
                   COALESCE(SUM(jl.debit-jl.credit),0) AS net_balance
            FROM journal_lines jl JOIN journal_entries je ON je.id=jl.journal_entry_id WHERE ${where}`,
           params,
@@ -10228,20 +10409,29 @@ export const resolvers = {
       await requirePermGW(ctx.auth, 'finance.journals.view', 'view')
       const [je, lines, linkedPos] = await Promise.all([
         query(
-          `SELECT je.*, co.journal_template_image, co.name AS company_name,
+          `-- currency-safe: NULL unless every line of the entry shares one currency_code (COUNT(DISTINCT)=1), never a cross-currency blend
+           SELECT je.*, co.journal_template_image, co.name AS company_name,
                   COALESCE(u.first_name  || ' ' || u.last_name,  u.email)  AS created_by_email,
                   COALESCE(ac.first_name || ' ' || ac.last_name, ac.email) AS accountant_email,
                   COALESCE(au.first_name || ' ' || au.last_name, au.email) AS auditor_email,
-                  COALESCE(SUM(jl.debit),0)  AS total_debit,
-                  COALESCE(SUM(jl.credit),0) AS total_credit
+                  -- amount_company_currency is retired -- total_debit/
+                  -- total_credit are the raw, unconverted SUM(debit)/
+                  -- SUM(credit) of this entry's own lines, and only
+                  -- meaningful when every line shares one currency_code
+                  -- (same convention as recalcPOTotalsGW: NULL otherwise,
+                  -- never a blind cross-currency blend). The per-line
+                  -- breakdown below (lines.rows) always has the real
+                  -- currency_code/debit/credit regardless.
+                  (SELECT CASE WHEN COUNT(DISTINCT jl2.currency_code) = 1 THEN SUM(jl2.debit) ELSE NULL END
+                   FROM journal_lines jl2 WHERE jl2.journal_entry_id = je.id) AS total_debit,
+                  (SELECT CASE WHEN COUNT(DISTINCT jl2.currency_code) = 1 THEN SUM(jl2.credit) ELSE NULL END
+                   FROM journal_lines jl2 WHERE jl2.journal_entry_id = je.id) AS total_credit
            FROM journal_entries je
            LEFT JOIN companies co ON co.id=je.company_id
            LEFT JOIN users u  ON u.id=je.created_by
            LEFT JOIN users ac ON ac.id=je.accountant_id
            LEFT JOIN users au ON au.id=je.audited_by
-           LEFT JOIN journal_lines jl ON jl.journal_entry_id=je.id
-           WHERE je.id=$1 AND je.company_id=$2
-           GROUP BY je.id, co.journal_template_image, co.name, u.email, u.first_name, u.last_name, ac.email, ac.first_name, ac.last_name, au.email, au.first_name, au.last_name`,
+           WHERE je.id=$1 AND je.company_id=$2`,
           [args.id, ctx.auth.companyId],
         ),
         query(
@@ -10387,6 +10577,52 @@ export const resolvers = {
       ])
       if (!pv.rows[0]) return null
       return { ...pv.rows[0], lines: lines.rows, journals: journals.rows }
+    },
+
+    // G1/G2: posting-account map. Always scoped to ctx.auth.companyId --
+    // never a client-supplied company id (multi-tenancy rule).
+    companyPostingAccounts: async (_: unknown, _args: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.accounts.view', 'view')
+      const rows = await listCompanyPostingAccounts(ctx.auth.companyId)
+      return rows.map((r) => ({
+        id: r.id,
+        role: r.role,
+        currencyCode: r.currency_code,
+        accountId: r.account_id,
+        accountCode: r.account_code,
+        accountName: r.account_name,
+        updatedAt: r.updated_at,
+      }))
+    },
+
+    postingAccountRoles: async (_: unknown, _args: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.accounts.view', 'view')
+      return POSTING_ACCOUNT_ROLES
+    },
+
+    // A role counts as "configured" when it has a company-wide default
+    // (currency_code IS NULL) -- that's the fallback resolvePostingAccount
+    // falls through to for any currency, so it's the only state that
+    // guarantees every call site resolves. A role with ONLY
+    // currency-specific overrides and no default still resolves for those
+    // specific currencies, so it's listed with hasDefault:false but its
+    // configured currencies named, rather than being flatly "missing".
+    postingAccountReadiness: async (_: unknown, _args: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.accounts.view', 'view')
+      const rows = await listCompanyPostingAccounts(ctx.auth.companyId)
+      const roles = POSTING_ACCOUNT_ROLES.map((role) => {
+        const roleRows = rows.filter((r) => r.role === role)
+        const hasDefault = roleRows.some((r) => r.currency_code === null)
+        const currencies = roleRows
+          .filter((r) => r.currency_code !== null)
+          .map((r) => r.currency_code as string)
+        return { role, hasDefault, currencies, configured: hasDefault || currencies.length > 0 }
+      })
+      const missingRoles = roles.filter((r) => !r.hasDefault).map((r) => r.role)
+      return { roles, missingRoles, allConfigured: missingRoles.length === 0 }
     },
 
     fxRates: async (
@@ -12386,7 +12622,6 @@ export const resolvers = {
             credit: number
             description?: string
             currency_code?: string
-            fx_rate?: number
             analytic_account_id?: string
             cost_center_id?: string
           }[]
@@ -12397,10 +12632,25 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'finance.journals.edit', 'edit')
       const { entry_date, description, source_type, lines } = args.input
-      const totalDebit = lines.reduce((s, l) => s + l.debit, 0)
-      const totalCredit = lines.reduce((s, l) => s + l.credit, 0)
-      if (Math.abs(totalDebit - totalCredit) > 0.001)
-        throw new Error('Journal entry must be balanced')
+      // No currency exchange anywhere: amounts are entered and stored in
+      // each line's own currency_code, never converted (amount_company_currency
+      // is retired — set equal to the line's own amount below). There is no
+      // single blended total to check — each currency present must
+      // independently balance (its own debits = its own credits).
+      const totalsByCurrency = new Map<string, { debit: number; credit: number }>()
+      for (const l of lines) {
+        if (l.debit > 0 && l.credit > 0) throw new Error('A journal line cannot have both debit and credit')
+        if (l.debit === 0 && l.credit === 0) throw new Error('A journal line must have either debit or credit > 0')
+        const ccy = l.currency_code ?? 'IQD'
+        const t = totalsByCurrency.get(ccy) ?? { debit: 0, credit: 0 }
+        t.debit += l.debit
+        t.credit += l.credit
+        totalsByCurrency.set(ccy, t)
+      }
+      for (const [ccy, t] of totalsByCurrency) {
+        if (Math.abs(t.debit - t.credit) > 0.001)
+          throw new Error(`Journal entry is not balanced in ${ccy}`)
+      }
       const createdEntry = await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
@@ -12419,9 +12669,10 @@ export const resolvers = {
           )
           const entry = je.rows[0] as Record<string, unknown>
           for (const l of lines) {
+            const amount = l.debit > 0 ? l.debit : l.credit
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id,account_id,description,currency_code,debit,credit,fx_rate,analytic_account_id,cost_center_id,amount_company_currency)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,ROUND(($5::numeric+$6::numeric)*$7::numeric,4))`,
+              `INSERT INTO journal_lines (journal_entry_id,account_id,description,currency_code,debit,credit,analytic_account_id,cost_center_id,amount_company_currency)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
               [
                 entry.id,
                 l.account_id,
@@ -12429,9 +12680,9 @@ export const resolvers = {
                 l.currency_code ?? 'IQD',
                 l.debit,
                 l.credit,
-                l.fx_rate ?? 1,
                 l.analytic_account_id ?? null,
                 l.cost_center_id ?? null,
+                amount,
               ],
             )
           }
@@ -12918,6 +13169,57 @@ export const resolvers = {
       )
       if (!r.rows[0]) throw new Error('Payment voucher not found or not approved')
       return r.rows[0]
+    },
+
+    // G1/G2: posting-account map. Scoped to ctx.auth.companyId, never a
+    // client-supplied one -- upsertCompanyPostingAccount/db already
+    // re-validates the account belongs to that company, is active and
+    // postable (trg_validate_company_posting_account backs it again
+    // regardless, migration 303).
+    upsertCompanyPostingAccount: async (
+      _: unknown,
+      args: { role: string; currencyCode?: string | null; accountId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.accounts.edit', 'edit')
+      if (!POSTING_ACCOUNT_ROLES.includes(args.role as PostingAccountRole)) {
+        throw new Error(`Unknown posting account role: ${args.role}`)
+      }
+      const row = await upsertCompanyPostingAccount(
+        ctx.auth.companyId,
+        args.role as PostingAccountRole,
+        args.currencyCode ?? null,
+        args.accountId,
+        ctx.auth.userId,
+      )
+      return {
+        id: row.id,
+        role: row.role,
+        currencyCode: row.currency_code,
+        accountId: row.account_id,
+        accountCode: row.account_code,
+        accountName: row.account_name,
+        updatedAt: row.updated_at,
+      }
+    },
+
+    deleteCompanyPostingAccount: async (
+      _: unknown,
+      args: { role: string; currencyCode?: string | null },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.accounts.edit', 'edit')
+      if (!POSTING_ACCOUNT_ROLES.includes(args.role as PostingAccountRole)) {
+        throw new Error(`Unknown posting account role: ${args.role}`)
+      }
+      await deleteCompanyPostingAccount(
+        ctx.auth.companyId,
+        args.role as PostingAccountRole,
+        args.currencyCode ?? null,
+      )
+      return true
     },
 
     // ── Phase 2: Procurement mutations ───────────────────────────
@@ -13830,7 +14132,8 @@ export const resolvers = {
                 // already absorbed/hid some contribution at some point, and a
                 // plain subtraction here could under- or over-correct it.
                 const totalRes = await client.query<{ total: string }>(
-                  `SELECT COALESCE(SUM(prl.qty_received),0) AS total
+                  `-- currency-safe: qty_received is a quantity, not money
+                   SELECT COALESCE(SUM(prl.qty_received),0) AS total
                    FROM po_receipt_lines prl
                    JOIN po_receipts pr2 ON pr2.id = prl.receipt_id
                    JOIN po_lines pl2 ON pl2.id = prl.po_line_id
@@ -13934,7 +14237,8 @@ export const resolvers = {
           // receipt naturally excluded by the status filter.
           for (const poLineId of new Set(poLineIds)) {
             await client.query(
-              `UPDATE po_lines SET qty_received = (
+              `-- currency-safe: qty_received is a quantity, not money
+               UPDATE po_lines SET qty_received = (
                  SELECT COALESCE(SUM(prl.qty_received),0) FROM po_receipt_lines prl
                  JOIN po_receipts pr2 ON pr2.id = prl.receipt_id
                  WHERE prl.po_line_id=$1 AND pr2.status != 'reversed'
@@ -15388,7 +15692,8 @@ export const resolvers = {
           // Check reorder point after adjustment and notify if now below threshold
           if (i.new_qty < currentQty) {
             const lowRes = await client.query(
-              `SELECT p.id, p.name, p.sku, p.reorder_point,
+              `-- currency-safe: qty_on_hand is a stock quantity, not money
+               SELECT p.id, p.name, p.sku, p.reorder_point,
                       COALESCE(SUM(sb.qty_on_hand), 0) AS qty_on_hand
                FROM products p
                LEFT JOIN stock_balances sb ON sb.product_id = p.id
@@ -15499,6 +15804,11 @@ export const resolvers = {
         `INSERT INTO project_status_history (project_id, from_status, to_status, changed_by) VALUES ($1, NULL, 'pending', $2)`,
         [r.rows[0].id, ctx.auth.userId],
       )
+      await upsertPrimaryProjectBudget(
+        r.rows[0].id as string,
+        String(i.budgetCurrency ?? 'IQD'),
+        Number(i.budgetAmount ?? 0),
+      )
       void publishEntityChanged(ctx.auth.companyId, 'project', r.rows[0].id as string, 'created')
       return projectRowToGQL(r.rows[0] as Record<string, unknown>)
     },
@@ -15569,6 +15879,14 @@ export const resolvers = {
         ],
       )
       if (!r.rows[0]) throw new Error('Project not found')
+      if (i.budgetAmount != null || i.budgetCurrency != null) {
+        const updated = r.rows[0] as Record<string, unknown>
+        await upsertPrimaryProjectBudget(
+          args.id,
+          String(updated.budget_currency ?? 'IQD'),
+          Number(updated.budget_amount ?? 0),
+        )
+      }
       const FIELD_LABELS: Record<string, string> = {
         name: 'name',
         description: 'description',
@@ -15682,6 +16000,11 @@ export const resolvers = {
         `INSERT INTO project_status_history (project_id, from_status, to_status, changed_by) VALUES ($1, NULL, $2, $3)`,
         [projectId, isDirectSupply ? 'approved' : 'pending', ctx.auth.userId],
       )
+      await upsertPrimaryProjectBudget(
+        projectId,
+        String(i.budgetCurrency ?? 'IQD'),
+        Number(i.budgetAmount ?? 0),
+      )
       const lines = i.rfqLines as Record<string, unknown>[] | undefined
       if (lines && lines.length > 0) {
         for (const [idx, line] of lines.entries()) {
@@ -15731,6 +16054,55 @@ export const resolvers = {
         'email.project_lifecycle',
       )
       return projectRowToGQL(createdRow)
+    },
+
+    // D2: a budget in a currency other than the project's primary one --
+    // the rare multi-currency case. Rejects a currency the project already
+    // has a budget in (use updateProject's budgetAmount/budgetCurrency to
+    // change the primary one instead of duplicating it here).
+    addProjectBudget: async (
+      _: unknown,
+      args: { projectId: string; currencyCode: string; amount: number },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.edit', 'edit')
+      const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.projectId,
+        ctx.auth.companyId,
+      ])
+      if (!proj.rows[0]) throw new Error('Project not found')
+      const existing = await query(
+        `SELECT id FROM project_budgets WHERE project_id=$1 AND currency_code=$2`,
+        [args.projectId, args.currencyCode],
+      )
+      if (existing.rows[0]) throw new Error(`This project already has a budget in ${args.currencyCode}`)
+      const r = await query(
+        `INSERT INTO project_budgets (project_id, currency_code, budget_amount, is_primary)
+         VALUES ($1, $2, $3, false) RETURNING id, currency_code, budget_amount, is_primary`,
+        [args.projectId, args.currencyCode, args.amount],
+      )
+      const row = r.rows[0] as Record<string, unknown>
+      return {
+        id: row.id,
+        currencyCode: row.currency_code,
+        amount: parseFloat(String(row.budget_amount)),
+        isPrimary: row.is_primary,
+      }
+    },
+
+    removeProjectBudget: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.edit', 'edit')
+      const r = await query(
+        `DELETE FROM project_budgets pb USING projects p
+         WHERE pb.id=$1 AND pb.project_id=p.id AND p.company_id=$2 AND pb.is_primary = false
+         RETURNING pb.id`,
+        [args.id, ctx.auth.companyId],
+      )
+      if (!r.rows[0])
+        throw new Error('Budget not found, or it is the primary budget (change it via Edit Project instead)')
+      return true
     },
 
     approveRFQ: async (_: unknown, args: { id: string; notes?: string }, ctx: GQLContext) => {
@@ -18567,20 +18939,14 @@ export const resolvers = {
         args.projectId,
       ])
       const summary = summaryR.rows[0] as Record<string, unknown>
-      const costsR = await query(
-        `SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`,
-        [args.projectId],
-      )
-      const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>).total ?? 0)
+      const directCostTotal = await getBidDirectCostTotalGW(args.projectId)
       const op = Number(summary.overhead_pct)
       const mp = Number(summary.margin_pct)
       const dp = Number(summary.discount_pct)
       const cp = Number(summary.contingency_pct)
-      const oa = (directCostTotal * op) / 100
-      const ca = (directCostTotal * cp) / 100
+      const { overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da } =
+        computeBidPricing(directCostTotal, op, mp, dp, cp)
       const sub = directCostTotal + oa + ca
-      const ma = (sub * mp) / 100
-      const da = ((sub + ma) * dp) / 100
       return {
         id: summary.id,
         projectId: args.projectId,
@@ -18652,20 +19018,14 @@ export const resolvers = {
         args.projectId,
       ])
       const summary = summaryR.rows[0] as Record<string, unknown>
-      const costsR = await query(
-        `SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`,
-        [args.projectId],
-      )
-      const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>).total ?? 0)
+      const directCostTotal = await getBidDirectCostTotalGW(args.projectId)
       const op = Number(summary.overhead_pct)
       const mp = Number(summary.margin_pct)
       const dp = Number(summary.discount_pct)
       const cp = Number(summary.contingency_pct)
-      const oa = (directCostTotal * op) / 100
-      const ca = (directCostTotal * cp) / 100
+      const { overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da } =
+        computeBidPricing(directCostTotal, op, mp, dp, cp)
       const sub = directCostTotal + oa + ca
-      const ma = (sub * mp) / 100
-      const da = ((sub + ma) * dp) / 100
       return {
         id: summary.id,
         projectId: args.projectId,
@@ -18716,20 +19076,14 @@ export const resolvers = {
         args.projectId,
       ])
       const summary = summaryR.rows[0] as Record<string, unknown>
-      const costsR = await query(
-        `SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`,
-        [args.projectId],
-      )
-      const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>).total ?? 0)
+      const directCostTotal = await getBidDirectCostTotalGW(args.projectId)
       const op = Number(summary.overhead_pct)
       const mp = Number(summary.margin_pct)
       const dp = Number(summary.discount_pct)
       const cp = Number(summary.contingency_pct)
-      const oa = (directCostTotal * op) / 100
-      const ca = (directCostTotal * cp) / 100
+      const { overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da } =
+        computeBidPricing(directCostTotal, op, mp, dp, cp)
       const sub = directCostTotal + oa + ca
-      const ma = (sub * mp) / 100
-      const da = ((sub + ma) * dp) / 100
       return {
         id: summary.id,
         projectId: args.projectId,
@@ -18773,20 +19127,14 @@ export const resolvers = {
         args.projectId,
       ])
       const summary = summaryR.rows[0] as Record<string, unknown>
-      const costsR = await query(
-        `SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`,
-        [args.projectId],
-      )
-      const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>).total ?? 0)
+      const directCostTotal = await getBidDirectCostTotalGW(args.projectId)
       const op = Number(summary.overhead_pct)
       const mp = Number(summary.margin_pct)
       const dp = Number(summary.discount_pct)
       const cp = Number(summary.contingency_pct)
-      const oa = (directCostTotal * op) / 100
-      const ca = (directCostTotal * cp) / 100
+      const { overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da } =
+        computeBidPricing(directCostTotal, op, mp, dp, cp)
       const sub = directCostTotal + oa + ca
-      const ma = (sub * mp) / 100
-      const da = ((sub + ma) * dp) / 100
       return {
         id: summary.id,
         projectId: args.projectId,
@@ -18835,11 +19183,7 @@ export const resolvers = {
           'No commercial summary yet — set overhead/margin/discount/contingency before revising',
         )
 
-      const costsR = await query(
-        `SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`,
-        [args.projectId],
-      )
-      const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>).total)
+      const directCostTotal = await getBidDirectCostTotalGW(args.projectId)
       const overheadPct = Number(summary.overhead_pct)
       const marginPct = Number(summary.margin_pct)
       const discountPct = Number(summary.discount_pct)
@@ -22363,34 +22707,44 @@ export const resolvers = {
         if (!r.rows[0]) throw new Error('Not found')
       })
       const pos = await query(
-        `SELECT po.id, po.po_number, v.name AS supplier_name, po.total_amount, po.currency_code, po.created_at FROM purchase_orders po LEFT JOIN vendors v ON v.id = po.vendor_id WHERE po.project_id=$1 AND po.status IN ('approved','ordered','partially_received','received','closed')`,
+        `SELECT po.id, po.po_number, v.name AS supplier_name, po.created_at FROM purchase_orders po LEFT JOIN vendors v ON v.id = po.vendor_id WHERE po.project_id=$1 AND po.status IN ('approved','ordered','partially_received','received','closed')`,
         [args.projectId],
       )
       for (const po of pos.rows) {
-        const existing = await query(
-          `SELECT id, invoiced_amount FROM project_committed_costs WHERE project_id=$1 AND reference_id=$2`,
-          [args.projectId, po.id],
-        )
-        if (existing.rows[0]) {
-          await query(
-            `UPDATE project_committed_costs SET committed_amount=$1, vendor_name=$2, updated_at=NOW() WHERE id=$3`,
-            [po.total_amount, po.supplier_name, existing.rows[0].id],
+        // D10: po.total_amount/currency_code collapse to NULL/a single
+        // label once a PO spans more than one currency, so read the real
+        // per-currency breakdown instead and keep one committed_costs row
+        // per (PO, currency) -- this table is already read per-currency
+        // elsewhere (cost-control reports filter committed_amount by
+        // currency_code), so multiple rows per PO is the existing shape,
+        // not a new one.
+        const currencyTotals = await getPOCurrencyTotals(query, po.id as string)
+        for (const ct of currencyTotals) {
+          const existing = await query(
+            `SELECT id FROM project_committed_costs WHERE project_id=$1 AND reference_id=$2 AND currency_code=$3`,
+            [args.projectId, po.id, ct.currency_code],
           )
-        } else {
-          await query(
-            `INSERT INTO project_committed_costs (project_id,commitment_type,reference_id,reference_number,description,vendor_name,committed_amount,currency_code,commitment_date,created_by) VALUES ($1,'po',$2,$3,$4,$5,$6,$7,$8,$9)`,
-            [
-              args.projectId,
-              po.id,
-              po.po_number,
-              `PO: ${po.po_number}`,
-              po.supplier_name,
-              po.total_amount,
-              po.currency_code || 'USD',
-              String(po.created_at).slice(0, 10),
-              ctx.auth.userId,
-            ],
-          )
+          if (existing.rows[0]) {
+            await query(
+              `UPDATE project_committed_costs SET committed_amount=$1, vendor_name=$2, updated_at=NOW() WHERE id=$3`,
+              [ct.subtotal, po.supplier_name, existing.rows[0].id],
+            )
+          } else {
+            await query(
+              `INSERT INTO project_committed_costs (project_id,commitment_type,reference_id,reference_number,description,vendor_name,committed_amount,currency_code,commitment_date,created_by) VALUES ($1,'po',$2,$3,$4,$5,$6,$7,$8,$9)`,
+              [
+                args.projectId,
+                po.id,
+                po.po_number,
+                `PO: ${po.po_number}`,
+                po.supplier_name,
+                ct.subtotal,
+                ct.currency_code,
+                String(po.created_at).slice(0, 10),
+                ctx.auth.userId,
+              ],
+            )
+          }
         }
       }
       return true
@@ -25129,7 +25483,8 @@ export const resolvers = {
             // here isn't already net of this (recordDirectDelivery never
             // touches po_returns), so it must be subtracted explicitly.
             const vendorReturnedRes = await client.query<{ qty: string | null }>(
-              `SELECT SUM(pri.quantity_returned) AS qty FROM po_return_items pri
+              `-- currency-safe: quantity_returned is a quantity, not money
+               SELECT SUM(pri.quantity_returned) AS qty FROM po_return_items pri
                  JOIN po_returns pr ON pr.id = pri.return_id
                 WHERE pri.po_line_id=$1 AND pr.status IN ('approved','credited')`,
               [line.poLineId],
@@ -25170,7 +25525,8 @@ export const resolvers = {
             // The accumulated cost_actuals total divided by the accumulated
             // received qty does.
             const costRes = await client.query<{ amount: string | null }>(
-              `SELECT SUM(amount) AS amount FROM project_cost_actuals WHERE source_type='po_direct_delivery' AND source_id=$1`,
+              `-- currency-safe: scoped to one po_line (source_id), which has one currency_code
+               SELECT SUM(amount) AS amount FROM project_cost_actuals WHERE source_type='po_direct_delivery' AND source_id=$1`,
               [line.poLineId],
             )
             const totalDirectCost = parseFloat(String(costRes.rows[0]?.amount ?? 0))
@@ -25707,19 +26063,10 @@ export const resolvers = {
          WHERE id=$2 RETURNING *`,
         [args.actualUnitPrice ?? null, args.lineId],
       )
-      // Recalculate PO-level subtotal and total_amount, converted to base currency
-      // the same way as recalcPO (see that function's comment) — actual_unit_price
-      // can be entered on a line priced in a non-base currency, so this must
-      // convert too, or a mixed-currency PO's total silently goes wrong the moment
-      // a buyer records what they actually paid.
-      await query(
-        `UPDATE purchase_orders
-         SET subtotal=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
-             total_amount=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
-             updated_at=NOW()
-         WHERE id=$1`,
-        [args.poId],
-      )
+      // Recalculate PO-level subtotal/total_amount — actual_unit_price can
+      // change a line's total_price, so the header figures need refreshing
+      // the same way as every other write path (recalcPOTotalsGW).
+      await recalcPOTotalsGW(query, args.poId)
       return r.rows[0]
     },
 
@@ -26486,7 +26833,8 @@ export const resolvers = {
 
         // Recalculate invoice header totals from lines
         const totals = await client.query(
-          `SELECT COALESCE(SUM(subtotal),0) AS sub, COALESCE(SUM(line_total),0) AS gross, COALESCE(SUM(margin_amount),0) AS margin
+          `-- currency-safe: scoped to one invoice, which has one currency_code
+           SELECT COALESCE(SUM(subtotal),0) AS sub, COALESCE(SUM(line_total),0) AS gross, COALESCE(SUM(margin_amount),0) AS margin
              FROM project_invoice_lines WHERE invoice_id=$1`,
           [args.id],
         )
@@ -26524,7 +26872,8 @@ export const resolvers = {
         const currentStatus = String(inv.status ?? '')
         if (['issued', 'sent', 'partial', 'paid'].includes(currentStatus)) {
           const paidRes = await client.query<{ total: string }>(
-            `SELECT COALESCE(SUM(amount),0) AS total FROM project_invoice_payments WHERE invoice_id=$1`,
+            `-- currency-safe: scoped to one invoice, which has one currency_code
+             SELECT COALESCE(SUM(amount),0) AS total FROM project_invoice_payments WHERE invoice_id=$1`,
             [args.id],
           )
           const totalPaidNow = parseFloat(paidRes.rows[0]?.total ?? '0')
@@ -27187,7 +27536,8 @@ export const resolvers = {
 
           // Check reorder points for all consumed components and send notifications
           const lowStockProducts = await client.query(
-            `SELECT p.id, p.name, p.sku, p.reorder_point,
+            `-- currency-safe: qty_on_hand is a stock quantity, not money
+           SELECT p.id, p.name, p.sku, p.reorder_point,
                   COALESCE(SUM(sb.qty_on_hand), 0) AS qty_on_hand
            FROM products p
            LEFT JOIN stock_balances sb ON sb.product_id = p.id
@@ -29315,9 +29665,17 @@ const phase5QueryResolvers = {
            AND je.entry_date >= date_trunc('month', CURRENT_DATE)`,
         [cid, currencyCode],
       ),
+      // D2: totalProjectBudget only sums budgets actually denominated in
+      // the dashboard's own currency (project_budgets, not the single
+      // budget_amount column) -- a project budgeted in another currency is
+      // left out of the sum rather than blended into it. cnt still counts
+      // every active project regardless of currency.
       query(
-        `SELECT COUNT(*) AS cnt, COALESCE(SUM(budget_amount),0) AS budget FROM projects WHERE company_id=$1 AND status='active'`,
-        [cid],
+        `SELECT COUNT(*) AS cnt, COALESCE(SUM(pb.budget_amount),0) AS budget
+         FROM projects p
+         LEFT JOIN project_budgets pb ON pb.project_id=p.id AND pb.currency_code=$2
+         WHERE p.company_id=$1 AND p.status='active'`,
+        [cid, currencyCode],
       ),
       query(`SELECT COUNT(*) AS cnt FROM employees WHERE company_id=$1 AND status='active'`, [cid]),
       query(
@@ -29366,24 +29724,25 @@ const phase5QueryResolvers = {
          GROUP BY c.name, m.month ORDER BY m.month, c.name`,
         [currencyCode],
       ),
-      // Project profitability scatter: active + completed projects, actual
-      // cost from the per-currency cost view, filtered to the selected
-      // currency (budget_amount is assumed to be in the project's/
-      // company's own currency — comparing it against a different
-      // currency's actual cost is exactly the kind of conversion D2 is
-      // meant to settle, not something to guess at here).
+      // Project profitability scatter: active + completed projects that
+      // have a real budget in the selected currency (D2 -- project_budgets
+      // is the per-currency source now, not the single p.budget_amount; a
+      // project with no budget in this currency has no meaningful margin
+      // point to plot here, so it's left out rather than compared against
+      // a budget denominated in some other currency).
       query(
-        `SELECT p.id, p.name, COALESCE(p.budget_amount,0) AS budget,
+        `SELECT p.id, p.name, pb.budget_amount AS budget,
                 COALESCE(SUM(pca.amount),0) AS actual_cost, p.status,
                 COALESCE(p.client_name,'') AS client_name,
-                CASE WHEN COALESCE(p.budget_amount,0)>0
-                     THEN ((COALESCE(p.budget_amount,0) - COALESCE(SUM(pca.amount),0)) / p.budget_amount) * 100
+                CASE WHEN pb.budget_amount>0
+                     THEN ((pb.budget_amount - COALESCE(SUM(pca.amount),0)) / pb.budget_amount) * 100
                      ELSE 0 END AS margin_pct
          FROM projects p
+         JOIN project_budgets pb ON pb.project_id=p.id AND pb.currency_code=$1
          LEFT JOIN v_project_cost_by_currency pca ON pca.project_id=p.id AND pca.currency_code=$1
          WHERE p.status IN ('active','completed')
-         GROUP BY p.id, p.name, p.budget_amount, p.status, p.client_name
-         ORDER BY p.budget_amount DESC NULLS LAST LIMIT 60`,
+         GROUP BY p.id, p.name, pb.budget_amount, p.status, p.client_name
+         ORDER BY pb.budget_amount DESC NULLS LAST LIMIT 60`,
         [currencyCode],
       ),
       // Headcount per company
@@ -29474,76 +29833,85 @@ const phase5QueryResolvers = {
     }
   },
 
+  // Real cross-company consolidation: sums every company's posted lines
+  // for one currency at a time via getConsolidatedGroupTotals (grouped by
+  // group_account_id, so each company's own local chart maps onto one
+  // shared row), with interco eliminations netted against the dedicated
+  // Intercompany accounts. showEliminations is accepted for API
+  // compatibility with the existing frontend but eliminations are always
+  // computed and returned on the row — it's the caller's choice whether
+  // to display/subtract them, same as consolidated.eliminated elsewhere.
   consolidatedPL: async (
     _: unknown,
-    args: { fromDate: string; toDate: string; showEliminations?: boolean },
+    args: { fromDate: string; toDate: string; showEliminations?: boolean; currencyCode?: string },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const rows = await query(
-      `SELECT coa.account_type, coa.code as account_code, coa.name as account_name,
-              COALESCE(SUM(jl.debit - jl.credit), 0) as consolidated
-       FROM journal_lines jl
-       JOIN chart_of_accounts coa ON coa.id = jl.account_id
-       JOIN journal_entries je ON je.id = jl.journal_entry_id
-       WHERE je.company_id = $1 AND je.status = 'posted'
-         AND je.entry_date BETWEEN $2 AND $3
-       GROUP BY coa.account_type, coa.code, coa.name ORDER BY coa.code`,
-      [ctx.auth.companyId, args.fromDate, args.toDate],
+    await requirePermGW(ctx.auth, 'reporting.consolidated.view', 'view')
+    const availableCurrencies = await getConsolidationAvailableCurrencies()
+    const currencyCode = await getConsolidationDefaultCurrency(args.currencyCode)
+    const groupRows = await getConsolidatedGroupTotals(
+      `je.status = 'posted' AND je.entry_date BETWEEN $1 AND $2`,
+      [args.fromDate, args.toDate],
+      currencyCode,
     )
+    const mappedRows = groupRows.filter((r) => r.accountType === 'revenue' || r.accountType === 'expense')
+    // consolidated is debit-credit for every row (including revenue,
+    // which is credit-normal) -- that's negative for a normal revenue
+    // line, so totalRevenue negates it back to a positive magnitude.
+    // Expense is debit-normal, so its own debit-credit is already
+    // positive and needs no sign flip. Getting this backwards is exactly
+    // the G3 bug already found and fixed in profitLoss.
+    const totalRevenue = mappedRows
+      .filter((r) => r.accountType === 'revenue')
+      .reduce((s, r) => s - r.consolidated, 0)
+    const totalExpenses = mappedRows
+      .filter((r) => r.accountType === 'expense')
+      .reduce((s, r) => s + r.consolidated, 0)
     return {
-      rows: rows.rows.map((r: Record<string, unknown>) => ({
-        accountType: r.account_type,
-        accountCode: r.account_code,
-        accountName: r.account_name,
-        companies: [],
-        consolidated: parseFloat(String(r.consolidated)),
-        eliminated: 0,
-      })),
-      companies: [],
-      currency: 'IQD',
-      totalRevenue: 0,
-      totalExpenses: 0,
-      netProfit: 0,
+      rows: mappedRows,
+      companies: await getConsolidationCompanies(),
+      currency: currencyCode,
+      availableCurrencies,
+      totalRevenue,
+      totalExpenses,
+      netProfit: totalRevenue - totalExpenses,
     }
   },
 
-  consolidatedBS: async (_: unknown, args: { asOfDate: string }, ctx: GQLContext) => {
+  // Same "not actually multi-company" caveat as consolidatedPL above.
+  // Also had its own sign bug independent of currency: consolidated is
+  // debit-credit for every row uniformly, which is negative for a normal
+  // liability/equity (credit-normal) balance -- totalLiabilities/
+  // totalEquity summed that raw, so isBalanced was comparing assets
+  // against a negative liabilities+equity figure.
+  consolidatedBS: async (_: unknown, args: { asOfDate: string; currencyCode?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const cid = ctx.auth.companyId
-    const r = await query(
-      `SELECT coa.account_type, coa.code AS account_code, coa.name AS account_name,
-              COALESCE(SUM(jl.debit - jl.credit), 0) AS consolidated
-       FROM journal_lines jl
-       JOIN chart_of_accounts coa ON coa.id = jl.account_id
-       JOIN journal_entries je ON je.id = jl.journal_entry_id
-       WHERE je.company_id=$1 AND je.status='posted' AND je.entry_date <= $2
-         AND coa.account_type IN ('asset','liability','equity')
-       GROUP BY coa.account_type, coa.code, coa.name
-       ORDER BY coa.code`,
-      [cid, args.asOfDate],
+    await requirePermGW(ctx.auth, 'reporting.consolidated.view', 'view')
+    const availableCurrencies = await getConsolidationAvailableCurrencies()
+    const currencyCode = await getConsolidationDefaultCurrency(args.currencyCode)
+    const groupRows = await getConsolidatedGroupTotals(
+      `je.status = 'posted' AND je.entry_date <= $1`,
+      [args.asOfDate],
+      currencyCode,
     )
-    const rows = r.rows.map((row: Record<string, unknown>) => ({
-      accountType: row.account_type,
-      accountCode: row.account_code,
-      accountName: row.account_name,
-      companies: [],
-      consolidated: parseFloat(String(row.consolidated)),
-      eliminated: 0,
-    }))
+    const rows = groupRows.filter((r) =>
+      ['asset', 'liability', 'equity'].includes(r.accountType),
+    )
     const totalAssets = rows
       .filter((r) => r.accountType === 'asset')
       .reduce((s, r) => s + r.consolidated, 0)
     const totalLiabilities = rows
       .filter((r) => r.accountType === 'liability')
-      .reduce((s, r) => s + r.consolidated, 0)
+      .reduce((s, r) => s - r.consolidated, 0)
     const totalEquity = rows
       .filter((r) => r.accountType === 'equity')
-      .reduce((s, r) => s + r.consolidated, 0)
+      .reduce((s, r) => s - r.consolidated, 0)
     return {
       rows,
-      companies: [],
-      currency: 'IQD',
+      companies: await getConsolidationCompanies(),
+      currency: currencyCode,
+      availableCurrencies,
       totalAssets,
       totalLiabilities,
       totalEquity,
@@ -29551,42 +29919,27 @@ const phase5QueryResolvers = {
     }
   },
 
-  consolidatedTrialBalance: async (_: unknown, args: { asOfDate: string }, ctx: GQLContext) => {
+  consolidatedTrialBalance: async (
+    _: unknown,
+    args: { asOfDate: string; currencyCode?: string },
+    ctx: GQLContext,
+  ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const cid = ctx.auth.companyId
-    const r = await query(
-      `SELECT coa.account_type, coa.code AS account_code, coa.name AS account_name,
-              COALESCE(SUM(jl.debit), 0) AS total_debit,
-              COALESCE(SUM(jl.credit), 0) AS total_credit,
-              COALESCE(SUM(jl.debit - jl.credit), 0) AS consolidated
-       FROM journal_lines jl
-       JOIN chart_of_accounts coa ON coa.id = jl.account_id
-       JOIN journal_entries je ON je.id = jl.journal_entry_id
-       WHERE je.company_id=$1 AND je.status='posted' AND je.entry_date <= $2
-       GROUP BY coa.account_type, coa.code, coa.name
-       ORDER BY coa.code`,
-      [cid, args.asOfDate],
+    await requirePermGW(ctx.auth, 'reporting.consolidated.view', 'view')
+    const availableCurrencies = await getConsolidationAvailableCurrencies()
+    const currencyCode = await getConsolidationDefaultCurrency(args.currencyCode)
+    const rows = await getConsolidatedGroupTotals(
+      `je.status = 'posted' AND je.entry_date <= $1`,
+      [args.asOfDate],
+      currencyCode,
     )
-    const rows = r.rows.map((row: Record<string, unknown>) => ({
-      accountType: row.account_type,
-      accountCode: row.account_code,
-      accountName: row.account_name,
-      companies: [],
-      consolidated: parseFloat(String(row.consolidated)),
-      eliminated: 0,
-    }))
-    const totalDebits = r.rows.reduce(
-      (s, row: Record<string, unknown>) => s + parseFloat(String(row.total_debit)),
-      0,
-    )
-    const totalCredits = r.rows.reduce(
-      (s, row: Record<string, unknown>) => s + parseFloat(String(row.total_credit)),
-      0,
-    )
+    const totalDebits = rows.reduce((s, r) => s + r.totalDebit, 0)
+    const totalCredits = rows.reduce((s, r) => s + r.totalCredit, 0)
     return {
       rows,
-      companies: [],
-      currency: 'IQD',
+      companies: await getConsolidationCompanies(),
+      currency: currencyCode,
+      availableCurrencies,
       totalDebits,
       totalCredits,
       isBalanced: Math.abs(totalDebits - totalCredits) < 0.01,
@@ -29607,25 +29960,28 @@ const phase5QueryResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
     const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
+    // Previously re-derived the same actual-cost logic as
+    // v_project_profitability with a direct, currency-blind
+    // SUM(pca.amount) over project_cost_actuals — now just reads that
+    // view (migration 305), which already handles posted-only filtering
+    // and splits activity by currency_code, one row per project+currency.
     const r = await query(
-      `SELECT p.id, p.code, p.name, p.project_type, p.status, p.budget_amount AS budget,
-              COALESCE(SUM(pca.amount),0) AS actual_cost,
-              COALESCE(p.client_name,'') AS client_name,
-              CASE WHEN COALESCE(p.budget_amount,0)>0
-                   THEN ((p.budget_amount - COALESCE(SUM(pca.amount),0)) / p.budget_amount) * 100
+      `SELECT project_id, code, name, project_type, status, budget_amount AS budget,
+              currency_code, total_costs AS actual_cost,
+              CASE WHEN COALESCE(budget_amount,0)>0 AND (currency_code IS NULL OR currency_code = budget_currency)
+                   THEN ((budget_amount - total_costs) / budget_amount) * 100
                    ELSE 0 END AS margin_pct
-       FROM projects p
-       LEFT JOIN project_cost_actuals pca ON pca.project_id=p.id
-       WHERE p.company_id=$1
-       GROUP BY p.id, p.code, p.name, p.project_type, p.status, p.budget_amount, p.client_name
-       ORDER BY p.created_at DESC LIMIT 50`,
+       FROM v_project_profitability
+       WHERE company_id=$1
+       ORDER BY project_id, currency_code LIMIT 50`,
       [cid],
     )
     return r.rows.map((row: Record<string, unknown>) => ({
-      id: row.id,
+      id: row.project_id,
       code: row.code,
       name: row.name,
       projectType: row.project_type,
+      currencyCode: row.currency_code,
       companyName: cid,
       budget: parseFloat(String(row.budget ?? 0)),
       actualCost: parseFloat(String(row.actual_cost ?? 0)),
@@ -29778,25 +30134,28 @@ const phase5QueryResolvers = {
     }
   },
 
-  dashboardKPIs: async (_: unknown, _args: { companyId: string }, ctx: GQLContext) => {
+  dashboardKPIs: async (_: unknown, args: { companyId: string; currencyCode?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'reporting.executive.view', 'view')
     const cid = ctx.auth.companyId
+    const currencyCode = await resolveCompanyDefaultCurrencyGW(cid, args.currencyCode)
 
     const [revenueRes, revenueLastRes, openPOsRes, openPOsLastRes, projectsRes, headcountRes] =
       await Promise.all([
         query(
           `SELECT COALESCE(SUM(net_payable),0) AS v FROM project_invoices
              WHERE company_id=$1 AND status IN ('issued','partial','paid')
-               AND invoice_date >= date_trunc('month', CURRENT_DATE)`,
-          [cid],
+               AND invoice_date >= date_trunc('month', CURRENT_DATE)
+               AND currency_code=$2`,
+          [cid, currencyCode],
         ),
         query(
           `SELECT COALESCE(SUM(net_payable),0) AS v FROM project_invoices
              WHERE company_id=$1 AND status IN ('issued','partial','paid')
                AND invoice_date >= date_trunc('month', CURRENT_DATE - interval '1 month')
-               AND invoice_date < date_trunc('month', CURRENT_DATE)`,
-          [cid],
+               AND invoice_date < date_trunc('month', CURRENT_DATE)
+               AND currency_code=$2`,
+          [cid, currencyCode],
         ),
         query(
           `SELECT COUNT(*) AS v FROM purchase_orders
@@ -29947,10 +30306,11 @@ const phase5QueryResolvers = {
     }))
   },
 
-  spendByCategory: async (_: unknown, _args: { companyId: string }, ctx: GQLContext) => {
+  spendByCategory: async (_: unknown, args: { companyId: string; currencyCode?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
     const cid = ctx.auth.companyId
+    const currencyCode = await resolveCompanyDefaultCurrencyGW(cid, args.currencyCode)
     const r = await query(
       `SELECT COALESCE(aa.name, 'Unallocated') AS category,
               SUM(po.total_amount) AS amount
@@ -29958,8 +30318,9 @@ const phase5QueryResolvers = {
        LEFT JOIN analytic_accounts aa ON aa.id = po.analytic_account_id
        WHERE po.company_id=$1 AND po.status NOT IN ('deleted')
          AND po.created_at >= CURRENT_DATE - interval '90 days'
+         AND po.currency_code=$2
        GROUP BY 1 ORDER BY amount DESC LIMIT 8`,
-      [cid],
+      [cid, currencyCode],
     )
     return r.rows.map((row) => ({
       category: String(row.category),
@@ -29967,19 +30328,21 @@ const phase5QueryResolvers = {
     }))
   },
 
-  revenueVsTarget: async (_: unknown, _args: { companyId: string }, ctx: GQLContext) => {
+  revenueVsTarget: async (_: unknown, args: { companyId: string; currencyCode?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
     const cid = ctx.auth.companyId
+    const currencyCode = await resolveCompanyDefaultCurrencyGW(cid, args.currencyCode)
     const r = await query(
       `SELECT TO_CHAR(date_trunc('month', invoice_date), 'Mon YYYY') AS month,
               SUM(net_payable) AS revenue
        FROM project_invoices
        WHERE company_id=$1 AND status IN ('issued','partial','paid')
          AND invoice_date >= CURRENT_DATE - interval '6 months'
+         AND currency_code=$2
        GROUP BY date_trunc('month', invoice_date)
        ORDER BY date_trunc('month', invoice_date)`,
-      [cid],
+      [cid, currencyCode],
     )
     return r.rows.map((row) => ({
       month: String(row.month),
@@ -29989,26 +30352,43 @@ const phase5QueryResolvers = {
 
   whtReport: async (
     _: unknown,
-    args: { fromDate: string; toDate: string; companyId: string },
+    args: { fromDate: string; toDate: string; companyId?: string | null; currencyCode?: string },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
     const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
+    const availableCurrenciesRes = await query<{ currency_code: string }>(
+      `SELECT DISTINCT currency_code FROM vendor_invoices WHERE company_id=$1 AND wht_amount > 0 ORDER BY 1`,
+      [cid],
+    )
+    const availableCurrencies = availableCurrenciesRes.rows.map((r) => r.currency_code)
+    let currencyCode = args.currencyCode
+    if (!currencyCode) {
+      const companyRes = await query<{ currency_code: string }>(`SELECT currency_code FROM companies WHERE id=$1`, [
+        cid,
+      ])
+      currencyCode = companyRes.rows[0]?.currency_code ?? 'IQD'
+    }
+    // G22: approved invoices only (draft/submitted aren't a confirmed
+    // liability yet; rejected/cancelled never were), subtotal -- not
+    // total_amount, which also includes other taxes -- as the WHT base.
     const r = await query(
       `SELECT v.name AS vendor_name, v.tax_id,
               'WHT' AS wht_type,
               COALESCE(v.withholding_tax_rate, 0) AS rate,
-              COALESCE(SUM(vi.total_amount), 0)   AS payment_amount,
+              COALESCE(SUM(vi.subtotal), 0)        AS payment_amount,
               COALESCE(SUM(vi.wht_amount),   0)   AS wht_amount,
               TO_CHAR(vi.invoice_date, 'YYYY-MM')  AS period
        FROM vendor_invoices vi
        JOIN vendors v ON v.id = vi.vendor_id
        WHERE vi.company_id=$1 AND vi.wht_amount > 0
+         AND vi.status IN ('approved','partially_paid','paid')
+         AND vi.currency_code = $4
          AND vi.invoice_date BETWEEN $2 AND $3
        GROUP BY v.name, v.tax_id, v.withholding_tax_rate, TO_CHAR(vi.invoice_date, 'YYYY-MM')
        ORDER BY period, v.name`,
-      [cid, args.fromDate, args.toDate],
+      [cid, args.fromDate, args.toDate, currencyCode],
     )
     const rows = r.rows as Record<string, unknown>[]
     const totalWHT = rows.reduce((s, r) => s + parseFloat(String(r.wht_amount)), 0)
@@ -30027,12 +30407,14 @@ const phase5QueryResolvers = {
       totalWHT,
       vendorCount,
       totalPaymentsSubjectToWHT: totalPayments,
+      currencyCode,
+      availableCurrencies,
     }
   },
 
   fxExposureReport: async (
     _: unknown,
-    args: { asOfDate: string; companyId: string },
+    args: { asOfDate: string; companyId?: string | null },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -30094,11 +30476,23 @@ const phase5QueryResolvers = {
 
   payrollTaxReport: async (
     _: unknown,
-    args: { fromDate: string; toDate: string; companyId: string },
+    args: { fromDate: string; toDate: string; companyId?: string | null; currencyCode?: string },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
+    const availableCurrenciesRes = await query<{ currency_code: string }>(
+      `SELECT DISTINCT currency_code FROM payslips WHERE company_id=$1 ORDER BY 1`,
+      [cid],
+    )
+    const availableCurrencies = availableCurrenciesRes.rows.map((r) => r.currency_code)
+    let currencyCode = args.currencyCode
+    if (!currencyCode) {
+      const companyRes = await query<{ currency_code: string }>(`SELECT currency_code FROM companies WHERE id=$1`, [
+        cid,
+      ])
+      currencyCode = companyRes.rows[0]?.currency_code ?? 'IQD'
+    }
     const r = await query(
       `SELECT (e.first_name || ' ' || e.last_name) AS employee_name,
               e.employee_number,
@@ -30113,8 +30507,9 @@ const phase5QueryResolvers = {
        JOIN employees e ON e.id = ps.employee_id
        WHERE ps.company_id=$1 AND pr.start_date >= $2 AND pr.end_date <= $3
          AND (ps.income_tax > 0 OR ps.social_security > 0)
+         AND ps.currency_code = $4
        ORDER BY pr.period_name, e.last_name`,
-      [cid, args.fromDate, args.toDate],
+      [cid, args.fromDate, args.toDate, currencyCode],
     )
     return {
       rows: (r.rows as Record<string, unknown>[]).map((row) => ({
@@ -30127,6 +30522,8 @@ const phase5QueryResolvers = {
         socialSecurity: parseFloat(String(row.social_security)),
         netPay: parseFloat(String(row.net_salary)),
       })),
+      currencyCode,
+      availableCurrencies,
     }
   },
 
@@ -30231,7 +30628,8 @@ const phase5QueryResolvers = {
     const lim = args.limit ?? 20
     const offset = (page - 1) * lim
     const r = await query(
-      `SELECT ist.*, fc.name as from_company_name, tc.name as to_company_name,
+      `-- currency-safe: every line for one transfer_id is inserted with the same currency_code (the from-company's own currency, set once per transfer across all 3 insert sites), so SUM can't blend currencies
+       SELECT ist.*, fc.name as from_company_name, tc.name as to_company_name,
               it.reference AS interco_transaction_reference, it.status AS interco_transaction_status,
               COALESCE((SELECT SUM(istl.total_transfer_value) FROM interco_stock_transfer_lines istl WHERE istl.transfer_id=ist.id), 0) AS total_value,
               COALESCE((SELECT istl.currency_code FROM interco_stock_transfer_lines istl WHERE istl.transfer_id=ist.id LIMIT 1), 'IQD') AS currency_code
@@ -31384,11 +31782,7 @@ const phase5QueryResolvers = {
       args.projectId,
     ])
     const summary = summaryR.rows[0] as Record<string, unknown> | undefined
-    const costsR = await query(
-      `SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`,
-      [args.projectId],
-    )
-    const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>).total ?? 0)
+    const directCostTotal = await getBidDirectCostTotalGW(args.projectId)
     const overheadPct = Number(summary?.overhead_pct ?? 0)
     const marginPct = Number(summary?.margin_pct ?? 0)
     const discountPct = Number(summary?.discount_pct ?? 0)
@@ -31590,22 +31984,30 @@ const phase5QueryResolvers = {
 
   // ── Cost Control Queries ──────────────────────────────────────────────────
 
-  projectCostCodes: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+  projectCostCodes: async (
+    _: unknown,
+    args: { projectId: string; currencyCode?: string },
+    ctx: GQLContext,
+  ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
-    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
-      args.projectId,
-      ctx.auth.companyId,
-    ]).then((r) => {
-      if (!r.rows[0]) throw new Error('Not found')
-    })
+    const projRes = await query<{ budget_currency: string }>(
+      `SELECT budget_currency FROM projects WHERE id=$1 AND company_id=$2`,
+      [args.projectId, ctx.auth.companyId],
+    )
+    if (!projRes.rows[0]) throw new Error('Not found')
+    // 0.1 sweep: project_committed_costs.currency_code defaults 'USD' but
+    // is settable per row; previously summed blind. Defaults to the
+    // project's own budget_currency, same as everywhere else this project
+    // reads its own costs in one currency.
+    const committedCurrency = args.currencyCode ?? projRes.rows[0].budget_currency
     const codes = await query(
       `SELECT * FROM project_cost_codes WHERE project_id=$1 ORDER BY category, sequence, code`,
       [args.projectId],
     )
     const committed = await query(
-      `SELECT cost_code_id, SUM(committed_amount) AS total FROM project_committed_costs WHERE project_id=$1 AND status != 'cancelled' GROUP BY cost_code_id`,
-      [args.projectId],
+      `SELECT cost_code_id, SUM(committed_amount) AS total FROM project_committed_costs WHERE project_id=$1 AND status != 'cancelled' AND currency_code=$2 GROUP BY cost_code_id`,
+      [args.projectId, committedCurrency],
     )
     const laborAct = await query(
       `SELECT cost_code_id, SUM(total_cost) AS total FROM project_labor_entries WHERE project_id=$1 GROUP BY cost_code_id`,
@@ -31768,22 +32170,32 @@ const phase5QueryResolvers = {
     return rows.rows.map((r) => ccMapClientBilling(r as Record<string, unknown>))
   },
 
-  projectCostSummary: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+  projectCostSummary: async (
+    _: unknown,
+    args: { projectId: string; currencyCode?: string },
+    ctx: GQLContext,
+  ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
-    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
-      args.projectId,
-      ctx.auth.companyId,
-    ]).then((r) => {
-      if (!r.rows[0]) throw new Error('Not found')
-    })
+    const projRes = await query<{ budget_currency: string }>(
+      `SELECT budget_currency FROM projects WHERE id=$1 AND company_id=$2`,
+      [args.projectId, ctx.auth.companyId],
+    )
+    if (!projRes.rows[0]) throw new Error('Not found')
+    // 0.1 sweep: same currency-blind SUM as projectCostCodes above.
+    const availableCurrenciesRes = await query<{ currency_code: string }>(
+      `SELECT DISTINCT currency_code FROM project_committed_costs WHERE project_id=$1 ORDER BY 1`,
+      [args.projectId],
+    )
+    const availableCurrencies = availableCurrenciesRes.rows.map((r) => r.currency_code)
+    const committedCurrency = args.currencyCode ?? projRes.rows[0].budget_currency
     const codes = await query(
       `SELECT category, SUM(budget_amount) AS budget FROM project_cost_codes WHERE project_id=$1 GROUP BY category`,
       [args.projectId],
     )
     const committed = await query(
-      `SELECT pcc.category, SUM(cc.committed_amount) AS total FROM project_committed_costs cc LEFT JOIN project_cost_codes pcc ON pcc.id=cc.cost_code_id WHERE cc.project_id=$1 AND cc.status != 'cancelled' GROUP BY pcc.category`,
-      [args.projectId],
+      `SELECT pcc.category, SUM(cc.committed_amount) AS total FROM project_committed_costs cc LEFT JOIN project_cost_codes pcc ON pcc.id=cc.cost_code_id WHERE cc.project_id=$1 AND cc.status != 'cancelled' AND cc.currency_code=$2 GROUP BY pcc.category`,
+      [args.projectId, committedCurrency],
     )
     const laborAct = await query(
       `SELECT pcc.category, SUM(le.total_cost) AS total FROM project_labor_entries le LEFT JOIN project_cost_codes pcc ON pcc.id=le.cost_code_id WHERE le.project_id=$1 GROUP BY pcc.category`,
@@ -31884,6 +32296,8 @@ const phase5QueryResolvers = {
       totalRetentionHeld: totalRetention,
       outstandingReceivable: totalCertified - totalPaid,
       byCategory,
+      currencyCode: committedCurrency,
+      availableCurrencies,
     }
   },
 
@@ -34467,7 +34881,8 @@ const phase5MutationResolvers = {
       const qtyOrdered = parseFloat(locked.rows[0].qty_ordered)
       const qtyFromStock = parseFloat(locked.rows[0].qty_from_stock ?? '0')
       const alreadyBought = await client.query<{ total: string }>(
-        `SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1`,
+        `-- currency-safe: qty is a purchased quantity, not money
+         SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1`,
         [lineId],
       )
       const alreadyQty = parseFloat(alreadyBought.rows[0]?.total ?? '0')
@@ -34723,7 +35138,8 @@ const phase5MutationResolvers = {
       throw new Error('Only a buyer position holder for this requisition can mark a line short')
 
     const boughtRes = await query<{ total: string }>(
-      `SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1`,
+      `-- currency-safe: qty is a purchased quantity, not money
+       SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1`,
       [args.lineId],
     )
     const remaining =
@@ -34797,7 +35213,8 @@ const phase5MutationResolvers = {
       throw new Error('Only a buyer position holder for this requisition can resolve a line from stock')
 
     const boughtRes = await query<{ total: string }>(
-      `SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1`,
+      `-- currency-safe: qty is a purchased quantity, not money
+       SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1`,
       [args.lineId],
     )
     const qtyFromStockSoFar = parseFloat(line.qty_from_stock ?? '0')
@@ -34931,6 +35348,7 @@ const phase5MutationResolvers = {
       `SELECT COUNT(*) AS c FROM po_lines pl
        WHERE pl.requisition_id=$1 AND pl.po_id IS NULL AND pl.short_marked_at IS NULL
          AND pl.qty_ordered - COALESCE(pl.qty_from_stock,0)
+             -- currency-safe: qty is a purchased quantity, not money
              - COALESCE((SELECT SUM(qty) FROM po_line_purchases WHERE po_line_id=pl.id),0) > 0.0001`,
       [args.id],
     )
@@ -35008,12 +35426,14 @@ const phase5MutationResolvers = {
         for (const vendorId of new Set(purchasesRes.rows.map((p) => p.vendor_id))) {
           const entriesForVendor = purchasesRes.rows.filter((p) => p.vendor_id === vendorId)
           const poNumber = await nextDocumentNumber(auth.companyId, 'purchase_order', 'PO')
-          // Header currency_code is a display-only summary under the
-          // no-conversion policy (po_lines.currency_code is what's
-          // authoritative per line) — picks the first entry's currency; a
-          // same-vendor split across genuinely different currencies is a
-          // known, accepted gap here, same as the old single-currency-
-          // header model already had.
+          // Header currency_code is a display-only label, not a calculation
+          // — picks the first entry's currency; a same-vendor split across
+          // genuinely different currencies is a known, accepted gap for this
+          // label only. The actual totals are no longer blended across
+          // currencies (see recalcPOTotalsGW/getPOCurrencyTotals below), so
+          // this gap can't silently misstate money — at worst the header
+          // names the "wrong" (but still real) currency for a PO whose other
+          // currencies are fully reported in PurchaseOrder.currencyTotals.
           const headerCurrency = entriesForVendor[0].currency_code
           const poRes = await client.query<{ id: string }>(
             `INSERT INTO purchase_orders
@@ -35119,13 +35539,7 @@ const phase5MutationResolvers = {
         }
 
         for (const childId of childByVendor.values()) {
-          await client.query(
-            `UPDATE purchase_orders
-             SET subtotal=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1),
-                 total_amount=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1)
-             WHERE id=$1`,
-            [childId],
-          )
+          await recalcPOTotalsGW(client, childId)
         }
       }
       // purchasesRes empty: every line that needed purchasing ended up
@@ -38621,6 +39035,23 @@ Object.assign(resolvers, {
         [parent.id],
       )
       return r.rows[0]?.has_gap ?? false
+    },
+    // D10: fetchFullPurchaseOrderGW (purchaseOrder(id) detail fetch) and the
+    // viewerRestricted stub above both already attach currencyTotals to the
+    // parent object -- the former to reuse its already-fetched lines instead
+    // of a second query, the latter to deliberately return [] instead of the
+    // real breakdown for a caller who shouldn't see it. Either way, once set
+    // it must win: only a bare `SELECT ... FROM purchase_orders` row (list,
+    // approval queue) has no currencyTotals of its own, and falls back to a
+    // live query here so those callers get the same per-currency breakdown
+    // without every list/queue resolver having to compute it itself.
+    currencyTotals: async (
+      parent: { id: string; currencyTotals?: unknown },
+    ): Promise<{ currency_code: string; subtotal: string; line_count: number }[]> => {
+      if (parent.currencyTotals !== undefined) {
+        return parent.currencyTotals as { currency_code: string; subtotal: string; line_count: number }[]
+      }
+      return getPOCurrencyTotals(query, parent.id)
     },
   },
 })

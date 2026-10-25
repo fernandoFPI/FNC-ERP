@@ -230,6 +230,8 @@ import {
   ADD_ENG_CLIENT_COMMENT,
   CLOSE_ENG_CLIENT_COMMENT,
   REOPEN_ENG_CLIENT_COMMENT,
+  ADD_PROJECT_BUDGET,
+  REMOVE_PROJECT_BUDGET,
 } from '../../../graphql/projects'
 import { PROJECT_RESOURCE_LOADING_QUERY } from '../../../graphql/_known-broken'
 import { PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
@@ -260,7 +262,7 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Modal } from '../../../components/ui/Modal'
 import { Table, type Column } from '../../../components/ui/Table'
 import JSZip from 'jszip'
-import type { AcceptHandoverCertificateMutation, AcceptHandoverCertificateMutationVariables, AddDailyReportMachineryMutation, AddDailyReportMachineryMutationVariables, AddDocCommentMutation, AddDocCommentMutationVariables, AddEngClientCommentMutation, AddEngClientCommentMutationVariables, AddPunchPhotoMutation, AddPunchPhotoMutationVariables, AddRiskReviewMutation, AddRiskReviewMutationVariables, AddVoDrawingMutation, AddVoDrawingMutationVariables, AdminSetPhaseMutation, AdminSetPhaseMutationVariables, AdminSetProjectStatusMutation, AdminSetProjectStatusMutationVariables, ApplyBaselineMutation, ApplyBaselineMutationVariables, ApproveBidMutation, ApproveBidMutationVariables, ApproveVariationOrderMutation, ApproveVariationOrderMutationVariables, AssignResourceMutation, AssignResourceMutationVariables, AttachDailyReportMachineryPhotoMutation, AttachDailyReportMachineryPhotoMutationVariables, BidCommercialSummaryQuery, BidCommercialSummaryQueryVariables, BidCostItemsQuery, BidCostItemsQueryVariables, BidDeliverablesQuery, BidDeliverablesQueryVariables, BidPackageFilesQuery, BidPackageFilesQueryVariables, BidSupplierQuotationsQuery, BidSupplierQuotationsQueryVariables, BulkImportActivitiesMutation, BulkImportActivitiesMutationVariables, ClientDocumentsQuery, ClientDocumentsQueryVariables, CloseEngClientCommentMutation, CloseEngClientCommentMutationVariables, CloseMeetingMutation, CloseMeetingMutationVariables, CloseTqMutation, CloseTqMutationVariables, CreateActivityMutation, CreateActivityMutationVariables, CreateBaselineMutation, CreateBaselineMutationVariables, CreateBidDeliverableMutation, CreateBidDeliverableMutationVariables, CreateBidSupplierQuotationMutation, CreateBidSupplierQuotationMutationVariables, CreateClientBillingMutation, CreateClientBillingMutationVariables, CreateCommittedCostMutation, CreateCommittedCostMutationVariables, CreateContractMilestoneMutation, CreateContractMilestoneMutationVariables, CreateCostCodeMutation, CreateCostCodeMutationVariables, CreateDailyReportMutation, CreateDailyReportMutationVariables, CreateDependencyMutation, CreateDependencyMutationVariables, CreateEngineeringDocMutation, CreateEngineeringDocMutationVariables, CreateEquipmentLogMutation, CreateEquipmentLogMutationVariables, CreateHandoverCertificateMutation, CreateHandoverCertificateMutationVariables, CreateHandoverItemMutation, CreateHandoverItemMutationVariables, CreateHseRecordMutation, CreateHseRecordMutationVariables, CreateInspectionRequestMutation, CreateInspectionRequestMutationVariables, CreateLaborEntryMutation, CreateLaborEntryMutationVariables, CreateMeetingActionMutation, CreateMeetingActionMutationVariables, CreateMeetingMutation, CreateMeetingMutationVariables, CreateProjectContractMutation, CreateProjectContractMutationVariables, CreateProjectItpMutation, CreateProjectItpMutationVariables, CreateProjectNcrMutation, CreateProjectNcrMutationVariables, CreateProjectRfiMutation, CreateProjectRfiMutationVariables, CreatePunchItemMutation, CreatePunchItemMutationVariables, CreateResourceMutation, CreateResourceMutationVariables, CreateRiskMutation, CreateRiskMutationVariables, CreateSiteInstructionMutation, CreateSiteInstructionMutationVariables, CreateSubcontractMutation, CreateSubcontractMutationVariables, CreateTqMutation, CreateTqMutationVariables, CreateVariationOrderMutation, CreateVariationOrderMutationVariables, CreateVoCorrespondenceMutation, CreateVoCorrespondenceMutationVariables, CreateVoCostItemMutation, CreateVoCostItemMutationVariables, CreateWbsNodeMutation, CreateWbsNodeMutationVariables, DeleteActivityMutation, DeleteActivityMutationVariables, DeleteBaselineMutation, DeleteBaselineMutationVariables, DeleteBidDeliverableFileMutation, DeleteBidDeliverableFileMutationVariables, DeleteBidDeliverableMutation, DeleteBidDeliverableMutationVariables, DeleteBidPackageFileMutation, DeleteBidPackageFileMutationVariables, DeleteBidSupplierQuotationMutation, DeleteBidSupplierQuotationMutationVariables, DeleteCalendarDayMutation, DeleteCalendarDayMutationVariables, DeleteClientBillingMutation, DeleteClientBillingMutationVariables, DeleteClientDocumentMutation, DeleteClientDocumentMutationVariables, DeleteCommittedCostMutation, DeleteCommittedCostMutationVariables, DeleteContractMilestoneMutation, DeleteContractMilestoneMutationVariables, DeleteCostCodeMutation, DeleteCostCodeMutationVariables, DeleteDailyReportFileMutation, DeleteDailyReportFileMutationVariables, DeleteDailyReportMachineryMutation, DeleteDailyReportMachineryMutationVariables, DeleteDailyReportMutation, DeleteDailyReportMutationVariables, DeleteDependencyMutation, DeleteDependencyMutationVariables, DeleteDocCommentMutation, DeleteDocCommentMutationVariables, DeleteEngineeringDocMutation, DeleteEngineeringDocMutationVariables, DeleteEquipmentLogMutation, DeleteEquipmentLogMutationVariables, DeleteHandoverCertFileMutation, DeleteHandoverCertFileMutationVariables, DeleteHandoverCertificateMutation, DeleteHandoverCertificateMutationVariables, DeleteHandoverItemMutation, DeleteHandoverItemMutationVariables, DeleteHseFileMutation, DeleteHseFileMutationVariables, DeleteHseRecordMutation, DeleteHseRecordMutationVariables, DeleteInspectionRequestMutation, DeleteInspectionRequestMutationVariables, DeleteIrFileMutation, DeleteIrFileMutationVariables, DeleteLaborEntryMutation, DeleteLaborEntryMutationVariables, DeleteMeetingActionMutation, DeleteMeetingActionMutationVariables, DeleteMeetingMutation, DeleteMeetingMutationVariables, DeleteNcrFileMutation, DeleteNcrFileMutationVariables, DeleteProjectItpMutation, DeleteProjectItpMutationVariables, DeleteProjectNcrMutation, DeleteProjectNcrMutationVariables, DeleteProjectRfiMutation, DeleteProjectRfiMutationVariables, DeletePunchItemMutation, DeletePunchItemMutationVariables, DeletePunchPhotoMutation, DeletePunchPhotoMutationVariables, DeleteResourceMutation, DeleteResourceMutationVariables, DeleteRfiFileMutation, DeleteRfiFileMutationVariables, DeleteRiskMutation, DeleteRiskMutationVariables, DeleteSiFileMutation, DeleteSiFileMutationVariables, DeleteSiteInstructionMutation, DeleteSiteInstructionMutationVariables, DeleteSubcontractMutation, DeleteSubcontractMutationVariables, DeleteTqFileMutation, DeleteTqFileMutationVariables, DeleteTqMutation, DeleteTqMutationVariables, DeleteVariationOrderMutation, DeleteVariationOrderMutationVariables, DeleteVoCorrespondenceMutation, DeleteVoCorrespondenceMutationVariables, DeleteVoCostItemMutation, DeleteVoCostItemMutationVariables, DeleteWbsNodeMutation, DeleteWbsNodeMutationVariables, DocCommentsQuery, DocCommentsQueryVariables, EngClientCommentsQuery, EngClientCommentsQueryVariables, EngineeringDocumentsQuery, EngineeringDocumentsQueryVariables, IfcDocumentsQuery, IfcDocumentsQueryVariables, IssueHandoverCertificateMutation, IssueHandoverCertificateMutationVariables, IssueMeetingMutation, IssueMeetingMutationVariables, LevelResourcesMutation, LevelResourcesMutationVariables, LifecycleConfigQuery, LifecycleConfigQueryVariables, ManufacturingRequestsQuery, ManufacturingRequestsQueryVariables, MaterialIssuesQuery, MaterialIssuesQueryVariables, PerformDocWorkflowActionMutation, PerformDocWorkflowActionMutationVariables, PmSignPunchMutation, PmSignPunchMutationVariables, ProjectActivitiesQuery, ProjectActivitiesQueryVariables, ProjectBaselinesQuery, ProjectBaselinesQueryVariables, ProjectCashFlowQuery, ProjectCashFlowQueryVariables, ProjectClientBillingsQuery, ProjectClientBillingsQueryVariables, ProjectCommittedCostsQuery, ProjectCommittedCostsQueryVariables, ProjectContractsQuery, ProjectContractsQueryVariables, ProjectCostCodesQuery, ProjectCostCodesQueryVariables, ProjectCostForecastQuery, ProjectCostForecastQueryVariables, ProjectCostSummaryQuery, ProjectCostSummaryQueryVariables, ProjectDailyReportsQuery, ProjectDailyReportsQueryVariables, ProjectDrawingsQuery, ProjectDrawingsQueryVariables, ProjectEquipmentLogQuery, ProjectEquipmentLogQueryVariables, ProjectEvmQuery, ProjectEvmQueryVariables, ProjectHandoverQuery, ProjectHandoverQueryVariables, ProjectHseRecordsQuery, ProjectHseRecordsQueryVariables, ProjectInspectionRequestsQuery, ProjectInspectionRequestsQueryVariables, ProjectInvoicesQuery, ProjectInvoicesQueryVariables, ProjectItPsQuery, ProjectItPsQueryVariables, ProjectLaborEntriesQuery, ProjectLaborEntriesQueryVariables, ProjectMeetingsQuery, ProjectMeetingsQueryVariables, ProjectNcRsQuery, ProjectNcRsQueryVariables, ProjectPunchItemsQuery, ProjectPunchItemsQueryVariables, ProjectQuery, ProjectQueryVariables, ProjectResourcesQuery, ProjectResourcesQueryVariables, ProjectRfIsQuery, ProjectRfIsQueryVariables, ProjectRisksQuery, ProjectRisksQueryVariables, ProjectSiteInstructionsQuery, ProjectSiteInstructionsQueryVariables, ProjectSubcontractsQuery, ProjectSubcontractsQueryVariables, ProjectTQsQuery, ProjectTQsQueryVariables, ProjectVariationOrdersQuery, ProjectVariationOrdersQueryVariables, ProjectWbsQuery, ProjectWbsQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, ReachMilestoneMutation, ReachMilestoneMutationVariables, RecalculateCpmMutation, RecalculateCpmMutationVariables, RecordItpItemResultMutation, RecordItpItemResultMutationVariables, RejectBidMutation, RejectBidMutationVariables, RejectHandoverCertificateMutation, RejectHandoverCertificateMutationVariables, RejectVariationOrderMutation, RejectVariationOrderMutationVariables, RemoveResourceAssignmentMutation, RemoveResourceAssignmentMutationVariables, RemoveVoDrawingMutation, RemoveVoDrawingMutationVariables, ReopenEngClientCommentMutation, ReopenEngClientCommentMutationVariables, ReopenPunchMutation, ReopenPunchMutationVariables, RespondToCommentMutation, RespondToCommentMutationVariables, RespondToRfiMutation, RespondToRfiMutationVariables, RespondToTqMutation, RespondToTqMutationVariables, ReviewTqMutation, ReviewTqMutationVariables, ReviseBidMutation, ReviseBidMutationVariables, ReviseContractMutation, ReviseContractMutationVariables, ReviseEngineeringDocMutation, ReviseEngineeringDocMutationVariables, RfqLinesQuery, RfqLinesQueryVariables, SetActiveBaselineMutation, SetActiveBaselineMutationVariables, SetCalendarDayMutation, SetCalendarDayMutationVariables, SetVoStatusMutation, SetVoStatusMutationVariables, SubmitBidForApprovalMutation, SubmitBidForApprovalMutationVariables, SubmitVariationOrderMutation, SubmitVariationOrderMutationVariables, SupervisorSignPunchMutation, SupervisorSignPunchMutationVariables, SyncPoCommitmentsMutation, SyncPoCommitmentsMutationVariables, UpdateActivityMutation, UpdateActivityMutationVariables, UpdateActivityProgressMutation, UpdateActivityProgressMutationVariables, UpdateBidCommercialSummaryMutation, UpdateBidCommercialSummaryMutationVariables, UpdateBidDeliverableMutation, UpdateBidDeliverableMutationVariables, UpdateBidSupplierQuotationMutation, UpdateBidSupplierQuotationMutationVariables, UpdateClientBillingMutation, UpdateClientBillingMutationVariables, UpdateClientDocumentMutation, UpdateClientDocumentMutationVariables, UpdateClientDocumentStatusMutation, UpdateClientDocumentStatusMutationVariables, UpdateCommittedCostMutation, UpdateCommittedCostMutationVariables, UpdateContractMilestoneMutation, UpdateContractMilestoneMutationVariables, UpdateCostCodeMutation, UpdateCostCodeMutationVariables, UpdateDailyReportMutation, UpdateDailyReportMutationVariables, UpdateEngineeringDocStatusMutation, UpdateEngineeringDocStatusMutationVariables, UpdateEquipmentLogMutation, UpdateEquipmentLogMutationVariables, UpdateHandoverCertificateMutation, UpdateHandoverCertificateMutationVariables, UpdateHandoverItemMutation, UpdateHandoverItemMutationVariables, UpdateHseRecordMutation, UpdateHseRecordMutationVariables, UpdateInspectionRequestMutation, UpdateInspectionRequestMutationVariables, UpdateLaborEntryMutation, UpdateLaborEntryMutationVariables, UpdateMeetingActionMutation, UpdateMeetingActionMutationVariables, UpdateMeetingMutation, UpdateMeetingMutationVariables, UpdateProjectContractMutation, UpdateProjectContractMutationVariables, UpdateProjectItpMutation, UpdateProjectItpMutationVariables, UpdateProjectNcrMutation, UpdateProjectNcrMutationVariables, UpdateProjectRfiMutation, UpdateProjectRfiMutationVariables, UpdateProjectStageMutation, UpdateProjectStageMutationVariables, UpdatePunchItemMutation, UpdatePunchItemMutationVariables, UpdatePunchStatusMutation, UpdatePunchStatusMutationVariables, UpdateResourceAssignmentMutation, UpdateResourceAssignmentMutationVariables, UpdateResourceMutation, UpdateResourceMutationVariables, UpdateRiskMutation, UpdateRiskMutationVariables, UpdateRiskStatusMutation, UpdateRiskStatusMutationVariables, UpdateSiteInstructionMutation, UpdateSiteInstructionMutationVariables, UpdateSubcontractMutation, UpdateSubcontractMutationVariables, UpdateTqMutation, UpdateTqMutationVariables, UpdateVariationOrderMutation, UpdateVariationOrderMutationVariables, UpdateVoCostItemMutation, UpdateVoCostItemMutationVariables, UpdateWbsNodeMutation, UpdateWbsNodeMutationVariables, UploadBidDeliverableFileMutation, UploadBidDeliverableFileMutationVariables, UploadBidPackageFileMutation, UploadBidPackageFileMutationVariables, UploadClientDocumentMutation, UploadClientDocumentMutationVariables, UploadClientDocumentRevisionMutation, UploadClientDocumentRevisionMutationVariables, UploadDailyReportFileMutation, UploadDailyReportFileMutationVariables, UploadHandoverCertFileMutation, UploadHandoverCertFileMutationVariables, UploadHseFileMutation, UploadHseFileMutationVariables, UploadIrFileMutation, UploadIrFileMutationVariables, UploadNcrFileMutation, UploadNcrFileMutationVariables, UploadRfiFileMutation, UploadRfiFileMutationVariables, UploadSiFileMutation, UploadSiFileMutationVariables, UploadTqFileMutation, UploadTqFileMutationVariables, UpsertBidCostItemsMutation, UpsertBidCostItemsMutationVariables, UpsertCashFlowPeriodMutation, UpsertCashFlowPeriodMutationVariables, UpsertCostForecastMutation, UpsertCostForecastMutationVariables, UpsertItpItemsMutation, UpsertItpItemsMutationVariables, VerifyHandoverItemMutation, VerifyHandoverItemMutationVariables } from '../../../graphql/generated'
+import type { AcceptHandoverCertificateMutation, AcceptHandoverCertificateMutationVariables, AddDailyReportMachineryMutation, AddDailyReportMachineryMutationVariables, AddDocCommentMutation, AddDocCommentMutationVariables, AddEngClientCommentMutation, AddEngClientCommentMutationVariables, AddProjectBudgetMutation, AddProjectBudgetMutationVariables, AddPunchPhotoMutation, AddPunchPhotoMutationVariables, AddRiskReviewMutation, AddRiskReviewMutationVariables, AddVoDrawingMutation, AddVoDrawingMutationVariables, AdminSetPhaseMutation, AdminSetPhaseMutationVariables, AdminSetProjectStatusMutation, AdminSetProjectStatusMutationVariables, ApplyBaselineMutation, ApplyBaselineMutationVariables, ApproveBidMutation, ApproveBidMutationVariables, ApproveVariationOrderMutation, ApproveVariationOrderMutationVariables, AssignResourceMutation, AssignResourceMutationVariables, AttachDailyReportMachineryPhotoMutation, AttachDailyReportMachineryPhotoMutationVariables, BidCommercialSummaryQuery, BidCommercialSummaryQueryVariables, BidCostItemsQuery, BidCostItemsQueryVariables, BidDeliverablesQuery, BidDeliverablesQueryVariables, BidPackageFilesQuery, BidPackageFilesQueryVariables, BidSupplierQuotationsQuery, BidSupplierQuotationsQueryVariables, BulkImportActivitiesMutation, BulkImportActivitiesMutationVariables, ClientDocumentsQuery, ClientDocumentsQueryVariables, CloseEngClientCommentMutation, CloseEngClientCommentMutationVariables, CloseMeetingMutation, CloseMeetingMutationVariables, CloseTqMutation, CloseTqMutationVariables, CreateActivityMutation, CreateActivityMutationVariables, CreateBaselineMutation, CreateBaselineMutationVariables, CreateBidDeliverableMutation, CreateBidDeliverableMutationVariables, CreateBidSupplierQuotationMutation, CreateBidSupplierQuotationMutationVariables, CreateClientBillingMutation, CreateClientBillingMutationVariables, CreateCommittedCostMutation, CreateCommittedCostMutationVariables, CreateContractMilestoneMutation, CreateContractMilestoneMutationVariables, CreateCostCodeMutation, CreateCostCodeMutationVariables, CreateDailyReportMutation, CreateDailyReportMutationVariables, CreateDependencyMutation, CreateDependencyMutationVariables, CreateEngineeringDocMutation, CreateEngineeringDocMutationVariables, CreateEquipmentLogMutation, CreateEquipmentLogMutationVariables, CreateHandoverCertificateMutation, CreateHandoverCertificateMutationVariables, CreateHandoverItemMutation, CreateHandoverItemMutationVariables, CreateHseRecordMutation, CreateHseRecordMutationVariables, CreateInspectionRequestMutation, CreateInspectionRequestMutationVariables, CreateLaborEntryMutation, CreateLaborEntryMutationVariables, CreateMeetingActionMutation, CreateMeetingActionMutationVariables, CreateMeetingMutation, CreateMeetingMutationVariables, CreateProjectContractMutation, CreateProjectContractMutationVariables, CreateProjectItpMutation, CreateProjectItpMutationVariables, CreateProjectNcrMutation, CreateProjectNcrMutationVariables, CreateProjectRfiMutation, CreateProjectRfiMutationVariables, CreatePunchItemMutation, CreatePunchItemMutationVariables, CreateResourceMutation, CreateResourceMutationVariables, CreateRiskMutation, CreateRiskMutationVariables, CreateSiteInstructionMutation, CreateSiteInstructionMutationVariables, CreateSubcontractMutation, CreateSubcontractMutationVariables, CreateTqMutation, CreateTqMutationVariables, CreateVariationOrderMutation, CreateVariationOrderMutationVariables, CreateVoCorrespondenceMutation, CreateVoCorrespondenceMutationVariables, CreateVoCostItemMutation, CreateVoCostItemMutationVariables, CreateWbsNodeMutation, CreateWbsNodeMutationVariables, DeleteActivityMutation, DeleteActivityMutationVariables, DeleteBaselineMutation, DeleteBaselineMutationVariables, DeleteBidDeliverableFileMutation, DeleteBidDeliverableFileMutationVariables, DeleteBidDeliverableMutation, DeleteBidDeliverableMutationVariables, DeleteBidPackageFileMutation, DeleteBidPackageFileMutationVariables, DeleteBidSupplierQuotationMutation, DeleteBidSupplierQuotationMutationVariables, DeleteCalendarDayMutation, DeleteCalendarDayMutationVariables, DeleteClientBillingMutation, DeleteClientBillingMutationVariables, DeleteClientDocumentMutation, DeleteClientDocumentMutationVariables, DeleteCommittedCostMutation, DeleteCommittedCostMutationVariables, DeleteContractMilestoneMutation, DeleteContractMilestoneMutationVariables, DeleteCostCodeMutation, DeleteCostCodeMutationVariables, DeleteDailyReportFileMutation, DeleteDailyReportFileMutationVariables, DeleteDailyReportMachineryMutation, DeleteDailyReportMachineryMutationVariables, DeleteDailyReportMutation, DeleteDailyReportMutationVariables, DeleteDependencyMutation, DeleteDependencyMutationVariables, DeleteDocCommentMutation, DeleteDocCommentMutationVariables, DeleteEngineeringDocMutation, DeleteEngineeringDocMutationVariables, DeleteEquipmentLogMutation, DeleteEquipmentLogMutationVariables, DeleteHandoverCertFileMutation, DeleteHandoverCertFileMutationVariables, DeleteHandoverCertificateMutation, DeleteHandoverCertificateMutationVariables, DeleteHandoverItemMutation, DeleteHandoverItemMutationVariables, DeleteHseFileMutation, DeleteHseFileMutationVariables, DeleteHseRecordMutation, DeleteHseRecordMutationVariables, DeleteInspectionRequestMutation, DeleteInspectionRequestMutationVariables, DeleteIrFileMutation, DeleteIrFileMutationVariables, DeleteLaborEntryMutation, DeleteLaborEntryMutationVariables, DeleteMeetingActionMutation, DeleteMeetingActionMutationVariables, DeleteMeetingMutation, DeleteMeetingMutationVariables, DeleteNcrFileMutation, DeleteNcrFileMutationVariables, DeleteProjectItpMutation, DeleteProjectItpMutationVariables, DeleteProjectNcrMutation, DeleteProjectNcrMutationVariables, DeleteProjectRfiMutation, DeleteProjectRfiMutationVariables, DeletePunchItemMutation, DeletePunchItemMutationVariables, DeletePunchPhotoMutation, DeletePunchPhotoMutationVariables, DeleteResourceMutation, DeleteResourceMutationVariables, DeleteRfiFileMutation, DeleteRfiFileMutationVariables, DeleteRiskMutation, DeleteRiskMutationVariables, DeleteSiFileMutation, DeleteSiFileMutationVariables, DeleteSiteInstructionMutation, DeleteSiteInstructionMutationVariables, DeleteSubcontractMutation, DeleteSubcontractMutationVariables, DeleteTqFileMutation, DeleteTqFileMutationVariables, DeleteTqMutation, DeleteTqMutationVariables, DeleteVariationOrderMutation, DeleteVariationOrderMutationVariables, DeleteVoCorrespondenceMutation, DeleteVoCorrespondenceMutationVariables, DeleteVoCostItemMutation, DeleteVoCostItemMutationVariables, DeleteWbsNodeMutation, DeleteWbsNodeMutationVariables, DocCommentsQuery, DocCommentsQueryVariables, EngClientCommentsQuery, EngClientCommentsQueryVariables, EngineeringDocumentsQuery, EngineeringDocumentsQueryVariables, IfcDocumentsQuery, IfcDocumentsQueryVariables, IssueHandoverCertificateMutation, IssueHandoverCertificateMutationVariables, IssueMeetingMutation, IssueMeetingMutationVariables, LevelResourcesMutation, LevelResourcesMutationVariables, LifecycleConfigQuery, LifecycleConfigQueryVariables, ManufacturingRequestsQuery, ManufacturingRequestsQueryVariables, MaterialIssuesQuery, MaterialIssuesQueryVariables, PerformDocWorkflowActionMutation, PerformDocWorkflowActionMutationVariables, PmSignPunchMutation, PmSignPunchMutationVariables, ProjectActivitiesQuery, ProjectActivitiesQueryVariables, ProjectBaselinesQuery, ProjectBaselinesQueryVariables, ProjectCashFlowQuery, ProjectCashFlowQueryVariables, ProjectClientBillingsQuery, ProjectClientBillingsQueryVariables, ProjectCommittedCostsQuery, ProjectCommittedCostsQueryVariables, ProjectContractsQuery, ProjectContractsQueryVariables, ProjectCostCodesQuery, ProjectCostCodesQueryVariables, ProjectCostForecastQuery, ProjectCostForecastQueryVariables, ProjectCostSummaryQuery, ProjectCostSummaryQueryVariables, ProjectDailyReportsQuery, ProjectDailyReportsQueryVariables, ProjectDrawingsQuery, ProjectDrawingsQueryVariables, ProjectEquipmentLogQuery, ProjectEquipmentLogQueryVariables, ProjectEvmQuery, ProjectEvmQueryVariables, ProjectHandoverQuery, ProjectHandoverQueryVariables, ProjectHseRecordsQuery, ProjectHseRecordsQueryVariables, ProjectInspectionRequestsQuery, ProjectInspectionRequestsQueryVariables, ProjectInvoicesQuery, ProjectInvoicesQueryVariables, ProjectItPsQuery, ProjectItPsQueryVariables, ProjectLaborEntriesQuery, ProjectLaborEntriesQueryVariables, ProjectMeetingsQuery, ProjectMeetingsQueryVariables, ProjectNcRsQuery, ProjectNcRsQueryVariables, ProjectPunchItemsQuery, ProjectPunchItemsQueryVariables, ProjectQuery, ProjectQueryVariables, ProjectResourcesQuery, ProjectResourcesQueryVariables, ProjectRfIsQuery, ProjectRfIsQueryVariables, ProjectRisksQuery, ProjectRisksQueryVariables, ProjectSiteInstructionsQuery, ProjectSiteInstructionsQueryVariables, ProjectSubcontractsQuery, ProjectSubcontractsQueryVariables, ProjectTQsQuery, ProjectTQsQueryVariables, ProjectVariationOrdersQuery, ProjectVariationOrdersQueryVariables, ProjectWbsQuery, ProjectWbsQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, ReachMilestoneMutation, ReachMilestoneMutationVariables, RecalculateCpmMutation, RecalculateCpmMutationVariables, RecordItpItemResultMutation, RecordItpItemResultMutationVariables, RejectBidMutation, RejectBidMutationVariables, RejectHandoverCertificateMutation, RejectHandoverCertificateMutationVariables, RejectVariationOrderMutation, RejectVariationOrderMutationVariables, RemoveProjectBudgetMutation, RemoveProjectBudgetMutationVariables, RemoveResourceAssignmentMutation, RemoveResourceAssignmentMutationVariables, RemoveVoDrawingMutation, RemoveVoDrawingMutationVariables, ReopenEngClientCommentMutation, ReopenEngClientCommentMutationVariables, ReopenPunchMutation, ReopenPunchMutationVariables, RespondToCommentMutation, RespondToCommentMutationVariables, RespondToRfiMutation, RespondToRfiMutationVariables, RespondToTqMutation, RespondToTqMutationVariables, ReviewTqMutation, ReviewTqMutationVariables, ReviseBidMutation, ReviseBidMutationVariables, ReviseContractMutation, ReviseContractMutationVariables, ReviseEngineeringDocMutation, ReviseEngineeringDocMutationVariables, RfqLinesQuery, RfqLinesQueryVariables, SetActiveBaselineMutation, SetActiveBaselineMutationVariables, SetCalendarDayMutation, SetCalendarDayMutationVariables, SetVoStatusMutation, SetVoStatusMutationVariables, SubmitBidForApprovalMutation, SubmitBidForApprovalMutationVariables, SubmitVariationOrderMutation, SubmitVariationOrderMutationVariables, SupervisorSignPunchMutation, SupervisorSignPunchMutationVariables, SyncPoCommitmentsMutation, SyncPoCommitmentsMutationVariables, UpdateActivityMutation, UpdateActivityMutationVariables, UpdateActivityProgressMutation, UpdateActivityProgressMutationVariables, UpdateBidCommercialSummaryMutation, UpdateBidCommercialSummaryMutationVariables, UpdateBidDeliverableMutation, UpdateBidDeliverableMutationVariables, UpdateBidSupplierQuotationMutation, UpdateBidSupplierQuotationMutationVariables, UpdateClientBillingMutation, UpdateClientBillingMutationVariables, UpdateClientDocumentMutation, UpdateClientDocumentMutationVariables, UpdateClientDocumentStatusMutation, UpdateClientDocumentStatusMutationVariables, UpdateCommittedCostMutation, UpdateCommittedCostMutationVariables, UpdateContractMilestoneMutation, UpdateContractMilestoneMutationVariables, UpdateCostCodeMutation, UpdateCostCodeMutationVariables, UpdateDailyReportMutation, UpdateDailyReportMutationVariables, UpdateEngineeringDocStatusMutation, UpdateEngineeringDocStatusMutationVariables, UpdateEquipmentLogMutation, UpdateEquipmentLogMutationVariables, UpdateHandoverCertificateMutation, UpdateHandoverCertificateMutationVariables, UpdateHandoverItemMutation, UpdateHandoverItemMutationVariables, UpdateHseRecordMutation, UpdateHseRecordMutationVariables, UpdateInspectionRequestMutation, UpdateInspectionRequestMutationVariables, UpdateLaborEntryMutation, UpdateLaborEntryMutationVariables, UpdateMeetingActionMutation, UpdateMeetingActionMutationVariables, UpdateMeetingMutation, UpdateMeetingMutationVariables, UpdateProjectContractMutation, UpdateProjectContractMutationVariables, UpdateProjectItpMutation, UpdateProjectItpMutationVariables, UpdateProjectNcrMutation, UpdateProjectNcrMutationVariables, UpdateProjectRfiMutation, UpdateProjectRfiMutationVariables, UpdateProjectStageMutation, UpdateProjectStageMutationVariables, UpdatePunchItemMutation, UpdatePunchItemMutationVariables, UpdatePunchStatusMutation, UpdatePunchStatusMutationVariables, UpdateResourceAssignmentMutation, UpdateResourceAssignmentMutationVariables, UpdateResourceMutation, UpdateResourceMutationVariables, UpdateRiskMutation, UpdateRiskMutationVariables, UpdateRiskStatusMutation, UpdateRiskStatusMutationVariables, UpdateSiteInstructionMutation, UpdateSiteInstructionMutationVariables, UpdateSubcontractMutation, UpdateSubcontractMutationVariables, UpdateTqMutation, UpdateTqMutationVariables, UpdateVariationOrderMutation, UpdateVariationOrderMutationVariables, UpdateVoCostItemMutation, UpdateVoCostItemMutationVariables, UpdateWbsNodeMutation, UpdateWbsNodeMutationVariables, UploadBidDeliverableFileMutation, UploadBidDeliverableFileMutationVariables, UploadBidPackageFileMutation, UploadBidPackageFileMutationVariables, UploadClientDocumentMutation, UploadClientDocumentMutationVariables, UploadClientDocumentRevisionMutation, UploadClientDocumentRevisionMutationVariables, UploadDailyReportFileMutation, UploadDailyReportFileMutationVariables, UploadHandoverCertFileMutation, UploadHandoverCertFileMutationVariables, UploadHseFileMutation, UploadHseFileMutationVariables, UploadIrFileMutation, UploadIrFileMutationVariables, UploadNcrFileMutation, UploadNcrFileMutationVariables, UploadRfiFileMutation, UploadRfiFileMutationVariables, UploadSiFileMutation, UploadSiFileMutationVariables, UploadTqFileMutation, UploadTqFileMutationVariables, UpsertBidCostItemsMutation, UpsertBidCostItemsMutationVariables, UpsertCashFlowPeriodMutation, UpsertCashFlowPeriodMutationVariables, UpsertCostForecastMutation, UpsertCostForecastMutationVariables, UpsertItpItemsMutation, UpsertItpItemsMutationVariables, VerifyHandoverItemMutation, VerifyHandoverItemMutationVariables } from '../../../graphql/generated'
 import type { MilestoneInput, ProjectContractInput } from '../../../graphql/schema-types'
 
 const ALL_TABS = [
@@ -412,6 +414,29 @@ export default function ProjectDetail() {
   const [editStage, setEditStage] = useState<Stage | null>(null)
   const [quickUpdateStage] = useMutation<UpdateProjectStageMutation, UpdateProjectStageMutationVariables>(UPDATE_PROJECT_STAGE, {
     onCompleted: () => void refetch(),
+    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+  })
+  // D2: the rare multi-currency budget case -- adding/removing a budget in
+  // a currency other than the project's primary one (that one is still set
+  // via Edit Project's single budget amount/currency field).
+  const [showAddBudgetForm, setShowAddBudgetForm] = useState(false)
+  const [addBudgetCcy, setAddBudgetCcy] = useState('')
+  const [addBudgetAmount, setAddBudgetAmount] = useState('')
+  const [addProjectBudget, { loading: addingBudget }] = useMutation<AddProjectBudgetMutation, AddProjectBudgetMutationVariables>(ADD_PROJECT_BUDGET, {
+    onCompleted: () => {
+      setShowAddBudgetForm(false)
+      setAddBudgetCcy('')
+      setAddBudgetAmount('')
+      addToast({ type: 'success', message: t('proj.detail.budgetAdded') })
+      void refetch()
+    },
+    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+  })
+  const [removeProjectBudget] = useMutation<RemoveProjectBudgetMutation, RemoveProjectBudgetMutationVariables>(REMOVE_PROJECT_BUDGET, {
+    onCompleted: () => {
+      addToast({ type: 'success', message: t('proj.detail.budgetRemoved') })
+      void refetch()
+    },
     onError: (e) => { addToast({ type: 'error', message: e.message }); },
   })
   const [stageDrawer, setStageDrawer] = useState(false)
@@ -1695,50 +1720,54 @@ export default function ProjectDetail() {
   const statusHistory = parse(p.statusHistory) as Record<string, unknown>[]
   const activityLog = parse(p.activityLog) as Record<string, unknown>[]
   const recentPos = parse(p.recentPos) as Record<string, unknown>[]
-  const costSummary = (() => {
+  // D2: costSummary is one entry per currency with budget and/or cost
+  // activity (see resolvers.ts' `project` query). budgetRemaining/
+  // grossMargin are null ("no budget"/"no margin") for a currency that
+  // has no matching budget row, or isn't the project's own value currency.
+  const costSummaryArr = (() => {
     try {
-      if (!p.costSummary) return null
-      return typeof p.costSummary === 'object'
-        ? (p.costSummary as Record<string, unknown>)
-        : (JSON.parse(String(p.costSummary)) as Record<string, unknown>)
+      if (!p.costSummary) return []
+      const v = typeof p.costSummary === 'object' ? p.costSummary : JSON.parse(String(p.costSummary))
+      return Array.isArray(v) ? (v as Record<string, unknown>[]) : []
     } catch {
-      return null
+      return []
+    }
+  })()
+  const primaryCcy = String(p.budgetCurrency ?? 'USD')
+  const otherCostSummaries = costSummaryArr.filter((e) => String(e.currencyCode) !== primaryCcy)
+  const budgetsArr = (() => {
+    try {
+      if (!p.budgets) return []
+      const v = typeof p.budgets === 'object' ? p.budgets : JSON.parse(String(p.budgets))
+      return Array.isArray(v)
+        ? (v as { id: string; currencyCode: string; amount: number; isPrimary: boolean }[])
+        : []
+    } catch {
+      return []
     }
   })()
 
   // ── header-level computations ───────────────────────────────────────────────
-  const cs = costSummary
-  const hdrCcy = String(cs?.currencyCode ?? p.budgetCurrency ?? 'USD')
+  const cs = costSummaryArr.find((e) => String(e.currencyCode) === primaryCcy) ?? null
+  const hdrCcy = primaryCcy
   const hdrActual = Number(cs?.actualCosts ?? 0)
   const hdrBudget = Number(cs?.budgetAmount ?? p.budgetAmount ?? 0)
   const hdrRemain = Number(cs?.budgetRemaining ?? hdrBudget - hdrActual)
   const hdrUtilPct = hdrBudget > 0 ? Math.round((hdrActual / hdrBudget) * 100) : 0
+  // recentPos is raw JSON from the resolver (keys: total_amount,
+  // currency_code, not camelCase) -- the old `.totalAmount ?? .amount`
+  // lookup matched neither real key, so these always summed to 0
+  // regardless of PO amount. Also only sums POs in the header's own
+  // currency now: a PO in a different currency than hdrCcy would
+  // otherwise have its raw number added as if it were hdrCcy.
   const hdrApprPOs = recentPos.filter(
-    (po) => (po).status === 'approved',
+    (po) => (po).status === 'approved' && String((po).currency_code ?? hdrCcy) === hdrCcy,
   )
   const hdrPendPOs = recentPos.filter(
-    (po) => (po).status === 'pending_approval',
+    (po) => (po).status === 'pending_approval' && String((po).currency_code ?? hdrCcy) === hdrCcy,
   )
-  const hdrApprAmt = hdrApprPOs.reduce(
-    (s, po) =>
-      s +
-      Number(
-        (po).totalAmount ??
-          (po).amount ??
-          0,
-      ),
-    0,
-  )
-  const hdrPendAmt = hdrPendPOs.reduce(
-    (s, po) =>
-      s +
-      Number(
-        (po).totalAmount ??
-          (po).amount ??
-          0,
-      ),
-    0,
-  )
+  const hdrApprAmt = hdrApprPOs.reduce((s, po) => s + Number((po).total_amount ?? 0), 0)
+  const hdrPendAmt = hdrPendPOs.reduce((s, po) => s + Number((po).total_amount ?? 0), 0)
   const remainDays = p.plannedEndDate
     ? Math.max(0, Math.ceil((new Date(p.plannedEndDate).getTime() - Date.now()) / 86400000))
     : null
@@ -2413,6 +2442,124 @@ export default function ProjectDetail() {
             kpiTile(t('proj.detail.remainingDays'), String(remainDays), null, kpiCircle(daysPct, '#8b5cf6'))}
         </div>
       </div>
+
+      {/* ── Other currency budgets (D2) ── admin-only, rare multi-currency case */}
+      {isAdmin && (otherCostSummaries.length > 0 || showAddBudgetForm) && (
+        <div
+          style={{
+            padding: isPhone ? '10px 12px' : '10px 24px',
+            background: theme.bgCanvas,
+            borderBottom: `1px solid ${theme.border}`,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.textMuted }}>
+              {t('proj.detail.otherCurrencyBudgets')}
+            </span>
+            {!showAddBudgetForm && (
+              <button
+                onClick={() => { setShowAddBudgetForm(true); }}
+                style={{ background: 'none', border: 'none', color: theme.accent, fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: '2px 4px' }}
+              >
+                {t('proj.detail.addCurrencyBudget')}
+              </button>
+            )}
+          </div>
+
+          {otherCostSummaries.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: showAddBudgetForm ? '10px' : 0 }}>
+              {otherCostSummaries.map((e) => {
+                const ccy = String(e.currencyCode)
+                const budgetRow = budgetsArr.find((b) => b.currencyCode === ccy)
+                const hasBudget = e.budgetAmount != null
+                const remaining = e.budgetRemaining != null ? Number(e.budgetRemaining) : null
+                return (
+                  <div
+                    key={ccy}
+                    style={{
+                      display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '160px',
+                      background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '10px 12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 700, color: theme.textPrimary }}>{ccy}</span>
+                      {budgetRow && !budgetRow.isPrimary && (
+                        <button
+                          onClick={() => { void removeProjectBudget({ variables: { id: budgetRow.id } }); }}
+                          title={t('proj.detail.remove2')}
+                          style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '12px', padding: 0 }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                      {hasBudget
+                        ? `${t('proj.detail.budget')}: ${formatCurrency(Number(e.budgetAmount), ccy)}`
+                        : t('proj.detail.noBudgetSet')}
+                    </div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                      {t('proj.detail.actualCost')}: {formatCurrency(Number(e.actualCosts ?? 0), ccy)}
+                    </div>
+                    {remaining != null && (
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: remaining < 0 ? '#ef4444' : '#22c55e' }}>
+                        {formatCurrency(remaining, ccy)}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {showAddBudgetForm && (
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '10px', color: theme.textMuted }}>{t('proj.detail.currency')}</label>
+                <input
+                  value={addBudgetCcy}
+                  onChange={(e) => { setAddBudgetCcy(e.target.value.toUpperCase().slice(0, 3)); }}
+                  placeholder="USD"
+                  style={{ width: '70px', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${theme.border}`, background: theme.bgSurface, color: theme.textPrimary }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '10px', color: theme.textMuted }}>{t('proj.detail.amount')}</label>
+                <input
+                  type="number"
+                  value={addBudgetAmount}
+                  onChange={(e) => { setAddBudgetAmount(e.target.value); }}
+                  placeholder="0.00"
+                  style={{ width: '140px', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${theme.border}`, background: theme.bgSurface, color: theme.textPrimary }}
+                />
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={addingBudget || addBudgetCcy.length !== 3 || !addBudgetAmount}
+                onClick={() => {
+                  void addProjectBudget({
+                    variables: { projectId: id!, currencyCode: addBudgetCcy, amount: Number(addBudgetAmount) },
+                  })
+                }}
+              >
+                {t('proj.detail.save')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setShowAddBudgetForm(false)
+                  setAddBudgetCcy('')
+                  setAddBudgetAmount('')
+                }}
+              >
+                {t('proj.detail.cancel')}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div
@@ -31888,6 +32035,8 @@ interface CCSummary {
     forecastEAC: number
     variance: number
   }[]
+  currencyCode: string
+  availableCurrencies: string[]
 }
 
 interface CCCommitted {
@@ -32173,12 +32322,13 @@ function CostControlTab(props: CostControlProps) {
       ))}
     </select>
   )
+  const ccCcy = summary?.currencyCode ?? 'USD'
   const fmt = (n: number) =>
     n >= 1000000
-      ? `$${(n / 1000000).toFixed(2)}M`
+      ? `${ccCcy} ${(n / 1000000).toFixed(2)}M`
       : n >= 1000
-        ? `$${(n / 1000).toFixed(1)}K`
-        : `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+        ? `${ccCcy} ${(n / 1000).toFixed(1)}K`
+        : `${ccCcy} ${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
   const pct = (n: number) => `${Math.min(100, Math.max(0, n)).toFixed(1)}%`
   const varColor = (v: number) => (v >= 0 ? '#22c55e' : '#ef4444')
 
@@ -33690,12 +33840,16 @@ function VariationOrdersTab(props: VariationOrdersProps) {
       ))}
     </select>
   )
-  const fmt = (n: number) =>
+  // Each VO (and cost item) carries its own currencyCode -- a single
+  // project's VOs are not guaranteed to share one currency, so every call
+  // site below passes the currency of whichever value it's formatting
+  // instead of a hardcoded "$".
+  const fmt = (n: number, currency = 'USD') =>
     n >= 1000000
-      ? `$${(n / 1000000).toFixed(2)}M`
+      ? `${currency} ${(n / 1000000).toFixed(2)}M`
       : n >= 1000
-        ? `$${(n / 1000).toFixed(1)}K`
-        : `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+        ? `${currency} ${(n / 1000).toFixed(1)}K`
+        : `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
   const modalOverlay: React.CSSProperties = {
     position: 'fixed',
@@ -33834,20 +33988,31 @@ function VariationOrdersTab(props: VariationOrdersProps) {
   const getSubTab = (voId: string): VOSubTab => subTab[voId] ?? 'cost'
 
   // ── Analysis ──────────────────────────────────────────────────────────────
+  // Each VO's currencyCode is a free-text-ish field on the create/edit form
+  // (default 'USD', not tied to its contract's own currency), so VOs on one
+  // project genuinely can diverge. Rather than silently blend them, the
+  // totals below are scoped to whichever currency most of this project's
+  // VOs are actually in -- same "pick one, don't convert" pattern used
+  // elsewhere in this sweep, since there's no single project-level VO
+  // currency to default to here.
   const renderAnalysis = () => {
-    const approved = variationOrders.filter((v) => v.status === 'approved')
-    const pending = variationOrders.filter((v) => ['submitted', 'under_review'].includes(v.status))
-    const rejected = variationOrders.filter((v) => v.status === 'rejected')
-    const draft = variationOrders.filter((v) => v.status === 'draft')
+    const voCcyCounts = new Map<string, number>()
+    for (const v of variationOrders) voCcyCounts.set(v.currencyCode, (voCcyCounts.get(v.currencyCode) ?? 0) + 1)
+    const voCcy = [...voCcyCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'USD'
+    const vosInCcy = variationOrders.filter((v) => v.currencyCode === voCcy)
+    const approved = vosInCcy.filter((v) => v.status === 'approved')
+    const pending = vosInCcy.filter((v) => ['submitted', 'under_review'].includes(v.status))
+    const rejected = vosInCcy.filter((v) => v.status === 'rejected')
+    const draft = vosInCcy.filter((v) => v.status === 'draft')
     const totalApproved = approved.reduce((s, v) => s + (v.approvedValue ?? v.voValue), 0)
     const totalPending = pending.reduce((s, v) => s + v.voValue, 0)
     const totalRejected = rejected.reduce((s, v) => s + v.voValue, 0)
     const totalDraft = draft.reduce((s, v) => s + v.voValue, 0)
     const totalSchedule = approved.reduce((s, v) => s + v.scheduleImpactDays, 0)
-    const grandTotal = variationOrders.reduce((s, v) => s + v.voValue, 0)
+    const grandTotal = vosInCcy.reduce((s, v) => s + v.voValue, 0)
 
     const byChangeType = Object.entries(
-      variationOrders.reduce<Record<string, number>>((acc, v) => {
+      vosInCcy.reduce<Record<string, number>>((acc, v) => {
         const k = v.changeType
         acc[k] = (acc[k] ?? 0) + v.voValue
         return acc
@@ -33855,7 +34020,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
     ).sort((a, b) => b[1] - a[1])
 
     const byInitiator = Object.entries(
-      variationOrders.reduce<Record<string, number>>((acc, v) => {
+      vosInCcy.reduce<Record<string, number>>((acc, v) => {
         const k = v.initiatedBy
         acc[k] = (acc[k] ?? 0) + v.voValue
         return acc
@@ -33874,9 +34039,9 @@ function VariationOrdersTab(props: VariationOrdersProps) {
         >
           {[
             { label: t('proj.detail.totalVos'), value: String(variationOrders.length), color: th.textPrimary },
-            { label: t('proj.detail.approvedValue'), value: fmt(totalApproved), color: '#22c55e' },
-            { label: t('proj.detail.pendingValue'), value: fmt(totalPending), color: '#f59e0b' },
-            { label: t('proj.detail.rejected'), value: fmt(totalRejected), color: '#ef4444' },
+            { label: t('proj.detail.approvedValue'), value: fmt(totalApproved, voCcy), color: '#22c55e' },
+            { label: t('proj.detail.pendingValue'), value: fmt(totalPending, voCcy), color: '#f59e0b' },
+            { label: t('proj.detail.rejected'), value: fmt(totalRejected, voCcy), color: '#ef4444' },
             {
               label: t('proj.detail.scheduleImpact'),
               value: `+${totalSchedule} days`,
@@ -33926,7 +34091,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 }}
               >
                 <span style={{ color: th.textPrimary }}>{row.label}</span>
-                <span style={{ color: row.color, fontWeight: 600 }}>{fmt(row.value)}</span>
+                <span style={{ color: row.color, fontWeight: 600 }}>{fmt(row.value, voCcy)}</span>
               </div>
               <div
                 style={{
@@ -33971,7 +34136,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 }}
               >
                 <span style={{ color: th.textSecondary }}>{CHANGE_TYPE_LABEL[k] ?? k}</span>
-                <span style={{ color: th.textPrimary, fontWeight: 500 }}>{fmt(v)}</span>
+                <span style={{ color: th.textPrimary, fontWeight: 500 }}>{fmt(v, voCcy)}</span>
               </div>
             ))}
             {byChangeType.length === 0 && (
@@ -34001,7 +34166,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 }}
               >
                 <span style={{ color: th.textSecondary }}>{INITIATED_BY_LABEL[k] ?? k}</span>
-                <span style={{ color: th.textPrimary, fontWeight: 500 }}>{fmt(v)}</span>
+                <span style={{ color: th.textPrimary, fontWeight: 500 }}>{fmt(v, voCcy)}</span>
               </div>
             ))}
             {byInitiator.length === 0 && (
@@ -34235,9 +34400,9 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               }}
             >
               {[
-                { label: t('proj.detail.value'), value: fmt(vo.voValue), color: th.textPrimary },
+                { label: t('proj.detail.value'), value: fmt(vo.voValue, vo.currencyCode), color: th.textPrimary },
                 ...(vo.approvedValue != null
-                  ? [{ label: t('proj.detail.approved'), value: fmt(vo.approvedValue), color: '#22c55e' }]
+                  ? [{ label: t('proj.detail.approved'), value: fmt(vo.approvedValue, vo.currencyCode), color: '#22c55e' }]
                   : []),
                 ...(vo.appliedValue != null && vo.contractId
                   ? [
@@ -34401,9 +34566,9 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                       >
                         <span style={{ fontSize: '12px', color: th.textSecondary }}>
                           {t('proj.detail.lineItemsTotal')}{' '}
-                          <strong style={{ color: th.accent }}>{fmt(costTotal)}</strong>
+                          <strong style={{ color: th.accent }}>{fmt(costTotal, vo.currencyCode)}</strong>
                           {costTotal !== vo.voValue && (
-                            <span style={{ color: '#f59e0b', marginInlineStart: '6px' }}>{t('proj.detail.voSubmitted', { value: fmt(vo.voValue) })}</span>
+                            <span style={{ color: '#f59e0b', marginInlineStart: '6px' }}>{t('proj.detail.voSubmitted', { value: fmt(vo.voValue, vo.currencyCode) })}</span>
                           )}
                         </span>
                         {isAdmin && (
@@ -34478,12 +34643,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                               </span>
                               <span style={{ color: th.textSecondary }}>{ci.unit ?? ''}</span>
                               <span style={{ color: th.textSecondary, textAlign: 'end' }}>
-                                {fmt(ci.unitRate)}
+                                {fmt(ci.unitRate, vo.currencyCode)}
                               </span>
                               <span
                                 style={{ color: th.accent, fontWeight: 600, textAlign: 'end' }}
                               >
-                                {fmt(ci.amount)}
+                                {fmt(ci.amount, vo.currencyCode)}
                               </span>
                               {isAdmin && (
                                 <div
@@ -34585,7 +34750,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                             <span />
                             <span />
                             <span style={{ color: th.accent, textAlign: 'end' }}>
-                              {fmt(costTotal)}
+                              {fmt(costTotal, vo.currencyCode)}
                             </span>
                             <span />
                           </div>

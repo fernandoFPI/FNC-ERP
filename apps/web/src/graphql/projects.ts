@@ -21,6 +21,7 @@ const PROJECT_FIELDS = gql`
     plannedEndDate
     budgetAmount
     budgetCurrency
+    budgets
     holdReason
     cancelReason
     receivingDate
@@ -388,6 +389,18 @@ export const UPDATE_PROJECT = gql`
       overallCompletionPct
       allowedActions
     }
+  }
+`
+
+export const ADD_PROJECT_BUDGET = gql`
+  mutation AddProjectBudget($projectId: ID!, $currencyCode: String!, $amount: Float!) {
+    addProjectBudget(projectId: $projectId, currencyCode: $currencyCode, amount: $amount)
+  }
+`
+
+export const REMOVE_PROJECT_BUDGET = gql`
+  mutation RemoveProjectBudget($id: ID!) {
+    removeProjectBudget(id: $id)
   }
 `
 
@@ -3795,6 +3808,8 @@ export const PROJECT_COST_SUMMARY_QUERY = gql`
         forecastEAC
         variance
       }
+      currencyCode
+      availableCurrencies
     }
   }
 `

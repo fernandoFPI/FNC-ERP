@@ -9,6 +9,33 @@ import { requirePermission } from '@fnc-erp/permissions'
 
 export const vendorInvoicesRouter: IRouter = Router()
 
+// G19 (0.1 sweep #5, AP mirror): ap-summary used to sum vendor_invoices /
+// vendor_payments straight across every currency_code. Resolves which
+// currency to report money totals in (explicit ?currency_code, else the
+// company's own) plus every currency with real AP activity. COUNT(*)
+// fields (open_invoice_count, overdue_count, pending_approval_count) stay
+// company-wide on purpose -- useAPPendingCount's nav badge reads
+// pending_approval_count expecting every pending invoice regardless of
+// currency, not just the ones in the resolved/default currency.
+async function resolveApCurrency(
+  companyId: string,
+  requested: string | undefined,
+): Promise<{ currencyCode: string; availableCurrencies: string[] }> {
+  const availableRes = await query<{ currency_code: string }>(
+    `SELECT DISTINCT currency_code FROM vendor_invoices WHERE company_id=$1
+     UNION
+     SELECT DISTINCT currency_code FROM vendor_payments WHERE company_id=$1
+     ORDER BY 1`,
+    [companyId],
+  )
+  const availableCurrencies = availableRes.rows.map((r) => r.currency_code)
+  if (requested) return { currencyCode: requested, availableCurrencies }
+  const companyRes = await query<{ currency_code: string }>(`SELECT currency_code FROM companies WHERE id=$1`, [
+    companyId,
+  ])
+  return { currencyCode: companyRes.rows[0]?.currency_code ?? 'IQD', availableCurrencies }
+}
+
 const LineSchema = z.object({
   po_line_id: z.string().uuid().optional(),
   description: z.string().min(1),
@@ -59,6 +86,7 @@ vendorInvoicesRouter.get('/', requirePermission('finance.ap.view', 'view'), asyn
       from_date,
       to_date,
       overdue,
+      currency_code,
       cross_company,
       page = '1',
       limit = '20',
@@ -97,6 +125,10 @@ vendorInvoicesRouter.get('/', requirePermission('finance.ap.view', 'view'), asyn
     if (overdue === 'true') {
       conditions.push(`vi.due_date < CURRENT_DATE`)
       conditions.push(`vi.status NOT IN ('paid','cancelled')`)
+    }
+    if (currency_code) {
+      conditions.push(`vi.currency_code = $${++p}`)
+      values.push(currency_code)
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -150,21 +182,32 @@ vendorInvoicesRouter.get(
   requirePermission('finance.ap.view', 'view'),
   asyncHandler(async (req, res) => {
     try {
+      const companyId = getAuth(req).companyId
+      const { currencyCode, availableCurrencies } = await resolveApCurrency(
+        companyId,
+        req.query['currency_code'] as string | undefined,
+      )
       const result = await query(
         `
       SELECT
-        COALESCE(SUM(vi.net_payable - vi.amount_paid) FILTER (WHERE vi.status NOT IN ('cancelled')), 0) AS total_outstanding,
         COALESCE(SUM(vi.net_payable - vi.amount_paid) FILTER (
-          WHERE vi.status NOT IN ('paid','cancelled') AND CURRENT_DATE - vi.due_date BETWEEN 0 AND 30
+          WHERE vi.status NOT IN ('cancelled') AND vi.currency_code = $2
+        ), 0) AS total_outstanding,
+        COALESCE(SUM(vi.net_payable - vi.amount_paid) FILTER (
+          WHERE vi.status NOT IN ('paid','cancelled') AND vi.currency_code = $2
+            AND CURRENT_DATE - vi.due_date BETWEEN 0 AND 30
         ), 0) AS bucket_0_30,
         COALESCE(SUM(vi.net_payable - vi.amount_paid) FILTER (
-          WHERE vi.status NOT IN ('paid','cancelled') AND CURRENT_DATE - vi.due_date BETWEEN 31 AND 60
+          WHERE vi.status NOT IN ('paid','cancelled') AND vi.currency_code = $2
+            AND CURRENT_DATE - vi.due_date BETWEEN 31 AND 60
         ), 0) AS bucket_31_60,
         COALESCE(SUM(vi.net_payable - vi.amount_paid) FILTER (
-          WHERE vi.status NOT IN ('paid','cancelled') AND CURRENT_DATE - vi.due_date BETWEEN 61 AND 90
+          WHERE vi.status NOT IN ('paid','cancelled') AND vi.currency_code = $2
+            AND CURRENT_DATE - vi.due_date BETWEEN 61 AND 90
         ), 0) AS bucket_61_90,
         COALESCE(SUM(vi.net_payable - vi.amount_paid) FILTER (
-          WHERE vi.status NOT IN ('paid','cancelled') AND CURRENT_DATE - vi.due_date > 90
+          WHERE vi.status NOT IN ('paid','cancelled') AND vi.currency_code = $2
+            AND CURRENT_DATE - vi.due_date > 90
         ), 0) AS bucket_over_90,
         COUNT(*) FILTER (WHERE vi.status NOT IN ('paid','cancelled'))::integer AS open_invoice_count,
         COUNT(*) FILTER (
@@ -173,15 +216,16 @@ vendorInvoicesRouter.get(
         COUNT(*) FILTER (WHERE vi.status = 'submitted')::integer AS pending_approval_count,
         COALESCE(SUM(vp.amount) FILTER (
           WHERE DATE_TRUNC('month', vp.payment_date) = DATE_TRUNC('month', CURRENT_DATE)
+            AND vp.currency_code = $2
         ), 0) AS paid_this_month
       FROM vendor_invoices vi
       LEFT JOIN vendor_payments vp ON vp.vendor_invoice_id = vi.id
       WHERE vi.company_id = $1
     `,
-        [getAuth(req).companyId],
+        [companyId, currencyCode],
       )
 
-      sendOk(res, result.rows[0])
+      sendOk(res, { ...result.rows[0], currencyCode, availableCurrencies })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get AP summary', err)
     }
@@ -194,12 +238,31 @@ vendorInvoicesRouter.get(
   requirePermission('finance.ap.view', 'view'),
   asyncHandler(async (req, res) => {
     try {
+      const companyId = getAuth(req).companyId
+      const vendorId = req.params['vendorId']
+      const vendorRes = await query<{ currency_code: string }>(`SELECT currency_code FROM vendors WHERE id = $1`, [
+        vendorId,
+      ])
+      if (!vendorRes.rows[0]) {
+        sendError(res, 404, 'NOT_FOUND', 'Vendor not found')
+        return
+      }
+      const requested = req.query['currency_code'] as string | undefined
+      const currencyCode = requested ?? vendorRes.rows[0].currency_code
+      const availableRes = await query<{ currency_code: string }>(
+        `SELECT DISTINCT currency_code FROM vendor_invoices WHERE vendor_id = $1 AND company_id = $2 ORDER BY 1`,
+        [vendorId, companyId],
+      )
+      const availableCurrencies = availableRes.rows.map((r) => r.currency_code)
+
       const result = await query(
         `
       SELECT
         v.id, v.name, v.currency_code,
         COUNT(vi.id) FILTER (WHERE vi.status NOT IN ('paid','cancelled'))::integer AS open_invoices,
-        COALESCE(SUM(vi.net_payable - vi.amount_paid) FILTER (WHERE vi.status NOT IN ('paid','cancelled')), 0) AS total_outstanding,
+        COALESCE(SUM(vi.net_payable - vi.amount_paid) FILTER (
+          WHERE vi.status NOT IN ('paid','cancelled') AND vi.currency_code = $3
+        ), 0) AS total_outstanding,
         MIN(vi.due_date) FILTER (WHERE vi.status NOT IN ('paid','cancelled')) AS earliest_due_date,
         COUNT(vi.id) FILTER (
           WHERE vi.due_date < CURRENT_DATE AND vi.status NOT IN ('paid','cancelled')
@@ -209,14 +272,10 @@ vendorInvoicesRouter.get(
       WHERE v.id = $2
       GROUP BY v.id, v.name, v.currency_code
     `,
-        [getAuth(req).companyId, req.params['vendorId']],
+        [companyId, vendorId, currencyCode],
       )
 
-      if (!result.rows[0]) {
-        sendError(res, 404, 'NOT_FOUND', 'Vendor not found')
-        return
-      }
-      sendOk(res, result.rows[0])
+      sendOk(res, { ...result.rows[0], currencyCode, availableCurrencies })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get vendor summary', err)
     }

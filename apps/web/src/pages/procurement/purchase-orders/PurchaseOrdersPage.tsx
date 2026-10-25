@@ -89,6 +89,10 @@ interface PurchaseOrder {
   total_amount: string
   viewerCanSeeTotals?: boolean | null
   currency_code: string
+  // D10: one entry per currency actually used by this PO's lines — never
+  // blended into total_amount, which is NULL once a PO spans more than one
+  // currency_code. See PurchaseOrder.currencyTotals (resolvers.ts).
+  currencyTotals: { currency_code: string; subtotal: string; line_count: number }[]
   created_at: string
   expected_delivery_date?: string | null
   invoice_count: number
@@ -276,11 +280,17 @@ export default function PurchaseOrdersPage() {
   const needActionCount = orders.filter(needsAction).length
   const delayedCount = orders.filter(isDelayed).length
   // Per currency — never summed across currencies (no-conversion policy).
+  // D10: reads each PO's own currencyTotals rather than total_amount,
+  // which is NULL once a PO's lines span more than one currency — a mixed-
+  // currency PO used to just drop out of this KPI entirely (parseFloat(null)
+  // is NaN); now every one of its currencies is counted.
   const openValueByCurrency = useMemo(() => {
     const m = new Map<string, number>()
     for (const o of openOrders) {
-      const v = parseFloat(o.total_amount)
-      if (!Number.isNaN(v) && v > 0) m.set(o.currency_code, (m.get(o.currency_code) ?? 0) + v)
+      for (const ct of o.currencyTotals) {
+        const v = parseFloat(ct.subtotal)
+        if (!Number.isNaN(v) && v > 0) m.set(ct.currency_code, (m.get(ct.currency_code) ?? 0) + v)
+      }
     }
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [openOrders])
@@ -418,6 +428,10 @@ export default function PurchaseOrdersPage() {
       t('po.list.csv.status'),
       t('po.list.csv.priority'),
       t('po.list.csv.organizer'),
+      // D10: a PO's lines can span more than one currency, so the amount
+      // column is the per-currency breakdown joined into one cell (e.g.
+      // "200.00 IQD; 30.00 USD") rather than a single total_amount that's
+      // NULL for exactly that case.
       ...(canSeeTotals ? [t('po.list.csv.totalAmount'), t('po.list.csv.currency')] : []),
       t('po.list.csv.created'),
       t('po.list.csv.expectedDelivery'),
@@ -429,7 +443,12 @@ export default function PurchaseOrdersPage() {
       getPOStatusLabel(o.status),
       priorityLabel(o.priority),
       o.organizerName ?? '',
-      ...(canSeeTotals ? [o.total_amount, o.currency_code] : []),
+      ...(canSeeTotals
+        ? [
+            o.currencyTotals.map((ct) => formatMoney(parseFloat(ct.subtotal) || 0, ct.currency_code)).join('; '),
+            o.currencyTotals.map((ct) => ct.currency_code).join('; '),
+          ]
+        : []),
       o.created_at.slice(0, 10),
       o.expected_delivery_date ?? '',
     ])
@@ -538,11 +557,25 @@ export default function PurchaseOrdersPage() {
           {
             key: 'total_amount',
             header: t('po.list.col.totalAmount'),
-            render: (o: PurchaseOrder) => (
-              <span style={{ fontSize: '13px', color: theme.textPrimary, whiteSpace: 'nowrap' }}>
-                {formatMoney(parseFloat(o.total_amount) || 0, o.currency_code)}
-              </span>
-            ),
+            // D10: total_amount is NULL for a PO whose lines span more than
+            // one currency — show the real per-currency breakdown
+            // (currencyTotals) instead of blending into one number or
+            // falling back to a misleading "0".
+            render: (o: PurchaseOrder) =>
+              o.currencyTotals.length === 0 ? (
+                <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  {o.currencyTotals.map((ct) => (
+                    <span
+                      key={ct.currency_code}
+                      style={{ fontSize: '13px', color: theme.textPrimary, whiteSpace: 'nowrap' }}
+                    >
+                      {formatMoney(parseFloat(ct.subtotal) || 0, ct.currency_code)}
+                    </span>
+                  ))}
+                </div>
+              ),
           },
         ]
       : []),

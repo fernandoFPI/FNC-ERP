@@ -12,13 +12,14 @@ import { EmptyState } from '../../../components/ui/EmptyState'
 import { Grid } from '../../../components/ui/Grid'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import { TabBar } from '../../../components/ui/TabBar'
 import { CONSOLIDATED_TB_QUERY } from '../../../graphql/reporting'
 
 interface TBRow {
   accountType: string
   accountCode: string
   accountName: string
-  companies: number[]
+  companies: Record<string, number>
   consolidated: number
   eliminated: number
 }
@@ -33,6 +34,7 @@ interface TBData {
     rows: TBRow[]
     companies: Company[]
     currency: string
+    availableCurrencies: string[]
     totalDebits: number
     totalCredits: number
     isBalanced: boolean
@@ -45,9 +47,10 @@ export default function ConsolidatedTrialBalance() {
   const today = new Date().toISOString().slice(0, 10)
   const [asOfDate, setAsOfDate] = useState(today)
   const [applied, setApplied] = useState(today)
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
 
   const { data, loading, refetch } = useQuery<TBData>(CONSOLIDATED_TB_QUERY, {
-    variables: { asOfDate: applied },
+    variables: { asOfDate: applied, currencyCode },
   })
 
   const d = data?.consolidatedTrialBalance
@@ -61,7 +64,7 @@ export default function ConsolidatedTrialBalance() {
     header: c.name,
     mobilePriority: 3 + ci,
     render: (row) => (
-      <AmountDisplay amount={row.companies[ci]} currency={d?.currency ?? t('rep.consTb.iqd')} size="sm" />
+      <AmountDisplay amount={row.companies[c.id] ?? 0} currency={d?.currency ?? t('rep.consTb.iqd')} size="sm" />
     ),
   }))
 
@@ -125,6 +128,16 @@ export default function ConsolidatedTrialBalance() {
           </Button>
         }
       />
+
+      {(d?.availableCurrencies.length ?? 0) > 1 && (
+        <Card padding="none" style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={d!.availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={d!.currency}
+            onChange={setCurrencyCode}
+          />
+        </Card>
+      )}
 
       {/* Filter Panel */}
       <Card padding="sm" style={{ marginBottom: '20px' }}>

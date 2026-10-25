@@ -60,7 +60,8 @@ invoicesRouter.get('/', requirePermission('projects.invoices.view', 'view'), asy
     const page = Math.max(1, parseInt((req.query['page'] as string) || '1'))
     const limit = Math.min(100, parseInt((req.query['limit'] as string) || '20'))
     const offset = (page - 1) * limit
-    let sql = `SELECT pi.*,
+    let sql = `-- currency-safe: scoped to one invoice, which has one currency_code
+               SELECT pi.*,
                       COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip WHERE pip.invoice_id=pi.id),0) AS total_paid
                FROM project_invoices pi WHERE pi.company_id=$1`
     const params: unknown[] = [getAuth(req).companyId]

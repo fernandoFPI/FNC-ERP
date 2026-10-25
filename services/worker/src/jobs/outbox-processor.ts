@@ -650,12 +650,6 @@ interface PaymentJournalPayload {
   wht_amount?: string | number
 }
 
-interface POCompletionJournalPayload {
-  po_id: string
-  company_id: string
-  receipt_notes?: string | null
-}
-
 interface VendorInvoiceJournalPayload {
   invoice_id: string
   company_id: string
@@ -702,9 +696,6 @@ async function deliverToFinance(event: OutboxRow): Promise<void> {
       break
     case 'PAYROLL_JOURNAL_REQUESTED':
       await createPayrollJournal(event.payload as unknown as PayrollJournalPayload)
-      break
-    case 'PO_COMPLETION_JOURNAL_REQUESTED':
-      await createPOCompletionJournal(event.payload as unknown as POCompletionJournalPayload)
       break
     default:
       throw new Error(`Unknown finance event: ${event.event_type}`)
@@ -811,100 +802,6 @@ async function createInvoiceJournal(p: InvoiceJournalPayload): Promise<void> {
   })
 
   log.info({ jeId, invoiceId: p.invoice_id }, 'invoice GL journal created')
-}
-
-// Posts a journal entry when a project-linked PO is completed so the cost
-// flows into project_cost_actuals via trg_sync_project_costs. Mirrors
-// services/gateway/src/graphql/resolvers.ts's postPOCompletionJournal
-// (used by the completePO GraphQL mutation) — this is the async-outbox
-// counterpart for services/procurement's REST /:id/complete endpoint.
-async function createPOCompletionJournal(p: POCompletionJournalPayload): Promise<void> {
-  const poRes = await pool.query<Record<string, unknown>>(
-    `SELECT po.id, po.po_number, po.project_id, po.total_amount, po.currency_code,
-            po.fx_rate, pr.analytic_account_id
-     FROM purchase_orders po
-     LEFT JOIN projects pr ON pr.id = po.project_id
-     WHERE po.id = $1`,
-    [p.po_id],
-  )
-  const po = poRes.rows[0]
-  if (!po?.['project_id'] || !po['analytic_account_id']) return // not a project PO or no analytic account
-  const totalAmount = parseFloat(String(po['total_amount'] ?? 0))
-  if (totalAmount <= 0) return
-
-  const currencyCode = String(po['currency_code'] ?? 'IQD')
-  let fxRate = 1.0
-  if (currencyCode !== 'IQD') {
-    const fxRes = await pool.query<{ rate: string }>(
-      `SELECT rate FROM fx_rates WHERE from_currency=$1 AND to_currency='IQD' ORDER BY rate_date DESC LIMIT 1`,
-      [currencyCode],
-    )
-    fxRate = fxRes.rows[0] ? parseFloat(String(fxRes.rows[0]['rate'])) : 1.0
-  }
-  const amountCompanyCurrency = totalAmount * fxRate
-  const poNumber = String(po['po_number'])
-  const analyticAccountId = String(po['analytic_account_id'])
-
-  // Note: nothing in the codebase currently enqueues PO_COMPLETION_JOURNAL_REQUESTED
-  // (the gateway's completePO writes this journal directly — see
-  // postPOCompletionJournal in resolvers.ts) — this handler is effectively
-  // dead, but it's fixed anyway so it doesn't ship the same silent-skip bug
-  // if it's ever revived.
-  const expAccountId = await resolvePostingAccount(p.company_id, 'expense_default', {
-    currencyCode: currencyCode,
-  })
-  const apAccountId = await resolvePostingAccount(p.company_id, 'ap', {
-    currencyCode: currencyCode,
-  })
-
-  const createdBy = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
-  const userId = createdBy.rows[0]?.['id'] ?? ''
-
-  const jeId = await withSystemTransaction(async (client) => {
-    const je = await client.query<{ id: string }>(
-      `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by,posted_at,posted_by)
-       VALUES ($1,$2,$3,CURRENT_DATE,'posted','po_completion',$4::uuid,$5,NOW(),$5) RETURNING id`,
-      [p.company_id, `PO-${poNumber}-COST`, `Project cost from PO ${poNumber}`, p.po_id, userId],
-    )
-    const id = firstRowOrThrow(je).id
-
-    await client.query(
-      `INSERT INTO journal_po_links (journal_entry_id, po_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
-      [id, p.po_id],
-    )
-
-    // Dr. Project Expense (tagged with analytic account → triggers trg_sync_project_costs)
-    await client.query(
-      `INSERT INTO journal_lines (journal_entry_id,account_id,analytic_account_id,description,debit,credit,currency_code,fx_rate,amount_company_currency)
-       VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8)`,
-      [
-        id,
-        expAccountId,
-        analyticAccountId,
-        `Project expense from PO ${poNumber}`,
-        totalAmount,
-        currencyCode,
-        fxRate,
-        amountCompanyCurrency,
-      ],
-    )
-    // Cr. Accounts Payable
-    await client.query(
-      `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,currency_code,fx_rate,amount_company_currency)
-       VALUES ($1,$2,$3,0,$4,$5,$6,$7)`,
-      [
-        id,
-        apAccountId,
-        `Payable for PO ${poNumber}`,
-        totalAmount,
-        currencyCode,
-        fxRate,
-        amountCompanyCurrency,
-      ],
-    )
-    return id
-  })
-  log.info({ jeId, poId: p.po_id }, 'PO completion GL journal created')
 }
 
 async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {

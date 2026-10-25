@@ -13,6 +13,7 @@ import { FilterBar } from '../../../components/ui/FilterBar'
 import { Grid } from '../../../components/ui/Grid'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import { TabBar } from '../../../components/ui/TabBar'
 import { WHT_REPORT_QUERY } from '../../../graphql/reporting'
 
 interface WHTRow {
@@ -31,6 +32,8 @@ interface WHTData {
     totalWHT: number
     vendorCount: number
     totalPaymentsSubjectToWHT: number
+    currencyCode: string
+    availableCurrencies: string[]
   }
 }
 
@@ -42,14 +45,15 @@ export default function WHTReport() {
 
   const [fromDate, setFromDate] = useState(firstOfMonth)
   const [toDate, setToDate] = useState(today)
-  const [companyId] = useState('1')
   const [search, setSearch] = useState('')
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
 
   const { data, loading, refetch } = useQuery<WHTData>(WHT_REPORT_QUERY, {
-    variables: { fromDate, toDate, companyId },
+    variables: { fromDate, toDate, currencyCode },
   })
 
   const d = data?.whtReport
+  const displayCurrency = d?.currencyCode ?? 'IQD'
   const rows = (d?.rows ?? []).filter(
     (r) =>
       !search ||
@@ -94,7 +98,7 @@ export default function WHTReport() {
       key: 'paymentAmount',
       header: t('rep.wht.payment'),
       mobilePriority: 2,
-      render: (row) => <AmountDisplay amount={row.paymentAmount} currency="IQD" size="sm" />,
+      render: (row) => <AmountDisplay amount={row.paymentAmount} currency={displayCurrency} size="sm" />,
     },
     {
       key: 'whtAmount',
@@ -102,7 +106,7 @@ export default function WHTReport() {
       mobilePriority: 1,
       render: (row) => (
         <span style={{ fontWeight: 500, color: theme.warning }}>
-          <AmountDisplay amount={row.whtAmount} currency="IQD" size="sm" />
+          <AmountDisplay amount={row.whtAmount} currency={displayCurrency} size="sm" />
         </span>
       ),
     },
@@ -132,6 +136,16 @@ export default function WHTReport() {
         }
       />
 
+      {(d?.availableCurrencies.length ?? 0) > 1 && (
+        <Card padding="none" style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={d!.availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={displayCurrency}
+            onChange={setCurrencyCode}
+          />
+        </Card>
+      )}
+
       <Card padding="sm" style={{ marginBottom: '16px' }}>
         <FilterBar
           search={{ value: search, onChange: setSearch, placeholder: t('rep.wht.searchVendorOrTaxId') }}
@@ -150,7 +164,7 @@ export default function WHTReport() {
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               {t('rep.wht.totalWht')}
             </p>
-            <AmountDisplay amount={d.totalWHT} currency="IQD" size="md" />
+            <AmountDisplay amount={d.totalWHT} currency={displayCurrency} size="md" />
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -164,7 +178,7 @@ export default function WHTReport() {
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               {t('rep.wht.paymentsSubjectToWht')}
             </p>
-            <AmountDisplay amount={d.totalPaymentsSubjectToWHT} currency="IQD" size="md" />
+            <AmountDisplay amount={d.totalPaymentsSubjectToWHT} currency={displayCurrency} size="md" />
           </Card>
         </Grid>
       )}

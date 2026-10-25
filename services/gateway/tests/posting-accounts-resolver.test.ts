@@ -11,9 +11,10 @@ import {
   listCompanyPostingAccounts,
   PostingAccountNotConfiguredError,
 } from '@fnc-erp/db'
+import { resolvers } from '../src/graphql/resolvers.js'
 
-const COMPANY_A = '00000000-0000-0000-0000-000000000001'
-const COMPANY_B = '00000000-0000-0000-0000-000000000002'
+const COMPANY_A = 'f0000000-0000-0000-0000-000000000009'
+const COMPANY_B = 'f0000000-0000-0000-0000-000000000010'
 const TEST_USER_EMAIL = 'posting-accounts-resolver-test@fnc-erp.local'
 
 let userId: string
@@ -175,5 +176,136 @@ describe('listCompanyPostingAccounts / deleteCompanyPostingAccount', () => {
     await expect(resolvePostingAccount(COMPANY_A, 'stock_variance')).rejects.toThrow(
       PostingAccountNotConfiguredError,
     )
+  })
+})
+
+// Settings screen plumbing: the GraphQL layer on top of the same db
+// functions above. Scoping (never a client-supplied company id),
+// permission gating, and the readiness summary are resolver-only concerns
+// not exercised by the db-level tests above.
+describe('GraphQL: companyPostingAccounts / upsertCompanyPostingAccount / deleteCompanyPostingAccount / postingAccountReadiness', () => {
+  const adminCtx = () =>
+    ({
+      auth: { companyId: COMPANY_A, userId, role: 'company_admin', module: 'all', sessionId: 'pa-resolver-test' },
+    }) as never
+  const noPermCtx = () =>
+    ({
+      auth: { companyId: COMPANY_A, userId, role: 'employee', module: 'finance', sessionId: 'pa-resolver-test-noperm' },
+    }) as never
+
+  it('set then list: upsertCompanyPostingAccount followed by companyPostingAccounts shows it', async () => {
+    const set = (await resolvers.Mutation.upsertCompanyPostingAccount(
+      null,
+      { role: 'ar', currencyCode: null, accountId: leafAccountA1 },
+      adminCtx(),
+    )) as { role: string; accountId: string; currencyCode: string | null }
+    expect(set.role).toBe('ar')
+    expect(set.accountId).toBe(leafAccountA1)
+    expect(set.currencyCode).toBeNull()
+
+    const list = (await resolvers.Query.companyPostingAccounts(null, {}, adminCtx())) as {
+      role: string
+      accountId: string
+    }[]
+    expect(list.find((r) => r.role === 'ar')?.accountId).toBe(leafAccountA1)
+  })
+
+  it('clear: deleteCompanyPostingAccount removes it, resolvePostingAccount then throws', async () => {
+    await resolvers.Mutation.upsertCompanyPostingAccount(
+      null,
+      { role: 'inventory', currencyCode: null, accountId: leafAccountA1 },
+      adminCtx(),
+    )
+    const removed = await resolvers.Mutation.deleteCompanyPostingAccount(
+      null,
+      { role: 'inventory', currencyCode: null },
+      adminCtx(),
+    )
+    expect(removed).toBe(true)
+    await expect(resolvePostingAccount(COMPANY_A, 'inventory')).rejects.toThrow(
+      PostingAccountNotConfiguredError,
+    )
+  })
+
+  it('rejects an invalid account the same way the db layer does (not company A, or a header)', async () => {
+    await expect(
+      resolvers.Mutation.upsertCompanyPostingAccount(
+        null,
+        { role: 'ap', currencyCode: null, accountId: leafAccountB },
+        adminCtx(),
+      ),
+    ).rejects.toThrow(/belong to this company/)
+
+    await expect(
+      resolvers.Mutation.upsertCompanyPostingAccount(
+        null,
+        { role: 'ap', currencyCode: null, accountId: headerAccountA },
+        adminCtx(),
+      ),
+    ).rejects.toThrow(/postable/)
+  })
+
+  it('wrong company: a mutation run as company B never touches company A\'s rows', async () => {
+    const companyBCtx = () =>
+      ({
+        auth: { companyId: COMPANY_B, userId, role: 'company_admin', module: 'all', sessionId: 'pa-resolver-test-b' },
+      }) as never
+    await resolvers.Mutation.upsertCompanyPostingAccount(
+      null,
+      { role: 'grni', currencyCode: null, accountId: leafAccountB },
+      companyBCtx(),
+    )
+    // Company A's own GRNI role is untouched -- still not configured.
+    await expect(resolvePostingAccount(COMPANY_A, 'grni')).rejects.toThrow(
+      PostingAccountNotConfiguredError,
+    )
+    const listA = (await resolvers.Query.companyPostingAccounts(null, {}, adminCtx())) as { role: string }[]
+    expect(listA.find((r) => r.role === 'grni')).toBeUndefined()
+  })
+
+  it('permission denied without finance.accounts.edit', async () => {
+    await expect(
+      resolvers.Mutation.upsertCompanyPostingAccount(
+        null,
+        { role: 'cash', currencyCode: null, accountId: leafAccountA1 },
+        noPermCtx(),
+      ),
+    ).rejects.toThrow(/Requires 'edit' access/)
+
+    await expect(
+      resolvers.Mutation.deleteCompanyPostingAccount(null, { role: 'cash', currencyCode: null }, noPermCtx()),
+    ).rejects.toThrow(/Requires 'edit' access/)
+  })
+
+  it('postingAccountReadiness reports hasDefault vs currency-only coverage, and the missing list', async () => {
+    await resolvers.Mutation.upsertCompanyPostingAccount(
+      null,
+      { role: 'wht_recoverable', currencyCode: null, accountId: leafAccountA1 },
+      adminCtx(),
+    )
+    await resolvers.Mutation.upsertCompanyPostingAccount(
+      null,
+      { role: 'salaries_payable', currencyCode: 'USD', accountId: leafAccountA2 },
+      adminCtx(),
+    )
+    const readiness = (await resolvers.Query.postingAccountReadiness(null, {}, adminCtx())) as {
+      roles: { role: string; hasDefault: boolean; currencies: string[]; configured: boolean }[]
+      missingRoles: string[]
+      allConfigured: boolean
+    }
+    const whtRow = readiness.roles.find((r) => r.role === 'wht_recoverable')!
+    expect(whtRow.hasDefault).toBe(true)
+    expect(whtRow.configured).toBe(true)
+
+    const salariesRow = readiness.roles.find((r) => r.role === 'salaries_payable')!
+    expect(salariesRow.hasDefault).toBe(false)
+    expect(salariesRow.currencies).toContain('USD')
+    expect(salariesRow.configured).toBe(true)
+    expect(readiness.missingRoles).toContain('salaries_payable')
+
+    const neverConfiguredRow = readiness.roles.find((r) => r.role === 'retention_payable')!
+    expect(neverConfiguredRow.configured).toBe(false)
+    expect(readiness.missingRoles).toContain('retention_payable')
+    expect(readiness.allConfigured).toBe(false)
   })
 })

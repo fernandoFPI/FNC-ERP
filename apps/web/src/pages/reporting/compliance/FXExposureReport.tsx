@@ -33,10 +33,9 @@ export default function FXExposureReport() {
   const today = new Date().toISOString().slice(0, 10)
   const [asOfDate, setAsOfDate] = useState(today)
   const [applied, setApplied] = useState(today)
-  const [companyId] = useState('1')
 
   const { data, loading, refetch } = useQuery<FXData>(FX_EXPOSURE_QUERY, {
-    variables: { asOfDate: applied, companyId },
+    variables: { asOfDate: applied },
   })
 
   const d = data?.fxExposureReport

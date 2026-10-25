@@ -8,6 +8,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { ConsolidatedFinancialTable } from '../../../components/ui/ConsolidatedFinancialTable'
+import { TabBar } from '../../../components/ui/TabBar'
 import { CONSOLIDATED_PL_QUERY } from '../../../graphql/reporting'
 
 interface PLRow {
@@ -29,6 +30,7 @@ interface PLData {
     rows: PLRow[]
     companies: Company[]
     currency: string
+    availableCurrencies: string[]
     totalRevenue: number
     totalExpenses: number
     netProfit: number
@@ -46,6 +48,7 @@ export default function ConsolidatedPL() {
   const [toDate, setToDate] = useState(todayStr)
   const [showEliminations, setShowEliminations] = useState(false)
   const [showPriorPeriod, setShowPriorPeriod] = useState(false)
+  const [currencyCode, setCurrencyCode] = useState<string | undefined>(undefined)
   const [applied, setApplied] = useState({
     fromDate: firstOfMonth,
     toDate: todayStr,
@@ -70,6 +73,7 @@ export default function ConsolidatedPL() {
       fromDate: applied.fromDate,
       toDate: applied.toDate,
       showEliminations: applied.showEliminations,
+      currencyCode,
     },
   })
 
@@ -78,6 +82,7 @@ export default function ConsolidatedPL() {
       fromDate: priorFromDate,
       toDate: priorToDate,
       showEliminations: applied.showEliminations,
+      currencyCode,
     },
     skip: !showPriorPeriod,
   })
@@ -116,6 +121,16 @@ export default function ConsolidatedPL() {
           </Button>
         }
       />
+
+      {(d?.availableCurrencies.length ?? 0) > 1 && (
+        <Card padding="none" style={{ marginBottom: '16px' }}>
+          <TabBar
+            tabs={d!.availableCurrencies.map((c) => ({ key: c, label: c }))}
+            active={d!.currency}
+            onChange={setCurrencyCode}
+          />
+        </Card>
+      )}
 
       {/* Filter Panel */}
       <Card padding="sm" style={{ marginBottom: '20px' }}>

@@ -9,7 +9,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
 
-const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
+const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const TEST_USER_EMAIL = 'journal-entry-attach-audit-test@fnc-erp.local'
 const REF_PREFIX = 'JEATEST-'
 
@@ -96,7 +96,7 @@ describe('journal_entry attachments', () => {
   it('refuses to attach to a journal entry in a different company', async () => {
     const journalEntryId = await makeJournalEntry()
     const fileId = await makeUploadedFile()
-    const otherCompanyCtx = { auth: { ...ctx.auth, companyId: '00000000-0000-0000-0000-000000000002' } }
+    const otherCompanyCtx = { auth: { ...ctx.auth, companyId: 'f0000000-0000-0000-0000-000000000010' } }
 
     await expect(
       resolvers.Mutation.attachFile(null, { fileId, entityType: 'journal_entry', entityId: journalEntryId }, otherCompanyCtx as never),
@@ -142,7 +142,7 @@ describe('auditTrail', () => {
        VALUES ($1,$2,'UPDATE','journal_entries',$3,'{"status":"posted"}')`,
       [userId, TEST_COMPANY_ID, journalEntryId],
     )
-    const otherCompanyCtx = { auth: { ...ctx.auth, companyId: '00000000-0000-0000-0000-000000000002' } }
+    const otherCompanyCtx = { auth: { ...ctx.auth, companyId: 'f0000000-0000-0000-0000-000000000010' } }
     const trail = await resolvers.Query.auditTrail(
       null,
       { tableName: 'journal_entries', recordId: journalEntryId },

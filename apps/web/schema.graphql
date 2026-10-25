@@ -119,7 +119,7 @@
 
     # Reporting
     projectProfitability(status: String): [ProjectProfitabilityRow!]!
-    consolidatedTrialBalance(asOfDate: String!): ConsolidatedTBResult!
+    consolidatedTrialBalance(asOfDate: String!, currencyCode: String): ConsolidatedTBResult!
 
     # Invoicing
     projectContracts(projectId: ID, status: String): [ProjectContract!]!
@@ -360,6 +360,34 @@
     account_type: String!
     is_active: Boolean!
     currency_code: String!
+  }
+
+  # G1/G2: one row per (company, role, optional currency) -- the account
+  # every automated journal producer resolves through for that role, instead
+  # of guessing by an old chart-code prefix. currencyCode is null for a
+  # role's company-wide default; a non-null row is a currency-specific
+  # override, preferred over the default when both exist.
+  type CompanyPostingAccount {
+    id: ID!
+    role: String!
+    currencyCode: String
+    accountId: ID!
+    accountCode: String!
+    accountName: String!
+    updatedAt: String!
+  }
+
+  type PostingAccountRoleStatus {
+    role: String!
+    configured: Boolean!
+    hasDefault: Boolean!
+    currencies: [String!]!
+  }
+
+  type PostingAccountReadiness {
+    roles: [PostingAccountRoleStatus!]!
+    missingRoles: [String!]!
+    allConfigured: Boolean!
   }
 
   type JournalEntry {
@@ -998,8 +1026,13 @@
 
     plannedStartDate: String
     plannedEndDate: String
+    # Mirror the project's own primary (first/only) project_budgets row --
+    # kept in sync with it by createProject/createRFQ/updateProject so a
+    # single-currency project (the overwhelming majority) reads exactly as
+    # before. The real per-currency source is the budgets/costSummary fields.
     budgetAmount: Float
     budgetCurrency: String
+    budgets: JSON
 
     managerId: ID
     managerName: String
@@ -1020,11 +1053,15 @@
     stagesCompleted: Int
     stagesTotal: Int
     currentStageName: String
-    totalCosts: Float
 
     stages: JSON
     team: JSON
     recentPos: JSON
+    # One entry per currency with budget and/or cost activity -- see D2 in
+    # docs/finance/currency-guard-allowlist.md. budgetRemaining/grossMargin
+    # are null ("no budget"/"no margin") rather than a converted guess when
+    # that currency has no matching project_budgets row or doesn't match
+    # projectValueCurrency.
     costSummary: JSON
     statusHistory: JSON
     activityLog: JSON
@@ -1250,10 +1287,11 @@
     project_type: String!
     status: String!
     budget_amount: String!
+    currency_code: String
     total_costs: String!
     total_revenue: String!
     gross_margin: String!
-    budget_remaining: String!
+    budget_remaining: String
   }
 
   type ConsolidatedTrialBalanceLine {
@@ -2074,7 +2112,6 @@
     currency_code: String
     debit: Float!
     credit: Float!
-    fx_rate: Float
   }
 
   input JournalEntryInput {
@@ -2129,6 +2166,13 @@
     costCenters: [CostCenter!]!
     paymentVouchers(status: String, fromDate: String, toDate: String): [PaymentVoucher!]!
     paymentVoucher(id: ID!): PaymentVoucher
+    # G1/G2: the posting-account map every automated journal producer now
+    # resolves through instead of guessing a GL account by old chart-code
+    # prefixes. Always scoped to the caller's own company (session), never
+    # a client-supplied company id.
+    companyPostingAccounts: [CompanyPostingAccount!]!
+    postingAccountRoles: [String!]!
+    postingAccountReadiness: PostingAccountReadiness!
   }
 
   extend type Mutation {
@@ -2147,6 +2191,8 @@
     updatePaymentVoucher(id: ID!, input: CreatePaymentVoucherInput!): PaymentVoucher!
     approvePaymentVoucher(id: ID!): PaymentVoucher!
     markPaymentVoucherPaid(id: ID!): PaymentVoucher!
+    upsertCompanyPostingAccount(role: String!, currencyCode: String, accountId: ID!): CompanyPostingAccount!
+    deleteCompanyPostingAccount(role: String!, currencyCode: String): Boolean!
   }
 
   # ── Phase 2: Procurement ─────────────────────────────────────
@@ -3616,6 +3662,12 @@
     createProject(input: ProjectCreateInput!): Project!
     createRFQ(input: ProjectCreateInput!): Project!
     updateProject(id: ID!, input: ProjectUpdateInput!): Project!
+    # A project's budget in a currency other than its primary one -- the
+    # rare multi-currency case (D2). The primary budget/currency is still
+    # set via ProjectCreateInput/ProjectUpdateInput's budgetAmount/
+    # budgetCurrency, same as before.
+    addProjectBudget(projectId: ID!, currencyCode: String!, amount: Float!): JSON!
+    removeProjectBudget(id: ID!): Boolean!
     startProject(id: ID!): Project!
     submitToTeam(id: ID!): Project!
     holdProject(id: ID!, reason: String!): Project!
@@ -3924,6 +3976,7 @@
     days_billed: Float!
     rate_amount: Float!
     total_amount: Float!
+    currency_code: String!
     whtApplies: Boolean!
     whtScenario: String
     whtRate: Float!
@@ -4058,6 +4111,7 @@
     accountType: String!
     accountCode: String!
     accountName: String!
+    currency_code: String
     companies: JSON!
     consolidated: Float!
     eliminated: Float!
@@ -4069,6 +4123,7 @@
     rows: [ConsolidatedRow!]!
     companies: [CompanyRef!]!
     currency: String!
+    availableCurrencies: [String!]!
     totalRevenue: Float!
     totalExpenses: Float!
     netProfit: Float!
@@ -4078,6 +4133,7 @@
     rows: [ConsolidatedRow!]!
     companies: [CompanyRef!]!
     currency: String!
+    availableCurrencies: [String!]!
     totalAssets: Float!
     totalLiabilities: Float!
     totalEquity: Float!
@@ -4088,6 +4144,7 @@
     rows: [ConsolidatedRow!]!
     companies: [CompanyRef!]!
     currency: String!
+    availableCurrencies: [String!]!
     totalDebits: Float!
     totalCredits: Float!
     isBalanced: Boolean!
@@ -4100,6 +4157,7 @@
     code: String!
     name: String!
     projectType: String
+    currencyCode: String
     companyName: String!
     budget: Float!
     actualCost: Float!
@@ -4132,13 +4190,13 @@
   type InventoryValuation { rows: [InventoryValRow!]! totalValue: Float! totalProducts: Int! totalLocations: Int! lowStockItems: Int! byLocation: [LocationValue!]! }
 
   type WHTRow { vendorName: String! taxId: String whtType: String! rate: Float! paymentAmount: Float! whtAmount: Float! period: String! }
-  type WHTReport { rows: [WHTRow!]! totalWHT: Float! vendorCount: Int! totalPaymentsSubjectToWHT: Float! }
+  type WHTReport { rows: [WHTRow!]! totalWHT: Float! vendorCount: Int! totalPaymentsSubjectToWHT: Float! currencyCode: String! availableCurrencies: [String!]! }
 
   type FXExposureRow { currency: String! openAR: Float! openAP: Float! netExposure: Float! fxRate: Float! iqdEquivalent: Float! }
   type FXExposureReport { rows: [FXExposureRow!]! totalIQDExposure: Float! }
 
   type PayrollTaxRow { employeeName: String! employeeNumber: String! period: String! grossPay: Float! taxableIncome: Float! incomeTaxWithheld: Float! socialSecurity: Float! netPay: Float! }
-  type PayrollTaxReport { rows: [PayrollTaxRow!]! }
+  type PayrollTaxReport { rows: [PayrollTaxRow!]! currencyCode: String! availableCurrencies: [String!]! }
 
   # ─── Phase 5: Inter-company ───────────────────────────────────────────────
 
@@ -4354,15 +4412,15 @@
 
   extend type Query {
     executiveDashboard(currencyCode: String): ExecutiveDashboardData!
-    consolidatedPL(fromDate: String!, toDate: String!, showEliminations: Boolean): ConsolidatedPLResult!
-    consolidatedBS(asOfDate: String!, showEliminations: Boolean): ConsolidatedBSResult!
+    consolidatedPL(fromDate: String!, toDate: String!, showEliminations: Boolean, currencyCode: String): ConsolidatedPLResult!
+    consolidatedBS(asOfDate: String!, showEliminations: Boolean, currencyCode: String): ConsolidatedBSResult!
     projectProfitabilityReport(companyId: ID, status: [String], projectType: String, fromDate: String, toDate: String): [ProjectProfitRow!]!
     payrollCostReport(fromDate: String!, toDate: String!, companyId: ID, departmentId: ID): PayrollCostReport!
     attendanceSummaryReport(fromDate: String!, toDate: String!, companyId: ID): AttendanceSummary!
     inventoryValuationReport(asOfDate: String!, companyId: ID, locationId: ID): InventoryValuation!
-    whtReport(fromDate: String!, toDate: String!, companyId: ID!): WHTReport!
-    fxExposureReport(asOfDate: String!, companyId: ID!): FXExposureReport!
-    payrollTaxReport(fromDate: String!, toDate: String!, companyId: ID!): PayrollTaxReport!
+    whtReport(fromDate: String!, toDate: String!, companyId: ID, currencyCode: String): WHTReport!
+    fxExposureReport(asOfDate: String!, companyId: ID): FXExposureReport!
+    payrollTaxReport(fromDate: String!, toDate: String!, companyId: ID, currencyCode: String): PayrollTaxReport!
 
     intercoTransaction(id: ID!): IntercoTransactionDetail
     intercoPricingConfigHistory(companyId: ID!): [IntercoPricingHistory!]!
@@ -4377,13 +4435,13 @@
     myPreferences: MyPreferences!
     mySessions: [MySession!]!
 
-    dashboardKPIs(companyId: ID!): DashboardKPIs!
+    dashboardKPIs(companyId: ID!, currencyCode: String): DashboardKPIs!
     recentPurchaseOrders(companyId: ID!, limit: Int): [DashboardPO!]!
     activityFeed(companyId: ID!, limit: Int): [ActivityEvent!]!
     myActivityFeed(companyId: ID!, limit: Int): [ActivityEvent!]!
     myProjects(companyId: ID!): [MyProjectSummary!]!
-    spendByCategory(companyId: ID!): [SpendCategory!]!
-    revenueVsTarget(companyId: ID!): [RevenueMonth!]!
+    spendByCategory(companyId: ID!, currencyCode: String): [SpendCategory!]!
+    revenueVsTarget(companyId: ID!, currencyCode: String): [RevenueMonth!]!
   }
 
   type DashboardKPIs {
@@ -5693,6 +5751,8 @@
     outstandingReceivable: Float!
     # Category breakdown
     byCategory: [CategoryCostSummary!]!
+    currencyCode: String!
+    availableCurrencies: [String!]!
   }
 
   type CategoryCostSummary {
@@ -5705,7 +5765,7 @@
   }
 
   extend type Query {
-    projectCostCodes(projectId: ID!): [CostCode!]!
+    projectCostCodes(projectId: ID!, currencyCode: String): [CostCode!]!
     projectCommittedCosts(projectId: ID!): [CommittedCost!]!
     projectCashFlow(projectId: ID!): [CashFlowPeriod!]!
     projectSubcontracts(projectId: ID!): [Subcontract!]!
@@ -5713,7 +5773,7 @@
     projectEquipmentLog(projectId: ID!, startDate: String, endDate: String): [EquipmentLog!]!
     projectCostForecast(projectId: ID!): [CostForecast!]!
     projectClientBillings(projectId: ID!): [ClientBilling!]!
-    projectCostSummary(projectId: ID!): CostControlSummary!
+    projectCostSummary(projectId: ID!, currencyCode: String): CostControlSummary!
   }
 
   extend type Mutation {
