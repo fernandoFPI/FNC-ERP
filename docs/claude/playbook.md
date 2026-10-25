@@ -400,3 +400,21 @@ Don't re-derive, check these first.
     If anything uses it, the rollback section must say "no code-only rollback past migration N" and name the
     only real options (fix forward, or restore a dump taken before the migration). Confirm a backup claim in the
     workflow file, not in the notes.
+
+40. **A shared table that forces every cell onto one line hides columns on any screen narrower than its longest
+    value.** `components/ui/Table.tsx` set `white-space: nowrap` on every body cell, so a single long text value sets
+    the width of the whole table; anything wider than the card sits behind a horizontal scrollbar at the bottom of the
+    list (the component's own `maxHeight` comment describes it). On the requisition Lines tab the item names are
+    supplier catalogue descriptions of 100+ characters ("110-003-019 UNIVERSAL SLIM WC SEAT MODEL 2 - ROUND FORM
+    (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING)"), and at pending approval the table has eight
+    columns (flag, #, item, qty, from stock, store / market / verified price), so on a normal laptop the user saw
+    flag, #, item and a clipped "Qty" and none of the prices. It looked fine for the developer on a wide monitor, and
+    an earlier workaround (the flag checkbox moved to the leftmost column "because only leading columns are guaranteed
+    visible") treated the symptom. How to spot it: "the columns don't fit on his screen but they do on mine"; open the
+    page in a narrow window (or at 125 to 150 % zoom) with a realistic, long value in the free-text column. Fix: an
+    opt-in column option, `wrap: true` (with a `minWidth`), so only the free-text column wraps and every numeric
+    column stays on one line; nothing changes for the ~90 other tables. `overflow-wrap: anywhere` is deliberate (it
+    lets a long part number break too), which is why `minWidth` is needed: without it the column could collapse to a
+    sliver. Other tables with long free text (PO lines, Items Bought, stock moves) have the same cells and have not
+    been checked. Tests: `components/ui/__tests__/Table.test.tsx` and `RequisitionDetail.test.tsx`; these prove the
+    style, not the pixels (jsdom has no layout), so check a narrow window by eye after changing a table.

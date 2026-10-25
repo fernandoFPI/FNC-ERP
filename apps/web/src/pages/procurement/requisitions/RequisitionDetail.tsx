@@ -824,6 +824,10 @@ export default function RequisitionDetail() {
     {
       key: 'description',
       header: t('req.detail.item'),
+      // Item names run to 100+ characters (supplier catalogue descriptions); on one line
+      // they pushed Qty and every price column off the card on all but the widest screens.
+      wrap: true,
+      minWidth: '220px',
       render: (l) => (
         <div>
           <div style={{ fontSize: '13px', color: theme.textPrimary }}>

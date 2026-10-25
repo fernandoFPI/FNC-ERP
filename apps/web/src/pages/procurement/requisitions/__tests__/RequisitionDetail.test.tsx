@@ -148,6 +148,44 @@ describe('RequisitionDetail', () => {
     expect(screen.getByText('2026-06-15')).toBeInTheDocument()
   })
 
+  it('lets a long item name wrap instead of pushing Qty and the price columns off the card', async () => {
+    const longName =
+      '110-003-019 UNIVERSAL SLIM WC SEAT MODEL 2 - ROUND FORM (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING)'
+    mockReq({
+      status: 'pending_approval',
+      currencyTotals: [],
+      lines: [
+        {
+          ...baseReq().lines[0],
+          description: longName,
+          qty: '3',
+          uom: 'pcs',
+          qty_from_stock: '0',
+          store_price: '110',
+          store_price_currency: 'USD',
+          market_price: '125.5',
+          market_price_currency: 'USD',
+          verified_price: '125.5',
+          verified_price_currency: 'USD',
+        },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    const itemCell = screen.getByText(longName).closest('td')
+    expect(itemCell).toHaveStyle({
+      whiteSpace: 'normal',
+      overflowWrap: 'anywhere',
+      minWidth: '220px',
+    })
+    // the quantity and the price columns the user could not see are still on the one row
+    const row = itemCell?.closest('tr')
+    expect(row).toHaveTextContent('3 pcs')
+    expect(row).toHaveTextContent('125.5 USD')
+    // and they stay on one line each
+    expect(screen.getByText('3 pcs').closest('td')).toHaveStyle({ whiteSpace: 'nowrap' })
+  })
+
   it('shows the lines table with the line description', async () => {
     const RequisitionDetail = (await import('../RequisitionDetail')).default
     wrap(<RequisitionDetail />)

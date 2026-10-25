@@ -8,6 +8,13 @@ export interface Column<T> {
   header: string
   renderHeader?: () => React.ReactNode
   width?: string
+  // Lets this column's cells wrap onto several lines (long item names, notes) instead of
+  // every cell being forced onto one line. Without it, one long name sets the width of
+  // the whole table and the columns to its right are pushed out of sight behind a
+  // horizontal scrollbar at the bottom of the list. Pair with `minWidth` so the column
+  // cannot be squeezed to a sliver when the other columns need the room.
+  wrap?: boolean
+  minWidth?: string
   render?: (row: T) => React.ReactNode
   sortable?: boolean
   // Mobile card view options
@@ -416,6 +423,7 @@ export function Table<T extends object>({
                 key={String(col.key)}
                 style={{
                   width: col.width,
+                  minWidth: col.minWidth,
                   padding: '10px 14px',
                   textAlign: 'start',
                   fontSize: '10px',
@@ -508,7 +516,9 @@ export function Table<T extends object>({
                         style={{
                           padding: '12px 14px',
                           color: theme.textSecondary,
-                          whiteSpace: 'nowrap',
+                          whiteSpace: col.wrap ? 'normal' : 'nowrap',
+                          overflowWrap: col.wrap ? 'anywhere' : undefined,
+                          minWidth: col.minWidth,
                           position: stickyFirstColumn && ci === 0 ? 'sticky' : undefined,
                           insetInlineStart: stickyFirstColumn && ci === 0 ? 0 : undefined,
                           background: stickyFirstColumn && ci === 0 ? theme.bgSurface : undefined,

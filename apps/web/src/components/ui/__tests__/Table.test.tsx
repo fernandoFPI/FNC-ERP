@@ -92,3 +92,46 @@ describe('Table', () => {
     expect(screen.getByText('Group A')).toBeInTheDocument()
   })
 })
+
+// A long item name used to set the width of the whole table (every cell was one line), pushing
+// the quantity and price columns off the card behind a sideways scrollbar. A column can now
+// opt in to wrapping; everything else stays on one line exactly as before.
+describe('Table: wrapping columns', () => {
+  const longName =
+    'UNIVERSAL SLIM WC SEAT MODEL 2 - ROUND FORM (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING)'
+  const wrapColumns: Column<Row>[] = [
+    { key: 'id', header: 'ID' },
+    { key: 'name', header: 'Name', wrap: true, minWidth: '220px' },
+    { key: 'value', header: 'Value' },
+  ]
+  const cellOf = (text: string) => {
+    const td = screen.getByText(text).closest('td')
+    if (!td) throw new Error(`no cell for ${text}`)
+    return td
+  }
+
+  it('lets a column that asks for it wrap, and keeps its minimum width', () => {
+    wrap(<Table columns={wrapColumns} data={[{ id: 'row-a', name: longName, value: 777 }]} />)
+    const cell = cellOf(longName)
+    expect(cell).toHaveStyle({ whiteSpace: 'normal', overflowWrap: 'anywhere', minWidth: '220px' })
+  })
+
+  it('keeps every other column on one line, as before', () => {
+    wrap(<Table columns={wrapColumns} data={[{ id: 'row-a', name: longName, value: 777 }]} />)
+    expect(cellOf('row-a')).toHaveStyle({ whiteSpace: 'nowrap' })
+    expect(cellOf('row-a')).not.toHaveStyle({ overflowWrap: 'anywhere' })
+    expect(cellOf('777')).toHaveStyle({ whiteSpace: 'nowrap' })
+  })
+
+  it('leaves a table that never asks for wrapping completely unchanged', () => {
+    wrap(<Table columns={columns} data={data} />)
+    for (const text of ['1', 'Alpha', '100'])
+      expect(cellOf(text)).toHaveStyle({ whiteSpace: 'nowrap' })
+  })
+
+  it('keeps the header on one line but gives it the same minimum width, so header and cells line up', () => {
+    wrap(<Table columns={wrapColumns} data={[{ id: 'row-a', name: longName, value: 777 }]} />)
+    const th = screen.getByText('Name').closest('th')
+    expect(th).toHaveStyle({ whiteSpace: 'nowrap', minWidth: '220px' })
+  })
+})
