@@ -76,7 +76,9 @@ export async function resolvePostingAccount(
   return accountId
 }
 
-export async function listCompanyPostingAccounts(companyId: string): Promise<CompanyPostingAccount[]> {
+export async function listCompanyPostingAccounts(
+  companyId: string,
+): Promise<CompanyPostingAccount[]> {
   const result = await pool.query<CompanyPostingAccount>(
     `SELECT cpa.id, cpa.company_id, cpa.role, cpa.currency_code, cpa.account_id,
             a.code AS account_code, a.name AS account_name, cpa.updated_at
@@ -105,11 +107,13 @@ export async function upsertCompanyPostingAccount(
     [accountId, companyId],
   )
   if (accountCheck.rows[0]?.ok !== true) {
-    throw new Error('Posting account must belong to this company, be active, and be a postable (leaf) account')
+    throw new Error(
+      'Posting account must belong to this company, be active, and be a postable (leaf) account',
+    )
   }
 
   const normalizedCurrency = currencyCode ? currencyCode.toUpperCase() : null
-  const result = await pool.query(
+  const result = await pool.query<{ id: string }>(
     normalizedCurrency
       ? `INSERT INTO company_posting_accounts (company_id, role, currency_code, account_id, created_by, updated_by)
          VALUES ($1,$2,$3,$4,$5,$5)
@@ -123,7 +127,7 @@ export async function upsertCompanyPostingAccount(
          RETURNING id`,
     [companyId, role, normalizedCurrency, accountId, userId],
   )
-  const id = firstRowOrThrow(result).id as string
+  const id = firstRowOrThrow(result).id
   const full = await pool.query<CompanyPostingAccount>(
     `SELECT cpa.id, cpa.company_id, cpa.role, cpa.currency_code, cpa.account_id,
             a.code AS account_code, a.name AS account_name, cpa.updated_at
