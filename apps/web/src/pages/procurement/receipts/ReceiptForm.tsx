@@ -297,8 +297,8 @@ export default function ReceiptForm() {
 
   const po = demoPurchaseOrder ?? poData?.purchaseOrder
   // Decided once, at PO creation (PurchaseOrderForm) — not a per-receipt
-  // choice, since the from-stock portion's auto Store Out already has to
-  // know this at PO approval time, long before anyone reaches receiving.
+  // choice. It only concerns the PURCHASED goods (Store In vs direct to the
+  // jobsite); the from-stock portion always has its own draft Store Out.
   const isJobsite = po?.purpose === 'project' && po.delivery_destination === 'jobsite'
   // The buyer normally uploads the vendor receipt when they buy (requisition's
   // Items Bought stage), so a jobsite delivery must not demand a second copy.

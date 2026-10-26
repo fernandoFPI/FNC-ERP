@@ -26,3 +26,10 @@
   `can_review`; the web page keeps no copy of the rule. A self-reviewed row is labelled "Reviewed by the person
   who raised it". Rejecting holds back only the product's own cost: the receipt, price, adjustment or edit that
   raised the request stays saved (stock adjustments and manual edits keep the stock location's cost).
+- Stock-covered lines and the delivery destination: a project requisition/PO's delivery destination only decides
+  what happens to PURCHASED goods (Delivered to inventory: a Store In; Delivered to the jobsite: straight to the
+  jobsite, no Store In). Whatever is covered from inventory ALWAYS gets a draft Store Out (never skipped because of
+  the destination), which reserves its quantity until it is confirmed; confirming deducts the stock, releases the
+  reservation and charges the project. A requisition completes only when those Store Outs are confirmed. One
+  function, `coverRequisitionStockLines` (gateway resolvers), makes the drafts at approval and when a buyer resolves
+  a line from stock at Items Bought. The destination is chosen at creation, long before approval.

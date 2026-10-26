@@ -499,10 +499,17 @@ Don't re-derive, check these first.
     the thing that releases the reservation.
     Kept from that commit: `materialIssues(requisitionId)` also returns Store Outs made against the requisition's child
     POs (scoped to the caller's company), and the requisition's Store Outs card shows a PO Number column.
-    Still to do: remove the destination skip (and `projectStockStaysInInventory`), make "resolve from stock" create its
-    draft Store Out, then backfill drafts for REQ-2026-0047, 0075, 0078, 0090 and 0010 (a production data write: backup
-    and a rolled-back dry run first). How to spot this class: a requisition in `sourcing` whose child POs are all
+    The real fix: the destination skip and `projectStockStaysInInventory` are gone; one function,
+    `coverRequisitionStockLines`, gives every stock-covered line its draft Store Out for the part no non-cancelled Store
+    Out line covers yet, so it is safe to run again. Approval, `resolveRequisitionLineFromStock` and the backfill all
+    call it (one function for one rule, so they cannot drift). The PO-side `issueStockForPOLines` lost the same skip
+    (no standalone project PO delivered to inventory had stock lines, so it changes no existing data). Still to do: a
+    backfill of drafts for REQ-2026-0047, 0075, 0078, 0090 and 0010 (a production data write: backup and a
+    rolled-back dry run first; check each reservation still covers its line, or confirming fails with "Reservation
+    mismatch"). How to spot this class: a requisition in `sourcing` whose child POs are all
     finished; compare "what does approval create for X" with "what does completion wait for for X", and look for every
     other place `qty_from_stock` is set after approval. Tests:
-    `services/gateway/tests/requisition-stock-lines-completion.test.ts` (real Postgres) and the Store Outs block in
-    `RequisitionDetail.test.tsx`. Related to #23, #24 and #34.
+    `services/gateway/tests/requisition-stock-lines-completion.test.ts` (real Postgres: both destinations, fully and
+    partly from stock, remainder marked short, resolve from stock, reuse of the open draft, project cost charged on
+    confirm, Store Outs by child PO) and the Store Outs block in `RequisitionDetail.test.tsx`. Related to #23, #24
+    and #34.

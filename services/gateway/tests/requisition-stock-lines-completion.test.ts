@@ -1,13 +1,13 @@
-// A requisition must never complete, or free the stock it reserved, while stock-covered lines have
-// not been issued to the project, whatever its delivery destination (the destination only says where
-// PURCHASED goods go). A first attempt let project requisitions delivered to inventory complete
-// without a Store Out and release their reservation; that was wrong and was taken back.
-// REQ-2026-0075 (9 stock lines, 72 units) has no Store Out at all because the August skip for
-// "delivered to inventory" is still in place: that gap is fixed separately, and these tests pin
-// the safety property that holds before and after it.
+// Every line covered from stock gets a draft Store Out line that reserves its quantity until it is
+// confirmed, whatever the requisition's delivery destination (the destination only decides what
+// happens to PURCHASED goods: Store In vs straight to the jobsite). A requisition completes only
+// when those Store Outs are confirmed, and confirming deducts the stock and frees the reservation.
 //
-// Also: the requisition's Store Outs card finds Store Outs that were made by hand for the items
-// bought on it (linked to its child PO, not to the requisition itself).
+// Found live: since August the draft was skipped for a project requisition "delivered to
+// inventory" (REQ-2026-0075: 9 stock lines, 72 units, no Store Out, stock reserved for nothing),
+// and a line a buyer resolves from stock at Items Bought never got one at any destination
+// (REQ-2026-0010). Also: the requisition's Store Outs card finds Store Outs made by hand for the
+// items bought on it (linked to its child PO, not to the requisition itself).
 //
 // Real Postgres through the resolvers, same pattern as requisition-completion.test.ts.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -35,6 +35,7 @@ async function makeProduct(suffix: string): Promise<string> {
 }
 
 async function receive(productId: string, qty: number): Promise<void> {
+  if (qty <= 0) return // a stock move of 0 violates stock_moves_qty_check
   const viR = await pool.query<{ id: string }>(
     `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,
     [TEST_COMPANY_ID],
@@ -69,13 +70,6 @@ async function stock(productId: string): Promise<{ onHand: number; reserved: num
     reserved: parseFloat(r.rows[0]?.qty_reserved ?? '0'),
   }
 }
-
-const storeOutsLinkedToReq = async (reqId: string): Promise<number> =>
-  parseInt(
-    (await pool.query<{ c: string }>(`SELECT COUNT(*) AS c FROM project_material_issues WHERE requisition_id=$1`, [reqId]))
-      .rows[0]!.c,
-    10,
-  )
 
 interface Made {
   reqId: string
@@ -256,52 +250,204 @@ afterAll(async () => {
   await pool.end()
 })
 
-describe('delivered to inventory: the requisition does not close or free its stock without a Store Out', () => {
-  it('fully from stock: stays in sourcing at approval, with the stock still reserved', async () => {
-    const { reqId, productId } = await makeProjectReq({ destination: 'inventory', qty: 6, fromStock: 6 })
-    expect(await statusOf(reqId)).toBe('sourcing')
-    expect(await stock(productId)).toEqual({ onHand: 6, reserved: 6 })
-  })
+interface StoreOutRow {
+  issue_id: string
+  status: string
+  project_id: string | null
+  qty_issued: string
+  po_line_id: string | null
+}
+const storeOutLines = async (reqId: string): Promise<StoreOutRow[]> =>
+  (
+    await pool.query<StoreOutRow>(
+      `SELECT h.id AS issue_id, h.status, h.project_id, m.qty_issued, m.po_line_id
+         FROM project_material_issues h
+         JOIN project_material_issue_lines m ON m.issue_id = h.id
+        WHERE h.requisition_id=$1
+        ORDER BY h.created_at, m.id`,
+      [reqId],
+    )
+  ).rows
 
-  it('part from stock, rest bought: the child PO being finished is not enough, the stock stays reserved', async () => {
-    const { reqId, productId, childId } = await makeProjectReq({ destination: 'inventory', qty: 10, fromStock: 4 })
-    expect(childId).toBeDefined()
-    expect(await statusOf(reqId)).toBe('sourcing')
-    await finishChild(childId!)
-    expect(await statusOf(reqId)).toBe('sourcing')
-    expect(await stock(productId)).toEqual({ onHand: 4, reserved: 4 })
-  })
+// A project requisition taken to Items Bought (approved, buying not finished), so a buyer can
+// still resolve a line from stock. `onHand` is what the warehouse holds in total.
+async function makeProjectReqAtItemsBought(opts: {
+  destination: 'inventory' | 'jobsite'
+  qty: number
+  fromStock: number
+  onHand: number
+}): Promise<{ reqId: string; lineId: string; productId: string }> {
+  const { destination, qty, fromStock, onHand } = opts
+  const productId = await makeProduct('pic')
+  await receive(productId, onHand)
+  const created = await resolvers.Mutation.createRequisition(
+    null,
+    {
+      input: {
+        purpose: 'project',
+        project_id: projectId,
+        delivery_destination: destination,
+        lines: [{ product_id: productId, description: 'x', qty, unit_price: 1 }],
+      },
+    },
+    ctx as never,
+  )
+  const reqId = (created as { id: string }).id
+  const lineId = (await pool.query<{ id: string }>(`SELECT id FROM po_lines WHERE requisition_id=$1`, [reqId])).rows[0]!.id
+  await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
+  await resolvers.Mutation.confirmRequisitionInventoryCheck(
+    null,
+    {
+      id: reqId,
+      lineStockQtys: [
+        { lineId, qtyFromStock: fromStock, sourceLocationId: fromStock > 0 ? warehouseId : undefined },
+      ],
+    },
+    ctx as never,
+  )
+  await resolvers.Mutation.submitRequisitionMarketPricing(
+    null,
+    { id: reqId, linePrices: [{ lineId, marketPrice: 10, currencyCode: 'IQD' }] },
+    ctx as never,
+  )
+  await resolvers.Mutation.verifyRequisitionPrices(
+    null,
+    { id: reqId, lineAdjustments: [{ lineId, verifiedPrice: 10 }] },
+    ctx as never,
+  )
+  await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
+  expect(await statusOf(reqId)).toBe('items_bought')
+  return { reqId, lineId, productId }
+}
 
-  it('part from stock, remainder marked short so nothing is forked: stays in sourcing, stock still reserved', async () => {
-    const { reqId, productId } = await makeProjectReq({ destination: 'inventory', qty: 5, fromStock: 2, shortRest: true })
-    expect(await statusOf(reqId)).toBe('sourcing')
-    expect(await stock(productId)).toEqual({ onHand: 2, reserved: 2 })
-  })
-})
+describe.each(['inventory', 'jobsite'] as const)(
+  'delivered to %s: every stock-covered line gets a draft Store Out',
+  (destination) => {
+    it('fully from stock: a draft for the whole quantity, linked to the line and the project, stock reserved', async () => {
+      const { reqId, lineId, productId } = await makeProjectReq({ destination, qty: 6, fromStock: 6 })
+      const rows = await storeOutLines(reqId)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ status: 'draft', po_line_id: lineId, project_id: projectId })
+      expect(parseFloat(rows[0]!.qty_issued)).toBe(6)
+      expect(await statusOf(reqId)).toBe('sourcing')
+      expect(await stock(productId)).toEqual({ onHand: 6, reserved: 6 })
+    })
 
-describe('delivered to the jobsite: a stock-covered line still needs its Store Out', () => {
-  it('project delivered to the jobsite, fully from stock: stays in sourcing with a draft Store Out and the stock reserved', async () => {
-    const { reqId, productId } = await makeProjectReq({ destination: 'jobsite', qty: 6, fromStock: 6 })
-    expect(await statusOf(reqId)).toBe('sourcing')
-    expect(await storeOutsLinkedToReq(reqId)).toBe(1)
-    expect(await stock(productId)).toEqual({ onHand: 6, reserved: 6 })
-  })
+    it('confirming it deducts the stock, frees the reservation, charges the project and completes the requisition', async () => {
+      const { reqId, productId } = await makeProjectReq({ destination, qty: 6, fromStock: 6 })
+      const issueId = (await storeOutLines(reqId))[0]!.issue_id
+      await resolvers.Mutation.issueMaterialIssue(null, { id: issueId }, ctx as never)
+      expect(await statusOf(reqId)).toBe('completed')
+      expect(await stock(productId)).toEqual({ onHand: 0, reserved: 0 })
+      const cost = await pool.query<{ c: string }>(
+        `SELECT COUNT(*) AS c FROM project_cost_actuals WHERE source_type='stock_issue' AND source_id=$1`,
+        [issueId],
+      )
+      expect(parseInt(cost.rows[0]!.c, 10)).toBeGreaterThan(0)
+    })
 
-  it('project delivered to the jobsite: confirming that Store Out completes it and issues the stock', async () => {
-    const { reqId, productId } = await makeProjectReq({ destination: 'jobsite', qty: 6, fromStock: 6 })
-    const issue = await pool.query<{ id: string }>(`SELECT id FROM project_material_issues WHERE requisition_id=$1`, [reqId])
-    await resolvers.Mutation.issueMaterialIssue(null, { id: issue.rows[0]!.id }, ctx as never)
-    expect(await statusOf(reqId)).toBe('completed')
-    expect(await stock(productId)).toEqual({ onHand: 0, reserved: 0 })
-  })
+    it('part from stock, rest bought: the draft covers only the stock part, and both it and the child PO must finish', async () => {
+      const { reqId, productId, childId } = await makeProjectReq({ destination, qty: 10, fromStock: 4 })
+      const rows = await storeOutLines(reqId)
+      expect(rows).toHaveLength(1)
+      expect(parseFloat(rows[0]!.qty_issued)).toBe(4)
+      await finishChild(childId!)
+      expect(await statusOf(reqId)).toBe('sourcing') // the Store Out is still a draft
+      expect(await stock(productId)).toEqual({ onHand: 4, reserved: 4 })
+      await resolvers.Mutation.issueMaterialIssue(null, { id: rows[0]!.issue_id }, ctx as never)
+      expect(await statusOf(reqId)).toBe('completed')
+      expect(await stock(productId)).toEqual({ onHand: 0, reserved: 0 })
+    })
 
-  it('project delivered to the jobsite, part from stock: the child PO being finished is not enough, the stock line is still unissued', async () => {
-    const { reqId, productId, childId } = await makeProjectReq({ destination: 'jobsite', qty: 10, fromStock: 4 })
-    await finishChild(childId!)
-    expect(await statusOf(reqId)).toBe('sourcing')
-    expect(await stock(productId)).toEqual({ onHand: 4, reserved: 4 })
-  })
-})
+    it('part from stock, the remainder marked short so nothing is forked: confirming the Store Out completes it', async () => {
+      const { reqId, productId } = await makeProjectReq({ destination, qty: 5, fromStock: 2, shortRest: true })
+      expect(await statusOf(reqId)).toBe('sourcing')
+      const rows = await storeOutLines(reqId)
+      expect(rows).toHaveLength(1)
+      await resolvers.Mutation.issueMaterialIssue(null, { id: rows[0]!.issue_id }, ctx as never)
+      expect(await statusOf(reqId)).toBe('completed')
+      expect(await stock(productId)).toEqual({ onHand: 0, reserved: 0 })
+    })
+
+    it('a line with no stock cover gets no Store Out', async () => {
+      const { reqId } = await makeProjectReqAtItemsBought({ destination, qty: 10, fromStock: 0, onHand: 0 })
+      expect(await storeOutLines(reqId)).toHaveLength(0)
+    })
+  },
+)
+
+describe.each(['inventory', 'jobsite'] as const)(
+  'delivered to %s: a line a buyer resolves from stock at Items Bought also gets its draft Store Out',
+  (destination) => {
+    const resolve = (lineId: string, qty: number) =>
+      resolvers.Mutation.resolveRequisitionLineFromStock(
+        null,
+        { lineId, qty, sourceLocationId: warehouseId },
+        ctx as never,
+      )
+
+    it('creates a draft line for the resolved quantity and keeps it reserved for that draft', async () => {
+      const { reqId, lineId, productId } = await makeProjectReqAtItemsBought({
+        destination,
+        qty: 10,
+        fromStock: 0,
+        onHand: 3,
+      })
+      await resolve(lineId, 3)
+      const rows = await storeOutLines(reqId)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ status: 'draft', po_line_id: lineId, project_id: projectId })
+      expect(parseFloat(rows[0]!.qty_issued)).toBe(3)
+      expect(await stock(productId)).toEqual({ onHand: 3, reserved: 3 })
+    })
+
+    it('adds only the new quantity, to the draft that is already open', async () => {
+      const { reqId, lineId } = await makeProjectReqAtItemsBought({
+        destination,
+        qty: 10,
+        fromStock: 4,
+        onHand: 7,
+      })
+      expect(await storeOutLines(reqId)).toHaveLength(1) // the 4 from approval
+      await resolve(lineId, 3)
+      const rows = await storeOutLines(reqId)
+      expect(new Set(rows.map((r) => r.issue_id)).size).toBe(1) // one draft, not two
+      expect(rows.map((r) => parseFloat(r.qty_issued)).sort()).toEqual([3, 4])
+    })
+
+    it('the requisition can then be finished end to end: buy the rest, finish the child, confirm the Store Out', async () => {
+      const { reqId, lineId, productId } = await makeProjectReqAtItemsBought({
+        destination,
+        qty: 10,
+        fromStock: 0,
+        onHand: 3,
+      })
+      await resolve(lineId, 3)
+      await resolvers.Mutation.recordLinePurchase(
+        null,
+        {
+          input: {
+            lineId,
+            vendorId,
+            qty: 7,
+            actualUnitPrice: 10,
+            currencyCode: 'IQD',
+            receiptFileId: await makeUploadedFile(),
+          },
+        },
+        ctx as never,
+      )
+      await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+      const childId = (await pool.query<{ id: string }>(`SELECT id FROM purchase_orders WHERE requisition_id=$1`, [reqId])).rows[0]!.id
+      await finishChild(childId)
+      expect(await statusOf(reqId)).toBe('sourcing') // the resolved 3 are still a draft
+      const rows = await storeOutLines(reqId)
+      await resolvers.Mutation.issueMaterialIssue(null, { id: rows[0]!.issue_id }, ctx as never)
+      expect(await statusOf(reqId)).toBe('completed')
+      expect(await stock(productId)).toEqual({ onHand: 0, reserved: 0 })
+    })
+  },
+)
 
 describe('materialIssues(requisitionId): Store Outs made by hand for the bought items', () => {
   const materialIssues = async (reqId: string): Promise<{ id: string }[]> =>

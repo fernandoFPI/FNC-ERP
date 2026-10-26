@@ -2038,20 +2038,6 @@ async function userIsAssignedApproverForRequisitionGW(
   return r.rows.length > 0
 }
 
-// KNOWN-WRONG RULE, kept only until it is removed (playbook #44): since August a
-// project PO/requisition "delivered to inventory" gets NO auto-created Store Out
-// for its from-stock lines (issueStockForPOLines / issueStockForRequisitionLines).
-// The intended rule is the opposite: the destination only decides what happens to
-// PURCHASED goods (Store In vs direct to the jobsite); a line covered from
-// inventory always gets a draft Store Out that reserves its quantity until it is
-// confirmed. REQ-2026-0075 (9 stock lines, 72 units) has no Store Out because of this.
-function projectStockStaysInInventory(doc: {
-  purpose?: unknown
-  delivery_destination?: unknown
-}): boolean {
-  return doc.purpose === 'project' && doc.delivery_destination === 'inventory'
-}
-
 // Mirrors issueStockForPOLines exactly (see that function's own comments
 // for the reasoning behind each piece — unchanged here) but scoped to
 // requisition_id instead of po_id, and stamps requisition_id (not po_id)
@@ -2071,20 +2057,45 @@ function projectStockStaysInInventory(doc: {
 // split already implies a company split wherever the companies actually
 // differ. (issueStockForPOLines has this same latent bundling gap; fixing
 // it is out of scope here — G1 doesn't touch old PO code paths.)
-async function issueStockForRequisitionLines(
+// Every line covered from stock gets a draft Store Out line, whatever the
+// requisition's delivery destination: the destination only decides what happens
+// to PURCHASED goods (Store In vs straight to the jobsite). The draft is what
+// the reserved quantity waits on — confirming it (issueMaterialIssue) deducts
+// the stock and releases the reservation (playbook #44).
+//
+// Only the part of qty_from_stock that no non-cancelled Store Out line points at
+// yet is covered, so it is safe to call again: at approval (nothing is covered
+// yet), when a buyer resolves a line from stock at Items Bought (only the new
+// quantity is uncovered), and to backfill requisitions approved before this rule
+// was fixed. Pass `onlyLineId` to cover a single line.
+// Drafts are grouped by source location (one real pick per location, which also
+// keeps interco-sourced lines in their own company's draft); a draft for the
+// same requisition and location that is still open is reused.
+async function coverRequisitionStockLines(
   client: PoolClient,
   req: Record<string, unknown>,
   companyId: string,
   userId: string,
+  onlyLineId?: string,
 ): Promise<{ issueId: string; issueNumber: string }[]> {
-  if (projectStockStaysInInventory(req)) return []
-
   const reqId = String(req.id)
   const linesRes = await client.query(
-    `SELECT * FROM po_lines WHERE requisition_id=$1 AND qty_from_stock > 0`,
-    [reqId],
+    `SELECT pl.*,
+            pl.qty_from_stock - COALESCE((
+              -- currency-safe: qty_issued is a stock quantity, not money
+              SELECT SUM(m.qty_issued) FROM project_material_issue_lines m
+              JOIN project_material_issues h ON h.id = m.issue_id AND h.status <> 'cancelled'
+              WHERE m.po_line_id = pl.id
+            ), 0) AS uncovered_qty
+     FROM po_lines pl
+     WHERE pl.requisition_id=$1 AND pl.qty_from_stock > 0
+       AND ($2::uuid IS NULL OR pl.id = $2::uuid)
+     ORDER BY pl.id`,
+    [reqId, onlyLineId ?? null],
   )
-  const lines = linesRes.rows as Record<string, unknown>[]
+  const lines = (linesRes.rows as Record<string, unknown>[]).filter(
+    (l) => parseFloat(String(l.uncovered_qty ?? 0)) > 0.0001,
+  )
   if (lines.length === 0) return []
 
   const { defaultFromLocationId, ownDestLocationId } = await getStockIssuanceLocations(
@@ -2100,22 +2111,34 @@ async function issueStockForRequisitionLines(
     else byLocation.set(locId, [line])
   }
 
-  const issued: { issueId: string; issueNumber: string }[] = []
-  for (const locLines of byLocation.values()) {
-    const issueNumber = await nextDocumentNumber(companyId, 'material_issue', 'SO')
-    const issueRes = await client.query(
-      `INSERT INTO project_material_issues
-         (project_id, company_id, requisition_id, issue_number, issue_date, status,
-          created_by, notes)
-       VALUES ($1,$2,$3,$4,NOW()::date,'draft',$5,
-               'Auto-created from requisition stock issuance')
-       RETURNING id`,
-      [req.project_id, companyId, reqId, issueNumber, userId],
+  const touched: { issueId: string; issueNumber: string }[] = []
+  for (const [locId, locLines] of byLocation) {
+    const open = await client.query<{ id: string; issue_number: string }>(
+      `SELECT h.id, h.issue_number FROM project_material_issues h
+       WHERE h.requisition_id=$1 AND h.company_id=$2 AND h.status='draft'
+         AND EXISTS (SELECT 1 FROM project_material_issue_lines m
+                     WHERE m.issue_id = h.id AND m.from_location_id = $3)
+       ORDER BY h.created_at LIMIT 1`,
+      [reqId, companyId, locId],
     )
-    const issueId = issueRes.rows[0]?.id as string
+    let issueId = open.rows[0]?.id
+    let issueNumber = open.rows[0]?.issue_number
+    if (!issueId) {
+      issueNumber = await nextDocumentNumber(companyId, 'material_issue', 'SO')
+      const issueRes = await client.query<{ id: string }>(
+        `INSERT INTO project_material_issues
+           (project_id, company_id, requisition_id, issue_number, issue_date, status,
+            created_by, notes)
+         VALUES ($1,$2,$3,$4,NOW()::date,'draft',$5,
+                 'Auto-created from requisition stock issuance')
+         RETURNING id`,
+        [req.project_id, companyId, reqId, issueNumber, userId],
+      )
+      issueId = issueRes.rows[0]?.id
+    }
 
     for (const line of locLines) {
-      const qty = parseFloat(String(line.qty_from_stock ?? 0))
+      const qty = parseFloat(String(line.uncovered_qty ?? 0))
       if (qty <= 0) continue
       if (!line.product_id) {
         await client.query(
@@ -2136,11 +2159,29 @@ async function issueStockForRequisitionLines(
         )
         continue
       }
-      await insertStockIssuanceLine(client, issueId, line, defaultFromLocationId, ownDestLocationId)
+      await insertStockIssuanceLine(
+        client,
+        issueId,
+        line,
+        defaultFromLocationId,
+        ownDestLocationId,
+        qty,
+      )
     }
-    issued.push({ issueId, issueNumber })
+    touched.push({ issueId, issueNumber })
   }
-  return issued
+  return touched
+}
+
+// Approval-time entry point: nothing is covered yet, so this makes the drafts for
+// every stock-covered line (see coverRequisitionStockLines).
+async function issueStockForRequisitionLines(
+  client: PoolClient,
+  req: Record<string, unknown>,
+  companyId: string,
+  userId: string,
+): Promise<{ issueId: string; issueNumber: string }[]> {
+  return coverRequisitionStockLines(client, req, companyId, userId)
 }
 
 // Mirrors releasePOStockReservations exactly, scoped to requisition_id.
@@ -2481,8 +2522,10 @@ async function insertStockIssuanceLine(
   line: Record<string, unknown>,
   defaultFromLocationId: string,
   ownDestLocationId: string,
+  // Only the part not yet covered by another Store Out line; defaults to the whole line.
+  qtyOverride?: number,
 ): Promise<void> {
-  const qty = parseFloat(String(line.qty_from_stock ?? 0))
+  const qty = qtyOverride ?? parseFloat(String(line.qty_from_stock ?? 0))
   const fromLocationId = (line.source_location_id as string | null) ?? defaultFromLocationId
 
   // Use store_price if set on the line; fall back to average_cost from stock
@@ -2667,14 +2710,10 @@ async function issueStockForPOLines(
   companyId: string,
   userId: string,
 ): Promise<{ issueId: string; issueNumber: string } | undefined> {
-  // A project PO explicitly marked "delivered to inventory" isn't consuming
-  // anything yet — its from-stock quantity should just stay put (no auto
-  // Store Out), the same way its freshly-purchased lines skip Store In under
-  // recordDirectDelivery's counterpart. Only 'jobsite' (or a non-project PO,
-  // where this destination concept doesn't apply) still issues stock out to
-  // the project.
-  if (projectStockStaysInInventory(po)) return undefined
-
+  // Every from-stock line gets its draft Store Out whatever the delivery
+  // destination: the destination only decides what happens to PURCHASED goods
+  // (Store In vs direct to the jobsite), never the stock already in the
+  // warehouse (playbook #44).
   const poId = String(po.id)
   const linesRes = await client.query(
     `SELECT * FROM po_lines WHERE po_id=$1 AND qty_from_stock > 0`,
@@ -35304,6 +35343,19 @@ const phase5MutationResolvers = {
         [newQtyFromStock, args.sourceLocationId, args.lineId],
       )
       updated = r.rows[0] as Record<string, unknown>
+      // Items Bought comes after approval, so the approval-time draft Store Out never
+      // saw this quantity. Give it its own draft now: otherwise it stays reserved with
+      // nothing to confirm and the requisition can never complete (REQ-2026-0010).
+      const reqRes = await client.query(`SELECT * FROM requisitions WHERE id=$1`, [
+        line.requisition_id,
+      ])
+      await coverRequisitionStockLines(
+        client,
+        reqRes.rows[0] as Record<string, unknown>,
+        auth.companyId,
+        auth.userId,
+        args.lineId,
+      )
       await client.query(
         `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
          VALUES ($1,'items_bought','items_bought','resolved_from_stock',$2,$3)`,

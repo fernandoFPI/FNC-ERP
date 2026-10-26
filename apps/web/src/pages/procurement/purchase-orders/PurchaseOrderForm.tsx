@@ -177,9 +177,9 @@ export default function PurchaseOrderForm() {
   const [priority, setPriority] = useState<'low' | 'high' | 'emergency'>('low')
   const [linkedProjectId, setLinkedProjectId] = useState('')
   // Only meaningful for purpose='project' — decided now, at creation, because
-  // it has to be known before approval (it gates whether the from-stock
-  // auto Store Out fires) and receiving (whether Record Receipt creates a
-  // Store In or a direct-to-jobsite delivery).
+  // receiving needs it (whether Record Receipt creates a Store In or a
+  // direct-to-jobsite delivery). It says nothing about the from-stock portion:
+  // that always gets its draft Store Out, whatever the destination.
   const [deliveryDestination, setDeliveryDestination] = useState<'' | 'inventory' | 'jobsite'>('')
   const [linkedMoId, setLinkedMoId] = useState('')
   const [lines, setLines] = useState<POLine[]>([emptyLine()])
