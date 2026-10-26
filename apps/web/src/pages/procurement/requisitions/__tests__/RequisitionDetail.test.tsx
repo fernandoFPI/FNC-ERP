@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, within, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import i18n from '../../../../i18n'
 import type * as ApolloClientModule from '@apollo/client'
 import type * as ReactRouterDomModule from 'react-router-dom'
 
@@ -852,5 +853,172 @@ describe('RequisitionDetail', () => {
     await vi.waitFor(() => {
       expect(localStorage.getItem('fnc_inv_check_draft_req-1')).toBeNull()
     })
+  })
+})
+
+// The lines table: an "Inventory cost" reference column (the product's own Cost, not the store
+// price typed on the line) and a Columns menu, remembered per person under its own table id.
+describe('RequisitionDetail: inventory cost column and Columns menu', () => {
+  // back to English while the page is still mounted, so the re-render is inside act()
+  afterEach(async () => {
+    if (i18n.language !== 'en') {
+      await act(async () => {
+        await i18n.changeLanguage('en')
+      })
+    }
+  })
+
+  const costLine = (over: Record<string, unknown> = {}) => ({
+    ...baseReq().lines[0],
+    description: 'Cement bags',
+    inventory_cost: '12.5',
+    inventory_cost_currency: 'USD',
+    ...over,
+  })
+  const open = async () => {
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    return wrap(<RequisitionDetail />)
+  }
+  const linesTable = () => {
+    const found = screen
+      .getAllByRole('table')
+      .find((el) => within(el).queryByRole('columnheader', { name: 'Item' }))
+    if (!found) throw new Error('lines table not found')
+    return found
+  }
+  const header = (name: string) => within(linesTable()).queryByRole('columnheader', { name })
+  const openColumns = () => {
+    fireEvent.click(screen.getByRole('button', { name: /^Columns/ }))
+  }
+  const cellOf = (lineName: string, columnName: string) => {
+    const headers = within(linesTable()).getAllByRole('columnheader')
+    const at = headers.findIndex((h) => h.textContent === columnName)
+    const row = within(linesTable()).getByText(lineName).closest('tr') as HTMLElement
+    return within(row).getAllByRole('cell')[at]
+  }
+
+  it('shows the product cost from Inventory check onward', async () => {
+    mockReq({ status: 'inventory_check', lines: [costLine()] })
+    await open()
+    expect(header('Inventory cost')).toBeInTheDocument()
+    expect(within(linesTable()).getByText('12.5 USD')).toBeInTheDocument()
+  })
+
+  it('is a different figure from the store price, and both show once pricing starts', async () => {
+    mockReq({
+      status: 'store_pricing',
+      currencyTotals: [],
+      lines: [costLine({ store_price: '110', store_price_currency: 'USD' })],
+    })
+    await open()
+    expect(header('Store price')).toBeInTheDocument()
+    expect(cellOf('Cement bags', 'Store price')).toHaveTextContent('110 USD')
+    expect(cellOf('Cement bags', 'Inventory cost')).toHaveTextContent('12.5 USD')
+  })
+
+  it('is off on a draft, but can be switched on', async () => {
+    mockReq({ status: 'draft', lines: [costLine()] })
+    await open()
+    expect(header('Inventory cost')).toBeNull()
+    openColumns()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inventory cost' }))
+    expect(header('Inventory cost')).toBeInTheDocument()
+    expect(within(linesTable()).getByText('12.5 USD')).toBeInTheDocument()
+  })
+
+  it('says "currency not set" for an older cost saved without one, and a dash for no cost', async () => {
+    mockReq({
+      status: 'inventory_check',
+      lines: [
+        costLine({ id: 'line-1', inventory_cost: '800', inventory_cost_currency: null }),
+        costLine({
+          id: 'line-2',
+          description: 'Custom item',
+          inventory_cost: null,
+          inventory_cost_currency: null,
+        }),
+      ],
+    })
+    await open()
+    expect(cellOf('Cement bags', 'Inventory cost')).toHaveTextContent('800')
+    expect(cellOf('Cement bags', 'Inventory cost')).toHaveTextContent('currency not set')
+    expect(cellOf('Custom item', 'Inventory cost')).toHaveTextContent(/^—$/)
+  })
+
+  it('never changes what a line costs', async () => {
+    mockReq({ status: 'inventory_check', lines: [costLine()] })
+    await open()
+    // 5 x 12.5 would be 62.5; the line keeps its own total
+    expect(cellOf('Cement bags', 'Total')).toHaveTextContent(/^500 IQD$/)
+  })
+
+  it('lists only the columns this stage has, and keeps Qty and Total from being hidden', async () => {
+    mockReq({ status: 'inventory_check', lines: [costLine()] })
+    await open()
+    openColumns()
+    expect(screen.getByRole('checkbox', { name: 'Inventory cost' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'From stock' })).toBeChecked()
+    expect(screen.queryByRole('checkbox', { name: 'Store price' })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: 'Market price' })).toBeNull()
+    expect(screen.getByRole('checkbox', { name: 'Qty' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Total' })).toBeDisabled()
+    expect(screen.getByText('Item, Qty and Total always stay visible')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Columns · 4 of 4' })).toBeInTheDocument()
+  })
+
+  it('hides a column when it is cleared, including one that was already there before', async () => {
+    mockReq({ status: 'inventory_check', lines: [costLine()] })
+    await open()
+    openColumns()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'From stock' }))
+    expect(header('From stock')).toBeNull()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inventory cost' }))
+    expect(header('Inventory cost')).toBeNull()
+    expect(header('Item')).toBeInTheDocument()
+    expect(header('Qty')).toBeInTheDocument()
+    expect(header('Total')).toBeInTheDocument()
+  })
+
+  it('remembers the choice on the next requisition, under its own table, apart from the PO lines', async () => {
+    mockReq({ status: 'inventory_check', lines: [costLine()] })
+    const first = await open()
+    openColumns()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inventory cost' }))
+    first.unmount()
+
+    expect(localStorage.getItem('fnc_table_view_v1_user-organizer_req-lines')).not.toBeNull()
+    expect(localStorage.getItem('fnc_table_view_v1_user-organizer_po-lines')).toBeNull()
+
+    mockReq({ id: 'req-2', status: 'store_pricing', lines: [costLine()] })
+    await open()
+    expect(header('Inventory cost')).toBeNull()
+  })
+
+  it('goes back to the defaults on "Reset to default"', async () => {
+    mockReq({ status: 'inventory_check', lines: [costLine()] })
+    await open()
+    openColumns()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inventory cost' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to default' }))
+    expect(header('Inventory cost')).toBeInTheDocument()
+  })
+
+  it('reads in Arabic without raw keys', async () => {
+    await i18n.changeLanguage('ar')
+    mockReq({
+      status: 'inventory_check',
+      lines: [costLine({ inventory_cost: '800', inventory_cost_currency: null })],
+    })
+    await open()
+    const table = screen
+      .getAllByRole('table')
+      .find((el) => within(el).queryByRole('columnheader', { name: 'تكلفة المخزون' }))
+    if (!table) throw new Error('lines table not found')
+    expect(within(table).getByText('العملة غير محددة')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^الأعمدة/ }))
+    expect(screen.getByText('المادة والكمية والإجمالي تظهر دائمًا')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(
+      /po\.detail\.|req\.detail\.linesAlwaysVisible|ui\.tableView\./,
+    )
   })
 })

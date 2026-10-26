@@ -40,6 +40,9 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { EditRequestCard } from '../../../components/procurement/EditRequestCard'
+import { InventoryCost } from '../../../components/procurement/InventoryCost'
+import { ColumnsMenu } from '../../../components/ui/ColumnsMenu'
+import { useTableView } from '../../../hooks/useTableView'
 import { Button } from '../../../components/ui/Button'
 import { StatusBar } from '../../../components/ui/StatusBar'
 import { TabBar } from '../../../components/ui/TabBar'
@@ -148,6 +151,9 @@ interface ReqLine {
   source_average_cost?: number | null
   store_price?: string | null
   store_price_currency?: string | null
+  /** The catalog product's own Cost right now, for reference (not what the store keeper typed). */
+  inventory_cost?: string | null
+  inventory_cost_currency?: string | null
   market_price?: string | null
   market_price_currency?: string | null
   verified_price?: string | null
@@ -696,6 +702,10 @@ export default function RequisitionDetail() {
     })),
   ]
 
+  // Which optional line columns this person has switched on or off; kept before the early
+  // returns below because a hook can't come after them.
+  const linesView = useTableView('req-lines')
+
   if (!id) return null
 
   if (loading && !req) {
@@ -872,6 +882,15 @@ export default function RequisitionDetail() {
           },
         ]
       : []),
+    // Reference only: the product's own Cost right now. Not the store price typed on this line
+    // (next column), and never part of a total.
+    {
+      key: 'inventory_cost',
+      header: t('po.detail.inventoryCost'),
+      render: (l: ReqLine) => (
+        <InventoryCost cost={l.inventory_cost} currency={l.inventory_cost_currency} />
+      ),
+    },
     ...([
       'store_pricing',
       'market_pricing',
@@ -1007,6 +1026,35 @@ export default function RequisitionDetail() {
       },
     },
   ]
+
+  // Which of those columns are shown: the person's own choice where they made one, otherwise the
+  // default here (everything the stage has, except Inventory cost, which waits until the order
+  // leaves draft). A column the stage doesn't have isn't in lineColumns, so the menu lists only
+  // what this requisition can show. The flag box, # and Item are not in the menu; Qty and Total
+  // are listed but locked.
+  const lockedLineColumns = ['qty', 'total']
+  const optionalLineColumns = [
+    'qty_from_stock',
+    'inventory_cost',
+    'store_price',
+    'market_price',
+    'verified_price',
+    'purchases',
+  ]
+  const lineViewOptions = lineColumns
+    .filter((c) => lockedLineColumns.includes(c.key) || optionalLineColumns.includes(c.key))
+    .map((c) => ({
+      key: c.key,
+      label: c.header,
+      locked: lockedLineColumns.includes(c.key),
+      defaultOn: c.key === 'inventory_cost' ? req.status !== 'draft' : true,
+    }))
+  const lineViewOn = (o: (typeof lineViewOptions)[number]) =>
+    o.locked || linesView.isOn(o.key, o.defaultOn)
+  const shownLineColumns = lineColumns.filter((c) => {
+    const o = lineViewOptions.find((v) => v.key === c.key)
+    return !o || lineViewOn(o)
+  })
 
   // ── Edit requests: diff builder (mirrors PurchaseOrderDetail's own
   // 'changes' tab, scoped to the fields applyRequisitionEditChanges allows)
@@ -1332,8 +1380,25 @@ export default function RequisitionDetail() {
 
           {activeTab === 'lines' && (
             <Card style={sectionCard}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+                <ColumnsMenu
+                  items={lineViewOptions.map((o) => ({
+                    key: o.key,
+                    label: o.label,
+                    on: lineViewOn(o),
+                    locked: o.locked,
+                  }))}
+                  onToggle={(key, on) => {
+                    const o = lineViewOptions.find((v) => v.key === key)
+                    if (o) linesView.setColumn(key, on, o.defaultOn)
+                  }}
+                  onReset={linesView.resetColumns}
+                  canReset={linesView.customized}
+                  note={t('req.detail.linesAlwaysVisible')}
+                />
+              </div>
               <Table
-                columns={lineColumns}
+                columns={shownLineColumns}
                 data={req.lines}
                 rowKey="id"
                 getRowStyle={(l) => {

@@ -3235,6 +3235,10 @@ async function fetchFullPurchaseOrderGW(
               pol.requested_currency_code, pol.fx_rate_to_base,
               pol.actual_unit_price,
               pol.store_price, pol.store_price_currency,
+              -- the item's own Cost in inventory (products.standard_cost), for reference. Not the
+              -- store_price above, which is what the store keeper typed on this line. 0 means "no
+              -- cost recorded" (a deliberate reset), so it comes back as NULL rather than a price.
+              NULLIF(p.standard_cost, 0) AS inventory_cost, p.cost_currency AS inventory_cost_currency,
               pol.market_price, pol.market_price_currency, pol.verified_price, pol.verified_price_currency,
               pol.in_stock, pol.qty_from_stock,
               pol.source_location_id, sl.name AS source_location_name,
@@ -10889,6 +10893,8 @@ export const resolvers = {
                   pol.requested_currency_code, pol.fx_rate_to_base,
                   pol.actual_unit_price,
                   pol.store_price, pol.store_price_currency,
+                  -- see the PO lines query: the item's Cost in inventory, NULL when none is recorded
+                  NULLIF(p.standard_cost, 0) AS inventory_cost, p.cost_currency AS inventory_cost_currency,
                   pol.market_price, pol.market_price_currency, pol.verified_price, pol.verified_price_currency,
                   pol.in_stock, pol.qty_from_stock,
                   pol.source_location_id, sl.name AS source_location_name,

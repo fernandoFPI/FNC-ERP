@@ -6189,6 +6189,8 @@ export type PoLine = {
   id: Scalars['ID']['output'];
   in_stock?: Maybe<Scalars['Boolean']['output']>;
   initial_unit_price?: Maybe<Scalars['String']['output']>;
+  inventory_cost?: Maybe<Scalars['String']['output']>;
+  inventory_cost_currency?: Maybe<Scalars['String']['output']>;
   is_bought?: Maybe<Scalars['Boolean']['output']>;
   line_number?: Maybe<Scalars['Int']['output']>;
   market_price?: Maybe<Scalars['String']['output']>;

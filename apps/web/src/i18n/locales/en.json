@@ -495,7 +495,10 @@
       "youDonTHaveAccessTo": "You don't have access to view this purchase order",
       "verifiedPriceCol": "Verified Price",
       "linesAlwaysVisible": "Item and Total always stay visible",
-      "orderTotal": "Order total"
+      "orderTotal": "Order total",
+      "inventoryCost": "Inventory cost",
+      "inventoryCostHint": "The item's current cost in inventory. For reference only: it is not the store price entered on this line, and it is not part of any total.",
+      "currencyNotSet": "currency not set"
     },
     "editReq": {
       "appliedAutomatically": "Applied straight away: the PO had not been approved yet, so no review was needed.",
@@ -1203,7 +1206,8 @@
       "waitingOnEveryLineToResolve": "Waiting on every line to resolve — either its stock-covered portion issued via Store Out, or its purchased portion's child PO reaching a finished state.",
       "whatSWrongWithThisLine": "What's wrong with this line?",
       "whyIsThisRequisitionBeingCancelled": "Why is this requisition being cancelled?",
-      "wrongItemReselect": "Wrong item? Reselect"
+      "wrongItemReselect": "Wrong item? Reselect",
+      "linesAlwaysVisible": "Item, Qty and Total always stay visible"
     }
   },
   "queue": {

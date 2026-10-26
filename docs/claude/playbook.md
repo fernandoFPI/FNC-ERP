@@ -453,3 +453,22 @@ Don't re-derive, check these first.
     of a wide screen; the lines are now `40 1 460px` against Next Step's `4 1 460px` (Next Step about 535px on a wide
     screen; they still wrap and stack at the same window width). Equal `flex-grow` on two columns means "split the room in half", which is rarely intended
     when one of them holds a table.
+
+43. **"The store price" is two different figures, and a field added to a shared line type has two builders.**
+    A request for "the price of the item saved in inventory, not the store price" had a trap in the word: a line's
+    `store_price` (`po_lines.store_price`) is what the store keeper typed on THAT line while pricing it, whereas the
+    inventory figure is the catalog product's own Cost (`products.standard_cost` + `cost_currency`), the one Cost
+    Change Approvals manages. Showing `store_price` would have answered a different question. The new
+    `inventory_cost` / `inventory_cost_currency` come from the `products` join in BOTH line builders (the PO lines SQL
+    and the requisition lines SQL), because the GraphQL type `POLine` serves both pages; adding it to one builder
+    leaves the other page's column silently empty (same family as #23 and #34). Three data rules that the cell has to
+    respect: `standard_cost = 0` means "never recorded" (the SQL uses `NULLIF(p.standard_cost, 0)`, so it arrives as
+    null and shows a dash, never "0 USD"); a cost can be saved with no `cost_currency` (about 2,000 Nishtimani
+    Factory products from legacy imports), which is shown with a "currency not set" tag and never given a guessed
+    currency; and a product cost is often in a different currency than the line (about a third of recent lines), so it
+    is never converted, compared or added into a total (no cross-currency conversion in this system). How to spot the
+    mistake: a "reference" column that equals a number already on the line, or a column that is filled on one page and
+    empty on the other. Tests: `services/gateway/tests/po-lines-inventory-cost.test.ts` (real Postgres, through
+    `ApolloServer.executeOperation`, both `purchaseOrder` and `requisition`, including another company's user and a
+    cost that changes after the line was made), `components/procurement/__tests__/InventoryCost.test.tsx`, and the
+    "inventory cost" blocks in `poLinesView.test.tsx` and `RequisitionDetail.test.tsx`.

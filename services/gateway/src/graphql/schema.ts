@@ -2240,6 +2240,12 @@
     requested_currency_code: String
     store_price: String
     store_price_currency: String
+    # The item's own Cost in inventory (the catalog product's single Cost figure), for reference
+    # only. Not store_price (what the store keeper typed on this line). Null for a custom line
+    # with no catalog product, or when no cost is recorded; the currency can be null on old
+    # figures that never had one recorded.
+    inventory_cost: String
+    inventory_cost_currency: String
     market_price: String
     market_price_currency: String
     verified_price: String

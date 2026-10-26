@@ -547,7 +547,10 @@
       "youDonTHaveAccessTo": "ليس لديك صلاحية لعرض أمر الشراء هذا",
       "verifiedPriceCol": "السعر الموثّق",
       "linesAlwaysVisible": "المادة والإجمالي يظهران دائمًا",
-      "orderTotal": "إجمالي أمر الشراء"
+      "orderTotal": "إجمالي أمر الشراء",
+      "inventoryCost": "تكلفة المخزون",
+      "inventoryCostHint": "التكلفة الحالية للصنف في المخزون. للاطلاع فقط: ليست سعر المخزن المُدخل على هذا البند، وليست جزءًا من أي إجمالي.",
+      "currencyNotSet": "العملة غير محددة"
     },
     "editReq": {
       "appliedAutomatically": "طُبّق فورًا: لم تتم الموافقة على أمر الشراء بعد، فلم تلزم مراجعة.",
@@ -1287,7 +1290,8 @@
       "waitingOnEveryLineToResolve": "بانتظار معالجة كل بند — إما صرف الجزء المغطّى من المخزون عبر «إخراج مخزني»، أو وصول أمر الشراء الفرعي للجزء المشترى إلى حالة منتهية.",
       "whatSWrongWithThisLine": "ما المشكلة في هذا البند؟",
       "whyIsThisRequisitionBeingCancelled": "لماذا يُلغى طلب الشراء هذا؟",
-      "wrongItemReselect": "مادة خاطئة؟ أعد الاختيار"
+      "wrongItemReselect": "مادة خاطئة؟ أعد الاختيار",
+      "linesAlwaysVisible": "المادة والكمية والإجمالي تظهر دائمًا"
     }
   },
   "queue": {

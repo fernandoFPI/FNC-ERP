@@ -62,6 +62,7 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { EditRequestCard } from '../../../components/procurement/EditRequestCard'
+import { InventoryCost } from '../../../components/procurement/InventoryCost'
 import { EntityAttachments } from '../../../components/inventory/EntityAttachments'
 import { Button, StickyActionBar } from '../../../components/ui/Button'
 import { StatusBar } from '../../../components/ui/StatusBar'
@@ -107,6 +108,9 @@ export interface POLine {
   actual_unit_price?: number | null
   store_price?: number
   store_price_currency?: string | null
+  /** The catalog product's own Cost right now, for reference (not what the store keeper typed). */
+  inventory_cost?: string | null
+  inventory_cost_currency?: string | null
   market_price?: number
   market_price_currency?: string | null
   fx_rate_to_base?: number | null
@@ -5093,6 +5097,17 @@ export default function PurchaseOrderDetail() {
               },
             },
             {
+              key: 'inventory_cost',
+              header: t('po.detail.inventoryCost'),
+              mobilePriority: 6,
+              render: (line) => (
+                <InventoryCost
+                  cost={line.inventory_cost}
+                  currency={line.inventory_cost_currency}
+                />
+              ),
+            },
+            {
               key: 'verified_price',
               header: t('po.detail.verifiedPriceCol'),
               mobilePriority: 7,
@@ -5301,6 +5316,13 @@ export default function PurchaseOrderDetail() {
               key: 'store_price',
               label: t('po.detail.storePrice2'),
               defaultOn: pricingStage,
+              locked: false,
+            },
+            {
+              // reference only (the product's Cost); on from Inventory check, off while still a draft
+              key: 'inventory_cost',
+              label: t('po.detail.inventoryCost'),
+              defaultOn: po.status !== 'draft',
               locked: false,
             },
             {

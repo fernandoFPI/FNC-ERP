@@ -124,7 +124,16 @@ describe('PO Lines table: which columns show', () => {
   it('shows the everyday columns and keeps the rarely used prices out of the way', async () => {
     mockPO('goods_received')
     await openPO()
-    for (const name of ['#', 'Item', 'Qty', 'Received', 'Market Price', 'Total', 'Notes'])
+    for (const name of [
+      '#',
+      'Item',
+      'Qty',
+      'Received',
+      'Market Price',
+      'Inventory cost',
+      'Total',
+      'Notes',
+    ])
       expect(header(name), name).toBeInTheDocument()
     for (const name of ['Initial Price', 'Store Price', 'Verified Price', 'Actual price'])
       expect(header(name), name).toBeNull()
@@ -164,10 +173,10 @@ describe('PO Lines table: which columns show', () => {
   it('counts what is showing in the button', async () => {
     mockPO('goods_received')
     await openPO()
-    expect(screen.getByRole('button', { name: 'Columns · 5 of 9' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Columns · 6 of 10' })).toBeInTheDocument()
     openColumns()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Initial Price' }))
-    expect(screen.getByRole('button', { name: 'Columns · 6 of 9' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Columns · 7 of 10' })).toBeInTheDocument()
   })
 })
 
@@ -337,13 +346,129 @@ describe('PO Lines table: Arabic', () => {
     mockPO('goods_received')
     await openPO()
     expect(screen.getByPlaceholderText('تصفية البنود')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'الأعمدة · 5 من 9' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'الأعمدة · 6 من 10' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'مضغوط' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^الأعمدة/ }))
     expect(screen.getByRole('checkbox', { name: 'السعر الموثّق' })).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(
-      /ui\.tableView\.|po\.detail\.(verifiedPriceCol|orderTotal)/,
+      /ui\.tableView\.|po\.detail\.(verifiedPriceCol|orderTotal|inventoryCost)/,
     )
+  })
+})
+
+// A reference column: what the item costs in inventory right now (the product's own Cost), which
+// is not the store price somebody typed on the line and never part of a total.
+describe('PO Lines table: inventory cost', () => {
+  const costLines = () => [
+    line({
+      id: 'l1',
+      description: 'Cement bags',
+      qty: 5,
+      unit_price: 100,
+      total: 500,
+      inventory_cost: '12.5',
+      inventory_cost_currency: 'USD',
+    }),
+    line({
+      id: 'l2',
+      description: 'Steel rebar 12mm',
+      qty: 20,
+      unit_price: 700,
+      total: 14000,
+      inventory_cost: '800.0000',
+      inventory_cost_currency: null,
+    }),
+    line({
+      id: 'l3',
+      description: 'Custom line',
+      qty: 3,
+      unit_price: 366.67,
+      total: 1100,
+      inventory_cost: null,
+      inventory_cost_currency: null,
+    }),
+  ]
+
+  it('shows once the order is past draft, with the product cost and its currency', async () => {
+    mockPO('inventory_check', { lines: costLines() })
+    await openPO()
+    expect(header('Inventory cost')).toBeInTheDocument()
+    expect(within(linesTable()).getByText('12.5 USD')).toBeInTheDocument()
+  })
+
+  it('is not the store price: both figures show side by side when the store price is on', async () => {
+    mockPO('price_verification', { lines: costLines() })
+    await openPO()
+    const table = within(linesTable())
+    expect(header('Store Price')).toBeInTheDocument()
+    expect(table.getAllByText('95 USD').length).toBe(3) // what the store keeper typed
+    expect(table.getByText('12.5 USD')).toBeInTheDocument() // what inventory holds
+  })
+
+  it('is off while the order is still a draft, and can be switched on', async () => {
+    mockPO('draft', { lines: costLines() })
+    await openPO()
+    expect(header('Inventory cost')).toBeNull()
+    openColumns()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inventory cost' }))
+    expect(header('Inventory cost')).toBeInTheDocument()
+    expect(within(linesTable()).getByText('12.5 USD')).toBeInTheDocument()
+  })
+
+  it('shows an old cost that has no currency, saying so rather than guessing one', async () => {
+    mockPO('inventory_check', { lines: costLines() })
+    await openPO()
+    const cell = within(linesTable()).getByText('800').closest('td')
+    expect(cell).toHaveTextContent('currency not set')
+    // only that one cost is missing its currency
+    expect(within(linesTable()).getAllByText('currency not set').length).toBe(1)
+  })
+
+  // the cell of one named column in the row of one named line
+  const cellOf = (lineName: string, columnName: string) => {
+    const headers = within(linesTable()).getAllByRole('columnheader')
+    const at = headers.findIndex((h) => h.textContent === columnName)
+    const row = within(linesTable()).getByText(lineName).closest('tr') as HTMLElement
+    return within(row).getAllByRole('cell')[at]
+  }
+
+  it('shows a dash, not 0, for an item with no recorded cost', async () => {
+    mockPO('inventory_check', { lines: costLines() })
+    await openPO()
+    expect(cellOf('Custom line', 'Inventory cost')).toHaveTextContent(/^—$/)
+  })
+
+  it('never changes what a line or the order costs', async () => {
+    mockPO('inventory_check', { lines: costLines() })
+    await openPO()
+    // 5 x 12.5 would be 62.5; the line is still priced from its own price
+    expect(cellOf('Cement bags', 'Total')).toHaveTextContent(/^500 USD$/)
+    expect(within(linesTable()).getByText('15,600 USD')).toBeInTheDocument()
+  })
+
+  it('can be hidden, and stays hidden on the next purchase order', async () => {
+    mockPO('inventory_check', { lines: costLines() })
+    const first = await openPO()
+    openColumns()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inventory cost' }))
+    expect(header('Inventory cost')).toBeNull()
+    first.unmount()
+
+    mockPO('goods_received', { id: 'po-2', lines: costLines() })
+    await openPO()
+    expect(header('Inventory cost')).toBeNull()
+  })
+
+  it('reads in Arabic', async () => {
+    await i18n.changeLanguage('ar')
+    mockPO('inventory_check', { lines: costLines() })
+    await openPO()
+    // the table finder above looks for the English "Item" heading
+    const table = screen
+      .getAllByRole('table')
+      .find((el) => within(el).queryByRole('columnheader', { name: 'تكلفة المخزون' }))
+    if (!table) throw new Error('lines table not found')
+    expect(within(table).getByText('العملة غير محددة')).toBeInTheDocument()
   })
 })
 

@@ -124,6 +124,8 @@ export const REQUISITION_QUERY = gql`
         source_average_cost
         store_price
         store_price_currency
+        inventory_cost
+        inventory_cost_currency
         market_price
         market_price_currency
         verified_price

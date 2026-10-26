@@ -613,6 +613,8 @@ export const PO_LIFECYCLE_QUERY = gql`
         actual_unit_price
         store_price
         store_price_currency
+        inventory_cost
+        inventory_cost_currency
         market_price
         market_price_currency
         fx_rate_to_base
