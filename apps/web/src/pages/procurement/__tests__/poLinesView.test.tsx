@@ -346,3 +346,37 @@ describe('PO Lines table: Arabic', () => {
     )
   })
 })
+
+describe('PO Lines table: not clipped, and not squeezed by the Next Step panel', () => {
+  // the nearest ancestor that carries a flex setting is the page column
+  const columnFlexOf = (el: HTMLElement) => {
+    let node: HTMLElement | null = el
+    while (node && !node.style.flex) node = node.parentElement
+    if (!node) throw new Error('no column found')
+    return node.style.flex
+  }
+  const grow = (flex: string) => parseFloat(flex.split(' ')[0] ?? '0')
+
+  it('draws the columns menu outside the lines card, so a one-line order does not cut it off', async () => {
+    mockPO('goods_received', {
+      lines: [line({ id: 'l1', description: 'Cement bags', qty: 5, unit_price: 100, total: 500 })],
+    })
+    await openPO()
+    openColumns()
+    const menu = screen.getByRole('group', { name: 'Show columns' })
+    expect(menu.parentElement).toBe(document.body)
+    expect(screen.getByRole('checkbox', { name: 'Notes' })).toBeInTheDocument()
+  })
+
+  it('gives the lines nearly all of the spare width and the Next Step panel almost none', async () => {
+    mockPO('goods_received')
+    await openPO()
+    const left = columnFlexOf(screen.getAllByText('Next Step')[0])
+    const right = columnFlexOf(linesTable())
+    expect(left).not.toBe(right)
+    expect(grow(right)).toBeGreaterThanOrEqual(grow(left) * 10)
+    // both still start from the same width, so they stack at the same window size as before
+    expect(left.endsWith('460px')).toBe(true)
+    expect(right.endsWith('460px')).toBe(true)
+  })
+})

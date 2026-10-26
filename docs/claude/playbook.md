@@ -436,3 +436,20 @@ Don't re-derive, check these first.
     `qty_from_stock > 0` on POs that are past receiving). Same family as #23 and #34 (two code paths for one thing): when
     a number is shown in two places, put the rule in one function both call, with a test that feeds it a
     from-stock line.
+
+42. **A popover drawn inside a `Card` is clipped by the card.** `components/ui/Card.tsx` sets `overflow: hidden`
+    (line 56), so anything absolutely positioned inside it that sticks out past the card's own edge is cut off. The
+    Lines table's "Columns" menu showed only its first five tick boxes on a one-line purchase order (the card was only
+    as tall as the table) and looked like a broken list; on a long order it looked fine, so it was missed. How to spot
+    it: a menu, tooltip or date picker that is complete on a big screen or a long page and cut at a straight edge on a
+    small one; look for `position: 'absolute'` inside a `Card`. Fix: draw it with `createPortal(…, document.body)` and
+    `position: 'fixed'`, placed from the trigger's `getBoundingClientRect()` (right edge in English, left edge in
+    Arabic, never off the window, flipped upward when there is no room below, `max-height` with its own scroll,
+    repositioned on window resize and ancestor scroll). A portal leaves the natural Tab order, so move focus into it
+    on open and back to the trigger on Escape (React still sends the portal's key events to the component that owns
+    it). `SearchableSelect` and `Modal` already portal; `components/ui/Dropdown.tsx` is absolutely positioned with no
+    portal and has not been checked for the same clipping. Tests: `ColumnsMenu.test.tsx` ("where the list appears").
+    The same screen also had the Next Step panel and the Lines table both set to `flex: 1 1 460px`, so each took half
+    of a wide screen; the lines are now `40 1 460px` against Next Step's `1 1 460px` (they still wrap and stack at the
+    same window width). Equal `flex-grow` on two columns means "split the room in half", which is rarely intended
+    when one of them holds a table.

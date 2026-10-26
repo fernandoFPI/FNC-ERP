@@ -2250,7 +2250,11 @@ export default function PurchaseOrderDetail() {
       {/* Next Step (left) and Tabs/Lines (right) side by side instead of
           stacked — both are tall on their own, and the page has plenty of
           unused horizontal room on wide screens. Each column's content is
-          otherwise completely untouched. */}
+          otherwise completely untouched.
+          Both columns start from the same 460px, but the lines get nearly all of the
+          spare width (grow 40 against 1): with equal growth the Next Step panel took half
+          of a wide screen and squeezed the Lines table. Below about 940px of room they
+          still wrap and stack, and a stacked column grows to the full width as before. */}
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <div style={{ flex: '1 1 460px', minWidth: 0 }}>
           {/* Inline action panel — replaces the former Action tab */}
@@ -4832,7 +4836,7 @@ export default function PurchaseOrderDetail() {
       )}
         </div>
 
-        <div style={{ flex: '1 1 460px', minWidth: 0 }}>
+        <div style={{ flex: '40 1 460px', minWidth: 0 }}>
       {/* Tabs */}
       <div style={{ marginBottom: '16px' }}>
         <TabBar
