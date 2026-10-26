@@ -3229,6 +3229,23 @@ export default function RequisitionDetail() {
                     ),
                   },
                   {
+                    // set when the Store Out was made against one of this requisition's
+                    // purchase orders (the bought items) rather than the requisition itself
+                    key: 'poNumber',
+                    header: t('req.detail.poNumber'),
+                    render: (mi: (typeof materialIssues)[number]) => (
+                      <span
+                        style={{
+                          fontFamily: 'monospace',
+                          color: theme.textSecondary,
+                          fontSize: '13px',
+                        }}
+                      >
+                        {mi.poNumber ?? '—'}
+                      </span>
+                    ),
+                  },
+                  {
                     key: 'status',
                     header: t('req.detail.status'),
                     render: (mi: (typeof materialIssues)[number]) => (
@@ -3251,7 +3268,12 @@ export default function RequisitionDetail() {
             <Card style={sectionCard}>
               <div style={sectionTitle}>{t('req.detail.sourcing')}</div>
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                {t('req.detail.waitingOnEveryLineToResolve')}
+                {/* same rule as the gateway's projectStockStaysInInventory: no Store Out is
+                    made for the stock-covered lines of a project requisition delivered to
+                    inventory, so nothing waits for one */}
+                {req.purpose === 'project' && req.delivery_destination === 'inventory'
+                  ? t('req.detail.sourcingStockStaysInInventory')
+                  : t('req.detail.waitingOnEveryLineToResolve')}
               </div>
             </Card>
           )}

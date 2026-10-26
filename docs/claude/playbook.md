@@ -472,3 +472,33 @@ Don't re-derive, check these first.
     `ApolloServer.executeOperation`, both `purchaseOrder` and `requisition`, including another company's user and a
     cost that changes after the line was made), `components/procurement/__tests__/InventoryCost.test.tsx`, and the
     "inventory cost" blocks in `poLinesView.test.tsx` and `RequisitionDetail.test.tsx`.
+
+44. **Two rules for one decision: the approval step skipped the Store Out, the completion check still waited for
+    one.** A project PO or requisition marked "delivered to inventory" deliberately gets no auto-created Store Out for
+    its from-stock lines ("isn't consuming anything yet", `issueStockForPOLines` /
+    `issueStockForRequisitionLines`). `evaluateRequisitionCompletion` was never told: a `sourcing` requisition completes
+    only when every stock-covered master line has an ISSUED Store Out line pointing at that exact line
+    (`project_material_issue_lines.po_line_id`), so on this kind nothing could ever satisfy it. Found live:
+    REQ-2026-0075 sat in Sourcing for good ("Waiting on every line to resolve") with 9 stock lines / 72 units that no
+    Store Out would ever cover; REQ-2026-0047, 0078 and 0090 were in the same state (253 units). The units also stayed
+    reserved: the reservation made at Inventory Check is released only by confirming a Store Out line or by
+    cancelling/rejecting (`releaseRequisitionStockReservations`), never by completing, and a Store Out made by hand
+    with no `po_line_id` can draw only the unreserved part. The only manual way out, `closeRequisitionLine`, has no
+    button in the web app and had never been used (0 lines closed in production). Fix: one predicate,
+    `projectStockStaysInInventory` (`resolvers.ts`), used by both issuance functions AND the completion check; for
+    that kind the completion check ignores stock-covered lines, releases what is still reserved when it completes, and
+    is also run right after `skip_buying` (approval of a fully stock-covered requisition) and after Finish Buying
+    forks nothing, the two moves into `sourcing` that no later event would ever follow. Other requisition kinds are
+    deliberately unchanged (an all-short requisition with nothing at all left still stays in `sourcing`; that looks
+    like the same kind of latent gap, left alone and flagged). How to spot it: a requisition in `sourcing` whose child
+    POs are all finished; compare the exact SQL of "what does approval do for X" with "what does completion wait for
+    for X". The same trip also showed that the Store Outs card and the Store Out page's requisition filter matched only
+    `pmi.requisition_id`, so Store Outs made by hand for the bought items (linked to the child PO) never showed under
+    the requisition: `materialIssues(requisitionId)` now also matches the requisition's child POs, scoped to the
+    caller's company, and the card shows a PO Number column. Requisitions whose child POs had ALREADY finished before
+    this shipped (0047, 0090 in production) get no further trigger, so they stay in `sourcing` until
+    `evaluateRequisitionCompletion` is run for them once (do it as a rolled-back dry run first, the #36 trick, then for real).
+    Tests: `services/gateway/tests/project-inventory-requisition-completion.test.ts` (real Postgres, 12 cases:
+    inventory vs jobsite vs stock, reservation held while open and freed on completion, no-fork Finish Buying, approval
+    log entry, Store Outs by child PO, another requisition's and another company's Store Outs excluded) and the
+    Store Outs / Sourcing block in `RequisitionDetail.test.tsx`. Related to #23, #24 and #34.

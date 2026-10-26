@@ -2038,6 +2038,19 @@ async function userIsAssignedApproverForRequisitionGW(
   return r.rows.length > 0
 }
 
+// A project PO/requisition explicitly marked "delivered to inventory" isn't
+// consuming anything yet: its from-stock quantity just stays put, so no Store
+// Out is auto-created for it at approval (issueStockForPOLines /
+// issueStockForRequisitionLines) — and, for the same reason, nothing waits for
+// one when the requisition is checked for completion (evaluateRequisitionCompletion).
+// One predicate for all three so they cannot drift apart again (playbook #44).
+function projectStockStaysInInventory(doc: {
+  purpose?: unknown
+  delivery_destination?: unknown
+}): boolean {
+  return doc.purpose === 'project' && doc.delivery_destination === 'inventory'
+}
+
 // Mirrors issueStockForPOLines exactly (see that function's own comments
 // for the reasoning behind each piece — unchanged here) but scoped to
 // requisition_id instead of po_id, and stamps requisition_id (not po_id)
@@ -2063,7 +2076,7 @@ async function issueStockForRequisitionLines(
   companyId: string,
   userId: string,
 ): Promise<{ issueId: string; issueNumber: string }[]> {
-  if (req.purpose === 'project' && req.delivery_destination === 'inventory') return []
+  if (projectStockStaysInInventory(req)) return []
 
   const reqId = String(req.id)
   const linesRes = await client.query(
@@ -2187,28 +2200,39 @@ async function releaseRequisitionStockReservations(
 //     too since a pre-G1 PO retroactively stamped with requisition_id can
 //     remain on the old vocab until Milestone B's status remap, and still
 //     finishes via completePO's old-vocab branch — see its own comment.
+//
+// A project requisition delivered to inventory (projectStockStaysInInventory)
+// never gets an auto-created Store Out for its stock-covered lines, so those
+// lines are not waited on at all: only its child POs are. When it completes,
+// whatever stock is still reserved for those lines is released (nothing was
+// ever issued against it, so there is no Store Out left to release it later).
 async function evaluateRequisitionCompletion(
   client: PoolClient,
   reqId: string,
   auth: GWAuth,
 ): Promise<void> {
-  const reqRow = await client.query<{ status: string }>(
-    `SELECT status FROM requisitions WHERE id=$1`,
-    [reqId],
-  )
+  const reqRow = await client.query<{
+    status: string
+    purpose: string | null
+    delivery_destination: string | null
+  }>(`SELECT status, purpose, delivery_destination FROM requisitions WHERE id=$1`, [reqId])
   if (!reqRow.rows[0] || reqRow.rows[0].status !== 'sourcing') return
+  const stockStaysInInventory = projectStockStaysInInventory(reqRow.rows[0])
 
+  const stockLineUnresolved = stockStaysInInventory
+    ? 'FALSE'
+    : `(pl.po_id IS NULL AND pl.qty_from_stock > COALESCE((
+           -- currency-safe: qty_issued is a stock quantity, not money
+           SELECT SUM(pmil.qty_issued) FROM project_material_issue_lines pmil
+           JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+           WHERE pmil.po_line_id = pl.id AND pmi.status = 'issued'
+         ), 0))`
   const unresolved = await client.query<{ c: string }>(
     `SELECT COUNT(*) AS c FROM po_lines pl
      WHERE pl.requisition_id=$1
        AND pl.closed_at IS NULL
        AND (
-         (pl.po_id IS NULL AND pl.qty_from_stock > COALESCE((
-           -- currency-safe: qty_issued is a stock quantity, not money
-           SELECT SUM(pmil.qty_issued) FROM project_material_issue_lines pmil
-           JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
-           WHERE pmil.po_line_id = pl.id AND pmi.status = 'issued'
-         ), 0))
+         ${stockLineUnresolved}
          OR
          (pl.po_id IS NOT NULL AND (
            SELECT status FROM purchase_orders WHERE id = pl.po_id
@@ -2219,6 +2243,7 @@ async function evaluateRequisitionCompletion(
   if (parseInt(unresolved.rows[0]?.c ?? '0', 10) > 0) return
 
   await reqTransition(client, reqId, 'sourcing', 'completed', 'complete', auth)
+  if (stockStaysInInventory) await releaseRequisitionStockReservations(client, reqId)
 }
 
 async function getProductCostChangeRequestForReturn(id: string): Promise<Record<string, unknown>> {
@@ -2654,7 +2679,7 @@ async function issueStockForPOLines(
   // recordDirectDelivery's counterpart. Only 'jobsite' (or a non-project PO,
   // where this destination concept doesn't apply) still issues stock out to
   // the project.
-  if (po.purpose === 'project' && po.delivery_destination === 'inventory') return undefined
+  if (projectStockStaysInInventory(po)) return undefined
 
   const poId = String(po.id)
   const linesRes = await client.query(
@@ -9561,7 +9586,14 @@ export const resolvers = {
         params.push(args.poId)
       }
       if (args.requisitionId) {
-        conditions.push(`pmi.requisition_id=$${idx++}`)
+        // A Store Out made by hand for the items bought on a requisition is
+        // linked to the child PO, not to the requisition itself, so match
+        // those too (the child PO is looked up inside the caller's company).
+        conditions.push(
+          `(pmi.requisition_id=$${idx} OR pmi.po_id IN (
+             SELECT id FROM purchase_orders WHERE requisition_id=$${idx} AND company_id=$1))`,
+        )
+        idx++
         params.push(args.requisitionId)
       }
       if (args.receiptNumber) {
@@ -34591,6 +34623,12 @@ const phase5MutationResolvers = {
           undefined,
           actorPosition,
         )
+        // Nothing to buy: for a project requisition delivered to inventory
+        // there is also no Store Out to wait for, so it is already done.
+        // Other kinds still wait for their Store Out and are left as they were.
+        if (projectStockStaysInInventory(fullReq)) {
+          await evaluateRequisitionCompletion(client, args.id, auth)
+        }
       }
       await client.query('COMMIT')
     } catch (e) {
@@ -35553,6 +35591,13 @@ const phase5MutationResolvers = {
       // bought — nothing to fork, just advance the requisition.
 
       await reqTransition(client, args.id, 'items_bought', 'sourcing', 'finish_buying', auth)
+      // A project requisition delivered to inventory has no Store Out to wait
+      // for, so when no child PO was forked (everything covered or marked
+      // short) nothing later would ever complete it: check it now. Other kinds
+      // are left exactly as they were.
+      if (projectStockStaysInInventory(req)) {
+        await evaluateRequisitionCompletion(client, args.id, auth)
+      }
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
