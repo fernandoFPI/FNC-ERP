@@ -80,6 +80,10 @@ import { useToastStore } from '../../../store/toastStore'
 import { api } from '../../../lib/axios'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { Input } from '../../../components/ui/Input'
+import { SearchInput } from '../../../components/ui/SearchInput'
+import { ColumnsMenu } from '../../../components/ui/ColumnsMenu'
+import { DensityToggle } from '../../../components/ui/DensityToggle'
+import { useTableView } from '../../../hooks/useTableView'
 import { Textarea } from '../../../components/ui/Textarea'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { buildPurchaseOrderHTML } from '../../../lib/poHtml'
@@ -745,6 +749,14 @@ export default function PurchaseOrderDetail() {
     })),
   ]
   const [adminPoStatus, setAdminPoStatus] = useState('')
+  // The Lines table's view: the columns this person chose to show and their row spacing are
+  // remembered in this browser (per user, across purchase orders); the text filter is not, and
+  // starts empty on every purchase order.
+  const linesView = useTableView('po-lines')
+  const [lineFilter, setLineFilter] = useState('')
+  useEffect(() => {
+    setLineFilter('')
+  }, [id])
   const [showActionsPanel, setShowActionsPanel] = useState(false)
   const [confirmDeletePO, setConfirmDeletePO] = useState(false)
   const [lineComments, setLineComments] = useState<Record<string, LineComment[]>>({})
@@ -4923,6 +4935,8 @@ export default function PurchaseOrderDetail() {
               key: 'item',
               header: t('po.detail.item'),
               mobilePrimary: true,
+              wrap: true,
+              minWidth: '220px',
               render: (line) => {
                 // An edit request can override this line's own description
                 // independently of the catalog product it's linked to (the
@@ -5074,6 +5088,50 @@ export default function PurchaseOrderDetail() {
               },
             },
             {
+              key: 'verified_price',
+              header: t('po.detail.verifiedPriceCol'),
+              mobilePriority: 7,
+              render: (line) => {
+                const vp = parseFloat(String(line.verified_price ?? 0))
+                return vp > 0 ? (
+                  <span
+                    style={{
+                      color: theme.textSecondary,
+                      fontFamily: 'monospace',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {fmtN(vp)} {line.verified_price_currency ?? po.currency_code}
+                  </span>
+                ) : (
+                  <span style={{ color: theme.textMuted, fontFamily: 'monospace' }}>—</span>
+                )
+              },
+            },
+            {
+              key: 'actual_price',
+              header: t('po.detail.actualPrice'),
+              mobilePriority: 7,
+              render: (line) => {
+                const ap = parseFloat(String(line.actual_unit_price ?? 0))
+                const ccy =
+                  line.market_price_currency ?? line.requested_currency_code ?? po.currency_code
+                return ap > 0 ? (
+                  <span
+                    style={{
+                      color: theme.textSecondary,
+                      fontFamily: 'monospace',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {fmtN(ap)} {ccy}
+                  </span>
+                ) : (
+                  <span style={{ color: theme.textMuted, fontFamily: 'monospace' }}>—</span>
+                )
+              },
+            },
+            {
               key: 'total',
               header: t('po.detail.total'),
               mobilePriority: 2,
@@ -5209,36 +5267,157 @@ export default function PurchaseOrderDetail() {
             },
           ]
 
+          // Which optional columns are shown: the person's own choice where they made one,
+          // otherwise the default here. The flag box and the # always show; the item and the
+          // total can't be hidden. Store price is on by default while prices are being worked
+          // out, when it is what the reviewer compares against, and off once the order is bought.
+          const pricingStage = [
+            'store_pricing',
+            'market_pricing',
+            'price_verification',
+            'pending_approval',
+          ].includes(po.status)
+          const viewOptions = [
+            { key: 'qty', label: t('po.detail.qty'), defaultOn: true, locked: false },
+            { key: 'received', label: t('po.detail.received'), defaultOn: true, locked: false },
+            {
+              key: 'initial_unit_price',
+              label: t('po.detail.initialPrice'),
+              defaultOn: false,
+              locked: false,
+            },
+            {
+              key: 'market_price',
+              label: t('po.detail.marketPrice2'),
+              defaultOn: true,
+              locked: false,
+            },
+            {
+              key: 'store_price',
+              label: t('po.detail.storePrice2'),
+              defaultOn: pricingStage,
+              locked: false,
+            },
+            {
+              key: 'verified_price',
+              label: t('po.detail.verifiedPriceCol'),
+              defaultOn: false,
+              locked: false,
+            },
+            {
+              key: 'actual_price',
+              label: t('po.detail.actualPrice'),
+              defaultOn: false,
+              locked: false,
+            },
+            { key: 'total', label: t('po.detail.total'), defaultOn: true, locked: true },
+            { key: 'notes', label: t('po.detail.notes2'), defaultOn: true, locked: false },
+          ]
+          const viewColumnOn = (o: (typeof viewOptions)[number]) =>
+            o.locked || linesView.isOn(o.key, o.defaultOn)
+          const shownColumns = lineColumns.filter((c) => {
+            const o = viewOptions.find((v) => v.key === c.key)
+            return !o || viewColumnOn(o)
+          })
+          const filterText = lineFilter.trim().toLowerCase()
+          const shownLines = filterText
+            ? po.lines.filter((l) =>
+                [l.description, l.product_name, l.product_name_ar].some((v) =>
+                  v?.toLowerCase().includes(filterText),
+                ),
+              )
+            : po.lines
+          const orderTotals = poTotalEntries(po)
+
           return (
             <Card>
               <div
                 style={{
                   padding: '16px 20px',
                   borderBottom: `1px solid ${theme.border}`,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px 16px',
                 }}
               >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontWeight: 600,
-                    fontSize: '15px',
-                    color: theme.textPrimary,
-                  }}
-                >
-                  <span style={{ color: theme.textMuted, display: 'flex' }}>
-                    <IconBox />
-                  </span>
-                  {t('po.detail.purchaseOrderLines')}
+                <div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontWeight: 600,
+                      fontSize: '15px',
+                      color: theme.textPrimary,
+                    }}
+                  >
+                    <span style={{ color: theme.textMuted, display: 'flex' }}>
+                      <IconBox />
+                    </span>
+                    {t('po.detail.purchaseOrderLines')}
+                  </div>
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                    {filterText
+                      ? t('ui.tableView.showing', {
+                          shown: shownLines.length,
+                          total: po.lines.length,
+                        })
+                      : t('po.detail.itemsOnOrder', { count: po.lines.length })}
+                  </div>
                 </div>
-                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                  {t('po.detail.itemsOnOrder', { count: po.lines.length })}
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                  <SearchInput
+                    value={lineFilter}
+                    onChange={setLineFilter}
+                    placeholder={t('ui.tableView.filterLines')}
+                    style={{ width: '190px' }}
+                  />
+                  <ColumnsMenu
+                    items={viewOptions.map((o) => ({
+                      key: o.key,
+                      label: o.label,
+                      on: viewColumnOn(o),
+                      locked: o.locked,
+                    }))}
+                    onToggle={(key, on) => {
+                      const o = viewOptions.find((v) => v.key === key)
+                      if (o) linesView.setColumn(key, on, o.defaultOn)
+                    }}
+                    onReset={linesView.resetColumns}
+                    canReset={linesView.customized}
+                    note={t('po.detail.linesAlwaysVisible')}
+                  />
+                  {!isPhone && (
+                    <DensityToggle value={linesView.density} onChange={linesView.setDensity} />
+                  )}
                 </div>
               </div>
               <Table
-                columns={lineColumns}
-                data={po.lines}
+                columns={shownColumns}
+                data={shownLines}
+                density={linesView.density}
+                emptyMessage={filterText ? t('ui.tableView.noMatches') : undefined}
+                footerRow={
+                  orderTotals.length > 0
+                    ? {
+                        item: t('po.detail.orderTotal'),
+                        total: (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            {orderTotals.map((e) => (
+                              <span
+                                key={e.currencyCode}
+                                style={{ color: BRAND_GREEN, fontFamily: 'monospace' }}
+                              >
+                                {fmtN(e.amount)} {e.currencyCode}
+                              </span>
+                            ))}
+                          </div>
+                        ),
+                      }
+                    : undefined
+                }
                 rowKey="id"
                 getRowStyle={(line) => {
                   // Currently checked for the reject box in progress — takes

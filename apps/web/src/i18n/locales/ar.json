@@ -544,7 +544,10 @@
       "warningOneOrMoreLinesHave": "تحذير: بند واحد أو أكثر بلا سعر. ارجع إلى تسعير السوق لتحديدها.",
       "whatSWrongWithThisLine": "ما المشكلة في هذا البند؟",
       "yesApplyCorrection": "نعم، طبّق التصحيح",
-      "youDonTHaveAccessTo": "ليس لديك صلاحية لعرض أمر الشراء هذا"
+      "youDonTHaveAccessTo": "ليس لديك صلاحية لعرض أمر الشراء هذا",
+      "verifiedPriceCol": "السعر الموثّق",
+      "linesAlwaysVisible": "المادة والإجمالي يظهران دائمًا",
+      "orderTotal": "إجمالي أمر الشراء"
     },
     "editReq": {
       "appliedAutomatically": "طُبّق فورًا: لم تتم الموافقة على أمر الشراء بعد، فلم تلزم مراجعة.",
@@ -2521,6 +2524,17 @@
     },
     "searchInput": {
       "search": "بحث..."
+    },
+    "tableView": {
+      "columnsCount": "الأعمدة · {{shown}} من {{total}}",
+      "showColumns": "إظهار الأعمدة",
+      "resetToDefault": "استعادة الافتراضي",
+      "density": "تباعد الصفوف",
+      "comfortable": "مريح",
+      "compact": "مضغوط",
+      "filterLines": "تصفية البنود",
+      "showing": "عرض {{shown}} من {{total}}",
+      "noMatches": "لا توجد بنود مطابقة لهذا الفلتر."
     }
   },
   "misc": {

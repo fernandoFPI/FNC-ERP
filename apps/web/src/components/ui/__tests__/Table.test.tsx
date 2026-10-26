@@ -135,3 +135,35 @@ describe('Table: wrapping columns', () => {
     expect(th).toHaveStyle({ whiteSpace: 'nowrap', minWidth: '220px' })
   })
 })
+
+// Row spacing: comfortable is the long-standing look and stays the default; compact trims the
+// vertical padding. Nothing else about the table changes.
+describe('Table: density', () => {
+  const cell = (text: string) => {
+    const td = screen.getByText(text).closest('td')
+    if (!td) throw new Error(`no cell for ${text}`)
+    return td
+  }
+  const head = (text: string) => {
+    const th = screen.getByText(text).closest('th')
+    if (!th) throw new Error(`no header for ${text}`)
+    return th
+  }
+
+  it('keeps the existing padding unless asked for compact', () => {
+    wrap(<Table columns={columns} data={data} />)
+    expect(cell('Alpha')).toHaveStyle({ padding: '12px 14px' })
+    expect(head('Name')).toHaveStyle({ padding: '10px 14px' })
+  })
+
+  it('treats comfortable as the same thing', () => {
+    wrap(<Table columns={columns} data={data} density="comfortable" />)
+    expect(cell('Alpha')).toHaveStyle({ padding: '12px 14px' })
+  })
+
+  it('packs rows and headers tighter when compact', () => {
+    wrap(<Table columns={columns} data={data} density="compact" />)
+    expect(cell('Alpha')).toHaveStyle({ padding: '8px 14px' })
+    expect(head('Name')).toHaveStyle({ padding: '7px 14px' })
+  })
+})

@@ -418,3 +418,21 @@ Don't re-derive, check these first.
     sliver. Other tables with long free text (PO lines, Items Bought, stock moves) have the same cells and have not
     been checked. Tests: `components/ui/__tests__/Table.test.tsx` and `RequisitionDetail.test.tsx`; these prove the
     style, not the pixels (jsdom has no layout), so check a narrow window by eye after changing a table.
+    Why a wide window can still be too narrow: `useBreakpoint` (phone / tablet / desktop) reads `window.innerWidth`,
+    but the Lines table lives in the right-hand panel next to the Next Step panel, so on a 1440px window it can be
+    about 700px wide while the hook says "desktop". Anything that must adapt to the room a table actually has needs the
+    width of its own container (a `ResizeObserver`, as `ScrollFadeRow` does), not the window's.
+    The Lines table now lets the person choose its columns and row spacing (`useTableView`, `ColumnsMenu`,
+    `DensityToggle`). The choice is kept in `localStorage` per user and per table (`fnc_table_view_v1_<user>_<table>`),
+    and only the columns the person actually switched are stored, as overrides of each column's default; storing the full
+    list would freeze stage-dependent columns (store price) and hide any column added later.
+
+41. **Two screens on one page can define "received" differently.** On a PO at Goods received, the Next Step coverage
+    list counts a line as fulfilled when `qty_received + qty_from_stock >= qty`
+    (`PurchaseOrderDetail.tsx`, `const fulfilled = Math.min(ord, rcv + fromStk)`), while the Lines table's Received
+    column counts only `qty_received >= qty`. A line covered entirely from stock therefore reads 100 % in the panel and
+    "0/n received" in the table. Found while designing a combined "9 of 11 lines fully received" summary, which needs one
+    answer; NOT fixed yet (changing it changes what users see, so check real data first: lines with
+    `qty_from_stock > 0` on POs that are past receiving). Same family as #23 and #34 (two code paths for one thing): when
+    a number is shown in two places, put the rule in one function both call, with a test that feeds it a
+    from-stock line.

@@ -492,7 +492,10 @@
       "warningOneOrMoreLinesHave": "Warning: one or more lines have no price. Go back to market pricing to set them.",
       "whatSWrongWithThisLine": "What's wrong with this line?",
       "yesApplyCorrection": "Yes, apply correction",
-      "youDonTHaveAccessTo": "You don't have access to view this purchase order"
+      "youDonTHaveAccessTo": "You don't have access to view this purchase order",
+      "verifiedPriceCol": "Verified Price",
+      "linesAlwaysVisible": "Item and Total always stay visible",
+      "orderTotal": "Order total"
     },
     "editReq": {
       "appliedAutomatically": "Applied straight away: the PO had not been approved yet, so no review was needed.",
@@ -2362,6 +2365,17 @@
     },
     "searchInput": {
       "search": "Search..."
+    },
+    "tableView": {
+      "columnsCount": "Columns · {{shown}} of {{total}}",
+      "showColumns": "Show columns",
+      "resetToDefault": "Reset to default",
+      "density": "Row spacing",
+      "comfortable": "Comfortable",
+      "compact": "Compact",
+      "filterLines": "Filter lines",
+      "showing": "Showing {{shown}} of {{total}}",
+      "noMatches": "No lines match this filter."
     }
   },
   "misc": {

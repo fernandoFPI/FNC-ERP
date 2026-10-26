@@ -61,6 +61,10 @@ interface TableProps<T extends object> {
   // (typically by comparing row[i] against row[i-1]). Desktop: a spanning
   // <tr>. Phone: a heading above the row's card.
   getSectionHeader?: (row: T, index: number) => React.ReactNode
+  // How tightly rows are packed on desktop and tablet. 'comfortable' is the long-standing look
+  // and the default; 'compact' trims the vertical padding of every row and header. No effect on
+  // the phone card layout.
+  density?: 'comfortable' | 'compact'
 }
 
 function renderValue<T extends object>(col: Column<T>, row: T): React.ReactNode {
@@ -126,6 +130,7 @@ export function Table<T extends object>({
   footerRow,
   renderExpanded,
   getSectionHeader,
+  density = 'comfortable',
 }: TableProps<T>) {
   const { t } = useTranslation()
   const { theme } = useTheme()
@@ -393,6 +398,9 @@ export function Table<T extends object>({
 
   // ── TABLET + DESKTOP — Standard table with scroll wrapper ────────────────────
   const visibleColumns = columns.filter((col) => (isTablet ? !col.tabletHide : true))
+  const compact = density === 'compact'
+  const headerPadding = compact ? '7px 14px' : '10px 14px'
+  const cellPadding = compact ? '8px 14px' : '12px 14px'
 
   return (
     <div
@@ -424,7 +432,7 @@ export function Table<T extends object>({
                 style={{
                   width: col.width,
                   minWidth: col.minWidth,
-                  padding: '10px 14px',
+                  padding: headerPadding,
                   textAlign: 'start',
                   fontSize: '10px',
                   fontWeight: 600,
@@ -514,7 +522,7 @@ export function Table<T extends object>({
                       <td
                         key={String(col.key)}
                         style={{
-                          padding: '12px 14px',
+                          padding: cellPadding,
                           color: theme.textSecondary,
                           whiteSpace: col.wrap ? 'normal' : 'nowrap',
                           overflowWrap: col.wrap ? 'anywhere' : undefined,
