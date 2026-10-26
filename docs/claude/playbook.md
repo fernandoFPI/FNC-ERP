@@ -473,32 +473,36 @@ Don't re-derive, check these first.
     cost that changes after the line was made), `components/procurement/__tests__/InventoryCost.test.tsx`, and the
     "inventory cost" blocks in `poLinesView.test.tsx` and `RequisitionDetail.test.tsx`.
 
-44. **Two rules for one decision: the approval step skipped the Store Out, the completion check still waited for
-    one.** A project PO or requisition marked "delivered to inventory" deliberately gets no auto-created Store Out for
-    its from-stock lines ("isn't consuming anything yet", `issueStockForPOLines` /
-    `issueStockForRequisitionLines`). `evaluateRequisitionCompletion` was never told: a `sourcing` requisition completes
-    only when every stock-covered master line has an ISSUED Store Out line pointing at that exact line
-    (`project_material_issue_lines.po_line_id`), so on this kind nothing could ever satisfy it. Found live:
-    REQ-2026-0075 sat in Sourcing for good ("Waiting on every line to resolve") with 9 stock lines / 72 units that no
-    Store Out would ever cover; REQ-2026-0047, 0078 and 0090 were in the same state (253 units). The units also stayed
-    reserved: the reservation made at Inventory Check is released only by confirming a Store Out line or by
-    cancelling/rejecting (`releaseRequisitionStockReservations`), never by completing, and a Store Out made by hand
-    with no `po_line_id` can draw only the unreserved part. The only manual way out, `closeRequisitionLine`, has no
-    button in the web app and had never been used (0 lines closed in production). Fix: one predicate,
-    `projectStockStaysInInventory` (`resolvers.ts`), used by both issuance functions AND the completion check; for
-    that kind the completion check ignores stock-covered lines, releases what is still reserved when it completes, and
-    is also run right after `skip_buying` (approval of a fully stock-covered requisition) and after Finish Buying
-    forks nothing, the two moves into `sourcing` that no later event would ever follow. Other requisition kinds are
-    deliberately unchanged (an all-short requisition with nothing at all left still stays in `sourcing`; that looks
-    like the same kind of latent gap, left alone and flagged). How to spot it: a requisition in `sourcing` whose child
-    POs are all finished; compare the exact SQL of "what does approval do for X" with "what does completion wait for
-    for X". The same trip also showed that the Store Outs card and the Store Out page's requisition filter matched only
-    `pmi.requisition_id`, so Store Outs made by hand for the bought items (linked to the child PO) never showed under
-    the requisition: `materialIssues(requisitionId)` now also matches the requisition's child POs, scoped to the
-    caller's company, and the card shows a PO Number column. Requisitions whose child POs had ALREADY finished before
-    this shipped (0047, 0090 in production) get no further trigger, so they stay in `sourcing` until
-    `evaluateRequisitionCompletion` is run for them once (do it as a rolled-back dry run first, the #36 trick, then for real).
-    Tests: `services/gateway/tests/project-inventory-requisition-completion.test.ts` (real Postgres, 12 cases:
-    inventory vs jobsite vs stock, reservation held while open and freed on completion, no-fork Finish Buying, approval
-    log entry, Store Outs by child PO, another requisition's and another company's Store Outs excluded) and the
-    Store Outs / Sourcing block in `RequisitionDetail.test.tsx`. Related to #23, #24 and #34.
+44. **A delivery-destination check was allowed to switch off the Store Out for stock-covered lines, and a wrong first
+    fix then hid the gap.** The business rule (stated by the user, not derived from the code): the delivery
+    destination only decides what happens to PURCHASED goods (to inventory: a Store In; to the jobsite: straight to the
+    jobsite, no Store In). Anything covered from inventory ALWAYS gets a draft Store Out that reserves its quantity until
+    it is confirmed; confirming deducts it and releases the reservation. The destination is chosen when the requisition
+    is created, long before approval, so it can never be a reason to skip that Store Out. The code did the opposite:
+    since August (`e40d5a0`) `issueStockForRequisitionLines` and `issueStockForPOLines` return early for a project
+    document delivered to inventory ("isn't consuming anything yet"), so those stock lines got no Store Out. Found live:
+    REQ-2026-0075 (9 stock lines, 72 units; STEEL-018: 18 units reserved, available 0, nothing to confirm). Scale on
+    production: 7 project requisitions delivered to inventory, 40 stock lines, about 1,885 units with no Store Out line
+    and 0 issued (4 open, 253 units, still reserved; 3 completed earlier through the old path); jobsite requisitions work
+    (28 of 29). Because project cost is posted when a Store Out is confirmed, those projects were never charged for that
+    stock, and a Store Out made by hand with no `po_line_id` can draw only the UNRESERVED part, so nobody could issue the
+    reserved units manually either. Second gap, any destination: a buyer can "resolve a line from stock" at Items Bought
+    (`resolveRequisitionLineFromStock`); it reserves the stock but creates no Store Out, because Store Outs are only built
+    once, at approval (REQ-2026-0010, 0.1 unit, stuck in Sourcing since 4 Oct).
+    **A wrong first fix (commit `1cdfbb6`, live on production for a few hours, then undone):** I read the skip as the
+    intended rule and made the COMPLETION check ignore stock lines for that kind and release the reservation when the
+    requisition completed. That would have closed REQ-2026-0075 with 72 units never issued and never charged to the
+    project, and, together with the real fix (a draft Store Out per stock line), it cannot coexist: the reservation would
+    be released first, so confirming the draft later fails with "Reservation mismatch". Lesson: when code and a business
+    rule disagree, ask which one is right BEFORE building on either; "the code says X deliberately" (a comment, a commit
+    message) is evidence of what was decided once, not of what is wanted now. A completion rule must keep waiting for
+    the thing that releases the reservation.
+    Kept from that commit: `materialIssues(requisitionId)` also returns Store Outs made against the requisition's child
+    POs (scoped to the caller's company), and the requisition's Store Outs card shows a PO Number column.
+    Still to do: remove the destination skip (and `projectStockStaysInInventory`), make "resolve from stock" create its
+    draft Store Out, then backfill drafts for REQ-2026-0047, 0075, 0078, 0090 and 0010 (a production data write: backup
+    and a rolled-back dry run first). How to spot this class: a requisition in `sourcing` whose child POs are all
+    finished; compare "what does approval create for X" with "what does completion wait for for X", and look for every
+    other place `qty_from_stock` is set after approval. Tests:
+    `services/gateway/tests/requisition-stock-lines-completion.test.ts` (real Postgres) and the Store Outs block in
+    `RequisitionDetail.test.tsx`. Related to #23, #24 and #34.

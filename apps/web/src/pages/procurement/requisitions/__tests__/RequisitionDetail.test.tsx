@@ -1028,8 +1028,8 @@ describe('RequisitionDetail: inventory cost column and Columns menu', () => {
 })
 
 // The Store Outs card lists the ones made by hand for the bought items too (the gateway now
-// returns those), saying which PO each belongs to; and the Sourcing panel stops saying it waits
-// for a Store Out on a project requisition delivered to inventory, where none is ever made.
+// returns those), saying which PO each belongs to; and the Sourcing panel keeps saying it waits
+// for the Store Outs of stock-covered lines, whatever the delivery destination.
 describe('RequisitionDetail: Store Outs card and the Sourcing panel', () => {
   afterEach(async () => {
     if (i18n.language !== 'en') {
@@ -1096,31 +1096,25 @@ describe('RequisitionDetail: Store Outs card and the Sourcing panel', () => {
     expect(screen.queryByText('Store Outs')).toBeNull()
   })
 
-  it('project requisition delivered to inventory: Sourcing says the stock part needs no Store Out', async () => {
-    mockReq({ status: 'sourcing', purpose: 'project', delivery_destination: 'inventory' })
-    await open()
-    expect(
-      screen.getByText(/the stock-covered part stays in inventory and needs no Store Out/),
-    ).toBeInTheDocument()
-    expect(screen.queryByText(/Waiting on every line to resolve/)).toBeNull()
-  })
-
   it.each([
+    [
+      'a project requisition delivered to inventory',
+      { purpose: 'project', delivery_destination: 'inventory' },
+    ],
     [
       'a project requisition delivered to the jobsite',
       { purpose: 'project', delivery_destination: 'jobsite' },
     ],
     ['a stock requisition', { purpose: 'stock', delivery_destination: null }],
-    [
-      'a non-project requisition that names inventory',
-      { purpose: 'stock', delivery_destination: 'inventory' },
-    ],
-  ])('%s: Sourcing keeps saying it waits on the Store Out', async (_label, over) => {
-    mockReq({ status: 'sourcing', ...over })
-    await open()
-    expect(screen.getByText(/Waiting on every line to resolve/)).toBeInTheDocument()
-    expect(screen.queryByText(/needs no Store Out/)).toBeNull()
-  })
+  ])(
+    '%s: Sourcing says it waits on the Store Out of its stock-covered lines',
+    async (_label, over) => {
+      mockReq({ status: 'sourcing', ...over })
+      await open()
+      expect(screen.getByText(/Waiting on every line to resolve/)).toBeInTheDocument()
+      expect(screen.queryByText(/needs no Store Out/)).toBeNull()
+    },
+  )
 
   it('reads in Arabic without raw keys', async () => {
     await i18n.changeLanguage('ar')
@@ -1131,7 +1125,7 @@ describe('RequisitionDetail: Store Outs card and the Sourcing panel', () => {
       storeOuts,
     )
     await open()
-    expect(screen.getByText(/ولا يحتاج إلى إذن صرف/)).toBeInTheDocument()
+    expect(screen.getByText(/بانتظار معالجة كل بند/)).toBeInTheDocument()
     expect(screen.getByText(/إذونات الصرف الخاصة بهذا الطلب/)).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/req\.detail\./)
   })

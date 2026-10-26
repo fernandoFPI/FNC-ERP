@@ -3268,12 +3268,7 @@ export default function RequisitionDetail() {
             <Card style={sectionCard}>
               <div style={sectionTitle}>{t('req.detail.sourcing')}</div>
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                {/* same rule as the gateway's projectStockStaysInInventory: no Store Out is
-                    made for the stock-covered lines of a project requisition delivered to
-                    inventory, so nothing waits for one */}
-                {req.purpose === 'project' && req.delivery_destination === 'inventory'
-                  ? t('req.detail.sourcingStockStaysInInventory')
-                  : t('req.detail.waitingOnEveryLineToResolve')}
+                {t('req.detail.waitingOnEveryLineToResolve')}
               </div>
             </Card>
           )}

@@ -1,8 +1,10 @@
-// A project requisition delivered to inventory keeps its stock-covered lines in inventory:
-// approval creates no Store Out for them (issueStockForRequisitionLines), so completing the
-// requisition must not wait for one either, and the stock reserved for them is released when it
-// completes. Found live: REQ-2026-0075 sat in Sourcing for good with 9 stock-covered lines
-// (72 units) that no Store Out could ever resolve, and those units stayed reserved.
+// A requisition must never complete, or free the stock it reserved, while stock-covered lines have
+// not been issued to the project, whatever its delivery destination (the destination only says where
+// PURCHASED goods go). A first attempt let project requisitions delivered to inventory complete
+// without a Store Out and release their reservation; that was wrong and was taken back.
+// REQ-2026-0075 (9 stock lines, 72 units) has no Store Out at all because the August skip for
+// "delivered to inventory" is still in place: that gap is fixed separately, and these tests pin
+// the safety property that holds before and after it.
 //
 // Also: the requisition's Store Outs card finds Store Outs that were made by hand for the items
 // bought on it (linked to its child PO, not to the requisition itself).
@@ -13,9 +15,9 @@ import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
 
 const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
-const TEST_USER_EMAIL = 'project-inventory-completion-test@fnc-erp.local'
-const VENDOR_PREFIX = 'PICTEST-VENDOR-'
-const SKU_PREFIX = 'PICTEST-'
+const TEST_USER_EMAIL = 'stock-lines-completion-test@fnc-erp.local'
+const VENDOR_PREFIX = 'SLCTEST-VENDOR-'
+const SKU_PREFIX = 'SLCTEST-'
 
 let userId: string
 let warehouseId: string
@@ -254,47 +256,30 @@ afterAll(async () => {
   await pool.end()
 })
 
-describe('project requisition delivered to inventory: stock-covered lines are not waited on', () => {
-  it('fully from stock: completes at approval, no Store Out is made, and the reservation is freed', async () => {
+describe('delivered to inventory: the requisition does not close or free its stock without a Store Out', () => {
+  it('fully from stock: stays in sourcing at approval, with the stock still reserved', async () => {
     const { reqId, productId } = await makeProjectReq({ destination: 'inventory', qty: 6, fromStock: 6 })
-    expect(await statusOf(reqId)).toBe('completed')
-    expect(await storeOutsLinkedToReq(reqId)).toBe(0)
-    // the stock stays in the warehouse, and is no longer held back from anyone else
-    expect(await stock(productId)).toEqual({ onHand: 6, reserved: 0 })
+    expect(await statusOf(reqId)).toBe('sourcing')
+    expect(await stock(productId)).toEqual({ onHand: 6, reserved: 6 })
   })
 
-  it('part from stock, rest bought: not done while the child PO is open, and the stock stays reserved meanwhile', async () => {
+  it('part from stock, rest bought: the child PO being finished is not enough, the stock stays reserved', async () => {
     const { reqId, productId, childId } = await makeProjectReq({ destination: 'inventory', qty: 10, fromStock: 4 })
     expect(childId).toBeDefined()
     expect(await statusOf(reqId)).toBe('sourcing')
-    expect(await storeOutsLinkedToReq(reqId)).toBe(0)
+    await finishChild(childId!)
+    expect(await statusOf(reqId)).toBe('sourcing')
     expect(await stock(productId)).toEqual({ onHand: 4, reserved: 4 })
   })
 
-  it('part from stock, rest bought: completes when the child PO reaches a finished state, and frees the reservation then', async () => {
-    const { reqId, productId, childId } = await makeProjectReq({ destination: 'inventory', qty: 10, fromStock: 4 })
-    await finishChild(childId!)
-    expect(await statusOf(reqId)).toBe('completed')
-    expect(await stock(productId)).toEqual({ onHand: 4, reserved: 0 })
-  })
-
-  it('part from stock, rest marked short so nothing is forked: completes at Finish Buying and frees the reservation', async () => {
+  it('part from stock, remainder marked short so nothing is forked: stays in sourcing, stock still reserved', async () => {
     const { reqId, productId } = await makeProjectReq({ destination: 'inventory', qty: 5, fromStock: 2, shortRest: true })
-    expect(await statusOf(reqId)).toBe('completed')
-    expect(await stock(productId)).toEqual({ onHand: 2, reserved: 0 })
-  })
-
-  it('writes the completion to the approval log like any other completion', async () => {
-    const { reqId } = await makeProjectReq({ destination: 'inventory', qty: 3, fromStock: 3 })
-    const log = await pool.query<{ action: string; from_status: string; to_status: string }>(
-      `SELECT action, from_status, to_status FROM requisition_approval_log WHERE requisition_id=$1 ORDER BY created_at, id`,
-      [reqId],
-    )
-    expect(log.rows.some((r) => r.action === 'complete' && r.from_status === 'sourcing' && r.to_status === 'completed')).toBe(true)
+    expect(await statusOf(reqId)).toBe('sourcing')
+    expect(await stock(productId)).toEqual({ onHand: 2, reserved: 2 })
   })
 })
 
-describe('everything else is unchanged: a stock-covered line still needs its Store Out', () => {
+describe('delivered to the jobsite: a stock-covered line still needs its Store Out', () => {
   it('project delivered to the jobsite, fully from stock: stays in sourcing with a draft Store Out and the stock reserved', async () => {
     const { reqId, productId } = await makeProjectReq({ destination: 'jobsite', qty: 6, fromStock: 6 })
     expect(await statusOf(reqId)).toBe('sourcing')

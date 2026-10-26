@@ -1204,7 +1204,6 @@
       "vendorQuoteRefOptional": "Vendor quote ref (optional)",
       "verifiedPrice": "Verified price",
       "waitingOnEveryLineToResolve": "Waiting on every line to resolve — either its stock-covered portion issued via Store Out, or its purchased portion's child PO reaching a finished state.",
-      "sourcingStockStaysInInventory": "Delivered to inventory: the stock-covered part stays in inventory and needs no Store Out. Waiting on this requisition's purchase orders to reach a finished state.",
       "whatSWrongWithThisLine": "What's wrong with this line?",
       "whyIsThisRequisitionBeingCancelled": "Why is this requisition being cancelled?",
       "wrongItemReselect": "Wrong item? Reselect",
