@@ -2251,12 +2251,13 @@ export default function PurchaseOrderDetail() {
           stacked — both are tall on their own, and the page has plenty of
           unused horizontal room on wide screens. Each column's content is
           otherwise completely untouched.
-          Both columns start from the same 460px, but the lines get nearly all of the
-          spare width (grow 40 against 1): with equal growth the Next Step panel took half
-          of a wide screen and squeezed the Lines table. Below about 940px of room they
-          still wrap and stack, and a stacked column grows to the full width as before. */}
+          Both columns start from the same 460px, but the lines get ten times the Next Step
+          panel's share of the spare width (grow 40 against 4): with equal growth the Next Step
+          panel took half of a wide screen and squeezed the Lines table. On a ~1750px content
+          area that leaves Next Step at about 535px. Below about 940px of room they still wrap
+          and stack, and a stacked column grows to the full width as before. */}
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div style={{ flex: '1 1 460px', minWidth: 0 }}>
+        <div style={{ flex: '4 1 460px', minWidth: 0 }}>
           {/* Inline action panel — replaces the former Action tab */}
           {!['completed', 'closed', 'deleted', 'cancelled'].includes(po.status) && (
         <Card

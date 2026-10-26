@@ -450,6 +450,6 @@ Don't re-derive, check these first.
     it). `SearchableSelect` and `Modal` already portal; `components/ui/Dropdown.tsx` is absolutely positioned with no
     portal and has not been checked for the same clipping. Tests: `ColumnsMenu.test.tsx` ("where the list appears").
     The same screen also had the Next Step panel and the Lines table both set to `flex: 1 1 460px`, so each took half
-    of a wide screen; the lines are now `40 1 460px` against Next Step's `1 1 460px` (they still wrap and stack at the
-    same window width). Equal `flex-grow` on two columns means "split the room in half", which is rarely intended
+    of a wide screen; the lines are now `40 1 460px` against Next Step's `4 1 460px` (Next Step about 535px on a wide
+    screen; they still wrap and stack at the same window width). Equal `flex-grow` on two columns means "split the room in half", which is rarely intended
     when one of them holds a table.

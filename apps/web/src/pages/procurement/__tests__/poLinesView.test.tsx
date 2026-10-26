@@ -368,13 +368,15 @@ describe('PO Lines table: not clipped, and not squeezed by the Next Step panel',
     expect(screen.getByRole('checkbox', { name: 'Notes' })).toBeInTheDocument()
   })
 
-  it('gives the lines nearly all of the spare width and the Next Step panel almost none', async () => {
+  it('gives the lines about ten times as much of the spare width as the Next Step panel', async () => {
     mockPO('goods_received')
     await openPO()
     const left = columnFlexOf(screen.getAllByText('Next Step')[0])
     const right = columnFlexOf(linesTable())
     expect(left).not.toBe(right)
-    expect(grow(right)).toBeGreaterThanOrEqual(grow(left) * 10)
+    expect(grow(left)).toBeGreaterThan(0)
+    expect(grow(right) / grow(left)).toBeGreaterThanOrEqual(8)
+    expect(grow(right) / grow(left)).toBeLessThanOrEqual(12)
     // both still start from the same width, so they stack at the same window size as before
     expect(left.endsWith('460px')).toBe(true)
     expect(right.endsWith('460px')).toBe(true)
