@@ -2071,14 +2071,13 @@ async function userIsAssignedApproverForRequisitionGW(
 // Drafts are grouped by source location (one real pick per location, which also
 // keeps interco-sourced lines in their own company's draft); a draft for the
 // same requisition and location that is still open is reused.
-async function coverRequisitionStockLines(
+// The read half of coverRequisitionStockLines, on its own so a dry run (the
+// backfill script) shows exactly what the real run would cover. Writes nothing.
+export async function uncoveredRequisitionStockLines(
   client: PoolClient,
-  req: Record<string, unknown>,
-  companyId: string,
-  userId: string,
+  reqId: string,
   onlyLineId?: string,
-): Promise<{ issueId: string; issueNumber: string }[]> {
-  const reqId = String(req.id)
+): Promise<Record<string, unknown>[]> {
   const linesRes = await client.query(
     `SELECT pl.*,
             pl.qty_from_stock - COALESCE((
@@ -2093,9 +2092,20 @@ async function coverRequisitionStockLines(
      ORDER BY pl.id`,
     [reqId, onlyLineId ?? null],
   )
-  const lines = (linesRes.rows as Record<string, unknown>[]).filter(
+  return (linesRes.rows as Record<string, unknown>[]).filter(
     (l) => parseFloat(String(l.uncovered_qty ?? 0)) > 0.0001,
   )
+}
+
+export async function coverRequisitionStockLines(
+  client: PoolClient,
+  req: Record<string, unknown>,
+  companyId: string,
+  userId: string,
+  onlyLineId?: string,
+): Promise<{ issueId: string; issueNumber: string }[]> {
+  const reqId = String(req.id)
+  const lines = await uncoveredRequisitionStockLines(client, reqId, onlyLineId)
   if (lines.length === 0) return []
 
   const { defaultFromLocationId, ownDestLocationId } = await getStockIssuanceLocations(

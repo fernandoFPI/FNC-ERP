@@ -483,8 +483,8 @@ Don't re-derive, check these first.
     document delivered to inventory ("isn't consuming anything yet"), so those stock lines got no Store Out. Found live:
     REQ-2026-0075 (9 stock lines, 72 units; STEEL-018: 18 units reserved, available 0, nothing to confirm). Scale on
     production: 7 project requisitions delivered to inventory, 40 stock lines, about 1,885 units with no Store Out line
-    and 0 issued (4 open, 253 units, still reserved; 3 completed earlier through the old path); jobsite requisitions work
-    (28 of 29). Because project cost is posted when a Store Out is confirmed, those projects were never charged for that
+    and 0 issued (4 open, 253 units, still reserved; the other 3 are pre-G1 `REQ-MIG-*` imports, see below); jobsite
+    requisitions work (28 of 29). Because project cost is posted when a Store Out is confirmed, those projects were never charged for that
     stock, and a Store Out made by hand with no `po_line_id` can draw only the UNRESERVED part, so nobody could issue the
     reserved units manually either. Second gap, any destination: a buyer can "resolve a line from stock" at Items Bought
     (`resolveRequisitionLineFromStock`); it reserves the stock but creates no Store Out, because Store Outs are only built
@@ -503,13 +503,24 @@ Don't re-derive, check these first.
     `coverRequisitionStockLines`, gives every stock-covered line its draft Store Out for the part no non-cancelled Store
     Out line covers yet, so it is safe to run again. Approval, `resolveRequisitionLineFromStock` and the backfill all
     call it (one function for one rule, so they cannot drift). The PO-side `issueStockForPOLines` lost the same skip
-    (no standalone project PO delivered to inventory had stock lines, so it changes no existing data). Still to do: a
-    backfill of drafts for REQ-2026-0047, 0075, 0078, 0090 and 0010 (a production data write: backup and a
-    rolled-back dry run first; check each reservation still covers its line, or confirming fails with "Reservation
-    mismatch"). How to spot this class: a requisition in `sourcing` whose child POs are all
+    (no standalone project PO delivered to inventory had stock lines, so it changes no existing data). The backfill for
+    requisitions approved before the fix is `services/gateway/src/scripts/backfill-stock-store-outs.ts`, compiled by the
+    gateway build and run on the VPS (`tsx` is NOT installed there, only `tsc`) from `services/gateway` after sourcing
+    `/opt/fnc-erp/.env`: `node dist/scripts/backfill-stock-store-outs.js --requisitions REQ-A,REQ-B` is a dry run (reads
+    only, takes no Store Out number, refuses a requisition whose reservation is smaller than its drafts would need,
+    because confirming would then fail with "Reservation mismatch"); adding `--apply --actor-email <admin>` writes one
+    transaction per requisition, records the drafts and an `audit_log` row under that administrator, and running it
+    twice creates nothing the second time. Back the database up first (`scripts/backup-db.sh`). It creates DRAFTS only:
+    nothing moves, nothing is charged and no reservation changes until a person confirms each draft. Deliberately NOT
+    run for the three completed `REQ-MIG-*` requisitions (20 stock lines, 1,632 units): they are pre-G1 historical POs
+    that migration 258 moved onto synthetic requisitions, 14 of the 20 lines have no source location, only 52 of the
+    1,632 units are available today, and their project already has its cost booked through other entries
+    (`stock_issue`, `po_direct_delivery`), so a Store Out would fail or double-deduct and double-charge; treat them as
+    history. How to spot this class: a requisition in `sourcing` whose child POs are all
     finished; compare "what does approval create for X" with "what does completion wait for for X", and look for every
     other place `qty_from_stock` is set after approval. Tests:
     `services/gateway/tests/requisition-stock-lines-completion.test.ts` (real Postgres: both destinations, fully and
     partly from stock, remainder marked short, resolve from stock, reuse of the open draft, project cost charged on
-    confirm, Store Outs by child PO) and the Store Outs block in `RequisitionDetail.test.tsx`. Related to #23, #24
-    and #34.
+    confirm, Store Outs by child PO), `backfill-stock-store-outs.test.ts` (dry run writes nothing, refusals, apply,
+    idempotence, audit, the created draft can be confirmed) and the Store Outs block in `RequisitionDetail.test.tsx`.
+    Related to #23, #24 and #34.
