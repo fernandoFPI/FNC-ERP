@@ -297,3 +297,62 @@ describe('backfill of stock Store Outs: apply', () => {
     expect(parseInt(cost.rows[0]!.c, 10)).toBeGreaterThan(0)
   })
 })
+
+// Requisition numbers repeat across companies (REQ-2026-0047 exists in two companies on production),
+// so the script must never guess which one is meant.
+describe('backfill of stock Store Outs: which company', () => {
+  async function withTwinInAnotherCompany(
+    number: string,
+    run: (otherName: string) => Promise<void>,
+  ): Promise<void> {
+    const otherName = `${SKU_PREFIX}OTHER-${Date.now()}`
+    const other = await pool.query<{ id: string }>(
+      `INSERT INTO companies (name, legal_name, country_code, currency_code) VALUES ($1,$1,'IQ','IQD') RETURNING id`,
+      [otherName],
+    )
+    const otherId = other.rows[0]!.id
+    try {
+      await pool.query(
+        `INSERT INTO requisitions (company_id, requisition_number, purpose, priority, organizer_id, status)
+         VALUES ($1,$2,'stock','low',$3,'sourcing')`,
+        [otherId, number, userId],
+      )
+      await run(otherName)
+    } finally {
+      await pool.query(`DELETE FROM requisitions WHERE company_id=$1`, [otherId])
+      await pool.query(`DELETE FROM companies WHERE id=$1`, [otherId])
+    }
+  }
+
+  it('refuses to guess when two companies have the same number, and says to name one', async () => {
+    const { number } = await makeLegacyRequisition({ qty: 3 })
+    await withTwinInAnotherCompany(number, async () => {
+      await expect(backfillStockStoreOuts({ requisitionNumbers: [number], apply: false })).rejects.toThrow(
+        /More than one company.*--company/,
+      )
+    })
+  })
+
+  it('uses the company that is named (by exact name or by id) and leaves the other alone', async () => {
+    const { reqId, number } = await makeLegacyRequisition({ qty: 3 })
+    const company = await pool.query<{ id: string; name: string }>(`SELECT id, name FROM companies WHERE id=$1`, [TEST_COMPANY_ID])
+    await withTwinInAnotherCompany(number, async () => {
+      const byName = await backfillStockStoreOuts({
+        requisitionNumbers: [number],
+        apply: false,
+        company: company.rows[0]!.name,
+      })
+      expect(byName[0]).toMatchObject({ status: 'planned', company: company.rows[0]!.name })
+      const byId = await backfillStockStoreOuts({ requisitionNumbers: [number], apply: false, company: TEST_COMPANY_ID })
+      expect(byId[0]!.status).toBe('planned')
+      expect(await storeOutCount(reqId)).toBe(0)
+    })
+  })
+
+  it('says so when the named company has no such requisition', async () => {
+    const { number } = await makeLegacyRequisition({ qty: 2 })
+    await expect(
+      backfillStockStoreOuts({ requisitionNumbers: [number], apply: false, company: 'No Such Company' }),
+    ).rejects.toThrow(/not found in company No Such Company/)
+  })
+})

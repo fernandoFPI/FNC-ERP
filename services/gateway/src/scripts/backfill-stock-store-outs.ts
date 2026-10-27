@@ -15,8 +15,9 @@
 // need (confirming would then fail with "Reservation mismatch").
 //
 // Run on the server, from the gateway folder, after sourcing the app's .env:
-//   node dist/scripts/backfill-stock-store-outs.js --requisitions REQ-2026-0075,REQ-2026-0047
-//   node dist/scripts/backfill-stock-store-outs.js --requisitions ... --apply --actor-email you@company.com
+//   node dist/scripts/backfill-stock-store-outs.js --company "Nishtimani Factory" --requisitions REQ-2026-0075,REQ-2026-0047
+//   node dist/scripts/backfill-stock-store-outs.js --company ... --requisitions ... --apply --actor-email you@company.com
+// (--company is needed whenever more than one company has a requisition with that number.)
 /* eslint-disable no-console -- a command-line script: printing is its output */
 import { pathToFileURL } from 'node:url'
 import { pool, type PoolClient } from '@fnc-erp/db'
@@ -49,6 +50,8 @@ export interface BackfillOptions {
   requisitionNumbers: string[]
   apply: boolean
   actorEmail?: string
+  // Requisition numbers repeat across companies, so name the company (its exact name or its id).
+  company?: string
 }
 
 interface ReqRow {
@@ -60,17 +63,19 @@ interface ReqRow {
   company_name: string
 }
 
-async function findRequisition(number: string): Promise<ReqRow> {
+async function findRequisition(number: string, company?: string): Promise<ReqRow> {
   const r = await pool.query<ReqRow>(
     `SELECT r.id, r.company_id, r.requisition_number, r.status, r.project_id, c.name AS company_name
        FROM requisitions r JOIN companies c ON c.id = r.company_id
-      WHERE r.requisition_number = $1`,
-    [number],
+      WHERE r.requisition_number = $1
+        AND ($2::text IS NULL OR c.id::text = $2 OR lower(c.name) = lower($2))`,
+    [number, company ?? null],
   )
-  if (r.rows.length === 0) throw new Error(`Requisition ${number} was not found`)
+  if (r.rows.length === 0)
+    throw new Error(`Requisition ${number} was not found${company ? ` in company ${company}` : ''}`)
   if (r.rows.length > 1)
     throw new Error(
-      `More than one company has a requisition numbered ${number} (${r.rows.map((x) => x.company_name).join(', ')}); refusing to guess`,
+      `More than one company has a requisition numbered ${number} (${r.rows.map((x) => x.company_name).join(', ')}); name one with --company`,
     )
   return r.rows[0]
 }
@@ -176,7 +181,7 @@ async function resolveActor(email: string, companyIds: string[]): Promise<string
 export async function backfillStockStoreOuts(opts: BackfillOptions): Promise<RequisitionReport[]> {
   if (opts.requisitionNumbers.length === 0) throw new Error('Name at least one requisition')
   const reqs: ReqRow[] = []
-  for (const n of opts.requisitionNumbers) reqs.push(await findRequisition(n.trim()))
+  for (const n of opts.requisitionNumbers) reqs.push(await findRequisition(n.trim(), opts.company))
 
   let actorId = ''
   if (opts.apply) {
@@ -329,11 +334,13 @@ async function main(): Promise<void> {
     .filter(Boolean)
   const apply = args.includes('--apply')
   const actorEmail = valueOf('--actor-email')
+  const company = valueOf('--company')
   try {
     const reports = await backfillStockStoreOuts({
       requisitionNumbers: requisitions,
       apply,
       ...(actorEmail ? { actorEmail } : {}),
+      ...(company ? { company } : {}),
     })
     printReports(reports, apply)
     process.exitCode = reports.some((r) => r.status === 'refused') ? 2 : 0

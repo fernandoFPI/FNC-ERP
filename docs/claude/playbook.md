@@ -506,7 +506,8 @@ Don't re-derive, check these first.
     (no standalone project PO delivered to inventory had stock lines, so it changes no existing data). The backfill for
     requisitions approved before the fix is `services/gateway/src/scripts/backfill-stock-store-outs.ts`, compiled by the
     gateway build and run on the VPS (`tsx` is NOT installed there, only `tsc`) from `services/gateway` after sourcing
-    `/opt/fnc-erp/.env`: `node dist/scripts/backfill-stock-store-outs.js --requisitions REQ-A,REQ-B` is a dry run (reads
+    `/opt/fnc-erp/.env`: `node dist/scripts/backfill-stock-store-outs.js --company "<company name>" --requisitions REQ-A,REQ-B`
+    (`--company` is required because requisition numbers repeat across companies: REQ-2026-0047 exists in two) is a dry run (reads
     only, takes no Store Out number, refuses a requisition whose reservation is smaller than its drafts would need,
     because confirming would then fail with "Reservation mismatch"); adding `--apply --actor-email <admin>` writes one
     transaction per requisition, records the drafts and an `audit_log` row under that administrator, and running it
