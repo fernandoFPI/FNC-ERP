@@ -525,3 +525,29 @@ Don't re-derive, check these first.
     confirm, Store Outs by child PO), `backfill-stock-store-outs.test.ts` (dry run writes nothing, refusals, apply,
     idempotence, audit, the created draft can be confirmed) and the Store Outs block in `RequisitionDetail.test.tsx`.
     Related to #23, #24 and #34.
+
+45. **A line removal that several tables silently forbid, and a raw foreign key error as the only explanation.** Approving
+    an edit request that removes a PO line ran `DELETE FROM po_lines` straight away. Twelve foreign keys point at
+    `po_lines` and seven have NO delete action (`po_receipt_lines`, `stock_moves`, `vendor_invoice_lines`,
+    `po_return_items`, `advance_settlement_lines`, `project_material_return_lines` and `po_lines.origin_line_id`; four
+    cascade and `project_material_issue_lines` sets null), so a doomed removal
+    reached the review queue and only failed when an admin clicked Approve, with
+    `update or delete on table "po_lines" violates foreign key constraint "po_receipt_lines_po_line_id_fkey"` (the Edit
+    Request card prints it as "Approving this would fail right now"). The requisition path had a guard for bought or
+    forked lines; the PO path had none. Found live on PO-2026-0021: a 19-unit pipe line that was never received (the
+    line itself said 0 received) was blocked by a row on a CANCELLED receipt (RCPT-1788941844304, 37 lines, no stock
+    moves) that had nothing to do with receiving. Fix (`lineRemovalBlocks`, `assertLinesRemovable`,
+    `clearCancelledReceiptLines` in `resolvers.ts`): name the real blockers in plain words at submission AND at approval,
+    for POs and requisitions; receipts count by STATUS (confirmed, draft and reversed block; cancelled does not unless
+    stock moved for it); when only cancelled receipts mention the line, their old rows go with it. The check is scoped to
+    the PO's or requisition's own lines, so naming another document's line reveals nothing.
+    **My own mistake worth keeping:** I first told the user both pending removals were "goods received" because the
+    query counted any `po_receipt_lines` row and the PO status was `goods_received`. A PO's status says nothing about one
+    line, and a receipt row says nothing without the receipt's status. When asked "was this received?", read the line's
+    own `qty_received` AND the receipt's `status`. How to spot this class: before deleting from a table, list every FK that
+    points at it (`pg_constraint`, `confdeltype`) and check each one; a delete behind an approval screen needs the same
+    check at submission, or the problem is only found by the approver.
+    Tests: `services/gateway/tests/po-line-removal-blockers.test.ts` (real Postgres: cancelled receipt cleared with
+    the line and only that line, other receipts untouched, confirmed / draft / reversed / stock-moved / split-from /
+    several reasons refused with the reason, the approval-time check for a request raised before the goods arrived and
+    the plain text in the preview, no probing of another PO's lines, an untouched line still removed).

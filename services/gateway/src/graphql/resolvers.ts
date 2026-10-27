@@ -271,6 +271,112 @@ function buildEditChangeSummary(changes: AdminPOCorrectionChanges): string {
   return parts.join(' | ')
 }
 
+// Why a PO or requisition line can't simply be deleted by an approved edit request.
+// Several tables point at po_lines with NO delete action (po_receipt_lines, stock_moves,
+// vendor_invoice_lines, po_return_items, advance_settlement_lines, project_material_return_lines,
+// and po_lines.origin_line_id), so a removal that reached the DELETE used to fail with a raw
+// foreign key error ("po_receipt_lines_po_line_id_fkey") that said nothing useful, and it did so
+// even when the only receipt behind the line was a CANCELLED one that never moved any stock
+// (PO-2026-0021, a 19-unit line that was never received). This names the real blockers, in plain
+// words, and lets a removal through when only cancelled receipts mention the line.
+// Receipts count by their status: confirmed (goods received), draft (a Store In in progress) and
+// reversed (received, then undone: the stock history keeps it) all block; cancelled does not, unless
+// stock actually moved for it.
+type LineRemovalQuery = (
+  sql: string,
+  params: unknown[],
+) => Promise<{ rows: Record<string, unknown>[] }>
+
+interface LineRemovalBlock {
+  lineId: string
+  description: string
+  reasons: string[]
+}
+
+async function lineRemovalBlocks(
+  run: LineRemovalQuery,
+  lineIds: string[],
+  owner: { poId?: string; requisitionId?: string },
+): Promise<LineRemovalBlock[]> {
+  if (lineIds.length === 0) return []
+  const r = await run(
+    `SELECT pl.id, COALESCE(NULLIF(pl.description, ''), 'a line') AS description,
+            (SELECT COALESCE(json_agg(json_build_object('n', pr.receipt_number, 's', pr.status)), '[]'::json)
+               FROM po_receipt_lines prl JOIN po_receipts pr ON pr.id = prl.receipt_id
+              WHERE prl.po_line_id = pl.id) AS receipts,
+            EXISTS (SELECT 1 FROM stock_moves sm WHERE sm.po_line_id = pl.id) AS has_stock_moves,
+            EXISTS (SELECT 1 FROM stock_moves sm JOIN po_receipt_lines prl ON prl.id = sm.po_receipt_line_id
+                     WHERE prl.po_line_id = pl.id) AS has_receipt_stock_moves,
+            EXISTS (SELECT 1 FROM vendor_invoice_lines v WHERE v.po_line_id = pl.id) AS on_invoice,
+            EXISTS (SELECT 1 FROM po_return_items ri WHERE ri.po_line_id = pl.id) AS on_return,
+            EXISTS (SELECT 1 FROM advance_settlement_lines a WHERE a.po_line_id = pl.id) AS on_advance,
+            EXISTS (SELECT 1 FROM project_material_return_lines m WHERE m.po_line_id = pl.id) AS on_material_return,
+            EXISTS (SELECT 1 FROM po_lines c WHERE c.origin_line_id = pl.id) AS was_split
+       FROM po_lines pl
+      WHERE pl.id = ANY($1::uuid[])
+        AND (($2::uuid IS NOT NULL AND pl.po_id = $2::uuid)
+          OR ($3::uuid IS NOT NULL AND pl.requisition_id = $3::uuid))`,
+    [lineIds, owner.poId ?? null, owner.requisitionId ?? null],
+  )
+  const blocks: LineRemovalBlock[] = []
+  for (const row of r.rows) {
+    const reasons: string[] = []
+    const receipts = (row.receipts as { n: string; s: string }[] | null) ?? []
+    const named = (status: string) =>
+      receipts
+        .filter((x) => x.s === status)
+        .map((x) => x.n)
+        .join(', ')
+    if (named('confirmed'))
+      reasons.push(
+        `goods are already received against it (receipt ${named('confirmed')}), so reverse that receipt first`,
+      )
+    if (named('draft'))
+      reasons.push(
+        `it is on a Store In that is still a draft (receipt ${named('draft')}), so cancel that draft first`,
+      )
+    if (named('reversed'))
+      reasons.push(
+        `it was received and the receipt reversed (receipt ${named('reversed')}), and that history is kept`,
+      )
+    if (row.has_stock_moves === true || row.has_receipt_stock_moves === true)
+      reasons.push('stock has already moved for it')
+    if (row.on_invoice === true) reasons.push('it is on a vendor invoice')
+    if (row.on_return === true) reasons.push('it is on a return')
+    if (row.on_advance === true) reasons.push('it is on an advance settlement')
+    if (row.on_material_return === true) reasons.push('it is on a material return')
+    if (row.was_split === true) reasons.push('other lines were split from it')
+    if (reasons.length > 0)
+      blocks.push({ lineId: String(row.id), description: String(row.description), reasons })
+  }
+  return blocks
+}
+
+async function assertLinesRemovable(
+  run: LineRemovalQuery,
+  lineIds: string[],
+  owner: { poId?: string; requisitionId?: string },
+): Promise<void> {
+  const blocks = await lineRemovalBlocks(run, lineIds, owner)
+  if (blocks.length === 0) return
+  throw new Error(
+    blocks.map((b) => `"${b.description}" can't be removed: ${b.reasons.join('; ')}.`).join(' '),
+  )
+}
+
+// What is left once assertLinesRemovable has passed: receipt rows of CANCELLED receipts that never
+// moved stock. They are history of a receipt that did not receive this line, and they are all that
+// still points at it, so they go with the line.
+async function clearCancelledReceiptLines(client: PoolClient, lineIds: string[]): Promise<void> {
+  if (lineIds.length === 0) return
+  await client.query(
+    `DELETE FROM po_receipt_lines
+      WHERE po_line_id = ANY($1::uuid[])
+        AND receipt_id IN (SELECT id FROM po_receipts WHERE status = 'cancelled')`,
+    [lineIds],
+  )
+}
+
 // Grouping/aggregation code throughout this file builds Map<K, V[]> (or
 // Map<K, Set<V>>) structures with a `has(k) ? set(k, empty) : ...` guard
 // immediately before every `.get(k)!` — this collapses that guard-then-assert
@@ -719,6 +825,8 @@ async function applyPOEditChanges(
     }
   }
   const removedLineIds = (changes.lines?.removed ?? []).map(removedLineId)
+  await assertLinesRemovable((sql, params) => client.query(sql, params), removedLineIds, { poId })
+  await clearCancelledReceiptLines(client, removedLineIds)
   await releaseLineStockReservations(client, removedLineIds)
   for (const lineId of removedLineIds) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND po_id=$2`, [lineId, poId])
@@ -875,6 +983,10 @@ async function applyRequisitionEditChanges(
     }
   }
   const removedLineIds = (changes.lines?.removed ?? []).map(removedLineId)
+  await assertLinesRemovable((sql, params) => client.query(sql, params), removedLineIds, {
+    requisitionId: reqId,
+  })
+  await clearCancelledReceiptLines(client, removedLineIds)
   await releaseLineStockReservations(client, removedLineIds)
   for (const lineId of removedLineIds) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND requisition_id=$2`, [lineId, reqId])
@@ -33243,6 +33355,11 @@ const phase5MutationResolvers = {
             `Line(s) already bought against or forked into a Purchase Order can't be edited or removed: ${blocked.map((r) => r.id).join(', ')}`,
           )
       }
+      await assertLinesRemovable(
+        (sql, params) => query(sql, params),
+        (changesForGuard.lines?.removed ?? []).map(removedLineId),
+        { requisitionId: reqId },
+      )
 
       const r = await query(
         `INSERT INTO po_edit_requests (requisition_id, requested_by, changes, request_notes)
@@ -33288,6 +33405,14 @@ const phase5MutationResolvers = {
       throw new Error(
         'A pending edit request already exists. It must be approved or rejected first.',
       )
+
+    // Refuse a removal that could never be applied (goods received, an invoice, a return...)
+    // now, with the reason in plain words, instead of letting an admin find out at approval.
+    await assertLinesRemovable(
+      (sql, params) => query(sql, params),
+      ((changesObj as EditChanges).lines?.removed ?? []).map(removedLineId),
+      { poId: args.id },
+    )
 
     // Write each touched line's name into the payload now, while the line still
     // exists: an approved removal deletes it, and the history could then never say
