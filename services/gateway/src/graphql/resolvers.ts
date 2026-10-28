@@ -278,10 +278,13 @@ function buildEditChangeSummary(changes: AdminPOCorrectionChanges): string {
 // foreign key error ("po_receipt_lines_po_line_id_fkey") that said nothing useful, and it did so
 // even when the only receipt behind the line was a CANCELLED one that never moved any stock
 // (PO-2026-0021, a 19-unit line that was never received). This names the real blockers, in plain
-// words, and lets a removal through when only cancelled receipts mention the line.
-// Receipts count by their status: confirmed (goods received), draft (a Store In in progress) and
-// reversed (received, then undone: the stock history keeps it) all block; cancelled does not, unless
-// stock actually moved for it.
+// words, and lets a removal through when nothing about the line is still in effect.
+// Receipts count by their status: confirmed (goods received) and draft (a Store In in progress)
+// block; cancelled and reversed do not. A reversed receipt (received, then undone) keeps its stock
+// moves as history, but they are all marked superseded (they net to zero), so they do not block
+// either: only a stock move that is still in effect (superseded_at IS NULL) does. When such a line
+// is removed, the history that still points at it is detached, not deleted (see
+// detachDeadLineHistory).
 type LineRemovalQuery = (
   sql: string,
   params: unknown[],
@@ -304,9 +307,10 @@ async function lineRemovalBlocks(
             (SELECT COALESCE(json_agg(json_build_object('n', pr.receipt_number, 's', pr.status)), '[]'::json)
                FROM po_receipt_lines prl JOIN po_receipts pr ON pr.id = prl.receipt_id
               WHERE prl.po_line_id = pl.id) AS receipts,
-            EXISTS (SELECT 1 FROM stock_moves sm WHERE sm.po_line_id = pl.id) AS has_stock_moves,
+            EXISTS (SELECT 1 FROM stock_moves sm
+                     WHERE sm.po_line_id = pl.id AND sm.superseded_at IS NULL) AS has_stock_moves,
             EXISTS (SELECT 1 FROM stock_moves sm JOIN po_receipt_lines prl ON prl.id = sm.po_receipt_line_id
-                     WHERE prl.po_line_id = pl.id) AS has_receipt_stock_moves,
+                     WHERE prl.po_line_id = pl.id AND sm.superseded_at IS NULL) AS has_receipt_stock_moves,
             EXISTS (SELECT 1 FROM vendor_invoice_lines v WHERE v.po_line_id = pl.id) AS on_invoice,
             EXISTS (SELECT 1 FROM po_return_items ri WHERE ri.po_line_id = pl.id) AS on_return,
             EXISTS (SELECT 1 FROM advance_settlement_lines a WHERE a.po_line_id = pl.id) AS on_advance,
@@ -335,12 +339,8 @@ async function lineRemovalBlocks(
       reasons.push(
         `it is on a Store In that is still a draft (receipt ${named('draft')}), so cancel that draft first`,
       )
-    if (named('reversed'))
-      reasons.push(
-        `it was received and the receipt reversed (receipt ${named('reversed')}), and that history is kept`,
-      )
     if (row.has_stock_moves === true || row.has_receipt_stock_moves === true)
-      reasons.push('stock has already moved for it')
+      reasons.push('stock movements for it are still in effect')
     if (row.on_invoice === true) reasons.push('it is on a vendor invoice')
     if (row.on_return === true) reasons.push('it is on a return')
     if (row.on_advance === true) reasons.push('it is on an advance settlement')
@@ -364,17 +364,54 @@ async function assertLinesRemovable(
   )
 }
 
-// What is left once assertLinesRemovable has passed: receipt rows of CANCELLED receipts that never
-// moved stock. They are history of a receipt that did not receive this line, and they are all that
-// still points at it, so they go with the line.
-async function clearCancelledReceiptLines(client: PoolClient, lineIds: string[]): Promise<void> {
-  if (lineIds.length === 0) return
+// What is left once assertLinesRemovable has passed: history of receipts that no longer receive
+// anything (CANCELLED ones, and REVERSED ones whose stock moves are all superseded). It is detached,
+// never deleted, so no stock ledger row is lost:
+//   - the stock moves that still point at the line or at one of its receipt lines keep every amount,
+//     quantity, location and date; only the two link columns (po_line_id, po_receipt_line_id) are
+//     cleared, and only on moves already marked superseded (the ledger is append-only, and these
+//     two columns are bookkeeping, not money or quantity);
+//   - the line's rows on those receipts are deleted, the rest of the receipt is untouched.
+// The detached moves are returned so the edit request can keep a record of them
+// (changes.detached_history): their old links stay recoverable.
+interface DetachedMove {
+  move_id: string
+  po_line_id: string | null
+  po_receipt_line_id: string | null
+}
+
+async function detachDeadLineHistory(
+  client: PoolClient,
+  lineIds: string[],
+): Promise<DetachedMove[]> {
+  if (lineIds.length === 0) return []
+  const detached = await client.query<DetachedMove>(
+    `WITH dead_receipt_lines AS (
+       SELECT prl.id FROM po_receipt_lines prl
+       JOIN po_receipts pr ON pr.id = prl.receipt_id
+       WHERE prl.po_line_id = ANY($1::uuid[]) AND pr.status IN ('cancelled', 'reversed')
+     ), old AS (
+       SELECT sm.id, sm.po_line_id, sm.po_receipt_line_id FROM stock_moves sm
+       WHERE sm.superseded_at IS NOT NULL
+         AND (sm.po_line_id = ANY($1::uuid[])
+              OR sm.po_receipt_line_id IN (SELECT id FROM dead_receipt_lines))
+       FOR UPDATE
+     ), cleared AS (
+       UPDATE stock_moves sm SET po_line_id = NULL, po_receipt_line_id = NULL
+       FROM old WHERE sm.id = old.id
+       RETURNING sm.id
+     )
+     SELECT old.id AS move_id, old.po_line_id, old.po_receipt_line_id
+       FROM old JOIN cleared ON cleared.id = old.id`,
+    [lineIds],
+  )
   await client.query(
     `DELETE FROM po_receipt_lines
       WHERE po_line_id = ANY($1::uuid[])
-        AND receipt_id IN (SELECT id FROM po_receipts WHERE status = 'cancelled')`,
+        AND receipt_id IN (SELECT id FROM po_receipts WHERE status IN ('cancelled', 'reversed'))`,
     [lineIds],
   )
+  return detached.rows
 }
 
 // Grouping/aggregation code throughout this file builds Map<K, V[]> (or
@@ -570,7 +607,7 @@ async function applyPOEditChanges(
   client: PoolClient,
   poId: string,
   changes: EditChanges,
-): Promise<void> {
+): Promise<DetachedMove[]> {
   const allowed = [
     'notes',
     'expected_delivery_date',
@@ -826,7 +863,7 @@ async function applyPOEditChanges(
   }
   const removedLineIds = (changes.lines?.removed ?? []).map(removedLineId)
   await assertLinesRemovable((sql, params) => client.query(sql, params), removedLineIds, { poId })
-  await clearCancelledReceiptLines(client, removedLineIds)
+  const detached = await detachDeadLineHistory(client, removedLineIds)
   await releaseLineStockReservations(client, removedLineIds)
   for (const lineId of removedLineIds) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND po_id=$2`, [lineId, poId])
@@ -834,6 +871,7 @@ async function applyPOEditChanges(
   if (changes.lines) {
     await recalcPOTotalsGW(client, poId)
   }
+  return detached
 }
 
 // G1 Phase 3 Milestone A — requisition equivalent of the PO rule in
@@ -868,7 +906,7 @@ async function applyRequisitionEditChanges(
   client: PoolClient,
   reqId: string,
   changes: EditChanges,
-): Promise<void> {
+): Promise<DetachedMove[]> {
   const allowed = [
     'notes',
     'priority',
@@ -986,11 +1024,12 @@ async function applyRequisitionEditChanges(
   await assertLinesRemovable((sql, params) => client.query(sql, params), removedLineIds, {
     requisitionId: reqId,
   })
-  await clearCancelledReceiptLines(client, removedLineIds)
+  const detached = await detachDeadLineHistory(client, removedLineIds)
   await releaseLineStockReservations(client, removedLineIds)
   for (const lineId of removedLineIds) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND requisition_id=$2`, [lineId, reqId])
   }
+  return detached
 }
 
 // Applies an edit request for real and keeps its money effect with it (changes.impact):
@@ -1004,13 +1043,23 @@ async function applyEditRecordingImpact(
   requestId: string,
 ): Promise<void> {
   const before = await snapshotEditLines(client, scope)
-  if ('poId' in scope) await applyPOEditChanges(client, scope.poId, changes)
-  else await applyRequisitionEditChanges(client, scope.requisitionId, changes)
+  const detached =
+    'poId' in scope
+      ? await applyPOEditChanges(client, scope.poId, changes)
+      : await applyRequisitionEditChanges(client, scope.requisitionId, changes)
   const after = await snapshotEditLines(client, scope)
   await client.query(
     `UPDATE po_edit_requests SET changes = jsonb_set(changes, '{impact}', $2::jsonb) WHERE id=$1`,
     [requestId, JSON.stringify(buildEditImpact(before, after))],
   )
+  // Where the removed line's old stock-move links pointed, so they stay recoverable
+  // (the moves themselves are kept; see detachDeadLineHistory).
+  if (detached.length > 0) {
+    await client.query(
+      `UPDATE po_edit_requests SET changes = jsonb_set(changes, '{detached_history}', $2::jsonb) WHERE id=$1`,
+      [requestId, JSON.stringify({ stock_moves: detached })],
+    )
+  }
 }
 
 // What approving a pending request would do to the totals: the real apply, run inside a

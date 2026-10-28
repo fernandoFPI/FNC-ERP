@@ -538,8 +538,9 @@ Don't re-derive, check these first.
     line itself said 0 received) was blocked by a row on a CANCELLED receipt (RCPT-1788941844304, 37 lines, no stock
     moves) that had nothing to do with receiving. Fix (`lineRemovalBlocks`, `assertLinesRemovable`,
     `clearCancelledReceiptLines` in `resolvers.ts`): name the real blockers in plain words at submission AND at approval,
-    for POs and requisitions; receipts count by STATUS (confirmed, draft and reversed block; cancelled does not unless
-    stock moved for it); when only cancelled receipts mention the line, their old rows go with it. The check is scoped to
+    for POs and requisitions; receipts count by STATUS (confirmed and draft block; cancelled and reversed do not), and
+    only a stock move still in effect (`superseded_at IS NULL`) blocks; see the follow-up below for what happens to the
+    history of a cancelled or reversed receipt. The check is scoped to
     the PO's or requisition's own lines, so naming another document's line reveals nothing.
     **My own mistake worth keeping:** I first told the user both pending removals were "goods received" because the
     query counted any `po_receipt_lines` row and the PO status was `goods_received`. A PO's status says nothing about one
@@ -551,3 +552,20 @@ Don't re-derive, check these first.
     the line and only that line, other receipts untouched, confirmed / draft / reversed / stock-moved / split-from /
     several reasons refused with the reason, the approval-time check for a request raised before the goods arrived and
     the plain text in the preview, no probing of another PO's lines, an untouched line still removed).
+    **Follow-up, same day it shipped (NF-PO-2026-0066): the advice in the message led into a second block.** The message
+    for a confirmed receipt said "reverse that receipt first". The user did, with the real `reverseReceipt`, and the
+    removal was refused again: a reversed receipt keeps the receipt and its stock moves as history (both moves
+    superseded, netting to zero) and the first version treated that history as a blocker. A refusal that tells the user
+    how to fix it must be tested along that exact path, with the real mutations (receive, confirm, reverse, then
+    remove), not with rows inserted by hand; the hand-built "reversed" fixture is what let the dead end through. Rule
+    now: a reversed or cancelled receipt does not block, and a stock move blocks only while it is in effect. When such a
+    line is removed its history is DETACHED, never deleted (`detachDeadLineHistory`): the line's rows leave the
+    receipt, and the stock moves that still point at the line or its receipt lines keep every amount, quantity,
+    location and date and only lose the two link columns (`po_line_id`, `po_receipt_line_id`), which is allowed on
+    superseded moves only (the ledger is append-only; `stock_moves` has an insert trigger for balances and no update
+    guard). The old links are written to the edit request (`changes.detached_history.stock_moves`) so they stay
+    recoverable. The preview (`dryRunEditImpact`) runs the same code inside its rolled-back transaction, which is why
+    the detach must go through the apply function's own `client` and never the shared `pool`. A mutation check caught a
+    gap in the first set of tests: both live-move tests linked the move through the line AND the receipt line, so
+    either half of the check alone passed; each path now has its own test (a Store Out leaves a move linked to the line
+    only).
