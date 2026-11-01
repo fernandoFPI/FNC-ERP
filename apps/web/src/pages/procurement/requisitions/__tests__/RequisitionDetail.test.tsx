@@ -102,10 +102,14 @@ function mockReq(
   availability: Record<string, unknown>[] = [],
   childPOs: Record<string, unknown>[] = [],
   materialIssues: Record<string, unknown>[] = [],
+  lineComments: Record<string, unknown>[] = [],
 ) {
   mockUseQuery.mockImplementation((doc: unknown, opts?: { variables?: Record<string, unknown> }) => {
     const opName = (doc as { definitions?: { kind?: string; name?: { value?: string } }[] }).definitions?.find((d) => d.kind === 'OperationDefinition')?.name
       ?.value
+    if (opName === 'POLineComments') {
+      return { data: { poLineComments: lineComments }, loading: false, refetch: vi.fn() }
+    }
     if (opName === 'RequisitionChildPurchaseOrders') {
       return { data: { requisitionChildPurchaseOrders: childPOs }, loading: false, refetch: vi.fn() }
     }
@@ -425,6 +429,123 @@ describe('RequisitionDetail', () => {
     expect(screen.getByText('Qty to buy: 12.5 unit')).toBeInTheDocument()
     // nothing is covered from stock, so there's no "from stock" note
     expect(screen.queryByText(/requested, .* from stock/i)).not.toBeInTheDocument()
+  })
+
+  // Procurement can leave a note on an item while pricing it, from the Lines
+  // table's Notes column. It is the same thread as the PO page's "+ Note"
+  // (po_line_comments). The market-pricing line card itself carries only the
+  // price and currency: no note button and no vendor quote ref field.
+  describe('line notes', () => {
+    const comment = (overrides: Record<string, unknown> = {}) => ({
+      id: 'c-1',
+      po_line_id: 'line-1',
+      comment: 'Vendor can only deliver half this week',
+      created_by_name: 'Nadia Saleh',
+      created_at: '2026-01-16T09:30:00.000Z',
+      flag: null,
+      resolved: false,
+      resolved_at: null,
+      ...overrides,
+    })
+
+    it('market_pricing: the only note button is the Lines table one; the line card has none', async () => {
+      mockReq({ status: 'market_pricing', callerHasMarketPricingPosition: true })
+      const RequisitionDetail = (await import('../RequisitionDetail')).default
+      wrap(<RequisitionDetail />)
+      // the market-pricing form is on screen, and still just the table's button
+      expect(screen.getByPlaceholderText('0.00')).toBeInTheDocument()
+      expect(screen.getAllByRole('button', { name: '+ Note' })).toHaveLength(1)
+    })
+
+    it('market_pricing: the line card has no vendor quote ref field', async () => {
+      mockReq({ status: 'market_pricing', callerHasMarketPricingPosition: true })
+      const RequisitionDetail = (await import('../RequisitionDetail')).default
+      wrap(<RequisitionDetail />)
+      expect(screen.queryByText(/vendor quote ref/i)).not.toBeInTheDocument()
+    })
+
+    it('market_pricing: submit sends only the line, price and currency (no vendorQuoteRef)', async () => {
+      const submitMock = vi.fn().mockResolvedValue({})
+      mockUseMutation.mockReturnValue([submitMock, { loading: false }])
+      mockReq({ status: 'market_pricing', callerHasMarketPricingPosition: true })
+      const RequisitionDetail = (await import('../RequisitionDetail')).default
+      wrap(<RequisitionDetail />)
+      fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '150' } })
+      fireEvent.click(screen.getByRole('button', { name: /submit to price verification/i }))
+      expect(submitMock).toHaveBeenCalledWith({
+        variables: {
+          id: 'req-1',
+          linePrices: [{ lineId: 'line-1', marketPrice: 150, currencyCode: 'IQD' }],
+        },
+      })
+    })
+
+    it('market_pricing: the Lines table button opens the note thread for that item', async () => {
+      mockReq({ status: 'market_pricing', callerHasMarketPricingPosition: true })
+      const RequisitionDetail = (await import('../RequisitionDetail')).default
+      wrap(<RequisitionDetail />)
+      expect(screen.queryByPlaceholderText('Type your comment…')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '+ Note' }))
+      expect(screen.getByPlaceholderText('Type your comment…')).toBeInTheDocument()
+      expect(screen.getByText('No comments yet.')).toBeInTheDocument()
+      // the modal names the item the note is for (the name also appears in the table and card)
+      expect(screen.getByText('Item Description: Cement bags')).toBeInTheDocument()
+    })
+
+    it('shows the comment count once the line has notes', async () => {
+      mockReq(
+        { status: 'market_pricing', callerHasMarketPricingPosition: true },
+        [],
+        [],
+        [],
+        [comment(), comment({ id: 'c-2', comment: 'Second note' })],
+      )
+      const RequisitionDetail = (await import('../RequisitionDetail')).default
+      wrap(<RequisitionDetail />)
+      expect(screen.getByRole('button', { name: '💬 2' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '+ Note' })).not.toBeInTheDocument()
+    })
+
+    it('shows the most severe unresolved flag instead of the count, like the PO page', async () => {
+      mockReq(
+        { status: 'market_pricing', callerHasMarketPricingPosition: true },
+        [],
+        [],
+        [],
+        [
+          comment({ id: 'c-1', flag: 'info' }),
+          comment({ id: 'c-2', flag: 'dispute' }),
+          comment({ id: 'c-3', flag: 'warning', resolved: true }),
+        ],
+      )
+      const RequisitionDetail = (await import('../RequisitionDetail')).default
+      wrap(<RequisitionDetail />)
+      // dispute outranks info; the resolved warning is not counted as open
+      expect(screen.getByRole('button', { name: /Dispute · 2 open/ })).toBeInTheDocument()
+    })
+
+    it('opens the thread with the existing comments listed', async () => {
+      mockReq(
+        { status: 'market_pricing', callerHasMarketPricingPosition: true },
+        [],
+        [],
+        [],
+        [comment()],
+      )
+      const RequisitionDetail = (await import('../RequisitionDetail')).default
+      wrap(<RequisitionDetail />)
+      fireEvent.click(screen.getByRole('button', { name: '💬 1' }))
+      expect(screen.getByText('Vendor can only deliver half this week')).toBeInTheDocument()
+      expect(screen.getByText(/Nadia Saleh/)).toBeInTheDocument()
+    })
+
+    it('the Lines table has a Notes column at every stage, not only market pricing', async () => {
+      mockReq({ status: 'draft' })
+      const RequisitionDetail = (await import('../RequisitionDetail')).default
+      wrap(<RequisitionDetail />)
+      expect(screen.getByRole('columnheader', { name: 'Notes' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '+ Note' })).toBeInTheDocument()
+    })
   })
 
   it('market_pricing: a partly stock-covered line shows only what is left to buy, plus how it splits', async () => {

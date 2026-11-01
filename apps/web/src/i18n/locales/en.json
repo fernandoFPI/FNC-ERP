@@ -1032,6 +1032,7 @@
     "detail": {
       "aLine": "a line",
       "addLine": "+ Add line",
+      "addNote": "+ Note",
       "addressedAwaitingConfirmation": "Addressed — awaiting confirmation",
       "approvalLog": "Approval Log",
       "approve": "Approve",
@@ -1122,6 +1123,7 @@
       "noLongerEditableBuyingAlreadyForked": "No longer editable — buying already forked this into one or more Purchase Orders, each with its own frozen copy of this value.",
       "noNewLinesAdded": "No new lines added",
       "noStockAvailableAtAnyLocation": "No stock available at any location for this item.",
+      "noteFlagOpen": "{{flag}} · {{n}} open",
       "notReadyToApprove": "Not ready to approve?",
       "notSet": "— Not set —",
       "notSet2": "not set",
@@ -1201,7 +1203,6 @@
       "unitPrice": "Unit Price",
       "uom": "UOM",
       "vendor": "Vendor",
-      "vendorQuoteRefOptional": "Vendor quote ref (optional)",
       "verifiedPrice": "Verified price",
       "waitingOnEveryLineToResolve": "Waiting on every line to resolve — either its stock-covered portion issued via Store Out, or its purchased portion's child PO reaching a finished state.",
       "whatSWrongWithThisLine": "What's wrong with this line?",

@@ -1104,6 +1104,7 @@
     "detail": {
       "aLine": "بند",
       "addLine": "+ إضافة بند",
+      "addNote": "+ ملاحظة",
       "addressedAwaitingConfirmation": "تمت المعالجة — بانتظار التأكيد",
       "approvalLog": "سجل الموافقات",
       "approve": "موافقة",
@@ -1202,6 +1203,7 @@
       "noLongerEditableBuyingAlreadyForked": "لم يعد قابلًا للتعديل — فقد تفرّع الشراء منه إلى أمر شراء واحد أو أكثر، لكل منها نسخة مجمّدة من هذه القيمة.",
       "noNewLinesAdded": "لم تُضف بنود جديدة",
       "noStockAvailableAtAnyLocation": "لا يتوفر مخزون لهذه المادة في أي موقع.",
+      "noteFlagOpen": "{{flag}} · {{n}} مفتوح",
       "notReadyToApprove": "غير جاهز للموافقة؟",
       "notSet": "— غير محدد —",
       "notSet2": "غير محدد",
@@ -1285,7 +1287,6 @@
       "unitPrice": "سعر الوحدة",
       "uom": "وحدة القياس",
       "vendor": "المورّد",
-      "vendorQuoteRefOptional": "مرجع عرض سعر المورّد (اختياري)",
       "verifiedPrice": "السعر الموثّق",
       "waitingOnEveryLineToResolve": "بانتظار معالجة كل بند — إما صرف الجزء المغطّى من المخزون عبر «إخراج مخزني»، أو وصول أمر الشراء الفرعي للجزء المشترى إلى حالة منتهية.",
       "whatSWrongWithThisLine": "ما المشكلة في هذا البند؟",

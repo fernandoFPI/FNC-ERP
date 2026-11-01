@@ -27,6 +27,7 @@ import {
 } from '../../../graphql/requisitions'
 import { RESOLVE_LINE_FLAG, PO_LINE_COMMENTS_QUERY } from '../../../graphql/procurement'
 import { LineCommentsModal, type LineComment } from './LineCommentsModal'
+import { LineNoteButton } from './LineNoteButton'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { MATERIAL_ISSUES_QUERY } from '../../../graphql/projects'
 import { useAuthStore } from '../../../store/authStore'
@@ -633,7 +634,6 @@ export default function RequisitionDetail() {
   const [storePrices, setStorePrices] = useState<Record<string, string>>({})
   const [marketPrices, setMarketPrices] = useState<Record<string, string>>({})
   const [marketCurrency, setMarketCurrency] = useState<Record<string, string>>({})
-  const [quoteRefs, setQuoteRefs] = useState<Record<string, string>>({})
   const [verifiedPrices, setVerifiedPrices] = useState<Record<string, string>>({})
   const [rejectReason, setRejectReason] = useState('')
   // Per-line review flags for the price_verification/pending_approval reject
@@ -786,6 +786,15 @@ export default function RequisitionDetail() {
     fontSize: '12px',
     color: theme.textMuted,
     marginBottom: '14px',
+  }
+
+  // Opens the line's note thread (the same modal the PO page's "+ Note"
+  // opens) — used by the Lines table's Notes column.
+  const openLineNote = (l: ReqLine) => {
+    // An empty description falls back to the product name, so test truthiness
+    // rather than null-ness (what `??` would do).
+    const name = l.description ? l.description : (l.product_name ?? '')
+    setCommentModal({ lineId: l.id, description: name })
   }
 
   // ── Lines table (columns adapt to current stage) ────────────────────────
@@ -1024,6 +1033,18 @@ export default function RequisitionDetail() {
           </span>
         )
       },
+    },
+    {
+      key: 'notes',
+      header: t('req.detail.notes'),
+      render: (l) => (
+        <LineNoteButton
+          comments={lineComments[l.id] ?? []}
+          onClick={() => {
+            openLineNote(l)
+          }}
+        />
+      ),
     },
   ]
 
@@ -2676,15 +2697,6 @@ export default function RequisitionDetail() {
                                   options={CURRENCIES.map((c) => ({ value: c, label: c }))}
                                 />
                               </div>
-                              <div style={{ flex: 1, minWidth: '160px' }}>
-                                <Input
-                                  label={t('req.detail.vendorQuoteRefOptional')}
-                                  value={quoteRefs[l.id] ?? ''}
-                                  onChange={(e) => {
-                                    setQuoteRefs((prev) => ({ ...prev, [l.id]: e.target.value }))
-                                  }}
-                                />
-                              </div>
                             </div>
                           </div>
                         )
@@ -2718,7 +2730,6 @@ export default function RequisitionDetail() {
                                           (l.market_price != null ? String(l.market_price) : ''),
                                       ),
                                       currencyCode: marketCurrency[l.id] ?? l.currency_code,
-                                      vendorQuoteRef: quoteRefs[l.id] || undefined,
                                     })),
                                   },
                                 })
