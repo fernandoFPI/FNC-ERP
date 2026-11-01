@@ -2205,11 +2205,13 @@ export type MaterialReturn = {
   id: Scalars['ID']['output'];
   lines: Array<MaterialReturnLine>;
   notes?: Maybe<Scalars['String']['output']>;
-  poId: Scalars['ID']['output'];
+  poId?: Maybe<Scalars['ID']['output']>;
   poNumber?: Maybe<Scalars['String']['output']>;
   projectCode?: Maybe<Scalars['String']['output']>;
   projectId?: Maybe<Scalars['ID']['output']>;
   projectName?: Maybe<Scalars['String']['output']>;
+  requisitionId?: Maybe<Scalars['ID']['output']>;
+  requisitionNumber?: Maybe<Scalars['String']['output']>;
   returnDate: Scalars['String']['output'];
   returnNumber: Scalars['String']['output'];
 };
@@ -2217,7 +2219,8 @@ export type MaterialReturn = {
 export type MaterialReturnInput = {
   lines: Array<MaterialReturnLineInput>;
   notes?: InputMaybe<Scalars['String']['input']>;
-  poId: Scalars['ID']['input'];
+  poId?: InputMaybe<Scalars['ID']['input']>;
+  requisitionId?: InputMaybe<Scalars['ID']['input']>;
   returnDate?: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -9220,13 +9223,15 @@ export type ReturnableIssueLine = {
   issueId: Scalars['ID']['output'];
   issueLineId: Scalars['ID']['output'];
   issueNumber: Scalars['String']['output'];
-  poId: Scalars['ID']['output'];
+  poId?: Maybe<Scalars['ID']['output']>;
   poNumber?: Maybe<Scalars['String']['output']>;
   productId: Scalars['ID']['output'];
   productName?: Maybe<Scalars['String']['output']>;
   qtyIssued: Scalars['Float']['output'];
   qtyReturnable: Scalars['Float']['output'];
   qtyReturnedSoFar: Scalars['Float']['output'];
+  requisitionId?: Maybe<Scalars['ID']['output']>;
+  requisitionNumber?: Maybe<Scalars['String']['output']>;
   sku?: Maybe<Scalars['String']['output']>;
   unitCost: Scalars['Float']['output'];
   uom?: Maybe<Scalars['String']['output']>;

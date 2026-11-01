@@ -1752,7 +1752,7 @@
       "newMaterialReturn": "+ New Material Return",
       "newMaterialReturn2": "New Material Return",
       "noMaterialReturnsYet": "No material returns yet",
-      "noReturnableItemsThisItemHas": "No returnable items — this item has nothing outstanding on any purchase order (either never ordered, or already fully returned).",
+      "noReturnableItemsThisItemHas": "No returnable items — this item has nothing left to return on any purchase order or requisition (either never issued, or already fully returned).",
       "noReturnableItemsThisPoHas": "No returnable items — this PO has no issued Store Out lines and no direct-to-jobsite deliveries with anything still outstanding.",
       "notes": "Notes",
       "optionalNotes": "Optional notes…",

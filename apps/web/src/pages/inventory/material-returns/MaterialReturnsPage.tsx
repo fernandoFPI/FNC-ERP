@@ -40,8 +40,12 @@ interface MR {
   id: string
   returnNumber: string
   returnDate: string
-  poId: string
+  // Exactly one of the two parents is set (a Store Out made against a
+  // requisition has no PO).
+  poId: string | null
   poNumber: string | null
+  requisitionId: string | null
+  requisitionNumber: string | null
   projectId: string | null
   projectCode: string | null
   projectName: string | null
@@ -55,8 +59,10 @@ interface ReturnableIssueLine {
   issueId: string
   issueNumber: string
   issueDate: string
-  poId: string
+  poId: string | null
   poNumber: string | null
+  requisitionId: string | null
+  requisitionNumber: string | null
   productId: string
   productName: string | null
   sku: string | null
@@ -81,6 +87,14 @@ interface ReturnableDirectDeliveryLine {
   qtyVendorReturned: number
   qtyReturnable: number
   unitCost: number
+}
+// What a returnable line says about the document it belongs to — a Store Out line carries a PO
+// or a requisition, a direct-delivery line only ever a PO.
+interface ReturnParent {
+  poId: string | null
+  poNumber: string | null
+  requisitionId?: string | null
+  requisitionNumber?: string | null
 }
 interface PO {
   id: string
@@ -267,33 +281,47 @@ export default function MaterialReturnsPage() {
   async function handleCreate() {
     if (!canSubmit) return
 
-    // Results can span more than one PO once "Narrow by item" is used
-    // without a specific PO selected — createMaterialReturn takes exactly
-    // one poId, so group the pending lines by their resolved PO and submit
-    // one return per group.
+    // Results can span more than one PO or requisition once "Narrow by item"
+    // is used without a specific PO selected — createMaterialReturn takes
+    // exactly one parent (a poId or a requisitionId), so group the pending
+    // lines by it and submit one return per group. A Store Out made against a
+    // requisition has no PO, so its group is keyed by the requisition.
     const groups = new Map<
       string,
-      { poNumber: string | null; issueLines: typeof pendingIssueLines; directLines: typeof pendingDirectLines }
+      {
+        poId: string | null
+        requisitionId: string | null
+        label: string | null
+        issueLines: typeof pendingIssueLines
+        directLines: typeof pendingDirectLines
+      }
     >()
-    for (const p of pendingIssueLines) {
-      const g = groups.get(p.line.poId) ?? { poNumber: p.line.poNumber, issueLines: [], directLines: [] }
-      g.issueLines.push(p)
-      groups.set(p.line.poId, g)
+    const groupFor = (line: ReturnParent) => {
+      const key = line.poId ?? line.requisitionId ?? ''
+      let g = groups.get(key)
+      if (!g) {
+        g = {
+          poId: line.poId,
+          requisitionId: line.poId ? null : (line.requisitionId ?? null),
+          label: line.poNumber ?? line.requisitionNumber ?? null,
+          issueLines: [],
+          directLines: [],
+        }
+        groups.set(key, g)
+      }
+      return g
     }
-    for (const p of pendingDirectLines) {
-      const g = groups.get(p.line.poId) ?? { poNumber: p.line.poNumber, issueLines: [], directLines: [] }
-      g.directLines.push(p)
-      groups.set(p.line.poId, g)
-    }
+    for (const p of pendingIssueLines) groupFor(p.line).issueLines.push(p)
+    for (const p of pendingDirectLines) groupFor(p.line).directLines.push(p)
 
     const succeeded: string[] = []
     const failed: { poNumber: string; error: string }[] = []
-    for (const [poId, g] of groups) {
+    for (const [groupKey, g] of groups) {
       try {
         await createReturn({
           variables: {
             input: {
-              poId,
+              ...(g.poId ? { poId: g.poId } : { requisitionId: g.requisitionId }),
               notes: formNotes || null,
               lines: [
                 ...g.issueLines.map((p) => ({
@@ -310,9 +338,9 @@ export default function MaterialReturnsPage() {
             },
           },
         })
-        succeeded.push(g.poNumber ?? poId)
+        succeeded.push(g.label ?? groupKey)
       } catch (e: unknown) {
-        failed.push({ poNumber: g.poNumber ?? poId, error: e instanceof Error ? e.message : t('inv.matReturns.failedToCreate') })
+        failed.push({ poNumber: g.label ?? groupKey, error: e instanceof Error ? e.message : t('inv.matReturns.failedToCreate') })
       }
     }
 
@@ -468,7 +496,7 @@ export default function MaterialReturnsPage() {
                   </div>
                   <div>
                     <span style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
-                      {r.poNumber ?? '—'}
+                      {r.poNumber ?? r.requisitionNumber ?? '—'}
                     </span>
                     {r.projectCode && (
                       <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
@@ -662,7 +690,7 @@ export default function MaterialReturnsPage() {
                             padding: '2px 6px',
                           }}
                         >
-                          {l.poNumber ?? 'PO'}
+                          {l.poNumber ?? l.requisitionNumber ?? 'PO'}
                         </span>
                       )}
                     </div>

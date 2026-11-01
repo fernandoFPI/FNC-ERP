@@ -4383,6 +4383,71 @@ async function resolveInterCompanyFxRate(
   return inverseRate > 0 ? 1 / inverseRate : 1
 }
 
+// The company's name for a stock-move note ("Store Out SO-00014 to company
+// Nishtimani Yakam"). These notes used to interpolate the raw company id, so
+// the Stock Moves screen showed "to company 00000000-0000-0000-…". Falls back
+// to the id only if the company row is somehow missing, so a note is never
+// empty and never blocks the move being written.
+async function companyNameForNote(
+  client: Pick<PoolClient, 'query'>,
+  companyId: string,
+): Promise<string> {
+  const res = await client.query<{ name: string | null }>(
+    `SELECT name FROM companies WHERE id=$1`,
+    [companyId],
+  )
+  const name = res.rows[0]?.name?.trim()
+  return name ? name : companyId
+}
+
+// One definition of a Material Return row as the API returns it, used by the
+// `materialReturns` list AND by createMaterialReturn's own response, so the two
+// can't drift (a return hangs off a PO or, since migration 310, a requisition;
+// the other one is null).
+const MATERIAL_RETURN_SELECT = `SELECT pmr.*,
+           p_proj.code AS project_code, p_proj.name AS project_name,
+           po.po_number, req.requisition_number,
+           COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_name,
+           COALESCE(
+             JSON_AGG(JSON_BUILD_OBJECT(
+               'id', pmrl.id, 'issueLineId', pmrl.issue_line_id, 'poLineId', pmrl.po_line_id, 'productId', pmrl.product_id,
+               'productName', prod.name, 'sku', prod.sku,
+               'toLocationId', pmrl.to_location_id, 'toLocationName', loc.name,
+               'qtyReturned', pmrl.qty_returned, 'unitCost', pmrl.unit_cost, 'totalCost', pmrl.total_cost
+             ) ORDER BY pmrl.created_at) FILTER (WHERE pmrl.id IS NOT NULL),
+             '[]'
+           ) AS lines
+         FROM project_material_returns pmr
+         LEFT JOIN projects p_proj ON p_proj.id = pmr.project_id
+         LEFT JOIN purchase_orders po ON po.id = pmr.po_id
+         LEFT JOIN requisitions req ON req.id = pmr.requisition_id AND req.company_id = pmr.company_id
+         LEFT JOIN users u ON u.id = pmr.created_by
+         LEFT JOIN project_material_return_lines pmrl ON pmrl.return_id = pmr.id
+         LEFT JOIN products prod ON prod.id = pmrl.product_id
+         LEFT JOIN stock_locations loc ON loc.id = pmrl.to_location_id`
+const MATERIAL_RETURN_GROUP_ORDER = `GROUP BY pmr.id, p_proj.code, p_proj.name, po.po_number, req.requisition_number,
+                  u.first_name, u.last_name, u.email
+         ORDER BY pmr.created_at DESC`
+
+function mapMaterialReturnRow(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    returnNumber: r.return_number,
+    returnDate: r.return_date,
+    poId: r.po_id ?? null,
+    poNumber: r.po_number ?? null,
+    requisitionId: r.requisition_id ?? null,
+    requisitionNumber: r.requisition_number ?? null,
+    projectId: r.project_id ?? null,
+    projectCode: r.project_code ?? null,
+    projectName: r.project_name ?? null,
+    notes: r.notes ?? null,
+    createdByName: r.created_by_name ?? null,
+    createdAt: r.created_at,
+    lines: (r.lines as unknown[] | null) ?? [],
+  }
+}
+
 // Bridges a material return whose destination is the group's central
 // warehouse — a different company than the one recording the return — using
 // the same two-sided virtual_out/virtual_in pattern issueMaterialIssue uses
@@ -4482,6 +4547,7 @@ async function postCrossCompanyMaterialReturnMove(
       userId,
     ],
   )
+  const callerCompanyName = await companyNameForNote(client, callerCompanyId)
   const toMove = await client.query<{ id: string }>(
     `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
      VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_return',$8,$9,$10) RETURNING id`,
@@ -4494,7 +4560,7 @@ async function postCrossCompanyMaterialReturnMove(
       unitCost,
       totalCost,
       returnId,
-      `Material return ${returnNumber} from company ${callerCompanyId}`,
+      `Material return ${returnNumber} from company ${callerCompanyName}`,
       userId,
     ],
   )
@@ -9888,45 +9954,12 @@ export const resolvers = {
         params.push(args.productId)
       }
       const result = await query(
-        `SELECT pmr.*,
-           p_proj.code AS project_code, p_proj.name AS project_name,
-           po.po_number,
-           COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_name,
-           COALESCE(
-             JSON_AGG(JSON_BUILD_OBJECT(
-               'id', pmrl.id, 'issueLineId', pmrl.issue_line_id, 'poLineId', pmrl.po_line_id, 'productId', pmrl.product_id,
-               'productName', prod.name, 'sku', prod.sku,
-               'toLocationId', pmrl.to_location_id, 'toLocationName', loc.name,
-               'qtyReturned', pmrl.qty_returned, 'unitCost', pmrl.unit_cost, 'totalCost', pmrl.total_cost
-             ) ORDER BY pmrl.created_at) FILTER (WHERE pmrl.id IS NOT NULL),
-             '[]'
-           ) AS lines
-         FROM project_material_returns pmr
-         LEFT JOIN projects p_proj ON p_proj.id = pmr.project_id
-         LEFT JOIN purchase_orders po ON po.id = pmr.po_id
-         LEFT JOIN users u ON u.id = pmr.created_by
-         LEFT JOIN project_material_return_lines pmrl ON pmrl.return_id = pmr.id
-         LEFT JOIN products prod ON prod.id = pmrl.product_id
-         LEFT JOIN stock_locations loc ON loc.id = pmrl.to_location_id
+        `${MATERIAL_RETURN_SELECT}
          WHERE ${conditions.join(' AND ')}
-         GROUP BY pmr.id, p_proj.code, p_proj.name, po.po_number, u.first_name, u.last_name, u.email
-         ORDER BY pmr.created_at DESC`,
+         ${MATERIAL_RETURN_GROUP_ORDER}`,
         params,
       )
-      return result.rows.map((r: Record<string, unknown>) => ({
-        id: r.id,
-        returnNumber: r.return_number,
-        returnDate: r.return_date,
-        poId: r.po_id,
-        poNumber: r.po_number ?? null,
-        projectId: r.project_id ?? null,
-        projectCode: r.project_code ?? null,
-        projectName: r.project_name ?? null,
-        notes: r.notes ?? null,
-        createdByName: r.created_by_name ?? null,
-        createdAt: r.created_at,
-        lines: (r.lines as unknown[] | null) ?? [],
-      }))
+      return result.rows.map(mapMaterialReturnRow)
     },
 
     // Every Store Out line belonging to an 'issued' project_material_issues
@@ -9943,15 +9976,18 @@ export const resolvers = {
       if (!ctx.auth) return []
       if (!args.poId && !args.projectId && !args.productId) return []
       await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
-      // po_id IS NOT NULL always applies (not just when poId is given) —
-      // createMaterialReturn requires one, so a manual/ad-hoc Store Out with
-      // no PO at all can never actually be completed through this flow.
+      // A parent (po_id or requisition_id) always applies, not just when
+      // poId is given — createMaterialReturn needs one of them, so a manual/
+      // ad-hoc Store Out with neither can never actually be completed through
+      // this flow. A requisition's Store Out has no po_id (since the G1
+      // requisition split, stock-covered lines are issued against the
+      // requisition), so requiring po_id alone hid every one of them.
       // Harmless for the poId-scoped case (that condition already implies
-      // it); load-bearing once productId alone can match across every PO.
+      // it); load-bearing once productId alone can match across every parent.
       const conditions: string[] = [
         'pmi.company_id=$1',
         "pmi.status='issued'",
-        'pmi.po_id IS NOT NULL',
+        '(pmi.po_id IS NOT NULL OR pmi.requisition_id IS NOT NULL)',
       ]
       const params: unknown[] = [ctx.auth.companyId]
       if (args.poId) {
@@ -9968,7 +10004,7 @@ export const resolvers = {
       }
       const result = await query(
         `SELECT pmil.id AS issue_line_id, pmi.id AS issue_id, pmi.issue_number, pmi.issue_date,
-                pmi.po_id, po.po_number,
+                pmi.po_id, po.po_number, pmi.requisition_id, req.requisition_number,
                 pmil.product_id, prod.name AS product_name, prod.sku, prod.uom,
                 pmil.qty_issued, pmil.unit_cost,
                 -- currency-safe: qty_returned_so_far is a quantity, not money
@@ -9978,6 +10014,7 @@ export const resolvers = {
          FROM project_material_issue_lines pmil
          JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
          LEFT JOIN purchase_orders po ON po.id = pmi.po_id
+         LEFT JOIN requisitions req ON req.id = pmi.requisition_id AND req.company_id = pmi.company_id
          LEFT JOIN products prod ON prod.id = pmil.product_id
          LEFT JOIN stock_locations loc ON loc.id = pmil.to_location_id
          LEFT JOIN (
@@ -9995,8 +10032,10 @@ export const resolvers = {
         issueId: r.issue_id,
         issueNumber: r.issue_number,
         issueDate: r.issue_date,
-        poId: r.po_id,
+        poId: r.po_id ?? null,
         poNumber: r.po_number ?? null,
+        requisitionId: r.requisition_id ?? null,
+        requisitionNumber: r.requisition_number ?? null,
         productId: r.product_id,
         productName: r.product_name ?? null,
         sku: r.sku ?? null,
@@ -25185,6 +25224,8 @@ export const resolvers = {
                 )
               ).rows[0].id) as string
 
+            const issuingCompanyName = await companyNameForNote(client, fromCompanyId)
+            const receivingCompanyName = await companyNameForNote(client, companyId)
             const fromMove = await client.query(
               `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id)
                VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10,$11) RETURNING id`,
@@ -25197,7 +25238,7 @@ export const resolvers = {
                 avco,
                 qty * avco,
                 args.id,
-                `Store Out ${String(issue.issue_number)} to company ${companyId}`,
+                `Store Out ${String(issue.issue_number)} to company ${receivingCompanyName}`,
                 ctx.auth.userId,
                 line.po_line_id,
               ],
@@ -25214,7 +25255,7 @@ export const resolvers = {
                 transferPrice,
                 qty * transferPrice,
                 args.id,
-                `Store Out ${String(issue.issue_number)} from company ${fromCompanyId}`,
+                `Store Out ${String(issue.issue_number)} from company ${issuingCompanyName}`,
                 ctx.auth.userId,
                 line.po_line_id,
               ],
@@ -25568,7 +25609,11 @@ export const resolvers = {
       _: unknown,
       args: {
         input: {
-          poId: string
+          // Exactly one of poId / requisitionId: a return hangs off the PO its
+          // material was sourced through, or — for a Store Out made against a
+          // requisition (the G1 flow, no po_id) — off that requisition.
+          poId?: string
+          requisitionId?: string
           returnDate?: string
           notes?: string
           lines: {
@@ -25586,9 +25631,17 @@ export const resolvers = {
       const { input } = args
       if (!input.lines || input.lines.length === 0)
         throw new Error('A material return needs at least one line')
+      if (!!input.poId === !!input.requisitionId)
+        throw new Error('A material return needs exactly one of poId or requisitionId')
       for (const line of input.lines) {
         if (!!line.issueLineId === !!line.poLineId)
           throw new Error('Each return line needs exactly one of issueLineId or poLineId')
+        // A direct-to-jobsite delivery is a line of a purchase order, never of
+        // a requisition's own Store Out.
+        if (input.requisitionId && line.poLineId)
+          throw new Error(
+            'A requisition return can only bring back Store Out lines, not purchase-order deliveries',
+          )
       }
 
       // project_id is deliberately nullable here — the PO this return is
@@ -25600,13 +25653,24 @@ export const resolvers = {
       // kept distinct from project_id here so a direct-delivery return's
       // offset always lands on the exact same project the forward entry
       // used, regardless of whether the two columns happen to agree.
-      const poRow = await query<{ project_id: string | null; linked_project_id: string | null }>(
-        `SELECT project_id, linked_project_id FROM purchase_orders WHERE id=$1 AND company_id=$2`,
-        [input.poId, ctx.auth.companyId],
-      )
-      if (!poRow.rows[0]) throw new Error('Purchase order not found')
-      const projectId = poRow.rows[0].project_id
-      const linkedProjectId = poRow.rows[0].linked_project_id
+      let projectId: string | null
+      let linkedProjectId: string | null = null
+      if (input.requisitionId) {
+        const reqRow = await query<{ project_id: string | null }>(
+          `SELECT project_id FROM requisitions WHERE id=$1 AND company_id=$2`,
+          [input.requisitionId, ctx.auth.companyId],
+        )
+        if (!reqRow.rows[0]) throw new Error('Requisition not found')
+        projectId = reqRow.rows[0].project_id
+      } else {
+        const poRow = await query<{ project_id: string | null; linked_project_id: string | null }>(
+          `SELECT project_id, linked_project_id FROM purchase_orders WHERE id=$1 AND company_id=$2`,
+          [input.poId, ctx.auth.companyId],
+        )
+        if (!poRow.rows[0]) throw new Error('Purchase order not found')
+        projectId = poRow.rows[0].project_id
+        linkedProjectId = poRow.rows[0].linked_project_id
+      }
 
       const client = await pool.connect()
       let returnId: string
@@ -25620,12 +25684,13 @@ export const resolvers = {
         await client.query('BEGIN')
         const returnNumber = await nextDocumentNumber(ctx.auth.companyId, 'material_return', 'MRET')
         const headerRes = await client.query<{ id: string }>(
-          `INSERT INTO project_material_returns (company_id, project_id, po_id, return_number, return_date, notes, created_by)
-           VALUES ($1,$2,$3,$4,COALESCE($5::date,CURRENT_DATE),$6,$7) RETURNING id`,
+          `INSERT INTO project_material_returns (company_id, project_id, po_id, requisition_id, return_number, return_date, notes, created_by)
+           VALUES ($1,$2,$3,$4,$5,COALESCE($6::date,CURRENT_DATE),$7,$8) RETURNING id`,
           [
             ctx.auth.companyId,
             projectId,
-            input.poId,
+            input.poId ?? null,
+            input.requisitionId ?? null,
             returnNumber,
             input.returnDate ?? null,
             input.notes ?? null,
@@ -25633,7 +25698,11 @@ export const resolvers = {
           ],
         )
         returnId = headerRes.rows[0].id
-        let totalReturnCost = 0
+        // Store Out cost to offset, per project. issueMaterialIssue charged the
+        // Store Out's OWN project_id, so a requisition return reverses exactly
+        // that one (see the issue-line branch); a PO return keeps using the
+        // PO's project, as before.
+        const returnCostByProject = new Map<string, number>()
         let totalDirectReturnCost = 0
         // Lazily resolved on first direct-delivery line — the per-company
         // "Virtual Receipts" bucket confirmReceipt itself uses as the source
@@ -25858,12 +25927,16 @@ export const resolvers = {
             to_location_id: string | null
             issue_status: string
             issue_po_id: string | null
+            issue_requisition_id: string | null
+            issue_project_id: string | null
             issue_company_id: string
             sku: string | null
             product_name: string | null
           }>(
             `SELECT pmil.product_id, pmil.qty_issued, pmil.unit_cost, pmil.to_location_id,
-                    pmi.status AS issue_status, pmi.po_id AS issue_po_id, pmi.company_id AS issue_company_id,
+                    pmi.status AS issue_status, pmi.po_id AS issue_po_id,
+                    pmi.requisition_id AS issue_requisition_id, pmi.project_id AS issue_project_id,
+                    pmi.company_id AS issue_company_id,
                     p.sku, p.name AS product_name
              FROM project_material_issue_lines pmil
              JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
@@ -25876,8 +25949,12 @@ export const resolvers = {
           if (!issueLine) throw new Error(`Store Out line ${issueLineId} not found`)
           if (issueLine.issue_company_id !== ctx.auth.companyId)
             throw new Error(`Store Out line ${issueLineId} not found`)
-          if (issueLine.issue_po_id !== input.poId)
+          if (input.requisitionId) {
+            if (issueLine.issue_requisition_id !== input.requisitionId)
+              throw new Error(`Store Out line ${issueLineId} does not belong to this requisition`)
+          } else if (issueLine.issue_po_id !== input.poId) {
             throw new Error(`Store Out line ${issueLineId} does not belong to this purchase order`)
+          }
           if (issueLine.issue_status !== 'issued')
             throw new Error(`Store Out line ${issueLineId} was never issued — nothing to return`)
           if (!issueLine.to_location_id)
@@ -25923,7 +26000,11 @@ export const resolvers = {
 
           const unitCost = parseFloat(issueLine.unit_cost)
           const totalCost = qty * unitCost
-          totalReturnCost += totalCost
+          const offsetProjectId = input.requisitionId ? issueLine.issue_project_id : projectId
+          if (offsetProjectId) {
+            const soFar = returnCostByProject.get(offsetProjectId) ?? 0
+            returnCostByProject.set(offsetProjectId, soFar + totalCost)
+          }
 
           let returnMoveId: string
           if (!crossCompanyReturn) {
@@ -26078,11 +26159,12 @@ export const resolvers = {
         // than one pooled total) because the two branches can in principle
         // point at different projects if project_id and linked_project_id
         // ever diverge on the same PO.
-        if (totalReturnCost > 0 && projectId) {
+        for (const [offsetProjectId, offsetCost] of returnCostByProject) {
+          if (offsetCost <= 0) continue
           await client.query(
             `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
              VALUES ($1,'material_return',$2,'materials',$3,'IQD',NOW()::date)`,
-            [projectId, returnId, -totalReturnCost],
+            [offsetProjectId, returnId, -offsetCost],
           )
         }
         if (totalDirectReturnCost > 0 && linkedProjectId) {
@@ -26102,33 +26184,17 @@ export const resolvers = {
       }
 
       const result = await query(
-        `SELECT pmr.*,
-           p_proj.code AS project_code, p_proj.name AS project_name,
-           po.po_number,
-           COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_name,
-           COALESCE(
-             JSON_AGG(JSON_BUILD_OBJECT(
-               'id', pmrl.id, 'issueLineId', pmrl.issue_line_id, 'poLineId', pmrl.po_line_id,
-               'productId', pmrl.product_id,
-               'productName', prod.name, 'sku', prod.sku,
-               'toLocationId', pmrl.to_location_id, 'toLocationName', loc.name,
-               'qtyReturned', pmrl.qty_returned, 'unitCost', pmrl.unit_cost, 'totalCost', pmrl.total_cost
-             ) ORDER BY pmrl.created_at) FILTER (WHERE pmrl.id IS NOT NULL),
-             '[]'
-           ) AS lines
-         FROM project_material_returns pmr
-         LEFT JOIN projects p_proj ON p_proj.id = pmr.project_id
-         LEFT JOIN purchase_orders po ON po.id = pmr.po_id
-         LEFT JOIN users u ON u.id = pmr.created_by
-         LEFT JOIN project_material_return_lines pmrl ON pmrl.return_id = pmr.id
-         LEFT JOIN products prod ON prod.id = pmrl.product_id
-         LEFT JOIN stock_locations loc ON loc.id = pmrl.to_location_id
+        `${MATERIAL_RETURN_SELECT}
          WHERE pmr.id=$1
-         GROUP BY pmr.id, p_proj.code, p_proj.name, po.po_number, u.first_name, u.last_name, u.email`,
+         ${MATERIAL_RETURN_GROUP_ORDER}`,
         [returnId],
       )
       const row = result.rows[0] as Record<string, unknown>
-      void publishEntityChanged(ctx.auth.companyId, 'purchase_order', input.poId, 'updated')
+      if (input.requisitionId) {
+        void publishEntityChanged(ctx.auth.companyId, 'requisition', input.requisitionId, 'updated')
+      } else if (input.poId) {
+        void publishEntityChanged(ctx.auth.companyId, 'purchase_order', input.poId, 'updated')
+      }
       for (const pid of new Set([projectId, linkedProjectId].filter((p): p is string => !!p))) {
         void publishEntityChanged(ctx.auth.companyId, 'project', pid, 'updated')
       }
@@ -26139,20 +26205,7 @@ export const resolvers = {
         void publishEntityChanged(t.fromCompanyId, 'interco_transaction', t.id, 'created')
         void publishEntityChanged(t.toCompanyId, 'interco_transaction', t.id, 'created')
       }
-      return {
-        id: row.id,
-        returnNumber: row.return_number,
-        returnDate: row.return_date,
-        poId: row.po_id,
-        poNumber: row.po_number ?? null,
-        projectId: row.project_id ?? null,
-        projectCode: row.project_code ?? null,
-        projectName: row.project_name ?? null,
-        notes: row.notes ?? null,
-        createdByName: row.created_by_name ?? null,
-        createdAt: row.created_at,
-        lines: (row.lines as unknown[] | null) ?? [],
-      }
+      return mapMaterialReturnRow(row)
     },
 
     adminSetPOStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
@@ -37911,6 +37964,10 @@ const phase5MutationResolvers = {
             )
           ).rows[0].id
 
+        // Names for the stock-move notes, resolved once for the whole transfer.
+        const fromCompanyName = await companyNameForNote(client, fromCompanyId)
+        const toCompanyName = await companyNameForNote(client, toCompanyId)
+
         // Pricing method is a property of the source (fromCompanyId) company
         // — same for every line in this transfer, so resolved once up front
         // rather than per-line.
@@ -38006,7 +38063,7 @@ const phase5MutationResolvers = {
               qty,
               avco,
               qty * avco,
-              `Interco transfer ${transferNum} to company ${toCompanyId}`,
+              `Interco transfer ${transferNum} to company ${toCompanyName}`,
               auth.userId,
             ],
           )
@@ -38026,7 +38083,7 @@ const phase5MutationResolvers = {
               qty,
               transferPrice,
               qty * transferPrice,
-              `Interco transfer ${transferNum} from company ${auth.companyId}`,
+              `Interco transfer ${transferNum} from company ${fromCompanyName}`,
               auth.userId,
             ],
           )

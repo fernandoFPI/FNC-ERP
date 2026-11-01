@@ -1477,8 +1477,13 @@
     id: ID!
     returnNumber: String!
     returnDate: String!
-    poId: ID!
+    # Exactly one parent: a PO, or — for a Store Out made against a requisition
+    # (no po_id since the G1 requisition split) — that requisition. The other
+    # is null (migration 310).
+    poId: ID
     poNumber: String
+    requisitionId: ID
+    requisitionNumber: String
     # Nullable — the originating PO (and therefore the Store Out it was
     # issued through) may have no project at all, e.g. a general-stock PO
     # (migration 213). Not every material return has project cost actuals
@@ -1519,12 +1524,15 @@
     issueId: ID!
     issueNumber: String!
     issueDate: String!
-    # Which PO this line's Store Out belongs to — always present (a line
-    # with no PO can't be resolved by createMaterialReturn, which requires
-    # one, so those are excluded upstream). Needed once a search can span
-    # more than one PO at a time (see productId below).
-    poId: ID!
+    # Which parent this line's Store Out belongs to: a PO, or a requisition
+    # (the G1 flow issues stock-covered lines against the requisition, with no
+    # po_id). Exactly one is set — a Store Out with neither can't be resolved
+    # by createMaterialReturn, so those are excluded upstream. Needed once a
+    # search can span more than one parent at a time (see productId below).
+    poId: ID
     poNumber: String
+    requisitionId: ID
+    requisitionNumber: String
     productId: ID!
     productName: String
     sku: String
@@ -1569,7 +1577,9 @@
   }
 
   input MaterialReturnInput {
-    poId: ID!
+    # Exactly one of poId / requisitionId (the resolver rejects neither/both).
+    poId: ID
+    requisitionId: ID
     returnDate: String
     notes: String
     lines: [MaterialReturnLineInput!]!

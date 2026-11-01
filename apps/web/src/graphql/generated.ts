@@ -4663,7 +4663,7 @@ export type CancelMaterialIssueMutation = { cancelMaterialIssue: { id: string, i
 
 export type MrLineFieldsFragment = { id: string, issueLineId: string | null, poLineId: string | null, productId: string, productName: string | null, sku: string | null, toLocationId: string, toLocationName: string | null, qtyReturned: number, unitCost: number, totalCost: number };
 
-export type MrFields2Fragment = { id: string, returnNumber: string, returnDate: string, poId: string, poNumber: string | null, projectId: string | null, projectCode: string | null, projectName: string | null, notes: string | null, createdByName: string | null, createdAt: string, lines: Array<{ id: string, issueLineId: string | null, poLineId: string | null, productId: string, productName: string | null, sku: string | null, toLocationId: string, toLocationName: string | null, qtyReturned: number, unitCost: number, totalCost: number }> };
+export type MrFields2Fragment = { id: string, returnNumber: string, returnDate: string, poId: string | null, poNumber: string | null, requisitionId: string | null, requisitionNumber: string | null, projectId: string | null, projectCode: string | null, projectName: string | null, notes: string | null, createdByName: string | null, createdAt: string, lines: Array<{ id: string, issueLineId: string | null, poLineId: string | null, productId: string, productName: string | null, sku: string | null, toLocationId: string, toLocationName: string | null, qtyReturned: number, unitCost: number, totalCost: number }> };
 
 export type MaterialReturnsQueryVariables = Exact<{
   poId?: string | number | null | undefined;
@@ -4672,7 +4672,7 @@ export type MaterialReturnsQueryVariables = Exact<{
 }>;
 
 
-export type MaterialReturnsQuery = { materialReturns: Array<{ id: string, returnNumber: string, returnDate: string, poId: string, poNumber: string | null, projectId: string | null, projectCode: string | null, projectName: string | null, notes: string | null, createdByName: string | null, createdAt: string, lines: Array<{ id: string, issueLineId: string | null, poLineId: string | null, productId: string, productName: string | null, sku: string | null, toLocationId: string, toLocationName: string | null, qtyReturned: number, unitCost: number, totalCost: number }> }> };
+export type MaterialReturnsQuery = { materialReturns: Array<{ id: string, returnNumber: string, returnDate: string, poId: string | null, poNumber: string | null, requisitionId: string | null, requisitionNumber: string | null, projectId: string | null, projectCode: string | null, projectName: string | null, notes: string | null, createdByName: string | null, createdAt: string, lines: Array<{ id: string, issueLineId: string | null, poLineId: string | null, productId: string, productName: string | null, sku: string | null, toLocationId: string, toLocationName: string | null, qtyReturned: number, unitCost: number, totalCost: number }> }> };
 
 export type ReturnableMaterialIssueLinesQueryVariables = Exact<{
   poId?: string | number | null | undefined;
@@ -4681,7 +4681,7 @@ export type ReturnableMaterialIssueLinesQueryVariables = Exact<{
 }>;
 
 
-export type ReturnableMaterialIssueLinesQuery = { returnableMaterialIssueLines: Array<{ issueLineId: string, issueId: string, issueNumber: string, issueDate: string, poId: string, poNumber: string | null, productId: string, productName: string | null, sku: string | null, uom: string | null, qtyIssued: number, qtyReturnedSoFar: number, qtyReturnable: number, unitCost: number, fromLocationId: string | null, fromLocationName: string | null }> };
+export type ReturnableMaterialIssueLinesQuery = { returnableMaterialIssueLines: Array<{ issueLineId: string, issueId: string, issueNumber: string, issueDate: string, poId: string | null, poNumber: string | null, requisitionId: string | null, requisitionNumber: string | null, productId: string, productName: string | null, sku: string | null, uom: string | null, qtyIssued: number, qtyReturnedSoFar: number, qtyReturnable: number, unitCost: number, fromLocationId: string | null, fromLocationName: string | null }> };
 
 export type ReturnableDirectDeliveryLinesQueryVariables = Exact<{
   poId?: string | number | null | undefined;
@@ -4697,7 +4697,7 @@ export type CreateMaterialReturnMutationVariables = Exact<{
 }>;
 
 
-export type CreateMaterialReturnMutation = { createMaterialReturn: { id: string, returnNumber: string, returnDate: string, poId: string, poNumber: string | null, projectId: string | null, projectCode: string | null, projectName: string | null, notes: string | null, createdByName: string | null, createdAt: string, lines: Array<{ id: string, issueLineId: string | null, poLineId: string | null, productId: string, productName: string | null, sku: string | null, toLocationId: string, toLocationName: string | null, qtyReturned: number, unitCost: number, totalCost: number }> } };
+export type CreateMaterialReturnMutation = { createMaterialReturn: { id: string, returnNumber: string, returnDate: string, poId: string | null, poNumber: string | null, requisitionId: string | null, requisitionNumber: string | null, projectId: string | null, projectCode: string | null, projectName: string | null, notes: string | null, createdByName: string | null, createdAt: string, lines: Array<{ id: string, issueLineId: string | null, poLineId: string | null, productId: string, productName: string | null, sku: string | null, toLocationId: string, toLocationName: string | null, qtyReturned: number, unitCost: number, totalCost: number }> } };
 
 export type TqFieldsFragment = { id: string, projectId: string, tqNumber: string, discipline: string | null, priority: string, subject: string, description: string | null, raisedBy: string | null, raisedDate: string | null, documentId: string | null, documentRef: string | null, documentRevision: string | null, status: string, response: string | null, responseBy: string | null, responseDate: string | null, dueDate: string | null, closedAt: string | null, createdAt: string, updatedAt: string, isOverdue: boolean, files: Array<{ id: string, fileId: string, filename: string, mimeType: string, sizeBytes: number, title: string | null, createdAt: string, downloadUrl: string | null }> };
 

@@ -648,6 +648,117 @@ describe('MaterialReturnsPage', () => {
     ])
   })
 
+  // A Store Out for a stock-covered requisition line has no PO (since the requisition split), so
+  // the dialog used to say "nothing outstanding on any purchase order" for it. It is now offered
+  // with its requisition number and returned against the requisition, not a PO.
+  it('offers a requisition Store Out and submits it with requisitionId (never poId), one return per parent', async () => {
+    const createReturnMock = vi.fn().mockResolvedValue({})
+    mockUseMutation.mockReturnValue([createReturnMock, { loading: false }])
+
+    const requisitionIssueLine = {
+      issueLineId: 'il3',
+      issueId: 'i3',
+      issueNumber: 'SO-00014',
+      issueDate: '2026-10-27',
+      poId: null,
+      poNumber: null,
+      requisitionId: 'req1',
+      requisitionNumber: 'REQ-2026-0052',
+      productId: 'p1',
+      productName: 'Black Ink',
+      sku: 'INK-001',
+      uom: 'unit',
+      qtyIssued: 4,
+      qtyReturnedSoFar: 0,
+      qtyReturnable: 4,
+      unitCost: 5.5,
+      fromLocationId: 'loc2',
+      fromLocationName: 'Virtual Consumption',
+    }
+    mockUseQuery.mockImplementation((query: { definitions?: { kind?: string; name?: { value?: string } }[] }) => {
+      const opName = query.definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value ?? ''
+      if (opName === 'MaterialReturns')
+        return { data: { materialReturns: returns }, loading: false, refetch: vi.fn() }
+      if (opName === 'ReturnableMaterialIssueLines')
+        return { data: { returnableMaterialIssueLines: [...returnableIssueLines, requisitionIssueLine] }, loading: false }
+      if (opName === 'ReturnableDirectDeliveryLines')
+        return { data: { returnableDirectDeliveryLines: [] }, loading: false }
+      if (opName === 'PurchaseOrders') return { data: { purchaseOrders }, loading: false }
+      if (opName === 'StockLocations') return { data: { stockLocations: locations }, loading: false }
+      if (opName === 'Projects') return { data: { projects: { data: projects } }, loading: false }
+      if (opName === 'Products') return { data: { products }, loading: false }
+      return { data: undefined, loading: false }
+    })
+
+    const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
+    wrap(<MaterialReturnsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /\+ new material return/i }))
+    fireEvent.click(screen.getByText('Any item…'))
+    fireEvent.mouseDown(screen.getByText('Black Ink'))
+
+    // Its parent shows as a badge, like a PO's number does.
+    expect(screen.getByText('REQ-2026-0052')).toBeInTheDocument()
+
+    const qtyInputs = document.body.querySelectorAll('input[type="number"]')
+    expect(qtyInputs.length).toBe(2)
+    fireEvent.change(qtyInputs[0], { target: { value: '2' } })
+    fireEvent.change(qtyInputs[1], { target: { value: '4' } })
+
+    const pickMainWarehouse = () => {
+      const opts = screen.getAllByText('Main Warehouse')
+      const last = opts.at(-1)
+      if (!last) throw new Error('Expected at least one "Main Warehouse" option')
+      fireEvent.mouseDown(last)
+    }
+    fireEvent.click(screen.getAllByText('Return to…')[0])
+    pickMainWarehouse()
+    fireEvent.click(screen.getByText('Return to…'))
+    pickMainWarehouse()
+
+    fireEvent.click(screen.getByRole('button', { name: /create return/i }))
+
+    await waitFor(() => { expect(createReturnMock).toHaveBeenCalledTimes(2); })
+    interface Input {
+      poId?: string
+      requisitionId?: string
+      lines: { issueLineId: string; qtyReturned: number }[]
+    }
+    const inputs = (createReturnMock.mock.calls as unknown[][]).map((c) => (c[0] as { variables: { input: Input } }).variables.input)
+
+    const poCall = inputs.find((i) => i.poId === 'po1')
+    expect(poCall).toBeDefined()
+    expect(poCall).not.toHaveProperty('requisitionId')
+    expect(poCall?.lines).toEqual([{ issueLineId: 'il1', toLocationId: 'loc1', qtyReturned: 2 }])
+
+    const reqCall = inputs.find((i) => i.requisitionId === 'req1')
+    expect(reqCall).toBeDefined()
+    expect(reqCall).not.toHaveProperty('poId')
+    expect(reqCall?.lines).toEqual([{ issueLineId: 'il3', toLocationId: 'loc1', qtyReturned: 4 }])
+  })
+
+  it('shows the requisition number on a return that has no PO', async () => {
+    mockUseQuery.mockImplementation((query: { definitions?: { kind?: string; name?: { value?: string } }[] }) => {
+      const opName = query.definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value ?? ''
+      if (opName === 'MaterialReturns')
+        return {
+          data: {
+            materialReturns: [
+              { ...returns[0], id: 'r2', returnNumber: 'MRET-2026-0002', poId: null, poNumber: null, requisitionId: 'req1', requisitionNumber: 'REQ-2026-0052' },
+            ],
+          },
+          loading: false,
+          refetch: vi.fn(),
+        }
+      if (opName === 'StockLocations') return { data: { stockLocations: locations }, loading: false }
+      if (opName === 'Projects') return { data: { projects: { data: projects } }, loading: false }
+      return { data: undefined, loading: false }
+    })
+    const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
+    wrap(<MaterialReturnsPage />)
+    expect(screen.getByText('MRET-2026-0002')).toBeInTheDocument()
+    expect(screen.getByText('REQ-2026-0052')).toBeInTheDocument()
+  })
+
   it('excludes virtual locations from the return-to destination options', async () => {
     const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
     wrap(<MaterialReturnsPage />)

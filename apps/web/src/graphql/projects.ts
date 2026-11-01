@@ -4840,6 +4840,8 @@ const MR_FIELDS = gql`
   returnDate
   poId
   poNumber
+  requisitionId
+  requisitionNumber
   projectId
   projectCode
   projectName
@@ -4867,6 +4869,8 @@ export const RETURNABLE_MATERIAL_ISSUE_LINES_QUERY = gql`
       issueDate
       poId
       poNumber
+      requisitionId
+      requisitionNumber
       productId
       productName
       sku

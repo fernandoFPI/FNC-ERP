@@ -569,3 +569,33 @@ Don't re-derive, check these first.
     gap in the first set of tests: both live-move tests linked the move through the line AND the receipt line, so
     either half of the check alone passed; each path now has its own test (a Store Out leaves a move linked to the line
     only).
+
+46. **A screen built around the old parent document silently hides everything made under the new one.** Material
+    Returns were scoped to a Purchase Order (migration 272): `returnableMaterialIssueLines` filtered `pmi.po_id IS NOT
+    NULL` and `createMaterialReturn` took a required `poId`, with a comment saying a Store Out with no PO "can never be
+    completed through this flow". After the requisition split (G1) the Store Out for a stock-covered line is made
+    against the REQUISITION (`project_material_issues.requisition_id`, no `po_id`), so none of them could be returned:
+    the dialog said "nothing outstanding on any purchase order" and nothing errored (Nishtimani Yakam, PLMB-727,
+    SO-00004 / 00008 / 00014, 12 units issued from the central warehouse; 50 of 289 issued Store Outs on production
+    belong to a requisition). The filter was deliberate and commented, which is why it survived: a comment records what
+    was decided once, not what is wanted now (same lesson as #44). How to spot it: a feature scoped by `po_id` that
+    "finds nothing" for recent documents; grep the resolvers for `po_id IS NOT NULL` and required `poId` inputs and ask,
+    for each, what the requisition equivalent is. Store Out numbers repeat across companies (SO-00004 exists in both
+    Nishtimani Factory and Nishtimani Yakam), so identify a Store Out by company and project, never by number alone.
+    Fix: migration 310 adds `project_material_returns.requisition_id` (CHECK: never both parents); a return hangs off
+    exactly one of PO / requisition; the project cost offset reverses the Store Out's OWN `project_id` (what
+    `issueMaterialIssue` charged), not the parent's; the list and the mutation response now share one SELECT and one row
+    mapper (`MATERIAL_RETURN_SELECT`, `mapMaterialReturnRow`) so they cannot drift (#23, #34). The cross-company return
+    path (`postCrossCompanyMaterialReturnMove`: stock back into the central warehouse, a posted transfer and a PENDING
+    reversing bill for Finance) already existed and had no test; it now has one. Still not returnable, on purpose: the
+    156 manual Store Outs that have neither a PO nor a requisition (no parent to hang a return on; separate decision).
+    Same session, same screen: cross-company stock-move notes carried the raw company id ("Store Out SO-00014 to company
+    00000000-0000-0000-0000-000000000001"); they now use `companyNameForNote`. Writing that fix also showed
+    `createIntercoStockTransfer`'s receiving-side note said "from company <caller>" even when the source company was a
+    different one (central warehouse or system_admin initiating); it now names the real source. Existing rows keep the
+    old text (stock moves are an append-only ledger; not rewritten). Tests:
+    `services/gateway/tests/material-return-requisition.test.ts` (real Postgres: same company and cross-company, over-
+    return, two-step return, another company's user, wrong-requisition line, PO-delivery line, notes) and the
+    "requisition Store Out" tests in `apps/web/src/pages/inventory/__tests__/inventory.test.tsx`; the three fixes that
+    matter most (the PO-or-requisition filter, the company name in the notes, the web submit by requisition) were each
+    checked by undoing them and watching the matching tests fail.
