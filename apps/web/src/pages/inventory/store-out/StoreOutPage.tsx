@@ -88,6 +88,11 @@ const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger
 const fmtAmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+// A project entry is a code chip plus a name that can run to 60 characters
+// ("Purchase of 1 Additional Equipped Storage Containers (FFSD)"); the default 260px list
+// cut the name off. Wider than the field is fine, the list is drawn in a portal.
+const PROJECT_PICKER_WIDTH = 560
+
 export default function StoreOutPage() {
   const { t } = useTranslation()
   const { theme } = useTheme()
@@ -661,6 +666,7 @@ export default function StoreOutPage() {
             value={projectFilter}
             options={projectOptions}
             placeholder={t('inv.storeOut.allProjects')}
+            minDropdownWidth={PROJECT_PICKER_WIDTH}
             onChange={(e) => {
               setProjectFilter(e.target.value)
             }}
@@ -1116,6 +1122,7 @@ export default function StoreOutPage() {
             }}
             options={projectOptions}
             placeholder={t('inv.storeOut.noProject')}
+            minDropdownWidth={PROJECT_PICKER_WIDTH}
           />
           <SearchableSelect
             label={t('inv.storeOut.linkToPoOptional')}

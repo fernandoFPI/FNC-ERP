@@ -76,9 +76,14 @@ export function SearchableSelect({
     const availableHeight = openUpward
       ? Math.min(MAX_HEIGHT, spaceAbove)
       : Math.min(MAX_HEIGHT, spaceBelow)
-    const dropWidth = Math.max(rect.width, minDropdownWidth)
-    // Keep left edge inside viewport
-    const left = Math.min(rect.left, window.innerWidth - dropWidth - MARGIN)
+    // Never wider than the window, so a generous minDropdownWidth can't push the list off a phone
+    // Never wider than the window, so a generous minDropdownWidth can't push the list off a phone
+    const dropWidth = Math.min(
+      Math.max(rect.width, minDropdownWidth),
+      window.innerWidth - 2 * MARGIN,
+    )
+    // Keep both edges inside the viewport
+    const left = Math.max(MARGIN, Math.min(rect.left, window.innerWidth - dropWidth - MARGIN))
     setDropdownStyle(
       openUpward
         ? {

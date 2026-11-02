@@ -21,6 +21,9 @@ interface SelectProps {
   required?: boolean
   className?: string
   style?: React.CSSProperties
+  // Minimum width of the popup list when `options` is used (it is never narrower than the
+  // field itself). Raise it for pickers whose entries are long, e.g. a project's name.
+  minDropdownWidth?: number
 }
 
 export function Select({
@@ -35,6 +38,7 @@ export function Select({
   required = false,
   className = '',
   style,
+  minDropdownWidth,
 }: SelectProps) {
   const { t } = useTranslation()
   const { theme, themeKey } = useTheme()
@@ -63,6 +67,7 @@ export function Select({
           placeholder={placeholder ?? t('ui.generic.select')}
           disabled={disabled}
           required={required}
+          {...(minDropdownWidth != null ? { minDropdownWidth } : {})}
         />
       </div>
     )
