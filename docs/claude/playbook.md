@@ -599,3 +599,20 @@ Don't re-derive, check these first.
     "requisition Store Out" tests in `apps/web/src/pages/inventory/__tests__/inventory.test.tsx`; the three fixes that
     matter most (the PO-or-requisition filter, the company name in the notes, the web submit by requisition) were each
     checked by undoing them and watching the matching tests fail.
+47. **An upload check that compares the file's extension with the browser's content type refuses real files when the
+    list of accepted types is the textbook one, not the one browsers send.** Uploading a bid archive to the Bidding
+    stage failed with `INVALID_FILE: File extension .rar does not match content type application/x-compressed`.
+    `validateFile` (`packages/storage/src/validate.ts`) cross-checks the extension against `EXTENSION_MIME_MAP` as a
+    spoofing defence, and it runs even for the blocklist-only `attachment` category. The map listed only the
+    registered names (`application/vnd.rar`, `application/x-rar-compressed`), but a Windows browser reports
+    `application/x-compressed` for `.zip`, `.rar` and `.7z` once WinRAR or 7-Zip has registered the extension, so the
+    same file passed or failed depending on which tools were installed on the user's PC. The error showed `.rar` while
+    the user said "zip file": read the extension in the message before assuming what was uploaded. Nothing caught it
+    because `validate.test.ts` had no archive case at all. Fix: `application/x-compressed` added to the three archive
+    entries, with tests for each, for the still-refused cases (`fake.pdf` sent as an archive type, `.rar` sent as
+    `image/jpeg`, the `contract` category) and a check that undoing the fix fails exactly the three new tests. Still
+    refused on purpose: an archive with no type at all, which several forms turn into `application/octet-stream`; add
+    it only if a user hits it. How to spot it: "this file won't upload but a colleague's will"; the message shows the
+    type the browser sent, so add THAT type to the map rather than loosening the check. Related to #30 (a web or
+    server list that drifted from what actually arrives). Rebuild `packages/storage` and restart the gateway for it to
+    take effect (#9).

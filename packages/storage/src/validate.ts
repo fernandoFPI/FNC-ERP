@@ -83,9 +83,16 @@ const EXTENSION_MIME_MAP: Record<string, string[]> = {
   '.webp': ['image/webp'],
   '.heic': ['image/heic'],
   '.heif': ['image/heif'],
-  '.zip': ['application/zip', 'application/x-zip-compressed', 'application/x-zip'],
-  '.rar': ['application/vnd.rar', 'application/x-rar-compressed'],
-  '.7z': ['application/x-7z-compressed'],
+  // 'application/x-compressed' is what Windows browsers report for any archive once WinRAR or
+  // 7-Zip has registered the extension, so it is valid for all three.
+  '.zip': [
+    'application/zip',
+    'application/x-zip-compressed',
+    'application/x-zip',
+    'application/x-compressed',
+  ],
+  '.rar': ['application/vnd.rar', 'application/x-rar-compressed', 'application/x-compressed'],
+  '.7z': ['application/x-7z-compressed', 'application/x-compressed'],
 }
 
 export interface ValidationResult {

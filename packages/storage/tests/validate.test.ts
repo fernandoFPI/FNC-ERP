@@ -38,6 +38,41 @@ describe('File validation', () => {
     expect(result.reason).toMatch(/does not match/)
   })
 
+  it.each(['bid.zip', 'bid.rar', 'bid.7z'])(
+    'accepts %s sent as application/x-compressed (what Windows browsers report with WinRAR / 7-Zip installed)',
+    (filename) => {
+      const result = validateFile(filename, 'application/x-compressed', 1024, 'attachment', MAX_50MB)
+      expect(result.valid).toBe(true)
+    },
+  )
+
+  it.each([
+    ['bid.zip', 'application/zip'],
+    ['bid.rar', 'application/vnd.rar'],
+    ['bid.rar', 'application/x-rar-compressed'],
+    ['bid.7z', 'application/x-7z-compressed'],
+  ])('still accepts %s sent as its own type %s', (filename, mimeType) => {
+    expect(validateFile(filename, mimeType, 1024, 'attachment', MAX_50MB).valid).toBe(true)
+  })
+
+  it('still rejects an archive type on a non-archive extension — .pdf with application/x-compressed', () => {
+    const result = validateFile('fake.pdf', 'application/x-compressed', 1024, 'attachment', MAX_50MB)
+    expect(result.valid).toBe(false)
+    expect(result.reason).toMatch(/does not match/)
+  })
+
+  it('still rejects an archive extension sent as a different known type — .rar with image/jpeg', () => {
+    const result = validateFile('bid.rar', 'image/jpeg', 1024, 'attachment', MAX_50MB)
+    expect(result.valid).toBe(false)
+    expect(result.reason).toMatch(/does not match/)
+  })
+
+  it('archive type does not open other categories — contract still refuses application/x-compressed', () => {
+    const result = validateFile('bid.zip', 'application/x-compressed', 1024, 'contract', MAX_50MB)
+    expect(result.valid).toBe(false)
+    expect(result.reason).toMatch(/not allowed/)
+  })
+
   it('accepts AutoCAD files for attachment category (not in the fixed allowlist)', () => {
     const dwg = validateFile('drawing.dwg', 'application/acad', 1024, 'attachment', MAX_50MB)
     expect(dwg.valid).toBe(true)
