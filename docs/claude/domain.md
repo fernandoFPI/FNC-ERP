@@ -33,3 +33,4 @@
   reservation and charges the project. A requisition completes only when those Store Outs are confirmed. One
   function, `coverRequisitionStockLines` (gateway resolvers), makes the drafts at approval and when a buyer resolves
   a line from stock at Items Bought. The destination is chosen at creation, long before approval.
+- One inventory for the whole group, held in Nishtimani Factory (companies.is_central_warehouse). Companies used to keep their own stock; now Yakam and Al Watanyia draw from Factory through cross-company Store Outs. Moving leftover stock into Factory is a no-charge re-assignment (no bill, no price, no journal), never an inter-company sale. Never match items across companies by SKU: shared SKUs are different items.

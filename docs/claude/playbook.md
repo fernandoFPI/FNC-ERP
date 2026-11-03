@@ -616,3 +616,41 @@ Don't re-derive, check these first.
     type the browser sent, so add THAT type to the map rather than loosening the check. Related to #30 (a web or
     server list that drifted from what actually arrives). Rebuild `packages/storage` and restart the gateway for it to
     take effect (#9).
+48. **A write action guarded only by "logged in" while its permission key sits unused, and a re-assignment that
+    silently re-prices stock.** `createIntercoStockTransfer` (the Inter-company > Stock Transfers form) moves stock
+    out of one company into another, yet it checked only that the caller was authenticated. The registry already
+    had `interco.stock_transfers.edit` (`packages/permissions/src/registry.ts`) but nothing read it: the route and the New Transfer button
+    asked only for `view`, so any user could send their own company's stock to ANY company by calling the mutation
+    directly. Zero manual transfers had ever been made on production (only 25 automatic ones from Store Outs), so
+    nothing had exposed it. How to spot it: for every `*.edit` key in the permission registry, grep for a consumer
+    (`requirePermGW(... 'key'`, `withPerm('key'`, `can('key'`); a key with none is a guard that was never wired.
+    Fix: the mutation now needs that permission (admins pass) AND the right to act in the destination company
+    (`callerHasCompanyAccessGW`: a system admin, or an active role there; a company admin of the source alone is
+    not enough), the route and the button follow the same key. Still open on that mutation: the destination
+    location is not checked to belong to the destination company, and it checks on-hand but not on-hand minus
+    reserved. Tests: `services/gateway/tests/interco-stock-transfer-permission.test.ts` (real Postgres: no
+    permission, view-only, no destination access, company admin without a destination role all refused with the
+    stock untouched; editor with both roles and a system admin succeed) and the New Transfer button block in
+    `apps/web/src/pages/interco/__tests__/interco.test.tsx`.
+    The same work produced the one-off `services/gateway/src/scripts/consolidate-stock-into-central.ts`: the group
+    now keeps ONE inventory, in Nishtimani Factory (`docs/claude/domain.md`), so what other companies still hold is
+    folded into it with two plain stock-ledger entries (source type `company_consolidation`), no bill, no price,
+    no journal. Three traps it had to respect. (1) Items are never matched across companies by SKU: all 77 SKUs
+    that Yakam and Factory share are DIFFERENT items (KIT-004 is Kleenex in one, chicken in the other), so an
+    item the destination does not own refuses the run. (2) Stock is valued at its LAST cost, and a move's cost
+    replaces the location's cost (migration 283's trigger): moving 4 units at 20 into a location holding 6 at 10
+    makes all 10 read 20. A re-assignment must not re-price what is already there, so the incoming entry takes the
+    destination's own cost and currency when it already holds the item (my first test assumed a weighted average
+    and failed, which is how it showed). (3) `logAudit` swallows its own errors, and a failed statement inside a
+    transaction turns COMMIT into a silent ROLLBACK, so the script re-reads the committed rows before reporting
+    success. Run as a dry run first; `--apply` is all-or-nothing per company. Tests:
+    `services/gateway/tests/consolidate-stock-into-central.test.ts` (16, each safeguard mutation-checked).
+
+49. **Mutation-checking by swapping in `git show HEAD:file` can corrupt the file on Windows.** The check "put the
+    original back, run the tests, restore the fix" is right, but `git show HEAD:file | Set-Content -NoNewline`
+    joins the array of output lines with nothing between them, so a 40,000-line file became one line (and the
+    tests failed to PARSE, which looks like a pass for the mutation and proves nothing). The fix was restored from
+    a saved copy and checked byte-for-byte (`cmp`, and `git diff --stat` showing only the intended lines).
+    Do it this way instead: save a copy of the fixed file first, write the original with
+    `cmd /c "git show HEAD:path > file"` (bytes preserved) or edit a copy with `String.Replace`, run the tests
+    inside `try { ... } finally { restore the copy }`, and read the failing test NAMES, not just "failed".
