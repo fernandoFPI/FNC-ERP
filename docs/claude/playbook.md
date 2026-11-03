@@ -610,9 +610,8 @@ Don't re-derive, check these first.
     the user said "zip file": read the extension in the message before assuming what was uploaded. Nothing caught it
     because `validate.test.ts` had no archive case at all. Fix: `application/x-compressed` added to the three archive
     entries, with tests for each, for the still-refused cases (`fake.pdf` sent as an archive type, `.rar` sent as
-    `image/jpeg`, the `contract` category) and a check that undoing the fix fails exactly the three new tests. Still
-    refused on purpose: an archive with no type at all, which several forms turn into `application/octet-stream`; add
-    it only if a user hits it. How to spot it: "this file won't upload but a colleague's will"; the message shows the
+    `image/jpeg`, the `contract` category) and a check that undoing the fix fails exactly the three new tests. (Superseded
+    by #50: a file whose type the browser could not determine, sent as `application/octet-stream`, is no longer a mismatch.) How to spot it: "this file won't upload but a colleague's will"; the message shows the
     type the browser sent, so add THAT type to the map rather than loosening the check. Related to #30 (a web or
     server list that drifted from what actually arrives). Rebuild `packages/storage` and restart the gateway for it to
     take effect (#9).
@@ -662,3 +661,52 @@ Don't re-derive, check these first.
     Do it this way instead: save a copy of the fixed file first, write the original with
     `cmd /c "git show HEAD:path > file"` (bytes preserved) or edit a copy with `String.Replace`, run the tests
     inside `try { ... } finally { restore the copy }`, and read the failing test NAMES, not just "failed".
+50. **"Allow all file types" is four separate restrictions, and relaxing one leaves the others.** The Bidding
+    Stage packages, Attachments and Preliminary Engineering tabs each limited what could be uploaded in a different
+    place. (1) The browser's file dialog: `accept=".zip,.rar,.7z"` on the bid packages, an `ACCEPT` list on Attachments
+    (`.xlsx,.pdf,.doc…`), and `input.accept = '.pdf,.dwg,…'` on Preliminary Engineering (Client Documents already used
+    `*/*`). (2) The type the page sends: Attachments and the two Bidding uploads sent the raw `file.type`, which is `''`
+    for any type the PC has no program registered for (a `.dwg` or `.rvt` without the CAD software), and the gateway
+    rejects an empty `mimeType` (`z.string().min(1)`), while a request with an empty `Content-Type` is not read as a
+    body at all; the other pickers already sent `file.type || 'application/octet-stream'`. (3) The server's
+    extension-versus-type cross-check (`validateFile`), which refused a known extension (`.pdf`, `.docx`, `.zip`…)
+    whose declared type was `application/octet-stream`, although "unknown" cannot be a spoof of another type. (4) The
+    server's deliberate blocklist (`.exe .bat .cmd .sh .ps1 .js .php .py .rb .pl .vbs .jar .com .scr`, and
+    `.html .htm .xhtml .shtml .svg`, the last group because a previewed upload would run script); that one was NOT
+    relaxed, see the decision recorded with the change. How to spot it: "it only fails for some files"; in the Network
+    tab a 400 `VALIDATION_ERROR` means an empty type, `INVALID_FILE` means the server check. Fix: one helper,
+    `uploadMimeType(file)` (`apps/web/src/lib/uploadMimeType.ts`), used by every upload in those tabs; no `accept`
+    filter on them; `validateFile` skips the cross-check for `''` / `application/octet-stream` (categories with a fixed
+    allowlist, e.g. `contract`, still refuse it). Other `/files/upload-url` callers still send the raw `file.type`
+    (`ExecUploadButton`, the machinery photo, `FileAttachments`, the HR/PO/receipt forms): switch them to the helper when
+    they are touched. Tests: `packages/storage/tests/validate.test.ts` (unknown type accepted for nine real cases,
+    blocked extensions still blocked, spoof check intact, fixed-allowlist categories unaffected; undoing the rule fails
+    7), `apps/web/src/lib/__tests__/uploadMimeType.test.ts`. Follow-up, same day (`some ZIP types still not accepted`): the three archive
+    extensions now share ONE family of type names (`ARCHIVE_MIME_TYPES`: zip, x-zip-compressed, zip-compressed, x-compressed,
+    x-rar, vnd.rar, x-7z-compressed, gzip, tar…) because the name a PC reports depends on which program registered the
+    extension and people rename one format to another; anything that is not an archive type (`image/jpeg`,
+    `text/html`…) is still a mismatch, and the refusal text names the extension and the type. Production data: 140
+    ZIP uploads have worked, all `application/x-zip-compressed`, the largest 49.1 MB, and the one RAR `x-compressed`. The
+    real ceiling for ANY file is 50 MB: nginx `client_max_body_size 50m` (`/etc/nginx/sites-enabled/fnc-erp`) and the
+    gateway upload proxy `express.raw({ limit: '50mb' })` (`routes/files.ts`) both stop a bigger body before the
+    application sees it (nginx answers 413 with an HTML page), while `MAX_FILE_SIZE_BYTES` says 250 MB, so the server's
+    own size message never appears first. The gateway request log records neither 400 refusals nor 413s, so a failed
+    upload leaves no trace on the server: the screen has to say why. Every upload toast in the four tabs now appends the
+    server's message or the 50 MB limit (`uploadFailureMessage`, `apps/web/src/lib/uploadMimeType.ts`) instead of a
+    bare `Upload failed`. Related to #47 (the same validator) and #30 (a list in the
+    page that drifts from the server's).
+
+51. **`<Trans>` keys that never got any text print the raw key on screen, and a build never notices.** The Bidding
+    Stage drop area showed `proj.detail.dropZipHereOr` and the Attachments tab `proj.detail.dropFileHereOr` /
+    `willBeTaggedAsExcelPdf`. The i18n codemod turned JSX text with a highlighted part into
+    `<Trans i18nKey=… components={[<span/>]} />` but never wrote the matching strings: `proj.detail` has no value with a
+    `<0>…</0>` in it in either language. A scan of `ProjectDetail.tsx` found 26 such keys (all `<Trans>`; the plain
+    `t('…')` keys were complete); the five on the upload areas are fixed, 21 remain (`isCurrentlyWorkingOnThisDocument`,
+    `supersedingMarksTheCurrentAsBuilt`, `typeToUnlockTheConfirmButton`, `workPackage`, `voRef`, `ptw`, …). Same family as
+    #26 (a missing key falls back to the raw key, silently) but a different cause: not the wrong namespace, no text at all.
+    How to spot it: a label on screen that looks like a dotted code. Detect it with a script, not by eye: collect every
+    `t('a.b.c'` and `i18nKey="a.b.c"` in the file and check each resolves in both locale files (treat a `key_*` plural
+    sibling as present). Fix: add the text to BOTH files with `<0>{{value}}</0>` where the component puts its highlighted
+    part, then render the real `<Trans>` in each language and assert there is no `proj.detail` in the output and the
+    highlighted word sits in the `<0>` span (`apps/web/src/i18n/__tests__/uploadAreaKeys.test.tsx`; removing a key fails
+    it). Run the scan for any file that a codemod touched before trusting its translations.
