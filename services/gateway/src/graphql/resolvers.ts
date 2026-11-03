@@ -992,6 +992,26 @@ async function applyRequisitionEditChanges(
       e.id,
       reqId,
     ])
+    // A line keeps its price in four places: unit_price (what the total is built from),
+    // market_price / verified_price (what the pricing stages recorded, and what the Lines table
+    // shows) and approved_unit_price (frozen at approval; the ceiling Items Bought judges every
+    // purchase against). An approved price edit has to move the ones the line already has, or the
+    // table keeps showing the old price next to the new total, and a purchase at the newly
+    // approved price is flagged over tolerance (REQ-2026-0077) while a price drop keeps the old,
+    // higher ceiling. Only fields that are already set move: before the stage was reached they are
+    // empty, and a draft-stage price must not become a "market price" (the Market pricing form
+    // pre-fills from it). The PO side does the same for market_price (applyPOEditChanges). The old
+    // value stays in the request's own changes and the requisition log.
+    if (e.field === 'unit_price' && e.to != null) {
+      await client.query(
+        `UPDATE po_lines
+         SET market_price        = CASE WHEN market_price        IS NOT NULL THEN $1 ELSE market_price END,
+             verified_price      = CASE WHEN verified_price      IS NOT NULL THEN $1 ELSE verified_price END,
+             approved_unit_price = CASE WHEN approved_unit_price IS NOT NULL THEN $1 ELSE approved_unit_price END
+         WHERE id=$2 AND requisition_id=$3`,
+        [e.to, e.id, reqId],
+      )
+    }
     if (e.field === 'qty_ordered' || e.field === 'unit_price') priceAffectedLineIds.add(e.id)
   }
   // Same zeroing rule as confirmRequisitionInventoryCheck: a line fully

@@ -743,3 +743,37 @@ Don't re-derive, check these first.
     code paths). Lint trap met on the way: `@typescript-eslint/non-nullable-type-assertion-style` rewrites
     `x.closest('…') as HTMLElement` into `x.closest('…')!`, which `no-non-null-assertion` then forbids, and the `!`
     leaves the type as `Element`; use `closest<HTMLElement>('…')` and throw if it is null.
+
+56. **An approved edit that rewrites one copy of a value leaves its other copies, and the control that reads them, on
+    the old value.** A requisition line holds its price in four places: `unit_price` (the total is built from it),
+    `market_price` and `verified_price` (what Market pricing and Price verification recorded; the Lines table shows
+    both) and `approved_unit_price` (frozen at approval; Items Bought flags a purchase above it plus the company's
+    tolerance, 5 % up to 25,000 IQD / 20 USD). `applyRequisitionEditChanges` wrote only the edited field and the total.
+    REQ-2026-0057 (Al Watanyia): an admin approved 148 to 145 and the table kept 148 under Market and Verified price
+    beside a total of 1,160 (REQ-2026-0056 the same). It was more than a label. REQ-2026-0077 (Nishtimani Factory):
+    58,000 to 64,000 approved, the buyer bought 20 at exactly 64,000, and the purchase was flagged over tolerance
+    against the stale 58,000 (ceiling 60,900), so a price an admin had approved needed a second approval; a price DROP
+    kept the old, higher ceiling (REQ-2026-0055: 3,500 to 2,000 left 3,675 unflagged). All five post-approval price
+    edits on production were stale. The PO side had fixed the same thing for `market_price` long before (comment in
+    `applyPOEditChanges`), so this is #23 / #34 / #43 again: one of two code paths fixed. How to spot it: a price
+    column that disagrees with the total on a line that had an edit approved; `unit_price` different from
+    `approved_unit_price` on a line with an `edit_approved` row in `requisition_approval_log` and no purchase yet.
+    Fix: when a `unit_price` edit is applied, `market_price`, `verified_price` and `approved_unit_price` move too, but
+    only the ones that are already set. Before a stage is reached they are empty, and a draft-stage price must not
+    become a "market price" (the Market pricing form pre-fills from the line's saved `market_price`). The old value
+    stays in the request's `changes` and the requisition log. Do NOT repair this generally ("every line where
+    `market_price` differs from `unit_price`"): after Price verification that difference is normal, the verifier's
+    price replaces the quote. The five lines edited before the fix are corrected by
+    `packages/db/scripts/requisition_price_edit_stage_prices_backfill.sql` (dry run by default, refuses unless it
+    finds exactly those five, `-v apply=1` to write; its SELECT and UPDATE were run from the file against a synthetic
+    line before use). Tests: `services/gateway/tests/requisition-edit-price-stage-fields.test.ts` (real Postgres
+    through the real submit, approve and `recordLinePurchase`; each safeguard mutation-checked: without the
+    approved-price update 3 fail, without the verified-price update 1, without the "only if already set" guard the
+    no-invented-prices test fails). Not checked: whether quantity, description or unit-of-measure edits leave stale
+    copies (stock-line quantities against their Store Out: 0 mismatches). Same family, not fixed: a line's from-stock
+    `store_price` / `store_price_currency` is a copy taken at Inventory Check and never refreshed when Inventory later
+    corrects the product's cost or currency (REQ-2026-0133, Pipe 1.5" PVC: IQD on the line, USD on the product, 36
+    seconds after the confirm). Tooling traps: when mutation-checking a file that also holds someone else's
+    uncommitted work, swap only the exact line and swap it back (check it matched once), never copy the whole file and
+    restore it; and `CREATE TABLE AS`, even `TEMP`, is refused inside a read-only transaction, so a "forced read-only
+    dry run" cannot build a working table (the production dry run caught it before anything was applied).
