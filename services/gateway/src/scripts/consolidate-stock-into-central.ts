@@ -382,8 +382,17 @@ function printReport(r: ConsolidateReport, apply: boolean): void {
   for (const m of r.moves)
     totals.set(m.currency, (totals.get(m.currency) ?? 0) + parseFloat(m.value))
   const units = r.moves.reduce((n, m) => n + parseFloat(m.qty), 0)
+  // Only a run that really moved something may say "applied": a refused --apply writes nothing.
+  const headline =
+    r.status === 'moved'
+      ? 'APPLIED'
+      : r.status === 'refused'
+        ? 'REFUSED (nothing written)'
+        : r.status === 'nothing-to-do'
+          ? 'NOTHING TO DO (nothing written)'
+          : 'DRY RUN (nothing written)'
   console.log(
-    `\n${apply ? 'APPLIED' : 'DRY RUN (nothing written)'}: ${r.moves.length} stock rows, ${units} units` +
+    `\n${headline}: ${r.moves.length} stock rows, ${units} units` +
       (totals.size > 0
         ? ` (value ${[...totals].map(([c, v]) => `${v.toFixed(4)} ${c}`).join(' + ')})`
         : '') +
