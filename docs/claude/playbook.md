@@ -710,3 +710,36 @@ Don't re-derive, check these first.
     part, then render the real `<Trans>` in each language and assert there is no `proj.detail` in the output and the
     highlighted word sits in the `<0>` span (`apps/web/src/i18n/__tests__/uploadAreaKeys.test.tsx`; removing a key fails
     it). Run the scan for any file that a codemod touched before trusting its translations.
+52. **A list built on one `entity_type` shows only what was uploaded through that screen, while the project's files
+    live in twenty places.** The project's Attachments tab read `/files/attachments?entityType=project`, so it listed
+    only files uploaded through itself. Every other tab keeps its files elsewhere: Client Documents in
+    `project_client_documents.file_id`, Preliminary Engineering in `engineering_documents.file_id`, the bid packages,
+    deliverables and technical queries as `document_attachments` rows of their own entity types (`bid_package_technical`,
+    `bid_package_commercial`, `bid_deliverable`, `tq`), meetings, drawings, punch photos, transmittals, RFIs, NCRs,
+    contract and invoice documents, and so on. AW-PRJ-2026-0080 had a Client Document (a WhatsApp image) and the Attachments
+    tab said "0 documents". On production only 1 file in the whole system had ever been attached through that tab,
+    against 198 in Client Documents and 152 bid packages. How to spot it: "it is in the other tab but not here"; compare
+    the entity types in `document_attachments_entity_type_check` and every `file_id` column
+    (`information_schema.columns`, name ending `file_id`) with what the screen queries. Fix: one GraphQL query,
+    `projectFiles(projectId, tabs)`, over one registry (`services/gateway/src/lib/projectFiles.ts`: one entry per kind of
+    file, tagged with the project tab it lives in). Rules it keeps: the project's own view guard
+    (`requireProjectViewGW`); a tab's files only to a caller holding the permission that tab's own queries already
+    require (`PROJECT_FILE_TAB_PERMISSION`: client_documents, engineering, bidding, meetings, contracts, handover,
+    execution, attachments), so it never shows more than the tabs do; bid-pricing files (the Commercial bid package,
+    supplier quotations, contract and invoice documents) are kept from a plain technical team member exactly as the
+    Bidding tab hides its Commercial sub-tab (`canSeeProjectCommercialFilesGW`: an admin, the PM, a holder of
+    `projects.edit`, or anyone who is not a technical member sees them). The page asks only for the tabs the viewer can
+    open (`lib/projectFiles.ts`), each file shows where it came from with a link to that tab, and only a file uploaded
+    through the Attachments tab (it has an attachment id) can be removed there. Deliberately NOT in the list: files that
+    belong to procurement, inventory or finance documents (`purchase_order`, `po_receipt`, `po_line_purchase`,
+    `po_return`, `material_issue`, `expense_claim*`, `journal_entry`, `vendor`, `employee`, ...), which stay in their own
+    modules. To add a new place that takes uploads: one registry entry plus one seeded row in the test, which fails
+    until every registered source returns its file. The machinery photo of a daily report is queried but not seeded
+    (it needs a purchase order). Tests: `services/gateway/tests/project-files.test.ts` (real Postgres, one real file
+    per source, so a wrong column fails there; per-tab permission, the Commercial rule, deleted and other-company
+    files, newest first), `apps/web/src/lib/__tests__/projectFiles.test.ts`, and
+    `apps/web/src/pages/projects/detail/__tests__/AttachmentsTab.test.tsx` (renders the real tab; `AttachmentsTab` is
+    exported only for that). Related to #34 (a list that is empty while the data is fine) and #23 (one thing, several
+    code paths). Lint trap met on the way: `@typescript-eslint/non-nullable-type-assertion-style` rewrites
+    `x.closest('…') as HTMLElement` into `x.closest('…')!`, which `no-non-null-assertion` then forbids, and the `!`
+    leaves the type as `Element`; use `closest<HTMLElement>('…')` and throw if it is null.
