@@ -13,6 +13,7 @@ import { FilterBar } from '../../../components/ui/FilterBar'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { INTERCO_STOCK_TRANSFERS_QUERY } from '../../../graphql/interco'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface StockTransferItem {
   id: string
@@ -66,6 +67,9 @@ export default function IntercoStockTransfersPage() {
   const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  // Same level the server asks for: a view-only user can read transfers but not create one.
+  const canCreate = can('interco.stock_transfers.edit', 'edit')
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -178,15 +182,17 @@ export default function IntercoStockTransfersPage() {
             >
               {t('interco.transfers.refresh')}
             </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                navigate('/interco/stock-transfers/new')
-              }}
-            >
-              {t('interco.transfers.newTransfer')}
-            </Button>
+            {canCreate && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  navigate('/interco/stock-transfers/new')
+                }}
+              >
+                {t('interco.transfers.newTransfer')}
+              </Button>
+            )}
           </div>
         }
       />

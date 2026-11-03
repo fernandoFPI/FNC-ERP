@@ -878,7 +878,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'stock-transfers/new',
-            element: withPerm('interco.stock_transfers.view', <IntercoStockTransferForm />),
+            element: withPerm('interco.stock_transfers.edit', <IntercoStockTransferForm />, 'edit'),
           },
           {
             path: 'stock-transfers/:id',

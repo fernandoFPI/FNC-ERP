@@ -37894,10 +37894,19 @@ const phase5MutationResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    // Moving stock out of a company is a write to two companies' books, so it needs the edit
+    // permission the page was always meant to use (admins pass, like everywhere else). This
+    // mutation used to need only a login: any user could send their own company's stock to any
+    // other company by calling it directly.
+    await requirePermGW(ctx.auth, 'interco.stock_transfers.edit', 'edit')
     const i = args.input
     const auth = ctx.auth
     const lines = (i.lines as Record<string, unknown>[]) ?? []
     if (lines.length === 0) throw new Error('At least one line is required')
+    // The caller must also be able to act in the company the stock lands in. A system_admin
+    // reaches every company; anyone else needs an active role there.
+    if (!(await callerHasCompanyAccessGW(auth, String(i.to_company_id))))
+      throw new Error('Destination company not found or not accessible to you')
 
     // Defaults to the caller's own company (the only option before this
     // field existed). A different fromCompanyId is only ever allowed for

@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { MockedProvider } from '@apollo/client/testing'
 import { ThemeProvider } from '../../../theme/ThemeContext'
+import { useAuthStore } from '../../../store/authStore'
+import type { AccessLevel } from '../../../hooks/usePermission'
 import {
   INTERCO_TRANSACTIONS_QUERY,
   INTERCO_STOCK_TRANSFERS_QUERY,
@@ -94,6 +96,45 @@ describe('IntercoStockTransfersPage', () => {
   it('shows skeleton loading initially', () => {
     const { container } = wrap(<IntercoStockTransfersPage />, [stockMock])
     expect(container.querySelector('.skeleton')).toBeInTheDocument()
+  })
+})
+
+// The server asks for 'interco.stock_transfers.edit' to create a transfer, so the button follows it.
+describe('IntercoStockTransfersPage - New Transfer button', () => {
+  const signIn = (role: string, permissions: Record<string, AccessLevel>) => {
+    useAuthStore.setState({
+      isAuthenticated: true,
+      user: {
+        id: 'u1',
+        email: 'u1@test.com',
+        mfaEnabled: false,
+        role,
+        permissions,
+        profileCompleted: true,
+      },
+    })
+  }
+
+  afterEach(() => {
+    useAuthStore.setState({ user: null, isAuthenticated: false })
+  })
+
+  it('is hidden from a user who may only view transfers', () => {
+    signIn('user', { 'interco.stock_transfers.view': 'view' })
+    wrap(<IntercoStockTransfersPage />, [stockMock])
+    expect(screen.queryByRole('button', { name: /new transfer/i })).not.toBeInTheDocument()
+  })
+
+  it('is shown to a user with edit permission', () => {
+    signIn('user', { 'interco.stock_transfers.edit': 'edit' })
+    wrap(<IntercoStockTransfersPage />, [stockMock])
+    expect(screen.getByRole('button', { name: /new transfer/i })).toBeInTheDocument()
+  })
+
+  it('is shown to a system admin', () => {
+    signIn('system_admin', {})
+    wrap(<IntercoStockTransfersPage />, [stockMock])
+    expect(screen.getByRole('button', { name: /new transfer/i })).toBeInTheDocument()
   })
 })
 
