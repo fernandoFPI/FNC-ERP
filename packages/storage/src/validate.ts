@@ -71,6 +71,34 @@ const BLOCKED_EXTENSIONS = [
   '.svg',
 ]
 
+// Every type name a browser, Windows or an archive tool is known to report for a ZIP, RAR or 7-Zip
+// file. They are one family on purpose: which name a PC reports depends on which program registered
+// the extension (WinRAR and 7-Zip say 'application/x-compressed' for all three; Windows says
+// 'application/x-zip-compressed'; Firefox and some tools say 'application/x-rar'), and people rename
+// one archive format to another, so a .zip that is really a RAR must not be turned away.
+const ARCHIVE_MIME_TYPES = [
+  'application/zip',
+  'application/x-zip',
+  'application/x-zip-compressed',
+  'application/zip-compressed',
+  'multipart/x-zip',
+  'application/x-compressed',
+  'application/x-compress',
+  'application/vnd.rar',
+  'application/x-rar',
+  'application/x-rar-compressed',
+  'application/rar',
+  'application/x-7z-compressed',
+  'application/x-7z',
+  'application/7z',
+  'application/gzip',
+  'application/x-gzip',
+  'application/x-tar',
+  'application/x-gtar',
+  'application/x-bzip2',
+  'application/x-xz',
+]
+
 const EXTENSION_MIME_MAP: Record<string, string[]> = {
   '.pdf': ['application/pdf'],
   '.doc': ['application/msword'],
@@ -83,17 +111,13 @@ const EXTENSION_MIME_MAP: Record<string, string[]> = {
   '.webp': ['image/webp'],
   '.heic': ['image/heic'],
   '.heif': ['image/heif'],
-  // 'application/x-compressed' is what Windows browsers report for any archive once WinRAR or
-  // 7-Zip has registered the extension, so it is valid for all three.
-  '.zip': [
-    'application/zip',
-    'application/x-zip-compressed',
-    'application/x-zip',
-    'application/x-compressed',
-  ],
-  '.rar': ['application/vnd.rar', 'application/x-rar-compressed', 'application/x-compressed'],
-  '.7z': ['application/x-7z-compressed', 'application/x-compressed'],
+  '.zip': ARCHIVE_MIME_TYPES,
+  '.rar': ARCHIVE_MIME_TYPES,
+  '.7z': ARCHIVE_MIME_TYPES,
 }
+
+// What a browser or client sends when it does not know a file's type.
+const UNKNOWN_CONTENT_TYPES = ['', 'application/octet-stream']
 
 export interface ValidationResult {
   valid: boolean
@@ -141,9 +165,17 @@ export function validateFile(
   // image/jpeg), independent of the category allowlist above and enforced
   // even for blocklist-only categories. Extensions with no entry here
   // (.dwg, .eml, .msg, ...) have nothing to cross-check, so they pass
-  // through rather than being rejected as "unrecognized".
+  // through rather than being rejected as "unrecognized". The same goes
+  // for a type the browser could not determine (application/octet-stream,
+  // which is what the web app sends for a file whose type the PC does not
+  // know): "unknown" claims to be nothing, so it cannot be a spoof of
+  // another type, and refusing it would turn away real files.
   const mimeAllowedForExt = EXTENSION_MIME_MAP[ext]
-  if (mimeAllowedForExt && !mimeAllowedForExt.includes(mimeType)) {
+  if (
+    mimeAllowedForExt &&
+    !UNKNOWN_CONTENT_TYPES.includes(mimeType) &&
+    !mimeAllowedForExt.includes(mimeType)
+  ) {
     return {
       valid: false,
       reason: `File extension ${ext} does not match content type ${mimeType}`,
