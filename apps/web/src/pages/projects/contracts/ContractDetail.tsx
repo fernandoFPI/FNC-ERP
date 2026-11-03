@@ -1,13 +1,15 @@
 ﻿import { useTranslation } from 'react-i18next'
 import { enumLabel } from '../../../i18n'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   PROJECT_CONTRACT_QUERY,
+  PROJECT_INVOICE_DEFAULTS_QUERY,
   REACH_MILESTONE,
   CREATE_PROJECT_INVOICE,
 } from '../../../graphql/projects'
+import { toInvoiceHeaderValues } from '../../../components/projects/InvoiceHeaderFields'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -18,7 +20,16 @@ import type { InvoiceBuilderResult } from '../../../components/ui/InvoiceBuilder
 import { InvoiceBuilder } from '../../../components/ui/InvoiceBuilder'
 import { useToastStore } from '../../../store/toastStore'
 import { useRecordLock } from '../../../hooks/useRecordLock'
-import type { CreateProjectInvoiceMutation, CreateProjectInvoiceMutationVariables, ProjectContractQuery, ProjectContractQueryVariables, ReachMilestoneMutation, ReachMilestoneMutationVariables } from '../../../graphql/generated'
+import type {
+  CreateProjectInvoiceMutation,
+  CreateProjectInvoiceMutationVariables,
+  ProjectContractQuery,
+  ProjectContractQueryVariables,
+  ProjectInvoiceDefaultsQuery,
+  ProjectInvoiceDefaultsQueryVariables,
+  ReachMilestoneMutation,
+  ReachMilestoneMutationVariables,
+} from '../../../graphql/generated'
 
 export default function ContractDetail() {
   const { t } = useTranslation()
@@ -36,6 +47,21 @@ export default function ContractDetail() {
   const [reachMilestone] = useMutation<ReachMilestoneMutation, ReachMilestoneMutationVariables>(REACH_MILESTONE)
   const [createInvoice] = useMutation<CreateProjectInvoiceMutation, CreateProjectInvoiceMutationVariables>(CREATE_PROJECT_INVOICE)
 
+  // What the project says about the invoice header block (client contract no., addresses, delivery
+  // date, period). Asked for only while the wizard is open, fresh each time.
+  const { data: defaultsData } = useQuery<
+    ProjectInvoiceDefaultsQuery,
+    ProjectInvoiceDefaultsQueryVariables
+  >(PROJECT_INVOICE_DEFAULTS_QUERY, {
+    variables: { contractId: id ?? '' },
+    skip: !showInvoiceBuilder || !id,
+    fetchPolicy: 'network-only',
+  })
+  const headerDefaults = useMemo(
+    () => (defaultsData ? toInvoiceHeaderValues(defaultsData.projectInvoiceDefaults) : undefined),
+    [defaultsData],
+  )
+
   const contract = data?.projectContract
 
   async function handleCreateInvoice(result: InvoiceBuilderResult) {
@@ -52,6 +78,16 @@ export default function ContractDetail() {
           whtApplies: result.wht_applies,
           whtScenario: result.wht_scenario ?? undefined,
           whtRate: result.wht_rate,
+          // Untouched: send nothing and the gateway fills the header from the project.
+          ...(result.header
+            ? {
+                clientContractNo: result.header.clientContractNo,
+                billToAddress: result.header.billToAddress,
+                deliverToAddress: result.header.deliverToAddress,
+                deliveryDate: result.header.deliveryDate,
+                periodOfPerformance: result.header.periodOfPerformance,
+              }
+            : {}),
           lines: result.lines.map((l) => ({
             description: l.description,
             sourceType: result.billing_method === 'milestone' ? 'milestone' : 'manual',
@@ -311,6 +347,7 @@ export default function ContractDetail() {
         projectName={contract.contractName}
         contractAmount={contract.contractValue}
         currency={cur}
+        headerDefaults={headerDefaults}
         milestones={contract.milestones.map(
           (m: { id: string; name: string; billableAmount: number; status: string }) => ({
             id: m.id,

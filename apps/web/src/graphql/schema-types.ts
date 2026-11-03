@@ -5510,11 +5510,16 @@ export type MutationUpdateProjectItpArgs = {
 
 
 export type MutationUpdateProjectInvoiceArgs = {
+  billToAddress?: InputMaybe<Scalars['String']['input']>;
+  clientContractNo?: InputMaybe<Scalars['String']['input']>;
   currencyCode?: InputMaybe<Scalars['String']['input']>;
+  deliverToAddress?: InputMaybe<Scalars['String']['input']>;
+  deliveryDate?: InputMaybe<Scalars['String']['input']>;
   dueDate?: InputMaybe<Scalars['String']['input']>;
   id: Scalars['ID']['input'];
   invoiceDate?: InputMaybe<Scalars['String']['input']>;
   lines?: InputMaybe<Array<InvoiceLineEditInput>>;
+  periodOfPerformance?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -7079,7 +7084,9 @@ export type ProjectInspectionRequest = {
 
 export type ProjectInvoice = {
   bankAccountId?: Maybe<Scalars['ID']['output']>;
+  billToAddress?: Maybe<Scalars['String']['output']>;
   billingMethod: Scalars['String']['output'];
+  clientContractNo?: Maybe<Scalars['String']['output']>;
   clientName?: Maybe<Scalars['String']['output']>;
   companyAddress?: Maybe<Scalars['String']['output']>;
   companyBranchAddress?: Maybe<Scalars['String']['output']>;
@@ -7095,6 +7102,8 @@ export type ProjectInvoice = {
   companyStampImage?: Maybe<Scalars['String']['output']>;
   contractNumber?: Maybe<Scalars['String']['output']>;
   currencyCode: Scalars['String']['output'];
+  deliverToAddress?: Maybe<Scalars['String']['output']>;
+  deliveryDate?: Maybe<Scalars['String']['output']>;
   discountAmount: Scalars['Float']['output'];
   discountPct: Scalars['Float']['output'];
   displayMode: Scalars['String']['output'];
@@ -7108,6 +7117,7 @@ export type ProjectInvoice = {
   paymentTermsDays?: Maybe<Scalars['Int']['output']>;
   paymentType: Scalars['String']['output'];
   payments: Array<InvoicePayment>;
+  periodOfPerformance?: Maybe<Scalars['String']['output']>;
   projectCode?: Maybe<Scalars['String']['output']>;
   projectName?: Maybe<Scalars['String']['output']>;
   retentionAmount: Scalars['Float']['output'];
@@ -7120,14 +7130,27 @@ export type ProjectInvoice = {
   whtScenario?: Maybe<Scalars['String']['output']>;
 };
 
+export type ProjectInvoiceHeaderDefaults = {
+  billToAddress?: Maybe<Scalars['String']['output']>;
+  clientContractNo?: Maybe<Scalars['String']['output']>;
+  deliverToAddress?: Maybe<Scalars['String']['output']>;
+  deliveryDate?: Maybe<Scalars['String']['output']>;
+  periodOfPerformance?: Maybe<Scalars['String']['output']>;
+};
+
 export type ProjectInvoiceInput = {
+  billToAddress?: InputMaybe<Scalars['String']['input']>;
   billingMethod: Scalars['String']['input'];
+  clientContractNo?: InputMaybe<Scalars['String']['input']>;
+  deliverToAddress?: InputMaybe<Scalars['String']['input']>;
+  deliveryDate?: InputMaybe<Scalars['String']['input']>;
   discountAmount?: InputMaybe<Scalars['Float']['input']>;
   discountPct?: InputMaybe<Scalars['Float']['input']>;
   displayMode?: InputMaybe<Scalars['String']['input']>;
   dueDate: Scalars['String']['input'];
   lines: Array<ProjectInvoiceLineInput>;
   notes?: InputMaybe<Scalars['String']['input']>;
+  periodOfPerformance?: InputMaybe<Scalars['String']['input']>;
   whtApplies?: InputMaybe<Scalars['Boolean']['input']>;
   whtRate?: InputMaybe<Scalars['Float']['input']>;
   whtScenario?: InputMaybe<Scalars['String']['input']>;
@@ -7630,6 +7653,7 @@ export type Query = {
   projectITPs: Array<ProjectItp>;
   projectInspectionRequests: Array<ProjectInspectionRequest>;
   projectInvoice?: Maybe<ProjectInvoice>;
+  projectInvoiceDefaults: ProjectInvoiceHeaderDefaults;
   projectInvoices: Array<ProjectInvoice>;
   projectLaborEntries: Array<LaborEntry>;
   projectMeeting?: Maybe<Meeting>;
@@ -8437,6 +8461,11 @@ export type QueryProjectInspectionRequestsArgs = {
 
 export type QueryProjectInvoiceArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryProjectInvoiceDefaultsArgs = {
+  contractId: Scalars['ID']['input'];
 };
 
 

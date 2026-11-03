@@ -743,6 +743,122 @@ Don't re-derive, check these first.
     code paths). Lint trap met on the way: `@typescript-eslint/non-nullable-type-assertion-style` rewrites
     `x.closest('…') as HTMLElement` into `x.closest('…')!`, which `no-non-null-assertion` then forbids, and the `!`
     leaves the type as `Element`; use `closest<HTMLElement>('…')` and throw if it is null.
+53. **A fixed-position page decoration (the stamp) over a page whose length was decided by a row count.** On the
+    letterhead invoice (`apps/web/src/lib/invoiceHtml.ts`, printed from the Invoice > PDF tab) the company stamp is
+    `position: fixed; bottom: 43mm`, so it repeats at the same spot on EVERY printed page (about 43 to 77 mm up from the
+    bottom edge, label included). Pages were cut server-side at 6 rows (`FIRST_PAGE_ROWS`), whatever those rows measured.
+    A description that wraps to four lines (supplier-style text in a 170 px column) makes page 1 taller than the space
+    above the stamp, so rows 5 and 6 and the "Continued on next page" bar printed on top of it. It stayed invisible for
+    years only because the stamp image had a solid background that painted over the rows; the first transparent stamp
+    exposed it. In the worst case Chrome cut the table at the sheet edge and the rest landed on top of the next page's
+    letterhead header (reproduced on the old code: rows 5 and 6 of the user's own invoice were not on page 1 at all).
+    How to spot it: text visible through a transparent stamp or logo; a layout whose page length is a constant ("6 rows")
+    rather than a measurement; anything `position: fixed` in a print stylesheet (it repeats on every sheet and takes no
+    room in the flow, so nothing in the flow knows to stay away from it). Fix: the generated page carries a script that
+    re-paginates from real heights, filling a page with rows until the next one would end the table below
+    `297 - topPadding - 85` mm and then starting a new one, and moving the totals/payment block on if it does not fit
+    either. Traps met while writing it:
+    (a) *Measure with the print geometry, not the screen's.* The on-screen iframe is wider and wraps less, so it
+    under-measures what the printer lays out. The script switches `html.measuring` on while it measures; that class
+    applies the same rules as `@media print` (A4 width, print paddings, stamp out of the flow), and both come from ONE
+    function (`printGeometryCss(scope)`) so they cannot drift. The measurement gave identical splits at a 500 px and a
+    1100 px viewport.
+    (b) *Convert mm to px with a probe element*, not `96 / 25.4`: the verification page injects `html { zoom }` into the
+    same HTML and `getBoundingClientRect` reports zoomed pixels.
+    (c) *`appendChild` moves a node, it does not copy it.* My first version re-appended rows into a tbody that still held
+    the old rows and silently re-ordered them (page 1 came out empty). Empty the old tbody first.
+    (d) *A flag measured for the last element has to be undone when that element moves.* The final row is measured without
+    the "continued" bar; when it overflowed to a new page, the page it left kept no bar. A unit test on the page
+    structure caught it; a screenshot check did not.
+    (e) *Let the script wait for the web font* (`document.fonts.ready`, a 3 s timer in case the font request hangs, and
+    `beforeprint`): Arial and Inter wrap differently.
+    (f) *`.page2-break.page-mid` has `padding-bottom: 85mm`* and the page's own footer bar sits below the table, so a
+    page filled to the limit overflows its sheet by the footer's height and Chrome prints a blank sheet after it. The
+    original output has such near-blank sheets already (a sheet holding only a footer bar, seen on a 20-row invoice);
+    pages made by the script are not `page-mid`. `makePage()` in the totals overflow still creates `page-mid` pages: check that if blank sheets
+    show up after the last page.
+    (g) *One shared stamp position was set by the worst letterhead.* The first fix kept the stamp 43 mm up and reserved
+    85 mm for it everywhere, and that number exists only because Al Watanyia's footer artwork rises to 41 mm from the
+    bottom edge; Yakam's starts at 24.7 mm and Factory's at 23.9 mm, so those two wasted about 18 mm a page (page 1 of a
+    24-line test invoice held 2 rows where 3 fit). Fixed by reading the footer from each company's own letterhead image
+    (`placeStamp` / `footerStartMm`: the bottom 40 % drawn on a canvas over white, first row with 3 or more dark pixels):
+    the stamp goes 2 mm above it (floor 12 mm, cap 75 mm), published as `--stamp-bottom` for the print and measuring CSS,
+    and the reserve becomes `stampBottom + 34.3 + 4` mm. Anything that stops it (image not decoded yet, tainted canvas,
+    no 2D context) keeps the old 43 mm / 85 mm, so the worst case is the previous behaviour. Measured stamp positions:
+    Yakam 26.7, Factory 25.9, Al Watanyia 43.2 mm. The 34.3 mm is the stamp block (110 px image, margin, label); change it
+    together with `.lh-stamp-img`'s `max-height`. A tighter clearance leaves the "Authorized By" label about 3 mm above
+    Yakam's footer rule; 4 mm clearance and 7.7 mm gap (the first version) is airier but gives page 1 one row less.
+    Unread so far: a letterhead with a faint full-width watermark in its bottom 40 % (luminance 240 or more is treated as
+    paper) would let the stamp sit over it, which is harmless with a transparent stamp. Per-company positions are not a
+    setting anywhere; if one is ever needed, put it on the company next to `stamp_image`, and let it override the scan.
+    Other levers that were measured and NOT used: a 90 px stamp (almost no gain), and narrower money columns (112/112/124
+    px instead of 140/140/150: the 24-line invoice drops from 7 pages to 5, 4 rows on page 1; a visual change nobody has
+    asked for yet). The description column is only about 130 px wide because the five numeric columns take 522 of 680 px,
+    which is why one catalogue-style description wraps to 7 lines.
+    How it was verified, and how to repeat it (a unit test cannot see layout): render `buildInvoiceHTML` with a stand-in
+    letterhead and a transparent stamp in headless Chrome (`puppeteer-core` is in `packages/pdf`), print to PDF with
+    `preferCSSPageSize`, and with PyMuPDF (`fitz`) list the words whose box intersects the stamp band (x 225 to 370 pt,
+    y 623 to 720 pt on A4, minus the stamp's own "AUTHORIZED BY" / "FNC"). Also assert that rows 1..N each appear exactly
+    once, or an empty page passes trivially (it did, first). The old code fails it on the user's case; the new one is clean
+    on six invoice shapes (short, 9 mixed rows, 20 rows, 5 very tall rows, one row taller than a sheet, no rows), four of
+    them also with bank details. Regression test (stand-in layout, runs the real generated script):
+    `apps/web/src/lib/__tests__/invoiceHtmlPagination.test.ts` (14 tests, the stamp placement ones use a fake image and
+    canvas); each safeguard was mutation-checked. Local fake data: five `TESTPAG-0x` invoices on contract BA-3437-2021 of
+    Nishtimani Yakam in `fnc_erp_dev` (the local Yakam stamp is an opaque JPEG, so the bug only shows once a transparent
+    stamp is uploaded). Related to #40 (a table
+    that cannot adapt to the room it has) and #23 (one thing, several code paths).
+
+54. **A document built as an HTML string puts database text in as markup, and the iframe that shows it runs scripts.**
+    Every `apps/web/src/lib/*Html.ts` builder (invoice, PO, requisition, Store In, Store Out, expense claim, payment
+    voucher) interpolates names, descriptions and addresses straight into a template literal, and the page shows the result
+    with `<iframe srcDoc=...>` with NO `sandbox`, so the document runs with the app's own origin. A line description of
+    `<img src=x onerror=...>` on an invoice ran in the browser of everyone who opened it, and the public QR verification
+    page (`InvoiceVerifyPage`, token only, no login) renders the same HTML. Found while reading `invoiceHtml.ts` for
+    another change, not exploited; confirmed by test, not in the field. Four ways in, all fixed for the invoice:
+    (a) element text and attribute values: `esc()` (`apps/web/src/lib/htmlEscape.ts`, the five characters `& < > " '`);
+    (b) an image source placed in `src="..."` or a CSS `url('...')`: a quote or a `)` ends it and carries markup
+    (`x');}</style><script>...`), so `safeImageSrc()` accepts only a `data:image/(png|jpeg|gif|webp|svg+xml)` URL with a
+    quote-free payload or an `http(s)` URL with no quote, bracket or space, and the invoice drops anything else;
+    (c) text that reaches the page through a JS string and then `innerHTML` (the pagination script builds the page
+    footers that way): escape it as HTML first and then as a JS literal (`jsStringLiteral`), in that order;
+    (d) numbers and enum words (status, currency) are strings too: wrap them as well.
+    How to spot it: grep `lib/*Html.ts` and any `srcDoc=` / `document.write(` for `${x.field}` with no `esc(`, and read
+    every `innerHTML =` in a generated `<script>`. Regression test: `lib/__tests__/invoiceHtml.test.ts` puts a hostile
+    string in EVERY field of both the standard and the letterhead invoice (bank block, company name, image sources)
+    and asserts no extra `<script>`, no `on*` attribute, and that the text is shown literally; each `esc` / `safeImageSrc`
+    call was removed in turn and the test failed. **Still open: the six sibling builders above and
+    `PaymentVoucherDetail`'s `document.write`**: about 330 interpolations, none escaped. Do them one at a time with the
+    same hostile-field test, because each document's look must stay identical. A `sandbox` on the iframe is NOT the
+    fix by itself: the invoice's own pagination script needs `allow-scripts`, and without `allow-same-origin` the page
+    can no longer call `contentWindow.print()`.
+
+55. **One label, two fields ("RFQ #"); and a new header field with three builders and two meanings of "empty".**
+    The invoice header's "Contract No." printed `project_contracts.contract_number`, our internal reference
+    (`BA-3437-2021`, and `IMPORT-BA-...` on 40 of 45 invoiced contracts), when the client expects its own contract / PO /
+    RFQ number. That lives in `projects.rfq_number` (labelled "RFQ #" on the project form and detail page; values like
+    `PO 4500140630`, `RFQ098`, `025/PC/24`, filled on 23 of 45 invoiced projects). The Projects LIST column headed
+    "RFQ #" deliberately shows `contract_name` instead (`ProjectsPage.tsx`, filled on 2 of 45): so "RFQ #" is two
+    different fields depending on the screen. Before wiring anything to "the field called X", find the column
+    behind the label on the screen you were pointed at.
+    Design of the invoice header block (migration 311, `project_invoices`: `client_contract_no`, `bill_to_address`,
+    `deliver_to_address`, `delivery_date`, `period_of_performance`): the invoice keeps its own copy, prefilled from the
+    project, editable on the create wizard and on the edit screen. NULL means "never set" and the value is derived from
+    the project at read time (so the invoices made before the migration print a useful header); '' means the person
+    cleared it on purpose and it stays blank. A DATE column cannot hold '', so clearing Date of Delivery falls back to the
+    project's actual end date. One helper, `services/gateway/src/lib/invoiceHeader.ts`, decides all of it, because three
+    code paths build the invoice shape (`projectInvoice`, the re-fetch inside `updateProjectInvoice`, and the public
+    `/verify/invoice/:token` route) and a field added to some of them reads as empty on the others (#23, #34, #43).
+    Two details worth keeping: the wizard sends the header only when the person touched it (`header: null` otherwise,
+    and the server derives the same defaults), and the edit screen sends only the fields that CHANGED
+    (`changedInvoiceHeader`), so saving a line edit on an old invoice does not freeze the derived values as if somebody
+    had typed them. The create form's prefill comes from a query over the same derivation (`projectInvoiceDefaults`), so
+    the form and an old invoice cannot disagree. Tests: `services/gateway/tests/invoice-header-fields.test.ts` (real
+    Postgres through `ApolloServer.executeOperation`; the three builders compared; tenancy; validation; seven
+    mutation-checked safeguards), `components/ui/__tests__/InvoiceBuilder.test.tsx`,
+    `components/projects/__tests__/InvoiceHeaderFields.test.tsx`, `lib/__tests__/invoiceHtml.test.ts`.
+    Tooling traps met on the way: PowerShell's `ConvertFrom-Json` refuses `en.json` (it has `Company` and `COMPANY`
+    keys; use Node), and `Get-Content | Set-Content -Encoding utf8` on a file with `→` or `–` turns them into
+    mojibake and adds a BOM (edit those files with Node or the editor tools, never a PowerShell round trip).
 
 56. **An approved edit that rewrites one copy of a value leaves its other copies, and the control that reads them, on
     the old value.** A requisition line holds its price in four places: `unit_price` (the total is built from it),

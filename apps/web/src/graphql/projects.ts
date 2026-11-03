@@ -814,6 +814,11 @@ export const PROJECT_INVOICE_QUERY = gql`
       companyBranchPhone
       paymentTermsDays
       verificationToken
+      clientContractNo
+      billToAddress
+      deliverToAddress
+      deliveryDate
+      periodOfPerformance
       lines {
         id
         lineNumber
@@ -835,6 +840,20 @@ export const PROJECT_INVOICE_QUERY = gql`
         paymentReference
         paymentMethod
       }
+    }
+  }
+`
+
+// What the create-invoice form prefills the header block with (client contract no., addresses,
+// delivery date, period): the same values an invoice falls back to when none were stored.
+export const PROJECT_INVOICE_DEFAULTS_QUERY = gql`
+  query ProjectInvoiceDefaults($contractId: ID!) {
+    projectInvoiceDefaults(contractId: $contractId) {
+      clientContractNo
+      billToAddress
+      deliverToAddress
+      deliveryDate
+      periodOfPerformance
     }
   }
 `
@@ -879,6 +898,11 @@ export const UPDATE_PROJECT_INVOICE = gql`
     $dueDate: String
     $currencyCode: String
     $lines: [InvoiceLineEditInput!]
+    $clientContractNo: String
+    $billToAddress: String
+    $deliverToAddress: String
+    $deliveryDate: String
+    $periodOfPerformance: String
   ) {
     updateProjectInvoice(
       id: $id
@@ -886,6 +910,11 @@ export const UPDATE_PROJECT_INVOICE = gql`
       dueDate: $dueDate
       currencyCode: $currencyCode
       lines: $lines
+      clientContractNo: $clientContractNo
+      billToAddress: $billToAddress
+      deliverToAddress: $deliverToAddress
+      deliveryDate: $deliveryDate
+      periodOfPerformance: $periodOfPerformance
     ) {
       id
       invoiceNumber
@@ -923,6 +952,11 @@ export const UPDATE_PROJECT_INVOICE = gql`
       companyBranchPhone
       paymentTermsDays
       verificationToken
+      clientContractNo
+      billToAddress
+      deliverToAddress
+      deliveryDate
+      periodOfPerformance
       lines {
         id
         lineNumber

@@ -1,3 +1,9 @@
+import { esc, safeImageSrc } from './htmlEscape'
+
+// Everything that comes from the database goes into the page through esc() (or safeImageSrc()
+// for images): the document is shown in an iframe without a sandbox, so markup in a line
+// description or a client name would otherwise run as script. See lib/htmlEscape.ts.
+
 export interface InvoiceLine {
   id?: string
   lineNumber: number
@@ -48,6 +54,14 @@ export interface InvoiceRenderData {
   companyCountry?: string | null
   companyStampImage?: string | null
   companyLetterheadImage?: string | null
+  /** The CLIENT's contract / PO / RFQ number (not our internal contract number). */
+  clientContractNo?: string | null
+  /** Free text, one line per line break. */
+  billToAddress?: string | null
+  deliverToAddress?: string | null
+  /** YYYY-MM-DD */
+  deliveryDate?: string | null
+  periodOfPerformance?: string | null
   companyAddress?: string | null
   companyPhone?: string | null
   companyEmail?: string | null
@@ -70,12 +84,24 @@ function fmt(n: number, currency: string): string {
       n,
     ) +
     ' ' +
-    currency
+    esc(currency)
   )
 }
 
-function fmtDate(d: string): string {
-  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+/** The text, or the fallback when it is missing or only spaces (an empty string is a blank, not a value). */
+function orElse(v: string | null | undefined, fallback: string): string {
+  const t = v?.trim()
+  if (!t) return fallback
+  return t
+}
+
+/** dd/mm/yyyy, read from the string itself so a time zone cannot move the day. */
+function fmtShortDate(d: string | null | undefined): string | null {
+  if (!d) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d)
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`
+  const t = new Date(d)
+  return Number.isNaN(t.getTime()) ? null : t.toLocaleDateString('en-GB')
 }
 
 export function buildInvoiceHTML(
@@ -83,12 +109,15 @@ export function buildInvoiceHTML(
   bankAccount?: BankAccount | null,
   paymentType?: string,
   stampImage?: string | null,
-  qrDataUrl?: string | null,
+  qrDataUrlInput?: string | null,
 ): string {
   const cur = inv.currencyCode
   const pt = paymentType ?? inv.paymentType ?? 'wire_transfer'
-  const stamp = stampImage ?? inv.companyStampImage ?? null
-  const letterhead = inv.companyLetterheadImage ?? null
+  const stamp = safeImageSrc(stampImage ?? inv.companyStampImage ?? null)
+  const letterhead = safeImageSrc(inv.companyLetterheadImage ?? null)
+  const qrDataUrl = safeImageSrc(qrDataUrlInput)
+  const invoiceNo = esc(inv.invoiceNumber)
+  const companyLabel = esc(inv.companyName ?? 'FNC Group')
 
   const subtotal = inv.lines.reduce((s, l) => s + l.subtotal, 0)
   const marginTotal = inv.lines.reduce((s, l) => s + l.marginAmount, 0)
@@ -97,6 +126,19 @@ export function buildInvoiceHTML(
   const hasTax = taxTotal > 0
   const retentionPct = inv.retentionPct ?? 0
 
+  // ── Header block (dates, Deliver To / Bill To, contract row) ─────────────
+  const none = '—'
+  const hdrLine = '#c3ccd6'
+  const hdrCell = `padding:7px 10px;border:1px solid ${hdrLine};font-size:11.5px;line-height:1.45;overflow-wrap:anywhere`
+  const hdrLabel = `${hdrCell};background:#dfe6ee;color:#1a3c5e;font-weight:700;text-align:center`
+  const hdrValue = `${hdrCell};color:#1a1a1a;text-align:center`
+  const hdrHead = `${hdrCell};background:#1a3c5e;border-color:#1a3c5e;color:#fff;font-weight:700;text-align:center`
+  const hdrText = `${hdrCell};border:0;color:#1a1a1a;text-align:left;white-space:pre-line;min-height:62px`
+  // The gateway always sends both addresses (typed, or derived from the project); the client name
+  // only stands in for Bill To when a caller sends none at all. An empty string is a blank on purpose.
+  const billTo = inv.billToAddress ?? inv.clientName ?? ''
+  const deliverTo = inv.deliverToAddress ?? ''
+
   const FIRST_PAGE_ROWS = 6
   const OTHER_PAGE_ROWS = 6
 
@@ -104,9 +146,9 @@ export function buildInvoiceHTML(
     const bg = idx % 2 === 1 ? 'background:#f8fafc;' : ''
     return `
     <tr style="page-break-inside:avoid;break-inside:avoid">
-      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;color:#888;${bg}">${l.lineNumber}</td>
-      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;${bg}">${l.description}</td>
-      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;${bg}">${l.qty}</td>
+      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;color:#888;${bg}">${esc(l.lineNumber)}</td>
+      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;${bg}">${esc(l.description)}</td>
+      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;${bg}">${esc(l.qty)}</td>
       <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;${bg}">${fmt(l.unitCost, cur)}</td>
       <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;${bg}">${fmt(l.subtotal, cur)}</td>
       ${
@@ -188,7 +230,7 @@ export function buildInvoiceHTML(
   <!-- Invoice title + number + QR positioned top-right, level with the letterhead logo -->
   <div style="position:absolute;top:16mm;right:15mm;text-align:right">
     <div style="font-size:20px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Invoice</div>
-    <div style="font-size:12px;color:#555;font-family:monospace;margin-top:5px;letter-spacing:0.3px">${inv.invoiceNumber}</div>
+    <div style="font-size:12px;color:#555;font-family:monospace;margin-top:5px;letter-spacing:0.3px">${invoiceNo}</div>
     ${
       qrDataUrl
         ? `
@@ -255,13 +297,13 @@ export function buildInvoiceHTML(
       <div style="font-size:11px;color:#999;font-style:italic">Continued from previous page</div>
       <div style="text-align:right">
         <div style="font-size:20px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Invoice</div>
-        <div style="font-size:12px;color:#555;font-family:monospace;margin-top:4px">${inv.invoiceNumber}</div>
+        <div style="font-size:12px;color:#555;font-family:monospace;margin-top:4px">${invoiceNo}</div>
       </div>
     </div>
     <!-- Print: absolute header mirrors page 1 letterhead position (hidden on screen via inline style) -->
     <div class="p2-print-hdr" style="display:none">
       <div style="font-size:20px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Invoice</div>
-      <div style="font-size:12px;color:#555;font-family:monospace;margin-top:5px;letter-spacing:0.3px">${inv.invoiceNumber}</div>
+      <div style="font-size:12px;color:#555;font-family:monospace;margin-top:5px;letter-spacing:0.3px">${invoiceNo}</div>
       ${
         qrDataUrl
           ? `
@@ -283,18 +325,29 @@ export function buildInvoiceHTML(
       <div style="font-size:13px;color:#666;font-style:italic">Continued from previous page</div>
       <div style="text-align:right">
         <div style="font-size:18px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:1px">Invoice</div>
-        <div style="font-size:12px;color:#666;font-family:monospace">${inv.invoiceNumber}</div>
+        <div style="font-size:12px;color:#666;font-family:monospace">${invoiceNo}</div>
       </div>
     </div>
     `
 
   function pageFooterBar(pageNum: number): string {
     return `
-  <div style="border-top:1px solid #e5e5e5;padding-top:10px;margin-top:16px;font-size:10px;color:#999;display:flex;justify-content:space-between">
-    <span>${inv.companyName ?? 'FNC Group'} &bull; ${inv.invoiceNumber}</span>
+  <div class="page-footer-bar" style="border-top:1px solid #e5e5e5;padding-top:10px;margin-top:16px;font-size:10px;color:#999;display:flex;justify-content:space-between">
+    <span>${companyLabel} &bull; ${invoiceNo}</span>
     <span class="page-count" data-page-num="${pageNum}">Page ${pageNum} of ${totalPages}</span>
   </div>`
   }
+
+  // "Continued on next page" bar closing every lines table that is followed by another page.
+  // The pagination script re-creates it when it moves rows, so there is a single copy of the markup.
+  const continuedTfoot = `
+    <tfoot>
+      <tr>
+        <td colspan="99" style="padding:10px 14px;font-size:11px;color:#999;font-style:italic;text-align:right;border-top:1px solid #e2e8f0">
+          Continued on next page →
+        </td>
+      </tr>
+    </tfoot>`
 
   // Totals + payment/bank details + signature block — appended only to the last page.
   // Wrapped in #trailing-content so the overflow-correction script (letterhead mode
@@ -364,34 +417,34 @@ export function buildInvoiceHTML(
   <!-- Payment instructions + bank details -->
   <div style="padding:20px;background:#f8fafc;border-radius:8px">
     <p style="font-size:11px;color:#666;line-height:1.7;margin-bottom:${pt === 'cash' || !bankAccount ? '0' : '16px'}">
-      Please ${pt === 'cash' ? 'arrange cash payment' : 'transfer payment'} within ${inv.paymentTermsDays ?? 30} days of invoice date.
-      Reference invoice number ${inv.invoiceNumber} in your payment.
+      Please ${pt === 'cash' ? 'arrange cash payment' : 'transfer payment'} within ${esc(inv.paymentTermsDays ?? 30)} days of invoice date.
+      Reference invoice number ${invoiceNo} in your payment.
     </p>
     ${
       pt !== 'cash' && bankAccount
         ? `
     <div>
       <p style="font-size:12px;font-weight:700;color:#1a3c5e;margin-bottom:12px;border-bottom:1px solid #e2e8f0;padding-bottom:6px">
-        Banking Information &mdash; ${bankAccount.accountName} (${bankAccount.currencyCode})
+        Banking Information &mdash; ${esc(bankAccount.accountName)} (${esc(bankAccount.currencyCode)})
       </p>
       <div style="display:grid;grid-template-columns:1fr${bankAccount.intermediaryBankName ? ' 1fr' : ''};gap:24px">
         <div style="font-size:12px;color:#444;line-height:2">
-          <span style="color:#666">Bank Name: </span><strong>${bankAccount.bankName}</strong><br>
-          ${bankAccount.beneficiaryName ? `<span style="color:#666">Beneficiary Name: </span><strong>${bankAccount.beneficiaryName}</strong><br>` : ''}
-          ${bankAccount.accountNumber ? `<span style="color:#666">Account Number: </span>${bankAccount.accountNumber}<br>` : ''}
-          ${bankAccount.iban ? `<span style="color:#666">IBAN: </span><span style="font-family:monospace">${bankAccount.iban}</span><br>` : ''}
-          ${bankAccount.swift ? `<span style="color:#666">SWIFT Code: </span>${bankAccount.swift}<br>` : ''}
-          ${bankAccount.branchCode ? `<span style="color:#666">Branch Code: </span>${bankAccount.branchCode}<br>` : ''}
-          ${bankAccount.bankAddress ? `<span style="color:#666">Bank Address:</span><br><span style="color:#555">${bankAccount.bankAddress}</span>` : ''}
+          <span style="color:#666">Bank Name: </span><strong>${esc(bankAccount.bankName)}</strong><br>
+          ${bankAccount.beneficiaryName ? `<span style="color:#666">Beneficiary Name: </span><strong>${esc(bankAccount.beneficiaryName)}</strong><br>` : ''}
+          ${bankAccount.accountNumber ? `<span style="color:#666">Account Number: </span>${esc(bankAccount.accountNumber)}<br>` : ''}
+          ${bankAccount.iban ? `<span style="color:#666">IBAN: </span><span style="font-family:monospace">${esc(bankAccount.iban)}</span><br>` : ''}
+          ${bankAccount.swift ? `<span style="color:#666">SWIFT Code: </span>${esc(bankAccount.swift)}<br>` : ''}
+          ${bankAccount.branchCode ? `<span style="color:#666">Branch Code: </span>${esc(bankAccount.branchCode)}<br>` : ''}
+          ${bankAccount.bankAddress ? `<span style="color:#666">Bank Address:</span><br><span style="color:#555">${esc(bankAccount.bankAddress)}</span>` : ''}
         </div>
         ${
           bankAccount.intermediaryBankName
             ? `
         <div style="font-size:12px;color:#444;line-height:2">
           <p style="font-size:11px;font-weight:600;color:#1a3c5e;margin-bottom:6px">Intermediary Bank:</p>
-          <strong>${bankAccount.intermediaryBankName}</strong><br>
-          ${bankAccount.intermediarySwift ? `SWIFT: ${bankAccount.intermediarySwift}<br>` : ''}
-          ${bankAccount.intermediaryCountry ? bankAccount.intermediaryCountry : ''}
+          <strong>${esc(bankAccount.intermediaryBankName)}</strong><br>
+          ${bankAccount.intermediarySwift ? `SWIFT: ${esc(bankAccount.intermediarySwift)}<br>` : ''}
+          ${bankAccount.intermediaryCountry ? esc(bankAccount.intermediaryCountry) : ''}
         </div>
         `
             : ''
@@ -409,34 +462,115 @@ export function buildInvoiceHTML(
   </section>
   </div>`
 
-  const companyFooterLabel = `${inv.companyName ?? 'FNC Group'} • ${inv.invoiceNumber}`
+  const companyFooterLabel = `${companyLabel} • ${invoiceNo}`
 
   function jsStringLiteral(s: string): string {
     return JSON.stringify(s).replace(/</g, '\\u003c')
   }
 
   // Letterhead mode only: the company stamp and header graphic are position:fixed,
-  // repeating identically on every physical printed page. If the last page's real
-  // content (table rows + totals/payment/signature) is taller than the safe zone
-  // between those fixed graphics, this measures the actual rendered content — not a
-  // hardcoded row count — and moves the trailing block onto a fresh page only when it
-  // would actually collide, rather than assuming a fixed row budget always fits.
+  // repeating identically on every physical printed page, so nothing in a page's flow
+  // may reach into the band they occupy. The server-side split into pages of a fixed
+  // row count cannot promise that: one long description wraps onto several lines and
+  // pushes the table into the stamp. So this script re-paginates from what the browser
+  // really lays out. Rows stay on a page until the next one would cross the reserve and
+  // then start a new page, and the totals/payment block moves on afterwards if it does
+  // not fit either.
+  //
+  // The stamp sits just above the footer artwork of THIS company's letterhead, read from
+  // the image itself (placeStamp), and the reserve follows it. A letterhead whose footer
+  // is low gets more room for rows than one whose footer rises high; when the image
+  // cannot be read the stamp stays 43 mm up and the reserve 85 mm, the values that were
+  // fixed before.
+  //
+  // It measures with `html.measuring` switched on, which gives the page its print
+  // geometry (A4 width, print paddings, stamp out of the flow): the on-screen layout is
+  // wider, wraps less, and would under-measure the printed one. If anything throws, the
+  // server-rendered pages are put back untouched.
   const overflowFixScript = letterhead
     ? `
   <script>
   (function () {
-    function mmToPx(mm) { return (mm * 96) / 25.4; }
+    var root = document.querySelector('.page');
+    if (!root) return;
+    var rootId = root.id;
+    var done = false;
+    var mmPx = 96 / 25.4;
+    var continuedTfoot = ${jsStringLiteral(continuedTfoot)};
+    var continuedHeader = ${jsStringLiteral(continuedHeaderHtml)};
+
+    // Pixels per mm in the same coordinate space getBoundingClientRect reports, so a
+    // zoom set on <html> (the verification page does that) cannot skew the comparison.
+    function measureMm() {
+      var probe = document.createElement('div');
+      probe.style.cssText = 'position:absolute;visibility:hidden;left:0;top:0;width:1px;height:100mm';
+      document.body.appendChild(probe);
+      var h = probe.getBoundingClientRect().height;
+      document.body.removeChild(probe);
+      return h > 0 ? h / 100 : 96 / 25.4;
+    }
+
+    function mmToPx(mm) { return mm * mmPx; }
+
+    // The stamp sits stampBottomMm above the bottom edge and the band above it, up to
+    // reserveMm, is kept clear. These defaults suit a letterhead whose footer rises about
+    // 41 mm from the edge (Al Watanyia's); placeStamp() lowers both for a letterhead with a
+    // lower footer, which gives that company's pages more room for rows.
+    var STAMP_BLOCK_MM = 34.3; // 110 px stamp image + margin + "Authorized By" label
+    var STAMP_GAP_MM = 4; // clear space kept between the table and the stamp
+    var stampBottomMm = 43;
+    var reserveMm = 85;
 
     function budgetFor(pageEl) {
       var topReserveMm = pageEl.classList.contains('page2-break') ? 74 : 54;
-      return mmToPx(297 - topReserveMm - 85);
+      return mmToPx(297 - topReserveMm - reserveMm);
     }
 
+    // Distance from the bottom edge to the first visible ink of the letterhead's footer
+    // artwork, or null when it cannot be read (image not decoded yet, or a tainted canvas).
+    function footerStartMm() {
+      var img = document.querySelector('.lh-bg img');
+      if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return null;
+      var w = img.naturalWidth;
+      var h = img.naturalHeight;
+      var scale = Math.min(1, 1500 / w);
+      var cropTop = Math.floor(h * 0.6); // the footer lives in the bottom 40 %
+      var cw = Math.round(w * scale);
+      var ch = Math.round((h - cropTop) * scale);
+      var canvas = document.createElement('canvas');
+      canvas.width = cw;
+      canvas.height = ch;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, cw, ch); // transparent pixels count as paper
+      ctx.drawImage(img, 0, cropTop, w, h - cropTop, 0, 0, cw, ch);
+      var px = ctx.getImageData(0, 0, cw, ch).data;
+      for (var y = 0; y < ch; y++) {
+        var ink = 0;
+        for (var x = 0; x < cw; x++) {
+          var i = (y * cw + x) * 4;
+          if ((px[i] + px[i + 1] + px[i + 2]) / 3 < 240) ink++;
+        }
+        if (ink >= 3) return 297 - ((cropTop + y / scale) / h) * 297;
+      }
+      return 0;
+    }
+
+    function placeStamp() {
+      var footer = null;
+      try { footer = footerStartMm(); } catch (e) { footer = null; }
+      if (footer === null) return; // keep the defaults
+      stampBottomMm = Math.min(75, Math.max(12, footer + 2));
+      reserveMm = stampBottomMm + STAMP_BLOCK_MM + STAMP_GAP_MM;
+      document.documentElement.style.setProperty('--stamp-bottom', stampBottomMm + 'mm');
+    }
+
+    function anchorOf(pageEl) { return pageEl.querySelector(':scope > .content-anchor'); }
+
     // Measures only up to the last MOVABLE (.js-trailing-section) child — not the box's
-    // own bottom. The signature block after it is not marked movable: in print, its
-    // stamp is position:fixed (repeats on every page, contributes zero flow height),
-    // but on screen (where we measure) it renders in-flow at a much larger size, so
-    // including it would wildly overstate this page's real print height.
+    // own bottom. The signature block after it is not marked movable: its stamp is
+    // position:fixed (repeats on every page, contributes zero flow height).
     function contentSpan(anchorEl, boxEl) {
       var sections = boxEl.querySelectorAll(':scope > .js-trailing-section');
       if (sections.length === 0) return 0;
@@ -451,69 +585,213 @@ export function buildInvoiceHTML(
       anchor.className = 'content-anchor';
       anchor.style.height = '0';
       el.appendChild(anchor);
-      el.insertAdjacentHTML('beforeend', ${jsStringLiteral(continuedHeaderHtml)});
+      el.insertAdjacentHTML('beforeend', continuedHeader);
       return el;
+    }
+
+    function footerBar(num, total) {
+      var footer = document.createElement('div');
+      footer.className = 'page-footer-bar';
+      footer.style.cssText = 'border-top:1px solid #e5e5e5;padding-top:10px;margin-top:16px;font-size:10px;color:#999;display:flex;justify-content:space-between';
+      footer.innerHTML = '<span>' + ${jsStringLiteral(companyFooterLabel)} + '</span><span class="page-count" data-page-num="' + num + '">Page ' + num + ' of ' + total + '</span>';
+      return footer;
     }
 
     function addFooter(pageEl) {
       var num = document.querySelectorAll('.page-count').length + 1;
-      var footer = document.createElement('div');
-      footer.style.cssText = 'border-top:1px solid #e5e5e5;padding-top:10px;margin-top:16px;font-size:10px;color:#999;display:flex;justify-content:space-between';
-      footer.innerHTML = '<span>' + ${jsStringLiteral(companyFooterLabel)} + '</span><span class="page-count" data-page-num="' + num + '">Page ' + num + ' of ' + num + '</span>';
-      pageEl.appendChild(footer);
+      pageEl.appendChild(footerBar(num, num));
     }
 
-    var pageLast = document.getElementById('page-last');
-    if (!pageLast) return;
-    var trailingBox = document.getElementById('trailing-content');
-    if (!trailingBox || !pageLast.contains(trailingBox)) return;
-
-    var currentPage = pageLast;
-    var currentBox = trailingBox;
-    var didSplit = false;
-    var guard = 0;
-
-    while (guard < 6) {
-      guard++;
-      var anchor = currentPage.querySelector('.content-anchor');
-      if (!anchor) break;
-      if (contentSpan(anchor, currentBox) <= budgetFor(currentPage)) break;
-
-      var sections = currentBox.querySelectorAll(':scope > .js-trailing-section');
-      if (sections.length === 0) break;
-
-      var newPage = makePage();
-      currentPage.parentNode.insertBefore(newPage, currentPage.nextSibling);
-      var newBox = document.createElement('div');
-      newPage.appendChild(newBox);
-
-      // Move sections from the tail of the current trailing box onto the new page,
-      // one at a time, until the current page fits (or nothing is left to move).
-      while (
-        contentSpan(anchor, currentBox) > budgetFor(currentPage) &&
-        currentBox.querySelectorAll(':scope > .js-trailing-section').length > 0
-      ) {
-        var tail = currentBox.querySelectorAll(':scope > .js-trailing-section');
-        newBox.insertBefore(tail[tail.length - 1], newBox.firstChild);
-      }
-
-      addFooter(newPage);
-      didSplit = true;
-      currentPage = newPage;
-      currentBox = newBox;
+    function setContinued(table, on) {
+      var has = table.tFoot;
+      if (on && !has) table.insertAdjacentHTML('beforeend', continuedTfoot);
+      if (!on && has) table.removeChild(has);
     }
 
-    if (didSplit) {
-      var counters = document.querySelectorAll('.page-count');
-      var total = counters.length;
-      for (var i = 0; i < counters.length; i++) {
-        counters[i].textContent = 'Page ' + counters[i].getAttribute('data-page-num') + ' of ' + total;
+    // A continuation page holding an empty copy of the lines table (same head, no rows).
+    function newLinesPage(template) {
+      var el = makePage();
+      el.className = 'page2-break';
+      var table = template.cloneNode(false);
+      table.style.marginBottom = '28px';
+      table.appendChild(template.tHead.cloneNode(true));
+      table.appendChild(document.createElement('tbody'));
+      el.appendChild(table);
+      return el;
+    }
+
+    function overflows(pageEl, table) {
+      var top = anchorOf(pageEl).getBoundingClientRect().top;
+      return table.getBoundingClientRect().bottom - top > budgetFor(pageEl);
+    }
+
+    // The zebra stripe restarts on every page, as it did when rows were chunked on the server.
+    function stripe(table) {
+      var trs = table.tBodies[0].rows;
+      for (var j = 0; j < trs.length; j++) {
+        var bg = j % 2 === 1 ? '#f8fafc' : '';
+        for (var c = 0; c < trs[j].cells.length; c++) trs[j].cells[c].style.background = bg;
       }
     }
+
+    // Puts every line row on a page where its table still ends above the stamp band.
+    function paginate() {
+      var oldTables = root.querySelectorAll('table.inv-lines');
+      var trailing = document.getElementById('trailing-content');
+      if (oldTables.length === 0 || !oldTables[0].tHead || !trailing) return;
+      var firstTable = oldTables[0];
+
+      var rows = [];
+      for (var t = 0; t < oldTables.length; t++) {
+        var oldBody = oldTables[t].tBodies[0];
+        for (var r = 0; r < oldBody.rows.length; r++) rows.push(oldBody.rows[r]);
+      }
+
+      // Drop the server-rendered split; the rows and the trailing block are placed again below.
+      for (var q = 0; q < rows.length; q++) rows[q].parentNode.removeChild(rows[q]);
+      trailing.parentNode.removeChild(trailing);
+      var oldPages = root.querySelectorAll(':scope > .page2-break');
+      for (var p = 0; p < oldPages.length; p++) root.removeChild(oldPages[p]);
+      var oldFooters = root.querySelectorAll(':scope > .page-footer-bar');
+      for (var f = 0; f < oldFooters.length; f++) root.removeChild(oldFooters[f]);
+      root.removeAttribute('id');
+      setContinued(firstTable, false);
+
+      var pages = [root];
+      var tables = [firstTable];
+      var cur = 0;
+      for (var k = 0; k < rows.length; k++) {
+        // Measured with the "continued" bar in place whenever another row follows, so a
+        // page is never filled right up to the limit and then pushed over by that bar.
+        var more = k < rows.length - 1;
+        var tbody = tables[cur].tBodies[0];
+        tbody.appendChild(rows[k]);
+        setContinued(tables[cur], more);
+        // A page keeps at least one row, however tall, so this always terminates.
+        if (tbody.rows.length > 1 && overflows(pages[cur], tables[cur])) {
+          tbody.removeChild(rows[k]);
+          // The last row is measured without the bar; another page follows now, so put it back.
+          setContinued(tables[cur], true);
+          var next = newLinesPage(firstTable);
+          root.appendChild(next);
+          pages.push(next);
+          tables.push(next.querySelector('table.inv-lines'));
+          cur++;
+          tables[cur].tBodies[0].appendChild(rows[k]);
+          setContinued(tables[cur], more);
+        }
+      }
+
+      setContinued(tables[cur], false);
+      tables[0].style.marginBottom = cur === 0 ? '28px' : '0';
+      pages[cur].id = 'page-last';
+      tables[cur].parentNode.insertBefore(trailing, tables[cur].nextSibling);
+      for (var i = 0; i < pages.length; i++) {
+        var after = i === cur ? trailing : tables[i];
+        after.parentNode.insertBefore(footerBar(i + 1, pages.length), after.nextSibling);
+        stripe(tables[i]);
+      }
+    }
+
+    // Moves the totals/payment sections onto a fresh page when they do not fit under the rows.
+    function fixTrailing() {
+      var pageLast = document.getElementById('page-last');
+      if (!pageLast) return;
+      var trailingBox = document.getElementById('trailing-content');
+      if (!trailingBox || !pageLast.contains(trailingBox)) return;
+
+      var currentPage = pageLast;
+      var currentBox = trailingBox;
+      var didSplit = false;
+      var guard = 0;
+
+      while (guard < 6) {
+        guard++;
+        var anchor = currentPage.querySelector('.content-anchor');
+        if (!anchor) break;
+        if (contentSpan(anchor, currentBox) <= budgetFor(currentPage)) break;
+
+        var sections = currentBox.querySelectorAll(':scope > .js-trailing-section');
+        if (sections.length === 0) break;
+
+        var newPage = makePage();
+        currentPage.parentNode.insertBefore(newPage, currentPage.nextSibling);
+        var newBox = document.createElement('div');
+        newPage.appendChild(newBox);
+
+        // Move sections from the tail of the current trailing box onto the new page,
+        // one at a time, until the current page fits (or nothing is left to move).
+        while (
+          contentSpan(anchor, currentBox) > budgetFor(currentPage) &&
+          currentBox.querySelectorAll(':scope > .js-trailing-section').length > 0
+        ) {
+          var tail = currentBox.querySelectorAll(':scope > .js-trailing-section');
+          newBox.insertBefore(tail[tail.length - 1], newBox.firstChild);
+        }
+
+        addFooter(newPage);
+        didSplit = true;
+        currentPage = newPage;
+        currentBox = newBox;
+      }
+
+      if (didSplit) {
+        var counters = document.querySelectorAll('.page-count');
+        var total = counters.length;
+        for (var i = 0; i < counters.length; i++) {
+          counters[i].textContent = 'Page ' + counters[i].getAttribute('data-page-num') + ' of ' + total;
+        }
+      }
+    }
+
+    function run() {
+      if (done) return;
+      done = true;
+      var snapshot = root.innerHTML;
+      document.documentElement.classList.add('measuring');
+      try {
+        mmPx = measureMm();
+        placeStamp();
+        paginate();
+        fixTrailing();
+      } catch (e) {
+        root.innerHTML = snapshot;
+        if (rootId) root.id = rootId;
+      } finally {
+        document.documentElement.classList.remove('measuring');
+      }
+    }
+
+    // Wait for the web font so rows wrap as they will in print; the timer covers a font
+    // request that hangs, and beforeprint covers a print started before either fired.
+    function start() {
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(run, run);
+      else run();
+    }
+    window.addEventListener('beforeprint', run);
+    setTimeout(run, 3000);
+    if (document.readyState === 'complete') start();
+    else window.addEventListener('load', start);
   })();
   </script>
   `
     : ''
+
+  // Letterhead rules that decide how tall each page's flow is. Written once and emitted twice:
+  // inside @media print, and under `html.measuring` so the pagination script can measure on
+  // screen exactly what the printer will lay out.
+  const printGeometryCss = (scope: string): string => {
+    const sel = (s: string) => (scope ? `${scope} ${s}` : s)
+    return `
+      ${sel('.header-qr')} { display: none; }
+      ${sel('.lh-stamp')} { position: fixed; bottom: var(--stamp-bottom, 43mm); left: 0; right: 0; border-top: none; padding-top: 0; margin-top: 0; z-index: 10; }
+      ${sel('.lh-stamp-img')} { max-height: 110px; max-width: 160px; }
+      ${sel('.page')} { padding: 54mm 15mm 50mm; }
+      /* Page 2 header: show absolute version in print only */
+      ${sel('.p2-screen-hdr')} { display: none !important; }
+      ${sel('.p2-print-hdr')}  { display: block !important; position: absolute; top: 16mm; right: 15mm; text-align: right; }
+      ${sel('.p2-print-divider')} { display: block !important; border-bottom: 2px solid #1a3c5e; margin-bottom: 22px; }`
+  }
 
   const continuationPagesHtml = continuationChunks
     .map((chunk, idx) => {
@@ -527,21 +805,10 @@ export function buildInvoiceHTML(
     ${continuedHeaderHtml}
 
     <!-- Remaining rows table -->
-    <table style="width:100%;border-collapse:collapse;margin-bottom:28px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+    <table class="inv-lines" style="width:100%;border-collapse:collapse;margin-bottom:28px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
       <thead>${tableHeadRow()}</thead>
       <tbody>${rows}</tbody>
-      ${
-        !isLast
-          ? `
-      <tfoot>
-        <tr>
-          <td colspan="99" style="padding:10px 14px;font-size:11px;color:#999;font-style:italic;text-align:right;border-top:1px solid #e2e8f0">
-            Continued on next page →
-          </td>
-        </tr>
-      </tfoot>`
-          : ''
-      }
+      ${!isLast ? continuedTfoot : ''}
     </table>
 
     ${isLast ? trailingContent : ''}
@@ -555,7 +822,7 @@ export function buildInvoiceHTML(
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Invoice ${inv.invoiceNumber}</title>
+  <title>Invoice ${invoiceNo}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -601,16 +868,13 @@ export function buildInvoiceHTML(
       .lh-bg img { width: 100%; height: 100%; display: block; }
       .lh-qr { display: block; position: fixed; bottom: 40mm; right: 14mm; text-align: center; z-index: 10; }
       .screen-auth { display: none; }
-      .header-qr { display: none; }
-      .lh-stamp { position: fixed; bottom: 43mm; left: 0; right: 0; border-top: none; padding-top: 0; margin-top: 0; z-index: 10; }
-      .lh-stamp-img { max-height: 110px; max-width: 160px; }
-      .page { padding: 54mm 15mm 50mm; }
       @page { size: A4; margin: 0; }
-      /* Page 2 header: show absolute version in print only */
-      .p2-screen-hdr { display: none !important; }
-      .p2-print-hdr  { display: block !important; position: absolute; top: 16mm; right: 15mm; text-align: right; }
-      .p2-print-divider { display: block !important; border-bottom: 2px solid #1a3c5e; margin-bottom: 22px; }
+      ${printGeometryCss('')}
     }
+    /* Same geometry on screen while the pagination script measures (see overflowFixScript) */
+    ${printGeometryCss('html.measuring')}
+    html.measuring .page { width: 210mm; max-width: none; }
+    html.measuring .page2-break { margin-top: 0; border-top: 0; padding-top: 74mm; }
     `
         : `
     .page { padding: 40px; max-width: 900px; margin: 0 auto; }
@@ -627,7 +891,7 @@ export function buildInvoiceHTML(
   <style>
     @media screen {
       body {
-        background-image: url('${letterhead}');
+        background-image: url('${letterhead.replace(/&/g, '%26')}');
         background-size: 100% 297mm;
         background-repeat: no-repeat;
         background-attachment: scroll;
@@ -667,63 +931,69 @@ ${
   <!-- Standard mode: full company header -->
   <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:24px;border-bottom:3px solid #1a3c5e;margin-bottom:32px">
     <div>
-      <div style="font-size:22px;font-weight:700;color:#1a3c5e;margin-bottom:4px">${inv.companyName ?? 'FNC Group'}</div>
+      <div style="font-size:22px;font-weight:700;color:#1a3c5e;margin-bottom:4px">${companyLabel}</div>
       <div style="font-size:11px;color:#666;line-height:1.6">
-        ${inv.companyLegalName ?? ''}<br>
-        ${inv.companyCountry ?? 'IQ'}<br>
+        ${esc(inv.companyLegalName ?? '')}<br>
+        ${esc(inv.companyCountry ?? 'IQ')}<br>
         FNC Group
       </div>
     </div>
     <div style="text-align:right">
       <div style="font-size:24px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Invoice</div>
-      <div style="font-size:14px;color:#666;margin-top:4px">${inv.invoiceNumber}</div>
-      <div style="margin-top:8px"><span style="${statusBadgeStyle}">${inv.status}</span></div>
+      <div style="font-size:14px;color:#666;margin-top:4px">${invoiceNo}</div>
+      <div style="margin-top:8px"><span style="${statusBadgeStyle}">${esc(inv.status)}</span></div>
     </div>
   </div>
   `
   }
 
-  <!-- Meta grid -->
-  <section style="display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:0;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:28px;overflow:hidden">
-    <div style="padding:16px 20px;border-right:1px solid #e2e8f0">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#999;margin-bottom:10px">Bill To</div>
-      <div style="font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:2px">${inv.clientName ?? '—'}</div>
+  <!-- Invoice header block: dates and number, then Deliver To / Bill To, then the contract row -->
+  <section style="margin-bottom:24px">
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:12px">
+      <tr>
+        <td style="${hdrLabel};width:17%">Date of Issue</td>
+        <td style="${hdrValue};width:16%">${esc(fmtShortDate(inv.invoiceDate) ?? none)}</td>
+        <td style="${hdrLabel};width:14%">Due Date</td>
+        <td style="${hdrValue};width:16%">${esc(fmtShortDate(inv.dueDate) ?? none)}</td>
+        <td style="${hdrLabel};width:16%">Invoice No.</td>
+        <td style="${hdrValue};width:21%;color:#1d4ed8;font-weight:700">${invoiceNo}</td>
+      </tr>
+    </table>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;column-gap:28px;margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:27% 1fr;border:1px solid ${hdrLine}">
+        <div style="${hdrLabel};border:0;border-right:1px solid ${hdrLine};text-align:left;display:flex;align-items:center">Deliver To</div>
+        <div style="${hdrText}">${esc(deliverTo) || none}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:27% 1fr;border:1px solid ${hdrLine}">
+        <div style="${hdrLabel};border:0;border-right:1px solid ${hdrLine};text-align:left;display:flex;align-items:center">Bill To</div>
+        <div style="${hdrText}">${esc(billTo) || none}</div>
+      </div>
     </div>
-    <div style="padding:16px 20px;border-right:1px solid #e2e8f0">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#999;margin-bottom:10px">Invoice Details</div>
-      <table style="font-size:12px;color:#444;line-height:2;width:100%;border-collapse:collapse">
-        <tr><td style="color:#888;padding-right:10px;white-space:nowrap">Invoice date</td><td style="font-weight:500">${fmtDate(inv.invoiceDate)}</td></tr>
-        <tr><td style="color:#888;white-space:nowrap">Due date</td><td style="color:#c53030;font-weight:600">${fmtDate(inv.dueDate)}</td></tr>
-        <tr><td style="color:#888;white-space:nowrap">Payment terms</td><td>Net ${inv.paymentTermsDays ?? 30} days</td></tr>
-        <tr><td style="color:#888;white-space:nowrap">Billing method</td><td style="text-transform:capitalize">${inv.billingMethod.replace(/_/g, ' ')}</td></tr>
-      </table>
-    </div>
-    <div style="padding:16px 20px">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#999;margin-bottom:10px">Project</div>
-      <table style="font-size:12px;color:#444;line-height:2;width:100%;border-collapse:collapse">
-        <tr><td style="color:#888;padding-right:10px;white-space:nowrap">Code</td><td style="font-family:monospace;color:#1a3c5e;font-weight:600">${inv.projectCode ?? '—'}</td></tr>
-        <tr><td style="color:#888;white-space:nowrap">Name</td><td style="font-weight:500">${inv.projectName ?? '—'}</td></tr>
-        <tr><td style="color:#888;white-space:nowrap">Contract</td><td style="font-family:monospace;font-size:11px">${inv.contractNumber ?? '—'}</td></tr>
-      </table>
-    </div>
+
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+      <tr>
+        <th style="${hdrHead};width:19%">Contract No.</th>
+        <th style="${hdrHead};width:25%">Job</th>
+        <th style="${hdrHead};width:17%">Period of Performance</th>
+        <th style="${hdrHead};width:16%">Date of Delivery</th>
+        <th style="${hdrHead};width:23%">Reference</th>
+      </tr>
+      <tr>
+        <td style="${hdrValue}">${esc(orElse(inv.clientContractNo, none))}</td>
+        <td style="${hdrValue}">${esc(inv.projectName ?? none)}</td>
+        <td style="${hdrValue}">${esc(orElse(inv.periodOfPerformance, 'n/a'))}</td>
+        <td style="${hdrValue}">${esc(fmtShortDate(inv.deliveryDate) ?? none)}</td>
+        <td style="${hdrValue}">${esc(inv.projectCode ?? none)}</td>
+      </tr>
+    </table>
   </section>
 
   <!-- Lines table (page 1 rows) -->
-  <table style="width:100%;border-collapse:collapse;margin-bottom:${isMultiPage ? '0' : '28px'};border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+  <table class="inv-lines" style="width:100%;border-collapse:collapse;margin-bottom:${isMultiPage ? '0' : '28px'};border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
     <thead>${tableHeadRow()}</thead>
     <tbody>${lineRows}</tbody>
-    ${
-      isMultiPage
-        ? `
-    <tfoot>
-      <tr>
-        <td colspan="99" style="padding:10px 14px;font-size:11px;color:#999;font-style:italic;text-align:right;border-top:1px solid #e2e8f0">
-          Continued on next page →
-        </td>
-      </tr>
-    </tfoot>`
-        : ''
-    }
+    ${isMultiPage ? continuedTfoot : ''}
   </table>
 
   ${

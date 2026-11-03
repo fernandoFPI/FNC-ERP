@@ -5938,6 +5938,18 @@
       "voidInvoice": "Void Invoice",
       "wireTransfer": "Wire Transfer"
     },
+    "invHeader": {
+      "title": "Invoice header (printed at the top)",
+      "hint": "Filled from the project where it has the information. Correct anything that is wrong or missing: this is what the client sees.",
+      "clientContractNo": "Contract No.",
+      "clientContractNoHint": "The client's contract, PO or RFQ number",
+      "deliveryDate": "Date of Delivery",
+      "periodOfPerformance": "Period of Performance",
+      "periodPlaceholder": "n/a",
+      "billTo": "Bill To",
+      "deliverTo": "Deliver To",
+      "addressPlaceholder": "Company name and address, one line per line"
+    },
     "invPay": {
       "amountReceived": "Amount received",
       "bankTransfer": "Bank Transfer",

@@ -1,13 +1,18 @@
 import { tl } from '../../i18n'
 import i18n from '../../i18n'
 import { Trans, useTranslation } from 'react-i18next'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { Button } from './Button'
 import { Input } from './Input'
 import { Modal } from './Modal'
 import { Select } from './Select'
 import { AmountDisplay } from './AmountDisplay'
+import {
+  InvoiceHeaderFields,
+  EMPTY_INVOICE_HEADER,
+  type InvoiceHeaderValues,
+} from '../projects/InvoiceHeaderFields'
 
 export type BillingMethod = 'fixed' | 'milestone' | 'time_material' | 'percentage'
 
@@ -29,6 +34,8 @@ export interface InvoiceBuilderResult {
   wht_applies: boolean
   wht_scenario: 'client_withholds' | 'fnc_pays' | null
   wht_rate: number
+  /** The invoice header block, or null when nobody touched it (the server then fills it from the project). */
+  header: InvoiceHeaderValues | null
 }
 
 interface Props {
@@ -37,6 +44,8 @@ interface Props {
   projectName: string
   contractAmount?: number
   currency?: string
+  /** What the project says about the header block; prefills the fields. */
+  headerDefaults?: InvoiceHeaderValues
   milestones?: { id: string; name: string; amount: number; status: string }[]
   onConfirm: (result: InvoiceBuilderResult) => Promise<void>
   onClose: () => void
@@ -73,6 +82,7 @@ export function InvoiceBuilder({
   projectName,
   contractAmount = 0,
   currency = 'IQD',
+  headerDefaults,
   milestones = [],
   onConfirm,
   onClose,
@@ -95,8 +105,18 @@ export function InvoiceBuilder({
   const [whtRatePct, setWhtRatePct] = useState('3')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [header, setHeader] = useState<InvoiceHeaderValues>(headerDefaults ?? EMPTY_INVOICE_HEADER)
+  const [headerTouched, setHeaderTouched] = useState(false)
+
+  // The project's values arrive a moment after the wizard opens; fill the fields with them
+  // until the person starts typing, then leave their text alone.
+  useEffect(() => {
+    if (open && headerDefaults && !headerTouched) setHeader(headerDefaults)
+  }, [open, headerDefaults, headerTouched])
 
   function reset() {
+    setHeader(headerDefaults ?? EMPTY_INVOICE_HEADER)
+    setHeaderTouched(false)
     setStep(0)
     setMethod('fixed')
     setLines([])
@@ -185,6 +205,7 @@ export function InvoiceBuilder({
         wht_applies: whtApplies,
         wht_scenario: whtApplies ? whtScenario : null,
         wht_rate: whtRate,
+        header: headerTouched ? header : null,
       })
       handleClose()
     } catch (err) {
@@ -630,6 +651,15 @@ export function InvoiceBuilder({
                   )}
                 </div>
               </div>
+
+              {/* Header block printed at the top of the invoice */}
+              <InvoiceHeaderFields
+                values={header}
+                onChange={(patch) => {
+                  setHeaderTouched(true)
+                  setHeader((h) => ({ ...h, ...patch }))
+                }}
+              />
 
               {/* Discount */}
               <div

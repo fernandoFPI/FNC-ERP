@@ -24,6 +24,14 @@ import {
   resolveContractBillingMethod,
   resolveInvoiceBillingMethod,
 } from '../lib/contractBilling.js'
+import {
+  INVOICE_HEADER_DEFAULTS_SQL,
+  INVOICE_HEADER_PROJECT_COLUMNS,
+  deriveInvoiceHeaderDefaults,
+  invoiceHeaderForCreate,
+  normalizeInvoiceHeaderInput,
+  resolveInvoiceHeader,
+} from '../lib/invoiceHeader.js'
 import { resolvePhotoBypass } from '../lib/receiptPhotoBypass.js'
 import {
   listProjectFiles,
@@ -9726,6 +9734,17 @@ export const resolvers = {
       }))
     },
 
+    // What the create-invoice form prefills Contract No., Bill To, Deliver To, Date of Delivery and
+    // Period of Performance with: the same derivation the invoice falls back to when a field was
+    // never stored, so the form and an old invoice agree.
+    projectInvoiceDefaults: async (_: unknown, args: { contractId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.invoices.edit', 'edit')
+      const r = await query(INVOICE_HEADER_DEFAULTS_SQL, [args.contractId, ctx.auth.companyId])
+      if (!r.rows[0]) throw new Error('Contract not found')
+      return deriveInvoiceHeaderDefaults(r.rows[0] as Record<string, unknown>)
+    },
+
     projectInvoice: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
       await requirePermGW(ctx.auth, 'projects.invoices.view', 'view')
@@ -9739,7 +9758,8 @@ export const resolvers = {
                 co.address AS company_address, co.phone AS company_phone, co.email AS company_email,
                 cb.name AS branch_name, cb.address AS branch_address,
                 cb.city AS branch_city, cb.phone AS branch_phone,
-                COALESCE(sc.default_payment_terms_days, 30) AS payment_terms_days
+                COALESCE(sc.default_payment_terms_days, 30) AS payment_terms_days,
+                ${INVOICE_HEADER_PROJECT_COLUMNS}
          FROM project_invoices pi
          LEFT JOIN projects          p  ON p.id  = pi.project_id
          LEFT JOIN project_contracts pc ON pc.id = pi.contract_id
@@ -9803,6 +9823,7 @@ export const resolvers = {
         companyBranchPhone: i.branch_phone ?? null,
         paymentTermsDays: parseInt(String(i.payment_terms_days ?? 30)),
         verificationToken: i.verification_token ?? null,
+        ...resolveInvoiceHeader(i),
         lines: lines.rows.map((l: Record<string, unknown>) => ({
           id: l.id,
           lineNumber: l.line_number,
@@ -26981,6 +27002,16 @@ export const resolvers = {
           const projectId = contractRow.rows[0].project_id
           const currencyCode = contractRow.rows[0].currency_code ?? 'IQD'
 
+          // Header block printed at the top: what the person typed, else what the project says.
+          const headerSource = await client.query(INVOICE_HEADER_DEFAULTS_SQL, [
+            args.contractId,
+            requireAuth(ctx).companyId,
+          ])
+          const header = invoiceHeaderForCreate(
+            i,
+            (headerSource.rows[0] ?? {}) as Record<string, unknown>,
+          )
+
           const num = await nextDocumentNumber(requireAuth(ctx).companyId, 'project_invoice', 'INV')
           const lines = (i.lines as Record<string, unknown>[]) ?? []
           const subtotalBeforeTax = lines.reduce(
@@ -27007,8 +27038,9 @@ export const resolvers = {
              (company_id,project_id,contract_id,invoice_number,billing_method,display_mode,
               gross_total,discount_pct,discount_amount,retention_amount,net_payable,currency_code,
               wht_applies,wht_scenario,wht_rate,wht_amount,
-              status,invoice_date,due_date,created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$14,$15,'draft',NOW(),$16,$17) RETURNING *`,
+              status,invoice_date,due_date,created_by,
+              client_contract_no,bill_to_address,deliver_to_address,delivery_date,period_of_performance)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$14,$15,'draft',NOW(),$16,$17,$18,$19,$20,$21,$22) RETURNING *`,
             [
               requireAuth(ctx).companyId,
               projectId,
@@ -27027,6 +27059,11 @@ export const resolvers = {
               whtAmount,
               i.dueDate,
               requireAuth(ctx).userId,
+              header.clientContractNo,
+              header.billToAddress,
+              header.deliverToAddress,
+              header.deliveryDate,
+              header.periodOfPerformance,
             ],
           )
           const invId = inv.rows[0].id
@@ -27076,6 +27113,7 @@ export const resolvers = {
             status: r.status,
             invoiceDate: r.invoice_date,
             dueDate: r.due_date,
+            ...header,
             lines: [],
             payments: [],
           }
@@ -27098,6 +27136,11 @@ export const resolvers = {
         dueDate?: string
         currencyCode?: string
         lines?: { id?: string; description?: string; qty?: number; unitCost?: number }[]
+        clientContractNo?: string | null
+        billToAddress?: string | null
+        deliverToAddress?: string | null
+        deliveryDate?: string | null
+        periodOfPerformance?: string | null
       },
       ctx: GQLContext,
     ) => {
@@ -27110,6 +27153,8 @@ export const resolvers = {
       ])
       if (!invRow.rows[0]) throw new Error('Invoice not found')
       const inv = invRow.rows[0] as Record<string, unknown>
+      // Validated before anything is written; only the keys that were sent change.
+      const headerEdit = normalizeInvoiceHeaderInput(args as unknown as Record<string, unknown>)
       if (args.currencyCode && inv.status !== 'draft') {
         throw new Error('Currency can only be changed while the invoice is in draft status')
       }
@@ -27214,6 +27259,19 @@ export const resolvers = {
           headerSets.push(`currency_code=$${headerParams.length + 1}`)
           headerParams.push(args.currencyCode)
         }
+        const headerColumns = {
+          clientContractNo: 'client_contract_no',
+          billToAddress: 'bill_to_address',
+          deliverToAddress: 'deliver_to_address',
+          deliveryDate: 'delivery_date',
+          periodOfPerformance: 'period_of_performance',
+        } as const
+        for (const [key, column] of Object.entries(headerColumns)) {
+          const value = headerEdit[key as keyof typeof headerEdit]
+          if (value === undefined) continue
+          headerSets.push(`${column}=$${headerParams.length + 1}`)
+          headerParams.push(value)
+        }
 
         // Recalculate status if there are payments so editing lines doesn't leave
         // the invoice showing 'paid' when more is now owed (or 'partial' when now fully covered)
@@ -27259,7 +27317,8 @@ export const resolvers = {
                 co.address AS company_address, co.phone AS company_phone, co.email AS company_email,
                 cb.name AS branch_name, cb.address AS branch_address,
                 cb.city AS branch_city, cb.phone AS branch_phone,
-                COALESCE(sc.default_payment_terms_days,30) AS payment_terms_days
+                COALESCE(sc.default_payment_terms_days,30) AS payment_terms_days,
+                ${INVOICE_HEADER_PROJECT_COLUMNS}
            FROM project_invoices pi
            LEFT JOIN projects p ON p.id=pi.project_id
            LEFT JOIN project_contracts pc ON pc.id=pi.contract_id
@@ -27320,6 +27379,7 @@ export const resolvers = {
         companyBranchPhone: u.branch_phone ?? null,
         paymentTermsDays: parseInt(String(u.payment_terms_days ?? 30)),
         verificationToken: u.verification_token ?? null,
+        ...resolveInvoiceHeader(u),
         lines: uLines.rows.map((l: Record<string, unknown>) => ({
           id: l.id,
           lineNumber: l.line_number,

@@ -1,5 +1,6 @@
 import { Router, type Router as ExpressRouter, type Request, type Response } from 'express'
 import { query, asyncHandler } from '@fnc-erp/db'
+import { INVOICE_HEADER_PROJECT_COLUMNS, resolveInvoiceHeader } from '../lib/invoiceHeader.js'
 
 export const verifyRouter: ExpressRouter = Router()
 
@@ -13,7 +14,8 @@ verifyRouter.get('/invoice/:token', asyncHandler(async (req: Request, res: Respo
               pc.contract_number, pc.client_name, pc.retention_pct,
               COALESCE(sc.default_payment_terms_days, pc.payment_terms_days, 30) AS payment_terms_days,
               co.name AS company_name, co.legal_name AS company_legal_name,
-              co.country_code AS company_country, co.stamp_image AS company_stamp_image
+              co.country_code AS company_country, co.stamp_image AS company_stamp_image,
+              ${INVOICE_HEADER_PROJECT_COLUMNS}
        FROM project_invoices pi
        LEFT JOIN projects p ON p.id = pi.project_id
        LEFT JOIN project_contracts pc ON pc.id = pi.contract_id
@@ -93,6 +95,7 @@ verifyRouter.get('/invoice/:token', asyncHandler(async (req: Request, res: Respo
           whtApplies: Boolean(i.wht_applies ?? false),
           whtAmount: parseFloat(String(i.wht_amount ?? '0')),
           bankAccountId: i.bank_account_id ?? null,
+          ...resolveInvoiceHeader(i),
           lines: linesR.rows.map((l: Record<string, unknown>) => ({
             lineNumber: l.line_number,
             description: l.description,

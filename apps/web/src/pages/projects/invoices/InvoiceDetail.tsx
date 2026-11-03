@@ -17,6 +17,13 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { apiErrMsg } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
+import {
+  InvoiceHeaderFields,
+  EMPTY_INVOICE_HEADER,
+  changedInvoiceHeader,
+  toInvoiceHeaderValues,
+  type InvoiceHeaderValues,
+} from '../../../components/projects/InvoiceHeaderFields'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { TabBar } from '../../../components/ui/TabBar'
@@ -84,6 +91,9 @@ export default function InvoiceDetail() {
   const [editDate, setEditDate] = useState('')
   const [editDueDate, setEditDueDate] = useState('')
   const [editCurrency, setEditCurrency] = useState('')
+  // The header block printed at the top (client contract no., addresses, delivery, period).
+  const [editHeader, setEditHeader] = useState<InvoiceHeaderValues>(EMPTY_INVOICE_HEADER)
+  const [initialHeader, setInitialHeader] = useState<InvoiceHeaderValues>(EMPTY_INVOICE_HEADER)
 
   const { data, loading, refetch } = useQuery<ProjectInvoiceQuery, ProjectInvoiceQueryVariables>(PROJECT_INVOICE_QUERY, {
     variables: { id: id ?? '' },
@@ -175,6 +185,9 @@ export default function InvoiceDetail() {
     setEditDate(inv?.invoiceDate ?? '')
     setEditDueDate(inv?.dueDate ?? '')
     setEditCurrency(inv?.currencyCode ?? 'IQD')
+    const header = toInvoiceHeaderValues(inv)
+    setEditHeader(header)
+    setInitialHeader(header)
     setEditMode(true)
     setTab('lines')
   }
@@ -203,11 +216,13 @@ export default function InvoiceDetail() {
 
   async function saveEdit() {
     try {
+      const changedHeader = changedInvoiceHeader(initialHeader, editHeader)
       await updateInvoice({
         variables: {
           id: id ?? '',
           invoiceDate: editDate || undefined,
           dueDate: editDueDate || undefined,
+          ...changedHeader,
           currencyCode: inv?.status === 'draft' ? editCurrency || undefined : undefined,
           lines: editLines.map((l) => ({
             id: l.id || undefined,
@@ -772,6 +787,14 @@ export default function InvoiceDetail() {
                   <span>
                     {t('proj.invDetail.editingRecalculatesTotalsFromQtyUnit')}
                   </span>
+                </div>
+                <div style={{ marginTop: '14px' }}>
+                  <InvoiceHeaderFields
+                    values={editHeader}
+                    onChange={(patch) => {
+                      setEditHeader((h) => ({ ...h, ...patch }))
+                    }}
+                  />
                 </div>
               </>
             )}

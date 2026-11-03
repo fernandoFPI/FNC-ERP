@@ -6125,6 +6125,18 @@
       "voidInvoice": "إبطال الفاتورة",
       "wireTransfer": "حوالة مصرفية"
     },
+    "invHeader": {
+      "title": "ترويسة الفاتورة (تُطبع في أعلى الفاتورة)",
+      "hint": "تُعبَّأ من المشروع عند توفر المعلومات. صحّح أي معلومة خاطئة أو ناقصة، فهذا ما يراه العميل.",
+      "clientContractNo": "رقم العقد",
+      "clientContractNoHint": "رقم عقد العميل أو أمر الشراء أو طلب عرض السعر",
+      "deliveryDate": "تاريخ التسليم",
+      "periodOfPerformance": "فترة التنفيذ",
+      "periodPlaceholder": "غير منطبق",
+      "billTo": "فاتورة إلى",
+      "deliverTo": "جهة التسليم",
+      "addressPlaceholder": "اسم الشركة والعنوان، كل سطر في سطر"
+    },
     "invPay": {
       "amountReceived": "المبلغ المستلم",
       "bankTransfer": "حوالة مصرفية",

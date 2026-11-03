@@ -126,6 +126,7 @@
     projectContract(id: ID!): ProjectContract
     projectInvoices(projectId: ID, contractId: ID, status: String): [ProjectInvoice!]!
     projectInvoice(id: ID!): ProjectInvoice
+    projectInvoiceDefaults(contractId: ID!): ProjectInvoiceHeaderDefaults!
     materialIssues(projectId: ID, status: String, poId: ID, requisitionId: ID, receiptNumber: String): [MaterialIssue!]!
     materialIssue(id: ID!): MaterialIssue
     materialReturns(projectId: ID, poId: ID, productId: ID): [MaterialReturn!]!
@@ -1402,8 +1403,21 @@
     companyBranchPhone: String
     paymentTermsDays: Int
     verificationToken: String
+    clientContractNo: String
+    billToAddress: String
+    deliverToAddress: String
+    deliveryDate: String
+    periodOfPerformance: String
     lines: [ProjectInvoiceLine!]!
     payments: [InvoicePayment!]!
+  }
+
+  type ProjectInvoiceHeaderDefaults {
+    clientContractNo: String
+    billToAddress: String
+    deliverToAddress: String
+    deliveryDate: String
+    periodOfPerformance: String
   }
 
   type ProjectInvoiceLine {
@@ -3745,7 +3759,7 @@
     updateProjectContract(id: ID!, input: ProjectContractInput!): ProjectContract!
     reviseContract(id: ID!, contractValue: Float!, retentionPct: Float!, endDate: String, changeSummary: String!, effectiveDate: String): ProjectContract!
     createProjectInvoice(contractId: ID!, input: ProjectInvoiceInput!): ProjectInvoice!
-    updateProjectInvoice(id: ID!, invoiceDate: String, dueDate: String, currencyCode: String, lines: [InvoiceLineEditInput!]): ProjectInvoice!
+    updateProjectInvoice(id: ID!, invoiceDate: String, dueDate: String, currencyCode: String, lines: [InvoiceLineEditInput!], clientContractNo: String, billToAddress: String, deliverToAddress: String, deliveryDate: String, periodOfPerformance: String): ProjectInvoice!
     voidProjectInvoice(id: ID!, reason: String): ProjectInvoice!
   }
 
@@ -3777,6 +3791,11 @@
     whtApplies: Boolean
     whtScenario: String
     whtRate: Float
+    clientContractNo: String
+    billToAddress: String
+    deliverToAddress: String
+    deliveryDate: String
+    periodOfPerformance: String
     lines: [ProjectInvoiceLineInput!]!
   }
 
