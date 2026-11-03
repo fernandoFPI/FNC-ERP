@@ -7631,7 +7631,12 @@
         "cancelled_after_approval": "cancelled after approval",
         "on_hold": "on hold"
       },
-      "hdr_otherText": "other"
+      "hdr_otherText": "other",
+      "dropZipHereOr": "Drop your file here or <0>{{t}}</0>",
+      "dropFileOr": "Drop file or <0>{{t}}</0>",
+      "dropFileHereOr": "Drop file here or <0>{{t}}</0>",
+      "willBeTaggedAsExcelPdf": "Any file type. Will be tagged as <0>{{uploadCategory}}</0>",
+      "clickToAttachRevisedFile": "Click to attach the revised file <0>{{t}}</0>"
     }
   },
   "hr": {

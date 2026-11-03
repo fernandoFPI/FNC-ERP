@@ -7874,7 +7874,12 @@
         "cancelled_after_approval": "ملغى بعد الاعتماد",
         "on_hold": "معلّق"
       },
-      "hdr_otherText": "أخرى"
+      "hdr_otherText": "أخرى",
+      "dropZipHereOr": "أفلت الملف هنا أو <0>{{t}}</0>",
+      "dropFileOr": "أفلت الملف أو <0>{{t}}</0>",
+      "dropFileHereOr": "أفلت الملف هنا أو <0>{{t}}</0>",
+      "willBeTaggedAsExcelPdf": "أي نوع من الملفات. سيُوسَم بـ <0>{{uploadCategory}}</0>",
+      "clickToAttachRevisedFile": "انقر لإرفاق الملف المعدَّل <0>{{t}}</0>"
     }
   },
   "hr": {

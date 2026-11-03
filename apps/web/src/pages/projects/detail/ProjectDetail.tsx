@@ -256,6 +256,7 @@ import {
   DEFAULT_CONTRACT_BILLING_METHOD,
 } from '../../../lib/contractBilling'
 import { CONTRACT_STATUSES } from '../../../lib/contractStatus'
+import { uploadMimeType, uploadFailureMessage } from '../../../lib/uploadMimeType'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
@@ -6439,8 +6440,11 @@ function ClientDocumentsTab({
         timeout: 120_000,
       })
       onPicked(fileId, file.name)
-    } catch {
-      addToast({ type: 'error', message: t('proj.detail.fileUploadFailed') })
+    } catch (err) {
+      addToast({
+        type: 'error',
+        message: uploadFailureMessage(t('proj.detail.fileUploadFailed'), err),
+      })
     } finally {
       setUploading(false)
     }
@@ -8458,7 +8462,7 @@ function BiddingTab({
       setDelUploadProgress(10)
       const { data: urlRes } = await api.post<{ fileId: string }>('/files/upload-url', {
         filename: file.name,
-        mimeType: file.type,
+        mimeType: uploadMimeType(file),
         sizeBytes: file.size,
         category: 'attachment',
       })
@@ -8466,14 +8470,14 @@ function BiddingTab({
       setDelUploadProgress(40)
       const buf = await file.arrayBuffer()
       await api.post(`/files/${fileId}/content`, buf, {
-        headers: { 'Content-Type': file.type },
+        headers: { 'Content-Type': uploadMimeType(file) },
         timeout: 120_000,
       })
       setDelUploadProgress(90)
       onUploadDeliverableFile(deliverableId, fileId, file.name.replace(/\.[^.]+$/, ''))
       setDelUploadProgress(100)
-    } catch {
-      addToast({ type: 'error', message: t('proj.detail.uploadFailed') })
+    } catch (err) {
+      addToast({ type: 'error', message: uploadFailureMessage(t('proj.detail.uploadFailed'), err) })
     } finally {
       setUploadingDelId(null)
       setDelUploadProgress(0)
@@ -8493,7 +8497,7 @@ function BiddingTab({
       setPkgUploadProgress(10)
       const { data: urlRes } = await api.post<{ fileId: string }>('/files/upload-url', {
         filename: file.name,
-        mimeType: file.type,
+        mimeType: uploadMimeType(file),
         sizeBytes: file.size,
         category: 'attachment',
       })
@@ -8501,14 +8505,14 @@ function BiddingTab({
       setPkgUploadProgress(40)
       const buf = await file.arrayBuffer()
       await api.post(`/files/${fileId}/content`, buf, {
-        headers: { 'Content-Type': file.type },
+        headers: { 'Content-Type': uploadMimeType(file) },
         timeout: 120_000,
       })
       setPkgUploadProgress(90)
       onUploadPackageFile(bidType, fileId, file.name.replace(/\.[^.]+$/, ''))
       setPkgUploadProgress(100)
-    } catch {
-      addToast({ type: 'error', message: t('proj.detail.uploadFailed') })
+    } catch (err) {
+      addToast({ type: 'error', message: uploadFailureMessage(t('proj.detail.uploadFailed'), err) })
     } finally {
       setUploadingPkgType(null)
       setPkgUploadProgress(0)
@@ -9061,7 +9065,6 @@ function BiddingTab({
       <input
         ref={pkgFileRef}
         type="file"
-        accept=".zip,.rar,.7z"
         style={{ display: 'none' }}
         onChange={(e) => {
           const file = e.target.files?.[0]
@@ -11405,7 +11408,7 @@ function EngineeringTab({
   const pickFile = async (onPicked: (fileId: string, filename: string) => void) => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.pdf,.dwg,.dxf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.zip'
+    input.accept = '*/*'
     input.onchange = async () => {
       const file = input.files?.[0]
       if (!file) return
@@ -11424,8 +11427,11 @@ function EngineeringTab({
           timeout: 120_000,
         })
         onPicked(fileId, file.name)
-      } catch {
-        addToast({ type: 'error', message: t('proj.detail.fileUploadFailed') })
+      } catch (err) {
+        addToast({
+          type: 'error',
+          message: uploadFailureMessage(t('proj.detail.fileUploadFailed'), err),
+        })
       } finally {
         setUploading(false)
       }
@@ -18783,8 +18789,6 @@ function AttachmentsTab({
   const [uploadCategory, setUploadCategory] = React.useState<DocCategory>('General')
   const [filterCategory, setFilterCategory] = React.useState<DocCategory | 'All'>('All')
 
-  const ACCEPT = '.xlsx,.xls,.pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.zip,.rar'
-
   // Reaching this tab at all already requires attachments.view — the only
   // further restriction is hiding Commercial-tagged documents from technical
   // project-team members. isAdmin (edit-level) still gates uploading/deleting
@@ -18828,13 +18832,18 @@ function AttachmentsTab({
     try {
       const { data: urlRes } = await api.post<{ uploadUrl: string; fileId: string }>(
         '/files/upload-url',
-        { filename: file.name, mimeType: file.type, sizeBytes: file.size, category: 'attachment' },
+        {
+          filename: file.name,
+          mimeType: uploadMimeType(file),
+          sizeBytes: file.size,
+          category: 'attachment',
+        },
       )
       const { fileId } = urlRes as unknown as { uploadUrl: string; fileId: string }
       setProgress(30)
       const buf = await file.arrayBuffer()
       await api.post(`/files/${fileId}/content`, buf, {
-        headers: { 'Content-Type': file.type },
+        headers: { 'Content-Type': uploadMimeType(file) },
         timeout: 120_000,
       })
       setProgress(75)
@@ -18852,8 +18861,11 @@ function AttachmentsTab({
       })
       setFiles(r.data as unknown as FileAttachment[])
       addToast({ type: 'success', message: t('proj.detail.uploaded', { name: file.name, uploadCategory: docCatLabel(uploadCategory) }) })
-    } catch {
-      addToast({ type: 'error', message: t('proj.detail.uploadFailedPleaseTryAgain') })
+    } catch (err) {
+      addToast({
+        type: 'error',
+        message: uploadFailureMessage(t('proj.detail.uploadFailedPleaseTryAgain'), err),
+      })
     } finally {
       setUploading(false)
       setProgress(0)
@@ -19139,7 +19151,6 @@ function AttachmentsTab({
         <input
           ref={fileRef}
           type="file"
-          accept={ACCEPT}
           style={{ display: 'none' }}
           onChange={(e) => {
             const f = e.target.files?.[0]
