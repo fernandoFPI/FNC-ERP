@@ -1,4 +1,4 @@
-﻿import i18n, { enumLabel, tl, tlh } from '../../../i18n'
+import i18n, { enumLabel, tl, tlh } from '../../../i18n'
 import { Trans, useTranslation } from 'react-i18next'
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -10,6 +10,7 @@ import {
   ADMIN_SET_PHASE,
   RFQ_LINES_QUERY,
   CLIENT_DOCUMENTS_QUERY,
+  PROJECT_FILES_QUERY,
   UPLOAD_CLIENT_DOCUMENT,
   UPLOAD_CLIENT_DOCUMENT_REVISION,
   UPDATE_CLIENT_DOCUMENT,
@@ -257,6 +258,8 @@ import {
 } from '../../../lib/contractBilling'
 import { CONTRACT_STATUSES } from '../../../lib/contractStatus'
 import { uploadMimeType, uploadFailureMessage } from '../../../lib/uploadMimeType'
+import { projectFileTabs, visibleProjectFiles, countByTab } from '../../../lib/projectFiles'
+import type { ProjectFilesQuery, ProjectFilesQueryVariables } from '../../../graphql/generated'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
@@ -5967,6 +5970,8 @@ export default function ProjectDetail() {
                 theme={theme}
                 isAdmin={canEdit.attachments}
                 viewerRole={projectRole}
+                visibleTabs={TABS.map((tx) => tx.key)}
+                onOpenTab={setTab}
               />
             )}
 
@@ -18765,11 +18770,14 @@ function PunchListTab({
   )
 }
 
-function AttachmentsTab({
+// Exported only so the tab can be rendered in tests (__tests__/AttachmentsTab.test.tsx).
+export function AttachmentsTab({
   projectId,
   theme,
   isAdmin,
   viewerRole,
+  visibleTabs,
+  onOpenTab,
 }: {
   projectId: string
   theme: ReturnType<typeof useTheme>['theme']
@@ -18777,17 +18785,33 @@ function AttachmentsTab({
   // Project-team role of the viewer — used only to hide the Commercial category
   // from technical members; unrelated to isAdmin (company-wide edit permission).
   viewerRole?: 'admin' | 'pm' | 'technical' | 'commercial' | 'both' | 'none'
+  // The project tabs this viewer can open: the Attachments list also shows the files uploaded in
+  // those tabs (Client Documents, Preliminary Engineering, Bidding Stage, ...), and only those.
+  visibleTabs: string[]
+  onOpenTab: (tab: string) => void
 }) {
   const { t } = useTranslation()
   const addToast = useToastStore((s) => s.addToast)
   const fileRef = React.useRef<HTMLInputElement>(null)
-  const [files, setFiles] = React.useState<FileAttachment[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const askTabs = React.useMemo(() => projectFileTabs(visibleTabs), [visibleTabs])
+  // Every file uploaded for the project, not only those uploaded through this tab. The server keeps
+  // out any tab the viewer lacks the permission for and the bid-pricing files of technical members.
+  const {
+    data: filesData,
+    loading: filesLoading,
+    refetch: refetchFiles,
+  } = useQuery<ProjectFilesQuery, ProjectFilesQueryVariables>(PROJECT_FILES_QUERY, {
+    variables: { projectId, tabs: askTabs },
+    fetchPolicy: 'cache-and-network',
+  })
+  const files = React.useMemo(() => filesData?.projectFiles ?? [], [filesData])
+  const loading = filesLoading && !filesData
   const [uploading, setUploading] = React.useState(false)
   const [progress, setProgress] = React.useState(0)
   const [dragOver, setDragOver] = React.useState(false)
   const [uploadCategory, setUploadCategory] = React.useState<DocCategory>('General')
   const [filterCategory, setFilterCategory] = React.useState<DocCategory | 'All'>('All')
+  const [filterTab, setFilterTab] = React.useState<string>('all')
 
   // Reaching this tab at all already requires attachments.view — the only
   // further restriction is hiding Commercial-tagged documents from technical
@@ -18799,28 +18823,29 @@ function AttachmentsTab({
     return cats
   }, [isAdmin, viewerRole])
 
-  React.useEffect(() => {
-    setLoading(true)
-    api
-      .get<FileAttachment[]>('/files/attachments', {
-        params: { entityType: 'project', entityId: projectId },
-      })
-      .then((r) => { setFiles(r.data as unknown as FileAttachment[]); })
-      .catch(() => {
-        /* ignore: file list just stays empty if this fails */
-      })
-      .finally(() => {
-        setLoading(false)
-      })
-  }, [projectId])
+  // A file's category: only uploads made through this tab carry one (in their label).
+  const categoryOf = (f: { title: string }): DocCategory => parseFileCategory(f.title).category
+  const hiddenCategories = React.useMemo(
+    () => new Set<string>(DOC_CATEGORIES.filter((c) => !visibleCategories.has(c))),
+    [visibleCategories],
+  )
 
-  // Filter visible files by role + active category filter
-  const visibleFiles = files.filter((f) => {
-    const { category } = parseFileCategory(f.label || f.original_filename)
-    if (!visibleCategories.has(category)) return false
-    if (filterCategory !== 'All' && category !== filterCategory) return false
-    return true
+  // Filter by role (Commercial-tagged uploads), the active category chip and the active tab chip.
+  const visibleFiles = visibleProjectFiles(files, {
+    categoryOf,
+    hiddenCategories,
+    category: filterCategory,
+    tab: filterTab,
   })
+  // How many files each tab contributes (for the tab chips); only tabs that have files get a chip.
+  const tabCounts = countByTab(files, categoryOf, hiddenCategories)
+  // Uploads made through this tab, per category (the category chips).
+  const categoryCounts = new Map<string, number>()
+  for (const f of files) {
+    if (f.source !== 'attachments') continue
+    categoryCounts.set(categoryOf(f), (categoryCounts.get(categoryOf(f)) ?? 0) + 1)
+  }
+  const tabLabelOf = (key: string): string => ALL_TABS.find((x) => x.key === key)?.label ?? key
 
   async function upload(file: File) {
     if (file.size > 52_428_800) {
@@ -18856,10 +18881,7 @@ function AttachmentsTab({
         label: labelWithCat,
       })
       setProgress(95)
-      const r = await api.get<FileAttachment[]>('/files/attachments', {
-        params: { entityType: 'project', entityId: projectId },
-      })
-      setFiles(r.data as unknown as FileAttachment[])
+      await refetchFiles()
       addToast({ type: 'success', message: t('proj.detail.uploaded', { name: file.name, uploadCategory: docCatLabel(uploadCategory) }) })
     } catch (err) {
       addToast({
@@ -18873,25 +18895,27 @@ function AttachmentsTab({
     }
   }
 
-  async function download(f: FileAttachment) {
+  async function download(f: { fileId: string; filename: string }) {
     try {
       const { data: res } = await api.get<{ downloadUrl: string }>(
-        `/files/${f.file_id}/download-url`,
+        `/files/${f.fileId}/download-url`,
       )
       const url = (res as unknown as { downloadUrl: string }).downloadUrl
       const a = document.createElement('a')
       a.href = url
-      a.download = f.original_filename
+      a.download = f.filename
       a.click()
     } catch {
       addToast({ type: 'error', message: t('proj.detail.downloadFailed') })
     }
   }
 
-  async function remove(attachment: FileAttachment) {
+  // Only a file uploaded through this tab can be removed here (it has an attachment id); the other
+  // tabs' files are removed in the tab they live in.
+  async function remove(attachmentId: string) {
     try {
-      await api.delete(`/files/attachments/${attachment.id}`)
-      setFiles((prev) => prev.filter((f) => f.id !== attachment.id))
+      await api.delete(`/files/attachments/${attachmentId}`)
+      await refetchFiles()
       addToast({ type: 'success', message: t('proj.detail.attachmentRemoved') })
     } catch {
       addToast({ type: 'error', message: t('proj.detail.failedToRemoveAttachment') })
@@ -18941,27 +18965,45 @@ function AttachmentsTab({
             }}
           >
             {docCatLabel(cat)}
-            {cat !== 'All' &&
-              files.filter(
-                (f) => parseFileCategory(f.label || f.original_filename).category === cat,
-              ).length > 0 && (
-                <span style={{ marginInlineStart: '4px', opacity: 0.75 }}>
-                  (
-                  {
-                    files.filter(
-                      (f) =>
-                        parseFileCategory(f.label || f.original_filename).category === cat &&
-                        visibleCategories.has(
-                          parseFileCategory(f.label || f.original_filename).category,
-                        ),
-                    ).length
-                  }
-                  )
-                </span>
-              )}
+            {cat !== 'All' && (categoryCounts.get(cat) ?? 0) > 0 && (
+              <span style={{ marginInlineStart: '4px', opacity: 0.75 }}>
+                ({categoryCounts.get(cat)})
+              </span>
+            )}
           </button>
         ))}
       </div>
+
+      {/* Where each file lives: one chip per tab that has files. Hidden when only this tab has any. */}
+      {tabCounts.size > 1 || (tabCounts.size === 1 && !tabCounts.has('attachments')) ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {(['all', ...Array.from(tabCounts.keys())] as string[]).map((tabKey) => (
+            <button
+              key={tabKey}
+              onClick={() => {
+                setFilterTab(tabKey)
+              }}
+              style={{
+                padding: '3px 12px',
+                borderRadius: '999px',
+                cursor: 'pointer',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: filterTab === tabKey ? theme.accent : theme.bgSurface,
+                color: filterTab === tabKey ? '#fff' : theme.textMuted,
+                border: `1px solid ${filterTab === tabKey ? 'transparent' : theme.border}`,
+              }}
+            >
+              {tabKey === 'all' ? t('proj.detail.allSources') : tabLabelOf(tabKey)}
+              {tabKey !== 'all' && (
+                <span style={{ marginInlineStart: '4px', opacity: 0.75 }}>
+                  ({tabCounts.get(tabKey)})
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {/* File list */}
       {loading ? (
@@ -19004,11 +19046,17 @@ function AttachmentsTab({
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {visibleFiles.map((f) => {
-            const { category, name } = parseFileCategory(f.label || f.original_filename)
+            // Uploaded through this tab: its title carries a category. Every other file comes from
+            // another tab, shown with the kind of file and a link to that tab.
+            const own = f.source === 'attachments'
+            const { category, name } = own
+              ? parseFileCategory(f.title)
+              : { category: 'General' as DocCategory, name: f.title }
             const catStyle = CAT_COLOR[category]
+            const attachmentId = f.attachmentId
             return (
               <div
-                key={f.id}
+                key={`${f.source}:${f.fileId}:${attachmentId ?? ''}`}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -19019,7 +19067,7 @@ function AttachmentsTab({
                   borderRadius: '8px',
                 }}
               >
-                <FileTypeIcon mime={f.mime_type} />
+                <FileTypeIcon mime={f.mimeType ?? ''} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
@@ -19041,29 +19089,57 @@ function AttachmentsTab({
                     >
                       {name}
                     </span>
-                    <span
-                      style={{
-                        flexShrink: 0,
-                        padding: '1px 7px',
-                        borderRadius: '999px',
-                        fontSize: '10px',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        background: catStyle.bg,
-                        color: catStyle.color,
-                      }}
-                    >
-                      {category}
-                    </span>
+                    {own ? (
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          padding: '1px 7px',
+                          borderRadius: '999px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          background: catStyle.bg,
+                          color: catStyle.color,
+                        }}
+                      >
+                        {category}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          onOpenTab(f.tab)
+                        }}
+                        title={t('proj.detail.openInTab', { tab: tabLabelOf(f.tab) })}
+                        style={{
+                          flexShrink: 0,
+                          padding: '1px 8px',
+                          borderRadius: '999px',
+                          cursor: 'pointer',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          letterSpacing: '0.03em',
+                          background: theme.accent + '18',
+                          color: theme.accent,
+                          border: `1px solid ${theme.accent}40`,
+                        }}
+                      >
+                        {t(`proj.detail.fileSource.${f.source}`, {
+                          defaultValue: tabLabelOf(f.tab),
+                        })}
+                      </button>
+                    )}
                   </div>
                   <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                    {formatBytes(f.size_bytes)} ·{' '}
-                    {new Date(f.created_at).toLocaleDateString('en-GB', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
-                    })}
+                    {f.detail ? `${f.detail} · ` : ''}
+                    {formatBytes(f.sizeBytes ?? 0)}
+                    {f.uploadedAt
+                      ? ` · ${new Date(f.uploadedAt).toLocaleDateString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}`
+                      : ''}
                   </div>
                 </div>
                 <button style={btnStyle} title={t('proj.detail.download')} onClick={() => void download(f)}>
@@ -19080,11 +19156,11 @@ function AttachmentsTab({
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
                 </button>
-                {isAdmin && (
+                {isAdmin && attachmentId && (
                   <button
                     style={{ ...btnStyle, color: '#ef4444' }}
                     title={t('proj.detail.remove2')}
-                    onClick={() => void remove(f)}
+                    onClick={() => void remove(attachmentId)}
                   >
                     <svg
                       width="15"

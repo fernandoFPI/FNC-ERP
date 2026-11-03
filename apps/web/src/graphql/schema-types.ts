@@ -6982,6 +6982,19 @@ export type ProjectDrawing = {
   uploadedByName?: Maybe<Scalars['String']['output']>;
 };
 
+export type ProjectFile = {
+  attachmentId?: Maybe<Scalars['ID']['output']>;
+  detail?: Maybe<Scalars['String']['output']>;
+  fileId: Scalars['ID']['output'];
+  filename: Scalars['String']['output'];
+  mimeType?: Maybe<Scalars['String']['output']>;
+  sizeBytes?: Maybe<Scalars['Float']['output']>;
+  source: Scalars['String']['output'];
+  tab: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+  uploadedAt?: Maybe<Scalars['String']['output']>;
+};
+
 export type ProjectHseRecord = {
   approvedBy?: Maybe<Scalars['String']['output']>;
   attendeeCount?: Maybe<Scalars['Int']['output']>;
@@ -7611,6 +7624,7 @@ export type Query = {
   projectDrawings: Array<ProjectDrawing>;
   projectEVM: EvmData;
   projectEquipmentLog: Array<EquipmentLog>;
+  projectFiles: Array<ProjectFile>;
   projectHSERecords: Array<ProjectHseRecord>;
   projectHandoverCertificates: Array<HandoverCertificate>;
   projectITPs: Array<ProjectItp>;
@@ -8391,6 +8405,12 @@ export type QueryProjectEquipmentLogArgs = {
   endDate?: InputMaybe<Scalars['String']['input']>;
   projectId: Scalars['ID']['input'];
   startDate?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryProjectFilesArgs = {
+  projectId: Scalars['ID']['input'];
+  tabs?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
 

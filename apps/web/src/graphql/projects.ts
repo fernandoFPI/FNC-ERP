@@ -1072,6 +1072,26 @@ export const CLIENT_DOCUMENTS_QUERY = gql`
   }
 `
 
+// Every file uploaded for a project, from every tab that takes uploads (the Attachments tab's list).
+// `tabs` = the project tabs the viewer can open; the server drops any tab the viewer lacks the
+// permission for and keeps bid-pricing files from technical members.
+export const PROJECT_FILES_QUERY = gql`
+  query ProjectFiles($projectId: ID!, $tabs: [String!]) {
+    projectFiles(projectId: $projectId, tabs: $tabs) {
+      source
+      tab
+      fileId
+      filename
+      mimeType
+      sizeBytes
+      title
+      detail
+      uploadedAt
+      attachmentId
+    }
+  }
+`
+
 export const UPLOAD_CLIENT_DOCUMENT = gql`
   ${CLIENT_DOCUMENT_FIELDS}
   mutation UploadClientDocument(

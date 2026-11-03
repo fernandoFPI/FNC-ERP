@@ -7636,7 +7636,33 @@
       "dropFileOr": "Drop file or <0>{{t}}</0>",
       "dropFileHereOr": "Drop file here or <0>{{t}}</0>",
       "willBeTaggedAsExcelPdf": "Any file type. Will be tagged as <0>{{uploadCategory}}</0>",
-      "clickToAttachRevisedFile": "Click to attach the revised file <0>{{t}}</0>"
+      "clickToAttachRevisedFile": "Click to attach the revised file <0>{{t}}</0>",
+      "allSources": "All sources",
+      "openInTab": "Open in {{tab}}",
+      "fileSource": {
+        "attachments": "Attachment",
+        "client_documents": "Client document",
+        "engineering": "Engineering document",
+        "rfq_phase": "Engineering phase file",
+        "drawings": "Drawing",
+        "bid_technical": "Technical bid package",
+        "bid_commercial": "Commercial bid package",
+        "bid_deliverables": "Bid deliverable",
+        "bid_quotations": "Supplier quotation",
+        "tq": "Technical query",
+        "meetings": "Meeting file",
+        "contract_documents": "Contract document",
+        "invoice_documents": "Invoice document",
+        "handover_certificates": "Handover certificate",
+        "punch_photos": "Punch list photo",
+        "rfis": "RFI",
+        "site_instructions": "Site instruction",
+        "inspection_requests": "Inspection request",
+        "ncrs": "NCR",
+        "hse_records": "HSE record",
+        "daily_reports": "Daily report",
+        "transmittals": "Transmittal"
+      }
     }
   },
   "hr": {

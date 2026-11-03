@@ -7879,7 +7879,33 @@
       "dropFileOr": "أفلت الملف أو <0>{{t}}</0>",
       "dropFileHereOr": "أفلت الملف هنا أو <0>{{t}}</0>",
       "willBeTaggedAsExcelPdf": "أي نوع من الملفات. سيُوسَم بـ <0>{{uploadCategory}}</0>",
-      "clickToAttachRevisedFile": "انقر لإرفاق الملف المعدَّل <0>{{t}}</0>"
+      "clickToAttachRevisedFile": "انقر لإرفاق الملف المعدَّل <0>{{t}}</0>",
+      "allSources": "كل المصادر",
+      "openInTab": "افتح في {{tab}}",
+      "fileSource": {
+        "attachments": "مرفق",
+        "client_documents": "وثيقة العميل",
+        "engineering": "وثيقة هندسية",
+        "rfq_phase": "ملف مرحلة هندسية",
+        "drawings": "مخطط",
+        "bid_technical": "حزمة العطاء الفنية",
+        "bid_commercial": "حزمة العطاء التجارية",
+        "bid_deliverables": "مُخرَج العطاء",
+        "bid_quotations": "عرض سعر مورّد",
+        "tq": "استفسار فني",
+        "meetings": "ملف اجتماع",
+        "contract_documents": "وثيقة العقد",
+        "invoice_documents": "وثيقة الفاتورة",
+        "handover_certificates": "شهادة التسليم",
+        "punch_photos": "صورة قائمة الملاحظات",
+        "rfis": "طلب معلومات (RFI)",
+        "site_instructions": "تعليمات الموقع",
+        "inspection_requests": "طلب فحص",
+        "ncrs": "تقرير عدم مطابقة (NCR)",
+        "hse_records": "سجل السلامة (HSE)",
+        "daily_reports": "تقرير يومي",
+        "transmittals": "مراسلة إحالة (Transmittal)"
+      }
     }
   },
   "hr": {

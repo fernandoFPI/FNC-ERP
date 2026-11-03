@@ -2633,6 +2633,14 @@ export type ClientDocumentsQueryVariables = Exact<{
 
 export type ClientDocumentsQuery = { clientDocuments: Array<{ id: string, projectId: string, fileId: string | null, category: string, title: string, documentNumber: string | null, revision: string | null, description: string | null, receivedFrom: string | null, transmissionDate: string | null, status: string, parentDocumentId: string | null, uploadedById: string | null, uploadedByName: string | null, downloadUrl: string | null, previewUrl: string | null, filename: string | null, mimeType: string | null, sizeBytes: number | null, createdAt: string, revisions: Array<{ id: string, fileId: string | null, category: string, title: string, documentNumber: string | null, revision: string | null, description: string | null, receivedFrom: string | null, transmissionDate: string | null, status: string, uploadedByName: string | null, downloadUrl: string | null, previewUrl: string | null, filename: string | null, createdAt: string }> }> };
 
+export type ProjectFilesQueryVariables = Exact<{
+  projectId: string | number;
+  tabs?: Array<string> | string | null | undefined;
+}>;
+
+
+export type ProjectFilesQuery = { projectFiles: Array<{ source: string, tab: string, fileId: string, filename: string, mimeType: string | null, sizeBytes: number | null, title: string, detail: string | null, uploadedAt: string | null, attachmentId: string | null }> };
+
 export type UploadClientDocumentMutationVariables = Exact<{
   projectId: string | number;
   fileId: string | number;
