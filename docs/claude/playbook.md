@@ -643,8 +643,16 @@ Don't re-derive, check these first.
     destination's own cost and currency when it already holds the item (my first test assumed a weighted average
     and failed, which is how it showed). (3) `logAudit` swallows its own errors, and a failed statement inside a
     transaction turns COMMIT into a silent ROLLBACK, so the script re-reads the committed rows before reporting
-    success. Run as a dry run first; `--apply` is all-or-nothing per company. Tests:
-    `services/gateway/tests/consolidate-stock-into-central.test.ts` (16, each safeguard mutation-checked).
+    success. Run as a dry run first; `--apply` is all-or-nothing per company, unless `--skip-blocked` is given
+    (move what can move, report the rest as LEFT BEHIND, run again later). `--create-missing-items` copies an item the
+    destination does not own into its catalog instead of refusing it: always a NEW item (a copy keeps the source SKU only
+    if the destination has none like it, otherwise it takes the next number of the destination's own store sequence,
+    the same numbering as the Add Product form; the dry run previews the number without using it up). Found on
+    production: all three Yakam-owned items with stock (FACT-001, GEN-004, GEN-023) had a DIFFERENT Factory item on the
+    same SKU, so none could keep its SKU. A refused `--apply` once printed `APPLIED` in its closing line (the label
+    keyed on the flag, not the status); read the status and the database, not that word. Tests:
+    `services/gateway/tests/consolidate-stock-into-central.test.ts` (31; the safeguards were each mutation-checked, except
+    the final left-behind-count post-check, which correct operation never trips).
 
 49. **Mutation-checking by swapping in `git show HEAD:file` can corrupt the file on Windows.** The check "put the
     original back, run the tests, restore the fix" is right, but `git show HEAD:file | Set-Content -NoNewline`

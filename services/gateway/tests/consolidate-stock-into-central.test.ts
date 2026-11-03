@@ -484,3 +484,336 @@ describe('consolidateStockIntoCentral - who may apply', () => {
     expect((await balance(p, s.dstWh)).qty).toBe(2)
   })
 })
+
+
+// ── --create-missing-items and --skip-blocked ────────────────────────────────────────────────────
+
+interface RichProduct {
+  sku?: string
+  name?: string
+  subCategory?: string | null
+  active?: boolean
+}
+
+// An item with every field the copy has to carry over, so a copy that drops one is caught.
+async function makeRichProduct(companyId: string, o: RichProduct = {}): Promise<{ id: string; sku: string; name: string }> {
+  const sku = o.sku ?? `${SKU_PREFIX}R-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  const name = o.name ?? `Rich item ${sku}`
+  const r = await pool.query<{ id: string }>(
+    `INSERT INTO products (company_id, sku, name, name_ar, description, category, sub_category, uom,
+                           standard_cost, cost_currency, is_storable, is_active)
+     VALUES ($1,$2,$3,$4,$5,'raw_material',$6,'pc',15.5,'IQD',true,$7) RETURNING id`,
+    [companyId, sku, name, `${name} (ar)`, `Description of ${name}`, o.subCategory ?? null, o.active ?? true],
+  )
+  return { id: r.rows[0]!.id, sku, name }
+}
+
+const run = (s: Scenario, extra: Record<string, boolean> = {}, apply = true) =>
+  consolidateStockIntoCentral({
+    company: s.srcName,
+    toCompany: s.dstName,
+    apply,
+    ...(apply ? { actorEmail: sysAdminEmail } : {}),
+    ...extra,
+  })
+
+async function productsNamed(companyId: string, name: string) {
+  return (
+    await pool.query<{
+      id: string
+      sku: string
+      name_ar: string | null
+      description: string | null
+      category: string | null
+      sub_category: string | null
+      uom: string
+      standard_cost: string
+      cost_currency: string | null
+      is_storable: boolean
+      is_active: boolean
+      valuation_method: string
+    }>(`SELECT * FROM products WHERE company_id=$1 AND name=$2`, [companyId, name])
+  ).rows
+}
+
+describe('consolidateStockIntoCentral - --create-missing-items', () => {
+  it('copies an item the destination does not own: a NEW item, with every field, never the unrelated item with the same SKU', async () => {
+    const s = await scenario()
+    const clash = `${SKU_PREFIX}CLASH-${Date.now()}`
+    const mine = await makeRichProduct(s.srcId, { sku: clash })
+    const unrelated = await makeRichProduct(s.dstId, { sku: clash, name: `Unrelated ${clash}` })
+    await receive(s.srcId, mine.id, s.srcVin, s.srcWh, 4, 15.5, 'IQD')
+
+    const r = await run(s, { createMissingItems: true })
+
+    expect(r.status).toBe('moved')
+    expect(r.copies).toHaveLength(1)
+    const copies = await productsNamed(s.dstId, mine.name)
+    expect(copies).toHaveLength(1)
+    const copy = copies[0]!
+    expect(copy.sku).not.toBe(clash) // taken in the destination by another item
+    expect(copy.id).not.toBe(unrelated.id)
+    expect(copy).toMatchObject({
+      name_ar: `${mine.name} (ar)`,
+      description: `Description of ${mine.name}`,
+      category: 'raw_material',
+      uom: 'pc',
+      is_storable: true,
+      is_active: true,
+      valuation_method: 'last_cost',
+    })
+    expect(parseFloat(copy.standard_cost)).toBe(15.5)
+    expect(copy.cost_currency?.trim()).toBe('IQD')
+
+    // The stock lands under the copy; the unrelated item and the original are untouched.
+    expect(await balance(copy.id, s.dstWh)).toMatchObject({ qty: 4, cost: 15.5 })
+    expect((await balance(mine.id, s.dstWh)).qty).toBe(0)
+    expect((await balance(unrelated.id, s.dstWh)).qty).toBe(0)
+    expect((await balance(mine.id, s.srcWh)).qty).toBe(0)
+    expect((await productsNamed(s.dstId, `Unrelated ${clash}`))[0]!.sku).toBe(clash)
+    expect(await productsNamed(s.srcId, mine.name)).toHaveLength(1)
+
+    // Out of the source under its own item, into the destination under the copy.
+    const moves = await consolidationMoves([s.srcId, s.dstId])
+    expect(moves.find((m) => m.company_id === s.srcId)!.product_id).toBe(mine.id)
+    expect(moves.find((m) => m.company_id === s.dstId)!.product_id).toBe(copy.id)
+  })
+
+  it('keeps the source SKU when the destination has no item with it', async () => {
+    const s = await scenario()
+    const mine = await makeRichProduct(s.srcId)
+    await receive(s.srcId, mine.id, s.srcVin, s.srcWh, 2, 1)
+
+    const r = await run(s, { createMissingItems: true })
+
+    expect(r.copies[0]).toMatchObject({ fromSku: mine.sku, toSku: mine.sku })
+    expect((await productsNamed(s.dstId, mine.name))[0]!.sku).toBe(mine.sku)
+  })
+
+  it("takes the next number of the destination's own store sequence when the SKU is taken", async () => {
+    const s = await scenario()
+    const store = `Test Store ${Date.now()}`
+    await pool.query(
+      `INSERT INTO product_store_categories (company_id, name, sku_prefix, slug) VALUES ($1,$2,'TST','tst')`,
+      [s.dstId, store],
+    )
+    await pool.query(
+      `INSERT INTO document_sequences (company_id, doc_type, prefix, next_number, pad_length)
+       VALUES ($1,'product_tst','TST',5,3)`,
+      [s.dstId],
+    )
+    const clash = `${SKU_PREFIX}SEQ-${Date.now()}`
+    const mine = await makeRichProduct(s.srcId, { sku: clash, subCategory: store })
+    await makeRichProduct(s.dstId, { sku: clash, name: `Unrelated ${clash}` })
+    await receive(s.srcId, mine.id, s.srcVin, s.srcWh, 2, 1)
+
+    // The dry run shows the number but does not use it up.
+    const dry = await run(s, { createMissingItems: true }, false)
+    expect(dry.copies[0]!.toSku).toBe('TST-005')
+    const seq = () =>
+      pool.query<{ next_number: number }>(
+        `SELECT next_number FROM document_sequences WHERE company_id=$1 AND doc_type='product_tst'`,
+        [s.dstId],
+      )
+    expect((await seq()).rows[0]!.next_number).toBe(5)
+
+    const applied = await run(s, { createMissingItems: true })
+    expect(applied.copies[0]!.toSku).toBe('TST-005')
+    expect((await productsNamed(s.dstId, mine.name))[0]!.sku).toBe('TST-005')
+    expect((await seq()).rows[0]!.next_number).toBe(6)
+  })
+
+  it('makes ONE copy for an item held in two source locations, and moves both rows under it', async () => {
+    const s = await scenario()
+    const site = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,'Site Store','site',true) RETURNING id`,
+        [s.srcId],
+      )
+    ).rows[0]!.id
+    const mine = await makeRichProduct(s.srcId)
+    await receive(s.srcId, mine.id, s.srcVin, s.srcWh, 3, 2, 'IQD')
+    await receive(s.srcId, mine.id, s.srcVin, site, 5, 2, 'IQD')
+
+    const r = await run(s, { createMissingItems: true })
+
+    const copies = await productsNamed(s.dstId, mine.name)
+    expect(copies).toHaveLength(1)
+    expect(r.copies).toHaveLength(1)
+    expect(r.moves).toHaveLength(2)
+    expect((await balance(copies[0]!.id, s.dstWh)).qty).toBe(8)
+  })
+
+  it('copies an inactive item as inactive, like the original', async () => {
+    const s = await scenario()
+    const mine = await makeRichProduct(s.srcId, { active: false })
+    await receive(s.srcId, mine.id, s.srcVin, s.srcWh, 1, 1)
+
+    const r = await run(s, { createMissingItems: true })
+
+    expect(r.copies[0]!.active).toBe(false)
+    expect((await productsNamed(s.dstId, mine.name))[0]!.is_active).toBe(false)
+  })
+
+  it('a dry run reports the copy and creates nothing', async () => {
+    const s = await scenario()
+    const mine = await makeRichProduct(s.srcId)
+    await receive(s.srcId, mine.id, s.srcVin, s.srcWh, 2, 1)
+
+    const r = await run(s, { createMissingItems: true }, false)
+
+    expect(r.status).toBe('planned')
+    expect(r.copies).toHaveLength(1)
+    expect(r.moves[0]!.intoSku).toBe(r.copies[0]!.toSku)
+    expect(await productsNamed(s.dstId, mine.name)).toHaveLength(0)
+    expect((await balance(mine.id, s.srcWh)).qty).toBe(2)
+  })
+
+  it('running it twice makes the copy once', async () => {
+    const s = await scenario()
+    const mine = await makeRichProduct(s.srcId)
+    await receive(s.srcId, mine.id, s.srcVin, s.srcWh, 2, 1)
+
+    await run(s, { createMissingItems: true })
+    const again = await run(s, { createMissingItems: true })
+
+    expect(again.status).toBe('nothing-to-do')
+    expect(await productsNamed(s.dstId, mine.name)).toHaveLength(1)
+  })
+
+  it('without the option an item the destination does not own still refuses the run, and nothing is created', async () => {
+    const s = await scenario()
+    const mine = await makeRichProduct(s.srcId)
+    await receive(s.srcId, mine.id, s.srcVin, s.srcWh, 2, 1)
+
+    const r = await run(s)
+
+    expect(r.status).toBe('refused')
+    expect(r.problems.join(' ')).toMatch(/never matched by SKU/)
+    expect(await productsNamed(s.dstId, mine.name)).toHaveLength(0)
+    expect((await balance(mine.id, s.srcWh)).qty).toBe(2)
+  })
+
+  it('a refused run creates no copy even for the rows that could have been copied', async () => {
+    const s = await scenario()
+    const copyable = await makeRichProduct(s.srcId)
+    const reservedItem = await makeProduct(s.dstId)
+    await receive(s.srcId, copyable.id, s.srcVin, s.srcWh, 2, 1)
+    await receive(s.srcId, reservedItem, s.srcVin, s.srcWh, 5, 1)
+    await pool.query(`UPDATE stock_balances SET qty_reserved=1 WHERE product_id=$1 AND location_id=$2`, [reservedItem, s.srcWh])
+
+    const r = await run(s, { createMissingItems: true })
+
+    expect(r.status).toBe('refused')
+    expect(await productsNamed(s.dstId, copyable.name)).toHaveLength(0)
+    expect((await balance(copyable.id, s.srcWh)).qty).toBe(2)
+  })
+})
+
+describe('consolidateStockIntoCentral - --skip-blocked', () => {
+  it('moves every row that can move and leaves the blocked one where it is', async () => {
+    const s = await scenario()
+    const free = await makeProduct(s.dstId)
+    const held = await makeProduct(s.dstId)
+    await receive(s.srcId, free, s.srcVin, s.srcWh, 5, 1)
+    await receive(s.srcId, held, s.srcVin, s.srcWh, 12, 1)
+    await pool.query(`UPDATE stock_balances SET qty_reserved=6 WHERE product_id=$1 AND location_id=$2`, [held, s.srcWh])
+
+    const r = await run(s, { skipBlocked: true })
+
+    expect(r.status).toBe('moved')
+    expect(r.moves).toHaveLength(1)
+    expect(r.problems.join(' ')).toMatch(/6\.0000 reserved for a document/)
+    expect((await balance(free, s.dstWh)).qty).toBe(5)
+    expect((await balance(free, s.srcWh)).qty).toBe(0)
+    // The blocked row is exactly as it was: quantity and reservation.
+    expect(await balance(held, s.srcWh)).toMatchObject({ qty: 12, reserved: 6 })
+    expect((await balance(held, s.dstWh)).qty).toBe(0)
+    expect(await consolidationMoves([s.srcId, s.dstId])).toHaveLength(2)
+  })
+
+  it('a second run moves the row once it is unblocked', async () => {
+    const s = await scenario()
+    const held = await makeProduct(s.dstId)
+    const free = await makeProduct(s.dstId)
+    await receive(s.srcId, free, s.srcVin, s.srcWh, 1, 1)
+    await receive(s.srcId, held, s.srcVin, s.srcWh, 4, 1)
+    await pool.query(`UPDATE stock_balances SET qty_reserved=4 WHERE product_id=$1 AND location_id=$2`, [held, s.srcWh])
+    await run(s, { skipBlocked: true })
+
+    await pool.query(`UPDATE stock_balances SET qty_reserved=0 WHERE product_id=$1 AND location_id=$2`, [held, s.srcWh])
+    const again = await run(s, { skipBlocked: true })
+
+    expect(again.status).toBe('moved')
+    expect(again.problems).toEqual([])
+    expect((await balance(held, s.dstWh)).qty).toBe(4)
+    expect((await balance(held, s.srcWh)).qty).toBe(0)
+  })
+
+  it('a dry run lists only the rows that would move, and what it would leave behind', async () => {
+    const s = await scenario()
+    const free = await makeProduct(s.dstId)
+    const held = await makeProduct(s.dstId)
+    await receive(s.srcId, free, s.srcVin, s.srcWh, 5, 1)
+    await receive(s.srcId, held, s.srcVin, s.srcWh, 5, 1)
+    await pool.query(`UPDATE stock_balances SET qty_reserved=2 WHERE product_id=$1 AND location_id=$2`, [held, s.srcWh])
+
+    const r = await run(s, { skipBlocked: true }, false)
+
+    expect(r.status).toBe('planned')
+    expect(r.moves).toHaveLength(1)
+    expect(r.problems).toHaveLength(1)
+    expect((await balance(free, s.srcWh)).qty).toBe(5)
+  })
+
+  it('refuses when every row is blocked, so there is nothing to move', async () => {
+    const s = await scenario()
+    const held = await makeProduct(s.dstId)
+    await receive(s.srcId, held, s.srcVin, s.srcWh, 5, 1)
+    await pool.query(`UPDATE stock_balances SET qty_reserved=5 WHERE product_id=$1 AND location_id=$2`, [held, s.srcWh])
+
+    const r = await run(s, { skipBlocked: true })
+
+    expect(r.status).toBe('refused')
+    expect(await consolidationMoves([s.srcId, s.dstId])).toHaveLength(0)
+  })
+
+  it('without it one blocked row still refuses the whole company', async () => {
+    const s = await scenario()
+    const free = await makeProduct(s.dstId)
+    const held = await makeProduct(s.dstId)
+    await receive(s.srcId, free, s.srcVin, s.srcWh, 5, 1)
+    await receive(s.srcId, held, s.srcVin, s.srcWh, 5, 1)
+    await pool.query(`UPDATE stock_balances SET qty_reserved=2 WHERE product_id=$1 AND location_id=$2`, [held, s.srcWh])
+
+    const r = await run(s)
+
+    expect(r.status).toBe('refused')
+    expect((await balance(free, s.srcWh)).qty).toBe(5)
+  })
+
+  it('with both options: copies what is missing, moves what is free, leaves the reserved row, and audits it', async () => {
+    const s = await scenario()
+    const own = await makeProduct(s.dstId)
+    const foreign = await makeRichProduct(s.srcId)
+    const held = await makeProduct(s.dstId)
+    await receive(s.srcId, own, s.srcVin, s.srcWh, 1, 1)
+    await receive(s.srcId, foreign.id, s.srcVin, s.srcWh, 2, 1)
+    await receive(s.srcId, held, s.srcVin, s.srcWh, 6, 1)
+    await pool.query(`UPDATE stock_balances SET qty_reserved=6 WHERE product_id=$1 AND location_id=$2`, [held, s.srcWh])
+
+    const r = await run(s, { createMissingItems: true, skipBlocked: true })
+
+    expect(r.status).toBe('moved')
+    expect(r.moves).toHaveLength(2)
+    expect(r.copies).toHaveLength(1)
+    expect(r.problems).toHaveLength(1)
+    expect((await balance(held, s.srcWh)).qty).toBe(6)
+    const audit = await pool.query<{ new_values: { rows: number; leftBehind: number; copies: { from: string; to: string }[] } }>(
+      `SELECT new_values FROM audit_log WHERE action='consolidate_stock_into_central' AND company_id=$1`,
+      [s.srcId],
+    )
+    expect(audit.rows[0]!.new_values).toMatchObject({ rows: 2, leftBehind: 1 })
+    expect(audit.rows[0]!.new_values.copies).toEqual([{ from: foreign.sku, to: r.copies[0]!.toSku }])
+  })
+})
