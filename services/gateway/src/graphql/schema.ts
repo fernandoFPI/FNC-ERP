@@ -3643,6 +3643,30 @@
     clientDocuments(projectId: ID!, category: String): [ClientDocument!]!
   }
 
+  # Every file uploaded for a project, from every tab that takes uploads (Attachments, Client
+  # Documents, Preliminary Engineering, Bidding Stage, Meetings, Contracts, Handover, Execution).
+  # 'tabs' names the project tabs to include (page tab keys: attachments, client_documents,
+  # rfq_lines, bidding, meetings, contracts, handover, execution); omitted means just the
+  # Attachments tab's own uploads. A tab's files are returned only to a caller who holds the
+  # permission that tab's own queries require, and bid-pricing files are kept from technical
+  # team members, so this never shows more than the tabs themselves.
+  type ProjectFile {
+    source:       String!
+    tab:          String!
+    fileId:       ID!
+    filename:     String!
+    mimeType:     String
+    sizeBytes:    Float
+    title:        String!
+    detail:       String
+    uploadedAt:   String
+    attachmentId: ID
+  }
+
+  extend type Query {
+    projectFiles(projectId: ID!, tabs: [String!]): [ProjectFile!]!
+  }
+
   extend type Mutation {
     uploadClientDocument(
       projectId:        ID!

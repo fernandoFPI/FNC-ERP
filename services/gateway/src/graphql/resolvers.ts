@@ -1,4 +1,4 @@
-﻿import {
+import {
   query,
   pool,
   getAttachments,
@@ -25,6 +25,12 @@ import {
   resolveInvoiceBillingMethod,
 } from '../lib/contractBilling.js'
 import { resolvePhotoBypass } from '../lib/receiptPhotoBypass.js'
+import {
+  listProjectFiles,
+  PROJECT_FILE_TABS,
+  PROJECT_FILE_TAB_PERMISSION,
+  type ProjectFileTab,
+} from '../lib/projectFiles.js'
 import { poEditNeedsApproval } from '../lib/poEditApproval.js'
 import {
   AUTO_APPLIED_REQUISITION_REVIEW_NOTE,
@@ -3982,6 +3988,33 @@ async function requireProjectViewGW(
     [projectId, auth.companyId, auth.userId],
   )
   if (!assigned.rows[0]) throw new Error(`Requires 'view' access to 'projects.view'`)
+}
+
+// May this caller see a project's bid-pricing files (the Commercial bid package, supplier quotations,
+// contract and invoice documents)? Mirrors the page: the Bidding tab hides the Commercial bid from a
+// plain technical team member, while an administrator, anyone with the company-wide projects.edit
+// grant, and the project's PM keep it. Anyone who is not a technical member of this project (a
+// commercial member, both, or no membership at all) sees it, as in the page.
+async function canSeeProjectCommercialFilesGW(
+  auth: { userId: string; companyId: string; role: string },
+  projectId: string,
+): Promise<boolean> {
+  if (isPermissionBypassGW(auth.role)) return true
+  const perms = await loadPermissions(auth.userId, auth.companyId)
+  if (meetsLevel(perms['projects.edit'], 'edit')) return true
+  const r = await query<{ is_pm: boolean; member_type: string | null }>(
+    `SELECT COALESCE(p.project_manager_id IN (SELECT id FROM employees WHERE user_id = $3), false) AS is_pm,
+            (SELECT pm.member_type FROM project_members pm
+               JOIN employees e ON e.id = pm.employee_id
+              WHERE pm.project_id = p.id AND e.user_id = $3 AND pm.is_active = true
+              LIMIT 1) AS member_type
+       FROM projects p WHERE p.id = $1 AND p.company_id = $2`,
+    [projectId, auth.companyId, auth.userId],
+  )
+  if (r.rows.length === 0) return false
+  const row = r.rows[0]
+  if (row.is_pm) return true
+  return row.member_type !== 'technical'
 }
 
 // A handful of report/lookup resolvers accept an optional companyId argument
@@ -31618,6 +31651,42 @@ const phase5QueryResolvers = {
       })
     }
     return result
+  },
+
+  // ── All files of a project (Attachments tab) ─────────────────────────────
+
+  projectFiles: async (
+    _: unknown,
+    args: { projectId: string; tabs?: string[] | null },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    // The project's own view rule (creator, PM, active member or projects.view), as for `project`.
+    await requireProjectViewGW(auth, args.projectId)
+    const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+      args.projectId,
+      auth.companyId,
+    ])
+    if (!proj.rows[0]) throw new Error('Project not found')
+
+    const requested = (args.tabs ?? ['attachments']).filter((t): t is ProjectFileTab =>
+      PROJECT_FILE_TABS.includes(t as ProjectFileTab),
+    )
+    // Each tab's files only to someone who holds the permission that tab's own queries need
+    // (clientDocuments: projects.client_documents.view, ...). An admin passes everything.
+    const perms = isPermissionBypassGW(auth.role)
+      ? null
+      : await loadPermissions(auth.userId, auth.companyId)
+    const tabs = requested.filter(
+      (t) => perms === null || meetsLevel(perms[PROJECT_FILE_TAB_PERMISSION[t]], 'view'),
+    )
+    if (tabs.length === 0) return []
+
+    return listProjectFiles(args.projectId, auth.companyId, {
+      tabs,
+      includeCommercial: await canSeeProjectCommercialFilesGW(auth, args.projectId),
+    })
   },
 
   // ── Client Documents ─────────────────────────────────────────────────────
