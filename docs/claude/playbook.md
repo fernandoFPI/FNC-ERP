@@ -1061,3 +1061,76 @@ Don't re-derive, check these first.
     triggers, the manual button after an auto finish, the race), the "Market pricing in two parts" block in
     `RequisitionDetail.test.tsx` and the organizer / record-all blocks in `ItemsBoughtPage.test.tsx`. Not verified in a
     browser. Related to #24 (a gate and the list that mirrors it) and #23 (one thing, several code paths).
+
+60. **An approval layer for chosen users, and four traps it turned up (a mark with no home, a screen that shows one company
+    and writes to another, a notification the worker cannot read, and a mock that loops).** An admin can now mark users
+    whose purchases at Items Bought must be approved by the requisition's organizer before the requisition continues
+    (migration 316). Design, and why:
+    (a) *Where the mark lives.* Not on `user_company_roles` (one row per user, company AND module), not a PO position
+    (positions belong to employees, come from a CHECK-constrained list, and a normal user has no employee record): its
+    own table, `user_purchase_review_marks (company_id, user_id)`, so it works for a procurement buyer and a normal user
+    alike. Managed by the same admins as PO positions (`system_admin` or the PO Admin position).
+    (b) *The purchase remembers.* `po_line_purchases.needs_organizer_approval` is stamped when the purchase is recorded,
+    from the buyer's mark at that moment, so marking someone later never traps a requisition already in progress and
+    un-marking never frees a purchase that already exists. Existing rows default to false (nothing in flight changed).
+    (c) *One rule, three consumers.* `canApproveMarkedPurchaseGW`: the organizer or an admin, never the person who bought
+    it (so when a normal user buys his own lines only an admin can approve). It decides `approveItemsBought`,
+    `sendBackPurchase` and the per-purchase `caller_can_approve` the page reads, so the page keeps no copy; the queue
+    mirrors it in SQL (`bought_by IS DISTINCT FROM organizer`), because a queue that re-implements a gate drifts (#24).
+    (d) *The wait is a fourth Finish Buying gate, last on purpose,* so that "only the organizer is missing" is
+    recognisable (`ORGANIZER_APPROVAL_PENDING_REASON`) and is the moment the organizer is notified. No new requisition
+    status: the existing auto-finish simply continues the moment the last approval lands. An approval step needs a
+    send-back as well (#58): `sendBackPurchase` removes the purchase and its receipt links in the same order as
+    `rejectTolerancePurchase` (purchase first, #21), logs the reason and tells the buyer.
+    The traps:
+    1. *A Settings screen with a company switcher that writes to the session company.* The user's Roles tab shows one
+    company at a time, but `userPOPositions` / `assignPOPosition` (and my first version of the mark) act on the admin's
+    SESSION company, so an admin looking at Company A could silently mark someone in Company B. The mark now takes an
+    explicit `companyId` (the one the tab shows); another company than the session's needs `system_admin`, and the target
+    must hold an active role in the company shown. The PO positions on the same tab had the same flaw and were fixed the
+    same way (user said "fix point 3"): `userPOPositions(userId, companyId)` lists the company shown (omitted still means
+    every company's, which the Stock Adjustment and Pending Catalog screens rely on), `assignPOPosition` takes
+    `companyId` and either `employeeId` (the Positions page) or `userId` (the Roles tab; the server finds the user's
+    employee record in that company), and `removePOPosition` finds the position's own company. Another company needs
+    `system_admin`. It also exposed how broken the Add Position modal was: it sent `poPositions[0]?.employeeId ?? ''`, the
+    employee of the user's FIRST position (possibly another company's, giving a row whose company and employee disagree),
+    or an empty string for a user with none, so a first position could never be added there; and nothing checked that the
+    employee, or the typed-in project / department / branch id, belonged to the company. The server now checks all of
+    them. Still open: the modal asks the admin to type a raw project / department / branch UUID. How to spot it: a
+    per-company setting on a screen that has a company switcher; check which company id the mutation really uses.
+    2. *A notification payload whose id key the worker does not read.* The worker's `REQ_*` handlers read
+    `payload.requisitionId`; `notifyUserGW` sends `poId`. Found on production while designing this: 192
+    `REQ_PRICE_VERIFICATION_REQUIRED` events failed, five attempts each, `invalid input syntax for type uuid:
+    "undefined"` (74 others, sent by the helper that does carry `requisitionId`, were delivered). That is
+    `submitRequisitionMarketPricing`'s "Price verification required" notice to the organizer, which has never reached
+    anyone. The new notices go through `notifyUserForRequisitionGW` (payload `{ userId, requisitionId, ... }`), and a test
+    asserts the key. The existing "Price verification required" call in `submitRequisitionMarketPricing` was moved to the same
+    helper once the user said "fix it" (regression test in `requisition-owner-split.test.ts`: the payload carries
+    `requisitionId`, no `poId`, and goes to the organizer); the 192 old failed rows are left as they are (stale notices
+    must not be replayed). Repeated failures also count toward the worker's `notifications` circuit breaker (5 failures
+    within a minute opens it for 2 minutes), which could delay other notices. How to spot it: a `service_outbox` row with
+    `status='failed'` and the same `last_error` on every attempt; compare the payload keys of the failing rows with the
+    ones that were delivered.
+    Found beside it, and fixed on the user's "same for that other finding": the worker had no `case` for
+    `REQ_INVENTORY_CHECK_REQUIRED` or `REQ_STORE_PRICING_REQUIRED`, and a notification event type it does not know is only
+    logged ("unknown notification event") and then marked delivered, so those notices were silently dropped (53
+    inventory-check events on production show `delivered` with no notification of that type). Both now share the REQ_
+    block, so the store keepers and store-pricing holders get the in-app notice AND the email, governed by the existing
+    `email.requisition_pricing_stage` setting (on by default; Settings > notifications turns it off; its description now
+    names inventory check). The old dropped events are not replayed. Guard test:
+    `services/worker/tests/req-notification-handlers.test.ts` reads the gateway and worker sources and fails if a
+    `REQ_*` type the gateway sends has no worker case, or if one is sent through `notifyUserGW`. How to spot it:
+    `service_outbox` rows `delivered` for a type that has no rows in `notifications`.
+    3. *A mock that returns a fresh object each render loops a component whose effect depends on query data.* The roles
+    tab does `useEffect(..., [permsData])` and sets state inside it; my mock built `permsData` anew on every call, so the
+    worker ran out of memory (`ERR_WORKER_OUT_OF_MEMORY`) instead of failing a test. Build mock results once and hand back
+    the same reference. Also: the page's `Input` does not tie its label to the box, so `getByLabelText` cannot find it.
+    4. *My own edit-file format kept the blank line before the next `=== FILE` marker as part of the last replacement,*
+    leaving stray blank lines (some inside a `gql` template, which no linter flags). After any scripted edit, lint the
+    hunks and scan template literals for blank lines.
+    Tests: `services/gateway/tests/purchase-organizer-approval.test.ts` (real Postgres through the real mutations and the
+    real schema, 44 tests: marking incl. another company, the stamp, the wait in either tolerance order, approve and send
+    back by each role, the buyer-is-organizer and admin-is-buyer cases, the queue, the notification and its key),
+    `UserRolesTab.purchaseReview.test.tsx`, and the approval blocks in `ItemsBoughtPage.test.tsx` and
+    `RequisitionDetail.test.tsx`. 34 backend and 19 web mutations, all killed. Not verified in a browser. Related to #24,
+    #58 and #59.
