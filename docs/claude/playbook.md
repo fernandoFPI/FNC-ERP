@@ -893,3 +893,56 @@ Don't re-derive, check these first.
     uncommitted work, swap only the exact line and swap it back (check it matched once), never copy the whole file and
     restore it; and `CREATE TABLE AS`, even `TEMP`, is refused inside a read-only transaction, so a "forced read-only
     dry run" cannot build a working table (the production dry run caught it before anything was applied).
+
+57. **A "fix it and resubmit" path that only the people who never file can use, built on an edit that deletes and
+    re-inserts its children.** A rejected expense claim was a dead end. `POST /:id/reject` set the terminal
+    `rejected`; `PUT /:id` and `submit` accepted only `draft`; and the Edit button needed `finance.expenses.edit`.
+    But 8 of the people who file claims (58 of 105 claims on production) hold no `finance.expenses.*` key at all:
+    they file through the self-service route (`request-self`, login only), cannot open the claim page (route needs
+    `finance.expenses.view`) and see a read-only popup built from `/mine`, which had the rejection reason in its data
+    and never rendered it. EXP-2026-0043 (Al Watanyia, 19 lines) was rejected today with "Line 10 has an incorrect
+    price": lines had no number (they sorted by `expense_date, id`, a random uuid, so same-date lines had no order),
+    so the approver counted rows by hand and typed "10", and the employee could only refile everything. 13 rejected
+    claims existed; the reasons were "upload the receipts" (the most common), "correct category", "line 10".
+    How to spot it: ask, for every "send it back to the author" state, WHO the author is and whether the control that
+    leaves that state is gated by something the author holds (compare the owner's `user_permissions` with the
+    permission on the edit route, query it on production). Fix (migration 312, `POST /:id/revise`): a rejected claim
+    stays `rejected` (so the 13 existing ones become fixable at once, no status migration) and the filer, or an admin,
+    can edit and resubmit it; who may is decided by ONE function (`canReviseClaim`) used by the route and returned as
+    `can_revise` on the reads, so the button cannot drift from the server (#24). Lines carry a stable `line_number`
+    (a trigger hands out the next from `expense_claims.line_counter`, so no insert path can forget it and a removed
+    line's number is never reused) and optional per-line flags like requisitions (`flag_reason`, addressed on
+    resubmit, resolved by an approver); flags are optional here, unlike requisitions, because about half the rejections
+    are about the whole claim ("wrong company").
+    Three traps in the old edit path that the new one had to avoid: (1) it deleted every line and re-inserted them, so
+    each edit gave every line a new id and the 109 line-level receipts on production
+    (`document_attachments.entity_type='expense_claim_line'`) were left pointing at deleted rows, and a number or a flag
+    could not survive. Match children by id: update in place, insert the new, delete the left-out (with their receipts
+    and the `files.status` bookkeeping `removeAttachment` does). (2) The edit screen blanked every line's category
+    (`category_id: ''`) and the API demanded one per line, so every edit meant re-picking every category; the editor
+    sends the line's own category and the server keeps its GL account when it is unchanged. (3) The route resolved a
+    reimbursement account that self-service claims deliberately do not have and threw for a currency without a default
+    cash account; the new route never touches it and only clears it when the currency changes, so Post Payment
+    resolves it again (it prefers a stored one, which would be the wrong currency).
+    Smaller things met on the way: a `total_amount` summed in JS (`reduce`) is now summed in SQL after the writes; the
+    reject route wrote no audit row (now does); a claim resubmitted after being rejected at `approved` must clear
+    `approved_by/at`; the old rejection becomes a "Previously rejected" note, not a live red banner (the banner is keyed
+    on `status`, not on `rejection_reason`, which stays on the row as history).
+    Test traps: (a) PostgreSQL `42P08` ("inconsistent types deduced for parameter") when one `$5` is assigned to a
+    `varchar` column and compared in a `CASE`: cast every use (`$5::varchar(3)`); (b) test users sharing one
+    `refresh_token_hash` string silently lose their session (`ON CONFLICT DO NOTHING` on the unique hash), which shows
+    up as a wall of 401s, not as a setup error: suffix the hash with the user id; (c) a leftover session from a
+    throwaway debug test has the same effect on the next run; (d) a `Fragment` is needed for a `<tbody>` child that
+    returns two `<tr>`s. Mutation-checked: 14 backend safeguards (owner check, finance.expenses.edit not extending a
+    rejected claim, company scope on revise / reject / resolve, approval cleared on resubmit, flags addressed on
+    resubmit, receipts removed with a line, line ids from another claim, duplicate ids, neither-reason-nor-flag) and 13
+    web ones; three first survived (duplicate line id, popup Edit gating, banner on a non-rejected claim) because the
+    assertions were too loose, and were tightened. Regression tests:
+    `services/finance/tests/expense-claim-revise.test.ts` (real Postgres through supertest, 30 tests, the owner is a
+    plain `user` with no permission), `apps/web/src/components/finance/__tests__/{ExpenseClaimEditor,MyExpenseClaimModal}.test.tsx`,
+    `pages/finance/expenses/__tests__/ExpenseClaimDetail.test.tsx`, `lib/__tests__/{expenseClaimFlags,expenseClaimHtml}.test.ts`.
+    The migration's backfill (numbering existing lines in the order everyone sees today) was re-run on real dev rows in a
+    transaction that rolls back, against the `(expense_date, id)` order. Not verified in a browser: the screens
+    themselves (layout, RTL, the receipts panel inside the popup). Still open, not part of this change: the list page's
+    status maps have no `audited` entry (46 claims on production), and `expenseClaimHtml.ts` interpolates unescaped
+    strings (#54).
