@@ -137,6 +137,9 @@ interface Purchase {
   bought_at: string
   bought_by_name?: string | null
   over_tolerance: boolean
+  // The extra layer of approval on Items Bought (migration 316).
+  needs_organizer_approval?: boolean | null
+  organizer_approved_by?: string | null
 }
 
 interface ReqLine {
@@ -751,6 +754,10 @@ export default function RequisitionDetail() {
   }
 
   const isOrganizer = req.organizer_id === currentUserId
+  // Purchases by a marked buyer that the organizer has not approved yet: the requisition waits in Items Bought for them.
+  const awaitingOrganizerApproval = req.lines
+    .flatMap((l) => l.purchases ?? [])
+    .filter((p) => p.needs_organizer_approval && !p.organizer_approved_by).length
   const canSubmitDraft = isSystemLevel || isOrganizer
   // Deliberately NOT isOrganizer — only a Store Keeper (or admin) can
   // confirm inventory check, even for your own requisition.
@@ -3352,10 +3359,18 @@ export default function RequisitionDetail() {
               >
                 {t('req.detail.recordingPurchasesPerVendorHappensOn')}
               </div>
+              {req.status === 'items_bought' && awaitingOrganizerApproval > 0 && (
+                <div style={{ fontSize: '13px', color: theme.warning, marginBottom: '10px' }}>
+                  {t('req.detail.waitingForOrganizerApproval', {
+                    count: awaitingOrganizerApproval,
+                  })}
+                </div>
+              )}
               {req.status === 'items_bought' && (
                 <Button
                   variant="primary"
                   size="sm"
+
                   onClick={() => {
                     navigate(`/procurement/requisitions/${req.id}/items-bought`)
                   }}

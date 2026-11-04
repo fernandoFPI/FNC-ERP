@@ -61,6 +61,9 @@
     purchaseOrderForAction(id: ID!): PurchaseOrder
     myPOQueue: [PurchaseOrder!]
     poPositions(projectId: ID, departmentId: ID, branchId: ID): [POPositionAssignment!]!
+    # Whether this user's purchases need the requisition organizer's approval (migration 316). Same admins as PO positions.
+    # companyId defaults to the caller's own company; another company needs system_admin.
+    userPurchaseReview(userId: ID!, companyId: ID): Boolean!
     poFxRates: POFxRatesResult!
     poReceipts: [POReceipt!]!
     poReceipt(id: ID!): POReceipt
@@ -216,6 +219,13 @@
     # the recorded purchase entirely (and its receipts) instead of signing
     # off on the price, so the buyer records it again with a corrected one.
     rejectTolerancePurchase(purchaseId: ID!, reason: String!): Boolean!
+    # The organizer's sign-off (or an admin's) on every purchase of this requisition that is waiting for it and that the
+    # caller may approve, never one he recorded himself. When the last one lands the requisition finishes buying by itself.
+    approveItemsBought(requisitionId: ID!): Requisition!
+    # The other option: removes one purchase that is waiting for the organizer's approval, with a reason, so the buyer
+    # records it again; the buyer is notified.
+    sendBackPurchase(purchaseId: ID!, reason: String!): Boolean!
+
     markRequisitionLineShort(lineId: ID!, reason: String!): POLine!
     # Stock arrived (anywhere in the group, including the central warehouse)
     # after this line's own Inventory Check already locked in "not
@@ -291,6 +301,10 @@
     # PO position management
     assignPOPosition(input: POPositionInput!): POPositionAssignment!
     removePOPosition(id: ID!): Boolean!
+    # Mark (or un-mark) a user whose purchases at Items Bought must be approved by the requisition's organizer before the
+    # requisition continues. Works for a procurement position holder and a normal user alike; same admins as PO positions.
+    setUserPurchaseReview(userId: ID!, required: Boolean!, companyId: ID): Boolean!
+
 
     # Manufacturing Requests
     createManufacturingRequest(input: ManufacturingRequestInput!): ManufacturingRequest!
@@ -519,7 +533,12 @@
   }
 
   input POPositionInput {
-    employeeId: ID!
+    # Who gets the position: an employee (the Positions page), or a user (the user's Roles tab), which the server turns into
+    # that user's employee record in the company. One of the two is required.
+    employeeId: ID
+    userId: ID
+    # The company the position belongs to. Omitted = the caller's own company, as before; another company needs system_admin.
+    companyId: ID
     position: String!
     projectId: ID
     departmentId: ID
@@ -2391,6 +2410,16 @@
     over_tolerance: Boolean!
     tolerance_approved_by: ID
     tolerance_approved_by_name: String
+    # An extra layer of approval (migration 316): true when the buyer was marked, at the time of the purchase, as someone
+    # whose purchases the requisition's organizer must approve. organizer_approved_by is the organizer, or an admin
+    # acting for him; it is never the buyer.
+    needs_organizer_approval: Boolean
+    organizer_approved_by: ID
+    organizer_approved_by_name: String
+    organizer_approved_at: String
+    # Whether THE CALLER may approve or send back this purchase right now. Decided on the server by the one rule the
+    # mutations use, so the page keeps no copy of it. Only filled by requisition(id).
+    caller_can_approve: Boolean
   }
 
   input RecordLinePurchaseInput {
@@ -4966,7 +4995,9 @@
     myCompanies: [CompanyRef!]!
     roleTemplates: [RoleTemplate!]!
     roleTemplate(id: ID!): RoleTemplate
-    userPOPositions(userId: ID!): [POPositionAssignment!]!
+    # companyId limits the list to that company's positions (another company than the caller's needs system_admin). Omitted =
+    # every company's positions for this user, as before.
+    userPOPositions(userId: ID!, companyId: ID): [POPositionAssignment!]!
   }
 
   extend type Mutation {

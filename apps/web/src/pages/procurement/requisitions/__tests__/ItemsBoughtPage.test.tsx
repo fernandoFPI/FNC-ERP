@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import i18n from '../../../../i18n'
+
 import type * as ApolloClientModule from '@apollo/client'
 import type * as ReactRouterDomModule from 'react-router-dom'
 
@@ -571,5 +573,201 @@ describe('ItemsBoughtPage: each line says who buys it', () => {
     // Rebar was bought by Sara, so she is named in the tag instead of the officer who priced it
     expect(nameCell('Rebar').getByText('Sara Hassan')).toBeInTheDocument()
     expect(nameCell('Rebar').queryByText('Ahmed Ali')).not.toBeInTheDocument()
+  })
+})
+
+// The extra layer of approval on Items Bought (migration 316): purchases recorded by a marked buyer wait for the
+// organizer, who approves them all at once or sends one back with a reason. Who may act is decided on the server
+// (caller_can_approve on each purchase); the page keeps no copy of the rule. The test user here is 'user-buyer'.
+describe('ItemsBoughtPage: the organizer approves what a marked buyer bought', () => {
+  const purchase = (over: Record<string, unknown> = {}) => ({
+    id: 'p-1',
+    vendor_id: 'vendor-1',
+    vendor_name: 'Al-Rasheed Hardware',
+    currency_code: 'IQD',
+    qty: '10',
+    actual_unit_price: '100',
+    bought_by: 'user-marked',
+    bought_by_name: 'Marked Buyer',
+    bought_at: '2026-01-01T00:00:00.000Z',
+    over_tolerance: false,
+    tolerance_approved_by: null,
+    receipt_file_id: 'file-1',
+    needs_organizer_approval: true,
+    organizer_approved_by: null,
+    organizer_approved_by_name: null,
+    caller_can_approve: false,
+    ...over,
+  })
+  const waitingLine = (p: Record<string, unknown> = {}) =>
+    baseLine({ id: 'line-a', description: 'Kitchen gloves', purchases: [purchase(p)] })
+
+  const approveCalls = vi.fn().mockResolvedValue({})
+  const sendBackCalls = vi.fn().mockResolvedValue({})
+  beforeEach(() => {
+    approveCalls.mockClear()
+    sendBackCalls.mockClear()
+    mockUseMutation.mockImplementation((doc: unknown) => {
+      const name = (
+        doc as { definitions?: { kind?: string; name?: { value?: string } }[] }
+      ).definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value
+      if (name === 'ApproveItemsBought') return [approveCalls, { loading: false }]
+      if (name === 'SendBackPurchase') return [sendBackCalls, { loading: false }]
+      return [
+        vi.fn().mockResolvedValue({ data: { ensureCashPurchaseVendor: { id: 'vendor-cash' } } }),
+        { loading: false },
+      ]
+    })
+  })
+  const open = async (lines: Record<string, unknown>[], over: Record<string, unknown> = {}) => {
+    mockReq(lines, { organizer_id: 'user-buyer', callerHasBuyerPosition: false, ...over })
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    return wrap(<ItemsBoughtPage />)
+  }
+
+  it('says the requisition is waiting, and gives the organizer an Approve button', async () => {
+    await open([waitingLine({ caller_can_approve: true })])
+    expect(screen.getByText("Waiting for the organizer's approval")).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        /1 purchase\(s\) were recorded by a buyer whose purchases need the organizer's approval/,
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve items bought' })).toBeInTheDocument()
+  })
+
+  it('approves the whole requisition in one click', async () => {
+    await open([waitingLine({ caller_can_approve: true })])
+    fireEvent.click(screen.getByRole('button', { name: 'Approve items bought' }))
+    expect(approveCalls).toHaveBeenCalledWith({ variables: { requisitionId: 'req-1' } })
+  })
+
+  it('shows the banner but no Approve button to someone who may not approve (decided by the server)', async () => {
+    await open([waitingLine({ caller_can_approve: false })], {
+      callerHasBuyerPosition: true,
+      organizer_id: 'somebody-else',
+    })
+    expect(screen.getByText("Waiting for the organizer's approval")).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve items bought' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Send back' })).not.toBeInTheDocument()
+  })
+
+  it('tells the buyer who recorded them that someone else has to approve', async () => {
+    await open([waitingLine({ bought_by: 'user-buyer', caller_can_approve: false })], {
+      callerHasBuyerPosition: true,
+    })
+    expect(
+      screen.getByText('You recorded some of these yourself, so someone else has to approve them.'),
+    ).toBeInTheDocument()
+  })
+
+  it('does not say it for purchases somebody else recorded', async () => {
+    await open([waitingLine({ caller_can_approve: true })])
+    expect(screen.queryByText(/you recorded some of these yourself/i)).not.toBeInTheDocument()
+  })
+
+  it('marks the purchase as waiting, then as approved with the approver’s name', async () => {
+    const { unmount } = await open([waitingLine({ caller_can_approve: true })])
+    expect(screen.getByText('Waiting for organizer approval')).toBeInTheDocument()
+    unmount()
+    await open([
+      waitingLine({
+        organizer_approved_by: 'user-buyer',
+        organizer_approved_by_name: 'Jane Doe',
+        caller_can_approve: false,
+      }),
+    ])
+    expect(screen.getByText('Approved by Jane Doe')).toBeInTheDocument()
+    expect(screen.queryByText("Waiting for the organizer's approval")).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve items bought' })).not.toBeInTheDocument()
+  })
+
+  it('shows nothing about approval for a purchase that never needed it', async () => {
+    await open([waitingLine({ needs_organizer_approval: false, caller_can_approve: false })])
+    expect(screen.queryByText("Waiting for the organizer's approval")).not.toBeInTheDocument()
+    expect(screen.queryByText('Waiting for organizer approval')).not.toBeInTheDocument()
+  })
+
+  it('shows no banner once the requisition has left Items Bought', async () => {
+    await open([waitingLine({ caller_can_approve: true })], { status: 'sourcing' })
+    expect(screen.queryByText("Waiting for the organizer's approval")).not.toBeInTheDocument()
+  })
+
+  describe('sending a purchase back', () => {
+    it('offers Send back only on a purchase the caller may act on', async () => {
+      await open([waitingLine({ caller_can_approve: true })])
+      expect(screen.getByRole('button', { name: 'Send back' })).toBeInTheDocument()
+    })
+
+    it('asks for a reason, and sends nothing without one', async () => {
+      await open([waitingLine({ caller_can_approve: true })])
+      fireEvent.click(screen.getByRole('button', { name: 'Send back' }))
+      const confirm = screen.getByRole('button', { name: 'Confirm send back' })
+      expect(confirm).toBeDisabled()
+      // the page's Input does not tie its label to the box, so find the box next to the label text
+      const box = screen.getByText(/why is this sent back/i).parentElement?.querySelector('input')
+      if (!box) throw new Error('reason input not found')
+      fireEvent.change(box, { target: { value: 'wrong brand' } })
+      expect(confirm).not.toBeDisabled()
+      fireEvent.click(confirm)
+      expect(sendBackCalls).toHaveBeenCalledWith({
+        variables: { purchaseId: 'p-1', reason: 'wrong brand' },
+      })
+    })
+
+    it('can be cancelled without sending anything', async () => {
+      await open([waitingLine({ caller_can_approve: true })])
+      fireEvent.click(screen.getByRole('button', { name: 'Send back' }))
+      const cancels = screen.getAllByRole('button', { name: 'Cancel' })
+      fireEvent.click(cancels[cancels.length - 1])
+      expect(screen.queryByText(/why is this sent back/i)).not.toBeInTheDocument()
+      expect(sendBackCalls).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('the Finish Buying card', () => {
+    const asBuyer = { organizer_id: 'somebody-else', callerHasBuyerPosition: true }
+    const fullyBought = (p: Record<string, unknown>) =>
+      baseLine({
+        id: 'line-a',
+        description: 'Kitchen gloves',
+        purchases: [purchase({ qty: '10', ...p })],
+      })
+
+    it('lists the waiting approvals and keeps the button off', async () => {
+      await open([fullyBought({ caller_can_approve: false })], asBuyer)
+      expect(
+        screen.getByText("1 purchase(s) are waiting for the organizer's approval"),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Finish Buying' })).toBeDisabled()
+    })
+
+    it('turns the button on once everything is approved', async () => {
+      await open(
+        [fullyBought({ organizer_approved_by: 'u-org', organizer_approved_by_name: 'Jane Doe' })],
+        asBuyer,
+      )
+      expect(screen.queryByText(/are waiting for the organizer's approval/)).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Finish Buying' })).not.toBeDisabled()
+    })
+
+    it('does not hold back a purchase that never needed approval', async () => {
+      await open([fullyBought({ needs_organizer_approval: false })], asBuyer)
+      expect(screen.getByRole('button', { name: 'Finish Buying' })).not.toBeDisabled()
+    })
+  })
+
+  it('reads in Arabic without raw keys', async () => {
+    await i18n.changeLanguage('ar')
+    try {
+      await open([waitingLine({ caller_can_approve: true })])
+      expect(screen.getByText('بانتظار موافقة مُنشئ الطلب')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'الموافقة على المشتريات' })).toBeInTheDocument()
+      expect(document.body.textContent).not.toMatch(/req\.bought\./)
+    } finally {
+      await act(async () => {
+        await i18n.changeLanguage('en')
+      })
+    }
   })
 })

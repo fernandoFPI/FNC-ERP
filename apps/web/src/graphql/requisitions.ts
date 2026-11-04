@@ -157,6 +157,8 @@ export const REQUISITION_QUERY = gql`
           actual_unit_price
           bought_at
           bought_by_name
+          needs_organizer_approval
+          organizer_approved_by
           over_tolerance
         }
       }
@@ -491,9 +493,32 @@ export const REQUISITION_ITEMS_BOUGHT_QUERY = gql`
           tolerance_approved_by_name
           receipt_file_id
           receipt_filename
+          needs_organizer_approval
+          organizer_approved_by
+          organizer_approved_by_name
+          organizer_approved_at
+          caller_can_approve
         }
       }
     }
+  }
+`
+
+// The extra layer of approval on Items Bought (migration 316): the organizer, or an admin, approves every purchase of the
+// requisition that is waiting for the caller; the requisition then finishes buying by itself when nothing else is missing.
+export const APPROVE_ITEMS_BOUGHT = gql`
+  mutation ApproveItemsBought($requisitionId: ID!) {
+    approveItemsBought(requisitionId: $requisitionId) {
+      id
+      status
+    }
+  }
+`
+
+// ...or removes one purchase that is waiting, with a reason, so the buyer records it again.
+export const SEND_BACK_PURCHASE = gql`
+  mutation SendBackPurchase($purchaseId: ID!, $reason: String!) {
+    sendBackPurchase(purchaseId: $purchaseId, reason: $reason)
   }
 `
 

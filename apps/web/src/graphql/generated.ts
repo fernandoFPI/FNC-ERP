@@ -1627,8 +1627,26 @@ export type OnPermissionsChangedSubscriptionVariables = Exact<{
 
 export type OnPermissionsChangedSubscription = { permissionsChanged: { userId: string, companyId: string } };
 
+export type GetUserPurchaseReviewQueryVariables = Exact<{
+  userId: string | number;
+  companyId?: string | number | null | undefined;
+}>;
+
+
+export type GetUserPurchaseReviewQuery = { userPurchaseReview: boolean };
+
+export type SetUserPurchaseReviewMutationVariables = Exact<{
+  userId: string | number;
+  required: boolean;
+  companyId?: string | number | null | undefined;
+}>;
+
+
+export type SetUserPurchaseReviewMutation = { setUserPurchaseReview: boolean };
+
 export type GetUserPoPositionsQueryVariables = Exact<{
   userId: string | number;
+  companyId?: string | number | null | undefined;
 }>;
 
 
@@ -5517,7 +5535,7 @@ export type RequisitionQueryVariables = Exact<{
 }>;
 
 
-export type RequisitionQuery = { requisition: { id: string, requisition_number: string, status: string, priority: string | null, purpose: string | null, delivery_destination: string | null, project_id: string | null, projectName: string | null, projectCode: string | null, linked_mo_id: string | null, linkedMoNumber: string | null, branch_id: string | null, branch_name: string | null, organizer_id: string | null, organizerName: string | null, procurementOfficerName: string | null, assigned_approver_id: string | null, assigned_receiver_id: string | null, assigned_receiver_name: string | null, notes: string | null, expected_delivery_date: string | null, created_at: string, updated_at: string, callerHasStoreKeeperPosition: boolean | null, callerHasStorePricingPosition: boolean | null, callerHasMarketPricingPosition: boolean | null, callerHasPriceVerificationPosition: boolean | null, callerHasBuyerPosition: boolean | null, callerCanApprove: boolean | null, owner_pricing_submitted_at: string | null, procurement_pricing_submitted_at: string | null, currencyTotals: Array<{ currency_code: string, subtotal: string, line_count: number }>, lines: Array<{ id: string, line_number: number | null, description: string | null, product_id: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, qty: string, uom: string | null, currency_code: string | null, unit_price: string, initial_unit_price: string | null, qty_from_stock: string | null, source_location_id: string | null, source_location_name: string | null, source_average_cost: number | null, store_price: string | null, store_price_currency: string | null, inventory_cost: string | null, inventory_cost_currency: string | null, market_price: string | null, market_price_currency: string | null, verified_price: string | null, verified_price_currency: string | null, total: string, qty_received: string | null, actual_unit_price: string | null, short_reason: string | null, short_marked_at: string | null, closed_at: string | null, closed_reason: string | null, flag_reason: string | null, flagged_at: string | null, flagged_by_name: string | null, flagged_from_status: string | null, flag_addressed_at: string | null, flag_resolved_at: string | null, flag_resolved_by_name: string | null, owner_handles: boolean | null, purchases: Array<{ id: string, vendor_id: string, vendor_name: string | null, currency_code: string, qty: string, actual_unit_price: string, bought_at: string, bought_by_name: string | null, over_tolerance: boolean }> | null }> | null, approval_log: Array<{ id: string, from_status: string, to_status: string, action: string, actor_id: string, actor_name: string | null, actor_position: string | null, notes: string | null, created_at: string }> | null, edit_requests: Array<{ id: string, status: string, changes: string, request_notes: string | null, requested_by: string | null, requested_by_email: string | null, requested_by_name: string | null, reviewed_by: string | null, reviewed_by_email: string | null, reviewed_by_name: string | null, review_notes: string | null, reviewed_at: string | null, created_at: string, auto_applied: boolean | null }> | null } | null };
+export type RequisitionQuery = { requisition: { id: string, requisition_number: string, status: string, priority: string | null, purpose: string | null, delivery_destination: string | null, project_id: string | null, projectName: string | null, projectCode: string | null, linked_mo_id: string | null, linkedMoNumber: string | null, branch_id: string | null, branch_name: string | null, organizer_id: string | null, organizerName: string | null, procurementOfficerName: string | null, assigned_approver_id: string | null, assigned_receiver_id: string | null, assigned_receiver_name: string | null, notes: string | null, expected_delivery_date: string | null, created_at: string, updated_at: string, callerHasStoreKeeperPosition: boolean | null, callerHasStorePricingPosition: boolean | null, callerHasMarketPricingPosition: boolean | null, callerHasPriceVerificationPosition: boolean | null, callerHasBuyerPosition: boolean | null, callerCanApprove: boolean | null, owner_pricing_submitted_at: string | null, procurement_pricing_submitted_at: string | null, currencyTotals: Array<{ currency_code: string, subtotal: string, line_count: number }>, lines: Array<{ id: string, line_number: number | null, description: string | null, product_id: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, qty: string, uom: string | null, currency_code: string | null, unit_price: string, initial_unit_price: string | null, qty_from_stock: string | null, source_location_id: string | null, source_location_name: string | null, source_average_cost: number | null, store_price: string | null, store_price_currency: string | null, inventory_cost: string | null, inventory_cost_currency: string | null, market_price: string | null, market_price_currency: string | null, verified_price: string | null, verified_price_currency: string | null, total: string, qty_received: string | null, actual_unit_price: string | null, short_reason: string | null, short_marked_at: string | null, closed_at: string | null, closed_reason: string | null, flag_reason: string | null, flagged_at: string | null, flagged_by_name: string | null, flagged_from_status: string | null, flag_addressed_at: string | null, flag_resolved_at: string | null, flag_resolved_by_name: string | null, owner_handles: boolean | null, purchases: Array<{ id: string, vendor_id: string, vendor_name: string | null, currency_code: string, qty: string, actual_unit_price: string, bought_at: string, bought_by_name: string | null, needs_organizer_approval: boolean | null, organizer_approved_by: string | null, over_tolerance: boolean }> | null }> | null, approval_log: Array<{ id: string, from_status: string, to_status: string, action: string, actor_id: string, actor_name: string | null, actor_position: string | null, notes: string | null, created_at: string }> | null, edit_requests: Array<{ id: string, status: string, changes: string, request_notes: string | null, requested_by: string | null, requested_by_email: string | null, requested_by_name: string | null, reviewed_by: string | null, reviewed_by_email: string | null, reviewed_by_name: string | null, review_notes: string | null, reviewed_at: string | null, created_at: string, auto_applied: boolean | null }> | null } | null };
 
 export type SubmitRequisitionEditRequestMutationVariables = Exact<{
   requisitionId: string | number;
@@ -5697,7 +5715,22 @@ export type RequisitionItemsBoughtQueryVariables = Exact<{
 }>;
 
 
-export type RequisitionItemsBoughtQuery = { requisition: { id: string, requisition_number: string, status: string, organizer_id: string | null, organizerName: string | null, procurementOfficerName: string | null, callerHasBuyerPosition: boolean | null, callerCanApprove: boolean | null, lines: Array<{ id: string, description: string | null, owner_handles: boolean | null, product_id: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, qty: string, uom: string | null, currency_code: string | null, unit_price: string, approved_unit_price: string | null, qty_from_stock: string | null, short_reason: string | null, short_marked_by: string | null, short_marked_at: string | null, account_id: string | null, account_code: string | null, account_name: string | null, cost_center_id: string | null, cost_center_name: string | null, purchases: Array<{ id: string, vendor_id: string, vendor_name: string | null, currency_code: string, qty: string, actual_unit_price: string, bought_by: string | null, bought_by_name: string | null, bought_at: string, over_tolerance: boolean, tolerance_approved_by: string | null, tolerance_approved_by_name: string | null, receipt_file_id: string | null, receipt_filename: string | null }> | null }> | null } | null };
+export type RequisitionItemsBoughtQuery = { requisition: { id: string, requisition_number: string, status: string, organizer_id: string | null, organizerName: string | null, procurementOfficerName: string | null, callerHasBuyerPosition: boolean | null, callerCanApprove: boolean | null, lines: Array<{ id: string, description: string | null, owner_handles: boolean | null, product_id: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, qty: string, uom: string | null, currency_code: string | null, unit_price: string, approved_unit_price: string | null, qty_from_stock: string | null, short_reason: string | null, short_marked_by: string | null, short_marked_at: string | null, account_id: string | null, account_code: string | null, account_name: string | null, cost_center_id: string | null, cost_center_name: string | null, purchases: Array<{ id: string, vendor_id: string, vendor_name: string | null, currency_code: string, qty: string, actual_unit_price: string, bought_by: string | null, bought_by_name: string | null, bought_at: string, over_tolerance: boolean, tolerance_approved_by: string | null, tolerance_approved_by_name: string | null, receipt_file_id: string | null, receipt_filename: string | null, needs_organizer_approval: boolean | null, organizer_approved_by: string | null, organizer_approved_by_name: string | null, organizer_approved_at: string | null, caller_can_approve: boolean | null }> | null }> | null } | null };
+
+export type ApproveItemsBoughtMutationVariables = Exact<{
+  requisitionId: string | number;
+}>;
+
+
+export type ApproveItemsBoughtMutation = { approveItemsBought: { id: string, status: string } };
+
+export type SendBackPurchaseMutationVariables = Exact<{
+  purchaseId: string | number;
+  reason: string;
+}>;
+
+
+export type SendBackPurchaseMutation = { sendBackPurchase: boolean };
 
 export type RecordLinePurchaseMutationVariables = Exact<{
   input: Types.RecordLinePurchaseInput;

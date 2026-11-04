@@ -119,9 +119,22 @@ export const PERMISSIONS_CHANGED_SUBSCRIPTION = gql`
   }
 `
 
+// Whether this user's purchases at Items Bought need the requisition organizer's approval (migration 316).
+export const GET_USER_PURCHASE_REVIEW = gql`
+  query GetUserPurchaseReview($userId: ID!, $companyId: ID) {
+    userPurchaseReview(userId: $userId, companyId: $companyId)
+  }
+`
+
+export const SET_USER_PURCHASE_REVIEW = gql`
+  mutation SetUserPurchaseReview($userId: ID!, $required: Boolean!, $companyId: ID) {
+    setUserPurchaseReview(userId: $userId, required: $required, companyId: $companyId)
+  }
+`
+
 export const GET_USER_PO_POSITIONS = gql`
-  query GetUserPOPositions($userId: ID!) {
-    userPOPositions(userId: $userId) {
+  query GetUserPOPositions($userId: ID!, $companyId: ID) {
+    userPOPositions(userId: $userId, companyId: $companyId) {
       id
       employeeId
       employeeName

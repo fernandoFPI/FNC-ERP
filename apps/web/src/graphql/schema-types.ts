@@ -2344,6 +2344,7 @@ export type Mutation = {
   applyBaseline: Scalars['Boolean']['output'];
   approveBid: BidCommercialSummary;
   approveIntercoCompany: IntercoTransactionDetail;
+  approveItemsBought: Requisition;
   approveLeaveRequest?: Maybe<LeaveRequest>;
   approveManufacturingRequest: ManufacturingRequest;
   approveOvertimeRequest?: Maybe<OvertimeLog>;
@@ -2643,6 +2644,7 @@ export type Mutation = {
   revokeUserSession: Scalars['Boolean']['output'];
   saveUserPermissions: UserPermissionsResult;
   scheduleMaintenanceItem: MaintenanceSchedule;
+  sendBackPurchase: Scalars['Boolean']['output'];
   sendPOToAudit: PurchaseOrder;
   setActiveBaseline: ProjectBaseline;
   setCalendarDay: ResourceCalendarDay;
@@ -2659,6 +2661,7 @@ export type Mutation = {
   setRechargeAccounts: Scalars['Boolean']['output'];
   setRechargeCostCenter: Scalars['Boolean']['output'];
   setRequisitionLineOwner: PoLine;
+  setUserPurchaseReview: Scalars['Boolean']['output'];
   setVOStatus: VariationOrder;
   startMO: ManufacturingOrder;
   startProject: Project;
@@ -2962,6 +2965,11 @@ export type MutationApproveBidArgs = {
 
 export type MutationApproveIntercoCompanyArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type MutationApproveItemsBoughtArgs = {
+  requisitionId: Scalars['ID']['input'];
 };
 
 
@@ -4871,6 +4879,12 @@ export type MutationScheduleMaintenanceItemArgs = {
 };
 
 
+export type MutationSendBackPurchaseArgs = {
+  purchaseId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
 export type MutationSendPoToAuditArgs = {
   id: Scalars['ID']['input'];
 };
@@ -4970,6 +4984,13 @@ export type MutationSetRechargeCostCenterArgs = {
 export type MutationSetRequisitionLineOwnerArgs = {
   byOwner: Scalars['Boolean']['input'];
   lineId: Scalars['ID']['input'];
+};
+
+
+export type MutationSetUserPurchaseReviewArgs = {
+  companyId?: InputMaybe<Scalars['ID']['input']>;
+  required: Scalars['Boolean']['input'];
+  userId: Scalars['ID']['input'];
 };
 
 
@@ -6302,8 +6323,13 @@ export type PoLinePurchase = {
   bought_at: Scalars['String']['output'];
   bought_by?: Maybe<Scalars['ID']['output']>;
   bought_by_name?: Maybe<Scalars['String']['output']>;
+  caller_can_approve?: Maybe<Scalars['Boolean']['output']>;
   currency_code: Scalars['String']['output'];
   id: Scalars['ID']['output'];
+  needs_organizer_approval?: Maybe<Scalars['Boolean']['output']>;
+  organizer_approved_at?: Maybe<Scalars['String']['output']>;
+  organizer_approved_by?: Maybe<Scalars['ID']['output']>;
+  organizer_approved_by_name?: Maybe<Scalars['String']['output']>;
   over_tolerance: Scalars['Boolean']['output'];
   po_line_id: Scalars['ID']['output'];
   qty: Scalars['String']['output'];
@@ -6333,10 +6359,12 @@ export type PoPositionAssignment = {
 
 export type PoPositionInput = {
   branchId?: InputMaybe<Scalars['ID']['input']>;
+  companyId?: InputMaybe<Scalars['ID']['input']>;
   departmentId?: InputMaybe<Scalars['ID']['input']>;
-  employeeId: Scalars['ID']['input'];
+  employeeId?: InputMaybe<Scalars['ID']['input']>;
   position: Scalars['String']['input'];
   projectId?: InputMaybe<Scalars['ID']['input']>;
+  userId?: InputMaybe<Scalars['ID']['input']>;
 };
 
 export type PoReceipt = {
@@ -7754,6 +7782,7 @@ export type Query = {
   userInvitations: Array<UserInvitation>;
   userPOPositions: Array<PoPositionAssignment>;
   userPermissions: UserPermissionsResult;
+  userPurchaseReview: Scalars['Boolean']['output'];
   userSessions: Array<UserSession>;
   users: UserPage;
   vendor?: Maybe<Vendor>;
@@ -8856,12 +8885,19 @@ export type QueryUserInvitationsArgs = {
 
 
 export type QueryUserPoPositionsArgs = {
+  companyId?: InputMaybe<Scalars['ID']['input']>;
   userId: Scalars['ID']['input'];
 };
 
 
 export type QueryUserPermissionsArgs = {
   companyId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+
+export type QueryUserPurchaseReviewArgs = {
+  companyId?: InputMaybe<Scalars['ID']['input']>;
   userId: Scalars['ID']['input'];
 };
 

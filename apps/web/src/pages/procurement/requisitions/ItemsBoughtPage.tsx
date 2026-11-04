@@ -8,6 +8,8 @@ import {
   RECORD_LINE_PURCHASE,
   APPROVE_TOLERANCE_PURCHASE,
   REJECT_TOLERANCE_PURCHASE,
+  APPROVE_ITEMS_BOUGHT,
+  SEND_BACK_PURCHASE,
   MARK_REQUISITION_LINE_SHORT,
   RESOLVE_REQUISITION_LINE_FROM_STOCK,
   FINISH_BUYING_REQUISITION,
@@ -36,6 +38,10 @@ import { Modal } from '../../../components/ui/Modal'
 import { EntityAttachments } from '../../../components/inventory/EntityAttachments'
 import { useToastStore } from '../../../store/toastStore'
 import type {
+  ApproveItemsBoughtMutation,
+  ApproveItemsBoughtMutationVariables,
+  SendBackPurchaseMutation,
+  SendBackPurchaseMutationVariables,
   ApproveTolerancePurchaseMutation,
   ApproveTolerancePurchaseMutationVariables,
   AttachFileMutation,
@@ -92,6 +98,12 @@ interface Purchase {
   over_tolerance: boolean
   tolerance_approved_by?: string | null
   tolerance_approved_by_name?: string | null
+  // The extra layer of approval (migration 316). caller_can_approve is decided on the server, so the page keeps no copy
+  // of who may approve.
+  needs_organizer_approval?: boolean | null
+  organizer_approved_by?: string | null
+  organizer_approved_by_name?: string | null
+  caller_can_approve?: boolean | null
   receipt_file_id?: string | null
   receipt_filename?: string | null
 }
@@ -256,6 +268,29 @@ export default function ItemsBoughtPage() {
     },
     onError: onErr,
   })
+  // The organizer, or an admin, approves what a marked buyer bought, or sends one purchase back with a reason.
+  const [approveItems, { loading: lApprovingItems }] = useMutation<
+    ApproveItemsBoughtMutation,
+    ApproveItemsBoughtMutationVariables
+  >(APPROVE_ITEMS_BOUGHT, {
+    onCompleted: () => {
+      addToast({ type: 'success', message: t('req.bought.itemsApproved') })
+      void refetch()
+    },
+    onError: onErr,
+  })
+  const [sendBack, { loading: lSendingBack }] = useMutation<
+    SendBackPurchaseMutation,
+    SendBackPurchaseMutationVariables
+  >(SEND_BACK_PURCHASE, {
+    onCompleted: () => {
+      addToast({ type: 'success', message: t('req.bought.purchaseSentBack') })
+      setSendBackFor(null)
+      setSendBackReason('')
+      void refetch()
+    },
+    onError: onErr,
+  })
   const [markShort, { loading: lMarkingShort }] = useMutation<
     MarkRequisitionLineShortMutation,
     MarkRequisitionLineShortMutationVariables
@@ -324,6 +359,8 @@ export default function ItemsBoughtPage() {
   const [shortReasonText, setShortReasonText] = useState('')
   const [rejectPurchaseFor, setRejectPurchaseFor] = useState<string | null>(null)
   const [rejectPurchaseReason, setRejectPurchaseReason] = useState('')
+  const [sendBackFor, setSendBackFor] = useState<string | null>(null)
+  const [sendBackReason, setSendBackReason] = useState('')
   const [resolveStockFor, setResolveStockFor] = useState<string | null>(null)
   const [resolveStockQty, setResolveStockQty] = useState('')
   const [resolveStockLocation, setResolveStockLocation] = useState('')
@@ -373,8 +410,17 @@ export default function ItemsBoughtPage() {
   const unapprovedTolerance = allPurchases.filter(
     (p) => p.over_tolerance && !p.tolerance_approved_by,
   )
+  // Purchases waiting for the organizer's approval (migration 316), and whether this caller may act on any of them.
+  const awaitingApproval = allPurchases.filter(
+    (p) => p.needs_organizer_approval && !p.organizer_approved_by,
+  )
+  const canApproveSome = awaitingApproval.some((p) => p.caller_can_approve)
+  const waitingOnMyOwn = awaitingApproval.filter((p) => p.bought_by === currentUserId)
   const canFinishBuying =
-    unresolvedLines.length === 0 && missingReceipt.length === 0 && unapprovedTolerance.length === 0
+    unresolvedLines.length === 0 &&
+    missingReceipt.length === 0 &&
+    unapprovedTolerance.length === 0 &&
+    awaitingApproval.length === 0
 
   // Applies one vendor to every line that still needs buying — backs the
   // "all items are from the same vendor" toggle, so the buyer picks a
@@ -618,6 +664,44 @@ export default function ItemsBoughtPage() {
           <div style={{ fontSize: '13px', color: theme.textMuted }}>
             {t('req.bought.thisRequisitionIsNoLongerAt')}
           </div>
+        </Card>
+      )}
+
+      {req.status === 'items_bought' && awaitingApproval.length > 0 && (
+        <Card
+          style={{
+            padding: '14px 20px',
+            marginTop: '16px',
+            borderInlineStart: `3px solid ${theme.warning}`,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
+              {t('req.bought.waitingForOrganizerTitle')}
+            </div>
+            <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
+              {t('req.bought.waitingForOrganizerBody', { count: awaitingApproval.length })}
+            </div>
+            {waitingOnMyOwn.length > 0 && (
+              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                {t('req.bought.youRecordedSomeOfThese')}
+              </div>
+            )}
+          </div>
+          {canApproveSome && (
+            <Button
+              variant="primary"
+              loading={lApprovingItems}
+              onClick={() => void approveItems({ variables: { requisitionId: req.id } })}
+            >
+              {t('req.bought.approveItemsBought')}
+            </Button>
+          )}
         </Card>
       )}
 
@@ -932,6 +1016,29 @@ export default function ItemsBoughtPage() {
                           </Button>
                         </>
                       )}
+                      {p.needs_organizer_approval && (
+                        <Badge variant={p.organizer_approved_by ? 'success' : 'warning'}>
+                          {p.organizer_approved_by
+                            ? t('req.bought.approvedBy', {
+                                name: p.organizer_approved_by_name ?? '',
+                              })
+                            : t('req.bought.waitingForOrganizer')}
+                        </Badge>
+                      )}
+                      {p.needs_organizer_approval &&
+                        !p.organizer_approved_by &&
+                        p.caller_can_approve && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            style={{ color: theme.danger }}
+                            onClick={() => {
+                              setSendBackFor(p.id)
+                            }}
+                          >
+                            {t('req.bought.sendBack')}
+                          </Button>
+                        )}
                     </div>
                     {rejectPurchaseFor === p.id && (
                       <div
@@ -972,6 +1079,51 @@ export default function ItemsBoughtPage() {
                           onClick={() => {
                             setRejectPurchaseFor(null)
                             setRejectPurchaseReason('')
+                          }}
+                        >
+                          {t('req.bought.cancel')}
+                        </Button>
+                      </div>
+                    )}
+                    {sendBackFor === p.id && (
+                      <div
+                        style={{
+                          marginTop: '10px',
+                          width: '100%',
+                          display: 'flex',
+                          gap: '8px',
+                          alignItems: 'flex-end',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                          <Input
+                            label={t('req.bought.whyIsThisSentBack')}
+                            value={sendBackReason}
+                            onChange={(e) => {
+                              setSendBackReason(e.target.value)
+                            }}
+                          />
+                        </div>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          loading={lSendingBack}
+                          disabled={!sendBackReason.trim()}
+                          onClick={() =>
+                            void sendBack({
+                              variables: { purchaseId: p.id, reason: sendBackReason },
+                            })
+                          }
+                        >
+                          {t('req.bought.confirmSendBack')}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSendBackFor(null)
+                            setSendBackReason('')
                           }}
                         >
                           {t('req.bought.cancel')}
@@ -1326,6 +1478,9 @@ export default function ItemsBoughtPage() {
                 <li>
                   {t('req.bought.unapprovedTolerance', { count: unapprovedTolerance.length })}
                 </li>
+              )}
+              {awaitingApproval.length > 0 && (
+                <li>{t('req.bought.waitingApprovals', { count: awaitingApproval.length })}</li>
               )}
             </ul>
           )}

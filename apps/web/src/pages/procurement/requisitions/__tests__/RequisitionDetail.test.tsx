@@ -1751,3 +1751,87 @@ describe('RequisitionDetail: who handles each line', () => {
     expect(document.body.textContent).not.toMatch(/req\.(detail|bought)\./)
   })
 })
+
+// A requisition can wait in Items Bought for the organizer's approval of what a marked buyer bought (migration 316); the
+// detail page says so, next to the way into the Items Bought screen.
+describe('RequisitionDetail: waiting for the organizer’s approval', () => {
+  const purchase = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    vendor_id: 'v-1',
+    vendor_name: 'Al-Rasheed',
+    currency_code: 'IQD',
+    qty: '2',
+    actual_unit_price: '10',
+    bought_at: '2026-01-02T00:00:00.000Z',
+    bought_by_name: 'Marked Buyer',
+    over_tolerance: false,
+    needs_organizer_approval: true,
+    organizer_approved_by: null,
+    ...over,
+  })
+  const withPurchases = (purchases: Record<string, unknown>[]) => [
+    {
+      id: 'line-1',
+      line_number: 1,
+      description: 'Kitchen gloves',
+      product_id: null,
+      product_name: null,
+      sku: null,
+      qty: '2',
+      uom: 'unit',
+      currency_code: 'IQD',
+      unit_price: '10',
+      qty_from_stock: '0',
+      store_price: null,
+      market_price: null,
+      verified_price: null,
+      total: '20',
+      owner_handles: false,
+      purchases,
+    },
+  ]
+  const open = async () => {
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    return wrap(<RequisitionDetail />)
+  }
+
+  it('says how many purchases are waiting', async () => {
+    mockReq({ status: 'items_bought', lines: withPurchases([purchase('p-1'), purchase('p-2')]) })
+    await open()
+    expect(
+      screen.getByText("Waiting for the organizer's approval on 2 purchase(s)."),
+    ).toBeInTheDocument()
+  })
+
+  it('counts only the ones still waiting', async () => {
+    mockReq({
+      status: 'items_bought',
+      lines: withPurchases([purchase('p-1', { organizer_approved_by: 'u-org' }), purchase('p-2')]),
+    })
+    await open()
+    expect(
+      screen.getByText("Waiting for the organizer's approval on 1 purchase(s)."),
+    ).toBeInTheDocument()
+  })
+
+  it('says nothing when every purchase is approved, or none needed it', async () => {
+    mockReq({
+      status: 'items_bought',
+      lines: withPurchases([
+        purchase('p-1', { organizer_approved_by: 'u-org' }),
+        purchase('p-2', { needs_organizer_approval: false }),
+      ]),
+    })
+    await open()
+    expect(screen.queryByText(/Waiting for the organizer's approval/)).not.toBeInTheDocument()
+  })
+
+  it.each(['approved', 'sourcing', 'completed'])(
+    'says nothing at %s, whatever the purchase rows say',
+    async (status) => {
+      mockReq({ status, lines: withPurchases([purchase('p-1')]) })
+      await open()
+      expect(screen.queryByText(/Waiting for the organizer's approval/)).not.toBeInTheDocument()
+    },
+  )
+})
