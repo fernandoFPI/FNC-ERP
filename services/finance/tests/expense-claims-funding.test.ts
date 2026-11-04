@@ -321,18 +321,16 @@ describe('Expense claim funding flow', () => {
     expect(failRes.body.data.status).toBe('draft')
     expect(failRes.body.data.audit_fail_reason).toBe('Wrong category — resubmit under Fuel')
 
-    // Draft and editable — PUT /:id only allows this from 'draft'.
+    // Draft and editable — POST /:id/revise only allows this from 'draft' or 'rejected'.
     const getRes = await request(app)
       .get(`/finance/expense-claims/${id}`)
       .set('Authorization', `Bearer ${token}`)
     expect(getRes.body.data.status).toBe('draft')
 
     const editRes = await request(app)
-      .put(`/finance/expense-claims/${id}`)
+      .post(`/finance/expense-claims/${id}/revise`)
       .set('Authorization', `Bearer ${token}`)
       .send({
-        employee_id: employeeId,
-        employee_name: 'Expense Tester',
         currency_code: 'IQD',
         lines: [{ id: lineId, expense_date: '2026-01-10', category_id: categoryId, description: 'Corrected', amount: 9000 }],
       })

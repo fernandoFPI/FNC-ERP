@@ -3,7 +3,12 @@ import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
 import { query, withTransaction, nextDocumentNumber, type PoolClient, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
-import { requirePermission } from '@fnc-erp/permissions'
+import {
+  requirePermission,
+  loadPermissions,
+  meetsLevel,
+  type UserPermissions,
+} from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
 export const expenseClaimsRouter: Router = Router()
@@ -117,6 +122,64 @@ async function nextClaimNumber(client: PoolClient, companyId: string): Promise<s
   )
   const n = String(firstRowOrThrow(res).n).padStart(4, '0')
   return `EXP-${yr}-${n}`
+}
+
+// ─── Lines, numbers and who may revise a claim ──────────────────────────────
+
+// A claim's lines in the order everyone reads them: by line_number (migration 312),
+// the stable "#" an approver quotes when flagging a line. One query for every
+// place that returns a claim's lines, so a field added to it appears everywhere.
+const CLAIM_LINES_SQL = `SELECT ecl.*, a.code AS account_code, a.name AS account_name,
+       COALESCE(fu.first_name || ' ' || fu.last_name, fu.email) AS flagged_by_name
+     FROM expense_claim_lines ecl
+     LEFT JOIN chart_of_accounts a ON a.id = ecl.gl_account_id
+     LEFT JOIN users fu ON fu.id = ecl.flagged_by
+     WHERE ecl.claim_id=$1 ORDER BY ecl.line_number`
+
+// The person who filed a claim: whoever created it, or the employee it is for.
+// Expects the claim as alias `ec` and the caller's user id as $3.
+const OWNER_CHECK_SQL = `(ec.created_by = $3 OR EXISTS (
+  SELECT 1 FROM employees e
+  WHERE e.id = ec.employee_id AND e.company_id = ec.company_id AND e.user_id = $3))`
+
+// The claim columns the revise route reads, plus whether the caller filed it.
+interface ReviseClaimRow {
+  status: string
+  is_owner: boolean
+  description: string | null
+  notes: string | null
+  currency_code: string
+}
+
+// A row from GET /mine is the caller's own claim, so the owner check is already true: it can be
+// revised exactly when it is a draft or has been rejected.
+function withCanRevise(row: Record<string, unknown>): Record<string, unknown> {
+  return { ...row, can_revise: row['status'] === 'draft' || row['status'] === 'rejected' }
+}
+
+// Trimmed text, or null for nothing (an emptied field is stored as NULL, not as '').
+function textOrNull(s: string | undefined): string | null {
+  const v = s?.trim()
+  return v ? v : null
+}
+
+// The single answer to "may this caller edit this claim?", used by the revise route
+// and by `can_revise` on the claim reads, so the button and the server cannot drift.
+// A rejected claim: its owner, or an admin. A draft: the same, plus anyone who could
+// already edit drafts (finance.expenses.edit).
+async function canReviseClaim(
+  auth: { userId: string; companyId: string; role: string },
+  status: string,
+  isOwner: boolean,
+): Promise<boolean> {
+  if (status !== 'draft' && status !== 'rejected') return false
+  if (auth.role === 'system_admin' || auth.role === 'company_admin') return true
+  if (isOwner) return true
+  if (status !== 'draft') return false
+  const perms = await loadPermissions(auth.userId, auth.companyId).catch(
+    () => ({}) as UserPermissions,
+  )
+  return meetsLevel(perms['finance.expenses.edit'], 'edit')
 }
 
 // ─── Expense categories CRUD ──────────────────────────────────────────────────
@@ -306,8 +369,12 @@ expenseClaimsRouter.get('/mine', asyncHandler(async (req, res) => {
           json_agg(
             json_build_object(
               'id', ecl.id, 'expense_date', ecl.expense_date, 'category_name', ecl.category_name,
-              'description', ecl.description, 'amount', ecl.amount, 'currency_code', ecl.currency_code
-            ) ORDER BY ecl.expense_date
+              'description', ecl.description, 'amount', ecl.amount, 'currency_code', ecl.currency_code,
+              'line_number', ecl.line_number, 'category_id', ecl.category_id,
+              'flag_reason', ecl.flag_reason, 'flagged_at', ecl.flagged_at,
+              'flagged_by_name', (SELECT COALESCE(fu.first_name || ' ' || fu.last_name, fu.email) FROM users fu WHERE fu.id = ecl.flagged_by),
+              'flag_addressed_at', ecl.flag_addressed_at, 'flag_resolved_at', ecl.flag_resolved_at
+            ) ORDER BY ecl.line_number
           ) FILTER (WHERE ecl.id IS NOT NULL), '[]'
         ) AS lines
        FROM expense_claims ec
@@ -318,7 +385,7 @@ expenseClaimsRouter.get('/mine', asyncHandler(async (req, res) => {
        ORDER BY ec.created_at DESC`,
       [getAuth(req).companyId, emp.id],
     )
-    sendOk(res, r.rows)
+    sendOk(res, r.rows.map(withCanRevise))
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load your claims', err)
   }
@@ -389,7 +456,8 @@ expenseClaimsRouter.get(
                   WHERE (da.entity_type='expense_claim' AND da.entity_id=ec.id)
                      OR (da.entity_type='expense_claim_line' AND da.entity_id IN (
                            SELECT id FROM expense_claim_lines WHERE claim_id=ec.id))
-                ) AS has_receipt
+                ) AS has_receipt,
+                ${OWNER_CHECK_SQL} AS is_owner
          FROM expense_claims ec
          LEFT JOIN projects proj ON proj.id = ec.project_id
          LEFT JOIN users cu ON cu.id = ec.created_by
@@ -401,20 +469,20 @@ expenseClaimsRouter.get(
          LEFT JOIN advance_settlements aset ON aset.id = ec.settled_via_settlement_id
          LEFT JOIN employee_advances adv ON adv.id = aset.advance_id
          WHERE ec.id=$1 AND ec.company_id=$2`,
-        [req.params['id'], getAuth(req).companyId],
+        [req.params['id'], getAuth(req).companyId, getAuth(req).userId],
       )
       if (!ec.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Claim not found')
         return
       }
-      const lines = await query(
-        `SELECT ecl.*, a.code AS account_code, a.name AS account_name
-       FROM expense_claim_lines ecl
-       LEFT JOIN chart_of_accounts a ON a.id = ecl.gl_account_id
-       WHERE ecl.claim_id=$1 ORDER BY ecl.expense_date, ecl.id`,
-        [req.params['id']],
+      const lines = await query(CLAIM_LINES_SQL, [req.params['id']])
+      const { is_owner: isOwner, ...claimRow } = ec.rows[0] as Record<string, unknown>
+      const canRevise = await canReviseClaim(
+        getAuth(req),
+        claimRow['status'] as string,
+        isOwner === true,
       )
-      sendOk(res, { ...ec.rows[0], lines: lines.rows })
+      sendOk(res, { ...claimRow, can_revise: canRevise, lines: lines.rows })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load claim', err)
     }
@@ -654,92 +722,296 @@ expenseClaimsRouter.post('/request-self', asyncHandler(async (req, res) => {
   }
 }))
 
-// ─── Update claim (only draft) ────────────────────────────────────────────────
+// ─── Revise claim (edit lines in place, optionally resubmit) ─────────────────
+//
+// The one edit path for the two states a claim can be fixed in: 'rejected' (an
+// approver sent it back, optionally flagging lines) and 'draft' (a new claim, or
+// one Finance sent back from audit). It replaced PUT /:id, which deleted and
+// re-inserted every line: each edit gave every line a new id, so the receipts
+// attached to a line (document_attachments, entity_type 'expense_claim_line';
+// 109 of them on production) were left pointing at rows that no longer existed,
+// and a line's number and review flag could not survive. Here lines are matched
+// by id: sent with an id they are updated in place, sent without one they are
+// new, left out they are removed together with their receipts.
+//
+// Who may call it is decided by canReviseClaim (also exposed as `can_revise` on
+// GET /:id), not by a route permission, because the people who file claims are
+// mostly plain users with no finance.expenses.* key at all.
+//
+// The claim's own total is summed in SQL after the writes, never in JS. The
+// reimbursement account is not resolved here (self-service claims have none by
+// design, Finance picks the funding at Post Payment); it is only cleared when
+// the currency changes, so Post Payment re-resolves it for the new currency.
 
-expenseClaimsRouter.put(
-  '/:id',
-  requirePermission('finance.expenses.edit', 'edit'),
+const reviseLineSchema = z.object({
+  id: z.string().uuid().optional(),
+  expense_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  // Optional on a line that already has one (keeps its category and account);
+  // required for a new line, checked below.
+  category_id: z.string().uuid().optional(),
+  description: z.string().max(2000).optional(),
+  amount: z.coerce.number().positive(),
+})
+
+const reviseSchema = z.object({
+  description: z.string().max(2000).optional(),
+  notes: z.string().max(2000).optional(),
+  currency_code: z.string().length(3).optional(),
+  lines: z.array(reviseLineSchema).min(1).max(500),
+  resubmit: z.boolean().default(false),
+})
+
+expenseClaimsRouter.post(
+  '/:id/revise',
   asyncHandler(async (req, res) => {
     try {
-      const existing = await query(
-        `SELECT status FROM expense_claims WHERE id=$1 AND company_id=$2`,
-        [req.params['id'], getAuth(req).companyId],
-      )
-      if (!existing.rows[0]) {
-        sendError(res, 404, 'NOT_FOUND', 'Claim not found')
-        return
-      }
-      if (existing.rows[0]['status'] !== 'draft') {
-        sendError(res, 409, 'INVALID_STATUS', 'Only draft claims can be edited')
-        return
-      }
-
-      const d = claimSchema.parse(req.body)
-      const totalAmount = d.lines.reduce((s, l) => s + l.amount, 0)
+      const d = reviseSchema.parse(req.body)
+      const auth = getAuth(req)
+      const claimId = req.params['id'] ?? ''
 
       const result = await withTransaction(
-        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
         async (client) => {
-          const reimbursementAccountId = await resolveReimbursementAccount(
-            client,
-            getAuth(req).companyId,
-            d.currency_code,
+          const cRes = await client.query<ReviseClaimRow>(
+            `SELECT ec.*, ${OWNER_CHECK_SQL} AS is_owner
+             FROM expense_claims ec
+             WHERE ec.id=$1 AND ec.company_id=$2 FOR UPDATE OF ec`,
+            [claimId, auth.companyId, auth.userId],
           )
-          const ecRes = await client.query(
-            `UPDATE expense_claims SET employee_name=$1, description=$2, currency_code=$3, total_amount=$4, reimbursement_account_id=$5, project_id=$6, notes=$7, updated_at=NOW()
-           WHERE id=$8 RETURNING *`,
-            [
-              d.employee_name,
-              d.description ?? null,
-              d.currency_code,
-              totalAmount,
-              reimbursementAccountId,
-              d.project_id ?? null,
-              d.notes ?? null,
-              req.params['id'],
-            ],
-          )
-          await client.query(`DELETE FROM expense_claim_lines WHERE claim_id=$1`, [
-            req.params['id'],
-          ])
-          const lines = []
-          for (const line of d.lines) {
-            const { accountId, categoryName } = await resolveLineGlAccount(
-              client,
-              getAuth(req).companyId,
-              line.category_id,
-              line.gl_account_id,
-            )
-            const lr = await client.query(
-              `INSERT INTO expense_claim_lines
-              (claim_id, company_id, expense_date, category_id, category_name, gl_account_id, description, amount, currency_code, receipt_url, notes)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-              [
-                req.params['id'],
-                getAuth(req).companyId,
-                line.expense_date,
-                line.category_id ?? null,
-                line.category_name ?? categoryName ?? null,
-                accountId,
-                line.description ?? null,
-                line.amount,
-                line.currency_code,
-                line.receipt_url ?? null,
-                line.notes ?? null,
-              ],
-            )
-            lines.push(lr.rows[0])
+          const claim = cRes.rows[0]
+          if (!claim) return { error: 'NOT_FOUND' as const }
+          if (claim.status !== 'draft' && claim.status !== 'rejected') {
+            return { error: 'INVALID_STATUS' as const }
           }
-          return { ...ecRes.rows[0], lines }
+          if (!(await canReviseClaim(auth, claim.status, claim.is_owner))) {
+            return { error: 'FORBIDDEN' as const }
+          }
+
+          const existingRes = await client.query<{ id: string; category_id: string | null }>(
+            `SELECT id, category_id FROM expense_claim_lines WHERE claim_id=$1 AND company_id=$2`,
+            [claimId, auth.companyId],
+          )
+          const existing = new Map(existingRes.rows.map((r) => [r.id, r]))
+          const sentIds = d.lines.map((l) => l.id).filter((x): x is string => !!x)
+          if (
+            sentIds.some((lid) => !existing.has(lid)) ||
+            new Set(sentIds).size !== sentIds.length
+          ) {
+            return { error: 'BAD_LINES' as const }
+          }
+
+          const currency = d.currency_code ?? claim.currency_code
+
+          // Removed lines go first, receipts with them, so a new line can never
+          // be confused with a removed one and no attachment is left dangling.
+          const removedIds = [...existing.keys()].filter((lid) => !sentIds.includes(lid))
+          if (removedIds.length > 0) {
+            const gone = await client.query<{ file_id: string }>(
+              `DELETE FROM document_attachments
+               WHERE entity_type='expense_claim_line' AND entity_id = ANY($1::uuid[]) RETURNING file_id`,
+              [removedIds],
+            )
+            if (gone.rows.length > 0) {
+              // Same bookkeeping as removeAttachment: a file nothing refers to
+              // any more goes back to 'uploaded'.
+              await client.query(
+                `UPDATE files SET status='uploaded'
+                 WHERE id = ANY($1::uuid[])
+                   AND NOT EXISTS (SELECT 1 FROM document_attachments da WHERE da.file_id = files.id)`,
+                [gone.rows.map((r) => r.file_id)],
+              )
+            }
+            await client.query(
+              `DELETE FROM expense_claim_lines WHERE claim_id=$1 AND id = ANY($2::uuid[])`,
+              [claimId, removedIds],
+            )
+          }
+
+          for (const line of d.lines) {
+            if (line.id) {
+              // A changed category re-resolves the GL account; an unchanged (or
+              // absent) one keeps the line's category and account exactly as is.
+              const before = existing.get(line.id)
+              if (line.category_id && line.category_id !== before?.category_id) {
+                const { accountId, categoryName } = await resolveLineGlAccount(
+                  client,
+                  auth.companyId,
+                  line.category_id,
+                  undefined,
+                )
+                await client.query(
+                  `UPDATE expense_claim_lines
+                   SET expense_date=$1, description=$2, amount=$3, currency_code=$4,
+                       category_id=$5, category_name=$6, gl_account_id=$7
+                   WHERE id=$8 AND claim_id=$9`,
+                  [
+                    line.expense_date,
+                    textOrNull(line.description),
+                    line.amount,
+                    currency,
+                    line.category_id,
+                    categoryName ?? null,
+                    accountId,
+                    line.id,
+                    claimId,
+                  ],
+                )
+              } else {
+                await client.query(
+                  `UPDATE expense_claim_lines
+                   SET expense_date=$1, description=$2, amount=$3, currency_code=$4
+                   WHERE id=$5 AND claim_id=$6`,
+                  [
+                    line.expense_date,
+                    textOrNull(line.description),
+                    line.amount,
+                    currency,
+                    line.id,
+                    claimId,
+                  ],
+                )
+              }
+            } else {
+              const { accountId, categoryName } = await resolveLineGlAccount(
+                client,
+                auth.companyId,
+                line.category_id,
+                undefined,
+              )
+              // line_number is handed out by the database (trigger, migration 312).
+              await client.query(
+                `INSERT INTO expense_claim_lines
+                   (claim_id, company_id, expense_date, category_id, category_name, gl_account_id, description, amount, currency_code)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+                [
+                  claimId,
+                  auth.companyId,
+                  line.expense_date,
+                  line.category_id ?? null,
+                  categoryName ?? null,
+                  accountId,
+                  textOrNull(line.description),
+                  line.amount,
+                  currency,
+                ],
+              )
+            }
+          }
+
+          if (d.resubmit) {
+            // The act of resubmitting is what "addresses" every open flag; the
+            // approver still confirms each one (resolve-flag below).
+            await client.query(
+              `UPDATE expense_claim_lines SET flag_addressed_at=NOW()
+               WHERE claim_id=$1 AND flagged_at IS NOT NULL
+                 AND flag_resolved_at IS NULL AND flag_addressed_at IS NULL`,
+              [claimId],
+            )
+          }
+
+          const description =
+            d.description === undefined ? claim.description : textOrNull(d.description)
+          const notes = d.notes === undefined ? claim.notes : textOrNull(d.notes)
+          const updated = await client.query<Record<string, unknown>>(
+            `UPDATE expense_claims SET
+               description=$3, notes=$4, currency_code=$5::varchar(3),
+               total_amount=(SELECT COALESCE(SUM(amount),0) FROM expense_claim_lines WHERE claim_id=$1),
+               reimbursement_account_id = CASE WHEN currency_code <> $5::varchar(3) THEN NULL ELSE reimbursement_account_id END,
+               status = CASE WHEN $6::boolean THEN 'submitted' ELSE status END,
+               submitted_at = CASE WHEN $6::boolean THEN NOW() ELSE submitted_at END,
+               approved_by = CASE WHEN $6::boolean THEN NULL ELSE approved_by END,
+               approved_at = CASE WHEN $6::boolean THEN NULL ELSE approved_at END,
+               updated_at=NOW()
+             WHERE id=$1 AND company_id=$2 RETURNING *`,
+            [claimId, auth.companyId, description, notes, currency, d.resubmit],
+          )
+          const lines = await client.query<Record<string, unknown>>(CLAIM_LINES_SQL, [claimId])
+          const revised: Record<string, unknown> = {
+            ...firstRowOrThrow(updated),
+            lines: lines.rows,
+          }
+          return {
+            claim: revised,
+            wasStatus: claim.status,
+            removed: removedIds.length,
+            added: d.lines.filter((l) => !l.id).length,
+          }
         },
       )
-      sendOk(res, result)
+
+      if ('error' in result) {
+        const errors = {
+          NOT_FOUND: [404, 'NOT_FOUND', 'Claim not found'],
+          FORBIDDEN: [403, 'FORBIDDEN', 'Only the person who filed this claim can edit it'],
+          INVALID_STATUS: [409, 'INVALID_STATUS', 'Only draft or rejected claims can be edited'],
+          BAD_LINES: [422, 'VALIDATION', 'One of the lines does not belong to this claim'],
+        } as const
+        const [status, code, message] = errors[result.error]
+        sendError(res, status, code, message)
+        return
+      }
+      await logAudit({
+        companyId: auth.companyId,
+        userId: auth.userId,
+        action: 'UPDATE',
+        tableName: 'expense_claims',
+        recordId: claimId,
+        oldValues: { status: result.wasStatus },
+        newValues: {
+          revised: true,
+          status: result.claim['status'],
+          total_amount: result.claim['total_amount'],
+          lines_added: result.added,
+          lines_removed: result.removed,
+        },
+      })
+      sendOk(res, result.claim)
     } catch (err) {
       if (err instanceof ExpenseConfigError) {
         sendError(res, 422, 'EXPENSE_CONFIG_MISSING', err.message)
         return
       }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update claim', err)
+    }
+  }),
+)
+
+// ─── Confirm a fixed line (approver) ─────────────────────────────────────────
+//
+// Mirrors resolveLineFlag on requisitions: a flag is raised by the reject, marked
+// "addressed" when the employee resubmits, and cleared only here, by someone who
+// could have raised it. Only an addressed flag can be resolved: an open one is
+// still waiting for the employee, and resolving it would hide the reason from them.
+
+expenseClaimsRouter.post(
+  '/:id/lines/:lineId/resolve-flag',
+  requirePermission('finance.expenses.approve', 'approve'),
+  asyncHandler(async (req, res) => {
+    try {
+      const r = await query(
+        `UPDATE expense_claim_lines ecl SET flag_resolved_at=NOW(), flag_resolved_by=$1
+         FROM expense_claims ec
+         WHERE ecl.id=$2 AND ecl.claim_id=$3 AND ec.id = ecl.claim_id AND ec.company_id=$4
+           AND ecl.flagged_at IS NOT NULL AND ecl.flag_addressed_at IS NOT NULL
+           AND ecl.flag_resolved_at IS NULL
+         RETURNING ecl.*`,
+        [getAuth(req).userId, req.params['lineId'], req.params['id'], getAuth(req).companyId],
+      )
+      if (!r.rows[0]) {
+        sendError(res, 409, 'INVALID_STATUS', 'This line has no fixed flag waiting to be confirmed')
+        return
+      }
+      await logAudit({
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
+        action: 'UPDATE',
+        tableName: 'expense_claim_lines',
+        recordId: req.params['lineId'],
+        newValues: { flag_resolved: true },
+      })
+      sendOk(res, r.rows[0])
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to resolve flag', err)
     }
   }),
 )
@@ -813,9 +1085,9 @@ expenseClaimsRouter.post(
 // can be granted independently even though today the same people likely
 // hold both. Pass moves the claim on to 'audited' (what Post Payment now
 // requires, see below); Fail sends it back to 'draft' instead of the
-// terminal 'rejected' used by /reject — a draft claim is editable via the
-// existing PUT /:id and goes through the normal draft -> submitted ->
-// approved -> audited path again once resubmitted, no special-casing needed.
+// 'rejected' used by /reject — a draft claim is editable via POST /:id/revise
+// and goes through the normal draft -> submitted -> approved -> audited path
+// again once resubmitted, no special-casing needed.
 
 expenseClaimsRouter.post(
   '/:id/pass-audit',
@@ -990,8 +1262,9 @@ expenseClaimsRouter.post(
           // rejects FOR UPDATE combined with GROUP BY/aggregates (json_agg
           // here), so the single-query aggregate+lock shape used elsewhere
           // in this file (e.g. GET /:id) doesn't work once locking is added.
-          // Lines can't change once a claim leaves 'draft' (PUT /:id only
-          // allows edits in draft), so locking just the header is enough.
+          // Lines can't change once a claim leaves 'draft' (POST /:id/revise
+          // only edits a draft or rejected claim), so locking just the
+          // header is enough.
           const claimRes = await client.query(
             `SELECT ec.*, aa.id AS project_analytic_account_id
              FROM expense_claims ec
@@ -1318,24 +1591,126 @@ expenseClaimsRouter.post(
 )
 
 // ─── Reject claim ─────────────────────────────────────────────────────────────
+//
+// An approver can tick the lines that are wrong and give each its own reason
+// (lineFlags), the same way a requisition is rejected, and/or give an overall
+// reason. At least one of the two is required; with only line flags the overall
+// reason is composed from them, so a rejected claim always has a reason to show.
+// Unlike requisitions the flags are optional: roughly half of the rejections on
+// record are about the whole claim ("wrong company", "not an expense").
+// 'rejected' stays editable by whoever filed the claim (POST /:id/revise).
+
+const rejectSchema = z
+  .object({
+    reason: z.string().trim().max(2000).optional(),
+    lineFlags: z
+      .array(z.object({ lineId: z.string().uuid(), reason: z.string().trim().min(1).max(1000) }))
+      .max(500)
+      .optional(),
+  })
+  .refine((d) => !!d.reason || (d.lineFlags?.length ?? 0) > 0, {
+    message: 'Give an overall reason or flag at least one line with a reason',
+  })
 
 expenseClaimsRouter.post(
   '/:id/reject',
   requirePermission('finance.expenses.approve', 'approve'),
   asyncHandler(async (req, res) => {
-    const schema = z.object({ reason: z.string().min(1) })
     try {
-      const { reason } = schema.parse(req.body)
-      const r = await query(
-        `UPDATE expense_claims SET status='rejected', rejected_by=$1, rejected_at=NOW(), rejection_reason=$2, updated_at=NOW()
-       WHERE id=$3 AND company_id=$4 AND status IN ('submitted','approved') RETURNING *`,
-        [getAuth(req).userId, reason, req.params['id'], getAuth(req).companyId],
+      const parsed = rejectSchema.safeParse(req.body)
+      if (!parsed.success) {
+        sendError(res, 422, 'VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request')
+        return
+      }
+      const { reason, lineFlags = [] } = parsed.data
+      const lineIds = lineFlags.map((f) => f.lineId)
+      const reasonByLine = new Map(lineFlags.map((f) => [f.lineId, f.reason]))
+      if (new Set(lineIds).size !== lineIds.length) {
+        sendError(res, 422, 'VALIDATION', 'A line can only be flagged once')
+        return
+      }
+
+      const result = await withTransaction(
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
+        async (client) => {
+          const cRes = await client.query(
+            `SELECT id FROM expense_claims
+             WHERE id=$1 AND company_id=$2 AND status IN ('submitted','approved') FOR UPDATE`,
+            [req.params['id'], getAuth(req).companyId],
+          )
+          if (!cRes.rows[0]) return { error: 'INVALID_STATUS' as const }
+
+          const flagged: { lineNumber: number; label: string; reason: string }[] = []
+          if (lineFlags.length > 0) {
+            const owned = await client.query<{
+              id: string
+              line_number: number
+              description: string | null
+              category_name: string | null
+            }>(
+              `SELECT id, line_number, description, category_name FROM expense_claim_lines
+               WHERE claim_id=$1 AND company_id=$2 AND id = ANY($3::uuid[]) ORDER BY line_number`,
+              [req.params['id'], getAuth(req).companyId, lineIds],
+            )
+            if (owned.rows.length !== lineIds.length) return { error: 'BAD_LINES' as const }
+            for (const row of owned.rows) {
+              const flagReason = reasonByLine.get(row.id) ?? ''
+              // Re-flagging a line starts a fresh cycle: clears whatever addressed/
+              // resolved state an earlier flag on it had.
+              await client.query(
+                `UPDATE expense_claim_lines
+                 SET flag_reason=$1, flagged_at=NOW(), flagged_by=$2,
+                     flag_addressed_at=NULL, flag_resolved_at=NULL, flag_resolved_by=NULL
+                 WHERE id=$3 AND claim_id=$4`,
+                [flagReason, getAuth(req).userId, row.id, req.params['id']],
+              )
+              flagged.push({
+                lineNumber: row.line_number,
+                label: [row.description?.trim(), row.category_name].find((v) => !!v) ?? '',
+                reason: flagReason,
+              })
+            }
+          }
+
+          const composed = flagged
+            .map((f) => `• Line ${f.lineNumber}${f.label ? ` (${f.label})` : ''}: ${f.reason}`)
+            .join('\n')
+          // The overall reason first, then the flagged lines, with a blank line between.
+          const fullReason = [reason, composed].filter((part) => !!part).join('\n\n')
+          const upd = await client.query<Record<string, unknown>>(
+            `UPDATE expense_claims SET status='rejected', rejected_by=$1, rejected_at=NOW(), rejection_reason=$2, updated_at=NOW()
+             WHERE id=$3 AND company_id=$4 RETURNING *`,
+            [getAuth(req).userId, fullReason, req.params['id'], getAuth(req).companyId],
+          )
+          return { claim: firstRowOrThrow(upd), flaggedCount: flagged.length }
+        },
       )
-      if (!r.rows[0]) {
+      if ('error' in result) {
+        if (result.error === 'BAD_LINES') {
+          sendError(
+            res,
+            422,
+            'VALIDATION',
+            'One of the flagged lines does not belong to this claim',
+          )
+          return
+        }
         sendError(res, 409, 'INVALID_STATUS', 'Claim is not in submitted or approved status')
         return
       }
-      sendOk(res, r.rows[0])
+      await logAudit({
+        companyId: getAuth(req).companyId,
+        userId: getAuth(req).userId,
+        action: 'UPDATE',
+        tableName: 'expense_claims',
+        recordId: req.params['id'],
+        newValues: {
+          status: 'rejected',
+          rejection_reason: result.claim['rejection_reason'],
+          lines_flagged: result.flaggedCount,
+        },
+      })
+      sendOk(res, result.claim)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to reject claim', err)
     }
