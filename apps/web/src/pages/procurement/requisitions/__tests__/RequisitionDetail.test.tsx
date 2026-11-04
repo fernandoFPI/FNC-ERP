@@ -1251,3 +1251,503 @@ describe('RequisitionDetail: Store Outs card and the Sourcing panel', () => {
     expect(document.body.textContent).not.toMatch(/req\.detail\./)
   })
 })
+
+// Market pricing in two parts (migration 315): the organizer takes the lines he will price and buy himself, procurement
+// does the rest, and the requisition moves on once each part that has lines has been submitted.
+describe('RequisitionDetail: Market pricing in two parts', () => {
+  afterEach(async () => {
+    if (i18n.language !== 'en') {
+      await act(async () => {
+        await i18n.changeLanguage('en')
+      })
+    }
+  })
+
+  const line = (id: string, description: string, over: Record<string, unknown> = {}) => ({
+    id,
+    line_number: Number(id.replace('line-', '')),
+    description,
+    product_id: null,
+    product_name: null,
+    sku: null,
+    qty: '2',
+    uom: 'unit',
+    currency_code: 'IQD',
+    unit_price: '0',
+    qty_from_stock: '0',
+    store_price: null,
+    market_price: null,
+    verified_price: null,
+    total: '0',
+    purchases: [],
+    owner_handles: false,
+    ...over,
+  })
+  const split = (over: Record<string, unknown> = {}) => ({
+    status: 'market_pricing',
+    lines: [
+      line('line-1', 'Kitchen gloves', { owner_handles: true }),
+      line('line-2', 'Cement bags'),
+      line('line-3', 'Rebar 12mm'),
+    ],
+    ...over,
+  })
+  const asOrganizer = () => {
+    mockAuthUser = { id: 'user-organizer', role: 'user' }
+  }
+  const asProcurement = () => {
+    mockAuthUser = { id: 'user-proc', role: 'user' }
+  }
+  // Every mutation resolves; the ones the tests inspect are told apart by operation name.
+  function mutations() {
+    const submit = vi.fn().mockResolvedValue({})
+    const setOwner = vi.fn().mockResolvedValue({})
+    mockUseMutation.mockImplementation((doc: unknown) => {
+      const opName = (
+        doc as { definitions?: { kind?: string; name?: { value?: string } }[] }
+      ).definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value
+      if (opName === 'SubmitRequisitionMarketPricing') return [submit, { loading: false }]
+      if (opName === 'SetRequisitionLineOwner') return [setOwner, { loading: false }]
+      return [vi.fn().mockResolvedValue({}), { loading: false }]
+    })
+    return { submit, setOwner }
+  }
+  const open = async () => {
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    return wrap(<RequisitionDetail />)
+  }
+  // The price boxes of the cards in the panel (the Lines table above has none).
+  const priceBoxes = () => screen.queryAllByPlaceholderText('0.00')
+
+  describe('the organizer without a procurement position', () => {
+    it('sees the lines instead of the "only a procurement officer" message, and can take one', async () => {
+      asOrganizer()
+      mutations()
+      mockReq(split({ callerHasMarketPricingPosition: false }))
+      await open()
+      expect(screen.queryByText(/only a procurement officer/i)).not.toBeInTheDocument()
+      expect(screen.getAllByRole('button', { name: /i'll handle this item/i })).toHaveLength(2)
+    })
+
+    it('takes a line with the right mutation arguments', async () => {
+      asOrganizer()
+      const { setOwner } = mutations()
+      mockReq(split())
+      await open()
+      fireEvent.click(screen.getAllByRole('button', { name: /i'll handle this item/i })[0])
+      expect(setOwner).toHaveBeenCalledWith({ variables: { lineId: 'line-2', byOwner: true } })
+    })
+
+    it('prices only the lines he took; the others say procurement prices them', async () => {
+      asOrganizer()
+      mutations()
+      mockReq(split())
+      await open()
+      expect(priceBoxes()).toHaveLength(1)
+      expect(screen.getAllByText(/procurement prices this item/i)).toHaveLength(2)
+    })
+
+    it('submits only his lines, as the organizer part, once each has a price', async () => {
+      asOrganizer()
+      const { submit } = mutations()
+      mockReq(split())
+      await open()
+      const button = screen.getByRole('button', { name: /^submit my items$/i })
+      expect(button).toBeDisabled()
+      expect(screen.getByText(/enter a price for every item you took/i)).toBeInTheDocument()
+      fireEvent.change(priceBoxes()[0], { target: { value: '12' } })
+      expect(button).not.toBeDisabled()
+      fireEvent.click(button)
+      expect(submit).toHaveBeenCalledWith({
+        variables: {
+          id: 'req-1',
+          side: 'OWNER',
+          linePrices: [{ lineId: 'line-1', marketPrice: 12, currencyCode: 'IQD' }],
+        },
+      })
+    })
+
+    it("has no submit button for procurement's part", async () => {
+      asOrganizer()
+      mutations()
+      mockReq(split())
+      await open()
+      expect(screen.queryByRole('button', { name: /procurement's items/i })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /submit to price verification/i }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('can hand a line back while it has no price, but not once it has one', async () => {
+      asOrganizer()
+      const { setOwner } = mutations()
+      mockReq(
+        split({
+          lines: [
+            line('line-1', 'Kitchen gloves', { owner_handles: true }),
+            line('line-2', 'Dish soap', {
+              owner_handles: true,
+              market_price: '5',
+              market_price_currency: 'IQD',
+            }),
+          ],
+        }),
+      )
+      await open()
+      const back = screen.getAllByRole('button', { name: /hand back to procurement/i })
+      expect(back).toHaveLength(1)
+      fireEvent.click(back[0])
+      expect(setOwner).toHaveBeenCalledWith({ variables: { lineId: 'line-1', byOwner: false } })
+    })
+
+    it('cannot take a line that already has a market price', async () => {
+      asOrganizer()
+      mutations()
+      mockReq(
+        split({
+          lines: [
+            line('line-1', 'Cement bags', { market_price: '5', market_price_currency: 'IQD' }),
+            line('line-2', 'Rebar'),
+          ],
+        }),
+      )
+      await open()
+      expect(screen.getAllByRole('button', { name: /i'll handle this item/i })).toHaveLength(1)
+    })
+
+    it('after submitting, the button says Update and the progress shows his part as submitted', async () => {
+      asOrganizer()
+      mutations()
+      mockReq(split({ owner_pricing_submitted_at: '2026-01-16T09:00:00.000Z' }))
+      await open()
+      expect(screen.getByRole('button', { name: /^update my items$/i })).toBeInTheDocument()
+      const ownerRow = screen.getByText(/organizer's items: 1/i).closest('span') as HTMLElement
+      expect(within(ownerRow).getByText('Submitted')).toBeInTheDocument()
+      const procRow = screen.getByText(/procurement's items: 2/i).closest('span') as HTMLElement
+      expect(within(procRow).getByText('Waiting')).toBeInTheDocument()
+    })
+  })
+
+  it('an organizer without the position gets no Continue button when every line is covered from stock', async () => {
+    asOrganizer()
+    mutations()
+    mockReq(
+      split({ lines: [line('line-1', 'Fully from stock', { qty: '5', qty_from_stock: '5' })] }),
+    )
+    await open()
+    expect(
+      screen.getByText(/nothing on this requisition needs a market price/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /continue to price verification/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  describe('a stranger', () => {
+    it('still sees only the message, with no way to take a line', async () => {
+      mockAuthUser = { id: 'user-nobody', role: 'user' }
+      mutations()
+      mockReq(split({ organizer_id: 'someone-else' }))
+      await open()
+      expect(screen.getByText(/only a procurement officer/i)).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /i'll handle this item/i }),
+      ).not.toBeInTheDocument()
+      expect(priceBoxes()).toHaveLength(0)
+    })
+  })
+
+  describe('procurement', () => {
+    const procurement = (over: Record<string, unknown> = {}) =>
+      split({ organizer_id: 'someone-else', callerHasMarketPricingPosition: true, ...over })
+
+    it("prices every line, the organizer's included, and submits its own part without a side", async () => {
+      asProcurement()
+      const { submit } = mutations()
+      mockReq(procurement())
+      await open()
+      expect(priceBoxes()).toHaveLength(3)
+      const button = screen.getByRole('button', { name: /^submit procurement's items$/i })
+      expect(button).toBeDisabled()
+      fireEvent.change(priceBoxes()[1], { target: { value: '30' } })
+      expect(button).toBeDisabled() // line 3 still blank
+      fireEvent.change(priceBoxes()[2], { target: { value: '40' } })
+      expect(button).not.toBeDisabled()
+      fireEvent.click(button)
+      expect(submit).toHaveBeenCalledWith({
+        variables: {
+          id: 'req-1',
+          linePrices: [
+            { lineId: 'line-2', marketPrice: 30, currencyCode: 'IQD' },
+            { lineId: 'line-3', marketPrice: 40, currencyCode: 'IQD' },
+          ],
+        },
+      })
+    })
+
+    it("can step in and submit the organizer's part for him", async () => {
+      asProcurement()
+      const { submit } = mutations()
+      mockReq(procurement())
+      await open()
+      const button = screen.getByRole('button', { name: /^submit the organizer's items$/i })
+      expect(button).toBeDisabled()
+      fireEvent.change(priceBoxes()[0], { target: { value: '9' } })
+      fireEvent.click(button)
+      expect(submit).toHaveBeenCalledWith({
+        variables: {
+          id: 'req-1',
+          side: 'OWNER',
+          linePrices: [{ lineId: 'line-1', marketPrice: 9, currencyCode: 'IQD' }],
+        },
+      })
+    })
+
+    it('can take over a line the organizer took, even one that is already priced', async () => {
+      asProcurement()
+      const { setOwner } = mutations()
+      mockReq(
+        procurement({
+          lines: [
+            line('line-1', 'Kitchen gloves', {
+              owner_handles: true,
+              market_price: '5',
+              market_price_currency: 'IQD',
+            }),
+            line('line-2', 'Cement bags'),
+          ],
+        }),
+      )
+      await open()
+      fireEvent.click(screen.getByRole('button', { name: /^take over$/i }))
+      expect(setOwner).toHaveBeenCalledWith({ variables: { lineId: 'line-1', byOwner: false } })
+    })
+
+    it('does not offer to push a line onto the organizer', async () => {
+      asProcurement()
+      mutations()
+      mockReq(procurement())
+      await open()
+      expect(
+        screen.queryByRole('button', { name: /i'll handle this item/i }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('has nothing to submit when the organizer took every line, and says it is waiting', async () => {
+      asProcurement()
+      mutations()
+      mockReq(procurement({ lines: [line('line-1', 'Kitchen gloves', { owner_handles: true })] }))
+      await open()
+      expect(screen.getByText(/nothing is left for procurement/i)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /procurement's items/i })).not.toBeInTheDocument()
+      const procRow = screen.getByText(/procurement's items: 0/i).closest('span') as HTMLElement
+      expect(within(procRow).getByText('None')).toBeInTheDocument()
+    })
+
+    it('with nothing split keeps the single submit it always had, and no progress strip', async () => {
+      asProcurement()
+      mutations()
+      mockReq(procurement({ lines: [line('line-1', 'Cement bags'), line('line-2', 'Rebar 12mm')] }))
+      await open()
+      expect(
+        screen.getByRole('button', { name: /^submit to price verification$/i }),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/organizer's items:/i)).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /i'll handle this item/i }),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('reads in Arabic without raw keys', async () => {
+    await i18n.changeLanguage('ar')
+    asOrganizer()
+    mutations()
+    mockReq(split({ owner_pricing_submitted_at: '2026-01-16T09:00:00.000Z' }))
+    await open()
+    expect(document.body.textContent).not.toMatch(/req\.(detail|bought)\./)
+    expect(screen.getAllByText(/المسؤول عنه/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/تحديث بنودي/)).toBeInTheDocument()
+  })
+})
+
+// Every line says who prices and buys it, in the Lines table, from Market pricing on (migration 315).
+describe('RequisitionDetail: who handles each line', () => {
+  afterEach(async () => {
+    if (i18n.language !== 'en') {
+      await act(async () => {
+        await i18n.changeLanguage('en')
+      })
+    }
+  })
+
+  const mk = (id: string, description: string, over: Record<string, unknown> = {}) => ({
+    id,
+    line_number: Number(id.replace('line-', '')),
+    description,
+    product_id: null,
+    product_name: null,
+    sku: null,
+    qty: '2',
+    uom: 'unit',
+    currency_code: 'IQD',
+    unit_price: '10',
+    qty_from_stock: '0',
+    store_price: null,
+    market_price: null,
+    verified_price: null,
+    total: '20',
+    purchases: [],
+    owner_handles: false,
+    ...over,
+  })
+  const lines = () => [
+    mk('line-1', 'Kitchen gloves', { owner_handles: true }),
+    mk('line-2', 'Cement bags'),
+    mk('line-3', 'Fully from stock', { qty: '5', qty_from_stock: '5' }),
+  ]
+  const open = async () => {
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    return wrap(<RequisitionDetail />)
+  }
+  const linesTable = () => {
+    const found = screen
+      .getAllByRole('table')
+      .find((el) => within(el).queryByRole('columnheader', { name: 'Item' }))
+    if (!found) throw new Error('lines table not found')
+    return found
+  }
+  const header = (name: string) => within(linesTable()).queryByRole('columnheader', { name })
+  const cellOf = (lineName: string, columnName: string) => {
+    const headers = within(linesTable()).getAllByRole('columnheader')
+    const at = headers.findIndex((h) => h.textContent === columnName)
+    const row = within(linesTable()).getByText(lineName).closest('tr')
+    if (!row) throw new Error('row not found')
+    return within(row).getAllByRole('cell')[at]
+  }
+
+  it('marks each line Organizer or Procurement, and a line covered from stock with a dash', async () => {
+    mockReq({ status: 'market_pricing', lines: lines() })
+    await open()
+    expect(cellOf('Kitchen gloves', 'Handled by')).toHaveTextContent('Organizer')
+    expect(cellOf('Kitchen gloves', 'Handled by')).not.toHaveTextContent('Procurement')
+    expect(cellOf('Cement bags', 'Handled by')).toHaveTextContent('Procurement')
+    expect(cellOf('Cement bags', 'Handled by')).not.toHaveTextContent('Organizer')
+    expect(cellOf('Fully from stock', 'Handled by')).toHaveTextContent(/^—$/)
+  })
+
+  it('sits right after Item, ahead of the numbers', async () => {
+    mockReq({ status: 'market_pricing', lines: lines() })
+    await open()
+    const names = within(linesTable())
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent)
+    expect(names.indexOf('Handled by')).toBe(names.indexOf('Item') + 1)
+    expect(names.indexOf('Handled by')).toBeLessThan(names.indexOf('Qty'))
+  })
+
+  it('names the organizer under his lines', async () => {
+    mockReq({ status: 'market_pricing', lines: lines() })
+    await open()
+    expect(within(cellOf('Kitchen gloves', 'Handled by')).getByText('Jane Doe')).toBeInTheDocument()
+    expect(cellOf('Cement bags', 'Handled by')).not.toHaveTextContent('Jane Doe')
+  })
+
+  it("names the procurement officer under procurement's lines once procurement has submitted its part", async () => {
+    mockReq({ status: 'price_verification', procurementOfficerName: 'Ahmed Ali', lines: lines() })
+    await open()
+    expect(within(cellOf('Cement bags', 'Handled by')).getByText('Ahmed Ali')).toBeInTheDocument()
+    expect(cellOf('Kitchen gloves', 'Handled by')).not.toHaveTextContent('Ahmed Ali')
+  })
+
+  it('names nobody for a procurement line before procurement has submitted: the marker stands alone', async () => {
+    mockReq({ status: 'market_pricing', procurementOfficerName: null, lines: lines() })
+    await open()
+    expect(cellOf('Cement bags', 'Handled by')).toHaveTextContent(/^Procurement$/)
+  })
+
+  it('names whoever recorded the purchase, even on a line the organizer took (procurement stepping in)', async () => {
+    const bought = (name: string) => [
+      {
+        id: 'p-' + name,
+        vendor_id: 'v-1',
+        vendor_name: 'Al-Rasheed',
+        currency_code: 'IQD',
+        qty: '2',
+        actual_unit_price: '10',
+        bought_at: '2026-01-02T00:00:00.000Z',
+        bought_by_name: name,
+        over_tolerance: false,
+      },
+    ]
+    mockReq({
+      status: 'items_bought',
+      procurementOfficerName: 'Ahmed Ali',
+      lines: [
+        mk('line-1', 'Kitchen gloves', { owner_handles: true, purchases: bought('Sara Hassan') }),
+        mk('line-2', 'Cement bags', { purchases: bought('Omar Khalid') }),
+      ],
+    })
+    await open()
+    const gloves = cellOf('Kitchen gloves', 'Handled by')
+    expect(gloves).toHaveTextContent('Organizer')
+    expect(within(gloves).getByText('Sara Hassan')).toBeInTheDocument()
+    expect(gloves).not.toHaveTextContent('Jane Doe')
+    const cement = cellOf('Cement bags', 'Handled by')
+    expect(within(cement).getByText('Omar Khalid')).toBeInTheDocument()
+    expect(cement).not.toHaveTextContent('Ahmed Ali')
+  })
+
+  it('puts the name on the Market pricing card too', async () => {
+    mockReq({ status: 'market_pricing', lines: lines() })
+    await open()
+    expect(screen.getByText('Handled by: Organizer · Jane Doe')).toBeInTheDocument()
+  })
+
+  it.each(['draft', 'inventory_check', 'store_pricing'])(
+    'has no such column at %s: nothing is decided yet',
+    async (status) => {
+      mockReq({ status, lines: lines() })
+      await open()
+      expect(header('Handled by')).toBeNull()
+    },
+  )
+
+  it.each([
+    'market_pricing',
+    'price_verification',
+    'pending_approval',
+    'approved',
+    'items_bought',
+    'sourcing',
+    'completed',
+  ])('shows it at %s', async (status) => {
+    mockReq({ status, lines: lines() })
+    await open()
+    expect(header('Handled by')).toBeInTheDocument()
+    expect(cellOf('Kitchen gloves', 'Handled by')).toHaveTextContent('Organizer')
+  })
+
+  it('is in the Columns menu, on by default, and can be switched off without touching Item', async () => {
+    mockReq({ status: 'items_bought', lines: lines() })
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: /^Columns/ }))
+    expect(screen.getByRole('checkbox', { name: 'Handled by' })).toBeChecked()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Handled by' }))
+    expect(header('Handled by')).toBeNull()
+    expect(header('Item')).toBeInTheDocument()
+  })
+
+  it('reads in Arabic without raw keys', async () => {
+    await i18n.changeLanguage('ar')
+    mockReq({ status: 'market_pricing', lines: lines() })
+    await open()
+    const table = screen
+      .getAllByRole('table')
+      .find((el) => within(el).queryByRole('columnheader', { name: 'المسؤول عنه' }))
+    if (!table) throw new Error('lines table not found')
+    expect(within(table).getByText('المُنشئ')).toBeInTheDocument()
+    expect(within(table).getByText('المشتريات')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/req\.(detail|bought)\./)
+  })
+})

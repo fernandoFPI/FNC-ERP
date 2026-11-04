@@ -20,6 +20,7 @@ import {
 } from '../../../graphql/inventory'
 import { ATTACH_FILE } from '../../../graphql/hr'
 import { useAuthStore } from '../../../store/authStore'
+import { lineHandlerName } from '../../../lib/lineHandler'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
 import { usePagePadding } from '../../../hooks/usePagePadding'
@@ -111,6 +112,8 @@ interface ReqLine {
   short_reason?: string | null
   short_marked_by?: string | null
   short_marked_at?: string | null
+  /** The owner took this line to buy himself (migration 315). */
+  owner_handles?: boolean | null
   account_id?: string | null
   account_code?: string | null
   account_name?: string | null
@@ -123,6 +126,9 @@ interface Requisition {
   id: string
   requisition_number: string
   status: string
+  organizer_id?: string | null
+  organizerName?: string | null
+  procurementOfficerName?: string | null
   callerHasBuyerPosition?: boolean | null
   callerCanApprove?: boolean | null
   lines: ReqLine[]
@@ -349,6 +355,10 @@ export default function ItemsBoughtPage() {
   }
 
   const canBuy = isSystemLevel || !!req.callerHasBuyerPosition
+  // The owner may also buy the lines he took at Market pricing; procurement keeps every line (it can step in).
+  const isOwner = !!currentUserId && req.organizer_id === currentUserId
+  const canBuyLine = (l: ReqLine) => canBuy || (isOwner && !!l.owner_handles)
+  const ownsAnyLine = isOwner && req.lines.some((l) => !!l.owner_handles)
   const canApproveTolerance = isSystemLevel || !!req.callerCanApprove
 
   const vendorOptions = [
@@ -522,7 +532,9 @@ export default function ItemsBoughtPage() {
   // drop out of the list, so a retry never double-records them.
   async function handleRecordAll() {
     if (!req) return
-    const pending = req.lines.filter((l) => !l.short_marked_at && remainingToBuy(l) > 0)
+    const pending = req.lines.filter(
+      (l) => canBuyLine(l) && !l.short_marked_at && remainingToBuy(l) > 0,
+    )
     setRecordingAll(true)
     try {
       for (const l of pending) {
@@ -571,7 +583,7 @@ export default function ItemsBoughtPage() {
         }
       />
 
-      {!canBuy && (
+      {!canBuy && !ownsAnyLine && (
         <Card
           style={{
             padding: '14px 20px',
@@ -581,6 +593,20 @@ export default function ItemsBoughtPage() {
         >
           <div style={{ fontSize: '13px', color: theme.textMuted }}>
             {t('req.bought.onlyABuyerPositionHolderFor')}
+          </div>
+        </Card>
+      )}
+
+      {!canBuy && ownsAnyLine && (
+        <Card
+          style={{
+            padding: '14px 20px',
+            marginTop: '16px',
+            borderInlineStart: `3px solid ${theme.info}`,
+          }}
+        >
+          <div style={{ fontSize: '13px', color: theme.textMuted }}>
+            {t('req.bought.ownerBuysOwnItems')}
           </div>
         </Card>
       )}
@@ -595,7 +621,7 @@ export default function ItemsBoughtPage() {
         </Card>
       )}
 
-      {canBuy && req.status === 'items_bought' && req.lines.length > 1 && (
+      {req.status === 'items_bought' && req.lines.filter(canBuyLine).length > 1 && (
         <Card
           style={{
             padding: '14px 20px',
@@ -737,6 +763,7 @@ export default function ItemsBoughtPage() {
       {req.lines.map((line) => {
         const resolved = lineIsResolved(line)
         const remaining = remainingToBuy(line)
+        const handlerName = lineHandlerName(line, req)
         return (
           <Card key={line.id} style={{ padding: '20px', marginTop: '16px' }}>
             <div
@@ -751,6 +778,30 @@ export default function ItemsBoughtPage() {
               <div>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
                   {line.description || line.product_name || '—'}
+                  {/* Every line that needs buying says who buys it; one fully covered from stock has nobody. */}
+                  {(parseFloat(line.qty) || 0) - (parseFloat(line.qty_from_stock ?? '0') || 0) >
+                    0.0001 && (
+                    <>
+                      {' '}
+                      {line.owner_handles ? (
+                        <Badge variant="accent">{t('req.bought.ownerItem')}</Badge>
+                      ) : (
+                        <Badge variant="neutral">{t('req.bought.procurementItem')}</Badge>
+                      )}
+                      {handlerName && (
+                        <span
+                          style={{
+                            marginInlineStart: '6px',
+                            fontSize: '12px',
+                            fontWeight: 400,
+                            color: theme.textMuted,
+                          }}
+                        >
+                          {handlerName}
+                        </span>
+                      )}
+                    </>
+                  )}
                 </div>
                 {line.product_name_ar && (
                   <div
@@ -933,7 +984,10 @@ export default function ItemsBoughtPage() {
             )}
 
             {/* ── Record a purchase / mark short ── */}
-            {canBuy && req.status === 'items_bought' && !line.short_marked_at && remaining > 0 && (
+            {canBuyLine(line) &&
+              req.status === 'items_bought' &&
+              !line.short_marked_at &&
+              remaining > 0 && (
               <div
                 style={{
                   marginTop: '14px',
@@ -1247,6 +1301,9 @@ export default function ItemsBoughtPage() {
             }}
           >
             {t('req.bought.finishBuying')}
+          </div>
+          <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>
+            {t('req.bought.finishesByItself')}
           </div>
           {!canFinishBuying && (
             <ul

@@ -11,6 +11,7 @@ import {
   CONFIRM_REQUISITION_INVENTORY_CHECK,
   SUBMIT_REQUISITION_STORE_PRICING,
   SUBMIT_REQUISITION_MARKET_PRICING,
+  SET_REQUISITION_LINE_OWNER,
   VERIFY_REQUISITION_PRICES,
   REJECT_REQUISITION_VERIFICATION_TO_MARKET_PRICING,
   REJECT_REQUISITION_VERIFICATION_TO_STORE_PRICING,
@@ -63,6 +64,7 @@ import {
 } from '../../../lib/requisition-constants'
 import { getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
 import { poTotalEntries } from '../../../lib/poTotals'
+import { lineHandlerName } from '../../../lib/lineHandler'
 import { useToastStore } from '../../../store/toastStore'
 import type {
   ApproveRequisitionEditRequestMutation,
@@ -104,6 +106,8 @@ import type {
   ResolveLineFlagMutation,
   ResolveLineFlagMutationVariables,
   PoLineCommentsQuery,
+  SetRequisitionLineOwnerMutation,
+  SetRequisitionLineOwnerMutationVariables,
   SubmitRequisitionEditRequestMutation,
   SubmitRequisitionEditRequestMutationVariables,
   SubmitRequisitionMarketPricingMutation,
@@ -131,6 +135,7 @@ interface Purchase {
   qty: string
   actual_unit_price: string
   bought_at: string
+  bought_by_name?: string | null
   over_tolerance: boolean
 }
 
@@ -173,6 +178,8 @@ interface ReqLine {
   flag_addressed_at?: string | null
   flag_resolved_at?: string | null
   flag_resolved_by_name?: string | null
+  /** The owner took this line to price and buy himself (migration 315); false = procurement's. */
+  owner_handles?: boolean | null
   purchases?: Purchase[] | null
 }
 
@@ -243,6 +250,8 @@ interface Requisition {
   branch_name?: string | null
   organizer_id?: string | null
   organizerName?: string | null
+  /** The procurement officer who submitted procurement's part of Market pricing; null until then. */
+  procurementOfficerName?: string | null
   assigned_receiver_id?: string | null
   assigned_receiver_name?: string | null
   notes?: string | null
@@ -254,6 +263,9 @@ interface Requisition {
   callerHasMarketPricingPosition?: boolean | null
   callerHasPriceVerificationPosition?: boolean | null
   callerCanApprove?: boolean | null
+  /** When each side last submitted its part of Market pricing; cleared whenever the stage is entered. */
+  owner_pricing_submitted_at?: string | null
+  procurement_pricing_submitted_at?: string | null
   currencyTotals: { currency_code: string; subtotal: string; line_count: number }[]
   lines: ReqLine[]
   approval_log: ApprovalLogEntry[]
@@ -376,6 +388,20 @@ export default function RequisitionDetail() {
     SubmitRequisitionMarketPricingMutation,
     SubmitRequisitionMarketPricingMutationVariables
   >(SUBMIT_REQUISITION_MARKET_PRICING, mutOpts)
+  const [setLineOwner] = useMutation<
+    SetRequisitionLineOwnerMutation,
+    SetRequisitionLineOwnerMutationVariables
+  >(SET_REQUISITION_LINE_OWNER, mutOpts)
+  // Which line's "take / hand back" is in flight, so only that button shows a spinner.
+  const [togglingLineId, setTogglingLineId] = useState<string | null>(null)
+  const toggleLineOwner = async (lineId: string, byOwner: boolean) => {
+    setTogglingLineId(lineId)
+    try {
+      await setLineOwner({ variables: { lineId, byOwner } })
+    } finally {
+      setTogglingLineId(null)
+    }
+  }
   const [verifyPrices, { loading: lVerify }] = useMutation<
     VerifyRequisitionPricesMutation,
     VerifyRequisitionPricesMutationVariables
@@ -861,6 +887,49 @@ export default function RequisitionDetail() {
         </div>
       ),
     },
+    // Who prices and buys this line (migration 315). It is decided at Market pricing, so the stages before have
+    // nothing to show. Right after Item on purpose: only the leading columns are sure to be visible on a narrow card.
+    ...([
+      'market_pricing',
+      'price_verification',
+      'pending_approval',
+      'approved',
+      'items_bought',
+      'sourcing',
+      'completed',
+    ].includes(req.status)
+      ? [
+          {
+            key: 'handled_by',
+            header: t('req.detail.handledBy'),
+            // The name can be long ("Mohammed Abdulrahman"), so let it wrap instead of widening the table.
+            wrap: true,
+            minWidth: '130px',
+            render: (l: ReqLine) => {
+              // A line fully covered from stock is bought by nobody: its Store Out is the whole story.
+              const toBuy =
+                (parseFloat(l.qty) || 0) - (parseFloat(String(l.qty_from_stock ?? '0')) || 0) >
+                0.0001
+              if (!toBuy) return <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
+              const name = lineHandlerName(l, req)
+              return (
+                <div>
+                  {l.owner_handles ? (
+                    <Badge variant="accent">{t('req.detail.handledByOwner')}</Badge>
+                  ) : (
+                    <Badge variant="neutral">{t('req.detail.handledByProcurement')}</Badge>
+                  )}
+                  {name && (
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                      {name}
+                    </div>
+                  )}
+                </div>
+              )
+            },
+          },
+        ]
+      : []),
     {
       key: 'qty',
       header: t('req.detail.qty'),
@@ -1055,6 +1124,7 @@ export default function RequisitionDetail() {
   // are listed but locked.
   const lockedLineColumns = ['qty', 'total']
   const optionalLineColumns = [
+    'handled_by',
     'qty_from_stock',
     'inventory_cost',
     'store_price',
@@ -2548,7 +2618,7 @@ export default function RequisitionDetail() {
               <div style={sectionHint}>
                 {t('req.detail.enterTheCheckedVendorQuotePer')}
               </div>
-              {!canMarketPrice ? (
+              {!canMarketPrice && !isOrganizer ? (
                 <div style={{ fontSize: '13px', color: theme.textMuted }}>
                   {t('req.detail.onlyAProcurementOfficerOrAn')}
                 </div>
@@ -2566,40 +2636,112 @@ export default function RequisitionDetail() {
                         (parseFloat(String(l.qty_from_stock ?? '0')) || 0) >
                       0.0001,
                   )
-                  return purchaseLines.length === 0 ? (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px',
-                        alignItems: 'flex-start',
-                      }}
-                    >
-                      <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                        {t('req.detail.nothingOnThisRequisitionNeedsA')}
-                      </div>
-                      <Button
-                        variant="primary"
-                        loading={lMarket}
-                        onClick={() =>
-                          void submitMarketPricing({ variables: { id: req.id, linePrices: [] } })
-                        }
+                  if (purchaseLines.length === 0)
+                    return (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px',
+                          alignItems: 'flex-start',
+                        }}
                       >
-                        {t('req.detail.continueToPriceVerification')}
-                      </Button>
-                    </div>
-                  ) : (
+                        <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                          {t('req.detail.nothingOnThisRequisitionNeedsA')}
+                        </div>
+                        {canMarketPrice && (
+                          <Button
+                            variant="primary"
+                            loading={lMarket}
+                            onClick={() =>
+                              void submitMarketPricing({
+                                variables: { id: req.id, linePrices: [] },
+                              })
+                            }
+                          >
+                            {t('req.detail.continueToPriceVerification')}
+                          </Button>
+                        )}
+                      </div>
+                    )
+
+                  // Market pricing is done in two parts (migration 315): the lines the owner took to price and buy
+                  // himself, and procurement's. The requisition moves on once each part that has lines has been
+                  // submitted. Procurement (and admins) can price any line, the owner only the ones he took.
+                  const ownerLines = purchaseLines.filter((l) => !!l.owner_handles)
+                  const procLines = purchaseLines.filter((l) => !l.owner_handles)
+                  const split = ownerLines.length > 0
+                  // Falls back to the line's own previously-saved market_price —
+                  // sent back here from price_verification (or later), a figure
+                  // Procurement already typed in should still be here, editable,
+                  // not wiped back to blank (mirrors verifiedPrices' own fallback
+                  // to market_price in the price_verification panel below).
+                  const rawOf = (l: ReqLine) =>
+                    marketPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
+                  const pricedOk = (l: ReqLine) => {
+                    const raw = rawOf(l)
+                    return raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
+                  }
+                  const linePricesOf = (ls: ReqLine[]) =>
+                    ls.map((l) => ({
+                      lineId: l.id,
+                      marketPrice: parseFloat(rawOf(l)),
+                      currencyCode: marketCurrency[l.id] ?? l.currency_code,
+                    }))
+                  const ownerAllPriced = ownerLines.every(pricedOk)
+                  const procAllPriced = procLines.every(pricedOk)
+                  const ownerSubmitted = !!req.owner_pricing_submitted_at
+                  const procSubmitted = !!req.procurement_pricing_submitted_at
+                  return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {isOrganizer && (
+                        <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                          {t('req.detail.splitHintOwner')}
+                        </div>
+                      )}
+                      {split && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '8px 16px',
+                            fontSize: '12px',
+                            color: theme.textMuted,
+                          }}
+                        >
+                          <span>
+                            {t('req.detail.ownerItemsCount', { n: ownerLines.length })}{' '}
+                            <Badge variant={ownerSubmitted ? 'success' : 'warning'}>
+                              {ownerSubmitted
+                                ? t('req.detail.partSubmitted')
+                                : t('req.detail.partWaiting')}
+                            </Badge>
+                          </span>
+                          <span>
+                            {t('req.detail.procurementItemsCount', { n: procLines.length })}{' '}
+                            {procLines.length === 0 ? (
+                              <Badge variant="neutral">{t('req.detail.partNone')}</Badge>
+                            ) : (
+                              <Badge variant={procSubmitted ? 'success' : 'warning'}>
+                                {procSubmitted
+                                  ? t('req.detail.partSubmitted')
+                                  : t('req.detail.partWaiting')}
+                              </Badge>
+                            )}
+                          </span>
+                        </div>
+                      )}
                       {purchaseLines.map((l) => {
-                        // Falls back to the line's own previously-saved market_price —
-                        // sent back here from price_verification (or later), a figure
-                        // Procurement already typed in should still be here, editable,
-                        // not wiped back to blank (mirrors verifiedPrices' own fallback
-                        // to market_price in the price_verification panel below).
-                        const raw =
-                          marketPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
+                        const ownerLine = !!l.owner_handles
+                        const handlerName = lineHandlerName(l, req)
+                        const mayPrice = canMarketPrice || (isOrganizer && ownerLine)
+                        const raw = rawOf(l)
                         const missing = raw === ''
                         const invalid = !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
+                        // The owner may take a line only before it has a price; procurement may always hand it back.
+                        const canTake = isOrganizer && !ownerLine && l.market_price == null
+                        const canGiveBack =
+                          ownerLine && (canMarketPrice || (isOrganizer && l.market_price == null))
                         // What the vendor quote is for: the requested quantity less
                         // whatever stock already covers (the same subtraction the
                         // purchaseLines filter above uses).
@@ -2612,7 +2754,7 @@ export default function RequisitionDetail() {
                             style={{
                               padding: '12px',
                               borderRadius: '8px',
-                              border: `1px solid ${missing || invalid ? theme.dangerBorder : theme.border}`,
+                              border: `1px solid ${mayPrice && (missing || invalid) ? theme.dangerBorder : theme.border}`,
                             }}
                           >
                             <div
@@ -2624,15 +2766,49 @@ export default function RequisitionDetail() {
                                 marginBottom: '8px',
                               }}
                             >
-                              <div
-                                style={{
-                                  fontSize: '13px',
-                                  fontWeight: 600,
-                                  color: theme.textPrimary,
-                                  minWidth: 0,
-                                }}
-                              >
-                                {l.description || l.product_name}
+                              <div style={{ minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    color: theme.textPrimary,
+                                  }}
+                                >
+                                  {l.description || l.product_name}
+                                </div>
+                                {(split || isOrganizer) && (
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      flexWrap: 'wrap',
+                                      gap: '6px',
+                                      marginTop: '6px',
+                                    }}
+                                  >
+                                    <Badge variant={ownerLine ? 'accent' : 'neutral'}>
+                                      {t('req.detail.handledBy')}:{' '}
+                                      {ownerLine
+                                        ? t('req.detail.handledByOwner')
+                                        : t('req.detail.handledByProcurement')}
+                                      {handlerName ? ` · ${handlerName}` : ''}
+                                    </Badge>
+                                    {(canTake || canGiveBack) && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        loading={togglingLineId === l.id}
+                                        onClick={() => void toggleLineOwner(l.id, !ownerLine)}
+                                      >
+                                        {canTake
+                                          ? t('req.detail.takeThisLine')
+                                          : isOrganizer
+                                            ? t('req.detail.handBackThisLine')
+                                            : t('req.detail.takeOverThisLine')}
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                               <div style={{ flexShrink: 0, textAlign: 'end' }}>
                                 <div
@@ -2664,82 +2840,119 @@ export default function RequisitionDetail() {
                                 )}
                               </div>
                             </div>
-                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                              <div style={{ width: '140px' }}>
-                                <Input
-                                  label={t('req.detail.marketPrice')}
-                                  type="number"
-                                  min="0"
-                                  value={raw}
-                                  onChange={(e) => {
-                                    setMarketPrices((prev) => ({ ...prev, [l.id]: e.target.value }))
-                                  }}
-                                  placeholder="0.00"
-                                  error={
-                                    missing
-                                      ? t('req.detail.required')
-                                      : invalid
-                                        ? t('req.detail.enterAValidPrice')
-                                        : undefined
-                                  }
-                                />
+                            {mayPrice ? (
+                              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                <div style={{ width: '140px' }}>
+                                  <Input
+                                    label={t('req.detail.marketPrice')}
+                                    type="number"
+                                    min="0"
+                                    value={raw}
+                                    onChange={(e) => {
+                                      setMarketPrices((prev) => ({
+                                        ...prev,
+                                        [l.id]: e.target.value,
+                                      }))
+                                    }}
+                                    placeholder="0.00"
+                                    error={
+                                      missing
+                                        ? t('req.detail.required')
+                                        : invalid
+                                          ? t('req.detail.enterAValidPrice')
+                                          : undefined
+                                    }
+                                  />
+                                </div>
+                                <div style={{ width: '110px' }}>
+                                  <Select
+                                    label={t('req.detail.currency')}
+                                    value={marketCurrency[l.id] ?? l.currency_code}
+                                    onChange={(e) => {
+                                      setMarketCurrency((prev) => ({
+                                        ...prev,
+                                        [l.id]: e.target.value,
+                                      }))
+                                    }}
+                                    options={CURRENCIES.map((c) => ({ value: c, label: c }))}
+                                  />
+                                </div>
                               </div>
-                              <div style={{ width: '110px' }}>
-                                <Select
-                                  label={t('req.detail.currency')}
-                                  value={marketCurrency[l.id] ?? l.currency_code}
-                                  onChange={(e) => {
-                                    setMarketCurrency((prev) => ({
-                                      ...prev,
-                                      [l.id]: e.target.value,
-                                    }))
-                                  }}
-                                  options={CURRENCIES.map((c) => ({ value: c, label: c }))}
-                                />
+                            ) : (
+                              <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                                {t('req.detail.procurementPricesThisLine')}
                               </div>
-                            </div>
+                            )}
                           </div>
                         )
                       })}
-                      {(() => {
-                        const allPriced = purchaseLines.every((l) => {
-                          const raw =
-                            marketPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
-                          return raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
-                        })
-                        return (
-                          <>
-                            {!allPriced && (
-                              <div style={{ fontSize: '12px', color: theme.danger }}>
-                                {t('req.detail.enterAPriceForEveryLine')}
-                              </div>
-                            )}
-                            <Button
-                              variant="primary"
-                              loading={lMarket}
-                              disabled={!allPriced}
-                              style={{ alignSelf: 'flex-start' }}
-                              onClick={() =>
-                                void submitMarketPricing({
-                                  variables: {
-                                    id: req.id,
-                                    linePrices: purchaseLines.map((l) => ({
-                                      lineId: l.id,
-                                      marketPrice: parseFloat(
-                                        marketPrices[l.id] ??
-                                          (l.market_price != null ? String(l.market_price) : ''),
-                                      ),
-                                      currencyCode: marketCurrency[l.id] ?? l.currency_code,
-                                    })),
-                                  },
-                                })
-                              }
-                            >
-                              {t('req.detail.submitToPriceVerification')}
-                            </Button>
-                          </>
-                        )
-                      })()}
+                      {/* The owner's part: his own lines, or procurement stepping in for him. */}
+                      {(isOrganizer || canMarketPrice) && ownerLines.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {!ownerAllPriced && (
+                            <div style={{ fontSize: '12px', color: theme.danger }}>
+                              {t('req.detail.priceEveryItemYouTook')}
+                            </div>
+                          )}
+                          <Button
+                            variant={
+                              procLines.length === 0 && canMarketPrice ? 'primary' : 'secondary'
+                            }
+                            loading={lMarket}
+                            disabled={!ownerAllPriced}
+                            style={{ alignSelf: 'flex-start' }}
+                            onClick={() =>
+                              void submitMarketPricing({
+                                variables: {
+                                  id: req.id,
+                                  side: 'OWNER',
+                                  linePrices: linePricesOf(ownerLines),
+                                },
+                              })
+                            }
+                          >
+                            {isOrganizer
+                              ? ownerSubmitted
+                                ? t('req.detail.updateMyItems')
+                                : t('req.detail.submitMyItems')
+                              : ownerSubmitted
+                                ? t('req.detail.updateOwnerItems')
+                                : t('req.detail.submitOwnerItems')}
+                          </Button>
+                        </div>
+                      )}
+                      {/* Procurement's part. With nothing split this is the one submit it always was. */}
+                      {canMarketPrice && procLines.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {!procAllPriced && (
+                            <div style={{ fontSize: '12px', color: theme.danger }}>
+                              {t('req.detail.enterAPriceForEveryLine')}
+                            </div>
+                          )}
+                          <Button
+                            variant="primary"
+                            loading={lMarket}
+                            disabled={!procAllPriced}
+                            style={{ alignSelf: 'flex-start' }}
+                            onClick={() =>
+                              void submitMarketPricing({
+                                variables: { id: req.id, linePrices: linePricesOf(procLines) },
+                              })
+                            }
+                          >
+                            {split
+                              ? procSubmitted
+                                ? t('req.detail.updateProcurementItems')
+                                : t('req.detail.submitProcurementItems')
+                              : t('req.detail.submitToPriceVerification')}
+                          </Button>
+                        </div>
+                      )}
+                      {canMarketPrice && procLines.length === 0 && (
+                        <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                          {t('req.detail.nothingLeftForProcurement')}
+                        </div>
+                      )}
                     </div>
                   )
                 })()

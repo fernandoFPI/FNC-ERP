@@ -87,6 +87,7 @@ export const REQUISITION_QUERY = gql`
       branch_name
       organizer_id
       organizerName
+      procurementOfficerName
       assigned_approver_id
       assigned_receiver_id
       assigned_receiver_name
@@ -100,6 +101,8 @@ export const REQUISITION_QUERY = gql`
       callerHasPriceVerificationPosition
       callerHasBuyerPosition
       callerCanApprove
+      owner_pricing_submitted_at
+      procurement_pricing_submitted_at
       currencyTotals {
         currency_code
         subtotal
@@ -144,6 +147,7 @@ export const REQUISITION_QUERY = gql`
         flag_addressed_at
         flag_resolved_at
         flag_resolved_by_name
+        owner_handles
         purchases {
           id
           vendor_id
@@ -152,6 +156,7 @@ export const REQUISITION_QUERY = gql`
           qty
           actual_unit_price
           bought_at
+          bought_by_name
           over_tolerance
         }
       }
@@ -279,11 +284,29 @@ export const SUBMIT_REQUISITION_STORE_PRICING = gql`
   }
 `
 
+// Market pricing is done in two parts (migration 315): the owner's lines (side OWNER) and procurement's (side
+// PROCUREMENT, also what an omitted side means). The requisition moves on when every side with lines has submitted.
 export const SUBMIT_REQUISITION_MARKET_PRICING = gql`
-  mutation SubmitRequisitionMarketPricing($id: ID!, $linePrices: [RequisitionMarketPriceInput!]) {
-    submitRequisitionMarketPricing(id: $id, linePrices: $linePrices) {
+  mutation SubmitRequisitionMarketPricing(
+    $id: ID!
+    $linePrices: [RequisitionMarketPriceInput!]
+    $side: MarketPricingSide
+  ) {
+    submitRequisitionMarketPricing(id: $id, linePrices: $linePrices, side: $side) {
       id
       status
+      owner_pricing_submitted_at
+      procurement_pricing_submitted_at
+    }
+  }
+`
+
+// Take a line to price and buy yourself (byOwner true), or hand it back to procurement (false).
+export const SET_REQUISITION_LINE_OWNER = gql`
+  mutation SetRequisitionLineOwner($lineId: ID!, $byOwner: Boolean!) {
+    setRequisitionLineOwner(lineId: $lineId, byOwner: $byOwner) {
+      id
+      owner_handles
     }
   }
 `
@@ -426,11 +449,15 @@ export const REQUISITION_ITEMS_BOUGHT_QUERY = gql`
       id
       requisition_number
       status
+      organizer_id
+      organizerName
+      procurementOfficerName
       callerHasBuyerPosition
       callerCanApprove
       lines {
         id
         description
+        owner_handles
         product_id
         product_name
         product_name_ar

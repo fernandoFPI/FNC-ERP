@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
 import type * as ApolloClientModule from '@apollo/client'
@@ -337,5 +337,239 @@ describe('ItemsBoughtPage', () => {
     const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
     wrap(<ItemsBoughtPage />)
     expect(screen.getByRole('button', { name: /needs a different approver/i })).toBeDisabled()
+  })
+})
+
+// Migration 315: the requisition's organizer may buy the lines he took at Market pricing (owner_handles); procurement
+// buys the rest, and can step in on any line. The test user here is 'user-buyer'.
+describe('ItemsBoughtPage: the organizer buys the lines he took', () => {
+  const mine = (overrides: Record<string, unknown> = {}) =>
+    baseLine({ id: 'line-mine', description: 'Kitchen gloves', owner_handles: true, ...overrides })
+  const theirs = (overrides: Record<string, unknown> = {}) =>
+    baseLine({ id: 'line-theirs', description: 'Cement bags', owner_handles: false, ...overrides })
+  const asOrganizer = { organizer_id: 'user-buyer', callerHasBuyerPosition: false }
+
+  it('shows the record form for his own line, with a note and a marker, and hides the "buyer only" warning', async () => {
+    mockReq([mine()], asOrganizer)
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    expect(screen.getByRole('button', { name: /record purchase/i })).toBeInTheDocument()
+    expect(screen.getByText(/you can record purchases for the items you took/i)).toBeInTheDocument()
+    expect(screen.getByText("Organizer's item")).toBeInTheDocument()
+    expect(screen.queryByText(/only a buyer position holder/i)).not.toBeInTheDocument()
+  })
+
+  it("offers the form only on his lines, not on procurement's", async () => {
+    mockReq([mine(), theirs()], asOrganizer)
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    expect(screen.getAllByRole('button', { name: /record purchase/i })).toHaveLength(1)
+    expect(screen.getAllByText('Mark short')).toHaveLength(1)
+  })
+
+  it('does not offer "all items are from the same vendor" when only one line is his to buy', async () => {
+    mockReq([mine(), theirs()], asOrganizer)
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    expect(screen.queryByText(/all items are from the same vendor/i)).not.toBeInTheDocument()
+  })
+
+  it('offers it when two of the lines are his', async () => {
+    mockReq([mine(), mine({ id: 'line-mine-2', description: 'Dish soap' })], asOrganizer)
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    expect(screen.getByText(/all items are from the same vendor/i)).toBeInTheDocument()
+  })
+
+  it('gives him no Finish Buying button: that stays with procurement', async () => {
+    mockReq([mine()], asOrganizer)
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    expect(screen.queryByRole('button', { name: /^finish buying$/i })).not.toBeInTheDocument()
+  })
+
+  it('keeps the read-only warning when none of the lines is his', async () => {
+    mockReq([theirs()], asOrganizer)
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    expect(screen.getByText(/only a buyer position holder/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /record purchase/i })).not.toBeInTheDocument()
+  })
+
+  it("does not let someone else use the flag on another person's requisition", async () => {
+    mockReq([mine()], { organizer_id: 'somebody-else', callerHasBuyerPosition: false })
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    expect(screen.getByText(/only a buyer position holder/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /record purchase/i })).not.toBeInTheDocument()
+  })
+
+  it('a procurement buyer still sees the form on every line, and the Finish Buying card says it happens by itself', async () => {
+    mockReq([mine(), theirs()], { organizer_id: 'somebody-else', callerHasBuyerPosition: true })
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    expect(screen.getAllByRole('button', { name: /record purchase/i })).toHaveLength(2)
+    expect(
+      screen.getByText(/this happens by itself once every item is bought/i),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^finish buying$/i })).toBeInTheDocument()
+  })
+})
+
+// "Record all purchases" walks every line that still needs buying; for the organizer that must be only the lines he
+// took, or the loop would stop at the first line the server refuses.
+describe('ItemsBoughtPage: record all purchases only walks the lines the caller may buy', () => {
+  interface RecordArg {
+    variables: { input: { lineId: string } }
+  }
+  const recordCalls = vi.fn<[RecordArg], Promise<unknown>>()
+
+  beforeEach(() => {
+    recordCalls.mockReset()
+    mockUseMutation.mockImplementation((doc: unknown) => {
+      const opName = (
+        doc as { definitions?: { kind?: string; name?: { value?: string } }[] }
+      ).definitions?.find((d) => d.kind === 'OperationDefinition')?.name?.value
+      if (opName === 'RequestUploadUrl')
+        return [
+          vi.fn().mockResolvedValue({ data: { requestUploadUrl: { fileId: 'file-1' } } }),
+          { loading: false },
+        ]
+      if (opName === 'RecordLinePurchase') {
+        recordCalls.mockResolvedValue({ data: { recordLinePurchase: { id: 'purchase-x' } } })
+        return [recordCalls, { loading: false }]
+      }
+      return [
+        vi.fn().mockResolvedValue({ data: { ensureCashPurchaseVendor: { id: 'vendor-cash' } } }),
+        { loading: false },
+      ]
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const line = (id: string, owner: boolean) =>
+    baseLine({ id, description: `Item ${id}`, owner_handles: owner })
+
+  async function recordAll() {
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    const { container } = wrap(<ItemsBoughtPage />)
+    fireEvent.click(screen.getByLabelText(/all items are from the same vendor/i))
+    fireEvent.click(screen.getByText('Search vendor…'))
+    // the options choose on mouse-down, not click
+    fireEvent.mouseDown(screen.getByText('Al-Rasheed Hardware'))
+    fireEvent.click(screen.getByLabelText(/attach one receipt for all items/i))
+    const input = container.querySelector('input[type="file"]')
+    if (!input) throw new Error('Expected a file input in the container')
+    fireEvent.change(input, {
+      target: { files: [new File(['x'], 'receipt.jpg', { type: 'image/jpeg' })] },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /record all purchases/i }))
+    await waitFor(() => {
+      expect(recordCalls).toHaveBeenCalled()
+    })
+  }
+  const recordedLines = () => recordCalls.mock.calls.map(([arg]) => arg.variables.input.lineId)
+
+  it('the organizer records his two lines and leaves the one that is procurement’s alone', async () => {
+    mockReq([line('line-a', true), line('line-b', false), line('line-c', true)], {
+      organizer_id: 'user-buyer',
+      callerHasBuyerPosition: false,
+    })
+    await recordAll()
+    await waitFor(() => {
+      expect(recordedLines()).toEqual(['line-a', 'line-c'])
+    })
+  })
+
+  it('a procurement buyer records all three, the organizer’s included', async () => {
+    mockReq([line('line-a', true), line('line-b', false), line('line-c', true)], {
+      organizer_id: 'somebody-else',
+      callerHasBuyerPosition: true,
+    })
+    await recordAll()
+    await waitFor(() => {
+      expect(recordedLines()).toEqual(['line-a', 'line-b', 'line-c'])
+    })
+  })
+})
+
+// Every line that needs buying says who buys it; one fully covered from stock has nobody to say.
+describe('ItemsBoughtPage: each line says who buys it', () => {
+  it('tags the organizer’s line and procurement’s line, and leaves a stock-covered line untagged', async () => {
+    mockReq(
+      [
+        baseLine({ id: 'line-a', description: 'Kitchen gloves', owner_handles: true }),
+        baseLine({ id: 'line-b', description: 'Cement bags', owner_handles: false }),
+        baseLine({
+          id: 'line-c',
+          description: 'From the shelf',
+          qty: '4',
+          qty_from_stock: '4',
+          owner_handles: false,
+        }),
+      ],
+      {
+        organizer_id: 'somebody-else',
+        organizerName: 'Jane Doe',
+        procurementOfficerName: 'Ahmed Ali',
+        callerHasBuyerPosition: true,
+      },
+    )
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    // the tag sits inside the element that holds the item name
+    const cardOf = (name: string) => within(screen.getByText(name))
+    expect(cardOf('Kitchen gloves').getByText("Organizer's item")).toBeInTheDocument()
+    expect(cardOf('Kitchen gloves').queryByText("Procurement's item")).not.toBeInTheDocument()
+    expect(cardOf('Cement bags').getByText("Procurement's item")).toBeInTheDocument()
+    expect(cardOf('From the shelf').queryByText("Procurement's item")).not.toBeInTheDocument()
+    expect(cardOf('From the shelf').queryByText("Organizer's item")).not.toBeInTheDocument()
+  })
+
+  it('names the person beside the tag, and the buyer once someone has recorded a purchase', async () => {
+    mockReq(
+      [
+        baseLine({ id: 'line-a', description: 'Kitchen gloves', owner_handles: true }),
+        baseLine({ id: 'line-b', description: 'Cement bags', owner_handles: false }),
+        baseLine({
+          id: 'line-c',
+          description: 'Rebar',
+          owner_handles: false,
+          purchases: [
+            {
+              id: 'p1',
+              vendor_id: 'vendor-1',
+              vendor_name: 'Al-Rasheed Hardware',
+              currency_code: 'IQD',
+              qty: '4',
+              actual_unit_price: '100',
+              bought_by: 'u-sara',
+              bought_by_name: 'Sara Hassan',
+              bought_at: '2026-01-01T00:00:00.000Z',
+              over_tolerance: false,
+              tolerance_approved_by: null,
+              receipt_file_id: 'file-1',
+            },
+          ],
+        }),
+      ],
+      {
+        organizer_id: 'somebody-else',
+        organizerName: 'Jane Doe',
+        procurementOfficerName: 'Ahmed Ali',
+        callerHasBuyerPosition: true,
+      },
+    )
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    const nameCell = (name: string) => within(screen.getByText(name))
+    expect(nameCell('Kitchen gloves').getByText('Jane Doe')).toBeInTheDocument()
+    expect(nameCell('Cement bags').getByText('Ahmed Ali')).toBeInTheDocument()
+    // Rebar was bought by Sara, so she is named in the tag instead of the officer who priced it
+    expect(nameCell('Rebar').getByText('Sara Hassan')).toBeInTheDocument()
+    expect(nameCell('Rebar').queryByText('Ahmed Ali')).not.toBeInTheDocument()
   })
 })

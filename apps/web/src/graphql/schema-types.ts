@@ -2175,6 +2175,10 @@ export type MarketPriceInput = {
   vendorQuoteRef?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type MarketPricingSide =
+  | 'OWNER'
+  | 'PROCUREMENT';
+
 export type MaterialIssue = {
   createdAt: Scalars['String']['output'];
   id: Scalars['ID']['output'];
@@ -2654,6 +2658,7 @@ export type Mutation = {
   setPOVendor: PurchaseOrder;
   setRechargeAccounts: Scalars['Boolean']['output'];
   setRechargeCostCenter: Scalars['Boolean']['output'];
+  setRequisitionLineOwner: PoLine;
   setVOStatus: VariationOrder;
   startMO: ManufacturingOrder;
   startProject: Project;
@@ -4962,6 +4967,12 @@ export type MutationSetRechargeCostCenterArgs = {
 };
 
 
+export type MutationSetRequisitionLineOwnerArgs = {
+  byOwner: Scalars['Boolean']['input'];
+  lineId: Scalars['ID']['input'];
+};
+
+
 export type MutationSetVoStatusArgs = {
   id: Scalars['ID']['input'];
   status: Scalars['String']['input'];
@@ -5040,6 +5051,7 @@ export type MutationSubmitProjectArgs = {
 export type MutationSubmitRequisitionMarketPricingArgs = {
   id: Scalars['ID']['input'];
   linePrices?: InputMaybe<Array<RequisitionMarketPriceInput>>;
+  side?: InputMaybe<MarketPricingSide>;
 };
 
 
@@ -6213,6 +6225,7 @@ export type PoLine = {
   market_price?: Maybe<Scalars['String']['output']>;
   market_price_currency?: Maybe<Scalars['String']['output']>;
   origin_line_id?: Maybe<Scalars['ID']['output']>;
+  owner_handles?: Maybe<Scalars['Boolean']['output']>;
   product_id?: Maybe<Scalars['ID']['output']>;
   product_name?: Maybe<Scalars['String']['output']>;
   product_name_ar?: Maybe<Scalars['String']['output']>;
@@ -9179,7 +9192,10 @@ export type Requisition = {
   notes?: Maybe<Scalars['String']['output']>;
   organizerName?: Maybe<Scalars['String']['output']>;
   organizer_id?: Maybe<Scalars['ID']['output']>;
+  owner_pricing_submitted_at?: Maybe<Scalars['String']['output']>;
   priority?: Maybe<Scalars['String']['output']>;
+  procurementOfficerName?: Maybe<Scalars['String']['output']>;
+  procurement_pricing_submitted_at?: Maybe<Scalars['String']['output']>;
   projectCode?: Maybe<Scalars['String']['output']>;
   projectName?: Maybe<Scalars['String']['output']>;
   project_id?: Maybe<Scalars['ID']['output']>;

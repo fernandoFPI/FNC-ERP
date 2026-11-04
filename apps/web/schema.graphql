@@ -179,7 +179,12 @@
     submitRequisitionToInventoryCheck(id: ID!, notes: String): Requisition!
     confirmRequisitionInventoryCheck(id: ID!, lineStockQtys: [StockConfirmLineInput!]!, notes: String): Requisition!
     submitRequisitionStorePricing(id: ID!, linePrices: [RequisitionStorePriceInput!]): Requisition!
-    submitRequisitionMarketPricing(id: ID!, linePrices: [RequisitionMarketPriceInput!]): Requisition!
+    # side: whose part of Market pricing is being submitted (migration 315). Omitted = PROCUREMENT, exactly the
+    # single submit it always was. The requisition advances to Price verification once every side that has
+    # lines to price has submitted.
+    submitRequisitionMarketPricing(id: ID!, linePrices: [RequisitionMarketPriceInput!], side: MarketPricingSide): Requisition!
+    # The owner (or procurement, stepping in) takes a line to price and buy himself, or hands it back.
+    setRequisitionLineOwner(lineId: ID!, byOwner: Boolean!): POLine!
     verifyRequisitionPrices(id: ID!, verificationNotes: String, lineAdjustments: [RequisitionPriceVerificationAdjustment!]): Requisition!
     approveRequisition(id: ID!): Requisition!
     rejectRequisitionApproval(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): Requisition!
@@ -2318,6 +2323,9 @@
     cost_center_name: String
     advance_settlement_id: ID
     is_bought: Boolean
+    # Requisition lines only (migration 315): the owner ticked this line to price and buy himself instead
+    # of procurement. false on every other line.
+    owner_handles: Boolean
     # G1 PR 3 — snapshotted at approval (migration 262), the tolerance
     # check compares actual_unit_price on each po_line_purchases entry
     # against this, never a live/current price.
@@ -2628,6 +2636,9 @@
     expected_delivery_date: String
     organizer_id: ID
     organizerName: String
+    # The procurement officer who submitted procurement's part of Market pricing (requisitions.procurement_officer_id,
+    # an employee); null until then, or when an admin without an employee record did it.
+    procurementOfficerName: String
     assigned_approver_id: ID
     assigned_receiver_id: ID
     assigned_receiver_name: String
@@ -2661,6 +2672,10 @@
     callerHasStorePricingPosition: Boolean
     callerHasMarketPricingPosition: Boolean
     callerHasPriceVerificationPosition: Boolean
+    # Market pricing is done in two parts that can run in parallel (migration 315): the owner's (lines he
+    # ticked) and procurement's (the rest). null = that part has not been submitted yet.
+    owner_pricing_submitted_at: String
+    procurement_pricing_submitted_at: String
     # G1 Phase 3 Milestone A screen 3 — gates the Items Bought screen.
     callerHasBuyerPosition: Boolean
     # Mirrors approveRequisition/rejectRequisitionApproval's own
@@ -2731,6 +2746,11 @@
   # — G1's no-conversion policy means there is nothing to stamp a
   # conversion rate onto; a line's currency_code IS its real currency,
   # full stop.
+  enum MarketPricingSide {
+    OWNER
+    PROCUREMENT
+  }
+
   input RequisitionMarketPriceInput {
     lineId: ID!
     marketPrice: Float!
