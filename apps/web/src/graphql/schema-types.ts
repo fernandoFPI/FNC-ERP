@@ -1782,6 +1782,15 @@ export type InviteUserInput = {
   email: Scalars['String']['input'];
 };
 
+export type InvoiceHeaderFlag = {
+  addressedAt?: Maybe<Scalars['String']['output']>;
+  field: Scalars['String']['output'];
+  flaggedAt?: Maybe<Scalars['String']['output']>;
+  flaggedByName?: Maybe<Scalars['String']['output']>;
+  reason: Scalars['String']['output'];
+  resolvedAt?: Maybe<Scalars['String']['output']>;
+};
+
 export type InvoiceLineEditInput = {
   description?: InputMaybe<Scalars['String']['input']>;
   id?: InputMaybe<Scalars['ID']['input']>;
@@ -7109,6 +7118,7 @@ export type ProjectInvoice = {
   displayMode: Scalars['String']['output'];
   dueDate: Scalars['String']['output'];
   grossTotal: Scalars['Float']['output'];
+  headerFlags?: Maybe<Array<InvoiceHeaderFlag>>;
   id: Scalars['ID']['output'];
   invoiceDate: Scalars['String']['output'];
   invoiceNumber: Scalars['String']['output'];
@@ -7120,6 +7130,9 @@ export type ProjectInvoice = {
   periodOfPerformance?: Maybe<Scalars['String']['output']>;
   projectCode?: Maybe<Scalars['String']['output']>;
   projectName?: Maybe<Scalars['String']['output']>;
+  rejectedAt?: Maybe<Scalars['String']['output']>;
+  rejectedByName?: Maybe<Scalars['String']['output']>;
+  rejectionReason?: Maybe<Scalars['String']['output']>;
   retentionAmount: Scalars['Float']['output'];
   retentionPct?: Maybe<Scalars['Float']['output']>;
   status: Scalars['String']['output'];
@@ -7158,6 +7171,11 @@ export type ProjectInvoiceInput = {
 
 export type ProjectInvoiceLine = {
   description: Scalars['String']['output'];
+  flagAddressedAt?: Maybe<Scalars['String']['output']>;
+  flagReason?: Maybe<Scalars['String']['output']>;
+  flagResolvedAt?: Maybe<Scalars['String']['output']>;
+  flaggedAt?: Maybe<Scalars['String']['output']>;
+  flaggedByName?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   lineNumber: Scalars['Int']['output'];
   lineTotal: Scalars['Float']['output'];

@@ -819,6 +819,17 @@ export const PROJECT_INVOICE_QUERY = gql`
       deliverToAddress
       deliveryDate
       periodOfPerformance
+      rejectionReason
+      rejectedAt
+      rejectedByName
+      headerFlags {
+        field
+        reason
+        flaggedAt
+        flaggedByName
+        addressedAt
+        resolvedAt
+      }
       lines {
         id
         lineNumber
@@ -832,6 +843,11 @@ export const PROJECT_INVOICE_QUERY = gql`
         taxPct
         taxAmount
         lineTotal
+        flagReason
+        flaggedAt
+        flaggedByName
+        flagAddressedAt
+        flagResolvedAt
       }
       payments {
         id
@@ -957,6 +973,17 @@ export const UPDATE_PROJECT_INVOICE = gql`
       deliverToAddress
       deliveryDate
       periodOfPerformance
+      rejectionReason
+      rejectedAt
+      rejectedByName
+      headerFlags {
+        field
+        reason
+        flaggedAt
+        flaggedByName
+        addressedAt
+        resolvedAt
+      }
       lines {
         id
         lineNumber
@@ -970,6 +997,11 @@ export const UPDATE_PROJECT_INVOICE = gql`
         taxPct
         taxAmount
         lineTotal
+        flagReason
+        flaggedAt
+        flaggedByName
+        flagAddressedAt
+        flagResolvedAt
       }
       payments {
         id

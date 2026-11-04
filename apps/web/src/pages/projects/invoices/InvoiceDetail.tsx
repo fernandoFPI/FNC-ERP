@@ -1,6 +1,6 @@
 ﻿import i18n, { enumLabel, tlh } from '../../../i18n'
 import { useTranslation } from 'react-i18next'
-import { useState, useRef, useEffect } from 'react'
+import { Fragment, useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -30,6 +30,10 @@ import { TabBar } from '../../../components/ui/TabBar'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { ActivityLog } from '../../../components/ui/ActivityLog'
+import { ExpenseLineFlag } from '../../../components/finance/ExpenseLineFlag'
+import { InvoiceHeaderReview } from '../../../components/projects/InvoiceHeaderReview'
+import { lineFlagState } from '../../../lib/expenseClaimFlags'
+import { usePermission } from '../../../hooks/usePermission'
 import { useToastStore } from '../../../store/toastStore'
 import { InvoicePaymentForm } from './InvoicePaymentForm'
 import { formatCurrency } from '../../../lib/format'
@@ -64,6 +68,18 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'neutral' | 'danger
   cancelled: 'danger',
 }
 
+// The review flag fields of an invoice line (GraphQL, camelCase) in the shape the shared flag helpers
+// (written for expense claims) read.
+const flagFields = (l: {
+  flagReason?: string | null
+  flagAddressedAt?: string | null
+  flagResolvedAt?: string | null
+}) => ({
+  flag_reason: l.flagReason,
+  flag_addressed_at: l.flagAddressedAt,
+  flag_resolved_at: l.flagResolvedAt,
+})
+
 interface Payment {
   id: string
   paymentDate: string
@@ -83,6 +99,17 @@ export default function InvoiceDetail() {
   const [showVoid, setShowVoid] = useState(false)
   const [paymentFormOpen, setPaymentFormOpen] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
+  // Reject mode: Reject opens a panel above the lines and adds a tick box to every row, as on a
+  // requisition or an expense claim. flaggedLines is line id -> that line's own reason.
+  const [showReject, setShowReject] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [flaggedLines, setFlaggedLines] = useState<Record<string, string>>({})
+  // The same for the printed header's fields (migration 314): field key -> that field's own reason.
+  const [flaggedHeader, setFlaggedHeader] = useState<Record<string, string>>({})
+  const [resolvingHeaderField, setResolvingHeaderField] = useState<string | null>(null)
+  const [resolvingLineId, setResolvingLineId] = useState<string | null>(null)
+  // Same gate as Approve on the server (projects.invoices.edit); the page only hides what it would refuse.
+  const canReview = usePermission().can('projects.invoices.edit', 'edit')
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [editLines, setEditLines] = useState<
@@ -158,6 +185,95 @@ export default function InvoiceDetail() {
       addToast({ type: 'error', message: apiErrMsg(e, t('proj.invDetail.actionFailed')) })
     } finally {
       setTransitioning(false)
+    }
+  }
+
+  function toggleFlag(lineId: string) {
+    setFlaggedLines((prev) => {
+      if (lineId in prev) {
+        const next = { ...prev }
+        Reflect.deleteProperty(next, lineId)
+        return next
+      }
+      return { ...prev, [lineId]: '' }
+    })
+  }
+
+  function toggleHeaderFlag(field: string) {
+    setFlaggedHeader((prev) => {
+      if (field in prev) {
+        const next = { ...prev }
+        Reflect.deleteProperty(next, field)
+        return next
+      }
+      return { ...prev, [field]: '' }
+    })
+  }
+
+  function closeRejectPanel() {
+    setShowReject(false)
+    setRejectReason('')
+    setFlaggedLines({})
+    setFlaggedHeader({})
+  }
+
+  // One reason is asked for at a time. With nothing ticked it is the whole-invoice reason; with lines or
+  // header fields ticked it is each ticked item's own reason, and the server builds the invoice's reason
+  // from them (a reason typed before the first tick is hidden, and not sent). The server enforces the
+  // same, so the button never fires a request it would refuse.
+  const flaggedIds = Object.keys(flaggedLines)
+  const flaggedHeaderIds = Object.keys(flaggedHeader)
+  const flaggedCount = flaggedIds.length + flaggedHeaderIds.length
+  const everyFlagHasReason =
+    flaggedIds.every((lid) => (flaggedLines[lid] ?? '').trim()) &&
+    flaggedHeaderIds.every((f) => (flaggedHeader[f] ?? '').trim())
+  const canSubmitReject = flaggedCount > 0 ? everyFlagHasReason : !!rejectReason.trim()
+
+  async function submitReject() {
+    setTransitioning(true)
+    try {
+      await api.post(`/projects/invoices/${id}/reject`, {
+        reason: flaggedCount > 0 ? undefined : rejectReason.trim() || undefined,
+        lineFlags: flaggedIds.map((lid) => ({
+          lineId: lid,
+          reason: (flaggedLines[lid] ?? '').trim(),
+        })),
+        headerFlags: flaggedHeaderIds.map((field) => ({
+          field,
+          reason: (flaggedHeader[field] ?? '').trim(),
+        })),
+      })
+      addToast({ type: 'success', message: t('proj.invDetail.invoiceSentBack') })
+      closeRejectPanel()
+      void refetch()
+    } catch (e: unknown) {
+      addToast({ type: 'error', message: apiErrMsg(e, t('proj.invDetail.actionFailed')) })
+    } finally {
+      setTransitioning(false)
+    }
+  }
+
+  async function resolveFlag(lineId: string) {
+    setResolvingLineId(lineId)
+    try {
+      await api.post(`/projects/invoices/${id}/lines/${lineId}/resolve-flag`, {})
+      void refetch()
+    } catch (e: unknown) {
+      addToast({ type: 'error', message: apiErrMsg(e, t('proj.invDetail.actionFailed')) })
+    } finally {
+      setResolvingLineId(null)
+    }
+  }
+
+  async function resolveHeaderFlag(field: string) {
+    setResolvingHeaderField(field)
+    try {
+      await api.post(`/projects/invoices/${id}/header-flags/${field}/resolve-flag`, {})
+      void refetch()
+    } catch (e: unknown) {
+      addToast({ type: 'error', message: apiErrMsg(e, t('proj.invDetail.actionFailed')) })
+    } finally {
+      setResolvingHeaderField(null)
     }
   }
 
@@ -284,17 +400,37 @@ export default function InvoiceDetail() {
     {
       key: 'description',
       label: t('proj.invDetail.description'),
-      render: (el) => (
-        <input
-          style={{ ...editInputStyle, minWidth: '200px' }}
-          value={el.description}
-          onChange={(e) => {
-            setEditLines((p) =>
-              p.map((r) => (r._key === el._key ? { ...r, description: e.target.value } : r)),
-            )
-          }}
-        />
-      ),
+      render: (el) => {
+        // What the approver flagged on this line, so it is in front of the person fixing it.
+        const original = inv.lines.find((l) => l.id === el.id)
+        const openFlag =
+          original && lineFlagState(flagFields(original)) === 'open' ? original.flagReason : null
+        return (
+          <div>
+            <input
+              style={{ ...editInputStyle, minWidth: '200px' }}
+              value={el.description}
+              onChange={(e) => {
+                setEditLines((p) =>
+                  p.map((r) => (r._key === el._key ? { ...r, description: e.target.value } : r)),
+                )
+              }}
+            />
+            {openFlag && (
+              <div
+                style={{
+                  marginTop: '4px',
+                  fontSize: '11px',
+                  color: theme.danger,
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {t('proj.invDetail.fixThis', { reason: openFlag })}
+              </div>
+            )}
+          </div>
+        )
+      },
     },
     {
       key: 'source',
@@ -468,14 +604,31 @@ export default function InvoiceDetail() {
               </>
             )}
             {inv.status === 'review' && (
-              <Button
-                variant="primary"
-                size="sm"
-                loading={transitioning}
-                onClick={() => void handleTransition('approve', t('proj.invDetail.invoiceApproved'))}
-              >
-                {t('proj.invDetail.approve')}
-              </Button>
+              <>
+                {canReview && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={showReject}
+                    onClick={() => {
+                      setShowReject(true)
+                      setTab('lines')
+                    }}
+                  >
+                    {t('proj.invDetail.reject')}
+                  </Button>
+                )}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={transitioning}
+                  onClick={() =>
+                    void handleTransition('approve', t('proj.invDetail.invoiceApproved'))
+                  }
+                >
+                  {t('proj.invDetail.approve')}
+                </Button>
+              </>
             )}
             {inv.status === 'approved' && (
               <Button
@@ -501,6 +654,48 @@ export default function InvoiceDetail() {
           </div>
         }
       />
+
+      {/* The last rejection: live while the invoice is back in draft, history after it is resubmitted. */}
+      {inv.rejectionReason && inv.status === 'draft' && (
+        <div
+          role="alert"
+          style={{
+            marginTop: '16px',
+            background: '#ef444410',
+            border: '1px solid #ef4444',
+            borderRadius: '8px',
+            padding: '10px 14px',
+            fontSize: '13px',
+            color: '#ef4444',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          <strong>
+            {t('proj.invDetail.sentBackBy', {
+              name: inv.rejectedByName ?? t('fin.expLines.someone'),
+            })}
+          </strong>{' '}
+          {inv.rejectionReason}
+          <div style={{ marginTop: '6px', color: theme.textSecondary }}>
+            {t('proj.invDetail.sentBackHint')}
+          </div>
+        </div>
+      )}
+      {inv.rejectionReason && inv.status !== 'draft' && (
+        <div
+          style={{
+            marginTop: '16px',
+            background: theme.bgCanvas,
+            borderRadius: '8px',
+            padding: '8px 12px',
+            fontSize: '12px',
+            color: theme.textSecondary,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          <strong>{t('fin.expLines.previouslyRejected')}</strong> {inv.rejectionReason}
+        </div>
+      )}
 
       {/* Summary KPIs */}
       <div
@@ -682,6 +877,96 @@ export default function InvoiceDetail() {
                 </div>
               )}
             </div>
+            {showReject && !editMode && (
+              <div
+                style={{
+                  marginBottom: '16px',
+                  padding: '16px',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '10px',
+                  background: theme.bgCanvas,
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 600,
+                    color: theme.textPrimary,
+                    fontSize: '14px',
+                    marginBottom: '6px',
+                  }}
+                >
+                  {t('proj.invDetail.rejectInvoice')}
+                </div>
+                <p style={{ fontSize: '12px', color: theme.textSecondary, margin: '0 0 10px' }}>
+                  {t('proj.invDetail.rejectPanelHint')}
+                </p>
+                {flaggedCount > 0 && (
+                  <div style={{ fontSize: '12px', color: theme.accent, marginBottom: '10px' }}>
+                    {t('proj.invDetail.flaggedItemsCount', { n: flaggedCount })}
+                  </div>
+                )}
+                {/* One reason field at a time: the whole-invoice reason while nothing is ticked, each
+                    ticked item's own reason (under its row) once one is. */}
+                {flaggedCount === 0 && (
+                  <textarea
+                    style={{ ...editInputStyle, height: '70px', resize: 'vertical' }}
+                    value={rejectReason}
+                    onChange={(e) => {
+                      setRejectReason(e.target.value)
+                    }}
+                    placeholder={t('proj.invDetail.reasonForRejection')}
+                    aria-label={t('proj.invDetail.reasonForRejection')}
+                  />
+                )}
+                {flaggedCount > 0 && !everyFlagHasReason && (
+                  <div style={{ fontSize: '12px', color: theme.danger, marginTop: '8px' }}>
+                    {t('proj.invDetail.needReasonPerFlag')}
+                  </div>
+                )}
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '8px',
+                    justifyContent: 'flex-end',
+                    marginTop: '14px',
+                  }}
+                >
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={closeRejectPanel}
+                    disabled={transitioning}
+                  >
+                    {t('proj.invDetail.cancel')}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    loading={transitioning}
+                    onClick={() => void submitReject()}
+                    disabled={!canSubmitReject}
+                  >
+                    {t('proj.invDetail.rejectInvoice')}
+                  </Button>
+                </div>
+              </div>
+            )}
+            {/* The printed header: every field with a tick box while rejecting, otherwise the fields an
+                approver flagged (also in Edit mode, in front of the person fixing them). */}
+            <InvoiceHeaderReview
+              invoice={inv}
+              flags={inv.headerFlags ?? []}
+              rejecting={showReject && !editMode}
+              ticked={flaggedHeader}
+              onToggle={toggleHeaderFlag}
+              onReason={(field, text) => {
+                setFlaggedHeader((prev) => ({ ...prev, [field]: text }))
+              }}
+              onResolve={
+                canReview && inv.status === 'review' ? (f) => void resolveHeaderFlag(f) : undefined
+              }
+              resolvingField={resolvingHeaderField}
+            />
             {editMode ? (
               <LineItemEditor
                 fields={editLineFields}
@@ -698,6 +983,7 @@ export default function InvoiceDetail() {
                 <thead>
                   <tr style={{ background: theme.bgSurfaceHover }}>
                     {[
+                      ...(showReject ? [t('proj.invDetail.flagColumn')] : []),
                       '#',
                       t('proj.invDetail.description'),
                       t('proj.invDetail.source'),
@@ -724,47 +1010,126 @@ export default function InvoiceDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {inv.lines.map((l: InvoiceLine) => (
-                    <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                      <td style={{ padding: '8px 12px', color: theme.textMuted, fontSize: '12px' }}>
-                        {l.lineNumber}
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          color: theme.textPrimary,
-                          fontSize: '13px',
-                        }}
-                      >
-                        {l.description}
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        <Badge variant="neutral">{enumLabel(l.sourceType)}</Badge>
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          fontFamily: 'monospace',
-                          fontSize: '13px',
-                          color: theme.textSecondary,
-                        }}
-                      >
-                        {l.qty}
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        <AmountDisplay amount={l.unitCost} currency={cur} size="sm" />
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        <AmountDisplay amount={l.subtotal} currency={cur} size="sm" />
-                      </td>
-                      <td style={{ padding: '8px 12px', fontSize: '12px', color: theme.success }}>
-                        {l.marginPct}%
-                      </td>
-                      <td style={{ padding: '8px 12px', fontWeight: 600 }}>
-                        <AmountDisplay amount={l.lineTotal} currency={cur} size="sm" />
-                      </td>
-                    </tr>
-                  ))}
+                  {inv.lines.map((l) => {
+                    const ticked = l.id in flaggedLines
+                    const flag = lineFlagState(flagFields(l))
+                    const edgeColor = ticked
+                      ? theme.accent
+                      : flag === 'open'
+                        ? theme.danger
+                        : flag === 'fixed'
+                          ? theme.warning
+                          : null
+                    // The person who may approve may also confirm a fix, once it is back in review.
+                    const canConfirm = canReview && inv.status === 'review'
+                    const rowStyle: React.CSSProperties = {
+                      background: edgeColor ? `${edgeColor}0c` : undefined,
+                      boxShadow: edgeColor ? `inset 4px 0 0 ${edgeColor}` : undefined,
+                    }
+                    return (
+                      <Fragment key={l.id}>
+                        <tr
+                          data-testid="invoice-line-row"
+                          style={{
+                            ...rowStyle,
+                            borderBottom:
+                              ticked || flag !== 'none' ? undefined : `1px solid ${theme.border}`,
+                          }}
+                        >
+                          {showReject && (
+                            <td style={{ padding: '8px 12px', width: '36px' }}>
+                              <input
+                                type="checkbox"
+                                checked={ticked}
+                                onChange={() => {
+                                  toggleFlag(l.id)
+                                }}
+                                aria-label={t('proj.invDetail.flagThisLine')}
+                                title={t('proj.invDetail.flagThisLine')}
+                              />
+                            </td>
+                          )}
+                          <td
+                            style={{
+                              padding: '8px 12px',
+                              color: theme.textMuted,
+                              fontSize: '12px',
+                            }}
+                          >
+                            {l.lineNumber}
+                          </td>
+                          <td
+                            style={{
+                              padding: '8px 12px',
+                              color: theme.textPrimary,
+                              fontSize: '13px',
+                            }}
+                          >
+                            {l.description}
+                          </td>
+                          <td style={{ padding: '8px 12px' }}>
+                            <Badge variant="neutral">{enumLabel(l.sourceType)}</Badge>
+                          </td>
+                          <td
+                            style={{
+                              padding: '8px 12px',
+                              fontFamily: 'monospace',
+                              fontSize: '13px',
+                              color: theme.textSecondary,
+                            }}
+                          >
+                            {l.qty}
+                          </td>
+                          <td style={{ padding: '8px 12px' }}>
+                            <AmountDisplay amount={l.unitCost} currency={cur} size="sm" />
+                          </td>
+                          <td style={{ padding: '8px 12px' }}>
+                            <AmountDisplay amount={l.subtotal} currency={cur} size="sm" />
+                          </td>
+                          <td
+                            style={{ padding: '8px 12px', fontSize: '12px', color: theme.success }}
+                          >
+                            {l.marginPct}%
+                          </td>
+                          <td style={{ padding: '8px 12px', fontWeight: 600 }}>
+                            <AmountDisplay amount={l.lineTotal} currency={cur} size="sm" />
+                          </td>
+                        </tr>
+                        {(ticked || flag !== 'none') && (
+                          <tr style={{ ...rowStyle, borderBottom: `1px solid ${theme.border}` }}>
+                            <td colSpan={showReject ? 9 : 8} style={{ padding: '4px 12px 12px' }}>
+                              <ExpenseLineFlag
+                                line={flagFields(l)}
+                                flaggedByName={l.flaggedByName}
+                                onResolve={canConfirm ? () => void resolveFlag(l.id) : undefined}
+                                resolving={resolvingLineId === l.id}
+                              />
+                              {ticked && (
+                                <div style={{ marginTop: flag !== 'none' ? '10px' : 0 }}>
+                                  <textarea
+                                    style={{
+                                      ...editInputStyle,
+                                      height: '56px',
+                                      resize: 'vertical',
+                                    }}
+                                    value={flaggedLines[l.id] ?? ''}
+                                    onChange={(e) => {
+                                      setFlaggedLines((prev) => ({
+                                        ...prev,
+                                        [l.id]: e.target.value,
+                                      }))
+                                    }}
+                                    placeholder={t('proj.invDetail.whatIsWrong')}
+                                    aria-label={t('proj.invDetail.whatIsWrong')}
+                                  />
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
             )}

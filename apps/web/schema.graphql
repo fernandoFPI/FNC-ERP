@@ -1408,8 +1408,27 @@
     deliverToAddress: String
     deliveryDate: String
     periodOfPerformance: String
+    # The last time an approver sent this invoice back from review (migration 313). Kept after a
+    # resubmit as history; all nullable, so an invoice that was never rejected reads null.
+    rejectionReason: String
+    rejectedAt: String
+    rejectedByName: String
+    # Fields of the printed header the approver flagged (migration 314). Nullable on purpose: the other
+    # mutations that return a ProjectInvoice do not fill it, and a non-null list would null the invoice.
+    headerFlags: [InvoiceHeaderFlag!]
     lines: [ProjectInvoiceLine!]!
     payments: [InvoicePayment!]!
+  }
+
+  # A flagged field of the invoice's printed header: field is one of invoice_date, due_date, invoice_number,
+  # deliver_to_address, bill_to_address, client_contract_no, job, period_of_performance, delivery_date, reference.
+  type InvoiceHeaderFlag {
+    field: String!
+    reason: String!
+    flaggedAt: String
+    flaggedByName: String
+    addressedAt: String
+    resolvedAt: String
   }
 
   type ProjectInvoiceHeaderDefaults {
@@ -1434,6 +1453,13 @@
     taxAmount: Float!
     lineTotal: Float!
     moComponents: [MOComponent]
+    # Review flag raised when an approver rejected the invoice with this line ticked (migration 313):
+    # open until the invoice is submitted again, then waiting for the approver to confirm the fix.
+    flagReason: String
+    flaggedAt: String
+    flaggedByName: String
+    flagAddressedAt: String
+    flagResolvedAt: String
   }
 
   type MOComponent {
