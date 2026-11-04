@@ -1002,3 +1002,62 @@ Don't re-derive, check these first.
     more in `InvoiceDetail.test.tsx`, `lib/__tests__/invoiceHeaderFlags.test.ts`; 13 backend and 12 web mutations, one of
     which first died on a SQL error (an ambiguous column) instead of the intended test and was tightened.
     Not verified in a browser. Related to #57, #55 and #54.
+
+59. **Making a step happen by itself breaks every caller that did "action, then the manual next step", and every cleanup
+    that did not know the step creates rows.** Market pricing and Items Bought used to need a position for the WHOLE
+    requisition (`procurement_officer`, `buyer`), so an organizer who bought some items himself could not record it.
+    Migration 315 lets the organizer take lines (`po_lines.owner_handles`); each side submits its own part of Market
+    pricing (`requisitions.owner_pricing_submitted_at` / `procurement_pricing_submitted_at`, both cleared in
+    `reqTransition` whenever the stage is entered) and the requisition moves on when every side that has lines has
+    submitted; Finish Buying now happens by itself the moment the last purchased line is bought or marked short, every
+    purchase has a receipt and every over-tolerance purchase is approved (`tryAutoFinishBuying`, called after
+    `recordLinePurchase`, `markRequisitionLineShort`, `resolveRequisitionLineFromStock`, `approveTolerancePurchase` and
+    an `attachFile` on a `po_line_purchase`). The auto step is what bit: 37 existing gateway tests in 5 files bought the
+    last line and then called `finishBuyingRequisition`, which now threw `Requisition must be in items_bought status to
+    finish buying`, and two suites failed in `beforeAll` with `purchase_orders_requisition_id_fkey` because their cleanup
+    deleted `po_lines` and `requisitions` but not the child POs the auto step now creates, leaving rows on the shared
+    test DB. Fix: the manual button returns the requisition unchanged when it is already in `sourcing` (a click on a
+    stale screen is not an error), and the cleanups delete `po_lines` by `po_id` and `purchase_orders` first. How to spot
+    it: before wiring an automatic transition, grep every test, web screen and script that performs the triggering
+    action and then the manual next step; any cleanup that deletes `requisitions` needs the child `purchase_orders`.
+    Rules kept for such a step: best effort (caught and logged; the action that triggered it has already committed and
+    must not fail because of it), the manual button stays as the fallback, one readiness function shared by both
+    (`finishBuyingNotReadyReason`), and a row lock (`FOR UPDATE`) in the fork so two last actions landing together do
+    not both do the work. `reqTransition` also locks and re-checks the status, so the final state is the same without
+    the new lock; the lock only stops the loser from doing the work first (and burning a PO number), so the race test
+    asserts the LOSER'S message (`must be in items_bought status`, not `Expected 'items_bought', got ...`), which is the
+    only thing that tells the two apart.
+    Who may act on a line is decided in ONE place on each side: `callerMayBuyRequisitionLineGW` (admin, buyer position,
+    or the organizer for a line with `owner_handles`) on the server and `canBuyLine` on the Items Bought page. The
+    organizer is limited to his own lines; procurement and admins can step in on any line, including pricing and
+    submitting the organizer's part (`side: OWNER`). `submitRequisitionMarketPricing` without a `side` still means
+    procurement's, so an older client keeps its single submit; a requisition where the organizer took nothing behaves
+    exactly as before (procurement's one submit advances it). A side with no lines counts as done, and the organizer's
+    part additionally requires every line he took to have a market price (procurement's keeps the old rule).
+    Every line says who handles it: a "Handled by" column in the requisition Lines table (right after Item, from Market
+    pricing on, optional in the Columns menu; a line fully covered from stock shows a dash because nobody buys it) and an
+    "Organizer's item" / "Procurement's item" tag on the Items Bought page. The Market pricing cards carry it too. Not
+    done: the child PO page does not show it. The marker is the SIDE the line was given to (`owner_handles`); the NAME
+    beside it is who has actually acted, from one function used by all three screens (`lib/lineHandler.ts`): whoever
+    recorded a purchase on the line (so a procurement buyer stepping in on the organizer's line is named, not the
+    organizer), else the organizer on his lines, else on procurement's lines the procurement officer who submitted
+    procurement's part (`Requisition.procurementOfficerName`, from `requisitions.procurement_officer_id`, an EMPLOYEE id,
+    joined within the same company; null until procurement has submitted, or when an admin without an employee record
+    did). That is who PRICED the requisition, not a per-line buyer assignment: procurement has no named person per line
+    until a purchase is recorded. The name comes back on both builders that return a requisition (the detail query and
+    `getRequisitionForReturn`); each was mutation-checked (company scope, the select itself).
+    NOT done: `myRequisitionApprovalQueue` lists a requisition at `market_pricing` / `items_bought` only for
+    `procurement_officer` / `buyer` holders, so an organizer who took lines does not see it in his queue (#24); the
+    queue is a visibility decision, so it was flagged rather than changed.
+    What the mutation checks found: a test that passed for the wrong reason (the "submit outside market pricing" fixture
+    had one line, so the transition caught the wrong stage anyway; with a second pending line nothing else stops the
+    write, and the status guard is what refuses it), an untested notification (the organizer is told to verify prices
+    once, when the last part lands, not after the first), and the race test above. 30 backend and 39 web mutations, all
+    killed except one cosmetic badge colour. Web traps met: `SearchableSelect` options choose on `mouseDown`, not
+    `click`; in this vitest `vi.fn<[Args], Return>()` takes the argument tuple and the return type separately; the
+    `@typescript-eslint/non-nullable-type-assertion-style` autofix turns `as HTMLInputElement` into `!` (#52), so write
+    `if (!el) throw`. Tests: `services/gateway/tests/requisition-owner-split.test.ts` (real Postgres, 40 tests: both
+    submit orders, taking and handing back a line, the stage guards, the buy gates, the auto finish after each of the five
+    triggers, the manual button after an auto finish, the race), the "Market pricing in two parts" block in
+    `RequisitionDetail.test.tsx` and the organizer / record-all blocks in `ItemsBoughtPage.test.tsx`. Not verified in a
+    browser. Related to #24 (a gate and the list that mirrors it) and #23 (one thing, several code paths).
