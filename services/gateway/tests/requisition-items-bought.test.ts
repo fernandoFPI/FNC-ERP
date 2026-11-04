@@ -121,6 +121,15 @@ async function cleanup(): Promise<void> {
     TEST_COMPANY_ID,
     userId,
   ])
+  // A requisition whose last line was bought forks its child POs by itself now (tryAutoFinishBuying).
+  await pool.query(
+    `DELETE FROM po_lines WHERE po_id IN (SELECT id FROM purchase_orders WHERE company_id=$1 AND requisition_id IN (SELECT id FROM requisitions WHERE company_id=$1 AND organizer_id=$2))`,
+    [TEST_COMPANY_ID, userId],
+  )
+  await pool.query(
+    `DELETE FROM purchase_orders WHERE company_id=$1 AND requisition_id IN (SELECT id FROM requisitions WHERE company_id=$1 AND organizer_id=$2)`,
+    [TEST_COMPANY_ID, userId],
+  )
   await pool.query(
     `DELETE FROM po_lines WHERE requisition_id IN (SELECT id FROM requisitions WHERE company_id=$1 AND organizer_id=$2)`,
     [TEST_COMPANY_ID, userId],

@@ -2021,6 +2021,14 @@ async function reqTransition(
     toStatus,
     reqId,
   ])
+  if (toStatus === 'market_pricing') {
+    // Market pricing is done in two parts (the owner's lines and procurement's, migration 315). Every
+    // way into the stage, first arrival or sent back, starts it with neither part submitted.
+    await client.query(
+      `UPDATE requisitions SET owner_pricing_submitted_at=NULL, procurement_pricing_submitted_at=NULL WHERE id=$1`,
+      [reqId],
+    )
+  }
   await client.query(
     `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes, actor_position) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     [reqId, fromStatus, toStatus, action, auth.userId, notes ?? null, actorPosition ?? null],
@@ -2116,12 +2124,14 @@ async function getRequisitionForReturn(reqId: string): Promise<Record<string, un
               cb.name AS branch_name,
               p.code AS "projectCode", p.name AS "projectName",
               COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName",
-              COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name
+              COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name,
+              COALESCE(NULLIF(TRIM(pe.first_name || ' ' || pe.last_name), ''), pe.email) AS "procurementOfficerName"
        FROM requisitions req
        LEFT JOIN company_branches cb ON cb.id = req.branch_id
        LEFT JOIN projects p ON p.id = req.project_id
        LEFT JOIN users u ON u.id = req.organizer_id
        LEFT JOIN employees re ON re.id = req.assigned_receiver_id
+       LEFT JOIN employees pe ON pe.id = req.procurement_officer_id AND pe.company_id = req.company_id
        WHERE req.id = $1`,
       [reqId],
     ),
@@ -2490,6 +2500,299 @@ async function evaluateRequisitionCompletion(
   if (parseInt(unresolved.rows[0]?.c ?? '0', 10) > 0) return
 
   await reqTransition(client, reqId, 'sourcing', 'completed', 'complete', auth)
+}
+
+// Who may buy a line of a requisition (record a purchase, mark it short, resolve it from stock): an admin, a buyer
+// position holder for the requisition, or the requisition's owner (organizer) for a line he took
+// (po_lines.owner_handles, migration 315). The owner is limited to his own lines; procurement keeps every line,
+// including the owner's, so it can step in when the owner is away.
+async function callerMayBuyRequisitionLineGW(
+  auth: GWAuth,
+  requisitionId: string,
+  ownerHandles: boolean,
+  organizerId: string | null,
+): Promise<boolean> {
+  if (await hasProcurementAuthorityGW(auth)) return true
+  if (ownerHandles && organizerId === auth.userId) return true
+  return userHasPositionForRequisitionGW(auth.userId, auth.companyId, requisitionId, 'buyer')
+}
+
+// Whether a requisition in Items Bought is ready to Finish Buying, as the message of what is still missing, or
+// null when it is: every purchased line fully bought or marked short, every purchase has a receipt, every
+// over-tolerance purchase signed off. The manual button and the automatic path (tryAutoFinishBuying) share it.
+async function finishBuyingNotReadyReason(
+  reqId: string,
+  companyId: string,
+): Promise<string | null> {
+  const statusRow = await query<{ status: string; company_id: string }>(
+    `SELECT status, company_id FROM requisitions WHERE id=$1`,
+    [reqId],
+  )
+  const row = statusRow.rows[0]
+  if (!row || row.company_id !== companyId) return 'Requisition not found'
+  if (row.status !== 'items_bought')
+    return 'Requisition must be in items_bought status to finish buying'
+
+  // Gate 1: every line is either fully accounted for (stock + bought
+  // covers qty_ordered) or explicitly marked short.
+  const unresolved = await query<{ c: string }>(
+    `SELECT COUNT(*) AS c FROM po_lines pl
+       WHERE pl.requisition_id=$1 AND pl.po_id IS NULL AND pl.short_marked_at IS NULL
+         AND pl.qty_ordered - COALESCE(pl.qty_from_stock,0)
+             -- currency-safe: qty is a purchased quantity, not money
+             - COALESCE((SELECT SUM(qty) FROM po_line_purchases WHERE po_line_id=pl.id),0) > 0.0001`,
+    [reqId],
+  )
+  if (parseInt(unresolved.rows[0]?.c ?? '0', 10) > 0)
+    return 'Every purchased line must be fully bought or marked short before finishing buying'
+
+  // Gate 2: every recorded purchase has a receipt attached (mirrors
+  // finishBuyingPO's "at least one receipt" gate, but per-entry since
+  // this model can have several real purchases/receipts per line).
+  const missingReceipt = await query<{ c: string }>(
+    `SELECT COUNT(*) AS c FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
+       WHERE pl.requisition_id=$1 AND plp.receipt_attachment_id IS NULL`,
+    [reqId],
+  )
+  if (parseInt(missingReceipt.rows[0]?.c ?? '0', 10) > 0)
+    return 'Attach a receipt photo to every recorded purchase before finishing buying'
+
+  // Gate 3: every over-tolerance purchase has been signed off.
+  const unapprovedTolerance = await query<{ c: string }>(
+    `SELECT COUNT(*) AS c FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
+       WHERE pl.requisition_id=$1 AND plp.over_tolerance=true AND plp.tolerance_approved_by IS NULL`,
+    [reqId],
+  )
+  if (parseInt(unapprovedTolerance.rows[0]?.c ?? '0', 10) > 0)
+    return 'Every over-tolerance purchase must be approved before finishing buying'
+
+  return null
+}
+
+// Forks one child purchase order per vendor and moves the requisition to Sourcing. Throws when the requisition is
+// not ready (finishBuyingNotReadyReason). Used by the Finish Buying button and, normally, by tryAutoFinishBuying.
+async function finishBuyingRequisitionCore(reqId: string, auth: GWAuth): Promise<void> {
+  const notReady = await finishBuyingNotReadyReason(reqId, auth.companyId)
+  if (notReady) throw new Error(notReady)
+
+  const reqRow = await query<{
+    status: string
+    company_id: string
+    project_id: string | null
+    branch_id: string | null
+    organizer_id: string | null
+    purpose: string | null
+    delivery_destination: string | null
+    priority: string | null
+    linked_mo_id: string | null
+    assigned_receiver_id: string | null
+  }>(
+    `SELECT status, company_id, project_id, branch_id, organizer_id, purpose, delivery_destination, priority, linked_mo_id, assigned_receiver_id
+       FROM requisitions WHERE id=$1`,
+    [reqId],
+  )
+  const req = reqRow.rows[0]
+  if (!req) throw new Error('Requisition not found')
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    // Two last actions landing together must not both fork: whoever gets the lock first does, the other sees
+    // the status has moved on.
+    const locked = await client.query<{ status: string }>(
+      `SELECT status FROM requisitions WHERE id=$1 FOR UPDATE`,
+      [reqId],
+    )
+    if (locked.rows[0]?.status !== 'items_bought')
+      throw new Error('Requisition must be in items_bought status to finish buying')
+
+    const linesRes = await client.query<{
+      id: string
+      qty_ordered: string
+      qty_from_stock: string
+      description: string
+      product_id: string | null
+      uom: string
+      account_id: string | null
+      cost_center_id: string | null
+      approved_unit_price: string | null
+      short_marked_at: string | null
+    }>(
+      `SELECT id, qty_ordered, qty_from_stock, description, product_id, uom, account_id, cost_center_id,
+              approved_unit_price, short_marked_at
+       FROM po_lines WHERE requisition_id=$1 AND po_id IS NULL ORDER BY line_number`,
+      [reqId],
+    )
+    const purchasesRes = await client.query<{
+      id: string
+      po_line_id: string
+      vendor_id: string
+      currency_code: string
+      qty: string
+      actual_unit_price: string
+    }>(
+      `SELECT plp.id, plp.po_line_id, plp.vendor_id, plp.currency_code, plp.qty, plp.actual_unit_price
+       FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
+       WHERE pl.requisition_id=$1 AND pl.po_id IS NULL
+       ORDER BY plp.bought_at`,
+      [reqId],
+    )
+
+    if (purchasesRes.rows.length > 0) {
+      const purchasesByLine = new Map<string, typeof purchasesRes.rows>()
+      for (const p of purchasesRes.rows) {
+        const arr = purchasesByLine.get(p.po_line_id)
+        if (arr) arr.push(p)
+        else purchasesByLine.set(p.po_line_id, [p])
+      }
+
+      // One child PO per distinct vendor.
+      const childByVendor = new Map<string, string>()
+      for (const vendorId of new Set(purchasesRes.rows.map((p) => p.vendor_id))) {
+        const entriesForVendor = purchasesRes.rows.filter((p) => p.vendor_id === vendorId)
+        const poNumber = await nextDocumentNumber(auth.companyId, 'purchase_order', 'PO')
+        // Header currency_code is a display-only label, not a calculation
+        // — picks the first entry's currency; a same-vendor split across
+        // genuinely different currencies is a known, accepted gap for this
+        // label only. The actual totals are no longer blended across
+        // currencies (see recalcPOTotalsGW/getPOCurrencyTotals below), so
+        // this gap can't silently misstate money — at worst the header
+        // names the "wrong" (but still real) currency for a PO whose other
+        // currencies are fully reported in PurchaseOrder.currencyTotals.
+        const headerCurrency = entriesForVendor[0].currency_code
+        const poRes = await client.query<{ id: string }>(
+          `INSERT INTO purchase_orders
+             (company_id, po_number, vendor_id, currency_code, status, purpose, project_id, linked_project_id,
+              created_by, priority, branch_id, organizer_id, requisition_id, delivery_destination, linked_mo_id, assigned_receiver_id)
+           VALUES ($1,$2,$3,$4,'bought',$5,$6,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+          [
+            auth.companyId,
+            poNumber,
+            vendorId,
+            headerCurrency,
+            req.purpose ?? 'stock',
+            req.project_id,
+            auth.userId,
+            req.priority ?? 'low',
+            req.branch_id,
+            req.organizer_id,
+            reqId,
+            req.delivery_destination,
+            req.linked_mo_id,
+            req.assigned_receiver_id,
+          ],
+        )
+        childByVendor.set(vendorId, poRes.rows[0].id)
+      }
+
+      const lineNumberCounters = new Map<string, number>()
+
+      for (const line of linesRes.rows) {
+        const entries = purchasesByLine.get(line.id) ?? []
+        if (entries.length === 0) continue // fully from stock, or fully short with nothing bought
+
+        const qtyOrdered = parseFloat(line.qty_ordered)
+        const qtyFromStock = parseFloat(line.qty_from_stock)
+        const totalEntryQty = entries.reduce((s, e) => s + parseFloat(e.qty), 0)
+        const mutateOriginal = qtyFromStock === 0 && !line.short_marked_at
+
+        if (!mutateOriginal) {
+          // Whatever isn't a vendor purchase (stock portion and/or the
+          // accepted short shortfall) stays on the original row.
+          const remainderQty = qtyOrdered - totalEntryQty
+          await client.query(
+            `UPDATE po_lines SET qty_ordered=$1, total_price=$1*unit_price WHERE id=$2`,
+            [remainderQty, line.id],
+          )
+        }
+
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i]
+          const childId = childByVendor.get(entry.vendor_id)
+          if (childId === undefined) throw new Error(`No PO created for vendor ${entry.vendor_id}`)
+          const nextLineNumber = (lineNumberCounters.get(childId) ?? 0) + 1
+          lineNumberCounters.set(childId, nextLineNumber)
+          const qty = parseFloat(entry.qty)
+          const price = parseFloat(entry.actual_unit_price)
+          const totalPrice = qty * price
+
+          if (mutateOriginal && i === 0) {
+            // actual_unit_price mirrors unit_price here — the buyer's
+            // recorded purchase price *is* this line's real price, there
+            // being no separate pre-purchase "PO price" preserved once a
+            // line's forked. Left unset, the Finance Audit panel's own
+            // "Actual Price (entered by buyer)" box — which reads
+            // po_lines.actual_unit_price specifically, a column the
+            // legacy items_bought checklist populates but this fork path
+            // never did — falsely claimed "buyer hasn't recorded a
+            // price" even though the purchase total right next to it was
+            // computed off that exact price. Found live on PO-2026-0028.
+            await client.query(
+              `UPDATE po_lines
+               SET po_id=$1, line_number=$2, qty_ordered=$3, unit_price=$4, actual_unit_price=$4,
+                   initial_unit_price=COALESCE(initial_unit_price,$4), currency_code=$5, total_price=$6
+               WHERE id=$7`,
+              [childId, nextLineNumber, qty, price, entry.currency_code, totalPrice, line.id],
+            )
+          } else {
+            await client.query(
+              `INSERT INTO po_lines
+                 (po_id, requisition_id, line_number, description, product_id, qty_ordered, unit_price,
+                  initial_unit_price, actual_unit_price, currency_code, uom, total_price, account_id, cost_center_id,
+                  approved_unit_price, qty_from_stock, in_stock, origin_line_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$7,$8,$9,$10,$11,$12,$13,0,false,$14)`,
+              [
+                childId,
+                reqId,
+                nextLineNumber,
+                line.description,
+                line.product_id,
+                qty,
+                price,
+                entry.currency_code,
+                line.uom,
+                totalPrice,
+                line.account_id,
+                line.cost_center_id,
+                line.approved_unit_price,
+                line.id,
+              ],
+            )
+          }
+        }
+      }
+
+      for (const childId of childByVendor.values()) {
+        await recalcPOTotalsGW(client, childId)
+      }
+    }
+    // purchasesRes empty: every line that needed purchasing ended up
+    // fully covered by stock and/or marked short with nothing ever
+    // bought — nothing to fork, just advance the requisition.
+
+    await reqTransition(client, reqId, 'items_bought', 'sourcing', 'finish_buying', auth)
+    await client.query('COMMIT')
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  } finally {
+    client.release()
+  }
+  void publishEntityChanged(auth.companyId, 'requisition', reqId, 'updated')
+}
+
+// Finish Buying happens by itself: the moment the last line of a requisition in Items Bought is bought (or marked
+// short or covered from stock), its receipt attached and any over-tolerance purchase signed off, whoever did that
+// last thing, owner or buyer. Called after each action that can complete the set. Best effort on purpose: the
+// action that triggered it has already succeeded and must not fail because of this, and the manual
+// finishBuyingRequisition stays as the fallback.
+async function tryAutoFinishBuying(reqId: string, auth: GWAuth): Promise<void> {
+  try {
+    if ((await finishBuyingNotReadyReason(reqId, auth.companyId)) !== null) return
+    await finishBuyingRequisitionCore(reqId, auth)
+  } catch (err) {
+    console.error('[auto-finish-buying] could not finish requisition', reqId, err)
+  }
 }
 
 async function getProductCostChangeRequestForReturn(id: string): Promise<Record<string, unknown>> {
@@ -3520,7 +3823,7 @@ async function fetchFullPurchaseOrderGW(
               pol.line_number, p.name AS product_name, p.name_ar AS product_name_ar, p.sku,
               pol.account_id, coa.code AS account_code, coa.name AS account_name,
               pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
-              pol.is_bought
+              pol.is_bought, pol.owner_handles
        FROM po_lines pol
        LEFT JOIN products p ON p.id=pol.product_id
        LEFT JOIN stock_locations sl ON sl.id=pol.source_location_id
@@ -11219,12 +11522,14 @@ export const resolvers = {
         query(
           `SELECT req.*, cb.name AS branch_name, p.code AS "projectCode", p.name AS "projectName",
                   mo.mo_number AS "linkedMoNumber",
-                  COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
+                  COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName",
+                  COALESCE(NULLIF(TRIM(pe.first_name || ' ' || pe.last_name), ''), pe.email) AS "procurementOfficerName"
            FROM requisitions req
            LEFT JOIN company_branches cb ON cb.id = req.branch_id
            LEFT JOIN projects p ON p.id = req.project_id
            LEFT JOIN manufacturing_orders mo ON mo.id = req.linked_mo_id
            LEFT JOIN users u ON u.id = req.organizer_id
+           LEFT JOIN employees pe ON pe.id = req.procurement_officer_id AND pe.company_id = req.company_id
            WHERE req.id=$1 AND req.company_id=$2`,
           [args.id, ctx.auth.companyId],
         ),
@@ -11244,7 +11549,7 @@ export const resolvers = {
                   pol.line_number, p.name AS product_name, p.name_ar AS product_name_ar, p.sku,
                   pol.account_id, coa.code AS account_code, coa.name AS account_name,
                   pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
-                  pol.is_bought,
+                  pol.is_bought, pol.owner_handles,
                   pol.approved_unit_price, pol.short_reason, pol.short_marked_by, pol.short_marked_at, pol.origin_line_id,
                   pol.closed_at, pol.closed_reason, pol.closed_by,
                   pol.flag_reason, pol.flagged_at, pol.flagged_from_status, pol.flag_addressed_at, pol.flag_resolved_at,
@@ -12488,6 +12793,15 @@ export const resolvers = {
         throw err
       } finally {
         client.release()
+      }
+      if (args.entityType === 'po_line_purchase') {
+        // A receipt can be the last thing Items Bought was waiting for: attached after the purchase was
+        // recorded, it may complete the set, and then the requisition finishes buying by itself.
+        const owner = await query<{ requisition_id: string }>(
+          `SELECT pl.requisition_id FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id WHERE plp.id=$1`,
+          [args.entityId],
+        )
+        if (owner.rows[0]) await tryAutoFinishBuying(owner.rows[0].requisition_id, ctx.auth)
       }
       const result = await query(
         `SELECT da.*, f.id AS file_id, f.original_filename, f.mime_type, f.size_bytes, f.category, f.uploaded_at
@@ -34526,11 +34840,14 @@ const phase5MutationResolvers = {
         vendorQuoteRef?: string
         currencyCode: string
       }[]
+      side?: 'OWNER' | 'PROCUREMENT' | null
     },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
+    // Whose part of Market pricing this is (migration 315). Omitted = procurement's, the single submit it always was.
+    const side = args.side ?? 'PROCUREMENT'
     const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionForRequisitionGW(
       auth.userId,
@@ -34538,18 +34855,47 @@ const phase5MutationResolvers = {
       args.id,
       'procurement_officer',
     )
-    if (!isAdmin && !hasPos) throw new Error('procurement_officer position required')
-    const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
+    const isProcurement = isAdmin || hasPos
     // Price verification is organizer/admin only now (no dedicated
     // position) — fetched here so the post-commit notification below can
     // ping them directly instead of a position-holder list.
-    const organizerRow = await query<{ organizer_id: string | null }>(
-      `SELECT organizer_id FROM requisitions WHERE id=$1`,
-      [args.id],
-    )
+    const organizerRow = await query<{
+      organizer_id: string | null
+      status: string
+      company_id: string
+    }>(`SELECT organizer_id, status, company_id FROM requisitions WHERE id=$1`, [args.id])
+    const reqRow = organizerRow.rows[0]
+    if (!reqRow || reqRow.company_id !== auth.companyId) throw new Error('Requisition not found')
+    const isOwner = reqRow.organizer_id === auth.userId
+    // Procurement's part needs the procurement_officer position (or an admin). The owner's part may be submitted
+    // by the owner himself, or by procurement stepping in. The owner never submits procurement's part.
+    if (side === 'PROCUREMENT' && !isProcurement)
+      throw new Error('procurement_officer position required')
+    if (side === 'OWNER' && !isProcurement && !isOwner)
+      throw new Error(
+        'Only the requisition owner, or procurement stepping in, can submit the owner part of market pricing',
+      )
+    if (reqRow.status !== 'market_pricing')
+      throw Object.assign(new Error(`Expected 'market_pricing', got '${reqRow.status}'`), {
+        extensions: { code: 'INVALID_STATUS' },
+      })
+    const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
+    let advanced = false
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      if (!isProcurement) {
+        // The owner prices only the lines he took; procurement may price any line, the owner's included.
+        const ids = [...new Set((args.linePrices ?? []).map((lp) => lp.lineId))]
+        if (ids.length > 0) {
+          const mine = await client.query<{ id: string }>(
+            `SELECT id FROM po_lines WHERE requisition_id=$1 AND owner_handles=true AND id = ANY($2::uuid[])`,
+            [args.id, ids],
+          )
+          if (mine.rows.length !== ids.length)
+            throw new Error('You can only price the lines you took')
+        }
+      }
       for (const lp of args.linePrices ?? []) {
         // No fx_rate_to_base — currency_code becomes this line's one real
         // currency here, full stop, never converted.
@@ -34584,7 +34930,7 @@ const phase5MutationResolvers = {
           })
         }
       }
-      if (empId)
+      if (empId && side === 'PROCUREMENT')
         await client.query(`UPDATE requisitions SET procurement_officer_id=$1 WHERE id=$2`, [
           empId,
           args.id,
@@ -34593,14 +34939,56 @@ const phase5MutationResolvers = {
         client,
         (args.linePrices ?? []).map((lp) => lp.lineId),
       )
-      await reqTransition(
-        client,
-        args.id,
-        'market_pricing',
-        'price_verification',
-        'submit_to_price_verification',
-        auth,
+      if (side === 'OWNER') {
+        // The owner's part is only done when every line he took has a price. (Procurement's part keeps the
+        // rule it always had: submitting is procurement saying its lines are done.)
+        const unpriced = await client.query<{ c: string }>(
+          `SELECT COUNT(*) AS c FROM po_lines pl
+           WHERE pl.requisition_id=$1 AND pl.po_id IS NULL AND pl.owner_handles
+             AND pl.qty_ordered - COALESCE(pl.qty_from_stock,0) > 0 AND pl.market_price IS NULL`,
+          [args.id],
+        )
+        if (parseInt(unpriced.rows[0]?.c ?? '0', 10) > 0)
+          throw new Error('Every line you took needs a market price before you submit your part')
+      }
+      await client.query(
+        `UPDATE requisitions SET ${
+          side === 'OWNER' ? 'owner_pricing_submitted_at' : 'procurement_pricing_submitted_at'
+        }=NOW() WHERE id=$1`,
+        [args.id],
       )
+      // Move on once every side that has lines to price has submitted. A side with no lines counts as done, so a
+      // requisition where the owner took nothing advances on procurement's one submit, exactly as before.
+      const parts = await client.query<{
+        owner_has_lines: boolean
+        procurement_has_lines: boolean
+        owner_done: boolean
+        procurement_done: boolean
+      }>(
+        `SELECT
+           EXISTS (SELECT 1 FROM po_lines pl WHERE pl.requisition_id=r.id AND pl.po_id IS NULL AND pl.owner_handles
+                   AND pl.qty_ordered - COALESCE(pl.qty_from_stock,0) > 0) AS owner_has_lines,
+           EXISTS (SELECT 1 FROM po_lines pl WHERE pl.requisition_id=r.id AND pl.po_id IS NULL AND NOT pl.owner_handles
+                   AND pl.qty_ordered - COALESCE(pl.qty_from_stock,0) > 0) AS procurement_has_lines,
+           r.owner_pricing_submitted_at IS NOT NULL AS owner_done,
+           r.procurement_pricing_submitted_at IS NOT NULL AS procurement_done
+         FROM requisitions r WHERE r.id=$1`,
+        [args.id],
+      )
+      const p = parts.rows[0]
+      advanced =
+        !!p &&
+        (!p.owner_has_lines || p.owner_done) &&
+        (!p.procurement_has_lines || p.procurement_done)
+      if (advanced)
+        await reqTransition(
+          client,
+          args.id,
+          'market_pricing',
+          'price_verification',
+          'submit_to_price_verification',
+          auth,
+        )
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -34608,7 +34996,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
-    if (organizerRow.rows[0]?.organizer_id) {
+    if (advanced && organizerRow.rows[0]?.organizer_id) {
       void notifyUserGW(organizerRow.rows[0].organizer_id, auth.companyId, {
         type: 'REQ_PRICE_VERIFICATION_REQUIRED',
         title: 'Price verification required',
@@ -34618,6 +35006,91 @@ const phase5MutationResolvers = {
     }
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
+  },
+
+
+  // The owner (or procurement, stepping in) takes a line of a requisition in Market pricing to price and buy himself,
+  // or hands it back (migration 315). The owner may change a line only while it has no market price yet (so priced
+  // work is never stranded); procurement and admins may always. The side that GAINS the line has to submit again.
+  setRequisitionLineOwner: async (
+    _: unknown,
+    args: { lineId: string; byOwner: boolean },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const lineRow = await query<{
+      requisition_id: string
+      company_id: string
+      status: string
+      organizer_id: string | null
+      market_price: string | null
+      owner_handles: boolean
+      po_id: string | null
+    }>(
+      `SELECT pl.requisition_id, req.company_id, req.status, req.organizer_id, pl.market_price, pl.owner_handles, pl.po_id
+       FROM po_lines pl JOIN requisitions req ON req.id=pl.requisition_id
+       WHERE pl.id=$1`,
+      [args.lineId],
+    )
+    const line = lineRow.rows[0]
+    if (!line || line.company_id !== auth.companyId) throw new Error('Requisition line not found')
+    if (line.status !== 'market_pricing' || line.po_id)
+      throw new Error(
+        'Lines can only be taken or handed back while the requisition is in market pricing',
+      )
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    const isProcurement =
+      isAdmin ||
+      (await userHasPositionForRequisitionGW(
+        auth.userId,
+        auth.companyId,
+        line.requisition_id,
+        'procurement_officer',
+      ))
+    const isOwner = line.organizer_id === auth.userId
+    if (!isProcurement && !isOwner)
+      throw new Error('Only the requisition owner or procurement can change who handles a line')
+    if (!isProcurement && line.market_price !== null)
+      throw new Error(
+        'This line already has a market price: only procurement can change who handles it now',
+      )
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const updated = await client.query(
+        `UPDATE po_lines SET owner_handles=$2 WHERE id=$1 RETURNING *`,
+        [args.lineId, args.byOwner],
+      )
+      if (line.owner_handles !== args.byOwner) {
+        // The side that gains a line has more to price now, so it must submit again.
+        await client.query(
+          `UPDATE requisitions SET ${
+            args.byOwner ? 'owner_pricing_submitted_at' : 'procurement_pricing_submitted_at'
+          }=NULL WHERE id=$1`,
+          [line.requisition_id],
+        )
+        await logAudit({
+          userId: auth.userId,
+          companyId: auth.companyId,
+          action: 'UPDATE',
+          tableName: 'po_lines',
+          recordId: args.lineId,
+          oldValues: { owner_handles: line.owner_handles },
+          newValues: { owner_handles: args.byOwner },
+          client,
+        })
+      }
+      await client.query('COMMIT')
+      void publishEntityChanged(auth.companyId, 'requisition', line.requisition_id, 'updated')
+      return updated.rows[0]
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
   },
 
   verifyRequisitionPrices: async (
@@ -35252,8 +35725,11 @@ const phase5MutationResolvers = {
       company_id: string
       requisition_status: string
       short_marked_at: string | null
+      organizer_id: string | null
+      owner_handles: boolean
     }>(
-      `SELECT pl.requisition_id, req.company_id, req.status AS requisition_status, pl.short_marked_at
+      `SELECT pl.requisition_id, req.company_id, req.status AS requisition_status, pl.short_marked_at,
+              req.organizer_id, pl.owner_handles
        FROM po_lines pl JOIN requisitions req ON req.id=pl.requisition_id
        WHERE pl.id=$1`,
       [lineId],
@@ -35267,15 +35743,17 @@ const phase5MutationResolvers = {
         'This line was marked short — no further purchases can be recorded against it',
       )
 
-    const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasBuyerPosition = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      line.requisition_id,
-      'buyer',
+    if (
+      !(await callerMayBuyRequisitionLineGW(
+        auth,
+        line.requisition_id,
+        line.owner_handles,
+        line.organizer_id,
+      ))
     )
-    if (!isAdmin && !hasBuyerPosition)
-      throw new Error('Only a buyer position holder for this requisition can record a purchase')
+      throw new Error(
+        'Only a buyer position holder for this requisition, or its owner for a line he took, can record a purchase',
+      )
 
     const vendorCheck = await query(
       `SELECT id FROM vendors WHERE id=$1 AND company_id=$2 AND is_active=true`,
@@ -35389,6 +35867,8 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    // The last thing a requisition was waiting for? Then it finishes buying by itself.
+    await tryAutoFinishBuying(line.requisition_id, auth)
     void publishEntityChanged(auth.companyId, 'requisition', line.requisition_id, 'updated')
     return getPOLinePurchaseForReturn(purchaseId)
   },
@@ -35446,6 +35926,7 @@ const phase5MutationResolvers = {
       auth.userId,
       args.purchaseId,
     ])
+    await tryAutoFinishBuying(purchase.requisition_id, auth)
     void publishEntityChanged(auth.companyId, 'requisition', purchase.requisition_id, 'updated')
     return getPOLinePurchaseForReturn(args.purchaseId)
   },
@@ -35549,9 +36030,11 @@ const phase5MutationResolvers = {
       qty_ordered: string
       qty_from_stock: string | null
       short_marked_at: string | null
+      organizer_id: string | null
+      owner_handles: boolean
     }>(
       `SELECT pl.requisition_id, req.company_id, req.status AS requisition_status,
-              pl.qty_ordered, pl.qty_from_stock, pl.short_marked_at
+              pl.qty_ordered, pl.qty_from_stock, pl.short_marked_at, req.organizer_id, pl.owner_handles
        FROM po_lines pl JOIN requisitions req ON req.id=pl.requisition_id
        WHERE pl.id=$1`,
       [args.lineId],
@@ -35562,15 +36045,17 @@ const phase5MutationResolvers = {
       throw new Error('Requisition must be in items_bought status to mark a line short')
     if (line.short_marked_at) throw new Error('This line was already marked short')
 
-    const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasBuyerPosition = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      line.requisition_id,
-      'buyer',
+    if (
+      !(await callerMayBuyRequisitionLineGW(
+        auth,
+        line.requisition_id,
+        line.owner_handles,
+        line.organizer_id,
+      ))
     )
-    if (!isAdmin && !hasBuyerPosition)
-      throw new Error('Only a buyer position holder for this requisition can mark a line short')
+      throw new Error(
+        'Only a buyer position holder for this requisition, or its owner for a line he took, can mark a line short',
+      )
 
     const boughtRes = await query<{ total: string }>(
       `-- currency-safe: qty is a purchased quantity, not money
@@ -35588,6 +36073,7 @@ const phase5MutationResolvers = {
       `UPDATE po_lines SET short_reason=$1, short_marked_by=$2, short_marked_at=NOW() WHERE id=$3 RETURNING *`,
       [args.reason.trim(), auth.userId, args.lineId],
     )
+    await tryAutoFinishBuying(line.requisition_id, auth)
     void publishEntityChanged(auth.companyId, 'requisition', line.requisition_id, 'updated')
     return r.rows[0]
   },
@@ -35621,9 +36107,12 @@ const phase5MutationResolvers = {
       qty_ordered: string
       qty_from_stock: string | null
       short_marked_at: string | null
+      organizer_id: string | null
+      owner_handles: boolean
     }>(
       `SELECT pl.requisition_id, req.company_id, req.status AS requisition_status,
-              pl.product_id, pl.qty_ordered, pl.qty_from_stock, pl.short_marked_at
+              pl.product_id, pl.qty_ordered, pl.qty_from_stock, pl.short_marked_at,
+              req.organizer_id, pl.owner_handles
        FROM po_lines pl JOIN requisitions req ON req.id=pl.requisition_id
        WHERE pl.id=$1`,
       [args.lineId],
@@ -35637,15 +36126,17 @@ const phase5MutationResolvers = {
     if (!line.product_id)
       throw new Error('A custom (non-catalog) line has no stock to resolve from')
 
-    const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasBuyerPosition = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      line.requisition_id,
-      'buyer',
+    if (
+      !(await callerMayBuyRequisitionLineGW(
+        auth,
+        line.requisition_id,
+        line.owner_handles,
+        line.organizer_id,
+      ))
     )
-    if (!isAdmin && !hasBuyerPosition)
-      throw new Error('Only a buyer position holder for this requisition can resolve a line from stock')
+      throw new Error(
+        'Only a buyer position holder for this requisition, or its owner for a line he took, can resolve a line from stock',
+      )
 
     const boughtRes = await query<{ total: string }>(
       `-- currency-safe: qty is a purchased quantity, not money
@@ -35736,6 +36227,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    await tryAutoFinishBuying(line.requisition_id, auth)
     void publishEntityChanged(auth.companyId, 'requisition', line.requisition_id, 'updated')
     return updated
   },
@@ -35769,240 +36261,15 @@ const phase5MutationResolvers = {
     if (!isAdmin && !hasBuyerPosition)
       throw new Error('Only a buyer position holder for this requisition can finish buying')
 
-    const reqRow = await query<{
-      status: string
-      company_id: string
-      project_id: string | null
-      branch_id: string | null
-      organizer_id: string | null
-      purpose: string | null
-      delivery_destination: string | null
-      priority: string | null
-      linked_mo_id: string | null
-      assigned_receiver_id: string | null
-    }>(
-      `SELECT status, company_id, project_id, branch_id, organizer_id, purpose, delivery_destination, priority, linked_mo_id, assigned_receiver_id
-       FROM requisitions WHERE id=$1`,
+    // Normally this has already happened by itself (tryAutoFinishBuying); the button is the fallback. Someone
+    // pressing it on a screen that has not caught up yet gets the requisition back, not an error.
+    const current = await query<{ status: string; company_id: string }>(
+      `SELECT status, company_id FROM requisitions WHERE id=$1`,
       [args.id],
     )
-    const req = reqRow.rows[0]
-    if (!req || req.company_id !== auth.companyId) throw new Error('Requisition not found')
-    if (req.status !== 'items_bought')
-      throw new Error(`Requisition must be in items_bought status to finish buying`)
-
-    // Gate 1: every line is either fully accounted for (stock + bought
-    // covers qty_ordered) or explicitly marked short.
-    const unresolved = await query<{ c: string }>(
-      `SELECT COUNT(*) AS c FROM po_lines pl
-       WHERE pl.requisition_id=$1 AND pl.po_id IS NULL AND pl.short_marked_at IS NULL
-         AND pl.qty_ordered - COALESCE(pl.qty_from_stock,0)
-             -- currency-safe: qty is a purchased quantity, not money
-             - COALESCE((SELECT SUM(qty) FROM po_line_purchases WHERE po_line_id=pl.id),0) > 0.0001`,
-      [args.id],
-    )
-    if (parseInt(unresolved.rows[0]?.c ?? '0', 10) > 0)
-      throw new Error(
-        'Every purchased line must be fully bought or marked short before finishing buying',
-      )
-
-    // Gate 2: every recorded purchase has a receipt attached (mirrors
-    // finishBuyingPO's "at least one receipt" gate, but per-entry since
-    // this model can have several real purchases/receipts per line).
-    const missingReceipt = await query<{ c: string }>(
-      `SELECT COUNT(*) AS c FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
-       WHERE pl.requisition_id=$1 AND plp.receipt_attachment_id IS NULL`,
-      [args.id],
-    )
-    if (parseInt(missingReceipt.rows[0]?.c ?? '0', 10) > 0)
-      throw new Error('Attach a receipt photo to every recorded purchase before finishing buying')
-
-    // Gate 3: every over-tolerance purchase has been signed off.
-    const unapprovedTolerance = await query<{ c: string }>(
-      `SELECT COUNT(*) AS c FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
-       WHERE pl.requisition_id=$1 AND plp.over_tolerance=true AND plp.tolerance_approved_by IS NULL`,
-      [args.id],
-    )
-    if (parseInt(unapprovedTolerance.rows[0]?.c ?? '0', 10) > 0)
-      throw new Error('Every over-tolerance purchase must be approved before finishing buying')
-
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-
-      const linesRes = await client.query<{
-        id: string
-        qty_ordered: string
-        qty_from_stock: string
-        description: string
-        product_id: string | null
-        uom: string
-        account_id: string | null
-        cost_center_id: string | null
-        approved_unit_price: string | null
-        short_marked_at: string | null
-      }>(
-        `SELECT id, qty_ordered, qty_from_stock, description, product_id, uom, account_id, cost_center_id,
-                approved_unit_price, short_marked_at
-         FROM po_lines WHERE requisition_id=$1 AND po_id IS NULL ORDER BY line_number`,
-        [args.id],
-      )
-      const purchasesRes = await client.query<{
-        id: string
-        po_line_id: string
-        vendor_id: string
-        currency_code: string
-        qty: string
-        actual_unit_price: string
-      }>(
-        `SELECT plp.id, plp.po_line_id, plp.vendor_id, plp.currency_code, plp.qty, plp.actual_unit_price
-         FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
-         WHERE pl.requisition_id=$1 AND pl.po_id IS NULL
-         ORDER BY plp.bought_at`,
-        [args.id],
-      )
-
-      if (purchasesRes.rows.length > 0) {
-        const purchasesByLine = new Map<string, typeof purchasesRes.rows>()
-        for (const p of purchasesRes.rows) {
-          const arr = purchasesByLine.get(p.po_line_id)
-          if (arr) arr.push(p)
-          else purchasesByLine.set(p.po_line_id, [p])
-        }
-
-        // One child PO per distinct vendor.
-        const childByVendor = new Map<string, string>()
-        for (const vendorId of new Set(purchasesRes.rows.map((p) => p.vendor_id))) {
-          const entriesForVendor = purchasesRes.rows.filter((p) => p.vendor_id === vendorId)
-          const poNumber = await nextDocumentNumber(auth.companyId, 'purchase_order', 'PO')
-          // Header currency_code is a display-only label, not a calculation
-          // — picks the first entry's currency; a same-vendor split across
-          // genuinely different currencies is a known, accepted gap for this
-          // label only. The actual totals are no longer blended across
-          // currencies (see recalcPOTotalsGW/getPOCurrencyTotals below), so
-          // this gap can't silently misstate money — at worst the header
-          // names the "wrong" (but still real) currency for a PO whose other
-          // currencies are fully reported in PurchaseOrder.currencyTotals.
-          const headerCurrency = entriesForVendor[0].currency_code
-          const poRes = await client.query<{ id: string }>(
-            `INSERT INTO purchase_orders
-               (company_id, po_number, vendor_id, currency_code, status, purpose, project_id, linked_project_id,
-                created_by, priority, branch_id, organizer_id, requisition_id, delivery_destination, linked_mo_id, assigned_receiver_id)
-             VALUES ($1,$2,$3,$4,'bought',$5,$6,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
-            [
-              auth.companyId,
-              poNumber,
-              vendorId,
-              headerCurrency,
-              req.purpose ?? 'stock',
-              req.project_id,
-              auth.userId,
-              req.priority ?? 'low',
-              req.branch_id,
-              req.organizer_id,
-              args.id,
-              req.delivery_destination,
-              req.linked_mo_id,
-              req.assigned_receiver_id,
-            ],
-          )
-          childByVendor.set(vendorId, poRes.rows[0].id)
-        }
-
-        const lineNumberCounters = new Map<string, number>()
-
-        for (const line of linesRes.rows) {
-          const entries = purchasesByLine.get(line.id) ?? []
-          if (entries.length === 0) continue // fully from stock, or fully short with nothing bought
-
-          const qtyOrdered = parseFloat(line.qty_ordered)
-          const qtyFromStock = parseFloat(line.qty_from_stock)
-          const totalEntryQty = entries.reduce((s, e) => s + parseFloat(e.qty), 0)
-          const mutateOriginal = qtyFromStock === 0 && !line.short_marked_at
-
-          if (!mutateOriginal) {
-            // Whatever isn't a vendor purchase (stock portion and/or the
-            // accepted short shortfall) stays on the original row.
-            const remainderQty = qtyOrdered - totalEntryQty
-            await client.query(
-              `UPDATE po_lines SET qty_ordered=$1, total_price=$1*unit_price WHERE id=$2`,
-              [remainderQty, line.id],
-            )
-          }
-
-          for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i]
-            const childId = childByVendor.get(entry.vendor_id)
-            if (childId === undefined)
-              throw new Error(`No PO created for vendor ${entry.vendor_id}`)
-            const nextLineNumber = (lineNumberCounters.get(childId) ?? 0) + 1
-            lineNumberCounters.set(childId, nextLineNumber)
-            const qty = parseFloat(entry.qty)
-            const price = parseFloat(entry.actual_unit_price)
-            const totalPrice = qty * price
-
-            if (mutateOriginal && i === 0) {
-              // actual_unit_price mirrors unit_price here — the buyer's
-              // recorded purchase price *is* this line's real price, there
-              // being no separate pre-purchase "PO price" preserved once a
-              // line's forked. Left unset, the Finance Audit panel's own
-              // "Actual Price (entered by buyer)" box — which reads
-              // po_lines.actual_unit_price specifically, a column the
-              // legacy items_bought checklist populates but this fork path
-              // never did — falsely claimed "buyer hasn't recorded a
-              // price" even though the purchase total right next to it was
-              // computed off that exact price. Found live on PO-2026-0028.
-              await client.query(
-                `UPDATE po_lines
-                 SET po_id=$1, line_number=$2, qty_ordered=$3, unit_price=$4, actual_unit_price=$4,
-                     initial_unit_price=COALESCE(initial_unit_price,$4), currency_code=$5, total_price=$6
-                 WHERE id=$7`,
-                [childId, nextLineNumber, qty, price, entry.currency_code, totalPrice, line.id],
-              )
-            } else {
-              await client.query(
-                `INSERT INTO po_lines
-                   (po_id, requisition_id, line_number, description, product_id, qty_ordered, unit_price,
-                    initial_unit_price, actual_unit_price, currency_code, uom, total_price, account_id, cost_center_id,
-                    approved_unit_price, qty_from_stock, in_stock, origin_line_id)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$7,$8,$9,$10,$11,$12,$13,0,false,$14)`,
-                [
-                  childId,
-                  args.id,
-                  nextLineNumber,
-                  line.description,
-                  line.product_id,
-                  qty,
-                  price,
-                  entry.currency_code,
-                  line.uom,
-                  totalPrice,
-                  line.account_id,
-                  line.cost_center_id,
-                  line.approved_unit_price,
-                  line.id,
-                ],
-              )
-            }
-          }
-        }
-
-        for (const childId of childByVendor.values()) {
-          await recalcPOTotalsGW(client, childId)
-        }
-      }
-      // purchasesRes empty: every line that needed purchasing ended up
-      // fully covered by stock and/or marked short with nothing ever
-      // bought — nothing to fork, just advance the requisition.
-
-      await reqTransition(client, args.id, 'items_bought', 'sourcing', 'finish_buying', auth)
-      await client.query('COMMIT')
-    } catch (e) {
-      await client.query('ROLLBACK')
-      throw e
-    } finally {
-      client.release()
-    }
-    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    if (current.rows[0]?.company_id === auth.companyId && current.rows[0].status === 'sourcing')
+      return getRequisitionForReturn(args.id)
+    await finishBuyingRequisitionCore(args.id, auth)
     return getRequisitionForReturn(args.id)
   },
 

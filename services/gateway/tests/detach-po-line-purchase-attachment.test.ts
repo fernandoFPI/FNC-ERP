@@ -93,6 +93,15 @@ async function cleanup(): Promise<void> {
     `DELETE FROM requisition_approval_log WHERE requisition_id IN (SELECT id FROM requisitions WHERE company_id=$1 AND organizer_id=$2)`,
     [TEST_COMPANY_ID, userId],
   )
+  // The only line was bought with a receipt, so the requisition forked its child PO by itself (tryAutoFinishBuying).
+  await pool.query(
+    `DELETE FROM po_lines WHERE po_id IN (SELECT id FROM purchase_orders WHERE company_id=$1 AND requisition_id IN (SELECT id FROM requisitions WHERE company_id=$1 AND organizer_id=$2))`,
+    [TEST_COMPANY_ID, userId],
+  )
+  await pool.query(
+    `DELETE FROM purchase_orders WHERE company_id=$1 AND requisition_id IN (SELECT id FROM requisitions WHERE company_id=$1 AND organizer_id=$2)`,
+    [TEST_COMPANY_ID, userId],
+  )
   await pool.query(
     `DELETE FROM po_lines WHERE requisition_id IN (SELECT id FROM requisitions WHERE company_id=$1 AND organizer_id=$2)`,
     [TEST_COMPANY_ID, userId],
