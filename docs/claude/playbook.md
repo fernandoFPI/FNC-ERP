@@ -946,3 +946,59 @@ Don't re-derive, check these first.
     themselves (layout, RTL, the receipts panel inside the popup). Still open, not part of this change: the list page's
     status maps have no `audited` entry (46 claims on production), and `expenseClaimHtml.ts` interpolates unescaped
     strings (#54).
+
+58. **An approval step with no "send it back", and a shared shape that more than one reader builds.** A project
+    invoice goes draft, review, approved, issued, and from `review` the only button was Approve
+    (`InvoiceDetail.tsx`, `routes/invoices.ts`): an approver who saw a wrong line had to tell the creator outside the
+    system. Approve is gated by the same key as edit (`projects.invoices.edit`), so there is no separate approver
+    permission and nobody to hand a rejection to except whoever can edit. Fix (migration 313, the expense claim flow
+    of #57 applied to a second document): `POST /:id/reject` sends a `review` invoice back to `draft` with optional
+    per-line flags and an overall reason, `submit-for-review` marks the open flags "addressed", `POST
+    /:id/lines/:lineId/resolve-flag` lets an approver confirm a fix. It lands in `draft` (not a new `rejected` status
+    as for expense claims) because a draft already has Edit, Submit for review and Void, nothing was posted yet
+    (sources are only marked invoiced at Approve, so there is nothing to undo), and no existing rows are stuck. The
+    gate for reject and resolve is the same as Approve, so nobody gained a permission. The reject panel asks for ONE
+    reason at a time: the invoice-level one while no line is ticked, each ticked line's own once one is (the server
+    composes the invoice's reason from them); a reason typed before the first tick is hidden and not sent.
+    Three things this work turned up. (1) *Three readers build the invoice shape*, as #55 already said: the
+    `projectInvoice` query and the re-fetch inside `updateProjectInvoice` each carried their own copy of the line
+    mapping, and the PUBLIC QR page (`routes/verify.ts`, no login) a third. Flags are internal review notes, so they
+    had to reach the first two and never the third. The two app readers now share one SQL and one mapper
+    (`services/gateway/src/lib/invoiceReview.ts`, a test asserts both return identical flags); the public route maps
+    explicit fields (no row spread, so a new column cannot leak) and a test fetches it with a flagged invoice and
+    checks neither the reason text nor the words "flag" / "rejection" appear. The printed invoice gets the same
+    treatment (`invoiceHtmlReviewNotes.test.ts`: the page passes the builder the whole GraphQL invoice, which now
+    carries the notes). (2) *A global stub outlives its test file.* The gateway suite runs every file in one process;
+    `mobile-sync.test.ts` replaced `fetch` with `vi.fn()` in two tests and never restored it, so any later file that
+    calls `fetch` got `undefined`: the new public-page test (which sorts after it) passed alone and failed in the full
+    run with "Cannot read properties of undefined (reading 'status')", 3 ms in. Spot it by running the failing file
+    alone and then after its alphabetical predecessors; fix is `vi.unstubAllGlobals()` in an `afterEach` (done there,
+    verified by restoring the original file and watching the two files fail together). (3) Line numbers on an
+    invoice are positional: `updateProjectInvoice` renumbers lines 1..n on every save, so unlike expense claims
+    (#57) a removed line shifts the rest. A flag stays attached to its own line, so only the "Line N" wording
+    inside an old overall reason can go stale; left as is.
+    Not changed, worth knowing: the edit mutation allows editing in every status, even issued or paid, with only a
+    currency check; and there is no separation of duties (the creator can approve or reject their own invoice, as
+    with Approve today). Production held 13 project invoices (12 draft, 1 in review, none ever approved), so there was
+    no data to migrate. Tests: `services/projects/tests/invoice-review-flags.test.ts` (real Postgres through
+    supertest, 17 tests, with an editor, a view-only user and another company's admin; 14 safeguards
+    mutation-checked), `services/gateway/tests/project-invoice-review-flags.test.ts` (real ApolloServer, the two
+    readers and the public route), `apps/web/src/pages/projects/invoices/__tests__/InvoiceDetail.test.tsx` (18 tests,
+    10 mutation-checked). Header fields (migration 314, same work): the one-reason-at-a-time rule left a mixed case, a wrong line plus a wrong
+    Bill To, with nowhere to say so, so the ten fields of the printed header (Date of Issue, Due Date, Invoice No.,
+    Deliver To, Bill To, Contract No., Job, Period of Performance, Date of Delivery, Reference) can be flagged like
+    lines. One row per field per invoice in `project_invoice_header_flags` (CHECK on the field list), same lifecycle
+    (raised, addressed on resubmit, resolved by the approver), `POST /:id/header-flags/:field/resolve-flag`. The
+    GraphQL `headerFlags` list on `ProjectInvoice` is NULLABLE on purpose (#38): the other mutations that return an
+    invoice do not fill it, and a non-null list would null the whole invoice. The composed reason lists header fields
+    before lines. Invoice No., Job and Reference are not editable on the invoice (generated / taken from the project);
+    they can still be flagged and the card says "Not editable on the invoice". The invoice page never showed the header
+    values in normal view (only the PDF tab and Edit), so reject mode draws a card of all ten with their current
+    values and outside it the card shows only flagged fields. Three copies of the field list (the CHECK, the projects
+    service, the web) are pinned to each other (the #30 pattern): the projects test reads `pg_get_constraintdef`, the
+    web test reads the migration file and the service source. A trap met on the way: once the header card added ten tick
+    boxes above the lines, every existing test that clicked `getAllByRole('checkbox')[n]` clicked a header box; scope
+    such queries to the table they mean. Tests: 15 more in `invoice-review-flags.test.ts`, 2 more in the gateway test, 13
+    more in `InvoiceDetail.test.tsx`, `lib/__tests__/invoiceHeaderFlags.test.ts`; 13 backend and 12 web mutations, one of
+    which first died on a SQL error (an ambiguous column) instead of the intended test and was tightened.
+    Not verified in a browser. Related to #57, #55 and #54.
