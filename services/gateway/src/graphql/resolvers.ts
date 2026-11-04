@@ -32,6 +32,12 @@ import {
   normalizeInvoiceHeaderInput,
   resolveInvoiceHeader,
 } from '../lib/invoiceHeader.js'
+import {
+  INVOICE_LINES_SQL,
+  invoiceHeaderFlagFields,
+  invoiceRejectionFields,
+  mapInvoiceLine,
+} from '../lib/invoiceReview.js'
 import { resolvePhotoBypass } from '../lib/receiptPhotoBypass.js'
 import {
   listProjectFiles,
@@ -9777,9 +9783,7 @@ export const resolvers = {
       if (!inv.rows[0]) return null
       const i = inv.rows[0] as Record<string, unknown>
       const [lines, payments] = await Promise.all([
-        query('SELECT * FROM project_invoice_lines WHERE invoice_id=$1 ORDER BY line_number', [
-          args.id,
-        ]),
+        query(INVOICE_LINES_SQL, [args.id]),
         query('SELECT * FROM project_invoice_payments WHERE invoice_id=$1 ORDER BY payment_date', [
           args.id,
         ]),
@@ -9824,21 +9828,9 @@ export const resolvers = {
         paymentTermsDays: parseInt(String(i.payment_terms_days ?? 30)),
         verificationToken: i.verification_token ?? null,
         ...resolveInvoiceHeader(i),
-        lines: lines.rows.map((l: Record<string, unknown>) => ({
-          id: l.id,
-          lineNumber: l.line_number,
-          description: l.description,
-          sourceType: l.source_type,
-          qty: parseFloat(String(l.qty)),
-          unitCost: parseFloat(String(l.unit_cost)),
-          subtotal: parseFloat(String(l.subtotal)),
-          marginPct: parseFloat(String(l.margin_pct)),
-          marginAmount: parseFloat(String(l.margin_amount)),
-          taxPct: parseFloat(String(l.tax_pct ?? 0)),
-          taxAmount: parseFloat(String(l.tax_amount ?? 0)),
-          lineTotal: parseFloat(String(l.line_total)),
-          moComponents: l.mo_components ?? null,
-        })),
+        ...(await invoiceRejectionFields(i)),
+        ...(await invoiceHeaderFlagFields(i.id)),
+        lines: lines.rows.map(mapInvoiceLine),
         payments: payments.rows.map((p: Record<string, unknown>) => ({
           id: p.id,
           paymentDate: p.payment_date,
@@ -27335,9 +27327,7 @@ export const resolvers = {
       )
       const u = updated.rows[0] as Record<string, unknown>
       const [uLines, uPayments] = await Promise.all([
-        query('SELECT * FROM project_invoice_lines WHERE invoice_id=$1 ORDER BY line_number', [
-          args.id,
-        ]),
+        query(INVOICE_LINES_SQL, [args.id]),
         query('SELECT * FROM project_invoice_payments WHERE invoice_id=$1 ORDER BY payment_date', [
           args.id,
         ]),
@@ -27380,21 +27370,9 @@ export const resolvers = {
         paymentTermsDays: parseInt(String(u.payment_terms_days ?? 30)),
         verificationToken: u.verification_token ?? null,
         ...resolveInvoiceHeader(u),
-        lines: uLines.rows.map((l: Record<string, unknown>) => ({
-          id: l.id,
-          lineNumber: l.line_number,
-          description: l.description,
-          sourceType: l.source_type,
-          qty: parseFloat(String(l.qty)),
-          unitCost: parseFloat(String(l.unit_cost)),
-          subtotal: parseFloat(String(l.subtotal)),
-          marginPct: parseFloat(String(l.margin_pct)),
-          marginAmount: parseFloat(String(l.margin_amount)),
-          taxPct: parseFloat(String(l.tax_pct ?? 0)),
-          taxAmount: parseFloat(String(l.tax_amount ?? 0)),
-          lineTotal: parseFloat(String(l.line_total)),
-          moComponents: l.mo_components ?? null,
-        })),
+        ...(await invoiceRejectionFields(u)),
+        ...(await invoiceHeaderFlagFields(u.id)),
+        lines: uLines.rows.map(mapInvoiceLine),
         payments: uPayments.rows.map((p: Record<string, unknown>) => ({
           id: p.id,
           paymentDate: p.payment_date,
