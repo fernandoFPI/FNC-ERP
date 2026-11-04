@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
-import { pool, query, firstRowOrThrow } from '@fnc-erp/db'
+import { z } from 'zod'
+import { pool, query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { getAuth } from '@fnc-erp/auth'
 import {
@@ -12,6 +13,11 @@ import {
   type BillingParams,
 } from '@fnc-erp/billing'
 import { sendOk, sendError, requireParam } from '../lib/errors.js'
+import {
+  INVOICE_HEADER_FLAG_FIELDS,
+  INVOICE_HEADER_FLAG_LABELS,
+  type InvoiceHeaderFlagField,
+} from '../lib/invoiceHeaderFlags.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const invoicesRouter: IRouter = Router()
@@ -301,18 +307,39 @@ invoicesRouter.post(
     try {
       const id = requireParam(req, 'id')
       const companyId = getAuth(req).companyId
-      const result = await query(
-        `UPDATE project_invoices SET status='review', updated_at=NOW()
-       WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING id`,
-        [id, companyId],
-      )
-      if (!result.rows[0])
-        return sendError(
-          res,
-          409,
-          'INVALID_STATUS',
-          'Only draft invoices can be submitted for review',
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        const result = await client.query(
+          `UPDATE project_invoices SET status='review', updated_at=NOW()
+           WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING id`,
+          [id, companyId],
         )
+        if (!result.rows[0]) {
+          await client.query('ROLLBACK')
+          sendError(res, 409, 'INVALID_STATUS', 'Only draft invoices can be submitted for review')
+          return
+        }
+        // Submitting again is what "addresses" every flag left by an earlier rejection (migration
+        // 313); the approver still confirms each one (resolve-flag below).
+        await client.query(
+          `UPDATE project_invoice_lines SET flag_addressed_at=NOW()
+           WHERE invoice_id=$1 AND flagged_at IS NOT NULL
+             AND flag_resolved_at IS NULL AND flag_addressed_at IS NULL`,
+          [id],
+        )
+        await client.query(
+          `UPDATE project_invoice_header_flags SET flag_addressed_at=NOW()
+           WHERE invoice_id=$1 AND flag_resolved_at IS NULL AND flag_addressed_at IS NULL`,
+          [id],
+        )
+        await client.query('COMMIT')
+      } catch (err) {
+        await client.query('ROLLBACK')
+        throw err
+      } finally {
+        client.release()
+      }
       sendOk(res, { id, status: 'review' })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Action failed', err)
@@ -381,6 +408,263 @@ invoicesRouter.post(
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve invoice', err)
     }
   },
+)
+
+// POST /projects/invoices/:id/reject — an approver sends an invoice in review back to draft.
+//
+// The lines that need changing can be ticked, each with its own reason (lineFlags), the same way a
+// requisition or an expense claim is rejected; with only flags the invoice's reason is composed from
+// them, so a rejected invoice always has a reason to show. Flags are optional: a reason about the
+// whole invoice is enough. It lands in 'draft', where Edit and Submit for review already exist, so
+// there is no new status. Nothing needs undoing: sources are only marked invoiced at approve.
+// Gated like approve (projects.invoices.edit): whoever may approve may reject.
+//
+// Fields of the printed header (Bill To, Due Date, Contract No., ...) can be flagged the same way
+// (headerFlags, migration 314), so a wrong line and a wrong header can be reported together.
+const rejectSchema = z
+  .object({
+    reason: z.string().trim().max(2000).optional(),
+    lineFlags: z
+      .array(z.object({ lineId: z.string().uuid(), reason: z.string().trim().min(1).max(1000) }))
+      .max(500)
+      .optional(),
+    headerFlags: z
+      .array(
+        z.object({
+          field: z.enum(INVOICE_HEADER_FLAG_FIELDS),
+          reason: z.string().trim().min(1).max(1000),
+        }),
+      )
+      .max(INVOICE_HEADER_FLAG_FIELDS.length)
+      .optional(),
+  })
+  .refine((d) => !!d.reason || (d.lineFlags?.length ?? 0) > 0 || (d.headerFlags?.length ?? 0) > 0, {
+    message: 'Give an overall reason or flag at least one line or header field with a reason',
+  })
+
+invoicesRouter.post(
+  '/:id/reject',
+  requirePermission('projects.invoices.edit', 'edit'),
+  asyncHandler(async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const { companyId, userId } = getAuth(req)
+      const parsed = rejectSchema.safeParse(req.body)
+      if (!parsed.success) {
+        sendError(res, 422, 'VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request')
+        return
+      }
+      const { reason, lineFlags = [], headerFlags = [] } = parsed.data
+      const lineIds = lineFlags.map((f) => f.lineId)
+      if (new Set(lineIds).size !== lineIds.length) {
+        sendError(res, 422, 'VALIDATION', 'A line can only be flagged once')
+        return
+      }
+      if (new Set(headerFlags.map((f) => f.field)).size !== headerFlags.length) {
+        sendError(res, 422, 'VALIDATION', 'A header field can only be flagged once')
+        return
+      }
+      const reasonByLine = new Map(lineFlags.map((f) => [f.lineId, f.reason]))
+
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        const inv = await client.query<{ status: string }>(
+          'SELECT status FROM project_invoices WHERE id=$1 AND company_id=$2 FOR UPDATE',
+          [id, companyId],
+        )
+        if (!inv.rows[0]) {
+          await client.query('ROLLBACK')
+          sendError(res, 404, 'NOT_FOUND', 'Invoice not found')
+          return
+        }
+        if (inv.rows[0].status !== 'review') {
+          await client.query('ROLLBACK')
+          sendError(res, 409, 'INVALID_STATUS', 'Only invoices in review can be rejected')
+          return
+        }
+
+        for (const hf of headerFlags) {
+          // One row per field: flagging it again starts a fresh cycle (not addressed, not resolved).
+          await client.query(
+            `INSERT INTO project_invoice_header_flags (invoice_id, field, flag_reason, flagged_by)
+             VALUES ($1,$2,$3,$4)
+             ON CONFLICT (invoice_id, field) DO UPDATE
+               SET flag_reason=EXCLUDED.flag_reason, flagged_at=NOW(), flagged_by=EXCLUDED.flagged_by,
+                   flag_addressed_at=NULL, flag_resolved_at=NULL, flag_resolved_by=NULL`,
+            [id, hf.field, hf.reason, userId],
+          )
+        }
+
+        const flagged: { lineNumber: number; label: string; reason: string }[] = []
+        if (lineIds.length > 0) {
+          const owned = await client.query<{
+            id: string
+            line_number: number
+            description: string | null
+          }>(
+            `SELECT id, line_number, description FROM project_invoice_lines
+             WHERE invoice_id=$1 AND id = ANY($2::uuid[]) ORDER BY line_number`,
+            [id, lineIds],
+          )
+          if (owned.rows.length !== lineIds.length) {
+            await client.query('ROLLBACK')
+            sendError(
+              res,
+              422,
+              'VALIDATION',
+              'One of the flagged lines does not belong to this invoice',
+            )
+            return
+          }
+          for (const row of owned.rows) {
+            const flagReason = reasonByLine.get(row.id) ?? ''
+            // Re-flagging a line starts a fresh cycle: clears whatever addressed/resolved state an
+            // earlier flag on it had.
+            await client.query(
+              `UPDATE project_invoice_lines
+               SET flag_reason=$1, flagged_at=NOW(), flagged_by=$2,
+                   flag_addressed_at=NULL, flag_resolved_at=NULL, flag_resolved_by=NULL
+               WHERE id=$3 AND invoice_id=$4`,
+              [flagReason, userId, row.id, id],
+            )
+            flagged.push({
+              lineNumber: row.line_number,
+              label: row.description?.trim() ?? '',
+              reason: flagReason,
+            })
+          }
+        }
+
+        // The header fields first (the order of the page), then the lines.
+        const composed = [
+          ...headerFlags.map((f) => `• ${INVOICE_HEADER_FLAG_LABELS[f.field]}: ${f.reason}`),
+          ...flagged.map(
+            (f) => `• Line ${f.lineNumber}${f.label ? ` (${f.label})` : ''}: ${f.reason}`,
+          ),
+        ].join('\n')
+        // The overall reason first, then the flagged items, with a blank line between.
+        const fullReason = [reason, composed].filter((part) => !!part).join('\n\n')
+        await client.query(
+          `UPDATE project_invoices
+           SET status='draft', rejected_by=$1, rejected_at=NOW(), rejection_reason=$2, updated_at=NOW()
+           WHERE id=$3`,
+          [userId, fullReason, id],
+        )
+        await client.query('COMMIT')
+        await logAudit({
+          companyId,
+          userId,
+          action: 'UPDATE',
+          tableName: 'project_invoices',
+          recordId: id,
+          oldValues: { status: 'review' },
+          newValues: {
+            status: 'draft',
+            rejection_reason: fullReason,
+            lines_flagged: flagged.length,
+            header_fields_flagged: headerFlags.length,
+          },
+        })
+        sendOk(res, { id, status: 'draft', rejection_reason: fullReason })
+      } catch (err) {
+        await client.query('ROLLBACK')
+        throw err
+      } finally {
+        client.release()
+      }
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to reject invoice', err)
+    }
+  }),
+)
+
+// POST /projects/invoices/:id/lines/:lineId/resolve-flag — the approver confirms a fixed line.
+//
+// Only an addressed flag (the invoice was submitted for review again) can be resolved: an open one
+// is still waiting for the person who made the invoice, and resolving it would hide the reason from
+// them. Same gate as reject.
+invoicesRouter.post(
+  '/:id/lines/:lineId/resolve-flag',
+  requirePermission('projects.invoices.edit', 'edit'),
+  asyncHandler(async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const lineId = requireParam(req, 'lineId')
+      const { companyId, userId } = getAuth(req)
+      const r = await query(
+        `UPDATE project_invoice_lines l SET flag_resolved_at=NOW(), flag_resolved_by=$1
+         FROM project_invoices pi
+         WHERE l.id=$2 AND l.invoice_id=$3 AND pi.id = l.invoice_id AND pi.company_id=$4
+           AND l.flagged_at IS NOT NULL AND l.flag_addressed_at IS NOT NULL
+           AND l.flag_resolved_at IS NULL
+         RETURNING l.id`,
+        [userId, lineId, id, companyId],
+      )
+      if (!r.rows[0]) {
+        sendError(res, 409, 'INVALID_STATUS', 'This line has no fixed flag waiting to be confirmed')
+        return
+      }
+      await logAudit({
+        companyId,
+        userId,
+        action: 'UPDATE',
+        tableName: 'project_invoice_lines',
+        recordId: lineId,
+        newValues: { flag_resolved: true },
+      })
+      sendOk(res, { id: lineId, flag_resolved: true })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to resolve flag', err)
+    }
+  }),
+)
+
+// POST /projects/invoices/:id/header-flags/:field/resolve-flag — the approver confirms a fixed header field.
+//
+// The same rule as a line: only an addressed flag can be resolved, same gate as reject.
+invoicesRouter.post(
+  '/:id/header-flags/:field/resolve-flag',
+  requirePermission('projects.invoices.edit', 'edit'),
+  asyncHandler(async (req, res) => {
+    try {
+      const id = requireParam(req, 'id')
+      const field = requireParam(req, 'field')
+      const { companyId, userId } = getAuth(req)
+      if (!(INVOICE_HEADER_FLAG_FIELDS as readonly string[]).includes(field)) {
+        sendError(res, 422, 'VALIDATION', 'Unknown header field')
+        return
+      }
+      const r = await query(
+        `UPDATE project_invoice_header_flags hf SET flag_resolved_at=NOW(), flag_resolved_by=$1
+         FROM project_invoices pi
+         WHERE hf.invoice_id=$2 AND hf.field=$3 AND pi.id = hf.invoice_id AND pi.company_id=$4
+           AND hf.flag_addressed_at IS NOT NULL AND hf.flag_resolved_at IS NULL
+         RETURNING hf.field`,
+        [userId, id, field, companyId],
+      )
+      if (!r.rows[0]) {
+        sendError(
+          res,
+          409,
+          'INVALID_STATUS',
+          'This field has no fixed flag waiting to be confirmed',
+        )
+        return
+      }
+      await logAudit({
+        companyId,
+        userId,
+        action: 'UPDATE',
+        tableName: 'project_invoice_header_flags',
+        recordId: id,
+        newValues: { field: field as InvoiceHeaderFlagField, flag_resolved: true },
+      })
+      sendOk(res, { id, field, flag_resolved: true })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to resolve flag', err)
+    }
+  }),
 )
 
 // POST /projects/invoices/:id/issue — posts GL + queues PDF
