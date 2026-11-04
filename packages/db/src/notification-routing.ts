@@ -36,7 +36,7 @@ export const NOTIFICATION_ROUTES = [
     key: 'email.requisition_pricing_stage',
     label: 'Requisition pricing pipeline pings',
     description:
-      'Email store pricing / market pricing / price verification / approval position holders when a requisition reaches their stage',
+      'Email inventory check / store pricing / market pricing / price verification / approval position holders when a requisition reaches their stage',
   },
   {
     key: 'email.project_lifecycle',

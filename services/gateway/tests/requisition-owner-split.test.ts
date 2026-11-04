@@ -122,7 +122,7 @@ const lineRow = async (lineId: string) =>
 const verificationNotices = async (reqId: string): Promise<number> =>
   (
     await pool.query<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM service_outbox WHERE event_type='REQ_PRICE_VERIFICATION_REQUIRED' AND payload->>'poId'=$1`,
+      `SELECT COUNT(*)::int AS n FROM service_outbox WHERE event_type='REQ_PRICE_VERIFICATION_REQUIRED' AND payload->>'requisitionId'=$1`,
       [reqId],
     )
   ).rows[0]!.n
@@ -170,7 +170,7 @@ async function cleanup(): Promise<void> {
   const reqs = `SELECT id FROM requisitions WHERE company_id=$1 AND organizer_id IN (SELECT id FROM users WHERE email LIKE $2)`
   const a = [TEST_COMPANY_ID, `${EMAIL_PREFIX}%`]
   await pool.query(
-    `DELETE FROM service_outbox WHERE event_type='REQ_PRICE_VERIFICATION_REQUIRED' AND payload->>'poId' IN (SELECT id::text FROM requisitions WHERE company_id=$1 AND organizer_id IN (SELECT id FROM users WHERE email LIKE $2))`,
+    `DELETE FROM service_outbox WHERE event_type='REQ_PRICE_VERIFICATION_REQUIRED' AND payload->>'requisitionId' IN (SELECT id::text FROM requisitions WHERE company_id=$1 AND organizer_id IN (SELECT id FROM users WHERE email LIKE $2))`,
     a,
   )
   await pool.query(`DELETE FROM requisition_approval_log WHERE requisition_id IN (${reqs})`, a)
@@ -390,6 +390,23 @@ describe('both parts have to be submitted before the requisition moves on', () =
     await new Promise((res) => setTimeout(res, 300))
     expect(await verificationNotices(r.reqId)).toBe(1)
   })
+
+  // Regression: this notice used to carry `poId`, which the worker's REQ_* handler cannot read, so every one failed
+  // ("invalid input syntax for type uuid: "undefined"", 192 on production) and none reached the organizer.
+  it('sends the notice to the organizer with the id key the worker reads, and not the one it cannot', async () => {
+    const r = await makeRequisition('market_pricing', [{}])
+    await submit('procurement', r.reqId, [price(r.lines[0]!)])
+    await vi.waitFor(async () => expect(await verificationNotices(r.reqId)).toBe(1))
+    const row = await pool.query<{ payload: Record<string, unknown> }>(
+      `SELECT payload FROM service_outbox WHERE event_type='REQ_PRICE_VERIFICATION_REQUIRED' AND payload->>'requisitionId'=$1`,
+      [r.reqId],
+    )
+    const payload = row.rows[0]!.payload
+    expect(payload.requisitionId).toBe(r.reqId)
+    expect(payload.userId).toBe(userIds.owner) // the organizer
+    expect(payload).not.toHaveProperty('poId')
+  })
+
 
   it('handing a line back re-opens procurement’s part, which then has to submit again', async () => {
     const r = await makeRequisition('market_pricing', [{ owner: true }, {}])

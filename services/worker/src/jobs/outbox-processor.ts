@@ -1839,6 +1839,8 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
     // and friends: those are in-app only), but this is a brand-new
     // notification path with no established in-app-only precedent, so it
     // starts with both.
+    case 'REQ_INVENTORY_CHECK_REQUIRED':
+    case 'REQ_STORE_PRICING_REQUIRED':
     case 'REQ_MARKET_PRICING_REQUIRED':
     case 'REQ_PRICE_VERIFICATION_REQUIRED':
     case 'REQ_APPROVAL_REQUIRED': {
@@ -1907,7 +1909,43 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       break
     }
 
+    // Items Bought's extra layer of approval (migration 316). In-app only, like the PO notices above: the organizer is
+    // told what is waiting for him, a buyer is told why a purchase was sent back. Payload from the gateway's
+    // notifyUserForRequisitionGW: { userId, requisitionId, type, title, body }.
+    case 'REQ_PURCHASES_APPROVAL_REQUIRED':
+    case 'REQ_PURCHASE_SENT_BACK': {
+      const reqRes = await pool.query<{ company_id: string; requisition_number: string }>(
+        `SELECT company_id, requisition_number FROM requisitions WHERE id=$1`,
+        [String(p['requisitionId'])],
+      )
+      const row = reqRes.rows[0]
+      if (!row) {
+        log.warn(
+          { requisitionId: p['requisitionId'], eventType: event.event_type },
+          'requisition not found for notification — skipping',
+        )
+        break
+      }
+      await pool.query(
+        `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,false)`,
+        [
+          String(p['userId']),
+          row.company_id,
+          event.event_type,
+          String(p['title'] ?? ''),
+          String(p['body'] ?? ''),
+          JSON.stringify({
+            requisitionId: p['requisitionId'],
+            requisitionNumber: row.requisition_number,
+          }),
+        ],
+      )
+      break
+    }
+
     case 'PO_APPROVED_NOTIFICATION': {
+
       const coRes = await pool.query<{ company_id: string; po_number: string }>(
         `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`,
         [String(p['poId'])],

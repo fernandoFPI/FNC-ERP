@@ -2171,11 +2171,13 @@ async function getPOLinePurchaseForReturn(id: string): Promise<Record<string, un
     `SELECT plp.*, v.name AS vendor_name,
             COALESCE(bu.first_name || ' ' || bu.last_name, bu.email) AS bought_by_name,
             COALESCE(tu.first_name || ' ' || tu.last_name, tu.email) AS tolerance_approved_by_name,
+            COALESCE(oau.first_name || ' ' || oau.last_name, oau.email) AS organizer_approved_by_name,
             f.id AS receipt_file_id, f.original_filename AS receipt_filename
      FROM po_line_purchases plp
      LEFT JOIN vendors v ON v.id=plp.vendor_id
      LEFT JOIN users bu ON bu.id=plp.bought_by
      LEFT JOIN users tu ON tu.id=plp.tolerance_approved_by
+     LEFT JOIN users oau ON oau.id=plp.organizer_approved_by
      LEFT JOIN document_attachments da ON da.id=plp.receipt_attachment_id
      LEFT JOIN files f ON f.id=da.file_id
      WHERE plp.id=$1`,
@@ -2517,6 +2519,71 @@ async function callerMayBuyRequisitionLineGW(
   return userHasPositionForRequisitionGW(auth.userId, auth.companyId, requisitionId, 'buyer')
 }
 
+// The extra layer of approval on Items Bought (migration 316). An admin marks users whose purchases the requisition's
+// organizer must approve before the requisition continues. Whether a purchase needs the approval is read from the mark
+// when the purchase is recorded and stored on the purchase, so un-marking someone later does not free what they already
+// bought, and marking someone does not trap what is already in progress.
+const ORGANIZER_APPROVAL_PENDING_REASON =
+  "Purchases recorded by a marked buyer must be approved by the requisition's organizer before finishing buying"
+
+// Who may approve, or send back, a purchase that needs the organizer's approval: the requisition's organizer, or an admin
+// acting for him, and never the person who bought it. When the buyer IS the organizer (a normal user buying his own lines)
+// that leaves admins only.
+function canApproveMarkedPurchaseGW(opts: {
+  callerId: string
+  callerIsAdmin: boolean
+  organizerId: string | null
+  boughtBy: string | null
+}): boolean {
+  if (opts.boughtBy !== null && opts.boughtBy === opts.callerId) return false
+  return opts.callerIsAdmin || (opts.organizerId !== null && opts.organizerId === opts.callerId)
+}
+
+// A short notice to one user about a requisition. The payload carries `requisitionId`, the key the worker reads for every
+// REQ_* event (notifyUserGW carries `poId`, which the worker's REQ_* cases cannot use).
+async function notifyUserForRequisitionGW(
+  userId: string,
+  requisitionId: string,
+  notification: POAuthGWNotification,
+): Promise<void> {
+  await query(
+    `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
+    [notification.type, JSON.stringify({ userId, requisitionId, ...notification })],
+  )
+}
+
+// Everything else Items Bought needed is in and the requisition is waiting only for the organizer: tell him. Not again
+// within half an hour (a later receipt photo triggers the same check), and not when the only purchases waiting are his
+// own, because nothing there is his to approve.
+async function notifyOrganizerOfPendingPurchases(reqId: string): Promise<void> {
+  const r = await query<{
+    organizer_id: string | null
+    requisition_number: string
+    waiting: string
+  }>(
+    `SELECT req.organizer_id, req.requisition_number,
+            (SELECT COUNT(*) FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
+              WHERE pl.requisition_id=req.id AND plp.needs_organizer_approval AND plp.organizer_approved_by IS NULL
+                AND plp.bought_by IS DISTINCT FROM req.organizer_id) AS waiting
+       FROM requisitions req WHERE req.id=$1`,
+    [reqId],
+  )
+  const row = r.rows[0]
+  if (!row.organizer_id || parseInt(row.waiting, 10) === 0) return
+  const recent = await query(
+    `SELECT 1 FROM service_outbox
+      WHERE event_type='REQ_PURCHASES_APPROVAL_REQUIRED' AND payload->>'requisitionId'=$1
+        AND payload->>'userId'=$2 AND created_at > NOW() - INTERVAL '30 minutes' LIMIT 1`,
+    [reqId, row.organizer_id],
+  )
+  if (recent.rows[0]) return
+  await notifyUserForRequisitionGW(row.organizer_id, reqId, {
+    type: 'REQ_PURCHASES_APPROVAL_REQUIRED',
+    title: 'Items bought need your approval',
+    body: `${row.requisition_number}: review what was bought and approve it so the requisition can continue`,
+  })
+}
+
 // Whether a requisition in Items Bought is ready to Finish Buying, as the message of what is still missing, or
 // null when it is: every purchased line fully bought or marked short, every purchase has a receipt, every
 // over-tolerance purchase signed off. The manual button and the automatic path (tryAutoFinishBuying) share it.
@@ -2565,6 +2632,16 @@ async function finishBuyingNotReadyReason(
   )
   if (parseInt(unapprovedTolerance.rows[0]?.c ?? '0', 10) > 0)
     return 'Every over-tolerance purchase must be approved before finishing buying'
+
+  // Gate 4: every purchase recorded by a marked buyer has the organizer's approval (migration 316). Last on purpose:
+  // when this is the only thing missing, the organizer is the one being waited for (see tryAutoFinishBuying).
+  const awaitingOrganizer = await query<{ c: string }>(
+    `SELECT COUNT(*) AS c FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
+       WHERE pl.requisition_id=$1 AND plp.needs_organizer_approval AND plp.organizer_approved_by IS NULL`,
+    [reqId],
+  )
+  if (parseInt(awaitingOrganizer.rows[0]?.c ?? '0', 10) > 0)
+    return ORGANIZER_APPROVAL_PENDING_REASON
 
   return null
 }
@@ -2788,7 +2865,13 @@ async function finishBuyingRequisitionCore(reqId: string, auth: GWAuth): Promise
 // finishBuyingRequisition stays as the fallback.
 async function tryAutoFinishBuying(reqId: string, auth: GWAuth): Promise<void> {
   try {
-    if ((await finishBuyingNotReadyReason(reqId, auth.companyId)) !== null) return
+    const notReady = await finishBuyingNotReadyReason(reqId, auth.companyId)
+    if (notReady === ORGANIZER_APPROVAL_PENDING_REASON) {
+      // Only the organizer's approval is missing: this is the moment to ask for it.
+      await notifyOrganizerOfPendingPurchases(reqId)
+      return
+    }
+    if (notReady !== null) return
     await finishBuyingRequisitionCore(reqId, auth)
   } catch (err) {
     console.error('[auto-finish-buying] could not finish requisition', reqId, err)
@@ -11570,7 +11653,11 @@ export const resolvers = {
                      'bought_by', plp.bought_by, 'bought_at', plp.bought_at,
                      'bought_by_name', COALESCE(bu.first_name || ' ' || bu.last_name, bu.email),
                      'over_tolerance', plp.over_tolerance, 'tolerance_approved_by', plp.tolerance_approved_by,
-                     'tolerance_approved_by_name', COALESCE(tu.first_name || ' ' || tu.last_name, tu.email)
+                     'tolerance_approved_by_name', COALESCE(tu.first_name || ' ' || tu.last_name, tu.email),
+                     'needs_organizer_approval', plp.needs_organizer_approval,
+                     'organizer_approved_by', plp.organizer_approved_by,
+                     'organizer_approved_at', plp.organizer_approved_at,
+                     'organizer_approved_by_name', COALESCE(oau.first_name || ' ' || oau.last_name, oau.email)
                    ) ORDER BY plp.bought_at), '[]')
                    FROM po_line_purchases plp
                    LEFT JOIN vendors v ON v.id=plp.vendor_id
@@ -11578,6 +11665,7 @@ export const resolvers = {
                    LEFT JOIN files rf ON rf.id=da.file_id
                    LEFT JOIN users bu ON bu.id=plp.bought_by
                    LEFT JOIN users tu ON tu.id=plp.tolerance_approved_by
+                   LEFT JOIN users oau ON oau.id=plp.organizer_approved_by
                    WHERE plp.po_line_id = pol.id) AS purchases
            FROM po_lines pol
            LEFT JOIN products p ON p.id=pol.product_id
@@ -11675,9 +11763,28 @@ export const resolvers = {
         userIsAssignedApproverForRequisitionGW(ctx.auth.userId, args.id),
         callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId),
       ])
+      // For each purchase waiting for the organizer's approval, whether THIS caller may act on it. Decided here by the
+      // same function the mutations use, so the page keeps no copy of the rule.
+      const callerId = ctx.auth.userId
+      const requisitionOrganizerId = (req.rows[0].organizer_id as string | null) ?? null
+      const linesWithApproval = lines.rows.map((l) => ({
+        ...l,
+        purchases: ((l.purchases as Record<string, unknown>[] | null) ?? []).map((p) => ({
+          ...p,
+          caller_can_approve:
+            !!p.needs_organizer_approval &&
+            !p.organizer_approved_by &&
+            canApproveMarkedPurchaseGW({
+              callerId,
+              callerIsAdmin: isAdmin,
+              organizerId: requisitionOrganizerId,
+              boughtBy: (p.bought_by as string | null) ?? null,
+            }),
+        })),
+      }))
       return {
         ...req.rows[0],
-        lines: lines.rows,
+        lines: linesWithApproval,
         approval_log: approvals.rows,
         currencyTotals,
         edit_requests: editRequests.rows.map((r) => ({
@@ -11825,6 +11932,12 @@ export const resolvers = {
                        WHERE ppa.employee_id=$3 AND ppa.position='po_admin'
                          AND ppa.is_active=true AND ppa.company_id=$1)))
                OR (req.status='items_bought' AND ${positionScope('buyer')})
+               -- the organizer, when a marked buyer's purchases are waiting for him (mirrors approveItemsBought: never
+               -- counting purchases he recorded himself; admins already see every items_bought requisition below)
+               OR (req.status='items_bought' AND req.organizer_id=$2 AND EXISTS (
+                     SELECT 1 FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
+                     WHERE pl.requisition_id=req.id AND plp.needs_organizer_approval
+                       AND plp.organizer_approved_by IS NULL AND plp.bought_by IS DISTINCT FROM $2))
                OR ($4=true AND req.status IN (
                      'inventory_check','store_pricing','market_pricing',
                      'price_verification','pending_approval','items_bought'))
@@ -12383,8 +12496,17 @@ export const resolvers = {
       }
     },
 
-    userPOPositions: async (_: unknown, args: { userId: string }, ctx: GQLContext) => {
+    userPOPositions: async (
+      _: unknown,
+      args: { userId: string; companyId?: string | null },
+      ctx: GQLContext,
+    ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      // The Roles tab shows one company at a time and asks for that company's positions. Omitted keeps the old answer
+      // (every company's), which the Stock Adjustment and Pending Catalog screens rely on for the logged-in user.
+      const companyId = args.companyId ?? null
+      if (companyId && companyId !== ctx.auth.companyId && ctx.auth.role !== 'system_admin')
+        throw new Error('system_admin role required to manage another company')
       const res = await query(
         `SELECT ppa.id, ppa.employee_id AS "employeeId",
          (e.first_name || ' ' || e.last_name) AS "employeeName",
@@ -12397,10 +12519,35 @@ export const resolvers = {
        LEFT JOIN projects proj ON proj.id = ppa.project_id
        LEFT JOIN departments d ON d.id = ppa.department_id
        LEFT JOIN company_branches cb ON cb.id = ppa.branch_id
-       WHERE e.user_id = $1`,
-        [args.userId],
+       WHERE e.user_id = $1 AND ($2::uuid IS NULL OR ppa.company_id = $2::uuid)`,
+        [args.userId, companyId],
       )
       return res.rows
+    },
+
+    // Whether this user's purchases need the organizer's approval (migration 316), for the Settings user screen. Same
+    // admins as the PO positions next to it.
+    userPurchaseReview: async (
+      _: unknown,
+      args: { userId: string; companyId?: string | null },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (
+        ctx.auth.role !== 'system_admin' &&
+        !(await callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId))
+      )
+        throw new Error('system_admin role or PO Admin position required')
+      // The Settings screen can be looking at another company than the admin's session. Only a system_admin reaches
+      // across companies, so the mark shown is the mark of the company being shown.
+      const companyId = args.companyId ?? ctx.auth.companyId
+      if (companyId !== ctx.auth.companyId && ctx.auth.role !== 'system_admin')
+        throw new Error('system_admin role required to manage another company')
+      const r = await query(
+        `SELECT 1 FROM user_purchase_review_marks WHERE company_id=$1 AND user_id=$2`,
+        [companyId, args.userId],
+      )
+      return r.rows.length > 0
     },
 
     bankDetailsSummary: async (_: unknown, args: { employee_id: string }, ctx: GQLContext) => {
@@ -34997,11 +35144,13 @@ const phase5MutationResolvers = {
       client.release()
     }
     if (advanced && organizerRow.rows[0]?.organizer_id) {
-      void notifyUserGW(organizerRow.rows[0].organizer_id, auth.companyId, {
+      // notifyUserForRequisitionGW, not notifyUserGW: the worker reads `requisitionId` for every REQ_* event, and
+      // notifyUserGW sends `poId`, so this notice used to fail on every attempt ("invalid input syntax for type uuid:
+      // "undefined"", 192 times on production) and never reached the organizer.
+      void notifyUserForRequisitionGW(organizerRow.rows[0].organizer_id, args.id, {
         type: 'REQ_PRICE_VERIFICATION_REQUIRED',
         title: 'Price verification required',
         body: 'Cross-check market prices and submit for approval',
-        poId: args.id,
       })
     }
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
@@ -35832,11 +35981,29 @@ const phase5MutationResolvers = {
       // approveTolerancePurchase itself refuses an approver who matches
       // bought_by, so there is no path (inline or otherwise) for the same
       // person to both record and clear their own over-tolerance purchase.
+      // An admin can mark users whose purchases the requisition's organizer must approve (migration 316). The mark is
+      // read now and kept on the purchase, so changing it later neither frees nor traps what already exists.
+      const marked = await client.query(
+        `SELECT 1 FROM user_purchase_review_marks WHERE company_id=$1 AND user_id=$2`,
+        [auth.companyId, auth.userId],
+      )
+      const needsOrganizerApproval = marked.rows.length > 0
+
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO po_line_purchases
-           (po_line_id, vendor_id, currency_code, qty, actual_unit_price, bought_by, over_tolerance)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-        [lineId, vendorId, currencyCode, qty, actualUnitPrice, auth.userId, overTolerance],
+           (po_line_id, vendor_id, currency_code, qty, actual_unit_price, bought_by, over_tolerance,
+            needs_organizer_approval)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [
+          lineId,
+          vendorId,
+          currencyCode,
+          qty,
+          actualUnitPrice,
+          auth.userId,
+          overTolerance,
+          needsOrganizerApproval,
+        ],
       )
       purchaseId = inserted.rows[0].id
 
@@ -36006,6 +36173,153 @@ const phase5MutationResolvers = {
       throw e
     } finally {
       client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', purchase.requisition_id, 'updated')
+    return true
+  },
+
+  // The organizer's sign-off on what a marked buyer bought (migration 316). Approves every purchase on the requisition
+  // that is waiting for it and that the caller may approve: the organizer, or an admin acting for him, never the person who
+  // bought it. When the last one lands the requisition finishes buying by itself.
+  approveItemsBought: async (_: unknown, args: { requisitionId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const reqRow = await query<{ status: string; company_id: string; organizer_id: string | null }>(
+      `SELECT status, company_id, organizer_id FROM requisitions WHERE id=$1`,
+      [args.requisitionId],
+    )
+    const req = reqRow.rows[0]
+    if (!req || req.company_id !== auth.companyId) throw new Error('Requisition not found')
+    if (req.status !== 'items_bought')
+      throw new Error('Requisition must be in items_bought status to approve the items bought')
+
+    const pending = await query<{ id: string; bought_by: string | null }>(
+      `SELECT plp.id, plp.bought_by FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
+        WHERE pl.requisition_id=$1 AND plp.needs_organizer_approval AND plp.organizer_approved_by IS NULL`,
+      [args.requisitionId],
+    )
+    if (pending.rows.length === 0)
+      throw new Error('No purchases are waiting for approval on this requisition')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    const mine = pending.rows.filter((p) =>
+      canApproveMarkedPurchaseGW({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        organizerId: req.organizer_id,
+        boughtBy: p.bought_by,
+      }),
+    )
+    if (mine.length === 0)
+      throw new Error(
+        "Only the requisition's organizer, or an admin, can approve these purchases, and never the person who bought them",
+      )
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query(
+        `UPDATE po_line_purchases SET organizer_approved_by=$1, organizer_approved_at=NOW()
+          WHERE id = ANY($2::uuid[]) AND organizer_approved_by IS NULL`,
+        [auth.userId, mine.map((p) => p.id)],
+      )
+      await client.query(
+        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+         VALUES ($1,'items_bought','items_bought','items_bought_approved',$2,$3)`,
+        [args.requisitionId, auth.userId, `${mine.length} purchase(s) approved`],
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    // The last thing a requisition was waiting for? Then it finishes buying by itself.
+    await tryAutoFinishBuying(args.requisitionId, auth)
+    void publishEntityChanged(auth.companyId, 'requisition', args.requisitionId, 'updated')
+    return getRequisitionForReturn(args.requisitionId)
+  },
+
+  // The other option beside approveItemsBought: removes one purchase that is waiting for the organizer's approval, with a
+  // reason, so the buyer records it again. The buyer is told why. Same people as the approval, never the buyer.
+  sendBackPurchase: async (
+    _: unknown,
+    args: { purchaseId: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const row = await query<{
+      id: string
+      requisition_id: string
+      company_id: string
+      status: string
+      organizer_id: string | null
+      requisition_number: string
+      bought_by: string | null
+      needs_organizer_approval: boolean
+      organizer_approved_by: string | null
+      line_description: string | null
+    }>(
+      `SELECT plp.id, pl.requisition_id, req.company_id, req.status, req.organizer_id, req.requisition_number,
+              plp.bought_by, plp.needs_organizer_approval, plp.organizer_approved_by,
+              pl.description AS line_description
+         FROM po_line_purchases plp
+         JOIN po_lines pl ON pl.id=plp.po_line_id
+         JOIN requisitions req ON req.id=pl.requisition_id
+        WHERE plp.id=$1`,
+      [args.purchaseId],
+    )
+    const purchase = row.rows[0]
+    if (!purchase || purchase.company_id !== auth.companyId)
+      throw new Error('Purchase entry not found')
+    if (purchase.status !== 'items_bought')
+      throw new Error('Requisition must be in items_bought status to send a purchase back')
+    if (!purchase.needs_organizer_approval || purchase.organizer_approved_by)
+      throw new Error('This purchase is not waiting for approval — it cannot be sent back')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    if (
+      !canApproveMarkedPurchaseGW({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        organizerId: purchase.organizer_id,
+        boughtBy: purchase.bought_by,
+      })
+    )
+      throw new Error(
+        "Only the requisition's organizer, or an admin, can send this purchase back, and never the person who bought it",
+      )
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      // po_line_purchases.receipt_attachment_id references document_attachments (not the other way around), so the
+      // purchase goes first, or deleting its still-referenced receipt trips the foreign key (same order as
+      // rejectTolerancePurchase).
+      await client.query(`DELETE FROM po_line_purchases WHERE id=$1`, [args.purchaseId])
+      await client.query(
+        `DELETE FROM document_attachments WHERE entity_type='po_line_purchase' AND entity_id=$1`,
+        [args.purchaseId],
+      )
+      await client.query(
+        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+         VALUES ($1,'items_bought','items_bought','purchase_sent_back',$2,$3)`,
+        [purchase.requisition_id, auth.userId, args.reason.trim()],
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    if (purchase.bought_by) {
+      await notifyUserForRequisitionGW(purchase.bought_by, purchase.requisition_id, {
+        type: 'REQ_PURCHASE_SENT_BACK',
+        title: 'A purchase was sent back',
+        body: `${purchase.requisition_number}${purchase.line_description ? ` — ${purchase.line_description}` : ''}: ${args.reason.trim()}`,
+      })
     }
     void publishEntityChanged(auth.companyId, 'requisition', purchase.requisition_id, 'updated')
     return true
@@ -38208,7 +38522,9 @@ const phase5MutationResolvers = {
     _: unknown,
     args: {
       input: {
-        employeeId: string
+        employeeId?: string | null
+        userId?: string | null
+        companyId?: string | null
         position: string
         projectId?: string
         departmentId?: string
@@ -38223,12 +38539,50 @@ const phase5MutationResolvers = {
       !(await callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId))
     )
       throw new Error('system_admin role or PO Admin position required')
-    const { employeeId, position, projectId, departmentId, branchId } = args.input
+    const { position, projectId, departmentId, branchId } = args.input
+    // The Roles tab can be looking at another company than the admin's session: the position goes to the company being
+    // shown, and only a system_admin reaches across companies. Omitted = the admin's own company, as before.
+    const companyId = args.input.companyId ?? ctx.auth.companyId
+    if (companyId !== ctx.auth.companyId && ctx.auth.role !== 'system_admin')
+      throw new Error('system_admin role required to manage another company')
+    // Who gets it: an employee id (the Positions page), or a user (the Roles tab) turned into that user's employee record
+    // in this company. Either way the employee must belong to the company the position is created in; before, nothing
+    // checked, and the Roles tab sent the employee of the user's FIRST position (an empty string when there was none).
+    let employeeId = args.input.employeeId ?? null
+    if (employeeId) {
+      const emp = await query(`SELECT 1 FROM employees WHERE id=$1 AND company_id=$2`, [
+        employeeId,
+        companyId,
+      ])
+      if (!emp.rows[0]) throw new Error('Employee not found in this company')
+    } else if (args.input.userId) {
+      const emp = await query<{ id: string }>(
+        `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
+        [args.input.userId, companyId],
+      )
+      if (!emp.rows[0]) throw new Error('This user has no employee record in this company')
+      employeeId = emp.rows[0].id
+    } else {
+      throw new Error('employeeId or userId is required')
+    }
+    // The project, department and branch must belong to that company too.
+    for (const [table, label, scopeId] of [
+      ['projects', 'Project', projectId],
+      ['departments', 'Department', departmentId],
+      ['company_branches', 'Branch', branchId],
+    ] as const) {
+      if (!scopeId) continue
+      const ok = await query(`SELECT 1 FROM ${table} WHERE id=$1 AND company_id=$2`, [
+        scopeId,
+        companyId,
+      ])
+      if (!ok.rows[0]) throw new Error(`${label} not found in this company`)
+    }
     const r = await query(
       `INSERT INTO po_position_assignments (company_id, employee_id, position, project_id, department_id, branch_id, assigned_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
       [
-        ctx.auth.companyId,
+        companyId,
         employeeId,
         position,
         projectId ?? null,
@@ -38274,17 +38628,74 @@ const phase5MutationResolvers = {
       !(await callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId))
     )
       throw new Error('system_admin role or PO Admin position required')
-    const r = await query(
-      `UPDATE po_position_assignments SET is_active=false, updated_at=NOW() WHERE id=$1 AND company_id=$2 RETURNING id`,
-      [args.id, ctx.auth.companyId],
+    // The Roles tab lists one company's positions, so a position can belong to a company other than the admin's session.
+    // Only a system_admin reaches it; for anyone else it is simply not found, as before.
+    const found = await query<{ company_id: string }>(
+      `SELECT company_id FROM po_position_assignments WHERE id=$1`,
+      [args.id],
     )
-    if (!r.rows[0]) throw new Error('Position assignment not found')
+    const owner = found.rows[0]
+    if (!owner || (owner.company_id !== ctx.auth.companyId && ctx.auth.role !== 'system_admin'))
+      throw new Error('Position assignment not found')
+    await query(
+      `UPDATE po_position_assignments SET is_active=false, updated_at=NOW() WHERE id=$1 AND company_id=$2`,
+      [args.id, owner.company_id],
+    )
+    return true
+  },
+
+  // Mark (or un-mark) a user whose purchases at Items Bought must be approved by the requisition's organizer before the
+  // requisition continues (migration 316). Same admins as the PO positions: system_admin or the PO Admin position. The
+  // user must belong to the company, so a mark cannot be planted on someone else's account.
+  setUserPurchaseReview: async (
+    _: unknown,
+    args: { userId: string; required: boolean; companyId?: string | null },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    if (
+      ctx.auth.role !== 'system_admin' &&
+      !(await callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId))
+    )
+      throw new Error('system_admin role or PO Admin position required')
+    // The Settings screen can be looking at another company than the admin's session: the mark goes to the company being
+    // shown, and only a system_admin reaches across companies.
+    const companyId = args.companyId ?? ctx.auth.companyId
+    if (companyId !== ctx.auth.companyId && ctx.auth.role !== 'system_admin')
+      throw new Error('system_admin role required to manage another company')
+    const member = await query(
+      `SELECT 1 FROM user_company_roles WHERE user_id=$1 AND company_id=$2 AND is_active=true LIMIT 1`,
+      [args.userId, companyId],
+    )
+    if (!member.rows[0]) throw new Error('User not found in this company')
+    if (args.required) {
+      await query(
+        `INSERT INTO user_purchase_review_marks (company_id, user_id, marked_by)
+         VALUES ($1,$2,$3) ON CONFLICT (company_id, user_id) DO NOTHING`,
+        [companyId, args.userId, ctx.auth.userId],
+      )
+    } else {
+      await query(`DELETE FROM user_purchase_review_marks WHERE company_id=$1 AND user_id=$2`, [
+        companyId,
+        args.userId,
+      ])
+    }
+    await logAudit({
+      userId: ctx.auth.userId,
+      companyId,
+
+      action: args.required ? 'purchase_review_marked' : 'purchase_review_unmarked',
+      tableName: 'user_purchase_review_marks',
+      recordId: args.userId,
+      newValues: { required: args.required },
+    })
     return true
   },
 
   createIntercoStockTransfer: async (
     _: unknown,
     args: { input: Record<string, unknown> },
+
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
