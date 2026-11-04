@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { enumLabel } from '../../../i18n'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -10,20 +10,29 @@ import { Badge } from '../../../components/ui/Badge'
 import { Select } from '../../../components/ui/Select'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EntityAttachments } from '../../../components/inventory/EntityAttachments'
+import { ExpenseClaimEditor } from '../../../components/finance/ExpenseClaimEditor'
+import { ExpenseLineFlag } from '../../../components/finance/ExpenseLineFlag'
 import { api } from '../../../lib/axios'
 import { useCompany } from '../../../hooks/useCompany'
 import { usePermission } from '../../../hooks/usePermission'
 import { buildExpenseClaimHTML } from '../../../lib/expenseClaimHtml'
+import { lineFlagState } from '../../../lib/expenseClaimFlags'
 
 interface ClaimLine {
   id: string
+  line_number: number
   expense_date: string
+  category_id: string | null
   category_name: string | null
   account_code: string | null
   account_name: string | null
   description: string | null
   amount: number
   currency_code: string
+  flag_reason: string | null
+  flagged_by_name: string | null
+  flag_addressed_at: string | null
+  flag_resolved_at: string | null
 }
 
 interface Claim {
@@ -60,24 +69,10 @@ interface Claim {
   advance_number: string | null
   receipt_pending: boolean
   has_receipt: boolean
+  // Decided by the server (canReviseClaim): the person who filed it or an admin for a rejected
+  // claim, plus finance.expenses.edit holders for a draft. The page never re-derives it.
+  can_revise: boolean
   lines: ClaimLine[]
-}
-
-interface ExpenseCategoryOption {
-  id: string
-  name: string
-}
-
-interface EditLine {
-  // Present for a pre-existing line (helps nothing server-side — PUT /:id
-  // replaces every line regardless — but keeps React's key stable across
-  // edits instead of reusing array index, which would misattach state to
-  // the wrong row after a reorder/removal).
-  key: string
-  expense_date: string
-  category_id: string
-  description: string
-  amount: string
 }
 
 interface FundingOptions {
@@ -116,8 +111,12 @@ export default function ExpenseClaimDetail() {
   const [claim, setClaim] = useState<Claim | null>(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
+  // Reject mode: the Reject button opens a panel above the lines and adds a tick box to every
+  // row, as on a requisition. flaggedLines is key = line id, value = that line's own reason.
   const [showReject, setShowReject] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+  const [flaggedLines, setFlaggedLines] = useState<Record<string, string>>({})
+  const [resolvingLineId, setResolvingLineId] = useState<string | null>(null)
   const [showPrintModal, setShowPrintModal] = useState(false)
   const printIframeRef = useRef<HTMLIFrameElement>(null)
 
@@ -127,18 +126,9 @@ export default function ExpenseClaimDetail() {
   const [showFailAudit, setShowFailAudit] = useState(false)
   const [failAuditReason, setFailAuditReason] = useState('')
 
-  // Edit mode (draft only — PUT /:id itself enforces this server-side too).
-  // Categories fetched lazily on first entry into edit mode, same pattern as
-  // fundingOptions below — most claims are never viewed while in 'draft'.
+  // Edit mode (a draft or a rejected claim): the shared editor does the work and POST
+  // /:id/revise enforces who may, so there is no edit state of its own here.
   const [isEditing, setIsEditing] = useState(false)
-  const [editDescription, setEditDescription] = useState('')
-  const [editNotes, setEditNotes] = useState('')
-  const [editCurrency, setEditCurrency] = useState('IQD')
-  const [editLines, setEditLines] = useState<EditLine[]>([])
-  const [categories, setCategories] = useState<ExpenseCategoryOption[] | null>(null)
-  const [loadingCategories, setLoadingCategories] = useState(false)
-  const [savingEdit, setSavingEdit] = useState(false)
-  const [editError, setEditError] = useState('')
 
   // Post Payment — Finance's funding-source decision, made on an already-
   // 'approved' claim. fundingOptions is fetched lazily when the modal opens
@@ -182,101 +172,61 @@ export default function ExpenseClaimDetail() {
     }
   }
 
-  function startEdit() {
-    if (!claim) return
-    setEditDescription(claim.description ?? '')
-    setEditNotes(claim.notes ?? '')
-    setEditCurrency(claim.currency_code)
-    setEditLines(
-      claim.lines.map((l) => ({
-        key: l.id,
-        expense_date: l.expense_date.slice(0, 10),
-        category_id: '',
-        description: l.description ?? '',
-        amount: String(l.amount),
-      })),
-    )
-    setEditError('')
-    setIsEditing(true)
-    if (!categories && !loadingCategories) {
-      setLoadingCategories(true)
-      api
-        .get<ExpenseCategoryOption[]>('/finance/expense-claims/categories')
-        .then((r) => {
-          setCategories(r.data)
-        })
-        .catch(() => {
-          setCategories([])
-        })
-        .finally(() => {
-          setLoadingCategories(false)
-        })
-    }
-  }
-
-  function cancelEdit() {
-    setIsEditing(false)
-    setEditError('')
-  }
-
-  function updateEditLine(key: string, patch: Partial<EditLine>) {
-    setEditLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)))
-  }
-
-  function addEditLine() {
-    setEditLines((prev) => [
-      ...prev,
-      {
-        key: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        expense_date: new Date().toISOString().slice(0, 10),
-        category_id: '',
-        description: '',
-        amount: '',
-      },
-    ])
-  }
-
-  function removeEditLine(key: string) {
-    setEditLines((prev) => prev.filter((l) => l.key !== key))
-  }
-
-  async function saveEdit() {
-    if (!id || !claim) return
-    if (editLines.length === 0) {
-      setEditError(t('fin.expDetail.atLeastOneLineIsRequired'))
-      return
-    }
-    for (const l of editLines) {
-      if (!l.expense_date || !l.amount || isNaN(parseFloat(l.amount)) || parseFloat(l.amount) <= 0) {
-        setEditError(t('fin.expDetail.everyLineNeedsADateAnd'))
-        return
+  function toggleFlag(lineId: string) {
+    setFlaggedLines((prev) => {
+      if (lineId in prev) {
+        const next = { ...prev }
+        Reflect.deleteProperty(next, lineId)
+        return next
       }
-    }
-    setSavingEdit(true)
-    setEditError('')
+      return { ...prev, [lineId]: '' }
+    })
+  }
+
+  function closeRejectPanel() {
+    setShowReject(false)
+    setRejectReason('')
+    setFlaggedLines({})
+  }
+
+  // One reason is asked for at a time. With no line ticked it is the whole-claim reason; with lines
+  // ticked it is each ticked line's own reason, and the server builds the claim's reason from them
+  // (a reason typed before the first tick is hidden, and not sent). The server enforces the same,
+  // so the button never fires a request it would refuse.
+  const flaggedIds = Object.keys(flaggedLines)
+  const everyFlagHasReason = flaggedIds.every((lid) => (flaggedLines[lid] ?? '').trim())
+  const canSubmitReject = flaggedIds.length > 0 ? everyFlagHasReason : !!rejectReason.trim()
+
+  async function submitReject() {
+    if (!id) return
+    setActing(true)
     try {
-      await api.put(`/finance/expense-claims/${id}`, {
-        employee_id: claim.employee_id,
-        employee_name: claim.employee_name,
-        description: editDescription || undefined,
-        currency_code: editCurrency,
-        project_id: claim.project_id ?? undefined,
-        notes: editNotes || undefined,
-        lines: editLines.map((l) => ({
-          expense_date: l.expense_date,
-          category_id: l.category_id || undefined,
-          description: l.description || undefined,
-          amount: parseFloat(l.amount),
-          currency_code: editCurrency,
+      await api.post(`/finance/expense-claims/${id}/reject`, {
+        reason: flaggedIds.length > 0 ? undefined : rejectReason.trim() || undefined,
+        lineFlags: flaggedIds.map((lid) => ({
+          lineId: lid,
+          reason: (flaggedLines[lid] ?? '').trim(),
         })),
       })
-      setIsEditing(false)
+      closeRejectPanel()
       void load()
-    } catch (err: unknown) {
-      const apiError = err as { response?: { data?: { error?: { message?: string } } } }
-      setEditError(apiError.response?.data?.error?.message ?? t('fin.expDetail.couldNotSaveChanges'))
+    } catch {
+      /* handled */
     } finally {
-      setSavingEdit(false)
+      setActing(false)
+    }
+  }
+
+  async function resolveFlag(lineId: string) {
+    if (!id) return
+    setResolvingLineId(lineId)
+    try {
+      await api.post(`/finance/expense-claims/${id}/lines/${lineId}/resolve-flag`, {})
+      void load()
+    } catch {
+      /* handled */
+    } finally {
+      setResolvingLineId(null)
     }
   }
 
@@ -369,40 +319,34 @@ export default function ExpenseClaimDetail() {
             >
               {t('fin.expDetail.back')}
             </Button>
-            {canEdit && claim.status === 'draft' && !isEditing && (
-              <>
-                <Button variant="ghost" size="sm" onClick={startEdit}>
-                  {t('fin.expDetail.edit')}
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => void act('submit')}
-                  disabled={acting}
-                >
-                  {t('fin.expDetail.submitForApproval')}
-                </Button>
-              </>
+            {claim.can_revise && !isEditing && (
+              <Button
+                variant={claim.status === 'rejected' ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => {
+                  setIsEditing(true)
+                }}
+              >
+                {claim.status === 'rejected'
+                  ? t('fin.expDetail.editResubmit')
+                  : t('fin.expDetail.edit')}
+              </Button>
             )}
-            {isEditing && (
-              <>
-                <Button variant="ghost" size="sm" onClick={cancelEdit} disabled={savingEdit}>
-                  {t('fin.expDetail.cancel')}
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => void saveEdit()}
-                  disabled={savingEdit}
-                >
-                  {t('fin.expDetail.saveChanges')}
-                </Button>
-              </>
+            {canEdit && claim.status === 'draft' && !isEditing && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void act('submit')}
+                disabled={acting}
+              >
+                {t('fin.expDetail.submitForApproval')}
+              </Button>
             )}
             {(claim.status === 'submitted' || claim.status === 'approved') && canApprove && (
               <Button
                 variant="ghost"
                 size="sm"
+                disabled={showReject}
                 onClick={() => {
                   setShowReject(true)
                 }}
@@ -646,7 +590,7 @@ export default function ExpenseClaimDetail() {
                 {claim.description}
               </div>
             )}
-            {claim.rejection_reason && (
+            {claim.rejection_reason && claim.status === 'rejected' && (
               <div
                 style={{
                   marginTop: '12px',
@@ -656,9 +600,31 @@ export default function ExpenseClaimDetail() {
                   padding: '8px 10px',
                   fontSize: '12px',
                   color: '#ef4444',
+                  whiteSpace: 'pre-wrap',
                 }}
               >
                 <strong>{t('fin.expDetail.rejected2')}</strong> {claim.rejection_reason}
+                {claim.can_revise && (
+                  <div style={{ marginTop: '6px', color: theme.textSecondary }}>
+                    {t('fin.expDetail.sentBackHint')}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* After a resubmit the old rejection is history, not a live banner. */}
+            {claim.rejection_reason && claim.status !== 'rejected' && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  background: theme.bgCanvas,
+                  borderRadius: '6px',
+                  padding: '8px 10px',
+                  fontSize: '12px',
+                  color: theme.textSecondary,
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                <strong>{t('fin.expLines.previouslyRejected')}</strong> {claim.rejection_reason}
               </div>
             )}
             {claim.status === 'draft' && claim.audit_fail_reason && (
@@ -730,131 +696,70 @@ export default function ExpenseClaimDetail() {
 
         {/* Lines table */}
         <div>
-          {isEditing ? (
-            <Card padding="md">
-              <p
-                style={{
-                  margin: '0 0 12px',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: theme.textMuted,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                {t('fin.expDetail.editingExpenseLines')}
+          {showReject && (
+            <Card padding="md" style={{ marginBottom: '16px' }}>
+              <h3 style={{ margin: '0 0 8px', color: theme.textPrimary, fontSize: '15px' }}>
+                {t('fin.expDetail.rejectClaim')}
+              </h3>
+              <p style={{ fontSize: '12px', color: theme.textSecondary, margin: '0 0 10px' }}>
+                {t('fin.expDetail.rejectPanelHint')}
               </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
-                <div style={{ flex: '1 1 220px' }}>
-                  <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.description')}</label>
-                  <input
-                    style={inputStyle}
-                    value={editDescription}
-                    onChange={(e) => {
-                      setEditDescription(e.target.value)
-                    }}
-                  />
-                </div>
-                <div style={{ width: '110px' }}>
-                  <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.currency')}</label>
-                  <input
-                    style={inputStyle}
-                    value={editCurrency}
-                    maxLength={3}
-                    onChange={(e) => {
-                      setEditCurrency(e.target.value.toUpperCase())
-                    }}
-                  />
-                </div>
-                <div style={{ flex: '1 1 220px' }}>
-                  <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.notes')}</label>
-                  <input
-                    style={inputStyle}
-                    value={editNotes}
-                    onChange={(e) => {
-                      setEditNotes(e.target.value)
-                    }}
-                  />
-                </div>
-              </div>
-              {editLines.map((l) => (
-                <div
-                  key={l.key}
-                  style={{
-                    display: 'flex',
-                    gap: '8px',
-                    alignItems: 'flex-end',
-                    marginBottom: '10px',
-                    paddingBottom: '10px',
-                    borderBottom: `1px solid ${theme.border}`,
-                  }}
-                >
-                  <div style={{ width: '130px' }}>
-                    <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.date')}</label>
-                    <input
-                      type="date"
-                      style={inputStyle}
-                      value={l.expense_date}
-                      onChange={(e) => {
-                        updateEditLine(l.key, { expense_date: e.target.value })
-                      }}
-                    />
-                  </div>
-                  <div style={{ flex: '1 1 150px' }}>
-                    <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.category')}</label>
-                    <Select
-                      value={l.category_id}
-                      onChange={(e) => {
-                        updateEditLine(l.key, { category_id: e.target.value })
-                      }}
-                      options={[
-                        { value: '', label: loadingCategories ? t('fin.expDetail.loading2') : t('fin.expDetail.selectCategory') },
-                        ...(categories ?? []).map((c) => ({ value: c.id, label: c.name })),
-                      ]}
-                    />
-                  </div>
-                  <div style={{ flex: '1 1 180px' }}>
-                    <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.description')}</label>
-                    <input
-                      style={inputStyle}
-                      value={l.description}
-                      onChange={(e) => {
-                        updateEditLine(l.key, { description: e.target.value })
-                      }}
-                    />
-                  </div>
-                  <div style={{ width: '110px' }}>
-                    <label style={{ fontSize: '11px', color: theme.textMuted }}>{t('fin.expDetail.amount')}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      style={inputStyle}
-                      value={l.amount}
-                      onChange={(e) => {
-                        updateEditLine(l.key, { amount: e.target.value })
-                      }}
-                    />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      removeEditLine(l.key)
-                    }}
-                    disabled={editLines.length <= 1}
-                  >
-                    {t('fin.expDetail.remove')}
-                  </Button>
-                </div>
-              ))}
-              <Button variant="ghost" size="sm" onClick={addEditLine}>
-                {t('fin.expDetail.addLine')}
-              </Button>
-              {editError && (
-                <div style={{ marginTop: '12px', fontSize: '12px', color: theme.danger }}>
-                  {editError}
+              {flaggedIds.length > 0 && (
+                <div style={{ fontSize: '12px', color: theme.accent, marginBottom: '10px' }}>
+                  {t('fin.expDetail.flaggedLinesCount', { n: flaggedIds.length })}
                 </div>
               )}
+              {/* One reason field at a time: the whole-claim reason while no line is ticked, each
+                  ticked line's own reason (under its row) once one is. */}
+              {flaggedIds.length === 0 && (
+                <textarea
+                  style={{ ...inputStyle, height: '70px', resize: 'vertical' as const }}
+                  value={rejectReason}
+                  onChange={(e) => {
+                    setRejectReason(e.target.value)
+                  }}
+                  placeholder={t('fin.expDetail.reasonForRejection')}
+                />
+              )}
+              {flaggedIds.length > 0 && !everyFlagHasReason && (
+                <div style={{ fontSize: '12px', color: theme.danger, marginTop: '8px' }}>
+                  {t('fin.expDetail.needReasonPerFlag')}
+                </div>
+              )}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '8px',
+                  justifyContent: 'flex-end',
+                  marginTop: '14px',
+                }}
+              >
+                <Button variant="ghost" size="sm" onClick={closeRejectPanel} disabled={acting}>
+                  {t('fin.expDetail.cancel')}
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => void submitReject()}
+                  disabled={acting || !canSubmitReject}
+                >
+                  {t('fin.expDetail.rejectClaim')}
+                </Button>
+              </div>
+            </Card>
+          )}
+          {isEditing ? (
+            <Card padding="md">
+              <ExpenseClaimEditor
+                claim={claim}
+                onSaved={() => {
+                  setIsEditing(false)
+                  void load()
+                }}
+                onCancel={() => {
+                  setIsEditing(false)
+                }}
+              />
             </Card>
           ) : (
             <Card padding="none">
@@ -875,7 +780,15 @@ export default function ExpenseClaimDetail() {
                   <tr
                     style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
                   >
-                    {[t('fin.expDetail.date'), t('fin.expDetail.category'), t('fin.expDetail.account'), t('fin.expDetail.description'), t('fin.expDetail.amount')].map((h) => (
+                    {[
+                      ...(showReject ? [t('fin.expDetail.flagColumn')] : []),
+                      t('fin.expLines.hdrNumber'),
+                      t('fin.expDetail.date'),
+                      t('fin.expDetail.category'),
+                      t('fin.expDetail.account'),
+                      t('fin.expDetail.description'),
+                      t('fin.expDetail.amount'),
+                    ].map((h) => (
                       <th
                         key={h}
                         style={{
@@ -891,59 +804,148 @@ export default function ExpenseClaimDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {claim.lines.map((l, i) => (
-                    <tr
-                      key={l.id}
-                      style={{
-                        borderBottom: `1px solid ${theme.border}`,
-                        background: i % 2 ? theme.bgCanvas : undefined,
-                      }}
-                    >
-                      <td
-                        style={{ padding: '8px 12px', color: theme.textSecondary, fontSize: '11px' }}
-                      >
-                        {new Date(l.expense_date).toLocaleDateString()}
-                      </td>
-                      <td style={{ padding: '8px 12px', color: theme.textSecondary }}>
-                        {l.category_name ?? '—'}
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        {l.account_code ? (
-                          <span>
-                            <span
-                              style={{
-                                fontFamily: 'monospace',
-                                color: theme.textMuted,
-                                fontSize: '10px',
-                              }}
-                            >
-                              {l.account_code}
-                            </span>
-                            <span style={{ marginInlineStart: '4px', color: theme.textPrimary }}>
-                              {l.account_name}
-                            </span>
-                          </span>
-                        ) : (
-                          <span style={{ color: theme.textMuted }}>—</span>
+                  {claim.lines.map((l, i) => {
+                    const ticked = l.id in flaggedLines
+                    const flag = lineFlagState(l)
+                    const edgeColor = ticked
+                      ? theme.accent
+                      : flag === 'open'
+                        ? theme.danger
+                        : flag === 'fixed'
+                          ? theme.warning
+                          : null
+                    const colCount = showReject ? 7 : 6
+                    // An approver can confirm a fix once the claim is back with them.
+                    const canConfirm = canApprove && claim.status !== 'rejected'
+                    return (
+                      <Fragment key={l.id}>
+                        <tr
+                          data-testid="expense-line-row"
+                          style={{
+                            borderBottom:
+                              ticked || flag !== 'none' ? undefined : `1px solid ${theme.border}`,
+                            background: edgeColor
+                              ? `${edgeColor}0c`
+                              : i % 2
+                                ? theme.bgCanvas
+                                : undefined,
+                            boxShadow: edgeColor ? `inset 4px 0 0 ${edgeColor}` : undefined,
+                          }}
+                        >
+                          {showReject && (
+                            <td style={{ padding: '8px 12px', width: '36px' }}>
+                              <input
+                                type="checkbox"
+                                checked={ticked}
+                                onChange={() => {
+                                  toggleFlag(l.id)
+                                }}
+                                aria-label={t('fin.expDetail.flagThisLine')}
+                                title={t('fin.expDetail.flagThisLine')}
+                              />
+                            </td>
+                          )}
+                          <td
+                            style={{
+                              padding: '8px 12px',
+                              color: theme.textMuted,
+                              fontVariantNumeric: 'tabular-nums',
+                              width: '32px',
+                            }}
+                          >
+                            {l.line_number}
+                          </td>
+                          <td
+                            style={{
+                              padding: '8px 12px',
+                              color: theme.textSecondary,
+                              fontSize: '11px',
+                            }}
+                          >
+                            {new Date(l.expense_date).toLocaleDateString()}
+                          </td>
+                          <td style={{ padding: '8px 12px', color: theme.textSecondary }}>
+                            {l.category_name ?? '—'}
+                          </td>
+                          <td style={{ padding: '8px 12px' }}>
+                            {l.account_code ? (
+                              <span>
+                                <span
+                                  style={{
+                                    fontFamily: 'monospace',
+                                    color: theme.textMuted,
+                                    fontSize: '10px',
+                                  }}
+                                >
+                                  {l.account_code}
+                                </span>
+                                <span
+                                  style={{ marginInlineStart: '4px', color: theme.textPrimary }}
+                                >
+                                  {l.account_name}
+                                </span>
+                              </span>
+                            ) : (
+                              <span style={{ color: theme.textMuted }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '8px 12px', color: theme.textSecondary }}>
+                            {l.description ?? '—'}
+                          </td>
+                          <td style={{ padding: '8px 12px', textAlign: 'end' }}>
+                            <AmountDisplay
+                              amount={Number(l.amount)}
+                              currency={l.currency_code}
+                              size="sm"
+                            />
+                          </td>
+                        </tr>
+                        {(ticked || flag !== 'none') && (
+                          <tr
+                            style={{
+                              borderBottom: `1px solid ${theme.border}`,
+                              background: edgeColor ? `${edgeColor}0c` : undefined,
+                              boxShadow: edgeColor ? `inset 4px 0 0 ${edgeColor}` : undefined,
+                            }}
+                          >
+                            <td colSpan={colCount} style={{ padding: '4px 12px 12px' }}>
+                              <ExpenseLineFlag
+                                line={l}
+                                flaggedByName={l.flagged_by_name}
+                                onResolve={canConfirm ? () => void resolveFlag(l.id) : undefined}
+                                resolving={resolvingLineId === l.id}
+                              />
+                              {ticked && (
+                                <div style={{ marginTop: flag !== 'none' ? '10px' : 0 }}>
+                                  <textarea
+                                    style={{
+                                      ...inputStyle,
+                                      height: '56px',
+                                      resize: 'vertical' as const,
+                                    }}
+                                    value={flaggedLines[l.id] ?? ''}
+                                    onChange={(e) => {
+                                      setFlaggedLines((prev) => ({
+                                        ...prev,
+                                        [l.id]: e.target.value,
+                                      }))
+                                    }}
+                                    placeholder={t('fin.expDetail.whatIsWrong')}
+                                    aria-label={t('fin.expDetail.whatIsWrong')}
+                                  />
+                                </div>
+                              )}
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td style={{ padding: '8px 12px', color: theme.textSecondary }}>
-                        {l.description ?? '—'}
-                      </td>
-                      <td style={{ padding: '8px 12px', textAlign: 'end' }}>
-                        <AmountDisplay
-                          amount={Number(l.amount)}
-                          currency={l.currency_code}
-                          size="sm"
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                      </Fragment>
+                    )
+                  })}
                 </tbody>
                 <tfoot>
                   <tr style={{ borderTop: `2px solid ${theme.border}`, background: theme.bgSurface }}>
                     <td
-                      colSpan={4}
+                      colSpan={showReject ? 6 : 5}
                       style={{ padding: '8px 12px', fontWeight: 700, color: theme.textPrimary }}
                     >
                       {t('fin.expDetail.total')}
@@ -962,63 +964,6 @@ export default function ExpenseClaimDetail() {
           )}
         </div>
       </div>
-
-      {/* Reject modal */}
-      {showReject && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <Card padding="lg" style={{ width: '400px' }}>
-            <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              {t('fin.expDetail.rejectClaim')}
-            </h3>
-            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
-              {t('fin.expDetail.provideAReasonThisWillBe')}
-            </p>
-            <textarea
-              style={{ ...inputStyle, height: '80px', resize: 'vertical' as const }}
-              value={rejectReason}
-              onChange={(e) => {
-                setRejectReason(e.target.value)
-              }}
-              placeholder={t('fin.expDetail.reasonForRejection')}
-            />
-            <div
-              style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}
-            >
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowReject(false)
-                }}
-              >
-                {t('fin.expDetail.cancel')}
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => void (async () => {
-                  await act('reject', { reason: rejectReason })
-                  setShowReject(false)
-                  setRejectReason('')
-                })()}
-                disabled={acting || !rejectReason}
-              >
-                {t('fin.expDetail.rejectClaim')}
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
 
       {/* Fail Audit modal */}
       {showFailAudit && (
@@ -1274,6 +1219,7 @@ export default function ExpenseClaimDetail() {
                   requestedByName: claim.created_by_name,
                   companyName: activeCompany?.name,
                   lines: claim.lines.map((l) => ({
+                    lineNumber: l.line_number,
                     expenseDate: l.expense_date,
                     categoryName: l.category_name,
                     accountCode: l.account_code,

@@ -825,7 +825,8 @@
       "selectAll": "Select all",
       "stage": "Stage",
       "status": "Status",
-      "viewDetails": "View details"
+      "viewDetails": "View details",
+      "hdrNumber": "#"
     },
     "form": {
       "addAtLeastOneLine": "Add at least one line",
@@ -4922,7 +4923,15 @@
       "total": "Total",
       "totalAmount": "Total Amount",
       "uploadReceipt": "Upload receipt",
-      "whatNeedsToBeCorrected": "What needs to be corrected..."
+      "whatNeedsToBeCorrected": "What needs to be corrected...",
+      "editResubmit": "Edit & resubmit",
+      "sentBackHint": "This claim was sent back. Fix the flagged lines, then resubmit it.",
+      "rejectPanelHint": "Tick the lines that need fixing and say what is wrong with each, or give one reason for the whole claim.",
+      "flaggedLinesCount": "Flagged lines: {{n}}",
+      "flagThisLine": "Flag this line for rejection",
+      "flagColumn": "Flag",
+      "whatIsWrong": "What is wrong with this line?",
+      "needReasonPerFlag": "A reason is needed for each flagged line."
     },
     "fxRates": {
       "addRate": "Add Rate",
@@ -5612,6 +5621,40 @@
       "total": "Total: {{pctTotal}}% {{value}}",
       "type": "Type",
       "value": "Value"
+    },
+    "expLines": {
+      "hdrNumber": "#",
+      "flagged": "Flagged",
+      "fixedAwaiting": "Fixed, awaiting confirmation",
+      "flaggedBy": "Flagged by {{name}}",
+      "someone": "someone",
+      "resolve": "Confirm fixed",
+      "previouslyRejected": "Previously rejected:"
+    },
+    "expEditor": {
+      "title": "Edit expense lines",
+      "description": "Description",
+      "currency": "Currency",
+      "notes": "Notes",
+      "date": "Date",
+      "category": "Category",
+      "keepCategory": "Keep current category",
+      "selectCategory": "Select category",
+      "loadingCategories": "Loading…",
+      "lineDescription": "Description",
+      "amount": "Amount",
+      "remove": "Remove",
+      "removeHint": "Removing a line also removes its receipts.",
+      "addLine": "+ Add line",
+      "save": "Save changes",
+      "saveResubmit": "Save & resubmit",
+      "saveSubmit": "Save & submit for approval",
+      "cancel": "Cancel",
+      "atLeastOneLine": "At least one line is required.",
+      "everyLineNeeds": "Every line needs a date, a category and an amount above zero.",
+      "couldNotSave": "Could not save changes.",
+      "newLine": "New line",
+      "flagLabel": "Fix this: {{reason}}"
     }
   },
   "proj": {

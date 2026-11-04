@@ -877,7 +877,8 @@
       "selectAll": "تحديد الكل",
       "stage": "المرحلة",
       "status": "الحالة",
-      "viewDetails": "عرض التفاصيل"
+      "viewDetails": "عرض التفاصيل",
+      "hdrNumber": "#"
     },
     "form": {
       "addAtLeastOneLine": "أضف بندًا واحدًا على الأقل",
@@ -5101,7 +5102,15 @@
       "total": "الإجمالي",
       "totalAmount": "المبلغ الإجمالي",
       "uploadReceipt": "رفع إيصال",
-      "whatNeedsToBeCorrected": "ما الذي يجب تصحيحه..."
+      "whatNeedsToBeCorrected": "ما الذي يجب تصحيحه...",
+      "editResubmit": "تعديل وإعادة إرسال",
+      "sentBackHint": "أُعيدت هذه المطالبة. صحّح البنود المُعلَّمة ثم أعد إرسالها.",
+      "rejectPanelHint": "حدّد البنود التي تحتاج إلى تصحيح واذكر المشكلة في كل منها، أو اكتب سبباً واحداً للمطالبة كلها.",
+      "flaggedLinesCount": "البنود المُعلَّمة: {{n}}",
+      "flagThisLine": "تعليم هذا البند للرفض",
+      "flagColumn": "تعليم",
+      "whatIsWrong": "ما المشكلة في هذا البند؟",
+      "needReasonPerFlag": "يلزم ذكر سبب لكل بند مُعلَّم."
     },
     "fxRates": {
       "addRate": "إضافة سعر",
@@ -5799,6 +5808,40 @@
       "total": "الإجمالي: {{pctTotal}}% {{value}}",
       "type": "النوع",
       "value": "القيمة"
+    },
+    "expLines": {
+      "hdrNumber": "#",
+      "flagged": "مُعلَّم للتصحيح",
+      "fixedAwaiting": "تم التصحيح، بانتظار التأكيد",
+      "flaggedBy": "علّمه {{name}}",
+      "someone": "أحد المراجعين",
+      "resolve": "تأكيد التصحيح",
+      "previouslyRejected": "رُفضت سابقاً:"
+    },
+    "expEditor": {
+      "title": "تعديل بنود المصروف",
+      "description": "الوصف",
+      "currency": "العملة",
+      "notes": "ملاحظات",
+      "date": "التاريخ",
+      "category": "الفئة",
+      "keepCategory": "الإبقاء على الفئة الحالية",
+      "selectCategory": "اختر الفئة",
+      "loadingCategories": "جارٍ التحميل…",
+      "lineDescription": "الوصف",
+      "amount": "المبلغ",
+      "remove": "حذف",
+      "removeHint": "حذف البند يحذف إيصالاته أيضاً.",
+      "addLine": "+ إضافة بند",
+      "save": "حفظ التعديلات",
+      "saveResubmit": "حفظ وإعادة الإرسال",
+      "saveSubmit": "حفظ وإرسال للموافقة",
+      "cancel": "إلغاء",
+      "atLeastOneLine": "يلزم بند واحد على الأقل.",
+      "everyLineNeeds": "كل بند يحتاج إلى تاريخ وفئة ومبلغ أكبر من صفر.",
+      "couldNotSave": "تعذّر حفظ التعديلات.",
+      "newLine": "بند جديد",
+      "flagLabel": "يرجى تصحيح: {{reason}}"
     }
   },
   "proj": {

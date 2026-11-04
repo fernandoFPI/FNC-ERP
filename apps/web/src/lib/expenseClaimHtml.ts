@@ -1,4 +1,6 @@
 export interface ExpenseClaimPrintLine {
+  // The line's stored number (the "#" an approver quotes); falls back to its position.
+  lineNumber?: number | null
   expenseDate: string
   categoryName?: string | null
   accountCode?: string | null
@@ -53,7 +55,7 @@ export function buildExpenseClaimHTML(ec: ExpenseClaimPrintData): string {
       const lineCcy = l.currencyCode ?? ccy
       return `
     <tr>
-      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#888">${i + 1}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#888">${l.lineNumber ?? i + 1}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#666">${fmtDate(l.expenseDate)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px">${l.categoryName ?? '—'}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px">

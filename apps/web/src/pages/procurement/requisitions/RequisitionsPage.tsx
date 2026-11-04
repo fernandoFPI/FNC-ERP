@@ -53,6 +53,7 @@ import {
   isPastDate,
 } from '../../../components/procurement/ListKit'
 import { RequisitionPreviewPanel } from '../../../components/procurement/PreviewPanels'
+import { MyExpenseClaimModal } from '../../../components/finance/MyExpenseClaimModal'
 import { useToastStore } from '../../../store/toastStore'
 import type { RequisitionsQuery, RequisitionsQueryVariables } from '../../../graphql/generated'
 
@@ -74,15 +75,24 @@ interface ExpenseClaimApiRow {
   project_name: string | null
   project_id: string | null
   description: string | null
+  notes?: string | null
+  rejection_reason?: string | null
+  can_revise?: boolean
   created_at: string
   updated_at: string | null
   lines?: {
     id: string
+    line_number?: number
     expense_date: string
+    category_id?: string | null
     category_name: string | null
     description: string | null
     amount: number
     currency_code: string
+    flag_reason?: string | null
+    flagged_by_name?: string | null
+    flag_addressed_at?: string | null
+    flag_resolved_at?: string | null
   }[]
 }
 
@@ -1143,77 +1153,20 @@ export default function RequisitionsPage() {
         </Card>
       </DockLayout>
 
-      <Modal
-        open={!!viewClaim}
+      <MyExpenseClaimModal
+        claim={viewClaim}
+        statusLabel={viewClaim ? expenseStatusLabel(viewClaim.status) : ''}
+        statusVariant={
+          viewClaim ? (EXPENSE_STATUS_VARIANTS[viewClaim.status] ?? 'neutral') : 'neutral'
+        }
         onClose={() => {
           setViewClaim(null)
         }}
-        title={viewClaim?.claim_number ?? ''}
-        description={viewClaim?.description ?? undefined}
-      >
-        {viewClaim && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Badge variant={EXPENSE_STATUS_VARIANTS[viewClaim.status] ?? 'neutral'}>
-                {expenseStatusLabel(viewClaim.status)}
-              </Badge>
-              <AmountDisplay
-                amount={Number(viewClaim.total_amount)}
-                currency={viewClaim.currency_code}
-                size="sm"
-              />
-              {viewClaim.project_code && (
-                <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                  {viewClaim.project_code} — {viewClaim.project_name}
-                </span>
-              )}
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  {['Date', 'Category', 'Description', 'Amount'].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: '6px 8px',
-                        textAlign: h === 'Amount' ? 'end' : 'start',
-                        color: theme.textMuted,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {t(`req.list.hdr${h}`)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(viewClaim.lines ?? []).map((l) => (
-                  <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td
-                      style={{ padding: '6px 8px', color: theme.textSecondary, fontSize: '11px' }}
-                    >
-                      {new Date(l.expense_date).toLocaleDateString()}
-                    </td>
-                    <td style={{ padding: '6px 8px', color: theme.textSecondary }}>
-                      {l.category_name ?? '—'}
-                    </td>
-                    <td style={{ padding: '6px 8px', color: theme.textSecondary }}>
-                      {l.description ?? '—'}
-                    </td>
-                    <td style={{ padding: '6px 8px', textAlign: 'end' }}>
-                      <AmountDisplay
-                        amount={Number(l.amount)}
-                        currency={l.currency_code}
-                        size="sm"
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Modal>
+        onChanged={() => {
+          setViewClaim(null)
+          loadExpenseClaims()
+        }}
+      />
 
       <Modal
         open={!!viewSettlement}
