@@ -62,11 +62,18 @@ vi.mock('@fnc-erp/auth', () => ({
   },
 }))
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import express from 'express'
 import request from 'supertest'
 import { pool, query } from '@fnc-erp/db'
 import { mobileSyncRouter } from '../src/routes/mobile-sync.js'
+
+// Some tests below replace the global fetch. The gateway suite runs every file in one process, and a
+// global stub outlives its file: any later test that calls fetch got `undefined` back (found when a
+// public-route test, which sorts after this file, failed in the full run and passed alone).
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 function makeApp() {
   const app = express()
