@@ -2,7 +2,7 @@ import request from 'supertest'
 import { describe, it, beforeAll, afterAll, expect } from 'vitest'
 import { createApp } from '../src/app.js'
 import { pool } from '@fnc-erp/db'
-import { createTestUser, TEST_COMPANY_ID } from './setup.js'
+import { createTestUser, attachTestBankAccount, TEST_COMPANY_ID } from './setup.js'
 
 const app = createApp()
 let token: string
@@ -183,6 +183,7 @@ describe('Project contracts', () => {
       })
     expect(invRes.status).toBe(201)
     invoiceId = invRes.body.data?.id ?? invRes.body.id
+    await attachTestBankAccount(invoiceId)
 
     // Now try to change contract_value
     const updateRes = await request(app)
@@ -606,6 +607,7 @@ describe('Invoice payments', () => {
       })
     expect(invRes.status).toBe(201)
     paymentInvoiceId = invRes.body.data?.id ?? invRes.body.id
+    await attachTestBankAccount(paymentInvoiceId)
 
     // Submit → approve → issue
     await request(app).post(`/projects/invoices/${paymentInvoiceId}/submit-for-review`).set('Authorization', `Bearer ${token}`).send()
@@ -699,6 +701,7 @@ describe('Double invoicing prevention', () => {
         milestone_ids: [newMilestoneId],
       })
     const cancelInvId = createRes.body.data?.id ?? createRes.body.id
+    await attachTestBankAccount(cancelInvId)
 
     // Submit and approve (to mark sources as invoiced)
     await request(app).post(`/projects/invoices/${cancelInvId}/submit-for-review`).set('Authorization', `Bearer ${token}`).send()

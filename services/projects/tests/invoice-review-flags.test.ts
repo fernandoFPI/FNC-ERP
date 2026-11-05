@@ -13,7 +13,7 @@ import request from 'supertest'
 import { createApp } from '../src/app.js'
 import { pool } from '@fnc-erp/db'
 import { hashPassword, signAccessToken } from '@fnc-erp/auth'
-import { createTestUser, cleanProjectsData, TEST_COMPANY_ID } from './setup.js'
+import { createTestUser, cleanProjectsData, attachTestBankAccount, TEST_COMPANY_ID } from './setup.js'
 import { INVOICE_HEADER_FLAG_FIELDS } from '../src/lib/invoiceHeaderFlags.js'
 
 const app = createApp()
@@ -141,6 +141,7 @@ async function makeInvoice(status = 'review'): Promise<Fixture> {
     [contractId, projectId, TEST_COMPANY_ID, `INV-REV-${Date.now()}-${counter}`, adminId, status],
   )
   const id = inv.rows[0]!.id
+  await attachTestBankAccount(id) // a wire-transfer invoice needs an account before it moves forward
   const lines: string[] = []
   for (const [i, [desc, amount]] of ([['Cement', 50], ['Steel bars', 200], ['Labour', 300]] as [string, number][]).entries()) {
     const l = await pool.query<{ id: string }>(

@@ -31,7 +31,28 @@ export async function createTestUser(): Promise<{ userId: string; token: string 
   return { userId, token }
 }
 
+// A wire-transfer invoice needs an active bank account before it can be submitted, approved or issued
+// (src/lib/invoiceBankAccount.ts), and invoice creation does not choose one. Tests that push an invoice forward call this
+// right after creating it. bank_accounts has no company column; one named test account is reused.
+export async function attachTestBankAccount(invoiceId: string): Promise<string> {
+  const found = await pool.query<{ id: string }>(`SELECT id FROM bank_accounts WHERE account_name = 'TEST-BANK-PRJ' LIMIT 1`)
+  const bankId =
+    found.rows[0]?.id ??
+    (
+      await pool.query<{ id: string }>(
+        `INSERT INTO bank_accounts (account_name, bank_name, currency_code) VALUES ('TEST-BANK-PRJ', 'Test Bank', 'IQD') RETURNING id`,
+      )
+    ).rows[0]!.id
+  await pool.query(`UPDATE project_invoices SET bank_account_id = $2 WHERE id = $1`, [invoiceId, bankId])
+  return bankId
+}
+
 export async function cleanProjectsData(): Promise<void> {
+  // Only an account no invoice still points at (the invoices are deleted by each test file before this runs).
+  await pool.query(
+    `DELETE FROM bank_accounts b WHERE b.account_name LIKE 'TEST-BANK-%'
+       AND NOT EXISTS (SELECT 1 FROM project_invoices pi WHERE pi.bank_account_id = b.id)`,
+  )
   await pool.query(`DELETE FROM sessions WHERE refresh_token_hash = 'test-refresh-hash-projects'`)
   await pool.query(`DELETE FROM project_cost_actuals WHERE project_id IN (SELECT id FROM projects WHERE company_id=$1 AND code LIKE 'TEST-%')`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM project_members WHERE project_id IN (SELECT id FROM projects WHERE company_id=$1 AND code LIKE 'TEST-%')`, [TEST_COMPANY_ID])

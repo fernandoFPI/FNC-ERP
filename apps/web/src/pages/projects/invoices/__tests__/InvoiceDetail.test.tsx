@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import i18n from '../../../../i18n'
 import type * as ApolloClientModule from '@apollo/client'
 import { PROJECT_INVOICE_QUERY } from '../../../../graphql/projects'
 
@@ -23,6 +24,8 @@ vi.mock('../../../../hooks/usePermission', () => ({
 }))
 
 let currentInvoice: Record<string, unknown> = {}
+// What the bank-accounts query returns; undefined = it failed (a user without finance.ar.view gets a permission error).
+let bankQueryData: unknown = { bankAccounts: [] }
 const refetch = vi.fn()
 vi.mock('@apollo/client', async (importOriginal) => {
   const actual = await importOriginal<typeof ApolloClientModule>()
@@ -31,7 +34,7 @@ vi.mock('@apollo/client', async (importOriginal) => {
     useQuery: (doc: unknown) =>
       doc === PROJECT_INVOICE_QUERY
         ? { data: { projectInvoice: currentInvoice }, loading: false, refetch }
-        : { data: { bankAccounts: [] }, loading: false, refetch: vi.fn() },
+        : { data: bankQueryData, loading: false, refetch: vi.fn() },
     useMutation: () => [vi.fn(), { loading: false }],
   }
 })
@@ -127,6 +130,7 @@ async function openInvoice(inv: Record<string, unknown>) {
 beforeEach(() => {
   apiPost.mockReset().mockResolvedValue({ data: {} })
   refetch.mockReset()
+  bankQueryData = { bankAccounts: [] }
   perms = { 'projects.invoices.view': true, 'projects.invoices.edit': true }
 })
 
@@ -605,5 +609,134 @@ describe('InvoiceDetail: a sent-back header', () => {
   it('an invoice with no header flags draws no header card outside reject mode', async () => {
     await openInvoice(invoice({ status: 'draft' }))
     expect(screen.queryByTestId('invoice-header-review')).not.toBeInTheDocument()
+  })
+})
+
+// A wire-transfer invoice prints its banking information from the account chosen on the invoice. With none (or a
+// deactivated one) the block silently disappeared from the preview and the print (NY-INV-2026-0004, AW-INV-2026-0001), so
+// the page now says so and holds the invoice back; the server refuses too (BANK_ACCOUNT_REQUIRED).
+describe('InvoiceDetail: a wire-transfer invoice needs a bank account', () => {
+  afterEach(async () => {
+    if (i18n.language !== 'en') {
+      await act(async () => {
+        await i18n.changeLanguage('en')
+      })
+    }
+  })
+
+  const account = (over: Record<string, unknown> = {}) => ({
+    id: 'bank-1',
+    accountName: 'FNC-USD',
+    bankName: 'BBAC BANK',
+    beneficiaryName: null,
+    accountNumber: null,
+    iban: null,
+    swift: null,
+    branchCode: null,
+    bankAddress: null,
+    intermediaryBankName: null,
+    intermediarySwift: null,
+    intermediaryCountry: null,
+    currencyCode: 'USD',
+    isActive: true,
+    createdAt: '2026-01-01',
+    ...over,
+  })
+  const withBanks = (...a: Record<string, unknown>[]) => {
+    bankQueryData = { bankAccounts: a }
+  }
+  const missing = /No bank account is chosen for this invoice/
+  const inactive = /no longer active/
+  const submit = () => screen.getByRole('button', { name: 'Submit for Review' })
+
+  it('warns, and holds back Submit for review, when no account is chosen', async () => {
+    withBanks(account())
+    await openInvoice(invoice({ status: 'draft', bankAccountId: null }))
+    expect(screen.getByText(missing)).toBeInTheDocument()
+    expect(submit()).toBeDisabled()
+    expect(submit().closest('span[title]')).toHaveAttribute('title', 'Choose a bank account first')
+  })
+
+  it('does not send anything when the held-back button is clicked', async () => {
+    withBanks(account())
+    await openInvoice(invoice({ status: 'draft', bankAccountId: null }))
+    fireEvent.click(submit())
+    expect(apiPost).not.toHaveBeenCalled()
+  })
+
+  it('says nothing, and lets the invoice go, once an active account is chosen', async () => {
+    withBanks(account())
+    await openInvoice(invoice({ status: 'draft', bankAccountId: 'bank-1' }))
+    expect(screen.queryByText(missing)).not.toBeInTheDocument()
+    expect(screen.queryByText(inactive)).not.toBeInTheDocument()
+    expect(submit()).not.toBeDisabled()
+    fireEvent.click(submit())
+    expect(apiPost).toHaveBeenCalledWith('/projects/invoices/inv-1/submit-for-review', {})
+    // let the page finish its own state update
+    await waitFor(() => {
+      expect(refetch).toHaveBeenCalled()
+    })
+  })
+
+  it('needs no account for a cash invoice', async () => {
+    withBanks(account())
+    await openInvoice(invoice({ status: 'draft', paymentType: 'cash', bankAccountId: null }))
+    expect(screen.queryByText(missing)).not.toBeInTheDocument()
+    expect(submit()).not.toBeDisabled()
+  })
+
+  it('warns in its own words when the chosen account has been deactivated', async () => {
+    withBanks(account({ id: 'bank-2', isActive: false }), account())
+    await openInvoice(invoice({ status: 'draft', bankAccountId: 'bank-2' }))
+    expect(screen.getByText(inactive)).toBeInTheDocument()
+    expect(screen.queryByText(missing)).not.toBeInTheDocument()
+    expect(submit()).toBeDisabled()
+  })
+
+  it('does not tell someone who cannot load the bank list that the invoice has no account', async () => {
+    bankQueryData = undefined // finance.ar.view is missing, so the query failed
+    await openInvoice(invoice({ status: 'draft', bankAccountId: 'bank-1' }))
+    expect(screen.queryByText(missing)).not.toBeInTheDocument()
+    expect(screen.queryByText(inactive)).not.toBeInTheDocument()
+    expect(submit()).not.toBeDisabled()
+  })
+
+  it('still warns that no account is chosen even when the list cannot be loaded', async () => {
+    bankQueryData = undefined
+    await openInvoice(invoice({ status: 'draft', bankAccountId: null }))
+    expect(screen.getByText(missing)).toBeInTheDocument()
+    expect(submit()).toBeDisabled()
+  })
+
+  it('holds back Approve while a review is waiting and no account is chosen', async () => {
+    withBanks(account())
+    await openInvoice(invoice({ status: 'review', bankAccountId: null }))
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled()
+  })
+
+  it('holds back Issue Invoice once approved and no account is chosen', async () => {
+    withBanks(account())
+    await openInvoice(invoice({ status: 'approved', bankAccountId: null }))
+    expect(screen.getByRole('button', { name: 'Issue Invoice' })).toBeDisabled()
+  })
+
+  it('lets Approve through when an active account is chosen', async () => {
+    withBanks(account())
+    await openInvoice(invoice({ status: 'review', bankAccountId: 'bank-1' }))
+    expect(screen.getByRole('button', { name: 'Approve' })).not.toBeDisabled()
+  })
+
+  it('says nothing about an invoice that is already issued or paid: nothing can be changed on it', async () => {
+    withBanks(account())
+    await openInvoice(invoice({ status: 'paid', bankAccountId: null }))
+    expect(screen.queryByText(missing)).not.toBeInTheDocument()
+  })
+
+  it('reads in Arabic without raw keys', async () => {
+    await i18n.changeLanguage('ar')
+    withBanks(account())
+    await openInvoice(invoice({ status: 'draft', bankAccountId: null }))
+    expect(screen.getByText(/لم يتم اختيار حساب مصرفي لهذه الفاتورة/)).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/proj\.invDetail\./)
   })
 })

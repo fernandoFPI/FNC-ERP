@@ -2,6 +2,7 @@ import { Router } from 'express'
 import type { IRouter } from 'express'
 import { z } from 'zod'
 import { pool, query, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
+import { invoiceBankCheck, BANK_ACCOUNT_REQUIRED } from '../lib/invoiceBankAccount.js'
 import { logAudit } from '@fnc-erp/audit'
 import { getAuth } from '@fnc-erp/auth'
 import {
@@ -307,6 +308,11 @@ invoicesRouter.post(
     try {
       const id = requireParam(req, 'id')
       const companyId = getAuth(req).companyId
+      // A wire-transfer invoice needs an active bank account before it goes anywhere; the wrong-status answer below
+      // still comes first for an invoice that is not a draft.
+      const bank = await invoiceBankCheck(id, companyId)
+      if (bank?.status === 'draft' && bank.problem)
+        return sendError(res, 409, BANK_ACCOUNT_REQUIRED, bank.problem)
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
@@ -365,6 +371,8 @@ invoicesRouter.post(
       if ((invoice.rows[0] as { status: string })['status'] !== 'review') {
         return sendError(res, 409, 'INVALID_STATUS', 'Only invoices in review can be approved')
       }
+      const bank = await invoiceBankCheck(id, companyId)
+      if (bank?.problem) return sendError(res, 409, BANK_ACCOUNT_REQUIRED, bank.problem)
 
       const lines = await query<{ source_type: string; source_id: string | null }>(
         'SELECT source_type, source_id FROM project_invoice_lines WHERE invoice_id=$1',
@@ -676,6 +684,12 @@ invoicesRouter.post(
       const id = requireParam(req, 'id')
       const companyId = getAuth(req).companyId
       const userId = getAuth(req).userId
+
+      // Same rule at the last step: an account cleared or deactivated after approval must not slip through to issue.
+      // The wrong-status answer below still comes first for an invoice that is not approved.
+      const bank = await invoiceBankCheck(id, companyId)
+      if (bank?.status === 'approved' && bank.problem)
+        return sendError(res, 409, BANK_ACCOUNT_REQUIRED, bank.problem)
 
       const client = await pool.connect()
       try {

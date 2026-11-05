@@ -1134,3 +1134,36 @@ Don't re-derive, check these first.
     `UserRolesTab.purchaseReview.test.tsx`, and the approval blocks in `ItemsBoughtPage.test.tsx` and
     `RequisitionDetail.test.tsx`. 34 backend and 19 web mutations, all killed. Not verified in a browser. Related to #24,
     #58 and #59.
+
+61. **A printed block that silently disappears when its optional data is unset, and a list gated by a different
+    permission than the screen.** "Some invoices print and preview without the bank account information, others are fine."
+    The invoice builds its Banking Information block only when `payment_type != 'cash' AND a bank account is chosen`
+    (`buildInvoiceHTML`), and `project_invoices.bank_account_id` is nullable with `payment_type` defaulting to
+    `wire_transfer`; nothing sets the account at creation and nothing checked it before the invoice left draft, so an
+    invoice with no account simply printed without the block, no error anywhere (NY-INV-2026-0004, already PAID, and
+    AW-INV-2026-0001, a draft). Second cause, same symptom: the page finds the account by looking it up in the
+    `bankAccounts` query, which needs `finance.ar.view`; a user without it (two people on production) gets no list, so the
+    block is missing for them on EVERY invoice, including ones that do have an account. How to spot it: compare the
+    invoices that print with the ones that do not on `bank_account_id IS NULL` and `payment_type`; then ask the same user
+    to open a good invoice (still missing = the permission, not the data). Fix: one shared check
+    (`services/projects/src/lib/invoiceBankAccount.ts`, `invoiceBankCheck`) used by `submit-for-review`, `approve` and
+    `issue`: a wire-transfer invoice needs an ACTIVE account, Cash is exempt, a deactivated account counts as none, a
+    wrong-status error still wins, the lookup is scoped to the company, and the refusal is a 409 `BANK_ACCOUNT_REQUIRED`.
+    The submit/approve/issue transitions live only in the projects service (the gateway's only status writers for
+    project invoices are payment recording, void and cancel), so there is no second path around it. The page shows a red
+    warning and disables the three buttons, and the warning is keyed on the invoice's OWN `bankAccountId`: only the
+    "chosen account is inactive" wording needs the loaded list, so someone who cannot load it is never told the invoice
+    has no account when it does. Data fix for the paid invoice: set to the account the client's other invoices use after
+    a manual `pg_dump` backup, one row, one `audit_log` row (the edit mutation refuses issued/paid invoices, so it had to
+    be SQL). Test traps: tightening a rule breaks every fixture that relied on the old permissive behaviour (17 existing
+    projects tests got 409 until they attached an account: `attachTestBankAccount` in `tests/setup.ts`, whose cleanup
+    deletes only test accounts no invoice still points at because `bank_accounts` has no `company_id`); a new
+    `role="alert"` warning broke 3 older tests that assert on the single alert, so the warning has no role; the
+    "bank list unavailable" case needs the query mock to be configurable (`bankQueryData`) or the permission half of the
+    bug cannot be tested. Mutation-checked: 10 web and the server safeguards (cash exemption, inactive account, the
+    loaded-list guard, each button held back, the status exclusion, the wording). Tests:
+    `services/projects/tests/invoice-bank-account-required.test.ts` (real Postgres, 12) and the "needs a bank account"
+    block in `InvoiceDetail.test.tsx`. Still open, by the user's choice or out of scope: `setInvoiceBankAccount` checks
+    only that the caller is logged in; a user without `finance.ar.view` sees no hint that the list could not load (the
+    user grants the permission instead); a bank account deactivated later makes its invoices need a new choice before
+    they can move on. Related to #23 (a rule on one path) and #34 (looks empty while the data is fine).

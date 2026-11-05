@@ -137,6 +137,20 @@ export default function InvoiceDetail() {
   const bankAccounts: BankAccount[] =
     bankData?.bankAccounts.filter((a: BankAccount) => a.isActive) ?? []
   const selectedBank = bankAccounts.find((a) => a.id === inv?.bankAccountId) ?? null
+  // A wire-transfer invoice prints its banking information from the account chosen on the invoice. With none (or one that
+  // has been deactivated) the block silently disappears from the preview and the print, so the page says so and holds the
+  // invoice back; the server refuses too (BANK_ACCOUNT_REQUIRED). Keyed on the invoice's own bankAccountId, not on the
+  // list of accounts: someone without finance.ar.view cannot load that list although the invoice does have its account,
+  // and must not be told it has none.
+  const bankProblem: 'none' | 'inactive' | null =
+    !inv || inv.paymentType === 'cash'
+      ? null
+      : !inv.bankAccountId
+        ? 'none'
+        : bankData && !selectedBank
+          ? 'inactive'
+          : null
+  const bankHint = bankProblem ? t('proj.invDetail.chooseBankFirst') : undefined
 
   useEffect(() => {
     if (tab !== 'pdf' || !inv?.verificationToken || qrDataUrl) return
@@ -582,16 +596,22 @@ export default function InvoiceDetail() {
             )}
             {inv.status === 'draft' && (
               <>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={transitioning}
-                  onClick={() =>
-                    void handleTransition('submit-for-review', t('proj.invDetail.invoiceSubmittedForReview'))
-                  }
-                >
-                  {t('proj.invDetail.submitForReview')}
-                </Button>
+                <span title={bankHint}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={transitioning}
+                    disabled={bankProblem !== null}
+                    onClick={() =>
+                      void handleTransition(
+                        'submit-for-review',
+                        t('proj.invDetail.invoiceSubmittedForReview'),
+                      )
+                    }
+                  >
+                    {t('proj.invDetail.submitForReview')}
+                  </Button>
+                </span>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -618,27 +638,33 @@ export default function InvoiceDetail() {
                     {t('proj.invDetail.reject')}
                   </Button>
                 )}
+                <span title={bankHint}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={transitioning}
+                    disabled={bankProblem !== null}
+                    onClick={() =>
+                      void handleTransition('approve', t('proj.invDetail.invoiceApproved'))
+                    }
+                  >
+                    {t('proj.invDetail.approve')}
+                  </Button>
+                </span>
+              </>
+            )}
+            {inv.status === 'approved' && (
+              <span title={bankHint}>
                 <Button
                   variant="primary"
                   size="sm"
                   loading={transitioning}
-                  onClick={() =>
-                    void handleTransition('approve', t('proj.invDetail.invoiceApproved'))
-                  }
+                  disabled={bankProblem !== null}
+                  onClick={() => void handleTransition('issue', t('proj.invDetail.invoiceIssued'))}
                 >
-                  {t('proj.invDetail.approve')}
+                  {t('proj.invDetail.issueInvoice')}
                 </Button>
-              </>
-            )}
-            {inv.status === 'approved' && (
-              <Button
-                variant="primary"
-                size="sm"
-                loading={transitioning}
-                onClick={() => void handleTransition('issue', t('proj.invDetail.invoiceIssued'))}
-              >
-                {t('proj.invDetail.issueInvoice')}
-              </Button>
+              </span>
             )}
             {canPay && (
               <Button
@@ -719,6 +745,23 @@ export default function InvoiceDetail() {
           </Card>
         ))}
       </div>
+
+      {bankProblem && !['issued', 'paid', 'void', 'cancelled'].includes(inv.status) && (
+        <Card
+          style={{
+            padding: '12px 16px',
+            marginTop: '14px',
+            background: theme.dangerBg,
+            border: `1px solid ${theme.dangerBorder}`,
+          }}
+        >
+          <div style={{ fontSize: '13px', color: theme.danger }}>
+            {bankProblem === 'none'
+              ? t('proj.invDetail.bankMissingWarning')
+              : t('proj.invDetail.bankInactiveWarning')}
+          </div>
+        </Card>
+      )}
 
       {/* Payment type + bank account selectors (editable before issued) */}
       {!['issued', 'paid', 'void', 'cancelled'].includes(inv.status) ? (
