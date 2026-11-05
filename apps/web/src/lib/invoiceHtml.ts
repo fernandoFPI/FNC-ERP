@@ -328,7 +328,18 @@ export function buildInvoiceHTML(
     </div>
     `
 
+  // Letterhead invoices: the page number and the "continued" note sit together, bottom right, on every page, just
+  // above the letterhead's footer artwork (see printGeometryCss). They take no room in the page's flow, so neither the
+  // table nor the totals have to leave space for them.
+  const continuedNote = `<div class="page-continued">Continued on next page →</div>`
+
   function pageFooterBar(pageNum: number): string {
+    if (letterhead) {
+      return `
+  <div class="page-footer-bar">
+    <div class="page-count" data-page-num="${pageNum}">Page ${pageNum} of ${totalPages}</div>${pageNum < totalPages ? continuedNote : ''}
+  </div>`
+    }
     return `
   <div class="page-footer-bar" style="border-top:1px solid #e5e5e5;padding-top:10px;margin-top:16px;font-size:10px;color:#999;display:flex;justify-content:space-between">
     <span>${companyLabel} &bull; ${invoiceNo}</span>
@@ -346,6 +357,8 @@ export function buildInvoiceHTML(
         </td>
       </tr>
     </tfoot>`
+  // The letterhead layout says it in the page marker instead, so its table has no such bar.
+  const tableContinuedBar = letterhead ? '' : continuedTfoot
 
   // Totals + payment/bank details + signature block — appended only to the last page.
   // Wrapped in #trailing-content so the overflow-correction script (letterhead mode
@@ -460,8 +473,6 @@ export function buildInvoiceHTML(
   </section>
   </div>`
 
-  const companyFooterLabel = `${companyLabel} • ${invoiceNo}`
-
   function jsStringLiteral(s: string): string {
     return JSON.stringify(s).replace(/</g, '\\u003c')
   }
@@ -494,7 +505,7 @@ export function buildInvoiceHTML(
     var rootId = root.id;
     var done = false;
     var mmPx = 96 / 25.4;
-    var continuedTfoot = ${jsStringLiteral(continuedTfoot)};
+    var continuedNote = ${jsStringLiteral(continuedNote)};
     var continuedHeader = ${jsStringLiteral(continuedHeaderHtml)};
 
     // Pixels per mm in the same coordinate space getBoundingClientRect reports, so a
@@ -587,11 +598,11 @@ export function buildInvoiceHTML(
       return el;
     }
 
+    // The page number, bottom right. "Continued on next page" is added to every page but the last by markContinued().
     function footerBar(num, total) {
       var footer = document.createElement('div');
       footer.className = 'page-footer-bar';
-      footer.style.cssText = 'border-top:1px solid #e5e5e5;padding-top:10px;margin-top:16px;font-size:10px;color:#999;display:flex;justify-content:space-between';
-      footer.innerHTML = '<span>' + ${jsStringLiteral(companyFooterLabel)} + '</span><span class="page-count" data-page-num="' + num + '">Page ' + num + ' of ' + total + '</span>';
+      footer.innerHTML = '<div class="page-count" data-page-num="' + num + '">Page ' + num + ' of ' + total + '</div>';
       return footer;
     }
 
@@ -600,10 +611,13 @@ export function buildInvoiceHTML(
       pageEl.appendChild(footerBar(num, num));
     }
 
-    function setContinued(table, on) {
-      var has = table.tFoot;
-      if (on && !has) table.insertAdjacentHTML('beforeend', continuedTfoot);
-      if (!on && has) table.removeChild(has);
+    // Every page but the last says the invoice goes on. Run once the pages are final: the totals block can still
+    // move to a page of its own after the rows are placed, which turns the page it left into a "continued" one.
+    function markContinued() {
+      var bars = document.querySelectorAll('.page-footer-bar');
+      for (var i = 0; i < bars.length - 1; i++) {
+        if (!bars[i].querySelector('.page-continued')) bars[i].insertAdjacentHTML('beforeend', continuedNote);
+      }
     }
 
     // A continuation page holding an empty copy of the lines table (same head, no rows).
@@ -653,34 +667,25 @@ export function buildInvoiceHTML(
       var oldFooters = root.querySelectorAll(':scope > .page-footer-bar');
       for (var f = 0; f < oldFooters.length; f++) root.removeChild(oldFooters[f]);
       root.removeAttribute('id');
-      setContinued(firstTable, false);
 
       var pages = [root];
       var tables = [firstTable];
       var cur = 0;
       for (var k = 0; k < rows.length; k++) {
-        // Measured with the "continued" bar in place whenever another row follows, so a
-        // page is never filled right up to the limit and then pushed over by that bar.
-        var more = k < rows.length - 1;
         var tbody = tables[cur].tBodies[0];
         tbody.appendChild(rows[k]);
-        setContinued(tables[cur], more);
         // A page keeps at least one row, however tall, so this always terminates.
         if (tbody.rows.length > 1 && overflows(pages[cur], tables[cur])) {
           tbody.removeChild(rows[k]);
-          // The last row is measured without the bar; another page follows now, so put it back.
-          setContinued(tables[cur], true);
           var next = newLinesPage(firstTable);
           root.appendChild(next);
           pages.push(next);
           tables.push(next.querySelector('table.inv-lines'));
           cur++;
           tables[cur].tBodies[0].appendChild(rows[k]);
-          setContinued(tables[cur], more);
         }
       }
 
-      setContinued(tables[cur], false);
       tables[0].style.marginBottom = cur === 0 ? '28px' : '0';
       pages[cur].id = 'page-last';
       tables[cur].parentNode.insertBefore(trailing, tables[cur].nextSibling);
@@ -752,6 +757,7 @@ export function buildInvoiceHTML(
         placeStamp();
         paginate();
         fixTrailing();
+        markContinued();
       } catch (e) {
         root.innerHTML = snapshot;
         if (rootId) root.id = rootId;
@@ -784,6 +790,13 @@ export function buildInvoiceHTML(
       ${sel('.header-qr')} { display: none; }
       ${sel('.lh-stamp')} { position: fixed; bottom: var(--stamp-bottom, 43mm); left: 0; right: 0; border-top: none; padding-top: 0; margin-top: 0; z-index: 10; }
       ${sel('.lh-stamp-img')} { max-height: 110px; max-width: 160px; }
+      /* Page number and "continued" note: bottom right, the note's line level with the stamp's bottom edge, on every sheet.
+         A page starts at the top of a sheet, so a distance from the page's top is the same distance on the sheet. The top is
+         fixed (two lines high), so the page number stays at one height whether or not a "continued" note sits below it.
+         No flow height. */
+      ${sel('.page-footer-bar')} { position: absolute; top: calc(297mm - var(--stamp-bottom, 43mm) - 9mm); right: 15mm; margin: 0; }
+      /* A continuation page sits inside the first page's 15 mm side padding, so it is already 15 mm in from the sheet edge. */
+      ${sel('.page .page2-break > .page-footer-bar')} { right: 0; }
       ${sel('.page')} { padding: 54mm 15mm 50mm; }
       /* Page 2 header: show absolute version in print only */
       ${sel('.p2-screen-hdr')} { display: none !important; }
@@ -806,7 +819,7 @@ export function buildInvoiceHTML(
     <table class="inv-lines" style="width:100%;border-collapse:collapse;margin-bottom:28px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
       <thead>${tableHeadRow()}</thead>
       <tbody>${rows}</tbody>
-      ${!isLast ? continuedTfoot : ''}
+      ${!isLast ? tableContinuedBar : ''}
     </table>
 
     ${isLast ? trailingContent : ''}
@@ -860,6 +873,8 @@ export function buildInvoiceHTML(
     .header-qr { display: block; }
     .page { position: relative; padding: 74mm 15mm 85mm; max-width: 100%; min-height: 297mm; }
     .lh-stamp { text-align: center; padding-top: 12px; border-top: 1px solid #e5e5e5; margin-top: 8px; }
+    .page-footer-bar { margin-top: 16px; text-align: right; font-size: 10px; color: #999; }
+    .page-footer-bar .page-continued { margin-top: 1px; font-size: 11px; font-style: italic; }
     .lh-stamp-img { max-height: 230px; max-width: 320px; object-fit: contain; display: block; margin: 0 auto 6px; }
     @media print {
       .lh-bg { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
@@ -991,7 +1006,7 @@ ${
   <table class="inv-lines" style="width:100%;border-collapse:collapse;margin-bottom:${isMultiPage ? '0' : '28px'};border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
     <thead>${tableHeadRow()}</thead>
     <tbody>${lineRows}</tbody>
-    ${isMultiPage ? continuedTfoot : ''}
+    ${isMultiPage ? tableContinuedBar : ''}
   </table>
 
   ${

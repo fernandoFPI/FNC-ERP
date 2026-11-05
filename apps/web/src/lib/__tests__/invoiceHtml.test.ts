@@ -247,7 +247,7 @@ describe('text from the database is text, never markup', () => {
       document.documentElement.className = ''
     })
 
-    it('builds the page footers from escaped text, not markup', () => {
+    it('puts only the page number in the footers it builds: no database text reaches them', () => {
       const html = buildInvoiceHTML(
         { ...hostile(), companyLetterheadImage: PNG },
         null,
@@ -260,7 +260,7 @@ describe('text from the database is text, never markup', () => {
       // eslint-disable-next-line @typescript-eslint/no-implied-eval
       new Function(script)()
       expect(document.querySelectorAll('.page-footer-bar img')).toHaveLength(0)
-      expect(document.querySelector('.page-footer-bar')?.textContent).toContain(HOSTILE)
+      expect(textOf(document.querySelector('.page-footer-bar'))).toBe('Page 1 of 1')
     })
   })
 

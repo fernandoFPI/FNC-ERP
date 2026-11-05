@@ -1167,3 +1167,35 @@ Don't re-derive, check these first.
     only that the caller is logged in; a user without `finance.ar.view` sees no hint that the list could not load (the
     user grants the permission instead); a bank account deactivated later makes its invoices need a new choice before
     they can move on. Related to #23 (a rule on one path) and #34 (looks empty while the data is fine).
+
+62. **Page furniture drawn from a page's edge lands in a different place on pages that are built differently.** The
+    letterhead invoice's footer (company name and invoice number on the left, "Page N of M" on the right, a rule above
+    it) and the "Continued on next page" row inside the table were replaced by one marker per page, bottom right, just
+    above the letterhead's footer artwork: "Page N of M" with the note under it on every page but the last
+    (`.page-footer-bar` in `apps/web/src/lib/invoiceHtml.ts`; the table's own `tfoot` bar is gone for letterhead invoices,
+    the plain layout still has both). In print it is `position: absolute` from the page's own top
+    (`top: calc(297mm - var(--stamp-bottom, 43mm) - 9mm)`, valid because every page starts at the top of a sheet) and
+    takes no room in the flow, so the pagination budget no longer has to leave space for a footer bar; on screen it stays
+    in the flow. `markContinued()` runs last, after the totals block has had its chance to move to a page of its own,
+    because that move turns the page it left into a "continued" one (a note written at pagination time would be wrong).
+    Traps met: (a) *Continuation pages are not all built the same way.* The pages `paginate()` makes are appended INSIDE
+    the first `.page`, so they are inset by its 15 mm side padding; the extra page `fixTrailing()` makes from page 1 is a
+    sibling in `<body>`, full width. `right: 15mm` therefore put the marker 29.8 mm from the edge on pages 2+ against
+    14.8 mm on page 1 (measured from the PDF, below). Fixed with `.page .page2-break > .page-footer-bar { right: 0 }`.
+    The existing continuation header (`.p2-print-hdr`, the INVOICE title and QR on pages 2+) has the same flaw: it prints
+    30.3 mm from the edge against 15.3 mm on page 1. Not fixed, nobody asked; a one-line rule of the same shape fixes it.
+    (b) *Anchoring a box by its bottom (`translateY(-100%)`) moves its first line when a second line appears.* The page
+    number sat 4.6 mm higher on pages with the note than on the last page; a fixed top (two lines high) keeps it at one
+    height. (c) *A test that asserted "company text from the database reaches the footer as text"* lost its subject when
+    the text left the footer; the check that matters now is the continuation header the script builds with
+    `insertAdjacentHTML` from an already escaped string (hostile invoice number, forced split, `invoiceHtmlPagination.test.ts`).
+    (d) `tsx` injects a helper (`__name`) into functions passed to puppeteer's `page.evaluate`, which then throw in the
+    page: hand it a string. And `python -I` cannot import PyMuPDF installed in the user site; leave `-I` off for your own PDFs.
+    How it was verified (a unit test cannot see layout): the real HTML printed to PDF in headless Chrome with a stand-in
+    letterhead (footer artwork 25 mm up, a stamp, a QR) for 15 row counts from 12 to 42 (2 to 5 pages, including
+    layouts where only the totals overflow); PyMuPDF word boxes show "Page N of M" at the same right and bottom distance
+    on every page, the note on exactly the pages before the last, nothing from the table in the marker's band. Tests:
+    `lib/__tests__/invoiceHtmlPagination.test.ts` (22) and `invoiceHtml.test.ts`; 10 mutations, all killed. Not checked: a
+    letterhead whose footer rises higher than the stamp scan expects (the marker follows `--stamp-bottom`, like the stamp,
+    so it should move with it); the real company letterheads. Related to #53 (its remarks about an in-flow footer bar no
+    longer apply to letterhead invoices) and #23 (one thing built on several paths).

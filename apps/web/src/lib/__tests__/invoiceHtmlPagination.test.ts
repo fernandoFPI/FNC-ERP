@@ -5,15 +5,15 @@ import { buildInvoiceHTML, type InvoiceLine, type InvoiceRenderData } from '../i
 // no page's table may reach into the band the stamp occupies. The page split is made by a script
 // inside the generated HTML that measures real row heights. jsdom has no layout, so these tests
 // run that script against a small stand-in layout where a row's height is written in its
-// description ("h=200"). That pins the algorithm (which rows go where, the "continued" bars,
-// footers, ids, restoring on failure); the real geometry was checked in headless Chrome by
+// description ("h=200"). That pins the algorithm (which rows go where, the "continued" notes,
+// page numbers, ids, restoring on failure); the real geometry was checked in headless Chrome by
 // printing to PDF and looking for text inside the stamp band.
 
 const PX_PER_MM = 96 / 25.4
 // What the script allows below its anchor (297 mm minus the page's top padding minus the 85 mm reserve)
 const FIRST_PAGE_BUDGET = (297 - 54 - 85) * PX_PER_MM // 597 px
 const OTHER_PAGE_BUDGET = (297 - 74 - 85) * PX_PER_MM // 521 px
-const BAR = 40 // head row and "continued" row, like every other row unless it says otherwise
+const BAR = 40 // the head row, like every other row unless it says otherwise
 const SECTION = 120 // one totals / payment section
 
 function line(n: number, h: number): InvoiceLine {
@@ -34,9 +34,10 @@ function line(n: number, h: number): InvoiceLine {
 function invoice(
   heights: number[],
   letterhead: string | null = 'data:image/png;base64,AAAA',
+  invoiceNumber = 'INV-1',
 ): string {
   const data: InvoiceRenderData = {
-    invoiceNumber: 'INV-1',
+    invoiceNumber,
     status: 'issued',
     invoiceDate: '2026-11-01',
     dueDate: '2026-12-01',
@@ -128,7 +129,7 @@ function pages(): PageSummary[] {
       rows: table
         ? Array.from(table.tBodies[0].rows).map((r) => Number(r.cells[0].textContent))
         : [],
-      continued: !!table?.tFoot,
+      continued: !!el.querySelector(':scope > .page-footer-bar .page-continued'),
       id: el.id,
       footer: el.querySelector(':scope > .page-footer-bar .page-count')?.textContent ?? null,
       sections: Array.from(el.querySelectorAll('.js-trailing-section')).filter(
@@ -170,7 +171,7 @@ describe('letterhead invoice pagination', () => {
   it('starts a new page before a row would push the table into the stamp band', () => {
     load(invoice([200, 200, 200, 200, 200]))
     const p = pages()
-    // page 1: head + 2 rows + "continued" = 480 of 597; a third row would make 680
+    // page 1: head + 2 rows = 440 of 597; a third row would make 640
     expect(p.map((x) => x.rows)).toEqual([[1, 2], [3, 4], [5]])
     expect(p.map((x) => x.continued)).toEqual([true, true, false])
     expect(p.map((x) => x.footer)).toEqual(['Page 1 of 3', 'Page 2 of 3', 'Page 3 of 3'])
@@ -196,6 +197,42 @@ describe('letterhead invoice pagination', () => {
     expect(p.map((x) => x.rows)).toEqual([[1, 2], [3, 4], []])
     expect(p.map((x) => x.sections)).toEqual([0, 0, 2])
     expect(p.map((x) => x.footer)).toEqual(['Page 1 of 3', 'Page 2 of 3', 'Page 3 of 3'])
+    // the rows end on page 2, but the invoice goes on to the totals page: page 2 must say so
+    expect(p.map((x) => x.continued)).toEqual([true, true, false])
+  })
+
+  it('says "continued" on every page but the last, and nowhere else', () => {
+    load(invoice([200, 200, 200, 200, 200]))
+    const notes = Array.from(document.querySelectorAll('.page-continued'))
+    expect(notes).toHaveLength(2)
+    expect(notes.every((n) => n.textContent === 'Continued on next page →')).toBe(true)
+    // no bar inside the tables any more
+    expect(document.querySelectorAll('tfoot')).toHaveLength(0)
+  })
+
+  it('puts only the page number and the note in a page marker: no company text, no rule', () => {
+    load(invoice([200, 200, 200, 200, 200]))
+    const bars = Array.from(document.querySelectorAll<HTMLElement>('.page-footer-bar'))
+    // one line each, the page number above the note
+    expect(bars.map((b) => Array.from(b.children).map((c) => c.textContent))).toEqual([
+      ['Page 1 of 3', 'Continued on next page →'],
+      ['Page 2 of 3', 'Continued on next page →'],
+      ['Page 3 of 3'],
+    ])
+    // the rule above the old footer was an inline border; the marker carries no inline style at all
+    expect(bars.every((b) => !b.hasAttribute('style'))).toBe(true)
+  })
+
+  it('keeps database text out of the continuation header it builds', () => {
+    const HOSTILE = '<img src=x onerror="window.__pwned=1">'
+    load(invoice([200, 200, 200, 200, 200], 'data:image/png;base64,AAAA', `INV-${HOSTILE}`))
+    expect(document.querySelectorAll('.page2-break').length).toBeGreaterThan(0)
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+    for (const el of Array.from(document.querySelectorAll('*'))) {
+      for (const a of Array.from(el.attributes)) expect(a.name.startsWith('on')).toBe(false)
+    }
+    const header = find(document, '.page2-break .p2-screen-hdr')
+    expect(header.textContent).toContain(HOSTILE) // shown, as text
   })
 
   it('terminates on a row taller than a whole page and keeps every row', () => {
@@ -279,7 +316,7 @@ describe('stamp placement from the letterhead footer', () => {
     fakeLetterhead(700)
     load(invoice([200, 200, 200, 200, 200]))
     expect(parseFloat(stampBottom())).toBeCloseTo(16.85, 1)
-    // reserve 55 mm instead of 85: page 1 now takes a third 200 px row (head + 3 rows + bar = 680
+    // reserve 55 mm instead of 85: page 1 now takes a third 200 px row (head + 3 rows = 640
     // of 710 px), where the default budget of 597 px stopped at two
     const p = pages()
     expect(p[0].rows).toEqual([1, 2, 3])
@@ -323,5 +360,69 @@ describe('letterhead invoice markup', () => {
 
   it('has no pagination script without a letterhead (the stamp is in the flow there)', () => {
     expect(invoice([BAR], null)).not.toContain('<script>')
+  })
+
+  it('puts the page marker bottom right, level with the stamp, once for print and once for measuring', () => {
+    const html = invoice([BAR])
+    const decl =
+      '.page-footer-bar { position: absolute; top: calc(297mm - var(--stamp-bottom, 43mm) - 9mm); right: 15mm; margin: 0; }'
+    expect(html.split(decl)).toHaveLength(3) // plain (@media print) and under html.measuring
+    expect(html).toContain(`html.measuring ${decl}`)
+  })
+
+  it('keeps the marker at the same place on a continuation page, which is already inset 15 mm', () => {
+    const html = invoice([BAR])
+    const nested = '.page .page2-break > .page-footer-bar { right: 0; }'
+    expect(html.split(nested)).toHaveLength(3)
+    expect(html).toContain(`html.measuring ${nested}`)
+    // it must come after the general rule, or the general rule would win on equal footing
+    expect(html.indexOf(nested)).toBeGreaterThan(
+      html.indexOf('.page-footer-bar { position: absolute;'),
+    )
+  })
+
+  describe('before the script runs (what is printed if it cannot)', () => {
+    const bars = (html: string) =>
+      Array.from(
+        new DOMParser()
+          .parseFromString(html, 'text/html')
+          .querySelectorAll<HTMLElement>('.page-footer-bar'),
+      )
+    const lines = (el: HTMLElement) => Array.from(el.children).map((c) => c.textContent)
+
+    it('a one-page invoice has just "Page 1 of 1"', () => {
+      const b = bars(invoice([BAR]))
+      expect(b.map(lines)).toEqual([['Page 1 of 1']])
+    })
+
+    it('a long invoice says "continued" on every page but the last, with no table bar', () => {
+      const html = invoice(Array.from({ length: 20 }, () => BAR))
+      const b = bars(html)
+      expect(b.length).toBeGreaterThanOrEqual(3)
+      b.forEach((el, i) => {
+        const last = i === b.length - 1
+        expect(lines(el)).toEqual(
+          last
+            ? [`Page ${i + 1} of ${b.length}`]
+            : [`Page ${i + 1} of ${b.length}`, 'Continued on next page →'],
+        )
+        expect(el.hasAttribute('style')).toBe(false)
+      })
+      expect(
+        new DOMParser().parseFromString(html, 'text/html').querySelectorAll('tfoot'),
+      ).toHaveLength(0)
+    })
+  })
+
+  it('leaves the plain (no letterhead) layout as it was: company text, rule and a bar in the table', () => {
+    const html = invoice(
+      Array.from({ length: 20 }, () => BAR),
+      null,
+    )
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const first = doc.querySelector<HTMLElement>('.page-footer-bar')
+    expect(first?.getAttribute('style')).toContain('border-top:1px solid #e5e5e5')
+    expect(first?.textContent).toContain('INV-1')
+    expect(doc.querySelectorAll('tfoot').length).toBeGreaterThan(0)
   })
 })
