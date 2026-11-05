@@ -775,8 +775,8 @@ Don't re-derive, check these first.
     (f) *`.page2-break.page-mid` has `padding-bottom: 85mm`* and the page's own footer bar sits below the table, so a
     page filled to the limit overflows its sheet by the footer's height and Chrome prints a blank sheet after it. The
     original output has such near-blank sheets already (a sheet holding only a footer bar, seen on a 20-row invoice);
-    pages made by the script are not `page-mid`. `makePage()` in the totals overflow still creates `page-mid` pages: check that if blank sheets
-    show up after the last page.
+    pages made by the script are not `page-mid`. `makePage()` in the totals overflow used to create `page-mid` pages too, and that did print
+    an empty sheet (NY-INV-2026-0011); fixed, see #63.
     (g) *One shared stamp position was set by the worst letterhead.* The first fix kept the stamp 43 mm up and reserved
     85 mm for it everywhere, and that number exists only because Al Watanyia's footer artwork rises to 41 mm from the
     bottom edge; Yakam's starts at 24.7 mm and Factory's at 23.9 mm, so those two wasted about 18 mm a page (page 1 of a
@@ -1199,3 +1199,30 @@ Don't re-derive, check these first.
     letterhead whose footer rises higher than the stamp scan expects (the marker follows `--stamp-bottom`, like the stamp,
     so it should move with it); the real company letterheads. Related to #53 (its remarks about an in-flow footer bar no
     longer apply to letterhead invoices) and #23 (one thing built on several paths).
+
+63. **A block that cannot be split, with padding below it, is moved whole to the next sheet: an empty page, then the block
+    at the top of an unmarked sheet over the logo.** NY-INV-2026-0011 printed 4 sheets while its own footers said "Page N of
+    3": sheet 3 was only the title block, "Continued from previous page" and "Page 3 of 3"; the payment type and Banking
+    Information block sat alone at the very top of sheet 4, over the letterhead's logo, with no title block and no page
+    marker. Cause: the page the script makes when the totals / payment block does not fit under the last rows
+    (`makePage()` in `fixTrailing`) still had the class `page-mid`, which adds `padding-bottom: 85mm` in print. Chrome has no
+    legal break between the last block of a box and the padding under it, and the payment section is
+    `break-inside: avoid` (about 85 mm tall with an intermediary bank), so the block, the 85 mm and the first page's own
+    50 mm bottom padding (continuation pages are nested inside it) all had to fit under the header: 87 + 84.7 + 85 + 50 =
+    306.7 mm against a 297 mm sheet. They did not, so the section went to the next sheet, which as a continuation fragment
+    has no top padding (hence over the logo). The script measures in `html.measuring` mode, which never included
+    `page-mid`'s padding, so it believed page 3 fitted. It hit every WIRE-TRANSFER invoice of 5 or more rows (18 of 22 row
+    counts tried, 1 to 30); with 1 to 4 rows the new page is a sibling of the first page, not nested in it, so the 50 mm was
+    not glued on; cash invoices have a much smaller block, which is why the sweep behind #62 (cash) missed it. It is older
+    than the page-marker change: the code from before it fails the same way (page number on the wrong sheet), and #53(f) had
+    flagged `makePage()`'s `page-mid` for exactly this. Fix: `makePage()` makes a plain `page2-break` (`newLinesPage` already
+    did); the static, script-less fallback keeps `page-mid` on its non-last pages. How to spot it: the number of sheets is not
+    the "of M" on the markers; a sheet with only a title block; a block at the top of a sheet over the logo. How to check (a
+    unit test cannot see fragmentation): print the real HTML to PDF in headless Chrome for row counts 1 to 30 with a
+    wire-transfer invoice that has intermediary bank details, and with PyMuPDF assert for every sheet a page marker that
+    matches its position, a title block from sheet 2, some table / totals / payment text, and sheets == the markers' total; do
+    it for the tightest letterhead too (footer artwork 41 mm up, Al Watanyia's). Before the fix 18 of 22 failed; after, 0 of 22
+    and 0 of 7. Test: `invoiceHtmlPagination.test.ts` ("no page-mid" on the page that receives the moved totals; the old
+    class makes it fail). General rule: anything in a print stylesheet must satisfy "content bottom + every padding glued under
+    it up to the end of the nearest breakable ancestor <= the sheet", and the measuring mode has to include the same paddings.
+    Related to #53, #62.

@@ -587,9 +587,12 @@ export function buildInvoiceHTML(
       return bottom - anchorEl.getBoundingClientRect().top;
     }
 
+    // Not "page-mid": that class adds 85 mm of padding below the content in print, and Chrome cannot break between the
+    // last block and the padding under it, so a page holding the payment block (about 85 mm) was pushed whole onto
+    // an extra sheet with no header or page number, leaving this one empty. The script budgets the content itself.
     function makePage() {
       var el = document.createElement('div');
-      el.className = 'page2-break page-mid';
+      el.className = 'page2-break';
       var anchor = document.createElement('div');
       anchor.className = 'content-anchor';
       anchor.style.height = '0';

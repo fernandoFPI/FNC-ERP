@@ -235,6 +235,19 @@ describe('letterhead invoice pagination', () => {
     expect(header.textContent).toContain(HOSTILE) // shown, as text
   })
 
+  it('gives the page that receives the moved totals no "page-mid" bottom padding', () => {
+    load(invoice([200, 200, 200, 200]))
+    // In print "page-mid" adds 85 mm of padding under the content, and Chrome cannot break between the last block and
+    // the padding below it. A page holding the payment block (about 85 mm) then needs block + 85 mm + the first page's
+    // 50 mm to fit on the sheet, which it does not, so the whole block was pushed onto an extra sheet with no header
+    // or page number and the page the script had made was left empty (NY-INV-2026-0011). Every wire-transfer invoice
+    // of 5 or more rows hit it. jsdom has no layout; the sheets were counted in a real printed PDF.
+    expect(document.querySelectorAll('.page-mid')).toHaveLength(0)
+    expect(Array.from(document.querySelectorAll('.page2-break')).map((el) => el.className)).toEqual(
+      ['page2-break', 'page2-break'],
+    )
+  })
+
   it('terminates on a row taller than a whole page and keeps every row', () => {
     load(invoice([BAR, 2000, BAR]))
     const p = pages()
