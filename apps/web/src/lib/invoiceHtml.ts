@@ -227,17 +227,16 @@ export function buildInvoiceHTML(
   // ── Letterhead-specific sections ─────────────────────────────────────────
 
   const letterheadHeader = `
-  <!-- Invoice title + number + QR positioned top-right, level with the letterhead logo -->
+  <!-- Invoice title + QR positioned top-right, level with the letterhead logo. The number is not repeated here: the
+       Invoice No. box right below carries it, and the QR needs no caption. -->
   <div style="position:absolute;top:16mm;right:15mm;text-align:right">
     <div style="font-size:20px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Invoice</div>
-    <div style="font-size:12px;color:#555;font-family:monospace;margin-top:5px;letter-spacing:0.3px">${invoiceNo}</div>
     ${
       qrDataUrl
         ? `
-    <div class="header-qr" style="margin-top:8px;display:flex;justify-content:flex-end">
+    <div class="header-qr" style="margin-top:10px;display:flex;justify-content:flex-end">
       <div style="text-align:center">
         <img src="${qrDataUrl}" alt="Scan to verify" style="width:72px;height:72px;display:block;"/>
-        <div style="font-size:8px;color:#999;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px">Scan to verify</div>
       </div>
     </div>`
         : ''
@@ -310,7 +309,6 @@ export function buildInvoiceHTML(
       <div style="margin-top:8px;display:flex;justify-content:flex-end">
         <div style="text-align:center">
           <img src="${qrDataUrl}" alt="Scan to verify" style="width:72px;height:72px;display:block;"/>
-          <div style="font-size:8px;color:#999;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px">Scan to verify</div>
         </div>
       </div>`
           : ''
