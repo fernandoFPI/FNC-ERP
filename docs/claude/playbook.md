@@ -1253,3 +1253,79 @@ Don't re-derive, check these first.
     scanning the printed QR code (no decoder is installed here; it is the same image, same 19 mm size, on plain white), and
     the real company letterheads. Tests: `invoiceHtml.test.ts` ("letterhead title block and QR code", 6) and
     `invoiceHtmlPagination.test.ts` (3 more, plus the geometry strings); 10 mutations, all killed. Related to #53, #62, #63.
+
+65. **A document step that records a reversal but moves no money, and a derived cost row that is copied once and never
+    follows its source.** RTN-NY-PO-2026-0101 (Nishtimani Yakam, 6 of 6 LED strip back to the vendor, 9.00 USD) was a
+    correct record that did nothing. The vendor return flow (`createPOReturn` / `approvePOReturn` / `creditPOReturn`) was
+    record-only: the 9.00 stayed in `project_cost_actuals` (source `po_direct_delivery`), the PO total never said a return
+    existed, and `completePO` posted the whole PO to the project expense and to payable, returned item included. Three
+    separate faults sat behind that one question:
+    (a) *A reversal that does not write where the original wrote.* The delivery wrote a cost row; the return wrote nothing.
+    Spot it: list every writer of a ledger-like table (`INSERT INTO project_cost_actuals`) and ask, for each document that
+    can be undone, where its undo writes. The material-return flows already counted `approved | credited` returns as
+    returned (`createMaterialReturn`'s returnable-quantity check) while the cost, the journal and the PO page ignored
+    them: two parts of the system disagreeing about whether a return had happened.
+    (b) *A hard-coded currency label.* `recordDirectDelivery` inserted `'IQD'` as the currency of the cost whatever the
+    line's currency, so a USD line booked its plain USD amount labelled IQD (127 rows on production on 2026-11-07, about
+    38.9K USD, first on 2 Sept and still being written; Al Watanyia 38 / Factory 18 / Yakam 71). The per-currency cost views
+    (migration 304) then showed USD material cost missing from the USD totals and tiny amounts inside the IQD ones. The
+    material-return offset (`createMaterialReturn`) had the same literal, and a return mixing two currencies was one IQD
+    number adding unlike units. Spot it: `SELECT cost.currency_code, line.currency_code, count(*)` where they differ, and
+    grep for a quoted currency in any INSERT that also takes an `amount`. Fix: the cost takes the LINE'S currency; a
+    material-return offset is written once per currency.
+    (c) *A copy that does not follow its source.* The cost row is `qty x price` copied at delivery. A price edited after
+    delivery (`applyPOEditChanges`, `applyAdminPOCorrection`) rewrote the line and left the cost: 15 rows on production
+    differed from received qty x price (NY-PO-2026-0101 line 8: 31.50 posted, 21.00 after the edit; NY-PO-2026-0100 line 9:
+    36.00 against 3.60). A removed line left its cost behind. Same family as #56 (an approved edit that rewrites one copy
+    of a value) and #6 (a total with several writers). Fix: ONE module, `services/gateway/src/lib/directDeliveryCost.ts`
+    (add, reprice, drop, offset), called by every path, so they cannot drift.
+    Design decisions, so they are not re-litigated: (1) a vendor return takes its value off the project cost and off what
+    the PO pays AT APPROVAL, not at credit (the user did not answer the question; chosen because the goods have already
+    left and the credit note arrives later; `credited` adds nothing on top). Say so if it is wrong: moving it to credit
+    means calling `offsetVendorReturnCost` from `creditPOReturn` instead of `approvePOReturn` and narrowing the status
+    filter in `getPONetCurrencyTotals` and the backfill. (2) The offset is a NEGATIVE cost
+    row (`po_vendor_return`, source = the return ITEM, unique per item by migration 317), never an edit of the delivery
+    row, because the cost table is append-only history like `stock_moves`. (3) The offset needs a delivery cost row to
+    cancel: a project PO delivered to INVENTORY costs the project nothing until a Store Out, so returning it takes nothing
+    off (test: "cost the project nothing yet"). (4) The PO keeps its lines and `currencyTotals` as ordered; the page shows
+    "Returned" and "After returns" per currency from the server (`PurchaseOrder.returnedTotals`, computed in SQL, never
+    added across currencies) and the completion journal posts ordered minus returned per currency (a fully returned
+    currency posts nothing). (5) A repeated delivery is ADDITIVE at the price current when it arrives (the weighted average
+    material returns read); only an EDIT re-prices what was already delivered. My first version recomputed
+    `received x price` on every delivery and broke two existing weighted-average tests (expected 12, got 15): a simpler rule
+    that changes an existing number needs those tests read before it is kept.
+    Also found and fixed on the way: `recordDirectDelivery` updated `po_lines` by line id alone, so a line id from another
+    purchase order (or company) could be delivered and charged through this PO's project; the UPDATE now requires
+    `po_id = the PO` and refuses otherwise (`not a line of this purchase order`, tested).
+    The backfill for rows the old code left (`services/gateway/src/scripts/backfill-direct-delivery-cost.ts`, compiled by
+    the gateway build and run on the VPS from `services/gateway` after sourcing `/opt/fnc-erp/.env`, same pattern as #44):
+    `node dist/scripts/backfill-direct-delivery-cost.js [--company "<name or id>"]` is a dry run listing four steps: (1)
+    relabel USD-line rows labelled IQD to the line's currency (the amount was never converted, so only the label moves);
+    rows converted at the old ~1,546 rate are recognised by `fx_rate_to_base <> 1` or an amount 100 times the line's value
+    and left alone; (2) re-price stale amounts, ONLY with `--reprice` (it changes a figure someone may have reported on, so
+    read the list first); (3) the offset for approved or credited returns that never got one (RTN-NY-PO-2026-0101);
+    (4) relabel the material-return offsets of a single-currency direct-delivery return, and REPORT, never change, one that
+    mixed a Store Out with a direct delivery or two currencies (its IQD number cannot be split). `--apply --actor-email
+    <admin>` does it in ONE transaction, writes one `audit_log` row per project, then re-reads the COMMITTED data on a
+    second connection and fails if anything it should have fixed is still wrong or an audit row is missing. Audit rows are
+    plain SQL, not `logAudit`: `logAudit` swallows its own errors, and a failed insert inside the transaction would have
+    turned COMMIT into a silent ROLLBACK while the script printed APPLIED (#48). Take `scripts/backup-db.sh` first.
+    Traps met: (i) *a "report the ambiguous ones" query that flags correct data.* My first step 4 listed every IQD
+    material-return row of a return that has a foreign direct line, which also matched returns the NEW code wrote
+    correctly (one row per currency: IQD for the stock part, USD for the direct part). Reading the query against what the
+    current code produces, then adding a test that runs the real mutation on a mixed return, found it; a backfill's
+    "suspicious" filter must exclude what current code writes. (ii) the test fixtures are the OLD state, which the old code
+    can no longer produce: build the row with the real mutation, then age it with SQL (relabel to IQD, delete the offset,
+    change the price directly), and say so in the test. (iii) a test that plans over the whole company reads other tests'
+    rows: scope by a project made per test and clear the cost rows in `beforeEach`. (iv) `createPOReturn` refuses a line
+    that was never received, so "a return on a line with no jobsite cost row" needs `qty_received` set by SQL.
+    Mutation-checked: 19 on the gateway code (the cost, offset, journal and display paths), 3 on the page and 14 on the
+    backfill; two survivors (the Store Out line and the converted-delivery guards of step 4) each got a test and then
+    died. Tests: `services/gateway/tests/po-direct-delivery-cost.test.ts` (real Postgres, 18),
+    `backfill-direct-delivery-cost.test.ts` (23), one more case in `project-material-return.test.ts`, and
+    `apps/web/src/pages/procurement/__tests__/procurement.test.tsx` (the Returned / After returns lines).
+    Still open, not part of this change: the stock side of a vendor return on a PO delivered to inventory (the goods are
+    still counted as received); `stock_issue` and Store Out `material_return` rows are still labelled IQD (a Store Out is
+    costed from the product's own cost, which has its own currency question, #43); the completion journal and the
+    direct-delivery cost may both charge the same goods to the project (a known open item, G17, not checked here); a PO funded by an employee advance is
+    not netted; the cost uses `unit_price` where the receipt screens use `actual_unit_price`. Related to #6, #23, #44, #48, #56.
