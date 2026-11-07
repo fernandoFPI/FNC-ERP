@@ -672,6 +672,30 @@ describe('createMaterialReturn — direct-delivery (jobsite) lines', () => {
     expect(parseFloat(costActuals.rows[1]!.amount)).toBe(-60)
   })
 
+  it('offsets a USD line in USD: the offset takes the currency of the cost it cancels (it used to say IQD)', async () => {
+    const productId = await makeProduct('dd-usd-offset')
+    const projectId = await makeProject('dd-usd-offset')
+    const poId = await makeDirectDeliveryPO(projectId)
+    const poLineId = await makePOLine(poId, productId, 10, 10)
+    await pool.query(`UPDATE po_lines SET currency_code='USD' WHERE id=$1`, [poLineId])
+    await deliverDirect(poId, poLineId, 10) // cost = 10 x 10 = 100 USD
+
+    await resolvers.Mutation.createMaterialReturn(
+      null,
+      { input: { poId, lines: [{ poLineId, toLocationId: warehouseId, qtyReturned: 4 }] } },
+      ctx as never,
+    )
+
+    const rows = await pool.query<{ source_type: string; amount: string; currency_code: string }>(
+      `SELECT source_type, amount::text, currency_code::text FROM project_cost_actuals WHERE project_id=$1 ORDER BY created_at`,
+      [projectId],
+    )
+    expect(rows.rows.map((r) => [r.source_type, parseFloat(r.amount), r.currency_code])).toEqual([
+      ['po_direct_delivery', 100, 'USD'],
+      ['material_return', -40, 'USD'],
+    ])
+  })
+
   it('rejects returning more than is still returnable net of vendor returns', async () => {
     const productId = await makeProduct('dd-over-return')
     const projectId = await makeProject('dd-over-return')

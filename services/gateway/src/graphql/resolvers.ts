@@ -47,6 +47,12 @@ import {
 } from '../lib/projectFiles.js'
 import { poEditNeedsApproval } from '../lib/poEditApproval.js'
 import {
+  addDirectDeliveryCost,
+  repriceDirectDeliveryCost,
+  dropDirectDeliveryCost,
+  offsetVendorReturnCost,
+} from '../lib/directDeliveryCost.js'
+import {
   AUTO_APPLIED_REQUISITION_REVIEW_NOTE,
   AUTO_APPLIED_REVIEW_NOTE,
   isAutoAppliedEditRequest,
@@ -837,6 +843,9 @@ async function applyPOEditChanges(
        WHERE id = ANY($1) AND po_id = $2`,
       [Array.from(priceAffectedLineIds), poId],
     )
+    // A price or currency edited after a jobsite delivery changes what that delivery cost the project; the cost
+    // row follows (it used to keep the old price: 3 units at 5.25 plus 9 at 1.75 for a line now worth 21.00).
+    await repriceDirectDeliveryCost(client, Array.from(priceAffectedLineIds))
   }
   if ((changes.lines?.added ?? []).length > 0) {
     if (!poCurrencyInfo) {
@@ -885,6 +894,8 @@ async function applyPOEditChanges(
   await assertLinesRemovable((sql, params) => client.query(sql, params), removedLineIds, { poId })
   const detached = await detachDeadLineHistory(client, removedLineIds)
   await releaseLineStockReservations(client, removedLineIds)
+  // A removed line's jobsite delivery cost goes with it (nothing else points at that row).
+  await dropDirectDeliveryCost(client, removedLineIds)
   for (const lineId of removedLineIds) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND po_id=$2`, [lineId, poId])
   }
@@ -1749,6 +1760,8 @@ async function applyAdminPOCorrection(
        WHERE id = ANY($1) AND po_id = $2`,
       [Array.from(priceAffectedLineIds), poId],
     )
+    // Same as applyPOEditChanges: a jobsite delivery's cost follows a corrected price.
+    await repriceDirectDeliveryCost(client, Array.from(priceAffectedLineIds))
   }
 
   // ── Receipts (header) ──────────────────────────────────────────────────
@@ -2996,8 +3009,10 @@ async function postPOCompletionJournal(
   // entry — posting one here would be a phantom payable no one will ever pay.
   if (po.funding_source === 'employee_advance') return
 
-  const currencyTotals = (await getPOCurrencyTotals(client, poId)).filter(
-    (t) => parseFloat(t.subtotal) !== 0,
+  // Net of approved vendor returns: a returned item is credited back by the vendor, so it is neither payable nor a
+  // cost (before this the whole PO was posted, returned lines included).
+  const currencyTotals = (await getPONetCurrencyTotals(client, poId)).filter(
+    (t) => parseFloat(t.net) > 0,
   )
   if (currencyTotals.length === 0) return
 
@@ -3006,7 +3021,7 @@ async function postPOCompletionJournal(
   const analyticAccountId = String(po.analytic_account_id)
 
   for (const ct of currencyTotals) {
-    const amount = parseFloat(ct.subtotal)
+    const amount = parseFloat(ct.net)
     // Previously picked "the first active expense/liability account" and
     // silently returned with no journal at all — no log, no error — if
     // neither existed. Project cost then just never showed up, with no
@@ -5233,6 +5248,52 @@ async function recalcPOTotalsGW(
 
 async function recalcPO(client: PoolClient, poId: string): Promise<void> {
   await recalcPOTotalsGW(client, poId)
+}
+
+// What each currency of a PO is worth once the vendor returns approved so far are taken off (approved or credited:
+// the same statuses the material-return flows already count as returned). Computed in SQL, never converted. The
+// PO's lines and currencyTotals stay as ordered; this is the figure the completion journal posts.
+async function getPONetCurrencyTotals(
+  exec: PoQueryExecutor,
+  poId: string,
+): Promise<{ currency_code: string; subtotal: string; returned: string; net: string }[]> {
+  const r = await execPOSql<{
+    currency_code: string
+    subtotal: string
+    returned: string
+    net: string
+  }>(
+    exec,
+    `SELECT l.currency_code, l.subtotal, COALESCE(r.returned, 0) AS returned,
+            l.subtotal - COALESCE(r.returned, 0) AS net
+     FROM (
+       SELECT currency_code, COALESCE(SUM(total_price), 0) AS subtotal
+       FROM po_lines WHERE po_id = $1 GROUP BY currency_code
+     ) l
+     LEFT JOIN (
+       SELECT currency_code, SUM(total_returned_value) AS returned
+       FROM po_returns WHERE po_id = $1 AND status IN ('approved', 'credited') GROUP BY currency_code
+     ) r ON r.currency_code = l.currency_code
+     ORDER BY l.currency_code`,
+    [poId],
+  )
+  return r.rows
+}
+
+// PurchaseOrder.returnedTotals: only the currencies that have an approved or credited vendor return.
+async function getPOReturnedTotals(
+  exec: PoQueryExecutor,
+  poId: string,
+): Promise<{ currency_code: string; ordered: string; returned: string; net: string }[]> {
+  const totals = await getPONetCurrencyTotals(exec, poId)
+  return totals
+    .filter((t) => parseFloat(t.returned) > 0)
+    .map((t) => ({
+      currency_code: t.currency_code,
+      ordered: t.subtotal,
+      returned: t.returned,
+      net: t.net,
+    }))
 }
 
 // ── Consolidated reporting helper ───────────────────────────────
@@ -15429,6 +15490,9 @@ export const resolvers = {
              WHERE id=$2 AND status='submitted'`,
             [auth.userId, args.id],
           )
+          // From approval on the return counts as returned (the material-return flows already read it that way):
+          // its value comes off the project cost of a jobsite delivery.
+          await offsetVendorReturnCost(client, args.id)
 
           if (employeeId && deduct) {
             await client.query(
@@ -15572,33 +15636,26 @@ export const resolvers = {
           }
 
           for (const l of i.lines) {
-            if (l.actual_unit_price != null && l.actual_unit_price > 0) {
-              await client.query(
-                `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1, actual_unit_price=$2 WHERE id=$3`,
-                [l.qty_received, l.actual_unit_price, l.po_line_id],
-              )
-            } else {
-              await client.query(
-                `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1 WHERE id=$2`,
-                [l.qty_received, l.po_line_id],
-              )
-            }
+            // The line must belong to THIS purchase order (it used to be updated by id alone).
+            const updated =
+              l.actual_unit_price != null && l.actual_unit_price > 0
+                ? await client.query(
+                    `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1, actual_unit_price=$2 WHERE id=$3 AND po_id=$4`,
+                    [l.qty_received, l.actual_unit_price, l.po_line_id, args.poId],
+                  )
+                : await client.query(
+                    `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1 WHERE id=$2 AND po_id=$3`,
+                    [l.qty_received, l.po_line_id, args.poId],
+                  )
+            if (updated.rowCount !== 1)
+              throw new Error('One of the delivered lines is not a line of this purchase order')
             const polRes = await client.query(
-              `SELECT product_id, unit_price, fx_rate_to_base, description, uom, currency_code FROM po_lines WHERE id=$1`,
+              `SELECT product_id, unit_price, description, uom, currency_code FROM po_lines WHERE id=$1`,
               [l.po_line_id],
             )
-            const polFxRate = parseFloat(String(polRes.rows[0]?.fx_rate_to_base ?? 1)) || 1
-            const polUnitPrice = parseFloat(String(polRes.rows[0]?.unit_price ?? 0)) * polFxRate
-            const cost = polUnitPrice * l.qty_received
-            if (cost > 0) {
-              await client.query(
-                `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
-                 VALUES ($1, 'po_direct_delivery', $2, 'materials', $3, 'IQD', $4::date)
-                 ON CONFLICT (source_id) WHERE source_type = 'po_direct_delivery' AND source_id IS NOT NULL
-                 DO UPDATE SET amount = project_cost_actuals.amount + EXCLUDED.amount`,
-                [poRow.linked_project_id, l.po_line_id, cost, i.received_date],
-              )
-            }
+            // This delivery's cost (qty x the line's price now) is added to the line's project cost, in the line's
+            // own currency. It used to be booked as IQD whatever the line's currency.
+            await addDirectDeliveryCost(client, l.po_line_id, l.qty_received, i.received_date)
             // Direct-to-jobsite items never touch stock/confirmReceipt, so this
             // is the only arrival point they have — queue the same way for a
             // custom (no product_id) line, so the store keeper's worklist
@@ -26230,7 +26287,8 @@ export const resolvers = {
         // that one (see the issue-line branch); a PO return keeps using the
         // PO's project, as before.
         const returnCostByProject = new Map<string, number>()
-        let totalDirectReturnCost = 0
+        // Direct-delivery cost is in the PO line's own currency, so its offset is too (per currency).
+        const directReturnCostByCurrency = new Map<string, number>()
         // Lazily resolved on first direct-delivery line — the per-company
         // "Virtual Receipts" bucket confirmReceipt itself uses as the source
         // of material entering real inventory for the first time.
@@ -26277,11 +26335,12 @@ export const resolvers = {
               po_id: string
               po_company_id: string
               delivery_destination: string | null
+              currency_code: string
               sku: string | null
               product_name: string | null
             }>(
               `SELECT pl.product_id, pl.qty_received, pl.po_id, po.company_id AS po_company_id,
-                      po.delivery_destination, prod.sku, prod.name AS product_name
+                      po.delivery_destination, pl.currency_code, prod.sku, prod.name AS product_name
                FROM po_lines pl
                JOIN purchase_orders po ON po.id = pl.po_id
                LEFT JOIN products prod ON prod.id = pl.product_id
@@ -26370,7 +26429,10 @@ export const resolvers = {
             const totalDirectCost = parseFloat(String(costRes.rows[0]?.amount ?? 0))
             const unitCost = qtyReceived > 0 ? totalDirectCost / qtyReceived : 0
             const totalCost = qty * unitCost
-            totalDirectReturnCost += totalCost
+            directReturnCostByCurrency.set(
+              polLine.currency_code,
+              (directReturnCostByCurrency.get(polLine.currency_code) ?? 0) + totalCost,
+            )
 
             if (!virtualInId) {
               const virtInRes = await client.query(
@@ -26694,12 +26756,15 @@ export const resolvers = {
             [offsetProjectId, returnId, -offsetCost],
           )
         }
-        if (totalDirectReturnCost > 0 && linkedProjectId) {
-          await client.query(
-            `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
-             VALUES ($1,'material_return',$2,'materials',$3,'IQD',NOW()::date)`,
-            [linkedProjectId, returnId, -totalDirectReturnCost],
-          )
+        if (linkedProjectId) {
+          for (const [currency, directReturnCost] of directReturnCostByCurrency) {
+            if (directReturnCost <= 0) continue
+            await client.query(
+              `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
+               VALUES ($1,'material_return',$2,'materials',$3,$4,NOW()::date)`,
+              [linkedProjectId, returnId, -directReturnCost, currency],
+            )
+          }
         }
 
         await client.query('COMMIT')
@@ -40192,6 +40257,12 @@ Object.assign(resolvers, {
       }
       return getPOCurrencyTotals(query, parent.id)
     },
+    // Approved or credited vendor returns, per currency (nothing converted). The PO's lines and currencyTotals stay
+    // as ordered; the screen shows the returned amount beside them.
+    returnedTotals: async (parent: {
+      id: string
+    }): Promise<{ currency_code: string; ordered: string; returned: string; net: string }[]> =>
+      getPOReturnedTotals(query, parent.id),
   },
 })
 
