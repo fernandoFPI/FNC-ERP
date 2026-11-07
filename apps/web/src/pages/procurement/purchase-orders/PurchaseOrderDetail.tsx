@@ -205,6 +205,9 @@ export interface PO {
   total_amount: string | null
   subtotal: string | null
   currencyTotals: { currency_code: string; subtotal: string; line_count: number }[]
+  // Approved or credited vendor returns, only for the currencies that have any. currencyTotals stays as ordered;
+  // net (ordered minus returned) is computed on the server, in SQL.
+  returnedTotals?: { currency_code: string; ordered: string; returned: string; net: string }[]
   vendor_id?: string | null
   vendor_name?: string | null
   analytic_account_id?: string | null
@@ -2066,6 +2069,39 @@ export default function PurchaseOrderDetail() {
                       <span key={ct.currency_code} style={{ color: BRAND_GREEN }}>
                         <AmountDisplay amount={parseFloat(ct.subtotal)} currency={ct.currency_code} size="lg" />
                       </span>
+                    ))}
+                    {/* Vendor returns already approved: the order above stays as it was placed, so say what went
+                        back and what is left, per currency (both from the server, never added across currencies). */}
+                    {(po.returnedTotals ?? []).map((rt) => (
+                      <div
+                        key={`returned-${rt.currency_code}`}
+                        data-testid="po-returned-total"
+                        style={{
+                          marginTop: '4px',
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          lineHeight: 1.6,
+                          color: theme.textMuted,
+                          whiteSpace: 'normal',
+                        }}
+                      >
+                        <div>
+                          {t('po.detail.returnedTotal')}:{' '}
+                          <AmountDisplay
+                            amount={-parseFloat(rt.returned)}
+                            currency={rt.currency_code}
+                            size="sm"
+                          />
+                        </div>
+                        <div>
+                          {t('po.detail.afterReturns')}:{' '}
+                          <AmountDisplay
+                            amount={parseFloat(rt.net)}
+                            currency={rt.currency_code}
+                            size="sm"
+                          />
+                        </div>
+                      </div>
                     ))}
                   </div>
                 ),

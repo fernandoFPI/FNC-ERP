@@ -6464,6 +6464,13 @@ export type PoReturnItemInput = {
   quantity_returned: Scalars['Float']['input'];
 };
 
+export type PoReturnTotal = {
+  currency_code: Scalars['String']['output'];
+  net: Scalars['String']['output'];
+  ordered: Scalars['String']['output'];
+  returned: Scalars['String']['output'];
+};
+
 export type PaginationMeta = {
   limit: Scalars['Int']['output'];
   page: Scalars['Int']['output'];
@@ -7549,6 +7556,7 @@ export type PurchaseOrder = {
   receipts?: Maybe<Array<PoReceipt>>;
   requisitionNumber?: Maybe<Scalars['String']['output']>;
   requisition_id?: Maybe<Scalars['ID']['output']>;
+  returnedTotals: Array<PoReturnTotal>;
   status: Scalars['String']['output'];
   store_keeper_id?: Maybe<Scalars['ID']['output']>;
   store_pricing_id?: Maybe<Scalars['ID']['output']>;

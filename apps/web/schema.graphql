@@ -2584,6 +2584,9 @@
     # (never summed across currencies). total_amount/subtotal remain the
     # separate, already-converted aggregate this doesn't replace.
     currencyTotals: [RequisitionCurrencyTotal!]!
+    # Vendor returns already approved (or credited) on this PO, only for the currencies that have any. currencyTotals
+    # stays as ordered; this carries the returned value and what is left after it, computed in SQL (never converted).
+    returnedTotals: [POReturnTotal!]!
     vendor_id: ID
     base_currency_code: String
     analytic_account_id: ID
@@ -2718,6 +2721,15 @@
     currency_code: String!
     subtotal: String!
     line_count: Int!
+  }
+
+  # One currency of a PO that has an approved (or credited) vendor return: what was ordered, what went back, and
+  # what is left (ordered minus returned). All three come from SQL as exact decimals.
+  type POReturnTotal {
+    currency_code: String!
+    ordered: String!
+    returned: String!
+    net: String!
   }
 
   type RequisitionApprovalLogEntry {

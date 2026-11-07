@@ -561,6 +561,12 @@ export const PO_LIFECYCLE_QUERY = gql`
         subtotal
         line_count
       }
+      returnedTotals {
+        currency_code
+        ordered
+        returned
+        net
+      }
       vendor_id
       vendor_name
       analytic_account_id

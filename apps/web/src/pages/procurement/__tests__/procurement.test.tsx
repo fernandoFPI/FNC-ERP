@@ -215,6 +215,38 @@ describe('PurchaseOrderDetail', () => {
     expect(screen.queryByText(/230/)).not.toBeInTheDocument()
   })
 
+  // The order itself stays as it was placed; an approved vendor return shows beside the total, per currency, with
+  // the net the server computed (NY-PO-2026-0101: 9.00 USD went back and the total never said so).
+  it('shows what an approved vendor return took off, and what is left, per currency', async () => {
+    mockPO('payment_pending', {
+      currency_code: 'IQD',
+      total_amount: null,
+      subtotal: null,
+      currencyTotals: [
+        { currency_code: 'IQD', subtotal: '24000.0000', line_count: 1 },
+        { currency_code: 'USD', subtotal: '236.5000', line_count: 9 },
+      ],
+      returnedTotals: [
+        { currency_code: 'USD', ordered: '236.5000', returned: '9.0000', net: '227.5000' },
+      ],
+    })
+    const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
+    wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
+    const box = screen.getByTestId('po-returned-total')
+    expect(box).toHaveTextContent(/Returned:\s*−9\s*USD/)
+    expect(box).toHaveTextContent(/After returns:\s*227\.5\s*USD/)
+    // the order total is still what was ordered, and only the currency that has a return gets the extra lines
+    expect(document.body.textContent).toMatch(/236\.5\s*USD/)
+    expect(screen.getAllByTestId('po-returned-total')).toHaveLength(1)
+  })
+
+  it('shows no returned lines on a PO without an approved return', async () => {
+    mockPO('payment_pending', { returnedTotals: [] })
+    const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
+    wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
+    expect(screen.queryByTestId('po-returned-total')).not.toBeInTheDocument()
+  })
+
   it('shows Record Receipt (not the items-bought checklist) for a bought child PO', async () => {
     mockPO('bought', { requisition_id: 'req-1' })
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
