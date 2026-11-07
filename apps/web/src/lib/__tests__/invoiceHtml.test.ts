@@ -321,9 +321,10 @@ describe('esc and safeImageSrc', () => {
   })
 })
 
-// The Invoice No. box carries the number, so the title block beside the QR code no longer repeats it, and the QR code
-// has no caption under it.
-describe('letterhead header beside the QR code', () => {
+/// The title block (top right) carries only the word INVOICE: letterhead artwork often fills that corner (Al Watanyia's Arabic
+// company name sat under the QR code and, on later pages, under the invoice number). The Invoice No. box carries the number
+// on page 1; the QR code sits bottom left on every page, in the footer band the letterhead scan keeps clear.
+describe('letterhead title block and QR code', () => {
   const lines = (n: number) =>
     Array.from({ length: n }, (_, i) => ({
       lineNumber: i + 1,
@@ -357,14 +358,15 @@ describe('letterhead header beside the QR code', () => {
       null,
       qr,
     )
+  // the absolutely positioned title block of page 1
+  const titleBlock = (doc: Document): Element =>
+    must(doc.querySelector('[style*="position:absolute"][style*="top:16mm"]'))
 
-  it('shows only the word Invoice above the QR code: no number, no caption', () => {
+  it('shows only the word Invoice top right on page 1: no QR code, no number, no caption', () => {
     const doc = parse(letterheadHtml())
-    const qr = must(doc.querySelector('.header-qr'))
-    expect(qr.querySelector('img')?.getAttribute('src')).toBe(PNG)
-    const block = must(qr.parentElement)
+    const block = titleBlock(doc)
     expect(textOf(block)).toBe('Invoice')
-    expect(textOf(qr)).toBe('')
+    expect(block.querySelector('img')).toBeNull()
   })
 
   it('still prints the number once in the Invoice No. box', () => {
@@ -372,25 +374,48 @@ describe('letterhead header beside the QR code', () => {
     expect(headerPairs(doc)['Invoice No.']).toBe('NY-INV-2026-0001')
   })
 
-  it('draws the title block the same way without a QR code', () => {
-    const doc = parse(letterheadHtml(1, null))
-    expect(doc.querySelector('.header-qr')).toBeNull()
+  it('puts the QR code in the page marker of every page, with no caption', () => {
+    const doc = parse(letterheadHtml(20))
+    const bars = Array.from(doc.querySelectorAll('.page-footer-bar'))
+    expect(bars.length).toBeGreaterThanOrEqual(3)
+    for (const bar of bars) {
+      const qr = bar.querySelectorAll('img.page-qr')
+      expect(qr).toHaveLength(1)
+      expect(qr[0].getAttribute('src')).toBe(PNG)
+      expect(qr[0].getAttribute('alt')).toBe('Scan to verify')
+    }
+    expect(doc.querySelectorAll('.header-qr')).toHaveLength(0)
     expect(visibleText(doc)).not.toMatch(/scan to verify/i)
   })
 
-  it('has no caption anywhere on a multi-page letterhead invoice, and keeps the number on the later pages', () => {
-    const doc = parse(letterheadHtml(9))
+  it('draws nothing for the QR code when there is none', () => {
+    const doc = parse(letterheadHtml(1, null))
+    expect(doc.querySelector('.page-qr')).toBeNull()
     expect(visibleText(doc)).not.toMatch(/scan to verify/i)
-    // the same header is also what the pagination script inserts when it re-paginates in the browser
-    // (the words may appear only as the image's alt text, never as a caption element)
-    const captions = scriptOf(letterheadHtml(9))
+  })
+
+  it('keeps the QR code and its caption out of the continuation header, and the number off the artwork', () => {
+    const doc = parse(letterheadHtml(9))
+    const later = must(doc.querySelector('.p2-print-hdr'))
+    // the title only: the number would land on the letterhead artwork under it
+    expect(textOf(later)).toBe('Invoice')
+    expect(later.querySelector('img')).toBeNull()
+    // a later page has no Invoice No. box, so the number sits on the free row above the rule, beside "Continued"
+    const row = must(doc.querySelector('.p2-print-divider'))
+    expect(textOf(row)).toBe('Continued from previous page NY-INV-2026-0001')
+  })
+
+  it('builds the same continuation header and QR code when the page script re-paginates', () => {
+    const script = scriptOf(letterheadHtml(9))
+    // the QR code is handed to the script as one escaped string, and appears there only as the page marker's image
+    expect(script).toContain('var qrImg = ')
+    expect(script).toContain('class=\\"page-qr\\"')
+    expect(script).not.toContain('class=\\"header-qr\\"')
+    // no caption element anywhere in the script: the words may appear only as the image's alt text
+    const captions = script
       .split('Scan to verify')
       .slice(0, -1)
       .filter((before) => !before.endsWith('alt=\\"'))
     expect(captions).toHaveLength(0)
-    const later = must(doc.querySelector('.p2-print-hdr'))
-    expect(later.querySelector('img')?.getAttribute('src')).toBe(PNG)
-    // a later page has no Invoice No. box, so its title block is what says which invoice the page belongs to
-    expect(textOf(later)).toBe('Invoice NY-INV-2026-0001')
   })
 })

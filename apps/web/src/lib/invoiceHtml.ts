@@ -227,20 +227,12 @@ export function buildInvoiceHTML(
   // ── Letterhead-specific sections ─────────────────────────────────────────
 
   const letterheadHeader = `
-  <!-- Invoice title + QR positioned top-right, level with the letterhead logo. The number is not repeated here: the
-       Invoice No. box right below carries it, and the QR needs no caption. -->
+  <!-- Invoice title top-right, level with the letterhead logo. The number is not repeated here (the Invoice No. box
+       right below carries it) and neither is the QR code: letterhead artwork often fills this corner (Al Watanyia's
+       Arabic company name sat under the QR), so the QR goes in the footer band, which the letterhead scan keeps clear
+       (see .page-footer-bar). -->
   <div style="position:absolute;top:16mm;right:15mm;text-align:right">
     <div style="font-size:20px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Invoice</div>
-    ${
-      qrDataUrl
-        ? `
-    <div class="header-qr" style="margin-top:10px;display:flex;justify-content:flex-end">
-      <div style="text-align:center">
-        <img src="${qrDataUrl}" alt="Scan to verify" style="width:72px;height:72px;display:block;"/>
-      </div>
-    </div>`
-        : ''
-    }
   </div>
 
   <!-- Divider between letterhead header zone and invoice content -->
@@ -299,23 +291,16 @@ export function buildInvoiceHTML(
         <div style="font-size:12px;color:#555;font-family:monospace;margin-top:4px">${invoiceNo}</div>
       </div>
     </div>
-    <!-- Print: absolute header mirrors page 1 letterhead position (hidden on screen via inline style) -->
+    <!-- Print: absolute title mirrors page 1 (hidden on screen via inline style). Only the title: the number would land
+         on letterhead artwork under it (Al Watanyia's Arabic company name), so it sits on the free row above the rule. -->
     <div class="p2-print-hdr" style="display:none">
       <div style="font-size:20px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Invoice</div>
-      <div style="font-size:12px;color:#555;font-family:monospace;margin-top:5px;letter-spacing:0.3px">${invoiceNo}</div>
-      ${
-        qrDataUrl
-          ? `
-      <div style="margin-top:8px;display:flex;justify-content:flex-end">
-        <div style="text-align:center">
-          <img src="${qrDataUrl}" alt="Scan to verify" style="width:72px;height:72px;display:block;"/>
-        </div>
-      </div>`
-          : ''
-      }
     </div>
     <div class="p2-print-divider" style="display:none">
-      <div style="font-size:11px;color:#999;font-style:italic;padding-bottom:8px">Continued from previous page</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding-bottom:8px">
+        <span style="font-size:11px;color:#999;font-style:italic">Continued from previous page</span>
+        <span style="font-size:12px;color:#555;font-family:monospace;letter-spacing:0.3px">${invoiceNo}</span>
+      </div>
     </div>
     `
     : `
@@ -329,15 +314,18 @@ export function buildInvoiceHTML(
     `
 
   // Letterhead invoices: the page number and the "continued" note sit together, bottom right, on every page, just
-  // above the letterhead's footer artwork (see printGeometryCss). They take no room in the page's flow, so neither the
-  // table nor the totals have to leave space for them.
+  // above the letterhead's footer artwork, and the verification QR code sits bottom left on the same line (see
+  // printGeometryCss). This band is the one the footer scan keeps clear (the stamp is centred in it), unlike the
+  // header corner, which the letterhead may fill. It takes no room in the page's flow, so neither the table nor the
+  // totals have to leave space for it.
   const continuedNote = `<div class="page-continued">Continued on next page →</div>`
+  const qrImg = qrDataUrl ? `<img class="page-qr" src="${qrDataUrl}" alt="Scan to verify"/>` : ''
 
   function pageFooterBar(pageNum: number): string {
     if (letterhead) {
       return `
   <div class="page-footer-bar">
-    <div class="page-count" data-page-num="${pageNum}">Page ${pageNum} of ${totalPages}</div>${pageNum < totalPages ? continuedNote : ''}
+    ${qrImg}<div class="page-count" data-page-num="${pageNum}">Page ${pageNum} of ${totalPages}</div>${pageNum < totalPages ? continuedNote : ''}
   </div>`
     }
     return `
@@ -506,6 +494,7 @@ export function buildInvoiceHTML(
     var done = false;
     var mmPx = 96 / 25.4;
     var continuedNote = ${jsStringLiteral(continuedNote)};
+    var qrImg = ${jsStringLiteral(qrImg)};
     var continuedHeader = ${jsStringLiteral(continuedHeaderHtml)};
 
     // Pixels per mm in the same coordinate space getBoundingClientRect reports, so a
@@ -601,11 +590,12 @@ export function buildInvoiceHTML(
       return el;
     }
 
-    // The page number, bottom right. "Continued on next page" is added to every page but the last by markContinued().
+    // The QR code (bottom left) and the page number (bottom right). "Continued on next page" is added to every page but
+    // the last by markContinued().
     function footerBar(num, total) {
       var footer = document.createElement('div');
       footer.className = 'page-footer-bar';
-      footer.innerHTML = '<div class="page-count" data-page-num="' + num + '">Page ' + num + ' of ' + total + '</div>';
+      footer.innerHTML = qrImg + '<div class="page-count" data-page-num="' + num + '">Page ' + num + ' of ' + total + '</div>';
       return footer;
     }
 
@@ -790,16 +780,16 @@ export function buildInvoiceHTML(
   const printGeometryCss = (scope: string): string => {
     const sel = (s: string) => (scope ? `${scope} ${s}` : s)
     return `
-      ${sel('.header-qr')} { display: none; }
       ${sel('.lh-stamp')} { position: fixed; bottom: var(--stamp-bottom, 43mm); left: 0; right: 0; border-top: none; padding-top: 0; margin-top: 0; z-index: 10; }
       ${sel('.lh-stamp-img')} { max-height: 110px; max-width: 160px; }
-      /* Page number and "continued" note: bottom right, the note's line level with the stamp's bottom edge, on every sheet.
-         A page starts at the top of a sheet, so a distance from the page's top is the same distance on the sheet. The top is
-         fixed (two lines high), so the page number stays at one height whether or not a "continued" note sits below it.
-         No flow height. */
-      ${sel('.page-footer-bar')} { position: absolute; top: calc(297mm - var(--stamp-bottom, 43mm) - 9mm); right: 15mm; margin: 0; }
+      /* QR code (bottom left) and page number with the "continued" note (bottom right): the bottom of the row is level with
+         the stamp's bottom edge, on every sheet. A page starts at the top of a sheet, so a distance from the page's top is the
+         same distance on the sheet. The box is a fixed 19 mm high (the QR code) and the page number sits 10 mm down in it, so
+         it stays at one height whether or not a "continued" note sits below it. No flow height. */
+      ${sel('.page-footer-bar')} { position: absolute; top: calc(297mm - var(--stamp-bottom, 43mm) - 19mm); left: 15mm; right: 15mm; height: 19mm; margin: 0; grid-template-rows: 10mm auto auto; }
       /* A continuation page sits inside the first page's 15 mm side padding, so it is already 15 mm in from the sheet edge. */
-      ${sel('.page .page2-break > .page-footer-bar')} { right: 0; }
+      ${sel('.page .page2-break > .page-footer-bar')} { left: 0; right: 0; }
+      ${sel('.page .page2-break > .p2-print-hdr')} { right: 0; }
       ${sel('.page')} { padding: 54mm 15mm 50mm; }
       /* Page 2 header: show absolute version in print only */
       ${sel('.p2-screen-hdr')} { display: none !important; }
@@ -873,11 +863,12 @@ export function buildInvoiceHTML(
     .lh-bg { display: none; }
     .lh-qr { display: none; }
     .screen-auth { display: flex; }
-    .header-qr { display: block; }
     .page { position: relative; padding: 74mm 15mm 85mm; max-width: 100%; min-height: 297mm; }
     .lh-stamp { text-align: center; padding-top: 12px; border-top: 1px solid #e5e5e5; margin-top: 8px; }
-    .page-footer-bar { margin-top: 16px; text-align: right; font-size: 10px; color: #999; }
-    .page-footer-bar .page-continued { margin-top: 1px; font-size: 11px; font-style: italic; }
+    .page-footer-bar { margin-top: 16px; display: grid; grid-template-columns: 19mm 1fr; grid-template-rows: 1fr auto auto; align-items: start; text-align: right; font-size: 10px; color: #999; }
+    .page-footer-bar .page-qr { grid-column: 1; grid-row: 1 / span 3; display: block; width: 19mm; height: 19mm; }
+    .page-footer-bar .page-count { grid-column: 2; grid-row: 2; }
+    .page-footer-bar .page-continued { grid-column: 2; grid-row: 3; margin-top: 1px; font-size: 11px; font-style: italic; }
     .lh-stamp-img { max-height: 230px; max-width: 320px; object-fit: contain; display: block; margin: 0 auto 6px; }
     @media print {
       .lh-bg { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }

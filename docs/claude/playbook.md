@@ -1182,8 +1182,8 @@ Don't re-derive, check these first.
     the first `.page`, so they are inset by its 15 mm side padding; the extra page `fixTrailing()` makes from page 1 is a
     sibling in `<body>`, full width. `right: 15mm` therefore put the marker 29.8 mm from the edge on pages 2+ against
     14.8 mm on page 1 (measured from the PDF, below). Fixed with `.page .page2-break > .page-footer-bar { right: 0 }`.
-    The existing continuation header (`.p2-print-hdr`, the INVOICE title and QR on pages 2+) has the same flaw: it prints
-    30.3 mm from the edge against 15.3 mm on page 1. Not fixed, nobody asked; a one-line rule of the same shape fixes it.
+    The existing continuation header (`.p2-print-hdr`, the INVOICE title and QR on pages 2+) had the same flaw: it printed
+    30.3 mm from the edge against 15.3 mm on page 1. Fixed later with a rule of the same shape, see #64.
     (b) *Anchoring a box by its bottom (`translateY(-100%)`) moves its first line when a second line appears.* The page
     number sat 4.6 mm higher on pages with the note than on the last page; a fixed top (two lines high) keeps it at one
     height. (c) *A test that asserted "company text from the database reaches the footer as text"* lost its subject when
@@ -1226,3 +1226,30 @@ Don't re-derive, check these first.
     class makes it fail). General rule: anything in a print stylesheet must satisfy "content bottom + every padding glued under
     it up to the end of the nearest breakable ancestor <= the sheet", and the measuring mode has to include the same paddings.
     Related to #53, #62.
+
+64. **Anything drawn at a fixed spot in a letterhead's header corner lands on some company's artwork.** Al Watanyia's
+    printed invoice (AW-INV-2026-0003) had the verification QR code on top of the Arabic company name in the top right of
+    the letterhead, and on pages 2 and 3 the invoice number sat on the same Arabic text. The corner was free on the
+    letterheads the layout was tried on (Yakam, Factory), and the invoice cannot know what a company's artwork looks like:
+    the header zone is whatever the uploaded image contains. Two things made page 2+ worse: the continuation title block
+    sat 15 mm further in than page 1's (the pagination script's pages are nested inside the first page's side padding, see
+    #62), which moved it from beside the artwork onto it, and it carried the number under the title, right where the
+    Arabic line is. Fix (letterhead layout only; the plain layout keeps its QR in the bottom row): the header corner holds
+    only the word INVOICE; the QR code moved to the bottom left of every page, in the footer band the letterhead scan already
+    keeps clear (`placeStamp` / `--stamp-bottom`, #53g), where the stamp is centred and the page number sits at the right.
+    It is one box per page, `.page-footer-bar` (QR left, page number and "continued" note right, 19 mm high, bottom level
+    with the stamp), so the script builds it with the same function for every page it creates and the nested-page offset (`left: 0;
+    right: 0`) is written once. Pages 2+ show the invoice number on the row above the rule, beside "Continued from previous
+    page", which is below any header artwork, and the title block there got the same `right: 0` offset. How to spot this
+    class: a layout element placed by millimetres from the top of the page rather than relative to something the page
+    measures; a printout of ONE company's letterhead looks fine and another's does not. Before putting anything in a
+    letterhead's margins, check it against each company's letterhead (Yakam's header text ends left of where the QR used
+    to sit, Al Watanyia's Arabic text fills it; the footers rise 24 to 41 mm; Factory's header was not looked at); the only
+    zone every letterhead has to keep empty is the one above its footer artwork, because the stamp already needs it. How it was verified (layout is invisible to unit tests):
+    the real HTML printed to PDF in headless Chrome with a stand-in letterhead that has text filling the top right and a
+    footer rising 41 mm, for 8 row counts (1 to 30), and the earlier 25 mm footer sweep for 14 more; PyMuPDF shows exactly
+    one 19 mm QR image per sheet, 15 mm from the left edge, bottom level with the stamp, never in the top 60 mm, no text
+    overlapping it, no invoice number in the header art region, and the sheet / marker checks of #63 still pass. NOT done:
+    scanning the printed QR code (no decoder is installed here; it is the same image, same 19 mm size, on plain white), and
+    the real company letterheads. Tests: `invoiceHtml.test.ts` ("letterhead title block and QR code", 6) and
+    `invoiceHtmlPagination.test.ts` (3 more, plus the geometry strings); 10 mutations, all killed. Related to #53, #62, #63.

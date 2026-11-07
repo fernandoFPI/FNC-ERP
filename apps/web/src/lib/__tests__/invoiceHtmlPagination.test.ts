@@ -35,6 +35,7 @@ function invoice(
   heights: number[],
   letterhead: string | null = 'data:image/png;base64,AAAA',
   invoiceNumber = 'INV-1',
+  qr: string | null = null,
 ): string {
   const data: InvoiceRenderData = {
     invoiceNumber,
@@ -51,7 +52,7 @@ function invoice(
     netPayable: 10,
     lines: heights.map((h, i) => line(i + 1, h)),
   }
-  return buildInvoiceHTML(data, null, 'cash', null, null)
+  return buildInvoiceHTML(data, null, 'cash', null, qr)
 }
 
 // ── stand-in layout ──────────────────────────────────────────────────────────
@@ -223,6 +224,28 @@ describe('letterhead invoice pagination', () => {
     expect(bars.every((b) => !b.hasAttribute('style'))).toBe(true)
   })
 
+  it('gives every page marker the QR code, the ones the script builds included', () => {
+    const QR = 'data:image/png;base64,QQQQ'
+    load(invoice([200, 200, 200, 200, 200], 'data:image/png;base64,AAAA', 'INV-1', QR))
+    const bars = Array.from(document.querySelectorAll<HTMLElement>('.page-footer-bar'))
+    expect(bars).toHaveLength(3)
+    for (const bar of bars) {
+      const qr = bar.querySelectorAll('img.page-qr')
+      expect(qr).toHaveLength(1)
+      expect(qr[0].getAttribute('src')).toBe(QR)
+    }
+    // and the page number and the note are still the only text in each marker
+    expect(
+      bars.map((b) =>
+        Array.from(b.querySelectorAll('.page-count, .page-continued')).map((c) => c.textContent),
+      ),
+    ).toEqual([
+      ['Page 1 of 3', 'Continued on next page →'],
+      ['Page 2 of 3', 'Continued on next page →'],
+      ['Page 3 of 3'],
+    ])
+  })
+
   it('keeps database text out of the continuation header it builds', () => {
     const HOSTILE = '<img src=x onerror="window.__pwned=1">'
     load(invoice([200, 200, 200, 200, 200], 'data:image/png;base64,AAAA', `INV-${HOSTILE}`))
@@ -377,20 +400,28 @@ describe('letterhead invoice markup', () => {
 
   it('puts the page marker bottom right, level with the stamp, once for print and once for measuring', () => {
     const html = invoice([BAR])
+    // QR code bottom left, page number bottom right: one 19 mm high box whose bottom is level with the stamp's
     const decl =
-      '.page-footer-bar { position: absolute; top: calc(297mm - var(--stamp-bottom, 43mm) - 9mm); right: 15mm; margin: 0; }'
+      '.page-footer-bar { position: absolute; top: calc(297mm - var(--stamp-bottom, 43mm) - 19mm); left: 15mm; right: 15mm; height: 19mm; margin: 0; grid-template-rows: 10mm auto auto; }'
     expect(html.split(decl)).toHaveLength(3) // plain (@media print) and under html.measuring
     expect(html).toContain(`html.measuring ${decl}`)
   })
 
-  it('keeps the marker at the same place on a continuation page, which is already inset 15 mm', () => {
+  it('keeps the marker and the title at the same place on a continuation page, which is already inset 15 mm', () => {
     const html = invoice([BAR])
-    const nested = '.page .page2-break > .page-footer-bar { right: 0; }'
-    expect(html.split(nested)).toHaveLength(3)
-    expect(html).toContain(`html.measuring ${nested}`)
+    for (const nested of [
+      '.page .page2-break > .page-footer-bar { left: 0; right: 0; }',
+      '.page .page2-break > .p2-print-hdr { right: 0; }',
+    ]) {
+      expect(html.split(nested)).toHaveLength(3)
+      expect(html).toContain(`html.measuring ${nested}`)
+    }
     // it must come after the general rule, or the general rule would win on equal footing
-    expect(html.indexOf(nested)).toBeGreaterThan(
+    expect(html.indexOf('.page .page2-break > .page-footer-bar')).toBeGreaterThan(
       html.indexOf('.page-footer-bar { position: absolute;'),
+    )
+    expect(html.indexOf('.page .page2-break > .p2-print-hdr')).toBeGreaterThan(
+      html.indexOf('.p2-print-hdr { display: block !important;'),
     )
   })
 
@@ -402,6 +433,18 @@ describe('letterhead invoice markup', () => {
           .querySelectorAll<HTMLElement>('.page-footer-bar'),
       )
     const lines = (el: HTMLElement) => Array.from(el.children).map((c) => c.textContent)
+
+    it('every page carries the QR code', () => {
+      const html = invoice(
+        Array.from({ length: 20 }, () => BAR),
+        'data:image/png;base64,AAAA',
+        'INV-1',
+        'data:image/png;base64,QQQQ',
+      )
+      const b = bars(html)
+      expect(b.length).toBeGreaterThanOrEqual(3)
+      expect(b.every((el) => el.querySelectorAll('img.page-qr').length === 1)).toBe(true)
+    })
 
     it('a one-page invoice has just "Page 1 of 1"', () => {
       const b = bars(invoice([BAR]))
