@@ -1446,3 +1446,45 @@ Don't re-derive, check these first.
     number) and `StoreOutPage.tsx` (the unit price prefill reads `prod.average_cost`) read the same legacy field through
     the same `PRODUCTS_QUERY`; 1,982 Factory products have no cost currency at all. Related to #43 (which "store price" a
     screen means), #56 (a copy that does not follow its source) and #34 (a report that looks empty while the data is fine).
+
+69. **A new field on a line that several screens and renderers show: the unit of measure on invoice lines.** The request
+    (a screenshot of the printed table) was a "Unit" column right after Qty with Ea, M, Lot, Roll, Set, Box. Before
+    building: `project_invoice_lines` had no unit (migration 021), all 189 production lines (14 invoices) were typed by
+    hand with no source record to take a unit from, and units elsewhere in the system are inconsistent free text (`po_lines`
+    alone has 'pc', 'No.', 'EA', 'EA.', 'Nos', 'box', 'Box', 'L.S', 'LS' as separate values), so a free text box would have
+    repeated that. The user chose (asked, not assumed): pick from a list or type your own, the list Ea, M, Lot, Roll, Set,
+    Box, Kg, L, Pack, Pair, Day, existing lines left blank (a dash), new lines start as Ea.
+    Design. Migration 318: `uom VARCHAR(20)`, nullable, `CHECK (uom IS NULL OR btrim(uom) <> '')`; NULL means "never set"
+    (every older line, not guessed at). The server accepts any text up to 20 characters and has NO whitelist
+    (`services/gateway/src/lib/invoiceUnit.ts`: trim, collapse inner spaces, empty becomes NULL, over 20 refused), so the
+    web's list (`lib/invoiceUnits.ts`) is only a convenience and there is no second list to drift (#30). Units are checked
+    before a document number is taken (`nextDocumentNumber` is a sequence, so a refusal after it would burn a number). On
+    edit, a unit left out keeps the stored one, an empty one or null clears it. Readers: the shared `mapInvoiceLine`
+    (`projectInvoice` and the re-fetch inside `updateProjectInvoice`) and the public verification route, which maps explicit
+    fields (#55, #58). The public route's pinned list of line keys (`project-invoice-review-flags.test.ts`) failed when `uom`
+    was added: that guard exists so an internal review field can never leak, and `uom` is a printed field, so the list was
+    updated deliberately. Web: `UnitSelect` (a select with the list, a stored value that is not in the list kept as a
+    choice, and "Other..." turning into a text box limited to 20), a Unit column in the create wizard and the edit screen and
+    the on-screen lines table, `lib/invoiceLineInputs.ts` for the create mapping, a locale group `invoiceUnit` in both
+    languages (every key used was checked to resolve in both, #26).
+    The printed table. The unit goes in through `esc()` (#54; a hostile unit is tested). Adding a column cost the printed
+    Description column width: at print width it fell from 157 px to 104 px (a four-line description), because the money
+    columns were 140/140/150 px hints with wrapping allowed, far wider than their numbers. Fix: money cells are
+    `white-space:nowrap` and the hints are 120/120/132, which gave Description 159 px for ordinary amounts (130 px only when an
+    amount has seven digits, because nowrap makes the column fit its number). Page breaks were identical to the previous
+    layout for 1 to 30 rows, plain and letterhead (10 cases, long descriptions). Measured in headless Chrome on the real HTML.
+    Not changed: the worker's own invoice PDF template (`packages/pdf/src/templates/invoice.ts`, its own table and no Unit
+    column; on production its 4 `PROJECT_INVOICE_PDF_REQUESTED` events all failed, so it is not in use) and the REST create
+    route in the projects service (it builds lines from sources and leaves the unit NULL; every production line is manual).
+    Traps met. (a) A test that asserts "the next invoice number is the previous plus one" proves nothing for a company
+    with no `document_sequences` row: `nextDocumentNumber` then returns `INV-<milliseconds>-<random>`, and the assertion
+    passed once and then failed every run. Give the test company a real sequence row. (b) My mutation script said KILLED for
+    a mutation whose pattern matched nothing: the Bash heredoc had swallowed a backslash in the regex (`\s` became `s`), the
+    code was unchanged, and the "kill" was that flaky test. Write scripts that contain regexes with the file tool, and
+    treat a result as meaningful only when the script also reports that the pattern was found exactly once. (c) `eslint
+    --fix` removed a type cast I needed for `.value` and left an error-typed return (use the generic form
+    `getAllByLabelText<HTMLSelectElement | HTMLInputElement>(...)`); auto-fix is for new files only (#37). Tests:
+    `services/gateway/tests/invoice-line-unit.test.ts` (18, real Postgres through ApolloServer and the public route, 9
+    mutations killed), `lib/__tests__/{invoiceUnits,invoiceHtmlUnit,invoiceLineInputs}.test.ts`,
+    `components/ui/__tests__/{UnitSelect,InvoiceBuilderUnit}.test.tsx`, `pages/projects/invoices/__tests__/InvoiceDetailUnit.test.tsx`
+    (21 web mutations killed). Related to #55, #58, #54, #30 and #63 (the print layout).
