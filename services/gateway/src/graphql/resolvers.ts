@@ -16459,14 +16459,40 @@ export const resolvers = {
               userId: auth.userId,
             })
             // This location's own ledger/average_cost, on the other hand,
-            // genuinely has nothing to correct once it already matches.
-            if (i.unit_cost === currentCost) {
+            // genuinely has nothing to correct once it already matches: the
+            // same amount AND the same currency. A correction that keeps the
+            // number and only changes the currency (35 IQD -> 35 USD) is a
+            // real one: skipping it left the location tagged with the old
+            // currency while the product's Cost said the new one (playbook
+            // #67). Only counts when a currency was actually specified — the
+            // form's explicit one, or the product's own — so an unspecified
+            // currency (which falls back to IQD above) can't flip a location
+            // that is already correctly tagged.
+            const currencySpecified = !!(i.currency_code ?? productCcyRes.rows[0]?.cost_currency)
+            const currencyDiffers =
+              currencySpecified && adjustmentCurrency !== String(currentCurrency).trim()
+            if (i.unit_cost === currentCost && !currencyDiffers) {
               return null
             }
-            if (currentQty <= 0)
+            // No balance row at all: this location never held the product,
+            // so there is nothing here to correct.
+            if (!balRes.rows[0])
               throw new Error(
                 'No on-hand quantity to correct cost for at this location — adjust the quantity first.',
               )
+            if (currentQty <= 0) {
+              // The row exists but holds nothing. There is no value to
+              // restate and a stock move needs a quantity above zero, so
+              // correct the row's own last cost and label directly. Used to
+              // throw, which also rolled back the product-level Cost change.
+              await client.query(
+                `UPDATE stock_balances SET average_cost=$1, last_cost_currency=$4, updated_at=NOW()
+                 WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+                [i.unit_cost, i.product_id, i.location_id, adjustmentCurrency],
+              )
+              void publishEntityChanged(auth.companyId, 'stock_balance', i.product_id, 'updated')
+              return null
+            }
             const mv = await client.query(
               `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,currency_code,source_type,notes,moved_by)
                VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,'cost_correction',$9,$10)

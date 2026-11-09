@@ -440,3 +440,129 @@ describe('createStockAdjustment — currency tagging (stock_balances.last_cost_c
     expect(product.rows[0]!.cost_currency).toBe('IQD')
   })
 })
+
+// Playbook #67. A correction that keeps the number and only changes the currency (35 IQD -> 35 USD) used to be
+// skipped for the location (`unit_cost === currentCost` compared the amount only), so the location went on saying
+// the old currency while the product's Cost said the new one. A location that holds nothing could not be corrected
+// at all when the amount differed: it threw, and the throw also rolled back the product-level Cost change.
+describe('createStockAdjustment — a correction that changes the currency of a costed location', () => {
+  type Input = { product_id: string; location_id: string; new_qty: number; unit_cost?: number; currency_code?: string }
+  const adjust = (input: Input) =>
+    resolvers.Mutation.createStockAdjustment(null, { input }, ctx as never) as Promise<{
+      id: string
+      source_type: string
+    } | null>
+
+  // A location holding `qty` at `cost` IQD, the way an imported or PO-received one looks before the product's
+  // currency is corrected.
+  async function costedInIqd(suffix: string, qty: number, cost: number): Promise<string> {
+    const productId = await makeProduct(suffix)
+    await adjust({ product_id: productId, location_id: warehouseId, new_qty: qty, unit_cost: cost, currency_code: 'IQD' })
+    expect(await getBalance(productId)).toEqual({ qty, cost })
+    expect(await getBalanceCurrency(productId)).toBe('IQD')
+    return productId
+  }
+
+  async function costCorrectionMoves(productId: string) {
+    const r = await pool.query<{ qty: string; unit_cost: string; currency_code: string }>(
+      `SELECT qty, unit_cost, currency_code FROM stock_moves WHERE product_id=$1 AND source_type='cost_correction'`,
+      [productId],
+    )
+    return r.rows
+  }
+
+  it('re-tags a location that holds stock, keeping qty and amount, through a ledger move in the new currency', async () => {
+    const productId = await costedInIqd('ccy-with-stock', 5, 35)
+
+    const result = await adjust({
+      product_id: productId,
+      location_id: warehouseId,
+      new_qty: 5,
+      unit_cost: 35,
+      currency_code: 'USD',
+    })
+
+    expect(result?.source_type).toBe('cost_correction')
+    expect(await getBalance(productId)).toEqual({ qty: 5, cost: 35 })
+    expect(await getBalanceCurrency(productId)).toBe('USD')
+    const moves = await costCorrectionMoves(productId)
+    expect(moves).toHaveLength(1)
+    expect(parseFloat(moves[0]!.qty)).toBe(5)
+    expect(parseFloat(moves[0]!.unit_cost)).toBe(35)
+    expect(moves[0]!.currency_code).toBe('USD')
+    // The location and the product now agree.
+    const product = await pool.query<{ standard_cost: string; cost_currency: string }>(
+      `SELECT standard_cost, cost_currency FROM products WHERE id=$1`,
+      [productId],
+    )
+    expect(parseFloat(product.rows[0]!.standard_cost)).toBe(35)
+    expect(product.rows[0]!.cost_currency).toBe('USD')
+  })
+
+  it('is a no-op once the location already has that amount in that currency', async () => {
+    const productId = await costedInIqd('ccy-repeat', 5, 35)
+    const input = { product_id: productId, location_id: warehouseId, new_qty: 5, unit_cost: 35, currency_code: 'USD' }
+    await adjust(input)
+
+    expect(await adjust(input)).toBeNull()
+    expect(await costCorrectionMoves(productId)).toHaveLength(1)
+  })
+
+  it('re-tags a location that holds nothing (the STEEL-018 case) without a stock move, instead of skipping it', async () => {
+    const productId = await costedInIqd('ccy-zero-stock', 5, 35)
+    await adjust({ product_id: productId, location_id: warehouseId, new_qty: 0 }) // empties it; the row stays
+    expect(await getBalance(productId)).toEqual({ qty: 0, cost: 35 })
+
+    const result = await adjust({
+      product_id: productId,
+      location_id: warehouseId,
+      new_qty: 0,
+      unit_cost: 35,
+      currency_code: 'USD',
+    })
+
+    expect(result).toBeNull()
+    expect(await getBalance(productId)).toEqual({ qty: 0, cost: 35 })
+    expect(await getBalanceCurrency(productId)).toBe('USD')
+    // Nothing is in the location, so there is no value to restate and no ledger entry.
+    expect(await costCorrectionMoves(productId)).toHaveLength(0)
+  })
+
+  it('corrects a location that holds nothing when the amount differs too, instead of throwing', async () => {
+    const productId = await costedInIqd('ccy-zero-stock-amount', 5, 3500)
+    await adjust({ product_id: productId, location_id: warehouseId, new_qty: 0 })
+
+    const result = await adjust({
+      product_id: productId,
+      location_id: warehouseId,
+      new_qty: 0,
+      unit_cost: 3.5,
+      currency_code: 'USD',
+    })
+
+    expect(result).toBeNull()
+    expect(await getBalance(productId)).toEqual({ qty: 0, cost: 3.5 })
+    expect(await getBalanceCurrency(productId)).toBe('USD')
+    // The product-level Cost change that used to be rolled back by the throw is kept.
+    const product = await pool.query<{ standard_cost: string; cost_currency: string }>(
+      `SELECT standard_cost, cost_currency FROM products WHERE id=$1`,
+      [productId],
+    )
+    expect(parseFloat(product.rows[0]!.standard_cost)).toBe(3.5)
+    expect(product.rows[0]!.cost_currency).toBe('USD')
+  })
+
+  it('does not treat an unspecified currency (it falls back to IQD) as a currency change', async () => {
+    const productId = await costedInIqd('ccy-unspecified', 5, 35)
+    await adjust({ product_id: productId, location_id: warehouseId, new_qty: 5, unit_cost: 35, currency_code: 'USD' })
+    expect(await getBalanceCurrency(productId)).toBe('USD')
+    // The product has no recorded currency and the caller names none.
+    await pool.query(`UPDATE products SET cost_currency=NULL WHERE id=$1`, [productId])
+
+    const result = await adjust({ product_id: productId, location_id: warehouseId, new_qty: 5, unit_cost: 35 })
+
+    expect(result).toBeNull()
+    expect(await getBalanceCurrency(productId)).toBe('USD')
+    expect(await costCorrectionMoves(productId)).toHaveLength(1)
+  })
+})
