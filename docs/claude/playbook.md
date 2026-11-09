@@ -1371,3 +1371,62 @@ Don't re-derive, check these first.
     Mutation-checked: 2 on the fork line (finisher again; no fallback) and 7 on the backfill, all killed. Tests:
     `services/gateway/tests/po-ownership-from-requisition.test.ts` (real Postgres, 14, two users through the real
     requisition flow). Related to #23, #24, #21, #48.
+
+67. **A legacy column still read by screens after the write path moved to another column, and a cost label that is
+    copied to a second table and never follows.** Two screens said "Last Cost" and both were wrong, for different
+    reasons. (1) The Products list showed `products.average_cost` (migration 008, `DEFAULT 0`). Only the old inventory
+    import ever set it (`routes/inventory-import.ts` inserts it once and its upsert never updates it again); the one
+    per-product Cost today is `products.standard_cost` with `cost_currency`, written only by `applyProductCostChange`
+    with a trail in `product_cost_history`. So every product of Nishtimani Yakam and Al Watanyia (181) showed 0, and
+    Nishtimani Factory showed stale import numbers on 2,649 of 3,545 products (AC-008: 4.25 shown, real cost 4,500 IQD).
+    Nothing errored: the column exists and is a valid number. (2) The product page's "Stock by Location" shows
+    `stock_balances.average_cost` and `last_cost_currency`, which only a stock move changes (the trigger from migration
+    283), so it is a copy of the product's cost taken when stock last moved. A Stock Adjustment cost correction that
+    keeps the same number and changes only the currency (STEEL-018: 35 IQD to 35 USD on 26 Oct) updated the product and
+    then hit `if (i.unit_cost === currentCost) return null` in `createStockAdjustment` (resolvers.ts), which compares
+    the amount and ignores the currency, so the location kept saying 35 IQD. How to spot it: the same field name on two
+    GraphQL types with different meanings (`Product.average_cost` is the legacy products column, `ProductBalance` /
+    `StockBalance.average_cost` is the stock_balances one); a column that is 0 for some companies and plausible for
+    another; `count(*) FILTER (WHERE p.average_cost > 0)` against the same for `standard_cost` per company; a cost
+    history whose newest row disagrees with the location row.
+    Production, read-only, 2026-11-09: of 979 Factory and 38 Yakam balance rows whose product has a cost currency, 765
+    and 13 carry a different currency label, and 714 and 13 of those have exactly the same amount (the label is the
+    only difference, "IQD" under a USD product); of the 548 such rows that hold stock, 507 were last set by an
+    `opening_balance` move. `stock_balances.last_cost_currency` and `stock_moves.currency_code` both default to
+    `'IQD'`, so legacy and backfilled rows were tagged IQD whatever the import's currency was.
+    Fixed (1 of 3): the Products list reads `standard_cost` / `cost_currency`, a never-recorded cost (0) is a dash, and a
+    cost without a currency keeps the "Currency not set" tag (`ProductsPage.test.tsx`, 4 mutations killed).
+    Fixed (2 of 3): `createStockAdjustment` treats a currency change at the same amount as a correction. A location that
+    holds stock gets the usual `cost_correction` move in the new currency; a location that holds nothing is re-tagged
+    directly (a move needs qty > 0 and there is no value to restate; it used to THROW when the amount also differed, and
+    the throw rolled back the product-level Cost change too); a currency counts only when one was actually given
+    (explicit, or the product's own), so the IQD fallback cannot flip a location that is correctly tagged; a location
+    with no balance row at all still throws. Tests in `stock-adjustment-cost-correction.test.ts` (5 new, 6 mutations
+    killed).
+    Fixed (3 of 3, data): `services/gateway/src/scripts/backfill-location-cost-currency.ts` (compiled by the gateway
+    build, run on the VPS from `services/gateway` after sourcing `/opt/fnc-erp/.env`:
+    `node dist/scripts/backfill-location-cost-currency.js [--company "<name or id>"]` is a dry run, `--apply
+    --actor-email <admin>` writes). The rule comes from the user: the PRODUCT's currency is the corrected one, so a
+    location tagged IQD under a product whose cost currency is USD, at exactly the same amount, becomes USD. Products
+    that are IQD are genuinely IQD (the user has both kinds) and are never touched; a product with no currency has
+    nothing to follow; rows whose amount differs (about 50 on production: 20,098 IQD under a 0.50 USD product, but also
+    0.2405 under 0.24) are LISTED for a person and never changed; a product held in another company's location (11 rows
+    at Yakam) and virtual locations are skipped. A row holding stock gets a `cost_correction` move (same location to
+    itself, full quantity, same cost, USD), which keeps the append-only ledger in step; the balance's `last_move_at` is
+    put back (a correction is not a physical movement, and transfer pricing ranks lots by it); an empty row is
+    relabelled directly. One transaction, one `audit_log` row per row (old and new label, and how it was done), plain
+    SQL for the audit rows (#48), then a re-read of the COMMITTED data on a second connection (label, quantity, amount,
+    last movement). By the script's own rules on production (read-only SQL, 2026-11-09): 716 rows, 547 holding stock and
+    169 empty, none lot-tracked or negative, 58 with a reservation (which a correction leaves alone); all in Nishtimani
+    Factory except 2 empty ones at Yakam. Tests: `backfill-location-cost-currency.test.ts` (12, real Postgres, fixtures
+    built with real stock moves; 13 mutations killed).
+    Traps met: (a) a count taken before an exclusion was designed (727 rows) is not what the finished script acts on
+    (716): rerun the real rule before quoting a number. (b) `psql` reads the apostrophe in an `\echo` as an unterminated
+    quote and prints an error line while the queries still run, so a stray "unterminated quoted string" above a result
+    is the echo, not the query. (c) `CREATE TEMP TABLE ... ON COMMIT DROP AS SELECT ... WHERE id = ANY($1)` takes a bound
+    parameter, and keeps `last_move_at` exact where a JavaScript round trip could lose digits.
+    Still open: `BOMForm.tsx` (`standard_cost: parseFloat(p.average_cost)`, so BOM cost planning starts from the legacy
+    number) and `StoreOutPage.tsx` (the unit price prefill reads `prod.average_cost`) read the same legacy field through
+    the same `PRODUCTS_QUERY`; the Stock Balances page ("Last Cost", `currency="IQD"` hard-coded) and the stock snapshot
+    total (it adds every row into one IQD number) ignore each row's own currency; 1,982 Factory products have no cost
+    currency at all. Related to #43 (which "store price" a screen means) and #56 (a copy that does not follow its source).
