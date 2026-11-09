@@ -48,6 +48,8 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
+import { UnitSelect } from '../../../components/ui/UnitSelect'
+import { DEFAULT_INVOICE_UNIT, cleanInvoiceUnit, invoiceUnitText } from '../../../lib/invoiceUnits'
 import type { BankAccountsQuery, BankAccountsQueryVariables, ProjectInvoiceQuery, ProjectInvoiceQueryVariables, SetInvoiceBankAccountMutation, SetInvoiceBankAccountMutationVariables, SetInvoicePaymentTypeMutation, SetInvoicePaymentTypeMutationVariables, UpdateProjectInvoiceMutation, UpdateProjectInvoiceMutationVariables, VoidProjectInvoiceMutation, VoidProjectInvoiceMutationVariables } from '../../../graphql/generated'
 
 type BankAccount = InvoiceBankAccount
@@ -113,7 +115,7 @@ export default function InvoiceDetail() {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [editLines, setEditLines] = useState<
-    { _key: string; id: string; description: string; qty: string; unitCost: string }[]
+    { _key: string; id: string; description: string; qty: string; uom: string; unitCost: string }[]
   >([])
   const [editDate, setEditDate] = useState('')
   const [editDueDate, setEditDueDate] = useState('')
@@ -309,6 +311,8 @@ export default function InvoiceDetail() {
         id: l.id ?? '',
         description: l.description,
         qty: String(l.qty),
+        // A line made before the Unit column has none: it stays empty until somebody picks one.
+        uom: l.uom ?? '',
         unitCost: String(l.unitCost),
       })),
     )
@@ -335,6 +339,7 @@ export default function InvoiceDetail() {
         id: '',
         description: '',
         qty: '1',
+        uom: DEFAULT_INVOICE_UNIT,
         unitCost: '0',
       },
     ])
@@ -358,6 +363,7 @@ export default function InvoiceDetail() {
             id: l.id || undefined,
             description: l.description,
             qty: parseFloat(l.qty) || 0,
+            uom: cleanInvoiceUnit(l.uom),
             unitCost: parseFloat(l.unitCost) || 0,
           })),
         },
@@ -476,6 +482,20 @@ export default function InvoiceDetail() {
               p.map((r) => (r._key === el._key ? { ...r, qty: e.target.value } : r)),
             )
           }}
+        />
+      ),
+    },
+    {
+      key: 'uom',
+      label: t('invoiceUnit.label'),
+      width: '110px',
+      render: (el) => (
+        <UnitSelect
+          value={el.uom}
+          onChange={(uom) => {
+            setEditLines((p) => p.map((r) => (r._key === el._key ? { ...r, uom } : r)))
+          }}
+          style={editInputStyle}
         />
       ),
     },
@@ -1031,6 +1051,7 @@ export default function InvoiceDetail() {
                       t('proj.invDetail.description'),
                       t('proj.invDetail.source'),
                       t('proj.invDetail.qty'),
+                      t('invoiceUnit.label'),
                       t('proj.invDetail.unitCost'),
                       t('proj.invDetail.subtotal'),
                       t('proj.invDetail.margin'),
@@ -1123,6 +1144,15 @@ export default function InvoiceDetail() {
                           >
                             {l.qty}
                           </td>
+                          <td
+                            style={{
+                              padding: '8px 12px',
+                              fontSize: '13px',
+                              color: l.uom ? theme.textSecondary : theme.textMuted,
+                            }}
+                          >
+                            {invoiceUnitText(l.uom)}
+                          </td>
                           <td style={{ padding: '8px 12px' }}>
                             <AmountDisplay amount={l.unitCost} currency={cur} size="sm" />
                           </td>
@@ -1140,7 +1170,7 @@ export default function InvoiceDetail() {
                         </tr>
                         {(ticked || flag !== 'none') && (
                           <tr style={{ ...rowStyle, borderBottom: `1px solid ${theme.border}` }}>
-                            <td colSpan={showReject ? 9 : 8} style={{ padding: '4px 12px 12px' }}>
+                            <td colSpan={showReject ? 10 : 9} style={{ padding: '4px 12px 12px' }}>
                               <ExpenseLineFlag
                                 line={flagFields(l)}
                                 flaggedByName={l.flaggedByName}

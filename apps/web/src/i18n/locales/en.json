@@ -9991,5 +9991,13 @@
       "verifiedAt": "Verified {{verifiedAt}} at {{value}}",
       "verifyingInvoice": "Verifying invoice…"
     }
+  },
+  "invoiceUnit": {
+    "label": "Unit",
+    "none": "—",
+    "other": "Other…",
+    "typeOne": "Type a unit",
+    "backToList": "Choose from the list",
+    "ariaLabel": "Unit of measure"
   }
 }

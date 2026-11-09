@@ -836,6 +836,7 @@ export const PROJECT_INVOICE_QUERY = gql`
         description
         sourceType
         qty
+        uom
         unitCost
         subtotal
         marginPct
@@ -990,6 +991,7 @@ export const UPDATE_PROJECT_INVOICE = gql`
         description
         sourceType
         qty
+        uom
         unitCost
         subtotal
         marginPct

@@ -1796,6 +1796,7 @@ export type InvoiceLineEditInput = {
   id?: InputMaybe<Scalars['ID']['input']>;
   qty?: InputMaybe<Scalars['Float']['input']>;
   unitCost?: InputMaybe<Scalars['Float']['input']>;
+  uom?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type InvoicePayment = {
@@ -7236,6 +7237,7 @@ export type ProjectInvoiceLine = {
   taxAmount: Scalars['Float']['output'];
   taxPct: Scalars['Float']['output'];
   unitCost: Scalars['Float']['output'];
+  uom?: Maybe<Scalars['String']['output']>;
 };
 
 export type ProjectInvoiceLineInput = {
@@ -7246,6 +7248,7 @@ export type ProjectInvoiceLineInput = {
   sourceType: Scalars['String']['input'];
   taxPct?: InputMaybe<Scalars['Float']['input']>;
   unitCost: Scalars['Float']['input'];
+  uom?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type ProjectList = {

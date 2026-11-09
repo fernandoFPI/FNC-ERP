@@ -18,6 +18,7 @@ import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { InvoiceBuilderResult } from '../../../components/ui/InvoiceBuilder'
 import { InvoiceBuilder } from '../../../components/ui/InvoiceBuilder'
+import { invoiceLineInputs } from '../../../lib/invoiceLineInputs'
 import { useToastStore } from '../../../store/toastStore'
 import { useRecordLock } from '../../../hooks/useRecordLock'
 import type {
@@ -88,14 +89,7 @@ export default function ContractDetail() {
                 periodOfPerformance: result.header.periodOfPerformance,
               }
             : {}),
-          lines: result.lines.map((l) => ({
-            description: l.description,
-            sourceType: result.billing_method === 'milestone' ? 'milestone' : 'manual',
-            qty: l.quantity,
-            unitCost: l.unit_price,
-            marginPct: 0,
-            taxPct: l.tax_pct ?? 0,
-          })),
+          lines: invoiceLineInputs(result),
         },
       },
     })

@@ -10250,5 +10250,13 @@
       "verifiedAt": "تم التحقق في {{verifiedAt}} الساعة {{value}}",
       "verifyingInvoice": "جارٍ التحقق من الفاتورة…"
     }
+  },
+  "invoiceUnit": {
+    "label": "الوحدة",
+    "none": "—",
+    "other": "أخرى…",
+    "typeOne": "اكتب الوحدة",
+    "backToList": "اختر من القائمة",
+    "ariaLabel": "وحدة القياس"
   }
 }

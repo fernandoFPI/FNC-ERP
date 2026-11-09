@@ -1,4 +1,5 @@
 import { esc, safeImageSrc } from './htmlEscape'
+import { cleanInvoiceUnit, invoiceUnitText } from './invoiceUnits'
 
 // Everything that comes from the database goes into the page through esc() (or safeImageSrc()
 // for images): the document is shown in an iframe without a sandbox, so markup in a line
@@ -9,6 +10,8 @@ export interface InvoiceLine {
   lineNumber: number
   description: string
   qty: number
+  /** Unit of measure (Ea, M, Lot, ...); empty or missing on a line made before the Unit column existed. */
+  uom?: string | null
   unitCost: number
   subtotal: number
   marginPct: number
@@ -149,13 +152,14 @@ export function buildInvoiceHTML(
       <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;color:#888;${bg}">${esc(l.lineNumber)}</td>
       <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;${bg}">${esc(l.description)}</td>
       <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;${bg}">${esc(l.qty)}</td>
-      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;${bg}">${fmt(l.unitCost, cur)}</td>
-      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;${bg}">${fmt(l.subtotal, cur)}</td>
+      <td style="padding:11px 6px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:center;overflow-wrap:anywhere;${cleanInvoiceUnit(l.uom) === '' ? 'color:#aaa;' : ''}${bg}">${esc(invoiceUnitText(l.uom))}</td>
+      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;white-space:nowrap;font-family:monospace;${bg}">${fmt(l.unitCost, cur)}</td>
+      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;white-space:nowrap;font-family:monospace;${bg}">${fmt(l.subtotal, cur)}</td>
       ${
         hasMargin
           ? `
         <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;${bg}">${(l.marginPct * 100).toFixed(1)}%</td>
-        <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;${bg}">${fmt(l.marginAmount, cur)}</td>
+        <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;white-space:nowrap;font-family:monospace;${bg}">${fmt(l.marginAmount, cur)}</td>
       `
           : ''
       }
@@ -163,11 +167,11 @@ export function buildInvoiceHTML(
         hasTax
           ? `
         <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;${bg}">${l.taxPct.toFixed(1)}%</td>
-        <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;${bg}">${fmt(l.taxAmount, cur)}</td>
+        <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;white-space:nowrap;font-family:monospace;${bg}">${fmt(l.taxAmount, cur)}</td>
       `
           : ''
       }
-      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;font-weight:700;color:#1a3c5e;${bg}">${fmt(l.lineTotal, cur)}</td>
+      <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;white-space:nowrap;font-family:monospace;font-weight:700;color:#1a3c5e;${bg}">${fmt(l.lineTotal, cur)}</td>
     </tr>`
   }
 
@@ -191,8 +195,9 @@ export function buildInvoiceHTML(
         <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:left;width:36px">#</th>
         <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:left">Description</th>
         <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:56px">Qty</th>
-        <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:140px">Unit Cost</th>
-        <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:140px">Subtotal</th>
+        <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 6px;text-align:center;width:56px">Unit</th>
+        <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:120px">Unit Cost</th>
+        <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:120px">Subtotal</th>
         ${
           hasMargin
             ? `
@@ -209,7 +214,7 @@ export function buildInvoiceHTML(
         `
             : ''
         }
-        <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:150px">Total</th>
+        <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:132px">Total</th>
       </tr>
     `
   }

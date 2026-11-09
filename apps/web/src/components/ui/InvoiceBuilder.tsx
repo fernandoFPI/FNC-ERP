@@ -8,6 +8,8 @@ import { Input } from './Input'
 import { Modal } from './Modal'
 import { Select } from './Select'
 import { AmountDisplay } from './AmountDisplay'
+import { UnitSelect } from './UnitSelect'
+import { DEFAULT_INVOICE_UNIT } from '../../lib/invoiceUnits'
 import {
   InvoiceHeaderFields,
   EMPTY_INVOICE_HEADER,
@@ -20,6 +22,8 @@ export interface InvoiceLineItem {
   id: string
   description: string
   quantity: number
+  /** Unit of measure (Ea, M, Lot, ...). A new line starts as Ea; empty means none. */
+  unit?: string
   unit_price: number
   tax_pct?: number
 }
@@ -140,7 +144,14 @@ export function InvoiceBuilder({
   function addLine() {
     setLines((l) => [
       ...l,
-      { id: `l-${Date.now()}`, description: '', quantity: 1, unit_price: 0, tax_pct: 0 },
+      {
+        id: `l-${Date.now()}`,
+        description: '',
+        quantity: 1,
+        unit: DEFAULT_INVOICE_UNIT,
+        unit_price: 0,
+        tax_pct: 0,
+      },
     ])
   }
 
@@ -160,6 +171,7 @@ export function InvoiceBuilder({
           id: 'pct-line',
           description: t('fin.invBuilder.ofContractValue', { percentage }),
           quantity: 1,
+          unit: DEFAULT_INVOICE_UNIT,
           unit_price: (contractAmount * percentage) / 100,
           tax_pct: 0,
         },
@@ -172,6 +184,7 @@ export function InvoiceBuilder({
           id: m.id,
           description: t('fin.invBuilder.milestone2', { name: m.name }),
           quantity: 1,
+          unit: DEFAULT_INVOICE_UNIT,
           unit_price: m.amount,
           tax_pct: 0,
         }))
@@ -401,7 +414,15 @@ export function InvoiceBuilder({
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: theme.bgSurfaceHover }}>
-                        {[t('fin.invBuilder.description'), t('fin.invBuilder.qty2'), t('fin.invBuilder.unitPrice'), t('fin.invBuilder.tax2'), t('fin.invBuilder.total'), ''].map((h) => (
+                        {[
+                          t('fin.invBuilder.description'),
+                          t('fin.invBuilder.qty2'),
+                          t('invoiceUnit.label'),
+                          t('fin.invBuilder.unitPrice'),
+                          t('fin.invBuilder.tax2'),
+                          t('fin.invBuilder.total'),
+                          '',
+                        ].map((h) => (
                           <th
                             key={h}
                             style={{
@@ -444,6 +465,15 @@ export function InvoiceBuilder({
                                 updateLine(line.id, { quantity: parseFloat(e.target.value) || 0 })
                               }}
                               style={{ ...inputStyle, width: '60px' }}
+                            />
+                          </td>
+                          <td style={{ padding: '4px 6px' }}>
+                            <UnitSelect
+                              value={line.unit ?? ''}
+                              onChange={(unit) => {
+                                updateLine(line.id, { unit })
+                              }}
+                              style={{ width: '88px' }}
                             />
                           </td>
                           <td style={{ padding: '4px 6px' }}>
