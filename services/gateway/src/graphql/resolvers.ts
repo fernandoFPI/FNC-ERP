@@ -12302,14 +12302,19 @@ export const resolvers = {
 
     stockBalanceSnapshot: async (_: unknown, __: unknown, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const rows = (
-        await query(
+      // Every row carries the currency of its own last cost (stock_balances.last_cost_currency) and
+      // the total is one figure PER currency, added in SQL. Rows in different currencies are never
+      // added together: there is no conversion in this system, and this used to add them all into
+      // one number labelled IQD (playbook #67).
+      const [rowsRes, totalsRes] = await Promise.all([
+        query(
           `SELECT p.id AS product_id, p.sku, p.name AS product_name, p.category,
                   sl.id AS location_id, sl.name AS location_name, sl.type AS location_type,
                   sb.qty_on_hand, sb.qty_reserved,
                   sb.qty_on_hand - sb.qty_reserved AS available,
                   sb.average_cost,
                   sb.qty_on_hand * sb.average_cost AS total_value,
+                  btrim(sb.last_cost_currency) AS currency_code,
                   (p.reorder_point IS NOT NULL AND sb.qty_on_hand < p.reorder_point) AS is_low_stock
            FROM stock_balances sb
            JOIN products p ON p.id=sb.product_id
@@ -12317,10 +12322,28 @@ export const resolvers = {
            WHERE sl.company_id=$1 AND sl.type NOT IN ('virtual_in','virtual_out') AND sb.qty_on_hand > 0
            ORDER BY p.sku, sl.name`,
           [ctx.auth.companyId],
-        )
-      ).rows as Record<string, unknown>[]
-      const totalValue = rows.reduce((s, r) => s + parseFloat(String(r.total_value ?? '0')), 0)
-      return { totalValue: String(totalValue), currency: 'IQD', rows }
+        ),
+        query<{ currency_code: string; total_value: string; row_count: number }>(
+          `SELECT btrim(sb.last_cost_currency) AS currency_code,
+                  COALESCE(SUM(sb.qty_on_hand * sb.average_cost), 0) AS total_value,
+                  COUNT(*)::int AS row_count
+           FROM stock_balances sb
+           JOIN stock_locations sl ON sl.id=sb.location_id
+           WHERE sl.company_id=$1 AND sl.type NOT IN ('virtual_in','virtual_out') AND sb.qty_on_hand > 0
+           GROUP BY btrim(sb.last_cost_currency)
+           ORDER BY btrim(sb.last_cost_currency)`,
+          [ctx.auth.companyId],
+        ),
+      ])
+      const totals = totalsRes.rows
+      // totalValue / currency stay only for a tab still open on the previous release: now the IQD
+      // rows' total alone, honestly labelled, instead of every currency in one number.
+      return {
+        totalValue: totals.find((t) => t.currency_code === 'IQD')?.total_value ?? '0',
+        currency: 'IQD',
+        totals,
+        rows: rowsRes.rows as Record<string, unknown>[],
+      }
     },
 
     stockMoves: async (

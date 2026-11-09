@@ -3132,12 +3132,26 @@
     available: String!
     average_cost: String!
     total_value: String!
+    # The currency average_cost and total_value are in: the location's own last_cost_currency,
+    # never converted. Nullable on purpose (a non-null violation would null the whole snapshot).
+    currency_code: String
     is_low_stock: Boolean!
   }
 
+  # What the stock in the snapshot is worth in ONE currency. Rows in different currencies are
+  # never added together (there is no conversion), so there is one of these per currency.
+  type StockSnapshotTotal {
+    currency_code: String!
+    total_value: String!
+    row_count: Int!
+  }
+
   type StockBalanceSnapshot {
+    # Kept only for a tab still open on the previous release. It is now the total of the IQD rows
+    # alone, labelled IQD, instead of every currency added into one number. Read totals instead.
     totalValue: String!
     currency: String!
+    totals: [StockSnapshotTotal!]!
     rows: [StockSnapshotRow!]!
   }
 
