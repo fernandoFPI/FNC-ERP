@@ -1205,7 +1205,7 @@ export type StockBalancesQuery = { stockBalances: Array<{ product_id: string, lo
 export type StockSnapshotQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type StockSnapshotQuery = { stockBalanceSnapshot: { totalValue: string, currency: string, rows: Array<{ product_id: string, sku: string, product_name: string, category: string | null, location_id: string, location_name: string, location_type: string, qty_on_hand: string, qty_reserved: string, available: string, average_cost: string, total_value: string, is_low_stock: boolean }> } };
+export type StockSnapshotQuery = { stockBalanceSnapshot: { totals: Array<{ currency_code: string, total_value: string, row_count: number }>, rows: Array<{ product_id: string, sku: string, product_name: string, category: string | null, location_id: string, location_name: string, location_type: string, qty_on_hand: string, qty_reserved: string, available: string, average_cost: string, total_value: string, currency_code: string | null, is_low_stock: boolean }> } };
 
 export type StockMovesQueryVariables = Exact<{
   productId?: string | number | null | undefined;

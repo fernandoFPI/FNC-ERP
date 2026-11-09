@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../theme/ThemeContext'
 import type * as ApolloClientModule from '@apollo/client'
@@ -60,6 +60,7 @@ describe('StockBalancesPage', () => {
       available: '90',
       average_cost: '5000',
       total_value: '500000',
+      currency_code: 'IQD',
       is_low_stock: false,
     },
     {
@@ -75,6 +76,7 @@ describe('StockBalancesPage', () => {
       available: '5',
       average_cost: '2000',
       total_value: '10000',
+      currency_code: 'IQD',
       is_low_stock: true,
     },
   ]
@@ -83,8 +85,7 @@ describe('StockBalancesPage', () => {
     mockUseQuery.mockReturnValue({
       data: {
         stockBalanceSnapshot: {
-          totalValue: '510000',
-          currency: 'IQD',
+          totals: [{ currency_code: 'IQD', total_value: '510000', row_count: 2 }],
           rows: snapshotRows,
         },
       },
@@ -135,6 +136,95 @@ describe('StockBalancesPage', () => {
         expect(screen.getByText('INK-001')).toBeInTheDocument()
       })
     }
+  })
+
+  // Playbook #67: the page labelled every row IQD and added every row into one total labelled IQD,
+  // although a location's last cost has its own currency and nothing here is ever converted.
+  describe('currencies', () => {
+    const usdRow = {
+      ...snapshotRows[0],
+      product_id: 'p3',
+      sku: 'STEEL-018',
+      product_name: 'Steel pipe',
+      qty_on_hand: '5',
+      average_cost: '35',
+      total_value: '175',
+      currency_code: 'USD',
+    }
+    const mixed = [
+      { currency_code: 'IQD', total_value: '510000', row_count: 2 },
+      { currency_code: 'USD', total_value: '175', row_count: 1 },
+    ]
+
+    function show(totals: typeof mixed, rows: unknown[]) {
+      mockUseQuery.mockReturnValue({
+        data: { stockBalanceSnapshot: { totals, rows } },
+        loading: false,
+        refetch: vi.fn(),
+      })
+    }
+    const rowOf = (sku: string): HTMLElement => {
+      const el = screen.getByText(sku).closest<HTMLElement>('tr')
+      if (!el) throw new Error(`no table row for ${sku}`)
+      return el
+    }
+    // Each value card is the box holding its title, its number and its currency.
+    const valueCards = (): HTMLElement[] =>
+      screen.getAllByText(/total inventory value/i).map((title) => {
+        if (!title.parentElement) throw new Error('card has no container')
+        return title.parentElement
+      })
+
+    it('shows each row in the currency of its own cost, not IQD for every row', async () => {
+      show(mixed, [...snapshotRows, usdRow])
+      const StockBalancesPage = (await import('../balances/StockBalancesPage')).default
+      wrap(<StockBalancesPage />)
+
+      // Last cost and total value of the USD row are USD.
+      expect(rowOf('STEEL-018')).toHaveTextContent(/35\s*USD/)
+      expect(rowOf('STEEL-018')).toHaveTextContent(/175\s*USD/)
+      expect(rowOf('STEEL-018')).not.toHaveTextContent('IQD')
+      // And the IQD row stays IQD.
+      expect(rowOf('INK-001')).toHaveTextContent(/5,000\s*IQD/)
+      expect(rowOf('INK-001')).toHaveTextContent(/500,000\s*IQD/)
+      expect(rowOf('INK-001')).not.toHaveTextContent('USD')
+    })
+
+    it('shows one Total Inventory Value card per currency and never one summed number', async () => {
+      show(mixed, [...snapshotRows, usdRow])
+      const StockBalancesPage = (await import('../balances/StockBalancesPage')).default
+      wrap(<StockBalancesPage />)
+
+      const cards = valueCards()
+      expect(cards).toHaveLength(2)
+      expect(cards[0]).toHaveTextContent('510,000')
+      expect(cards[0]).toHaveTextContent('IQD')
+      expect(cards[0]).not.toHaveTextContent('USD')
+      expect(cards[1]).toHaveTextContent('175')
+      expect(cards[1]).toHaveTextContent('USD')
+      expect(cards[1]).not.toHaveTextContent('IQD')
+      // 510,000 IQD and 175 USD are never added into 510,175.
+      expect(screen.queryByText('510,175')).not.toBeInTheDocument()
+    })
+
+    it('shows a single card for a company that holds one currency', async () => {
+      show([mixed[1]], [usdRow])
+      const StockBalancesPage = (await import('../balances/StockBalancesPage')).default
+      wrap(<StockBalancesPage />)
+      expect(valueCards()).toHaveLength(1)
+      expect(valueCards()[0]).toHaveTextContent('175')
+    })
+
+    it('shows 0 with no currency when nothing is in stock', async () => {
+      show([], [])
+      const StockBalancesPage = (await import('../balances/StockBalancesPage')).default
+      wrap(<StockBalancesPage />)
+      const cards = valueCards()
+      expect(cards).toHaveLength(1)
+      expect(within(cards[0]).getByText('0')).toBeInTheDocument()
+      expect(cards[0]).not.toHaveTextContent('IQD')
+      expect(cards[0]).not.toHaveTextContent('USD')
+    })
   })
 })
 

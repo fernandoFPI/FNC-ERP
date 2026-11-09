@@ -29,6 +29,8 @@ interface SnapshotRow {
   available: string
   average_cost: string
   total_value: string
+  // The currency of THIS row's last cost (never converted, and not the same for every row).
+  currency_code?: string | null
   is_low_stock: boolean
 }
 
@@ -45,7 +47,9 @@ export default function StockBalancesPage() {
 
   const snapshot = data?.stockBalanceSnapshot
   const rows: SnapshotRow[] = snapshot?.rows ?? []
-  const totalValue = snapshot?.totalValue ? parseFloat(snapshot.totalValue) : 0
+  // One total per currency, added by the server. Rows in different currencies are never added
+  // together (there is no conversion), so there is one value card for each.
+  const totals = snapshot?.totals ?? []
 
   const filtered = rows.filter((r) => {
     if (showLowOnly && !r.is_low_stock) return false
@@ -155,12 +159,16 @@ export default function StockBalancesPage() {
     {
       key: 'average_cost',
       header: t('inv.balances.lastCost'),
-      render: (r) => <AmountDisplay amount={parseFloat(r.average_cost)} currency="IQD" />,
+      render: (r) => (
+        <AmountDisplay amount={parseFloat(r.average_cost)} currency={r.currency_code ?? ''} />
+      ),
     },
     {
       key: 'total_value',
       header: t('inv.balances.totalValue'),
-      render: (r) => <AmountDisplay amount={parseFloat(r.total_value)} currency="IQD" />,
+      render: (r) => (
+        <AmountDisplay amount={parseFloat(r.total_value)} currency={r.currency_code ?? ''} />
+      ),
     },
   ]
 
@@ -191,12 +199,19 @@ export default function StockBalancesPage() {
           marginBottom: '16px',
         }}
       >
-        <KPICard
-          title={t('inv.balances.totalInventoryValue')}
-          value={totalValue.toLocaleString()}
-          subtitle={t('inv.balances.iqd')}
-          iconColor="success"
-        />
+        {totals.length > 0 ? (
+          totals.map((total) => (
+            <KPICard
+              key={total.currency_code}
+              title={t('inv.balances.totalInventoryValue')}
+              value={parseFloat(total.total_value).toLocaleString()}
+              subtitle={total.currency_code}
+              iconColor="success"
+            />
+          ))
+        ) : (
+          <KPICard title={t('inv.balances.totalInventoryValue')} value="0" iconColor="success" />
+        )}
         <KPICard
           title={t('inv.balances.totalSkus')}
           value={new Set(rows.map((r) => r.product_id)).size}

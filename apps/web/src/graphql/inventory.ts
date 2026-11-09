@@ -251,8 +251,11 @@ export const STOCK_BALANCES_QUERY = gql`
 export const STOCK_SNAPSHOT_QUERY = gql`
   query StockSnapshot {
     stockBalanceSnapshot {
-      totalValue
-      currency
+      totals {
+        currency_code
+        total_value
+        row_count
+      }
       rows {
         product_id
         sku
@@ -266,6 +269,7 @@ export const STOCK_SNAPSHOT_QUERY = gql`
         available
         average_cost
         total_value
+        currency_code
         is_low_stock
       }
     }

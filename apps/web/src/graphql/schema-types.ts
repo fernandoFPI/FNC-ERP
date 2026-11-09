@@ -9558,6 +9558,7 @@ export type StockBalanceSnapshot = {
   currency: Scalars['String']['output'];
   rows: Array<StockSnapshotRow>;
   totalValue: Scalars['String']['output'];
+  totals: Array<StockSnapshotTotal>;
 };
 
 export type StockConfirmLineInput = {
@@ -9628,6 +9629,7 @@ export type StockSnapshotRow = {
   available: Scalars['String']['output'];
   average_cost: Scalars['String']['output'];
   category?: Maybe<Scalars['String']['output']>;
+  currency_code?: Maybe<Scalars['String']['output']>;
   is_low_stock: Scalars['Boolean']['output'];
   location_id: Scalars['ID']['output'];
   location_name: Scalars['String']['output'];
@@ -9637,6 +9639,12 @@ export type StockSnapshotRow = {
   qty_on_hand: Scalars['String']['output'];
   qty_reserved: Scalars['String']['output'];
   sku: Scalars['String']['output'];
+  total_value: Scalars['String']['output'];
+};
+
+export type StockSnapshotTotal = {
+  currency_code: Scalars['String']['output'];
+  row_count: Scalars['Int']['output'];
   total_value: Scalars['String']['output'];
 };
 
