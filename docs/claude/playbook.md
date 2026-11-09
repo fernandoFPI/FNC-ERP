@@ -1425,8 +1425,24 @@ Don't re-derive, check these first.
     quote and prints an error line while the queries still run, so a stray "unterminated quoted string" above a result
     is the echo, not the query. (c) `CREATE TEMP TABLE ... ON COMMIT DROP AS SELECT ... WHERE id = ANY($1)` takes a bound
     parameter, and keeps `last_move_at` exact where a JavaScript round trip could lose digits.
+    Fixed (step 3, same day): the Stock Balances page and `stockBalanceSnapshot`. The page labelled every row's last cost
+    and value `IQD` and added every row into one "Total Inventory Value" labelled IQD, although a location's last cost has
+    its own currency (`stock_balances.last_cost_currency`) and nothing here is ever converted. Now every snapshot row
+    carries `currency_code`, the snapshot returns `totals` (one figure per currency, summed in SQL, ordered by currency),
+    and the page shows one value card per currency and each row in its own currency. `totalValue` / `currency` stay on the
+    type only for a browser tab still open on the previous release and are now the IQD rows' total alone, labelled IQD
+    (removing a field would break such a tab with a validation error). `currency_code` is nullable on purpose (#38: a
+    non-null violation would null the whole snapshot). Tests: `stock-balance-snapshot-currency.test.ts` (9, through the
+    real ApolloServer, 6 mutations killed) and the "currencies" block in `inventory.test.tsx` (4, 6 mutations killed).
+    Found, NOT fixed: the Inventory Valuation Report query (`inventoryValuationReport`) does not work at all. Its SQL names
+    the column `average_cost` but the mapper reads `row.avg_cost`, so every `avgCost` is NaN and GraphQL refuses it
+    (`Float cannot represent non numeric value: NaN`, reproduced through the real schema against dev data, so any company
+    with stock gets an error instead of a report). Behind that it hard-codes `'IQD'`, adds every currency into one
+    `totalValue`, does not exclude virtual locations, returns `totalLocations: 0` / `lowStockItems: 0` /
+    `byLocation: []` as literals (#34), and the page draws the headline total with `currency="USD"` while its rows say
+    IQD. Fix the column first, then the currency the same way as the snapshot (a currency on every row, totals per
+    currency). Nothing caught it because no test runs that query through the schema (#14, #38).
     Still open: `BOMForm.tsx` (`standard_cost: parseFloat(p.average_cost)`, so BOM cost planning starts from the legacy
     number) and `StoreOutPage.tsx` (the unit price prefill reads `prod.average_cost`) read the same legacy field through
-    the same `PRODUCTS_QUERY`; the Stock Balances page ("Last Cost", `currency="IQD"` hard-coded) and the stock snapshot
-    total (it adds every row into one IQD number) ignore each row's own currency; 1,982 Factory products have no cost
-    currency at all. Related to #43 (which "store price" a screen means) and #56 (a copy that does not follow its source).
+    the same `PRODUCTS_QUERY`; 1,982 Factory products have no cost currency at all. Related to #43 (which "store price" a
+    screen means), #56 (a copy that does not follow its source) and #34 (a report that looks empty while the data is fine).
