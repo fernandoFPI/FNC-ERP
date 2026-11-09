@@ -1447,6 +1447,40 @@ Don't re-derive, check these first.
     the same `PRODUCTS_QUERY`; 1,982 Factory products have no cost currency at all. Related to #43 (which "store price" a
     screen means), #56 (a copy that does not follow its source) and #34 (a report that looks empty while the data is fine).
 
+68. **A printed document in a variable web font becomes Type 3 text cut into pieces at every space and hyphen, and a PDF
+    program that re-flows it puts letters on top of each other.** The invoice number in the payment line of NY-INV-2026-0005
+    ("Reference invoice number NY-INV-2026-0005 in your payment.") showed its "Y-I" overlapping, in a PDF saved from the
+    Invoice page and opened in a PDF program (dotted boxes around the text blocks, the look of an editing viewer). It could
+    not be reproduced on screen: the stored number is plain ASCII (checked on production, all 14 invoice numbers), the page
+    rendered cleanly in Chrome and Edge at 100, 125 and 150 % display scaling and at the zoom the public verification page
+    uses, and the PDF was clean in Chrome's viewer and in MuPDF. What the PDF did show: `invoiceHtml.ts` loaded Inter from
+    Google Fonts, which is a VARIABLE font, and Chrome wrote it as Type 3 fonts. The payment line was 32 separate text runs
+    alternating between two Type 3 fonts at every space and punctuation mark (`NY` | `-` | `INV` | `-2026-0005`), one PDF
+    held 29 to 98 Type 3 fonts, and two pages weighed 233 KB (59 KB with real fonts). A program that re-flows text places
+    each run itself, and the seams between a letter and a hyphen have no space to hide an error in: `Y-I` is exactly such a
+    place. That this is what the user's program does is inferred (the dotted boxes, the location of the overlap), not
+    observed: the program was never named and could not be run here.
+    Fix: STATIC Inter (latin and latin-ext, 400/500/600/700, woff2, from @fontsource/inter 5.0.19, SIL OFL, licence file
+    included) in `apps/web/public/fonts`, declared by `lib/documentFonts.ts` (`INTER_FONT_FACES`) and used by
+    `buildInvoiceHTML` instead of the Google `@import`. It is the same Inter: page breaks were identical for 1 to 30 rows,
+    plain and letterhead (10 cases) and a line's width differed by under 1.4 pt. Checked in headless Chrome with the real
+    code behind a server serving `public/` the way nginx does: the `srcDoc` preview iframe loads the fonts from the
+    root-relative path (200), nothing is requested from Google, and the printed PDF has 0 Type 3 fonts (real Inter Regular,
+    SemiBold, Bold and a latin-ext Inter Regular), the payment line is one run, and Kurdish letters (Ş ş û ê ç) are in one
+    run too. Production serves the app from `/opt/fnc-erp/apps/web/dist` with `try_files $uri /index.html` and no CSP, so
+    `/fonts/` is served from `dist/fonts` (Vite copies `public/`); after a deploy check
+    `curl -I https://erp.npbsco.com/fonts/inter-latin-400-normal.woff2` answers 200 `font/woff2` (a missing file would
+    return index.html with 200 and the page would quietly fall back to Arial).
+    How to spot it: `page.get_fonts()` in PyMuPDF lists `Type3`; text extraction returns dozens of spans for one line; a
+    two-page document of plain text is hundreds of KB; copy and paste from the PDF comes out wrong. Any Chrome-printed
+    page that uses a Google variable font does it, not only Inter.
+    NOT done, same cause: the other six document builders still import Google's variable Inter, so their PDFs are Type 3
+    too (`expenseClaimHtml.ts`, `poHtml.ts`, `requisitionHtml.ts`, `storeInHtml.ts`, `storeOutHtml.ts`, `voucherHtml.ts`);
+    the fix is one line each with the same `INTER_FONT_FACES`. The worker's `packages/pdf` templates have their own markup
+    and no Inter import. Tests: `lib/__tests__/documentFonts.test.ts` (7, 6 mutations killed: the Google import back, the
+    unicode ranges dropped, the wrong folder, a variable weight range, a subset left out, a font file missing).
+    Related to #53, #54 (the invoice's print path) and #14 (a test cannot see how a PDF looks; the PDF was inspected).
+
 69. **A new field on a line that several screens and renderers show: the unit of measure on invoice lines.** The request
     (a screenshot of the printed table) was a "Unit" column right after Qty with Ea, M, Lot, Roll, Set, Box. Before
     building: `project_invoice_lines` had no unit (migration 021), all 189 production lines (14 invoices) were typed by
