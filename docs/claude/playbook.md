@@ -1488,3 +1488,29 @@ Don't re-derive, check these first.
     mutations killed), `lib/__tests__/{invoiceUnits,invoiceHtmlUnit,invoiceLineInputs}.test.ts`,
     `components/ui/__tests__/{UnitSelect,InvoiceBuilderUnit}.test.tsx`, `pages/projects/invoices/__tests__/InvoiceDetailUnit.test.tsx`
     (21 web mutations killed). Related to #55, #58, #54, #30 and #63 (the print layout).
+
+70. **A list that keeps its filters in component state loses them on Back, and the product page's own Back button would
+    have defeated a URL-only fix.** The report: filter Products by category, open a product, click Back, the filter is
+    gone. `ProductsPage` held its five filters (search, category, store, Low Stock Only, Manufactured Only) in `useState`,
+    and the page unmounts when a row is opened. The product page's Back is `<PageHeader backPath="/inventory/products">`,
+    which calls `navigate(backPath)`: a fresh visit to the bare path with no query string, not a step back in history.
+    Keeping the filters in the URL would therefore have fixed only the browser's Back button, which is why the fix follows
+    the convention the Projects and Requisitions lists already use instead: `sessionStorage`, key `products-page-filters`,
+    written on every change and read when the page opens. Read defensively: a category that is not one of the four is
+    dropped, a store is kept only under Raw Material (it means nothing under another category), values of the wrong type
+    are ignored, and corrupt or blocked storage (an accessor that throws) just starts with no filters. It lasts for the
+    browser tab: closing the tab resets it, by the same rule as the other two lists. Tests: `ProductsPageFilters.test.tsx`
+    (14) walks the real flow through a router (open a product, then the Back button and then the browser's back) for the
+    category, the store, the search text and both toggles, plus a cleared filter being remembered as cleared and each of the
+    defensive reads; 12 mutations killed.
+    Audit, approximate (pages that render `<FilterBar>` and mention neither `sessionStorage` nor `useSearchParams`): 25 of
+    28 keep nothing, among them Vendors, Employees, Users, Manufacturing Orders and Requests, Payment Vouchers, Leave
+    Requests, Stock Balances, Accounts, Locations, the two interco lists and the reports. `useSearchParams` in Lots and
+    Stock Moves may only READ incoming links, so those two are not confirmed to keep anything. NOT changed (the request was
+    Products). The same ten lines now exist three times (Projects, Requisitions, Products): if more lists get this, move
+    them into one hook rather than a fourth copy.
+    Traps met in the test. `Select` with `options` is a searchable portal select, not a native `<select>`: open it by
+    clicking what it currently shows and choose the option on `mouseDown` (#59), and a store name is also printed in a
+    product row, so take the LAST text match and assert on which rows are shown instead of on ambiguous text. A "mutation
+    killed" can be a compile error (`Tests  no tests`), so a result without a test count is not a kill. `eslint --fix`
+    strips casts it thinks are unnecessary (#69); give the query a generic instead.
