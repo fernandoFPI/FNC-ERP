@@ -100,6 +100,7 @@ verifyRouter.get('/invoice/:token', asyncHandler(async (req: Request, res: Respo
             lineNumber: l.line_number,
             description: l.description,
             qty: parseFloat(String(l.qty)),
+            uom: l.uom ?? null,
             unitCost: parseFloat(String(l.unit_cost)),
             subtotal: parseFloat(String(l.subtotal)),
             marginPct: parseFloat(String(l.margin_pct ?? '0')),

@@ -27,6 +27,7 @@ export function mapInvoiceLine(l: Row) {
     description: l.description,
     sourceType: l.source_type,
     qty: parseFloat(String(l.qty)),
+    uom: textOrNull(l.uom),
     unitCost: parseFloat(String(l.unit_cost)),
     subtotal: parseFloat(String(l.subtotal)),
     marginPct: parseFloat(String(l.margin_pct)),

@@ -1469,6 +1469,8 @@
     description: String!
     sourceType: String!
     qty: Float!
+    # Unit of measure (migration 318): Ea, M, Lot, Roll, ... Null for a line made before the column existed.
+    uom: String
     unitCost: Float!
     subtotal: Float!
     marginPct: Float!
@@ -3868,6 +3870,8 @@
     id: ID
     description: String
     qty: Float
+    # Left out: the stored unit stays. Empty or null: the unit is cleared.
+    uom: String
     unitCost: Float
   }
 
@@ -3904,6 +3908,8 @@
     description: String!
     sourceType: String!
     qty: Float!
+    # Unit of measure; left out means none (the web always sends one, Ea by default).
+    uom: String
     unitCost: Float!
     marginPct: Float
     taxPct: Float

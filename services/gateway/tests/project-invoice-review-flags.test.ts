@@ -279,7 +279,8 @@ describe('the public verification page', () => {
       expect(text.toLowerCase()).not.toContain('flag')
       expect(text.toLowerCase()).not.toContain('rejection')
       expect(Object.keys(body.data.invoice.lines[1]).sort()).toEqual(
-        ['description', 'lineNumber', 'lineTotal', 'marginAmount', 'marginPct', 'qty', 'subtotal', 'taxAmount', 'taxPct', 'unitCost'].sort(),
+        // `uom` (the unit of measure, migration 318) is a printed invoice field, not a review note: it is meant to be here.
+        ['description', 'lineNumber', 'lineTotal', 'marginAmount', 'marginPct', 'qty', 'subtotal', 'taxAmount', 'taxPct', 'unitCost', 'uom'].sort(),
       )
     } finally {
       srv.close()

@@ -32,6 +32,7 @@ import {
   normalizeInvoiceHeaderInput,
   resolveInvoiceHeader,
 } from '../lib/invoiceHeader.js'
+import { normalizeInvoiceUnit } from '../lib/invoiceUnit.js'
 import {
   INVOICE_LINES_SQL,
   invoiceHeaderFlagFields,
@@ -27582,8 +27583,10 @@ export const resolvers = {
             (headerSource.rows[0] ?? {}) as Record<string, unknown>,
           )
 
-          const num = await nextDocumentNumber(requireAuth(ctx).companyId, 'project_invoice', 'INV')
           const lines = (i.lines as Record<string, unknown>[]) ?? []
+          // Checked before a document number is taken, so a bad unit does not burn one.
+          const lineUnits = lines.map((l) => normalizeInvoiceUnit(l.uom))
+          const num = await nextDocumentNumber(requireAuth(ctx).companyId, 'project_invoice', 'INV')
           const subtotalBeforeTax = lines.reduce(
             (s, l) => s + Number(l.qty ?? 1) * Number(l.unitCost ?? 0),
             0,
@@ -27645,8 +27648,8 @@ export const resolvers = {
             const taxAmount = sub * (taxPct / 100)
             await client.query(
               `INSERT INTO project_invoice_lines
-               (invoice_id,line_number,description,source_type,qty,unit_cost,subtotal,margin_pct,margin_amount,tax_pct,tax_amount,line_total,source_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+               (invoice_id,line_number,description,source_type,qty,unit_cost,subtotal,margin_pct,margin_amount,tax_pct,tax_amount,line_total,source_id,uom)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
               [
                 invId,
                 idx + 1,
@@ -27661,6 +27664,7 @@ export const resolvers = {
                 taxAmount,
                 sub + margin + taxAmount,
                 l.sourceId ?? null,
+                lineUnits[idx],
               ],
             )
           }
@@ -27705,7 +27709,13 @@ export const resolvers = {
         invoiceDate?: string
         dueDate?: string
         currencyCode?: string
-        lines?: { id?: string; description?: string; qty?: number; unitCost?: number }[]
+        lines?: {
+          id?: string
+          description?: string
+          qty?: number
+          unitCost?: number
+          uom?: string | null
+        }[]
         clientContractNo?: string | null
         billToAddress?: string | null
         deliverToAddress?: string | null
@@ -27725,6 +27735,10 @@ export const resolvers = {
       const inv = invRow.rows[0] as Record<string, unknown>
       // Validated before anything is written; only the keys that were sent change.
       const headerEdit = normalizeInvoiceHeaderInput(args as unknown as Record<string, unknown>)
+      // A unit left out keeps the stored one (undefined); anything sent is cleaned, and empty or null clears it.
+      const lineUnits = (args.lines ?? []).map((l) =>
+        l.uom === undefined ? undefined : normalizeInvoiceUnit(l.uom),
+      )
       if (args.currencyCode && inv.status !== 'draft') {
         throw new Error('Currency can only be changed while the invoice is in draft status')
       }
@@ -27764,9 +27778,10 @@ export const resolvers = {
               const marginPct = parseFloat(String(exRow.margin_pct ?? 0))
               const marginAmount = subtotal * marginPct
               const lineTotal = subtotal + marginAmount
+              const unit = lineUnits[i]
               await client.query(
                 `UPDATE project_invoice_lines
-                    SET line_number=$1, description=$2, qty=$3, unit_cost=$4, subtotal=$5, margin_amount=$6, line_total=$7
+                    SET line_number=$1, description=$2, qty=$3, unit_cost=$4, subtotal=$5, margin_amount=$6, line_total=$7, uom=$9
                   WHERE id=$8`,
                 [
                   lineNum,
@@ -27777,6 +27792,7 @@ export const resolvers = {
                   marginAmount,
                   lineTotal,
                   line.id,
+                  unit === undefined ? ((exRow.uom as string | null) ?? null) : unit,
                 ],
               )
             } else {
@@ -27786,9 +27802,17 @@ export const resolvers = {
               const subtotal = qty * unitCost
               await client.query(
                 `INSERT INTO project_invoice_lines
-                   (invoice_id, line_number, description, source_type, qty, unit_cost, subtotal, margin_pct, margin_amount, tax_pct, tax_amount, line_total)
-                 VALUES ($1,$2,$3,'manual',$4,$5,$6,0,0,0,0,$6)`,
-                [args.id, lineNum, line.description ?? 'New item', qty, unitCost, subtotal],
+                   (invoice_id, line_number, description, source_type, qty, unit_cost, subtotal, margin_pct, margin_amount, tax_pct, tax_amount, line_total, uom)
+                 VALUES ($1,$2,$3,'manual',$4,$5,$6,0,0,0,0,$6,$7)`,
+                [
+                  args.id,
+                  lineNum,
+                  line.description ?? 'New item',
+                  qty,
+                  unitCost,
+                  subtotal,
+                  lineUnits[i] ?? null,
+                ],
               )
             }
           }
