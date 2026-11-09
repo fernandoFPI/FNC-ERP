@@ -1329,3 +1329,45 @@ Don't re-derive, check these first.
     costed from the product's own cost, which has its own currency question, #43); the completion journal and the
     direct-delivery cost may both charge the same goods to the project (a known open item, G17, not checked here); a PO funded by an employee advance is
     not netted; the cost uses `unit_price` where the receipt screens use `actual_unit_price`. Related to #6, #23, #44, #48, #56.
+
+66. **A field that meant "the owner" when a document was created by hand silently means "the person who clicked last" once
+    a system step creates the document.** Before the requisition split (G1) a purchase order was created by its organizer,
+    so `purchase_orders.created_by` and `organizer_id` were the same person and code could read either. The fork
+    (`finishBuyingRequisitionCore`) creates the child PO when Finish Buying runs, and it wrote `created_by = auth.userId`,
+    the user whose action happened to complete the set (a buyer recording the last purchase, an admin approving the last
+    over-tolerance purchase, or the organizer), while `organizer_id` correctly carried the requisition's organizer. On
+    production 250 of 297 requisition-linked POs named that person in `created_by` (45 already matched, 2 belong to
+    requisitions with no organizer, 0 were anything else). The user saw the buyer's name where the organizer's belonged
+    and the organizer "losing ownership". `organizer_id` was never overwritten (checked on every row: 0 differ); only two
+    places read `created_by` for a PO: the PO page's "Created by" box (`fetchFullPurchaseOrderGW`,
+    `PurchaseOrderDetail.tsx`) and the non-admin gate of `submitPOEditRequest` (`created_by OR assigned_to OR project
+    member`, no organizer, so an organizer who was not on the project was refused with "You are not associated with this PO
+    or its project": 85 of 297 POs, 82 still open). Every other PO check uses `organizer_id` (`userIsOrganizerGW`).
+    Same family as #23 and #24 (a rule that was right for one creation path drifts when a second path is added).
+    Decision (the user's, after I recommended the narrower fix of letting the organizer through the gate and showing an
+    Organizer box): the forked PO continues the requisition's ownership, so `created_by` is the requisition's organizer,
+    falling back to the finisher only when the requisition has no organizer (`created_by` is NOT NULL). Who finished the
+    buying is not lost: it stays in `requisition_approval_log` (action `finish_buying`, `actor_id`). Consequence to know:
+    the finisher (typically a buyer) no longer passes the `submitPOEditRequest` gate through `created_by`; they still can
+    as an admin, an assigned user or a project member. If buyers should keep that, widen the gate; it was deliberately
+    not touched here.
+    The backfill (`services/gateway/src/scripts/backfill-po-ownership.ts`, compiled by the gateway build and run on the VPS
+    from `services/gateway` after sourcing `/opt/fnc-erp/.env`): `node dist/scripts/backfill-po-ownership.js [--company
+    "<name or id>"]` is a dry run; `--apply --actor-email <admin>` sets `created_by` to the requisition's organizer in one
+    transaction, writes one `audit_log` row per PO with the OLD and NEW `created_by` (so it can be undone from there), then
+    re-reads the committed data on a second connection and fails if anything is still wrong or an audit row is missing.
+    It only touches a PO whose `created_by` is an actor of a `finish_buying` row of ITS OWN requisition, i.e. exactly what
+    the fork wrote: a PO somebody created by hand or a legacy one on a `REQ-MIG-*` requisition keeps its creator; a
+    requisition without an organizer is counted and left. `organizer_id` is never written. Take `scripts/backup-db.sh`
+    first. Audit rows are plain SQL, not `logAudit` (#48).
+    Traps met: (i) a test that makes the PO with the SAME user as organizer and finisher (the existing Finish Buying
+    fixtures do) can never see this bug; the fixture needs two users. (ii) A mutation survived the first tests: removing
+    `po.created_by <> r.organizer_id` from the plan changed nothing because the finisher guard alone excluded the PO, since
+    in my fixtures the organizer was never also the finisher. The common real case, an organizer who finished their own
+    buying, needed its own test (it would otherwise list a no-op and make the guarded UPDATE count differ). (iii) Cleanup of
+    a test that makes attachments: `po_line_purchases.receipt_attachment_id` points AT `document_attachments` (#21), so the
+    purchases of EVERY test company go before any attachment, and cleanup finds its companies by name prefix so a run that
+    died half way cannot poison the next one (it did: 8 leftover companies after a few failed runs).
+    Mutation-checked: 2 on the fork line (finisher again; no fallback) and 7 on the backfill, all killed. Tests:
+    `services/gateway/tests/po-ownership-from-requisition.test.ts` (real Postgres, 14, two users through the real
+    requisition flow). Related to #23, #24, #21, #48.
