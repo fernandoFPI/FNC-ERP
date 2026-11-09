@@ -2762,7 +2762,10 @@ async function finishBuyingRequisitionCore(reqId: string, auth: GWAuth): Promise
             headerCurrency,
             req.purpose ?? 'stock',
             req.project_id,
-            auth.userId,
+            // The child PO continues the requisition's ownership: created_by is its organizer, not whoever happened
+            // to trigger Finish Buying (that person is in requisition_approval_log, action finish_buying). Only a
+            // requisition with no organizer falls back to them, because created_by is NOT NULL.
+            req.organizer_id ?? auth.userId,
             req.priority ?? 'low',
             req.branch_id,
             req.organizer_id,
