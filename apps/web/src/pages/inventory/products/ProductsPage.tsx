@@ -1,6 +1,6 @@
 ﻿import { tl } from '../../../i18n'
 import { useTranslation } from 'react-i18next'
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
@@ -26,6 +26,37 @@ import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import type { BoMsQuery, BoMsQueryVariables, ProductsQuery, ProductsQueryVariables } from '../../../graphql/generated'
+
+// The page unmounts when a product is opened, and its filters went with it: coming back (the browser's Back or the
+// product page's own Back button) showed the full list again. They are kept for this browser tab, the same way the
+// Projects and Requisitions lists keep theirs (sessionStorage), and read again when the page opens.
+const PRODUCT_FILTERS_STORAGE_KEY = 'products-page-filters'
+const CATEGORY_VALUES = ['raw_material', 'finished_goods', 'consumable', 'service']
+
+function loadSavedFilters(): typeof FILTER_DEFAULTS {
+  try {
+    const raw = sessionStorage.getItem(PRODUCT_FILTERS_STORAGE_KEY)
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<Record<keyof typeof FILTER_DEFAULTS, unknown>>
+      const text = (v: unknown, fallback: string) => (typeof v === 'string' ? v : fallback)
+      const flag = (v: unknown) => (v === 'true' ? 'true' : 'false')
+      // A category that no longer exists is dropped rather than leaving a filter nobody can see or clear, and a
+      // store only means something under Raw Material.
+      const wanted = text(saved.category, '')
+      const category = CATEGORY_VALUES.includes(wanted) ? wanted : ''
+      return {
+        search: text(saved.search, ''),
+        category,
+        subCategory: category === 'raw_material' ? text(saved.subCategory, '') : '',
+        showLowStock: flag(saved.showLowStock),
+        showHasBom: flag(saved.showHasBom),
+      }
+    }
+  } catch {
+    // corrupt or unavailable storage: start with no filters
+  }
+  return FILTER_DEFAULTS
+}
 
 interface Product {
   id: string
@@ -57,11 +88,12 @@ export default function ProductsPage() {
   const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
-  const [search, setSearch] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('')
-  const [subCategoryFilter, setSubCategoryFilter] = useState('')
-  const [showLowStock, setShowLowStock] = useState(false)
-  const [showHasBom, setShowHasBom] = useState(false)
+  const [saved] = useState(loadSavedFilters)
+  const [search, setSearch] = useState(saved.search)
+  const [categoryFilter, setCategoryFilter] = useState(saved.category)
+  const [subCategoryFilter, setSubCategoryFilter] = useState(saved.subCategory)
+  const [showLowStock, setShowLowStock] = useState(saved.showLowStock === 'true')
+  const [showHasBom, setShowHasBom] = useState(saved.showHasBom === 'true')
   const currentFilters = {
     search,
     category: categoryFilter,
@@ -69,6 +101,22 @@ export default function ProductsPage() {
     showLowStock: String(showLowStock),
     showHasBom: String(showHasBom),
   }
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        PRODUCT_FILTERS_STORAGE_KEY,
+        JSON.stringify({
+          search,
+          category: categoryFilter,
+          subCategory: subCategoryFilter,
+          showLowStock: String(showLowStock),
+          showHasBom: String(showHasBom),
+        }),
+      )
+    } catch {
+      // storage unavailable: the filters just will not be kept
+    }
+  }, [search, categoryFilter, subCategoryFilter, showLowStock, showHasBom])
   const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
     'products',
     FILTER_DEFAULTS,
