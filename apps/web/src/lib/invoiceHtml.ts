@@ -1,4 +1,5 @@
 import { esc, safeImageSrc } from './htmlEscape'
+import { INTER_FONT_FACES } from './documentFonts'
 import { cleanInvoiceUnit, invoiceUnitText } from './invoiceUnits'
 
 // Everything that comes from the database goes into the page through esc() (or safeImageSrc()
@@ -833,7 +834,8 @@ export function buildInvoiceHTML(
   <meta charset="UTF-8">
   <title>Invoice ${invoiceNo}</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    /* Static Inter from our own site, not Google's variable one: a PDF of a variable font is Type 3 text broken into pieces at every space and hyphen (documentFonts.ts, playbook #68). */
+    ${INTER_FONT_FACES}
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Inter', Arial, sans-serif; font-size: 13px; color: #1a1a1a; line-height: 1.5; background: white; }
     section { page-break-inside: avoid; break-inside: avoid; }
