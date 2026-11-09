@@ -1088,7 +1088,7 @@ export type ProductsQueryVariables = Exact<{
 }>;
 
 
-export type ProductsQuery = { products: Array<{ id: string, sku: string, name: string, name_ar: string | null, category: string | null, sub_category: string | null, uom: string, valuation_method: string, average_cost: string, cost_currency: string | null, is_active: boolean, reorder_point: string | null, qty_on_hand: string | null } | null> | null };
+export type ProductsQuery = { products: Array<{ id: string, sku: string, name: string, name_ar: string | null, category: string | null, sub_category: string | null, uom: string, valuation_method: string, average_cost: string, standard_cost: string | null, cost_currency: string | null, is_active: boolean, reorder_point: string | null, qty_on_hand: string | null } | null> | null };
 
 export type ProductQueryVariables = Exact<{
   id: string | number;

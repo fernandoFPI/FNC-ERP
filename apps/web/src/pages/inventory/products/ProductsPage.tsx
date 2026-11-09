@@ -36,7 +36,10 @@ interface Product {
   sub_category?: string | null
   uom: string
   valuation_method: string
-  average_cost: string
+  // The product's own Cost (products.standard_cost, with cost_currency). The legacy
+  // products.average_cost is only ever set once by the inventory import and never kept up to
+  // date, so it is never shown here.
+  standard_cost?: string | null
   cost_currency?: string | null
   is_active: boolean
   reorder_point?: string | null
@@ -175,20 +178,27 @@ export default function ProductsPage() {
       },
     },
     {
-      key: 'average_cost',
+      key: 'standard_cost',
       header: t('inv.products.lastCost'),
-      render: (p) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
-            {parseFloat(p.average_cost).toLocaleString()}
-          </span>
-          {p.cost_currency ? (
-            <span style={{ fontSize: '11px', color: theme.textMuted }}>{p.cost_currency}</span>
-          ) : (
-            <Badge variant="warning">{t('inv.products.currencyNotSet')}</Badge>
-          )}
-        </div>
-      ),
+      render: (p) => {
+        // 0 or empty means no cost was ever recorded: a dash, never "0 USD".
+        const cost = p.standard_cost == null ? NaN : parseFloat(p.standard_cost)
+        if (!(cost > 0)) {
+          return <span style={{ fontFamily: 'monospace', color: theme.textMuted }}>—</span>
+        }
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
+              {cost.toLocaleString()}
+            </span>
+            {p.cost_currency ? (
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>{p.cost_currency}</span>
+            ) : (
+              <Badge variant="warning">{t('inv.products.currencyNotSet')}</Badge>
+            )}
+          </div>
+        )
+      },
     },
     {
       key: 'is_active',
