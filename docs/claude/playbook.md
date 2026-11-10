@@ -1599,3 +1599,122 @@ Don't re-derive, check these first.
     `apps/web/src/components/projects/__tests__/ProjectStatusBar.test.tsx` (10) and `lib/__tests__/projectFinancing.test.ts`
     (8) (10 mutations killed). Not covered by an automated test: `ProjectDetail`'s wiring of the gate (no page harness for
     a 36k-line file) and the screens in a browser. Related to #30, #33, #58, #12.
+
+72. **Removing a form field can orphan the control that served it, and a number to calculate from may be a field nobody
+    fills.** The request: take Budget Amount off the new-RFQ and edit-project forms and put withholding tax (WHT) there,
+    "calculated from the Bid Price". Three things were hiding behind it.
+    (a) *The Currency selector served the removed field.* The form's one Currency box sent only `budgetCurrency`;
+    `projectValueCurrency` was never sent, so `createRFQ` stored the Bid Price's currency as `'IQD'`
+    (`i.projectValueCurrency ?? 'IQD'`) whatever was picked (production: the one project with a Bid Price is labelled IQD
+    beside a USD budget). With the Budget gone the selector would have labelled nothing, and a tax amount has to carry a
+    currency. Fix: the form sends both currencies from the one selector. Same family as #65(b) (a hard-coded `'IQD'`
+    label). Visible side effect, deliberate: the cost summary's `grossMargin` is shown only when a currency equals
+    `projectValueCurrency`, so a USD project now gets a margin it never had. Spot it: for any field you remove, grep what
+    else its inputs fed (here `currencyCode` also set `budget_currency`, the header's display currency).
+    (b) *Production data decided the base.* "Bid Price" is three different things here: `projects.project_value` (typed on
+    the form, labelled "Bid Price (Project Value)"), the Bidding tab's computed price (`bid_commercial_summary` and
+    `project_bid_revisions`) and `rfq_lines.bid_unit_price`. Read-only SELECTs on production (152 projects) showed 1
+    project with a typed Bid Price, 0 with a bid summary or revision, 0 priced RFQ lines, 20 contracts, and 1 project
+    with a Budget Amount (so removing it breaks almost nothing, and nothing else sets the budget afterwards). The tax
+    therefore calculates from the typed field, shows no amount (null, not 0) until one is typed, and says so on the form.
+    Check what people actually fill in before choosing the number a calculation hangs on.
+    (c) *Store the settings, calculate the figure.* Migration 320 adds `projects.wht_applies`, `wht_scenario`, `wht_rate`
+    (same shape and CHECK as `project_invoices`, migration 063; a table CHECK `projects_wht_consistent` also keeps
+    "applies needs a scenario, off means no scenario and a zero rate" true whatever writes the row). The amount is
+    `project_value x wht_rate`, rounded to four decimals like an invoice, computed in `projectRowToGQL` on every read;
+    storing it would go stale the moment the Bid Price changed (#56). `project_value` is `NUMERIC(.,2)`, so the tax is
+    worked out from the stored two-decimal price (a test typed 1234.5678 and expected 40.7407, the stored 1234.57 gives
+    40.7408). The GraphQL fields are all nullable (#38). Settings change only when the update input mentions them: the
+    status bar's schedule update sends none of the three, and a `COALESCE` per column cannot clear a scenario, so the
+    UPDATE uses `CASE WHEN $27::boolean` with every parameter cast (#57 trap (a)). Validation runs BEFORE the project
+    number is taken or the analytic account is made, and an unknown scenario or an out-of-range rate is refused with a
+    message, never quietly replaced (#30). A rate may have at most two decimals of a percent; the form and the server
+    both refuse more instead of rounding what the person typed.
+    Kept on purpose: the API still accepts `budgetAmount` (an old browser tab keeps working), an edit that omits it keeps
+    the stored budget (`COALESCE`), and `EditProjectDrawer` (a second Budget field, imported nowhere) was deleted with its
+    30 `proj.edit.*` strings. Invoices are untouched: their WHT is still typed per invoice (the wizard starts at 3%, as the
+    project form does, and ignores the company default `system_configuration.default_wht_rate`, also 3% everywhere).
+    Tooling traps met. (i) A mock whose `useQuery` returns a fresh `data` object each call loops a component whose effect
+    depends on it until the worker runs out of memory; the run then HANGS instead of failing (#60.3): hand back one
+    object, run vitest with `timeout` and output to a file, and stop the leftover node processes. (ii) A test that calls
+    `createRFQ` needs the company's `project` and `rfq` document sequences (`deriveRfqNumber` reads `.rows[0].prefix` and
+    throws a bare TypeError without them); the test adds and removes them, and removes the analytic accounts
+    `createProject` makes, or the next run collides on the same code. (iii) The shell patch trap again (#69): write
+    scripts that hold regexes or newlines with the file tool.
+    Tests: `services/gateway/tests/project-withholding-tax.test.ts` (real Postgres through the real ApolloServer, 26; 13
+    mutations killed), `apps/web/src/pages/projects/form/__tests__/ProjectForm.test.tsx` (14, drives the real form) and
+    `lib/__tests__/projectWht.test.ts` (11, pins the scenario list and rounding to the server file) (16 mutations killed).
+    Not covered by an automated test: the Overview's Withholding Tax row in `ProjectDetail` (no page harness) and the
+    screens in a browser. Related to #30, #38, #56, #65, #71.
+
+73. **A "catch-all" branch in a type-to-label mapping, and a sibling screen on a different permission key.** The
+    Bidding tab's file areas were two: Technical and Commercial, stored as `document_attachments` of entity type
+    `bid_package_technical` / `bid_package_commercial` (migration 171). `bidPackageFileList` mapped the stored type
+    back to the name the page uses with `entity_type === 'bid_package_technical' ? 'technical' : 'commercial'`, and
+    the upload and delete resolvers each repeated the pair. Adding Cost Analysis and Clarifications (migration 321)
+    through that code would have labelled both as Commercial, with no error, and the page, which files by that
+    label, would have shown a Cost Analysis upload under Commercial. Fix: one map
+    (`services/gateway/src/lib/bidPackages.ts`: entity type, label and whether the API hides it from a technical
+    member, per area) used by all three resolvers, with a lookup that THROWS on an unknown type
+    (`bidTypeFromEntityType`) and an upload that refuses an unknown `bidType` with a message naming the allowed ones.
+    How to spot it: a two-value ternary or `else` that decides what a stored value means; adding a third value is
+    where it breaks. Grep the resolvers for `=== '...' ? '...' : '...'` on a type column before adding a value.
+    The same change turned up four more things:
+    (a) *The old Clarifications Bid was a different feature on a different permission key.* It was the Technical
+    Queries screen (`project_tqs`, ~1,000 lines of UI, ten GraphQL operations) gated by `projects.qaqc.*`, while the
+    two sub-tabs beside it used `projects.bidding.*`. A user could open the Bidding tab and get a permission error
+    inside one of its sub-tabs. Spot it: compare the permission key each sub-tab's queries and mutations ask for with
+    the key the tab itself needs. Before removing the screen, production was read: 0 TQs and 0 TQ attachments, so
+    nothing was lost; the table `project_tqs` and the `tq` value of the entity-type CHECK were KEPT (empty), so a
+    code-only rollback still works (#39). Removing a feature also means removing its entry in the project Attachments
+    registry (`lib/projectFiles.ts`) and its label under `proj.detail.fileSource`, and re-running codegen.
+    (b) *A new Attachments source needs a label in both languages, and nothing fails without it.* The Attachments tab
+    prints `proj.detail.fileSource.<source>`; a source with no label shows the raw dotted key. I had added the two
+    sources to the registry and the page and only found the missing labels by asking what else reads the registry.
+    `lib/__tests__/projectFileSourceLabels.test.ts` now reads every source key out of the gateway file and fails
+    for a source with no label, or a label for a source that is gone, in en and ar (#26, #51).
+    (c) *The page hid Commercial from technical-only team members; the API never did.* `bidPackageFiles` has always
+    returned Commercial files to anyone holding `projects.bidding.view`, and the upload notice goes to every team
+    member with the file name. Cost Analysis is pricing material, so it is enforced on the server for the list, the
+    upload (and the list it returns) and the delete, with the same rule as the Attachments tab
+    (`canSeeProjectCommercialFilesGW`). Commercial was first left as it was (narrowing it is the user's call) and was
+    closed the same day on the user's instruction ("fix the API"): it narrows only what a technical member can fetch by
+    calling the API directly, nothing the page showed them. One flag per area in `lib/bidPackages.ts`
+    (`apiHiddenFromTechnicalMembers`), pinned equal to the page's list by `bidPackageTabs.test.ts`. A delete a
+    technical member is not allowed returns `true` and matches nothing: the test reads the row afterwards instead of
+    trusting the result. Still open, by the user's choice or out of scope: the upload notification naming a Cost
+    Analysis or Commercial file to technical members (user: keep as it is), and the Commercial BUILDER queries
+    (`bidCostItems`, `bidSupplierQuotations`, `bidCommercialSummary` and their mutations), which still need only
+    `projects.bidding.view`; they feed the full (non-simple) bid mode, which all three companies have switched off.
+    (d) *Tooling.* jsdom's `File` has no `arrayBuffer()`, which the real upload code calls, so every upload test
+    failed at first, Technical included, which looked like a regression in code that had not changed; give the test
+    file one. The Bidding tab had no render test at all (a 36k-line file with no harness); `BiddingTab` is now
+    exported for tests, like `AttachmentsTab`, and rendered with its props. A scan of ProjectDetail's translation keys
+    against the locales showed 21 keys already missing before this change (the list in #51 plus `directCostTotal2`,
+    `raisedBy2`, `drawing3`, `spec`, `location`, `inspector2`, `attendees2`, `acknowledged2`, `resp`,
+    `totalWorkforceToday`, `totalCriticalCompleteInProgress`, `activitiesDependencies`, `submittedValue`,
+    `isCurrentlyWorkingOnThisVo`, `workPkg`); to tell yours from older ones, run the same scan on the pre-change
+    source against the locale files at `git HEAD` and compare. All 21 were then added on the user's instruction: the
+    English is what stood in the JSX before the conversion (`git show 760645f -- ProjectDetail.tsx`, the removed `-`
+    lines), with `<0>` where the page puts a `<strong>` / `<span>` and `{{name}}` equal to the `values` it passes; the
+    Arabic is mine and reuses the file's own terms. `i18n/__tests__/projectDetailKeys.test.ts` now reads every literal
+    `t('...')` and `i18nKey` out of ProjectDetail.tsx and fails for any key missing in en or ar, and checks each of the
+    21 has the same highlighted parts in both languages (an Arabic string may drop a value, never add one).
+    (e) *A phrase to type, translated, against a code constant that is not.* The as-built "Supersede" confirmation
+    unlocks its button only when the input equals `requireConfirmPhrase` (`'SUPERSEDE'`, ProjectDetail.tsx), but the
+    instruction and the placeholder showed `t('proj.detail.supersede2')`: in Arabic "استبدال". An Arabic user was told
+    to type a word the code would never accept, so the destructive action could not be confirmed (same trap as #25a,
+    found while writing the Arabic for "Type <0>…</0> to unlock the confirm button"). Both now show the constant itself,
+    in both languages, and the unused `supersede2` key is gone. Spot it: a `requireConfirmPhrase`, or any `=== 'ENGLISH'`
+    comparison, next to a text the user is told to type. The page has no harness for that modal, so the test pins the
+    source lines (`projectDetailKeys.test.ts`); check it by eye in Arabic.
+    Tests: `services/gateway/tests/bid-package-files.test.ts` (real Postgres through the real ApolloServer, 24: each
+    area uploads, lists under its own name and deletes; the four kept apart; unknown type refused; another company's
+    file and project; view-only, no permission, technical member, commercial member, PM, admin; the old TQ operations
+    are gone from the schema), `project-files.test.ts` (the two new sources, the Cost Analysis visibility),
+    `apps/web/src/pages/projects/detail/__tests__/BiddingTab.test.tsx` (24: the sub-tabs per viewer, each area's own
+    files and heading, where a dropped file goes, any file type, delete and no-edit), `lib/__tests__/bidPackageTabs.test.ts`
+    (pins the four kinds and the hidden ones to the gateway file), `projectFileSourceLabels.test.ts` and
+    `i18n/__tests__/projectDetailKeys.test.ts`. 11 mutations on the gateway, 10 on the web and 6 on the translations,
+    all killed (one survived at first: nothing pinned the placeholder of the phrase box). Related to #20 (the CHECK
+    constraint), #24, #25, #29, #30, #51, #52.
