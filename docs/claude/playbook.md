@@ -1548,3 +1548,54 @@ Don't re-derive, check these first.
     product row, so take the LAST text match and assert on which rows are shown instead of on ambiguous text. A "mutation
     killed" can be a compile error (`Tests  no tests`), so a result without a test count is not a kill. `eslint --fix`
     strips casts it thinks are unnecessary (#69); give the query a generic instead.
+
+71. **Adding a "configurable" lifecycle phase means finding every place that still holds the list, the shortcut that
+    jumps over it, and the message nobody sees.** The project lifecycle is company config (`lifecycle_phases`,
+    migrations 166 / 175), so the stage bar picked up a new Financing step (between Execution and Closeout) from one
+    migration row. Everything else that still knew "the six phases" did not: the new-company seed
+    (`company-management.ts`), the admin override's valid list (`adminSetPhase`) and its dropdown, the web's fallback
+    stage list, the project form's stepper (its index came from `status`, so Closeout would have shown as step 6 of 7),
+    and the Settings sentence "The six phases are fixed". Found by grepping `closeout` across the repo, not by the
+    feature itself. Same family as #30 (parallel lists drifting). Fix: one list on the gateway
+    (`services/gateway/src/lib/projectLifecycle.ts`), and a test that parses the migrations and the new-company seed and
+    fails when they disagree with it. The test must parse the SOURCES: `fnc_erp_test` has no `lifecycle_phases` rows at
+    all (166 seeds only the companies that exist when it runs), so a test that reads the table checks nothing.
+    The design itself: Financing is a PHASE, not a status. `projects.status` stays `approved` through it, so every
+    existing check on an approved project (POs, costs, invoicing, the state machine) is untouched, and the move is
+    phase-only like `advancePhase` for Scope Review to Bidding. Execution to Financing is `advancePhase('financing')`
+    (End Execution, with a confirm bar); `completeProject` (Close Project) now demands phase `financing` and a settled
+    invoice list. Three things this turned up:
+    (a) *A shortcut that skips the new step.* `completeProject` went straight from Execution to Closeout, and a second
+    path, the REST `POST /projects/:id/complete` in the projects service, closes a project without ever setting a phase.
+    Gating only the GraphQL one would have left the rule bypassable, so the invoice rule is one function in
+    `packages/db/src/projectCloseout.ts` used by both (the REST route does not use phases, so only the invoice rule
+    applies there). Grep every writer of `status='completed'`.
+    (b) *A refusal the user never sees.* The status bar's `executeBtn` had no catch and the Apollo error link toasts
+    nothing for GraphQL errors, so the new, clear server messages ("1 invoice is not fully paid yet (1 issued, unpaid)")
+    would have been an unhandled rejection and a button that seemed dead. Every status-bar button now toasts the
+    server's message. How to spot it: a mutation call with no `.catch` / `try` and no `onError`.
+    (c) *A hint that depends on which tab you visited.* The invoices query was `skip`ped unless the Contract Management
+    tab was open, so the Close Project button would only have learned about unpaid invoices after a visit there. It loads
+    in the Financing phase whatever tab is open; the server stays the authority and the web mirror
+    (`lib/projectFinancing.ts`) is pinned to the server file by a test (#58 pattern).
+    Rule chosen on purpose (#33): an allow-list of what SETTLES an invoice (`paid`, or `cancelled` / `void` which are not
+    invoices), so a status added to `project_invoices_status_check` later blocks the close by default instead of letting
+    it through; a test fails until a new status is classified. The unknown-status safeguard could only be tested through a
+    pure function (`summariseInvoiceStatusCounts`) because the CHECK constraint refuses to store an unknown status: the
+    first version of the test fed the blocker a hand-built state and the mutation that put the deny-list back SURVIVED.
+    Who may end execution and close out: the project's own manager (`project_manager_id`, an employee linked to the user)
+    OR a `projects.approve` holder (admins pass); one function, `callerCanCloseOutProjectGW`. A manager who lacks
+    `projects.approve` can now close their own project (before, `completeProject` needed the permission); the user asked
+    for this. A project with no invoices (or only cancelled / void ones) can be closed only by an administrator
+    (system / company admin or a projects module admin); an unpaid invoice blocks everyone. The Admin Override panel
+    (`adminSetPhase`) is untouched and can still move a project to any phase.
+    Tooling traps met. (i) `node -e` through Bash and a `String.replace` patch of a script both mangled a regex / newline
+    (#69): write scripts with the file tool. (ii) A mutation pattern that matches twice is skipped, not killed: the admin
+    expression existed in two places, so the pattern needed its neighbouring line. (iii) The projects service creates an
+    analytic account coded `PRJ-` + the project code in a `varchar(20)`, so a test project code over 16 characters
+    returns a bare 500. (iv) `eslint --fix` on new files only (#37).
+    Tests: `services/gateway/tests/project-financing-phase.test.ts` (real Postgres and the real ApolloServer, 30; 13
+    mutations killed), `services/projects/tests/project-close-invoices.test.ts` (REST, 3; mutation-checked),
+    `apps/web/src/components/projects/__tests__/ProjectStatusBar.test.tsx` (10) and `lib/__tests__/projectFinancing.test.ts`
+    (8) (10 mutations killed). Not covered by an automated test: `ProjectDetail`'s wiring of the gate (no page harness for
+    a 36k-line file) and the screens in a browser. Related to #30, #33, #58, #12.
