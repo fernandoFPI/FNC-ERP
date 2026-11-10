@@ -251,6 +251,7 @@ import { CONTRACT_STATUSES } from '../../../lib/contractStatus'
 import { projectCloseoutGate } from '../../../lib/projectFinancing'
 import { whtPercentText } from '../../../lib/projectWht'
 import { visibleBidPackageKinds, type BidPackageKind } from '../../../lib/bidPackageTabs'
+import { OtherCurrencyBudgets } from '../../../components/projects/OtherCurrencyBudgets'
 import { uploadMimeType, uploadFailureMessage } from '../../../lib/uploadMimeType'
 import { projectFileTabs, visibleProjectFiles, countByTab } from '../../../lib/projectFiles'
 import type { ProjectFilesQuery, ProjectFilesQueryVariables } from '../../../graphql/generated'
@@ -2457,124 +2458,6 @@ export default function ProjectDetail() {
             kpiTile(t('proj.detail.remainingDays'), String(remainDays), null, kpiCircle(daysPct, '#8b5cf6'))}
         </div>
       </div>
-
-      {/* ── Other currency budgets (D2) ── admin-only, rare multi-currency case */}
-      {isAdmin && (otherCostSummaries.length > 0 || showAddBudgetForm) && (
-        <div
-          style={{
-            padding: isPhone ? '10px 12px' : '10px 24px',
-            background: theme.bgCanvas,
-            borderBottom: `1px solid ${theme.border}`,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: theme.textMuted }}>
-              {t('proj.detail.otherCurrencyBudgets')}
-            </span>
-            {!showAddBudgetForm && (
-              <button
-                onClick={() => { setShowAddBudgetForm(true); }}
-                style={{ background: 'none', border: 'none', color: theme.accent, fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: '2px 4px' }}
-              >
-                {t('proj.detail.addCurrencyBudget')}
-              </button>
-            )}
-          </div>
-
-          {otherCostSummaries.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: showAddBudgetForm ? '10px' : 0 }}>
-              {otherCostSummaries.map((e) => {
-                const ccy = String(e.currencyCode)
-                const budgetRow = budgetsArr.find((b) => b.currencyCode === ccy)
-                const hasBudget = e.budgetAmount != null
-                const remaining = e.budgetRemaining != null ? Number(e.budgetRemaining) : null
-                return (
-                  <div
-                    key={ccy}
-                    style={{
-                      display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '160px',
-                      background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '10px 12px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 700, color: theme.textPrimary }}>{ccy}</span>
-                      {budgetRow && !budgetRow.isPrimary && (
-                        <button
-                          onClick={() => { void removeProjectBudget({ variables: { id: budgetRow.id } }); }}
-                          title={t('proj.detail.remove2')}
-                          style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '12px', padding: 0 }}
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                    <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                      {hasBudget
-                        ? `${t('proj.detail.budget')}: ${formatCurrency(Number(e.budgetAmount), ccy)}`
-                        : t('proj.detail.noBudgetSet')}
-                    </div>
-                    <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                      {t('proj.detail.actualCost')}: {formatCurrency(Number(e.actualCosts ?? 0), ccy)}
-                    </div>
-                    {remaining != null && (
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: remaining < 0 ? '#ef4444' : '#22c55e' }}>
-                        {formatCurrency(remaining, ccy)}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {showAddBudgetForm && (
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '10px', color: theme.textMuted }}>{t('proj.detail.currency')}</label>
-                <input
-                  value={addBudgetCcy}
-                  onChange={(e) => { setAddBudgetCcy(e.target.value.toUpperCase().slice(0, 3)); }}
-                  placeholder="USD"
-                  style={{ width: '70px', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${theme.border}`, background: theme.bgSurface, color: theme.textPrimary }}
-                />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '10px', color: theme.textMuted }}>{t('proj.detail.amount')}</label>
-                <input
-                  type="number"
-                  value={addBudgetAmount}
-                  onChange={(e) => { setAddBudgetAmount(e.target.value); }}
-                  placeholder="0.00"
-                  style={{ width: '140px', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${theme.border}`, background: theme.bgSurface, color: theme.textPrimary }}
-                />
-              </div>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={addingBudget || addBudgetCcy.length !== 3 || !addBudgetAmount}
-                onClick={() => {
-                  void addProjectBudget({
-                    variables: { projectId: id!, currencyCode: addBudgetCcy, amount: Number(addBudgetAmount) },
-                  })
-                }}
-              >
-                {t('proj.detail.save')}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setShowAddBudgetForm(false)
-                  setAddBudgetCcy('')
-                  setAddBudgetAmount('')
-                }}
-              >
-                {t('proj.detail.cancel')}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Tabs */}
       <div
@@ -5180,6 +5063,39 @@ export default function ProjectDetail() {
                 th={theme as unknown as Record<string, string>}
                 isEditable={canEdit.costControl}
                 isAdmin={canEdit.costControl}
+                topSlot={
+                  <OtherCurrencyBudgets
+                    isAdmin={isAdmin}
+                    summaries={otherCostSummaries}
+                    budgets={budgetsArr}
+                    showForm={showAddBudgetForm}
+                    currency={addBudgetCcy}
+                    amount={addBudgetAmount}
+                    saving={addingBudget}
+                    onOpenForm={() => {
+                      setShowAddBudgetForm(true)
+                    }}
+                    onCancelForm={() => {
+                      setShowAddBudgetForm(false)
+                      setAddBudgetCcy('')
+                      setAddBudgetAmount('')
+                    }}
+                    onCurrencyChange={setAddBudgetCcy}
+                    onAmountChange={setAddBudgetAmount}
+                    onSave={() => {
+                      void addProjectBudget({
+                        variables: {
+                          projectId: id,
+                          currencyCode: addBudgetCcy,
+                          amount: Number(addBudgetAmount),
+                        },
+                      })
+                    }}
+                    onRemove={(budgetId) => {
+                      void removeProjectBudget({ variables: { id: budgetId } })
+                    }}
+                  />
+                }
                 costCodes={ccCodesData?.projectCostCodes ?? []}
                 summary={ccSummaryData?.projectCostSummary ?? null}
                 onCreateCostCode={(v) => void createCostCode({ variables: v as CreateCostCodeMutationVariables })}
@@ -31175,6 +31091,8 @@ interface CostControlProps {
   th: Record<string, string>
   isEditable: boolean
   isAdmin: boolean
+  // Shown above the sub-sections (the project's "Other Currency Budgets" card).
+  topSlot?: React.ReactNode
   costCodes: CCCostCode[]
   summary: CCSummary | null
   projectAnalyticAccountId: string | null
@@ -31209,7 +31127,8 @@ interface CostControlProps {
   onDeleteBilling: (id: string) => void
 }
 
-function CostControlTab(props: CostControlProps) {
+// Exported only so the tab can be rendered in tests (__tests__/CostControlTopSlot.test.tsx).
+export function CostControlTab(props: CostControlProps) {
   const { t } = useTranslation()
   const {
     projectId,
@@ -32392,6 +32311,7 @@ function CostControlTab(props: CostControlProps) {
 
   return (
     <div style={{ fontFamily: 'system-ui,sans-serif', color: th.textPrimary }}>
+      {props.topSlot}
       {/* Sub-nav */}
       <div
         style={{
