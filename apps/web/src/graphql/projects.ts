@@ -13,6 +13,10 @@ const PROJECT_FIELDS = gql`
     projectLocation
     projectValue
     projectValueCurrency
+    whtApplies
+    whtScenario
+    whtRate
+    whtAmount
     clientName
     clientContact
     managerId
@@ -385,6 +389,11 @@ export const UPDATE_PROJECT = gql`
       name
       status
       projectValue
+      projectValueCurrency
+      whtApplies
+      whtScenario
+      whtRate
+      whtAmount
       budgetAmount
       overallCompletionPct
       allowedActions
@@ -4999,97 +5008,6 @@ export const CREATE_MATERIAL_RETURN = gql`${MR_LINE_FIELDS}
   ${MR_FIELDS}
   mutation CreateMaterialReturn($input: MaterialReturnInput!) {
     createMaterialReturn(input: $input) { ...MRFields2 }
-  }
-`
-
-// ── Phase 3: Technical Queries ───────────────────────────────────────────────
-
-const TQ_FIELDS = gql`
-  fragment TQFields on ProjectTQ {
-
-  id projectId tqNumber discipline priority subject description
-  raisedBy raisedDate documentId documentRef documentRevision
-  status response responseBy responseDate dueDate closedAt
-  createdAt updatedAt isOverdue
-  files { ...ExecFileFields }
-
-  }
-`
-
-export const PROJECT_TQS_QUERY = gql`
-  ${EXEC_FILE_FIELDS}
-  ${TQ_FIELDS}
-  query ProjectTQs($projectId: ID!, $status: String, $discipline: String, $priority: String) {
-    projectTQs(projectId: $projectId, status: $status, discipline: $discipline, priority: $priority) {
-      ...TQFields
-    }
-  }
-`
-
-export const CREATE_TQ = gql`${TQ_FIELDS}
-  ${EXEC_FILE_FIELDS}
-  mutation CreateTQ(
-    $projectId: ID! $discipline: String $priority: String $subject: String!
-    $description: String $raisedBy: String $raisedDate: String
-    $documentId: ID $documentRef: String $documentRevision: String $dueDate: String
-  ) {
-    createTQ(
-      projectId: $projectId discipline: $discipline priority: $priority subject: $subject
-      description: $description raisedBy: $raisedBy raisedDate: $raisedDate
-      documentId: $documentId documentRef: $documentRef documentRevision: $documentRevision
-      dueDate: $dueDate
-    ) { ...TQFields }
-  }
-`
-
-export const UPDATE_TQ = gql`${TQ_FIELDS}
-  ${EXEC_FILE_FIELDS}
-  mutation UpdateTQ(
-    $id: ID! $discipline: String $priority: String $subject: String
-    $description: String $raisedBy: String $raisedDate: String
-    $documentId: ID $documentRef: String $documentRevision: String $dueDate: String
-  ) {
-    updateTQ(
-      id: $id discipline: $discipline priority: $priority subject: $subject
-      description: $description raisedBy: $raisedBy raisedDate: $raisedDate
-      documentId: $documentId documentRef: $documentRef documentRevision: $documentRevision
-      dueDate: $dueDate
-    ) { ...TQFields }
-  }
-`
-
-export const REVIEW_TQ = gql`${TQ_FIELDS}
-  ${EXEC_FILE_FIELDS}
-  mutation ReviewTQ($id: ID!) { reviewTQ(id: $id) { ...TQFields } }
-`
-
-export const RESPOND_TO_TQ = gql`${TQ_FIELDS}
-  ${EXEC_FILE_FIELDS}
-  mutation RespondToTQ($id: ID!, $response: String!, $responseBy: String) {
-    respondToTQ(id: $id, response: $response, responseBy: $responseBy) { ...TQFields }
-  }
-`
-
-export const CLOSE_TQ = gql`${TQ_FIELDS}
-  ${EXEC_FILE_FIELDS}
-  mutation CloseTQ($id: ID!) { closeTQ(id: $id) { ...TQFields } }
-`
-
-export const DELETE_TQ = gql`
-  mutation DeleteTQ($id: ID!) {
-    deleteTQ(id: $id)
-  }
-`
-
-export const UPLOAD_TQ_FILE = gql`${TQ_FIELDS}
-  ${EXEC_FILE_FIELDS}
-  mutation UploadTQFile($tqId: ID!, $fileId: ID!, $title: String) {
-    uploadTQFile(tqId: $tqId, fileId: $fileId, title: $title) { ...TQFields }
-  }
-`
-export const DELETE_TQ_FILE = gql`
-  mutation DeleteTQFile($attachmentId: ID!, $tqId: ID!) {
-    deleteTQFile(attachmentId: $attachmentId, tqId: $tqId)
   }
 `
 

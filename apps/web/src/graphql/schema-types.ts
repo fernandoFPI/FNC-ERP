@@ -2390,7 +2390,6 @@ export type Mutation = {
   closeMeeting: Meeting;
   closeRentalContract: RentalContract;
   closeRequisitionLine: PoLine;
-  closeTQ: ProjectTq;
   combineJournalEntries: JournalEntry;
   completeMO: ManufacturingOrder;
   completePO: PurchaseOrder;
@@ -2470,7 +2469,6 @@ export type Mutation = {
   createStockLocation: StockLocation;
   createSubcontract: Subcontract;
   createSubcontractBilling: SubcontractBilling;
-  createTQ: ProjectTq;
   createUser: UserDetail;
   createVOCorrespondence: VoCorrespondence;
   createVOCostItem: VoCostItem;
@@ -2536,8 +2534,6 @@ export type Mutation = {
   deleteSiteInstruction: Scalars['Boolean']['output'];
   deleteSubcontract: Scalars['Boolean']['output'];
   deleteSubcontractBilling: Scalars['Boolean']['output'];
-  deleteTQ: Scalars['Boolean']['output'];
-  deleteTQFile: Scalars['Boolean']['output'];
   deleteVOCorrespondence: Scalars['Boolean']['output'];
   deleteVOCostItem: Scalars['Boolean']['output'];
   deleteVariationOrder: Scalars['Boolean']['output'];
@@ -2628,13 +2624,11 @@ export type Mutation = {
   resolveRequisitionLineFromStock: PoLine;
   respondToComment: DocComment;
   respondToRFI: ProjectRfi;
-  respondToTQ: ProjectTq;
   resumeProject: Project;
   retryDLQEntry: Scalars['Boolean']['output'];
   retryOutboxEvent: Scalars['Boolean']['output'];
   revealBankDetails?: Maybe<BankDetailsResult>;
   reverseReceipt: PoReceipt;
-  reviewTQ: ProjectTq;
   reviseBid: BidCommercialSummary;
   reviseContract: ProjectContract;
   reviseEngineeringDoc: EngineeringDoc;
@@ -2755,7 +2749,6 @@ export type Mutation = {
   updateSiteInstruction: ProjectSiteInstruction;
   updateSubcontract: Subcontract;
   updateSubcontractBilling: SubcontractBilling;
-  updateTQ: ProjectTq;
   updateUserRole: UserRole;
   updateVOCostItem: VoCostItem;
   updateVariationOrder: VariationOrder;
@@ -2774,7 +2767,6 @@ export type Mutation = {
   uploadNCRFile: ProjectNcr;
   uploadRFIFile: ProjectRfi;
   uploadSIFile: ProjectSiteInstruction;
-  uploadTQFile: ProjectTq;
   upsertBidCostItems: Array<BidCostItem>;
   upsertCashFlowPeriod: CashFlowPeriod;
   upsertCompanyPostingAccount: CompanyPostingAccount;
@@ -3225,11 +3217,6 @@ export type MutationCloseRentalContractArgs = {
 export type MutationCloseRequisitionLineArgs = {
   lineId: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
-};
-
-
-export type MutationCloseTqArgs = {
-  id: Scalars['ID']['input'];
 };
 
 
@@ -3869,21 +3856,6 @@ export type MutationCreateSubcontractBillingArgs = {
 };
 
 
-export type MutationCreateTqArgs = {
-  description?: InputMaybe<Scalars['String']['input']>;
-  discipline?: InputMaybe<Scalars['String']['input']>;
-  documentId?: InputMaybe<Scalars['ID']['input']>;
-  documentRef?: InputMaybe<Scalars['String']['input']>;
-  documentRevision?: InputMaybe<Scalars['String']['input']>;
-  dueDate?: InputMaybe<Scalars['String']['input']>;
-  priority?: InputMaybe<Scalars['String']['input']>;
-  projectId: Scalars['ID']['input'];
-  raisedBy?: InputMaybe<Scalars['String']['input']>;
-  raisedDate?: InputMaybe<Scalars['String']['input']>;
-  subject: Scalars['String']['input'];
-};
-
-
 export type MutationCreateUserArgs = {
   input: CreateUserInput;
 };
@@ -4253,17 +4225,6 @@ export type MutationDeleteSubcontractArgs = {
 
 export type MutationDeleteSubcontractBillingArgs = {
   id: Scalars['ID']['input'];
-};
-
-
-export type MutationDeleteTqArgs = {
-  id: Scalars['ID']['input'];
-};
-
-
-export type MutationDeleteTqFileArgs = {
-  attachmentId: Scalars['ID']['input'];
-  tqId: Scalars['ID']['input'];
 };
 
 
@@ -4779,13 +4740,6 @@ export type MutationRespondToRfiArgs = {
 };
 
 
-export type MutationRespondToTqArgs = {
-  id: Scalars['ID']['input'];
-  response: Scalars['String']['input'];
-  responseBy?: InputMaybe<Scalars['String']['input']>;
-};
-
-
 export type MutationResumeProjectArgs = {
   id: Scalars['ID']['input'];
 };
@@ -4810,11 +4764,6 @@ export type MutationRevealBankDetailsArgs = {
 export type MutationReverseReceiptArgs = {
   id: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
-};
-
-
-export type MutationReviewTqArgs = {
-  id: Scalars['ID']['input'];
 };
 
 
@@ -5753,21 +5702,6 @@ export type MutationUpdateSubcontractBillingArgs = {
 };
 
 
-export type MutationUpdateTqArgs = {
-  description?: InputMaybe<Scalars['String']['input']>;
-  discipline?: InputMaybe<Scalars['String']['input']>;
-  documentId?: InputMaybe<Scalars['ID']['input']>;
-  documentRef?: InputMaybe<Scalars['String']['input']>;
-  documentRevision?: InputMaybe<Scalars['String']['input']>;
-  dueDate?: InputMaybe<Scalars['String']['input']>;
-  id: Scalars['ID']['input'];
-  priority?: InputMaybe<Scalars['String']['input']>;
-  raisedBy?: InputMaybe<Scalars['String']['input']>;
-  raisedDate?: InputMaybe<Scalars['String']['input']>;
-  subject?: InputMaybe<Scalars['String']['input']>;
-};
-
-
 export type MutationUpdateUserRoleArgs = {
   input: UpdateRoleInput;
   roleId: Scalars['ID']['input'];
@@ -5917,13 +5851,6 @@ export type MutationUploadSiFileArgs = {
   fileId: Scalars['ID']['input'];
   siId: Scalars['ID']['input'];
   title?: InputMaybe<Scalars['String']['input']>;
-};
-
-
-export type MutationUploadTqFileArgs = {
-  fileId: Scalars['ID']['input'];
-  title?: InputMaybe<Scalars['String']['input']>;
-  tqId: Scalars['ID']['input'];
 };
 
 
@@ -6842,6 +6769,10 @@ export type Project = {
   team?: Maybe<Scalars['JSON']['output']>;
   teamCount?: Maybe<Scalars['Int']['output']>;
   updatedAt?: Maybe<Scalars['String']['output']>;
+  whtAmount?: Maybe<Scalars['Float']['output']>;
+  whtApplies?: Maybe<Scalars['Boolean']['output']>;
+  whtRate?: Maybe<Scalars['Float']['output']>;
+  whtScenario?: Maybe<Scalars['String']['output']>;
 };
 
 export type ProjectActivity = {
@@ -6958,6 +6889,9 @@ export type ProjectCreateInput = {
   siteVisitTime?: InputMaybe<Scalars['String']['input']>;
   submissionDate?: InputMaybe<Scalars['String']['input']>;
   submissionTime?: InputMaybe<Scalars['String']['input']>;
+  whtApplies?: InputMaybe<Scalars['Boolean']['input']>;
+  whtRate?: InputMaybe<Scalars['Float']['input']>;
+  whtScenario?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type ProjectDailyReport = {
@@ -7404,31 +7338,6 @@ export type ProjectStage = {
   status: Scalars['String']['output'];
 };
 
-export type ProjectTq = {
-  closedAt?: Maybe<Scalars['String']['output']>;
-  createdAt: Scalars['String']['output'];
-  description?: Maybe<Scalars['String']['output']>;
-  discipline?: Maybe<Scalars['String']['output']>;
-  documentId?: Maybe<Scalars['ID']['output']>;
-  documentRef?: Maybe<Scalars['String']['output']>;
-  documentRevision?: Maybe<Scalars['String']['output']>;
-  dueDate?: Maybe<Scalars['String']['output']>;
-  files: Array<RfqPhaseFile>;
-  id: Scalars['ID']['output'];
-  isOverdue: Scalars['Boolean']['output'];
-  priority: Scalars['String']['output'];
-  projectId: Scalars['ID']['output'];
-  raisedBy?: Maybe<Scalars['String']['output']>;
-  raisedDate?: Maybe<Scalars['String']['output']>;
-  response?: Maybe<Scalars['String']['output']>;
-  responseBy?: Maybe<Scalars['String']['output']>;
-  responseDate?: Maybe<Scalars['String']['output']>;
-  status: Scalars['String']['output'];
-  subject: Scalars['String']['output'];
-  tqNumber: Scalars['String']['output'];
-  updatedAt: Scalars['String']['output'];
-};
-
 export type ProjectTeamMember = {
   employee_id: Scalars['ID']['output'];
   employee_name: Scalars['String']['output'];
@@ -7464,6 +7373,9 @@ export type ProjectUpdateInput = {
   siteVisitTime?: InputMaybe<Scalars['String']['input']>;
   submissionDate?: InputMaybe<Scalars['String']['input']>;
   submissionTime?: InputMaybe<Scalars['String']['input']>;
+  whtApplies?: InputMaybe<Scalars['Boolean']['input']>;
+  whtRate?: InputMaybe<Scalars['Float']['input']>;
+  whtScenario?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type PunchItem = {
@@ -7741,8 +7653,6 @@ export type Query = {
   projectRisks: Array<Risk>;
   projectSiteInstructions: Array<ProjectSiteInstruction>;
   projectSubcontracts: Array<Subcontract>;
-  projectTQ?: Maybe<ProjectTq>;
-  projectTQs: Array<ProjectTq>;
   projectTeamMembers: Array<ProjectTeamMember>;
   projectVariationOrder?: Maybe<VariationOrder>;
   projectVariationOrders: Array<VariationOrder>;
@@ -8640,19 +8550,6 @@ export type QueryProjectSiteInstructionsArgs = {
 
 export type QueryProjectSubcontractsArgs = {
   projectId: Scalars['ID']['input'];
-};
-
-
-export type QueryProjectTqArgs = {
-  id: Scalars['ID']['input'];
-};
-
-
-export type QueryProjectTQsArgs = {
-  discipline?: InputMaybe<Scalars['String']['input']>;
-  priority?: InputMaybe<Scalars['String']['input']>;
-  projectId: Scalars['ID']['input'];
-  status?: InputMaybe<Scalars['String']['input']>;
 };
 
 

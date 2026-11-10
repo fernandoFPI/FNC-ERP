@@ -11,6 +11,14 @@ import { useToastStore } from '../../../store/toastStore'
 import { usePermission } from '../../../hooks/usePermission'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { api } from '../../../lib/axios'
+import { formatCurrency } from '../../../lib/format'
+import {
+  DEFAULT_WHT_RATE_PERCENT,
+  estimateProjectWht,
+  whtPercentText,
+  whtRateFromPercent,
+  type ProjectWhtScenario,
+} from '../../../lib/projectWht'
 import type { CreateRfqMutation, CreateRfqMutationVariables, ProjectQuery, ProjectQueryVariables, UpdateProjectMutation, UpdateProjectMutationVariables } from '../../../graphql/generated'
 
 interface Employee {
@@ -72,7 +80,6 @@ interface FormState {
   clientName: string
   clientContact: string
   projectValue: string
-  budgetAmount: string
   currencyCode: string
   startDate: string
   endDate: string
@@ -88,6 +95,19 @@ interface FormState {
   managerId: string
 }
 
+// Withholding tax (WHT), the same three settings an invoice carries. Kept apart from FormState, whose
+// fields are all text inputs. The rate is typed as a percent and sent as a fraction.
+interface WhtState {
+  applies: boolean
+  scenario: ProjectWhtScenario
+  ratePct: string
+}
+const WHT_BLANK: WhtState = {
+  applies: false,
+  scenario: 'client_withholds',
+  ratePct: DEFAULT_WHT_RATE_PERCENT,
+}
+
 const BLANK: FormState = {
   name: '',
   contractName: '',
@@ -96,7 +116,6 @@ const BLANK: FormState = {
   clientName: '',
   clientContact: '',
   projectValue: '',
-  budgetAmount: '',
   currencyCode: 'IQD',
   startDate: '',
   endDate: '',
@@ -119,6 +138,8 @@ export default function ProjectForm() {
   const { theme } = useTheme()
   const isEdit = !!id
   const [form, setForm] = useState<FormState>(BLANK)
+  const [wht, setWht] = useState<WhtState>(WHT_BLANK)
+  const [whtRateError, setWhtRateError] = useState('')
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
 
   const addToast = useToastStore((s) => s.addToast)
@@ -184,7 +205,6 @@ export default function ProjectForm() {
       clientName: p.clientName ?? '',
       clientContact: p.clientContact ?? '',
       projectValue: p.projectValue != null ? String(p.projectValue) : '',
-      budgetAmount: p.budgetAmount != null ? String(p.budgetAmount) : '',
       currencyCode: p.budgetCurrency ?? 'IQD',
       startDate: p.plannedStartDate ?? '',
       endDate: p.plannedEndDate ?? '',
@@ -199,6 +219,15 @@ export default function ProjectForm() {
       rfqEstimatedCost: p.rfqEstimatedCost != null ? String(p.rfqEstimatedCost) : '',
       managerId: p.managerId ?? '',
     })
+    setWht({
+      applies: p.whtApplies === true,
+      scenario: p.whtScenario === 'fnc_pays' ? 'fnc_pays' : 'client_withholds',
+      ratePct:
+        p.whtApplies === true && p.whtRate != null
+          ? whtPercentText(p.whtRate)
+          : DEFAULT_WHT_RATE_PERCENT,
+    })
+    setWhtRateError('')
   }, [data])
 
   const set =
@@ -212,11 +241,13 @@ export default function ProjectForm() {
     if (!form.name.trim()) e.name = t('proj.form.required')
     if (!form.projectType) e.projectType = t('proj.form.required')
     if (form.projectValue && isNaN(Number(form.projectValue))) e.projectValue = t('proj.form.mustBeNumber')
-    if (form.budgetAmount && isNaN(Number(form.budgetAmount))) e.budgetAmount = t('proj.form.mustBeNumber')
     if (!form.receivingDate) e.receivingDate = t('proj.form.required')
     if (!form.submissionDate) e.submissionDate = t('proj.form.required')
     setErrors(e)
-    return Object.keys(e).length === 0
+    // The rate only matters while WHT applies; the server refuses anything this lets through.
+    const whtOk = !wht.applies || whtRateFromPercent(wht.ratePct) !== null
+    setWhtRateError(whtOk ? '' : t('proj.form.whtRateInvalid'))
+    return Object.keys(e).length === 0 && whtOk
   }
 
   const submit = async () => {
@@ -229,8 +260,14 @@ export default function ProjectForm() {
       clientName: form.clientName || null,
       clientContact: form.clientContact || null,
       projectValue: form.projectValue ? Number(form.projectValue) : null,
-      budgetAmount: form.budgetAmount ? Number(form.budgetAmount) : null,
+      // The one Currency selector labels the Bid Price (and so its tax) as well as the project's currency.
+      // Before, only budgetCurrency was sent and the Bid Price stayed labelled IQD whatever was picked.
       budgetCurrency: form.currencyCode,
+      projectValueCurrency: form.currencyCode,
+      // Withholding tax. Sent whole every time: switched off, the server clears the scenario and rate.
+      whtApplies: wht.applies,
+      whtScenario: wht.applies ? wht.scenario : null,
+      whtRate: wht.applies ? (whtRateFromPercent(wht.ratePct) ?? 0) : 0,
       plannedStartDate: form.startDate || null,
       plannedEndDate: form.endDate || null,
       description: form.description || null,
@@ -605,10 +642,126 @@ export default function ProjectForm() {
         {/* ── Financials ────────────────────────────────────── */}
         <div style={card}>
           <div style={cardTitle}>{t('proj.form.financials')}</div>
-          <div style={grid3}>
+          <div style={grid2}>
             {field('projectValue', t('proj.form.bidPriceProjectValue'), 'number', '0.00')}
             {field('rfqEstimatedCost', t('proj.form.internalCostEstimate'), 'number', '0.00')}
-            {field('budgetAmount', t('proj.form.budgetAmount'), 'number', '0.00')}
+          </div>
+
+          {/* Withholding tax: the same three settings an invoice carries. The amount is worked out from the
+              Bid Price above, so it is shown, never typed. */}
+          <div
+            style={{
+              marginTop: '18px',
+              paddingTop: '16px',
+              borderTop: `1px solid ${theme.border}`,
+            }}
+          >
+            <div style={{ ...cardTitle, marginBottom: '10px' }}>
+              {t('proj.form.withholdingTax')}
+            </div>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '13px',
+                color: theme.textPrimary,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={wht.applies}
+                onChange={(e) => {
+                  setWht((w) => ({ ...w, applies: e.target.checked }))
+                  setWhtRateError('')
+                }}
+                style={{ width: '15px', height: '15px' }}
+              />
+              {t('proj.form.applyWhtToThisProject')}
+            </label>
+            {wht.applies ? (
+              <div style={{ ...grid3, marginTop: '12px', alignItems: 'start' }}>
+                <SearchableSelect
+                  label={t('proj.form.whtScenario')}
+                  value={wht.scenario}
+                  onChange={(v) => {
+                    setWht((w) => ({
+                      ...w,
+                      scenario: v === 'fnc_pays' ? 'fnc_pays' : 'client_withholds',
+                    }))
+                  }}
+                  options={[
+                    {
+                      value: 'client_withholds',
+                      label: t('proj.form.clientWithholdsPaysTaxAuthority'),
+                    },
+                    { value: 'fnc_pays', label: t('proj.form.clientPaysFullFncRemitsAnnually') },
+                  ]}
+                />
+                <div>
+                  <label style={labelStyle}>
+                    {t('proj.form.whtRate')}
+                    {whtRateError && (
+                      <span
+                        style={{
+                          color: '#ef4444',
+                          fontWeight: 400,
+                          marginInlineStart: '6px',
+                          textTransform: 'none',
+                        }}
+                      >
+                        {whtRateError}
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    style={inputStyle(!!whtRateError)}
+                    value={wht.ratePct}
+                    onChange={(e) => {
+                      setWht((w) => ({ ...w, ratePct: e.target.value }))
+                      setWhtRateError('')
+                    }}
+                  />
+                </div>
+                {(() => {
+                  const amount = estimateProjectWht(
+                    form.projectValue,
+                    whtRateFromPercent(wht.ratePct),
+                  )
+                  return (
+                    <div>
+                      <label style={labelStyle}>{t('proj.form.estimatedWht')}</label>
+                      <div
+                        data-testid="estimated-wht"
+                        style={{
+                          ...inputStyle(),
+                          background: theme.bgSurface,
+                          fontWeight: amount === null ? 400 : 700,
+                          color: amount === null ? theme.textMuted : theme.textPrimary,
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {amount === null ? '—' : formatCurrency(amount, form.currencyCode)}
+                      </div>
+                      <div style={{ marginTop: '4px', fontSize: '11px', color: theme.textMuted }}>
+                        {amount === null
+                          ? t('proj.form.enterBidPriceToSeeWht')
+                          : t('proj.form.bidPriceTimesRate')}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            ) : (
+              <p style={{ margin: '8px 0 0', fontSize: '12px', color: theme.textMuted }}>
+                {t('proj.form.whtOffHint')}
+              </p>
+            )}
           </div>
         </div>
 

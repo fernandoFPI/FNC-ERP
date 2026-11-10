@@ -27,15 +27,6 @@ import {
   ADD_DOC_COMMENT,
   RESPOND_TO_COMMENT,
   DELETE_DOC_COMMENT,
-  PROJECT_TQS_QUERY,
-  CREATE_TQ,
-  UPDATE_TQ,
-  REVIEW_TQ,
-  RESPOND_TO_TQ,
-  CLOSE_TQ,
-  DELETE_TQ,
-  UPLOAD_TQ_FILE,
-  DELETE_TQ_FILE,
   PROJECT_PUNCH_ITEMS_QUERY,
   CREATE_PUNCH_ITEM,
   UPDATE_PUNCH_ITEM,
@@ -258,6 +249,8 @@ import {
 } from '../../../lib/contractBilling'
 import { CONTRACT_STATUSES } from '../../../lib/contractStatus'
 import { projectCloseoutGate } from '../../../lib/projectFinancing'
+import { whtPercentText } from '../../../lib/projectWht'
+import { visibleBidPackageKinds, type BidPackageKind } from '../../../lib/bidPackageTabs'
 import { uploadMimeType, uploadFailureMessage } from '../../../lib/uploadMimeType'
 import { projectFileTabs, visibleProjectFiles, countByTab } from '../../../lib/projectFiles'
 import type { ProjectFilesQuery, ProjectFilesQueryVariables } from '../../../graphql/generated'
@@ -267,7 +260,7 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Modal } from '../../../components/ui/Modal'
 import { Table, type Column } from '../../../components/ui/Table'
 import JSZip from 'jszip'
-import type { AcceptHandoverCertificateMutation, AcceptHandoverCertificateMutationVariables, AddDailyReportMachineryMutation, AddDailyReportMachineryMutationVariables, AddDocCommentMutation, AddDocCommentMutationVariables, AddEngClientCommentMutation, AddEngClientCommentMutationVariables, AddProjectBudgetMutation, AddProjectBudgetMutationVariables, AddPunchPhotoMutation, AddPunchPhotoMutationVariables, AddRiskReviewMutation, AddRiskReviewMutationVariables, AddVoDrawingMutation, AddVoDrawingMutationVariables, AdminSetPhaseMutation, AdminSetPhaseMutationVariables, AdminSetProjectStatusMutation, AdminSetProjectStatusMutationVariables, ApplyBaselineMutation, ApplyBaselineMutationVariables, ApproveBidMutation, ApproveBidMutationVariables, ApproveVariationOrderMutation, ApproveVariationOrderMutationVariables, AssignResourceMutation, AssignResourceMutationVariables, AttachDailyReportMachineryPhotoMutation, AttachDailyReportMachineryPhotoMutationVariables, BidCommercialSummaryQuery, BidCommercialSummaryQueryVariables, BidCostItemsQuery, BidCostItemsQueryVariables, BidDeliverablesQuery, BidDeliverablesQueryVariables, BidPackageFilesQuery, BidPackageFilesQueryVariables, BidSupplierQuotationsQuery, BidSupplierQuotationsQueryVariables, BulkImportActivitiesMutation, BulkImportActivitiesMutationVariables, ClientDocumentsQuery, ClientDocumentsQueryVariables, CloseEngClientCommentMutation, CloseEngClientCommentMutationVariables, CloseMeetingMutation, CloseMeetingMutationVariables, CloseTqMutation, CloseTqMutationVariables, CreateActivityMutation, CreateActivityMutationVariables, CreateBaselineMutation, CreateBaselineMutationVariables, CreateBidDeliverableMutation, CreateBidDeliverableMutationVariables, CreateBidSupplierQuotationMutation, CreateBidSupplierQuotationMutationVariables, CreateClientBillingMutation, CreateClientBillingMutationVariables, CreateCommittedCostMutation, CreateCommittedCostMutationVariables, CreateContractMilestoneMutation, CreateContractMilestoneMutationVariables, CreateCostCodeMutation, CreateCostCodeMutationVariables, CreateDailyReportMutation, CreateDailyReportMutationVariables, CreateDependencyMutation, CreateDependencyMutationVariables, CreateEngineeringDocMutation, CreateEngineeringDocMutationVariables, CreateEquipmentLogMutation, CreateEquipmentLogMutationVariables, CreateHandoverCertificateMutation, CreateHandoverCertificateMutationVariables, CreateHandoverItemMutation, CreateHandoverItemMutationVariables, CreateHseRecordMutation, CreateHseRecordMutationVariables, CreateInspectionRequestMutation, CreateInspectionRequestMutationVariables, CreateLaborEntryMutation, CreateLaborEntryMutationVariables, CreateMeetingActionMutation, CreateMeetingActionMutationVariables, CreateMeetingMutation, CreateMeetingMutationVariables, CreateProjectContractMutation, CreateProjectContractMutationVariables, CreateProjectItpMutation, CreateProjectItpMutationVariables, CreateProjectNcrMutation, CreateProjectNcrMutationVariables, CreateProjectRfiMutation, CreateProjectRfiMutationVariables, CreatePunchItemMutation, CreatePunchItemMutationVariables, CreateResourceMutation, CreateResourceMutationVariables, CreateRiskMutation, CreateRiskMutationVariables, CreateSiteInstructionMutation, CreateSiteInstructionMutationVariables, CreateSubcontractMutation, CreateSubcontractMutationVariables, CreateTqMutation, CreateTqMutationVariables, CreateVariationOrderMutation, CreateVariationOrderMutationVariables, CreateVoCorrespondenceMutation, CreateVoCorrespondenceMutationVariables, CreateVoCostItemMutation, CreateVoCostItemMutationVariables, CreateWbsNodeMutation, CreateWbsNodeMutationVariables, DeleteActivityMutation, DeleteActivityMutationVariables, DeleteBaselineMutation, DeleteBaselineMutationVariables, DeleteBidDeliverableFileMutation, DeleteBidDeliverableFileMutationVariables, DeleteBidDeliverableMutation, DeleteBidDeliverableMutationVariables, DeleteBidPackageFileMutation, DeleteBidPackageFileMutationVariables, DeleteBidSupplierQuotationMutation, DeleteBidSupplierQuotationMutationVariables, DeleteCalendarDayMutation, DeleteCalendarDayMutationVariables, DeleteClientBillingMutation, DeleteClientBillingMutationVariables, DeleteClientDocumentMutation, DeleteClientDocumentMutationVariables, DeleteCommittedCostMutation, DeleteCommittedCostMutationVariables, DeleteContractMilestoneMutation, DeleteContractMilestoneMutationVariables, DeleteCostCodeMutation, DeleteCostCodeMutationVariables, DeleteDailyReportFileMutation, DeleteDailyReportFileMutationVariables, DeleteDailyReportMachineryMutation, DeleteDailyReportMachineryMutationVariables, DeleteDailyReportMutation, DeleteDailyReportMutationVariables, DeleteDependencyMutation, DeleteDependencyMutationVariables, DeleteDocCommentMutation, DeleteDocCommentMutationVariables, DeleteEngineeringDocMutation, DeleteEngineeringDocMutationVariables, DeleteEquipmentLogMutation, DeleteEquipmentLogMutationVariables, DeleteHandoverCertFileMutation, DeleteHandoverCertFileMutationVariables, DeleteHandoverCertificateMutation, DeleteHandoverCertificateMutationVariables, DeleteHandoverItemMutation, DeleteHandoverItemMutationVariables, DeleteHseFileMutation, DeleteHseFileMutationVariables, DeleteHseRecordMutation, DeleteHseRecordMutationVariables, DeleteInspectionRequestMutation, DeleteInspectionRequestMutationVariables, DeleteIrFileMutation, DeleteIrFileMutationVariables, DeleteLaborEntryMutation, DeleteLaborEntryMutationVariables, DeleteMeetingActionMutation, DeleteMeetingActionMutationVariables, DeleteMeetingMutation, DeleteMeetingMutationVariables, DeleteNcrFileMutation, DeleteNcrFileMutationVariables, DeleteProjectItpMutation, DeleteProjectItpMutationVariables, DeleteProjectNcrMutation, DeleteProjectNcrMutationVariables, DeleteProjectRfiMutation, DeleteProjectRfiMutationVariables, DeletePunchItemMutation, DeletePunchItemMutationVariables, DeletePunchPhotoMutation, DeletePunchPhotoMutationVariables, DeleteResourceMutation, DeleteResourceMutationVariables, DeleteRfiFileMutation, DeleteRfiFileMutationVariables, DeleteRiskMutation, DeleteRiskMutationVariables, DeleteSiFileMutation, DeleteSiFileMutationVariables, DeleteSiteInstructionMutation, DeleteSiteInstructionMutationVariables, DeleteSubcontractMutation, DeleteSubcontractMutationVariables, DeleteTqFileMutation, DeleteTqFileMutationVariables, DeleteTqMutation, DeleteTqMutationVariables, DeleteVariationOrderMutation, DeleteVariationOrderMutationVariables, DeleteVoCorrespondenceMutation, DeleteVoCorrespondenceMutationVariables, DeleteVoCostItemMutation, DeleteVoCostItemMutationVariables, DeleteWbsNodeMutation, DeleteWbsNodeMutationVariables, DocCommentsQuery, DocCommentsQueryVariables, EngClientCommentsQuery, EngClientCommentsQueryVariables, EngineeringDocumentsQuery, EngineeringDocumentsQueryVariables, IfcDocumentsQuery, IfcDocumentsQueryVariables, IssueHandoverCertificateMutation, IssueHandoverCertificateMutationVariables, IssueMeetingMutation, IssueMeetingMutationVariables, LevelResourcesMutation, LevelResourcesMutationVariables, LifecycleConfigQuery, LifecycleConfigQueryVariables, ManufacturingRequestsQuery, ManufacturingRequestsQueryVariables, MaterialIssuesQuery, MaterialIssuesQueryVariables, PerformDocWorkflowActionMutation, PerformDocWorkflowActionMutationVariables, PmSignPunchMutation, PmSignPunchMutationVariables, ProjectActivitiesQuery, ProjectActivitiesQueryVariables, ProjectBaselinesQuery, ProjectBaselinesQueryVariables, ProjectCashFlowQuery, ProjectCashFlowQueryVariables, ProjectClientBillingsQuery, ProjectClientBillingsQueryVariables, ProjectCommittedCostsQuery, ProjectCommittedCostsQueryVariables, ProjectContractsQuery, ProjectContractsQueryVariables, ProjectCostCodesQuery, ProjectCostCodesQueryVariables, ProjectCostForecastQuery, ProjectCostForecastQueryVariables, ProjectCostSummaryQuery, ProjectCostSummaryQueryVariables, ProjectDailyReportsQuery, ProjectDailyReportsQueryVariables, ProjectDrawingsQuery, ProjectDrawingsQueryVariables, ProjectEquipmentLogQuery, ProjectEquipmentLogQueryVariables, ProjectEvmQuery, ProjectEvmQueryVariables, ProjectHandoverQuery, ProjectHandoverQueryVariables, ProjectHseRecordsQuery, ProjectHseRecordsQueryVariables, ProjectInspectionRequestsQuery, ProjectInspectionRequestsQueryVariables, ProjectInvoicesQuery, ProjectInvoicesQueryVariables, ProjectItPsQuery, ProjectItPsQueryVariables, ProjectLaborEntriesQuery, ProjectLaborEntriesQueryVariables, ProjectMeetingsQuery, ProjectMeetingsQueryVariables, ProjectNcRsQuery, ProjectNcRsQueryVariables, ProjectPunchItemsQuery, ProjectPunchItemsQueryVariables, ProjectQuery, ProjectQueryVariables, ProjectResourcesQuery, ProjectResourcesQueryVariables, ProjectRfIsQuery, ProjectRfIsQueryVariables, ProjectRisksQuery, ProjectRisksQueryVariables, ProjectSiteInstructionsQuery, ProjectSiteInstructionsQueryVariables, ProjectSubcontractsQuery, ProjectSubcontractsQueryVariables, ProjectTQsQuery, ProjectTQsQueryVariables, ProjectVariationOrdersQuery, ProjectVariationOrdersQueryVariables, ProjectWbsQuery, ProjectWbsQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, ReachMilestoneMutation, ReachMilestoneMutationVariables, RecalculateCpmMutation, RecalculateCpmMutationVariables, RecordItpItemResultMutation, RecordItpItemResultMutationVariables, RejectBidMutation, RejectBidMutationVariables, RejectHandoverCertificateMutation, RejectHandoverCertificateMutationVariables, RejectVariationOrderMutation, RejectVariationOrderMutationVariables, RemoveProjectBudgetMutation, RemoveProjectBudgetMutationVariables, RemoveResourceAssignmentMutation, RemoveResourceAssignmentMutationVariables, RemoveVoDrawingMutation, RemoveVoDrawingMutationVariables, ReopenEngClientCommentMutation, ReopenEngClientCommentMutationVariables, ReopenPunchMutation, ReopenPunchMutationVariables, RespondToCommentMutation, RespondToCommentMutationVariables, RespondToRfiMutation, RespondToRfiMutationVariables, RespondToTqMutation, RespondToTqMutationVariables, ReviewTqMutation, ReviewTqMutationVariables, ReviseBidMutation, ReviseBidMutationVariables, ReviseContractMutation, ReviseContractMutationVariables, ReviseEngineeringDocMutation, ReviseEngineeringDocMutationVariables, RfqLinesQuery, RfqLinesQueryVariables, SetActiveBaselineMutation, SetActiveBaselineMutationVariables, SetCalendarDayMutation, SetCalendarDayMutationVariables, SetVoStatusMutation, SetVoStatusMutationVariables, SubmitBidForApprovalMutation, SubmitBidForApprovalMutationVariables, SubmitVariationOrderMutation, SubmitVariationOrderMutationVariables, SupervisorSignPunchMutation, SupervisorSignPunchMutationVariables, SyncPoCommitmentsMutation, SyncPoCommitmentsMutationVariables, UpdateActivityMutation, UpdateActivityMutationVariables, UpdateActivityProgressMutation, UpdateActivityProgressMutationVariables, UpdateBidCommercialSummaryMutation, UpdateBidCommercialSummaryMutationVariables, UpdateBidDeliverableMutation, UpdateBidDeliverableMutationVariables, UpdateBidSupplierQuotationMutation, UpdateBidSupplierQuotationMutationVariables, UpdateClientBillingMutation, UpdateClientBillingMutationVariables, UpdateClientDocumentMutation, UpdateClientDocumentMutationVariables, UpdateClientDocumentStatusMutation, UpdateClientDocumentStatusMutationVariables, UpdateCommittedCostMutation, UpdateCommittedCostMutationVariables, UpdateContractMilestoneMutation, UpdateContractMilestoneMutationVariables, UpdateCostCodeMutation, UpdateCostCodeMutationVariables, UpdateDailyReportMutation, UpdateDailyReportMutationVariables, UpdateEngineeringDocStatusMutation, UpdateEngineeringDocStatusMutationVariables, UpdateEquipmentLogMutation, UpdateEquipmentLogMutationVariables, UpdateHandoverCertificateMutation, UpdateHandoverCertificateMutationVariables, UpdateHandoverItemMutation, UpdateHandoverItemMutationVariables, UpdateHseRecordMutation, UpdateHseRecordMutationVariables, UpdateInspectionRequestMutation, UpdateInspectionRequestMutationVariables, UpdateLaborEntryMutation, UpdateLaborEntryMutationVariables, UpdateMeetingActionMutation, UpdateMeetingActionMutationVariables, UpdateMeetingMutation, UpdateMeetingMutationVariables, UpdateProjectContractMutation, UpdateProjectContractMutationVariables, UpdateProjectItpMutation, UpdateProjectItpMutationVariables, UpdateProjectNcrMutation, UpdateProjectNcrMutationVariables, UpdateProjectRfiMutation, UpdateProjectRfiMutationVariables, UpdateProjectStageMutation, UpdateProjectStageMutationVariables, UpdatePunchItemMutation, UpdatePunchItemMutationVariables, UpdatePunchStatusMutation, UpdatePunchStatusMutationVariables, UpdateResourceAssignmentMutation, UpdateResourceAssignmentMutationVariables, UpdateResourceMutation, UpdateResourceMutationVariables, UpdateRiskMutation, UpdateRiskMutationVariables, UpdateRiskStatusMutation, UpdateRiskStatusMutationVariables, UpdateSiteInstructionMutation, UpdateSiteInstructionMutationVariables, UpdateSubcontractMutation, UpdateSubcontractMutationVariables, UpdateTqMutation, UpdateTqMutationVariables, UpdateVariationOrderMutation, UpdateVariationOrderMutationVariables, UpdateVoCostItemMutation, UpdateVoCostItemMutationVariables, UpdateWbsNodeMutation, UpdateWbsNodeMutationVariables, UploadBidDeliverableFileMutation, UploadBidDeliverableFileMutationVariables, UploadBidPackageFileMutation, UploadBidPackageFileMutationVariables, UploadClientDocumentMutation, UploadClientDocumentMutationVariables, UploadClientDocumentRevisionMutation, UploadClientDocumentRevisionMutationVariables, UploadDailyReportFileMutation, UploadDailyReportFileMutationVariables, UploadHandoverCertFileMutation, UploadHandoverCertFileMutationVariables, UploadHseFileMutation, UploadHseFileMutationVariables, UploadIrFileMutation, UploadIrFileMutationVariables, UploadNcrFileMutation, UploadNcrFileMutationVariables, UploadRfiFileMutation, UploadRfiFileMutationVariables, UploadSiFileMutation, UploadSiFileMutationVariables, UploadTqFileMutation, UploadTqFileMutationVariables, UpsertBidCostItemsMutation, UpsertBidCostItemsMutationVariables, UpsertCashFlowPeriodMutation, UpsertCashFlowPeriodMutationVariables, UpsertCostForecastMutation, UpsertCostForecastMutationVariables, UpsertItpItemsMutation, UpsertItpItemsMutationVariables, VerifyHandoverItemMutation, VerifyHandoverItemMutationVariables } from '../../../graphql/generated'
+import type { AcceptHandoverCertificateMutation, AcceptHandoverCertificateMutationVariables, AddDailyReportMachineryMutation, AddDailyReportMachineryMutationVariables, AddDocCommentMutation, AddDocCommentMutationVariables, AddEngClientCommentMutation, AddEngClientCommentMutationVariables, AddProjectBudgetMutation, AddProjectBudgetMutationVariables, AddPunchPhotoMutation, AddPunchPhotoMutationVariables, AddRiskReviewMutation, AddRiskReviewMutationVariables, AddVoDrawingMutation, AddVoDrawingMutationVariables, AdminSetPhaseMutation, AdminSetPhaseMutationVariables, AdminSetProjectStatusMutation, AdminSetProjectStatusMutationVariables, ApplyBaselineMutation, ApplyBaselineMutationVariables, ApproveBidMutation, ApproveBidMutationVariables, ApproveVariationOrderMutation, ApproveVariationOrderMutationVariables, AssignResourceMutation, AssignResourceMutationVariables, AttachDailyReportMachineryPhotoMutation, AttachDailyReportMachineryPhotoMutationVariables, BidCommercialSummaryQuery, BidCommercialSummaryQueryVariables, BidCostItemsQuery, BidCostItemsQueryVariables, BidDeliverablesQuery, BidDeliverablesQueryVariables, BidPackageFilesQuery, BidPackageFilesQueryVariables, BidSupplierQuotationsQuery, BidSupplierQuotationsQueryVariables, BulkImportActivitiesMutation, BulkImportActivitiesMutationVariables, ClientDocumentsQuery, ClientDocumentsQueryVariables, CloseEngClientCommentMutation, CloseEngClientCommentMutationVariables, CloseMeetingMutation, CloseMeetingMutationVariables, CreateActivityMutation, CreateActivityMutationVariables, CreateBaselineMutation, CreateBaselineMutationVariables, CreateBidDeliverableMutation, CreateBidDeliverableMutationVariables, CreateBidSupplierQuotationMutation, CreateBidSupplierQuotationMutationVariables, CreateClientBillingMutation, CreateClientBillingMutationVariables, CreateCommittedCostMutation, CreateCommittedCostMutationVariables, CreateContractMilestoneMutation, CreateContractMilestoneMutationVariables, CreateCostCodeMutation, CreateCostCodeMutationVariables, CreateDailyReportMutation, CreateDailyReportMutationVariables, CreateDependencyMutation, CreateDependencyMutationVariables, CreateEngineeringDocMutation, CreateEngineeringDocMutationVariables, CreateEquipmentLogMutation, CreateEquipmentLogMutationVariables, CreateHandoverCertificateMutation, CreateHandoverCertificateMutationVariables, CreateHandoverItemMutation, CreateHandoverItemMutationVariables, CreateHseRecordMutation, CreateHseRecordMutationVariables, CreateInspectionRequestMutation, CreateInspectionRequestMutationVariables, CreateLaborEntryMutation, CreateLaborEntryMutationVariables, CreateMeetingActionMutation, CreateMeetingActionMutationVariables, CreateMeetingMutation, CreateMeetingMutationVariables, CreateProjectContractMutation, CreateProjectContractMutationVariables, CreateProjectItpMutation, CreateProjectItpMutationVariables, CreateProjectNcrMutation, CreateProjectNcrMutationVariables, CreateProjectRfiMutation, CreateProjectRfiMutationVariables, CreatePunchItemMutation, CreatePunchItemMutationVariables, CreateResourceMutation, CreateResourceMutationVariables, CreateRiskMutation, CreateRiskMutationVariables, CreateSiteInstructionMutation, CreateSiteInstructionMutationVariables, CreateSubcontractMutation, CreateSubcontractMutationVariables, CreateVariationOrderMutation, CreateVariationOrderMutationVariables, CreateVoCorrespondenceMutation, CreateVoCorrespondenceMutationVariables, CreateVoCostItemMutation, CreateVoCostItemMutationVariables, CreateWbsNodeMutation, CreateWbsNodeMutationVariables, DeleteActivityMutation, DeleteActivityMutationVariables, DeleteBaselineMutation, DeleteBaselineMutationVariables, DeleteBidDeliverableFileMutation, DeleteBidDeliverableFileMutationVariables, DeleteBidDeliverableMutation, DeleteBidDeliverableMutationVariables, DeleteBidPackageFileMutation, DeleteBidPackageFileMutationVariables, DeleteBidSupplierQuotationMutation, DeleteBidSupplierQuotationMutationVariables, DeleteCalendarDayMutation, DeleteCalendarDayMutationVariables, DeleteClientBillingMutation, DeleteClientBillingMutationVariables, DeleteClientDocumentMutation, DeleteClientDocumentMutationVariables, DeleteCommittedCostMutation, DeleteCommittedCostMutationVariables, DeleteContractMilestoneMutation, DeleteContractMilestoneMutationVariables, DeleteCostCodeMutation, DeleteCostCodeMutationVariables, DeleteDailyReportFileMutation, DeleteDailyReportFileMutationVariables, DeleteDailyReportMachineryMutation, DeleteDailyReportMachineryMutationVariables, DeleteDailyReportMutation, DeleteDailyReportMutationVariables, DeleteDependencyMutation, DeleteDependencyMutationVariables, DeleteDocCommentMutation, DeleteDocCommentMutationVariables, DeleteEngineeringDocMutation, DeleteEngineeringDocMutationVariables, DeleteEquipmentLogMutation, DeleteEquipmentLogMutationVariables, DeleteHandoverCertFileMutation, DeleteHandoverCertFileMutationVariables, DeleteHandoverCertificateMutation, DeleteHandoverCertificateMutationVariables, DeleteHandoverItemMutation, DeleteHandoverItemMutationVariables, DeleteHseFileMutation, DeleteHseFileMutationVariables, DeleteHseRecordMutation, DeleteHseRecordMutationVariables, DeleteInspectionRequestMutation, DeleteInspectionRequestMutationVariables, DeleteIrFileMutation, DeleteIrFileMutationVariables, DeleteLaborEntryMutation, DeleteLaborEntryMutationVariables, DeleteMeetingActionMutation, DeleteMeetingActionMutationVariables, DeleteMeetingMutation, DeleteMeetingMutationVariables, DeleteNcrFileMutation, DeleteNcrFileMutationVariables, DeleteProjectItpMutation, DeleteProjectItpMutationVariables, DeleteProjectNcrMutation, DeleteProjectNcrMutationVariables, DeleteProjectRfiMutation, DeleteProjectRfiMutationVariables, DeletePunchItemMutation, DeletePunchItemMutationVariables, DeletePunchPhotoMutation, DeletePunchPhotoMutationVariables, DeleteResourceMutation, DeleteResourceMutationVariables, DeleteRfiFileMutation, DeleteRfiFileMutationVariables, DeleteRiskMutation, DeleteRiskMutationVariables, DeleteSiFileMutation, DeleteSiFileMutationVariables, DeleteSiteInstructionMutation, DeleteSiteInstructionMutationVariables, DeleteSubcontractMutation, DeleteSubcontractMutationVariables, DeleteVariationOrderMutation, DeleteVariationOrderMutationVariables, DeleteVoCorrespondenceMutation, DeleteVoCorrespondenceMutationVariables, DeleteVoCostItemMutation, DeleteVoCostItemMutationVariables, DeleteWbsNodeMutation, DeleteWbsNodeMutationVariables, DocCommentsQuery, DocCommentsQueryVariables, EngClientCommentsQuery, EngClientCommentsQueryVariables, EngineeringDocumentsQuery, EngineeringDocumentsQueryVariables, IfcDocumentsQuery, IfcDocumentsQueryVariables, IssueHandoverCertificateMutation, IssueHandoverCertificateMutationVariables, IssueMeetingMutation, IssueMeetingMutationVariables, LevelResourcesMutation, LevelResourcesMutationVariables, LifecycleConfigQuery, LifecycleConfigQueryVariables, ManufacturingRequestsQuery, ManufacturingRequestsQueryVariables, MaterialIssuesQuery, MaterialIssuesQueryVariables, PerformDocWorkflowActionMutation, PerformDocWorkflowActionMutationVariables, PmSignPunchMutation, PmSignPunchMutationVariables, ProjectActivitiesQuery, ProjectActivitiesQueryVariables, ProjectBaselinesQuery, ProjectBaselinesQueryVariables, ProjectCashFlowQuery, ProjectCashFlowQueryVariables, ProjectClientBillingsQuery, ProjectClientBillingsQueryVariables, ProjectCommittedCostsQuery, ProjectCommittedCostsQueryVariables, ProjectContractsQuery, ProjectContractsQueryVariables, ProjectCostCodesQuery, ProjectCostCodesQueryVariables, ProjectCostForecastQuery, ProjectCostForecastQueryVariables, ProjectCostSummaryQuery, ProjectCostSummaryQueryVariables, ProjectDailyReportsQuery, ProjectDailyReportsQueryVariables, ProjectDrawingsQuery, ProjectDrawingsQueryVariables, ProjectEquipmentLogQuery, ProjectEquipmentLogQueryVariables, ProjectEvmQuery, ProjectEvmQueryVariables, ProjectHandoverQuery, ProjectHandoverQueryVariables, ProjectHseRecordsQuery, ProjectHseRecordsQueryVariables, ProjectInspectionRequestsQuery, ProjectInspectionRequestsQueryVariables, ProjectInvoicesQuery, ProjectInvoicesQueryVariables, ProjectItPsQuery, ProjectItPsQueryVariables, ProjectLaborEntriesQuery, ProjectLaborEntriesQueryVariables, ProjectMeetingsQuery, ProjectMeetingsQueryVariables, ProjectNcRsQuery, ProjectNcRsQueryVariables, ProjectPunchItemsQuery, ProjectPunchItemsQueryVariables, ProjectQuery, ProjectQueryVariables, ProjectResourcesQuery, ProjectResourcesQueryVariables, ProjectRfIsQuery, ProjectRfIsQueryVariables, ProjectRisksQuery, ProjectRisksQueryVariables, ProjectSiteInstructionsQuery, ProjectSiteInstructionsQueryVariables, ProjectSubcontractsQuery, ProjectSubcontractsQueryVariables, ProjectVariationOrdersQuery, ProjectVariationOrdersQueryVariables, ProjectWbsQuery, ProjectWbsQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, ReachMilestoneMutation, ReachMilestoneMutationVariables, RecalculateCpmMutation, RecalculateCpmMutationVariables, RecordItpItemResultMutation, RecordItpItemResultMutationVariables, RejectBidMutation, RejectBidMutationVariables, RejectHandoverCertificateMutation, RejectHandoverCertificateMutationVariables, RejectVariationOrderMutation, RejectVariationOrderMutationVariables, RemoveProjectBudgetMutation, RemoveProjectBudgetMutationVariables, RemoveResourceAssignmentMutation, RemoveResourceAssignmentMutationVariables, RemoveVoDrawingMutation, RemoveVoDrawingMutationVariables, ReopenEngClientCommentMutation, ReopenEngClientCommentMutationVariables, ReopenPunchMutation, ReopenPunchMutationVariables, RespondToCommentMutation, RespondToCommentMutationVariables, RespondToRfiMutation, RespondToRfiMutationVariables, ReviseBidMutation, ReviseBidMutationVariables, ReviseContractMutation, ReviseContractMutationVariables, ReviseEngineeringDocMutation, ReviseEngineeringDocMutationVariables, RfqLinesQuery, RfqLinesQueryVariables, SetActiveBaselineMutation, SetActiveBaselineMutationVariables, SetCalendarDayMutation, SetCalendarDayMutationVariables, SetVoStatusMutation, SetVoStatusMutationVariables, SubmitBidForApprovalMutation, SubmitBidForApprovalMutationVariables, SubmitVariationOrderMutation, SubmitVariationOrderMutationVariables, SupervisorSignPunchMutation, SupervisorSignPunchMutationVariables, SyncPoCommitmentsMutation, SyncPoCommitmentsMutationVariables, UpdateActivityMutation, UpdateActivityMutationVariables, UpdateActivityProgressMutation, UpdateActivityProgressMutationVariables, UpdateBidCommercialSummaryMutation, UpdateBidCommercialSummaryMutationVariables, UpdateBidDeliverableMutation, UpdateBidDeliverableMutationVariables, UpdateBidSupplierQuotationMutation, UpdateBidSupplierQuotationMutationVariables, UpdateClientBillingMutation, UpdateClientBillingMutationVariables, UpdateClientDocumentMutation, UpdateClientDocumentMutationVariables, UpdateClientDocumentStatusMutation, UpdateClientDocumentStatusMutationVariables, UpdateCommittedCostMutation, UpdateCommittedCostMutationVariables, UpdateContractMilestoneMutation, UpdateContractMilestoneMutationVariables, UpdateCostCodeMutation, UpdateCostCodeMutationVariables, UpdateDailyReportMutation, UpdateDailyReportMutationVariables, UpdateEngineeringDocStatusMutation, UpdateEngineeringDocStatusMutationVariables, UpdateEquipmentLogMutation, UpdateEquipmentLogMutationVariables, UpdateHandoverCertificateMutation, UpdateHandoverCertificateMutationVariables, UpdateHandoverItemMutation, UpdateHandoverItemMutationVariables, UpdateHseRecordMutation, UpdateHseRecordMutationVariables, UpdateInspectionRequestMutation, UpdateInspectionRequestMutationVariables, UpdateLaborEntryMutation, UpdateLaborEntryMutationVariables, UpdateMeetingActionMutation, UpdateMeetingActionMutationVariables, UpdateMeetingMutation, UpdateMeetingMutationVariables, UpdateProjectContractMutation, UpdateProjectContractMutationVariables, UpdateProjectItpMutation, UpdateProjectItpMutationVariables, UpdateProjectNcrMutation, UpdateProjectNcrMutationVariables, UpdateProjectRfiMutation, UpdateProjectRfiMutationVariables, UpdateProjectStageMutation, UpdateProjectStageMutationVariables, UpdatePunchItemMutation, UpdatePunchItemMutationVariables, UpdatePunchStatusMutation, UpdatePunchStatusMutationVariables, UpdateResourceAssignmentMutation, UpdateResourceAssignmentMutationVariables, UpdateResourceMutation, UpdateResourceMutationVariables, UpdateRiskMutation, UpdateRiskMutationVariables, UpdateRiskStatusMutation, UpdateRiskStatusMutationVariables, UpdateSiteInstructionMutation, UpdateSiteInstructionMutationVariables, UpdateSubcontractMutation, UpdateSubcontractMutationVariables, UpdateVariationOrderMutation, UpdateVariationOrderMutationVariables, UpdateVoCostItemMutation, UpdateVoCostItemMutationVariables, UpdateWbsNodeMutation, UpdateWbsNodeMutationVariables, UploadBidDeliverableFileMutation, UploadBidDeliverableFileMutationVariables, UploadBidPackageFileMutation, UploadBidPackageFileMutationVariables, UploadClientDocumentMutation, UploadClientDocumentMutationVariables, UploadClientDocumentRevisionMutation, UploadClientDocumentRevisionMutationVariables, UploadDailyReportFileMutation, UploadDailyReportFileMutationVariables, UploadHandoverCertFileMutation, UploadHandoverCertFileMutationVariables, UploadHseFileMutation, UploadHseFileMutationVariables, UploadIrFileMutation, UploadIrFileMutationVariables, UploadNcrFileMutation, UploadNcrFileMutationVariables, UploadRfiFileMutation, UploadRfiFileMutationVariables, UploadSiFileMutation, UploadSiFileMutationVariables, UpsertBidCostItemsMutation, UpsertBidCostItemsMutationVariables, UpsertCashFlowPeriodMutation, UpsertCashFlowPeriodMutationVariables, UpsertCostForecastMutation, UpsertCostForecastMutationVariables, UpsertItpItemsMutation, UpsertItpItemsMutationVariables, VerifyHandoverItemMutation, VerifyHandoverItemMutationVariables } from '../../../graphql/generated'
 import type { MilestoneInput, ProjectContractInput } from '../../../graphql/schema-types'
 
 const ALL_TABS = [
@@ -3286,6 +3279,28 @@ export default function ProjectDetail() {
                             formatCurrency(p.projectValue ?? 0, ovCcy),
                             true,
                           )}
+                          {p.whtApplies &&
+                            infoRow(
+                              t('proj.detail.withholdingTax'),
+                              <>
+                                <div>
+                                  {p.whtAmount != null ? formatCurrency(p.whtAmount, ovCcy) : '—'}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: '11px',
+                                    color: theme.textMuted,
+                                    fontWeight: 400,
+                                  }}
+                                >
+                                  {whtPercentText(p.whtRate ?? 0)}% ·{' '}
+                                  {p.whtScenario === 'fnc_pays'
+                                    ? t('proj.detail.whtFncPays')
+                                    : t('proj.detail.whtClientWithholds')}
+                                </div>
+                              </>,
+                              true,
+                            )}
                           {infoRow(t('proj.detail.startDate'), fmtDate(p.plannedStartDate))}
                           {infoRow(t('proj.detail.completionDate'), fmtDate(p.plannedEndDate))}
                           {infoRow(t('proj.detail.projectManager2'), p.managerName ?? '—')}
@@ -8328,7 +8343,8 @@ const APPROVAL_STATUS: Record<string, { label: string; color: string; bg: string
   rejected: { get label() { return i18n.t('proj.detail.rejected', { defaultValue: "Rejected" }) }, color: '#ef4444', bg: '#ef444420' },
 }
 
-function BiddingTab({
+// Exported only so the tab can be rendered in tests (__tests__/BiddingTab.test.tsx).
+export function BiddingTab({
   projectId,
   isEditable,
   isAdmin,
@@ -8400,7 +8416,7 @@ function BiddingTab({
   onUploadDeliverableFile: (deliverableId: string, fileId: string, title?: string) => void
   onDeleteDeliverableFile: (attachmentId: string, deliverableId: string) => void
   packageFiles: BidPackageFile[]
-  onUploadPackageFile: (bidType: 'technical' | 'commercial', fileId: string, title?: string) => void
+  onUploadPackageFile: (bidType: BidPackageKind, fileId: string, title?: string) => void
   onDeletePackageFile: (attachmentId: string) => void
   costItems: BidCostItem[]
   savingCosts: boolean
@@ -8459,10 +8475,9 @@ function BiddingTab({
 }) {
   const { t } = useTranslation()
   const addToast = useToastStore((s) => s.addToast)
-  const [bidSub, setBidSub] = React.useState<'technical' | 'commercial' | 'clarifications'>(
-    'technical',
-  )
-  // Technical members read their own bid work but not commercial pricing/margins.
+  const [bidSub, setBidSub] = React.useState<BidPackageKind>('technical')
+  // Technical members read their own bid work but not commercial pricing/margins (Commercial Bid and
+  // Cost Analysis; the server also refuses Cost Analysis to them).
   const canSeeCommercialBid = isAdmin || viewerRole !== 'technical'
 
   // ── Technical state ────────────────────────────────────────────────────
@@ -8508,13 +8523,11 @@ function BiddingTab({
   }
 
   // ── Bid package (ZIP bundle) state ─────────────────────────────────────
-  const [uploadingPkgType, setUploadingPkgType] = React.useState<'technical' | 'commercial' | null>(
-    null,
-  )
+  const [uploadingPkgType, setUploadingPkgType] = React.useState<BidPackageKind | null>(null)
   const [pkgUploadProgress, setPkgUploadProgress] = React.useState(0)
   const pkgFileRef = React.useRef<HTMLInputElement>(null)
 
-  async function handlePkgFileUpload(bidType: 'technical' | 'commercial', file: File) {
+  async function handlePkgFileUpload(bidType: BidPackageKind, file: File) {
     try {
       setUploadingPkgType(bidType)
       setPkgUploadProgress(10)
@@ -8637,12 +8650,17 @@ function BiddingTab({
     )
   }
 
-  const technicalPackageFiles = packageFiles.filter((f) => f.bidType === 'technical')
-  const commercialPackageFiles = packageFiles.filter((f) => f.bidType === 'commercial')
+  // Heading and "none yet" wording of each file area (the same upload zone serves all four).
+  const packageHeading: Record<BidPackageKind, string> = {
+    technical: t('proj.detail.technicalBidPackage'),
+    commercial: t('proj.detail.commercialBidPackage'),
+    cost_analysis: t('proj.detail.costAnalysisPackage'),
+    clarifications: t('proj.detail.clarificationsPackage'),
+  }
 
-  function renderPackageUploadZone(bidType: 'technical' | 'commercial') {
-    const files = bidType === 'technical' ? technicalPackageFiles : commercialPackageFiles
-    const label = bidType === 'technical' ? t('proj.detail.technicalBidPackage') : t('proj.detail.commercialBidPackage')
+  function renderPackageUploadZone(bidType: BidPackageKind) {
+    const files = packageFiles.filter((f) => f.bidType === bidType)
+    const label = packageHeading[bidType]
     return (
       <div
         style={{
@@ -8808,7 +8826,11 @@ function BiddingTab({
             })}
           </div>
         ) : (
-          <div style={{ fontSize: '12px', color: theme.textMuted }}>{t('proj.detail.noBidPackageUploadedYet', { bidType })}</div>
+          <div style={{ fontSize: '12px', color: theme.textMuted }}>
+            {t('proj.detail.noBidPackageUploadedYet', {
+              bidType: t(`proj.detail.bidFileArea.${bidType}`),
+            })}
+          </div>
         )}
         {isEditable && (
           <div
@@ -9057,44 +9079,45 @@ function BiddingTab({
           borderBottom: `1px solid ${theme.border}`,
         }}
       >
-        {(['technical', 'commercial', 'clarifications'] as const)
-          .filter((s) => s !== 'commercial' || canSeeCommercialBid)
-          .map((s) => (
-            <button
-              key={s}
-              onClick={() => { setBidSub(s); }}
-              style={{
-                padding: '8px 24px',
-                border: 'none',
-                background: 'none',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 600,
-                color: bidSub === s ? theme.accent : theme.textMuted,
-                borderBottom: bidSub === s ? `2px solid ${theme.accent}` : '2px solid transparent',
-                marginBottom: '-1px',
-              }}
-            >
-              {s === 'technical'
-                ? t('proj.detail.technicalBid')
-                : s === 'commercial'
-                  ? t('proj.detail.commercialBid')
+        {visibleBidPackageKinds(canSeeCommercialBid).map((s) => (
+          <button
+            key={s}
+            onClick={() => {
+              setBidSub(s)
+            }}
+            style={{
+              padding: '8px 24px',
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              color: bidSub === s ? theme.accent : theme.textMuted,
+              borderBottom: bidSub === s ? `2px solid ${theme.accent}` : '2px solid transparent',
+              marginBottom: '-1px',
+            }}
+          >
+            {s === 'technical'
+              ? t('proj.detail.technicalBid')
+              : s === 'commercial'
+                ? t('proj.detail.commercialBid')
+                : s === 'cost_analysis'
+                  ? t('proj.detail.costAnalysis')
                   : t('proj.detail.clarificationsBid')}
-            </button>
-          ))}
+          </button>
+        ))}
       </div>
 
-      {/* Shared hidden input for bid package (ZIP) uploads — used by both Technical and Commercial zones */}
+      {/* Shared hidden input for bid package uploads — used by every file area (Technical, Commercial, Cost Analysis, Clarifications) */}
       <input
         ref={pkgFileRef}
         type="file"
         style={{ display: 'none' }}
         onChange={(e) => {
           const file = e.target.files?.[0]
-          const bidType = pkgFileRef.current?.getAttribute('data-pkg-bidtype') as
-            | 'technical'
-            | 'commercial'
-            | null
+          const bidType = pkgFileRef.current?.getAttribute(
+            'data-pkg-bidtype',
+          ) as BidPackageKind | null
           if (file && bidType) void handlePkgFileUpload(bidType, file)
           e.target.value = ''
         }}
@@ -10976,9 +10999,20 @@ function BiddingTab({
         </div>
       )}
 
+      {/* ═══ COST ANALYSIS ═══════════════════════════════════════════ */}
+      {/* Files only, in both bid modes. Pricing material: hidden from technical members like Commercial. */}
+      {bidSub === 'cost_analysis' && canSeeCommercialBid && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {renderPackageUploadZone('cost_analysis')}
+        </div>
+      )}
+
       {/* ═══ CLARIFICATIONS BID ══════════════════════════════════════ */}
+      {/* Files only, in both bid modes (this used to be the Technical Queries screen). */}
       {bidSub === 'clarifications' && (
-        <TQTab projectId={projectId} theme={theme} isAdmin={isAdmin} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {renderPackageUploadZone('clarifications')}
+        </div>
       )}
 
       {/* Bid package ZIP entry preview */}
@@ -15659,13 +15693,28 @@ function EngineeringTab({
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                     }}
-                  ><Trans i18nKey="proj.detail.typeToUnlockTheConfirmButton" values={{ t: t('proj.detail.supersede2') }} components={[<span style={{ fontFamily: 'monospace', background: '#fecaca', padding: '1px 6px', borderRadius: 4, }}  />]} /></div>
+                  >
+                    <Trans
+                      i18nKey="proj.detail.typeToUnlockTheConfirmButton"
+                      values={{ t: workflowAction.btn.requireConfirmPhrase }}
+                      components={[
+                        <span
+                          style={{
+                            fontFamily: 'monospace',
+                            background: '#fecaca',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                          }}
+                        />,
+                      ]}
+                    />
+                  </div>
                   <input
                     value={workflowAction.enteredPhrase}
                     onChange={(e) =>
                       { setWorkflowAction((a) => (a ? { ...a, enteredPhrase: e.target.value } : a)); }
                     }
-                    placeholder={t('proj.detail.supersede2')}
+                    placeholder={workflowAction.btn.requireConfirmPhrase}
                     autoComplete="off"
                     style={{
                       width: '100%',
@@ -15952,1130 +16001,6 @@ function EngineeringTab({
                   </button>
                 )
               })()}
-            </div>
-          </div>
-        </Modal>
-      )}
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TQ types & constants
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface ProjectTQ {
-  id: string
-  projectId: string
-  tqNumber: string
-  discipline: string | null
-  priority: string
-  subject: string
-  description: string | null
-  raisedBy: string | null
-  raisedDate: string | null
-  documentId: string | null
-  documentRef: string | null
-  documentRevision: string | null
-  status: string
-  response: string | null
-  responseBy: string | null
-  responseDate: string | null
-  dueDate: string | null
-  closedAt: string | null
-  createdAt: string
-  updatedAt: string
-  isOverdue: boolean
-  files: ExecFile[]
-}
-
-const TQ_STATUS: Record<string, { label: string; dot: string; text: string; bg: string }> = {
-  open: { get label() { return i18n.t('proj.detail.open', { defaultValue: "Open" }) }, dot: '#f59e0b', text: '#92400e', bg: '#fffbeb' },
-  under_review: { get label() { return i18n.t('proj.detail.underReview', { defaultValue: "Under Review" }) }, dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
-  responded: { get label() { return i18n.t('proj.detail.responded', { defaultValue: "Responded" }) }, dot: '#8b5cf6', text: '#5b21b6', bg: '#ede9fe' },
-  closed: { get label() { return i18n.t('proj.detail.closed', { defaultValue: "Closed" }) }, dot: '#22c55e', text: '#15803d', bg: '#f0fdf4' },
-}
-
-const TQ_PRIORITY: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  urgent: { get label() { return i18n.t('proj.detail.urgent', { defaultValue: "URGENT" }) }, color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
-  normal: { get label() { return i18n.t('proj.detail.normal', { defaultValue: "Normal" }) }, color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
-  low: { get label() { return i18n.t('proj.detail.low', { defaultValue: "Low" }) }, color: '#64748b', bg: '#f1f5f9', border: '#cbd5e1' },
-}
-
-const TQ_DISCIPLINES = [
-  'Civil',
-  'Structural',
-  'Mechanical',
-  'Electrical',
-  'Instrumentation',
-  'Piping',
-  'HSE',
-  'Architecture',
-  'Process',
-  'General',
-]
-
-function TQTab({
-  projectId,
-  theme,
-}: {
-  projectId: string
-  theme: ReturnType<typeof useTheme>['theme']
-  isAdmin?: boolean
-}) {
-  const { t } = useTranslation()
-  const addToast = useToastStore((s) => s.addToast)
-
-  const [statusFilter, setStatusFilter] = React.useState<string>('all')
-  const [expandedId, setExpandedId] = React.useState<string | null>(null)
-  const [showModal, setShowModal] = React.useState(false)
-  const [editTQ, setEditTQ] = React.useState<ProjectTQ | null>(null)
-  const [respondId, setRespondId] = React.useState<string | null>(null)
-  const [responseText, setResponseText] = React.useState('')
-  const [responseBy, setResponseBy] = React.useState('')
-
-  const emptyForm = {
-    discipline: '',
-    priority: 'normal',
-    subject: '',
-    description: '',
-    raisedBy: '',
-    raisedDate: '',
-    documentRef: '',
-    documentRevision: '',
-    dueDate: '',
-  }
-  const [form, setForm] = React.useState(emptyForm)
-
-  const { data, loading, refetch } = useQuery<ProjectTQsQuery, ProjectTQsQueryVariables>(PROJECT_TQS_QUERY, {
-    variables: { projectId, status: statusFilter === 'all' ? undefined : statusFilter },
-    skip: !projectId,
-    fetchPolicy: 'cache-and-network',
-  })
-  const tqs: ProjectTQ[] = data?.projectTQs ?? []
-
-  const [createTQ] = useMutation<CreateTqMutation, CreateTqMutationVariables>(CREATE_TQ)
-  const [updateTQ] = useMutation<UpdateTqMutation, UpdateTqMutationVariables>(UPDATE_TQ)
-  const [reviewTQM] = useMutation<ReviewTqMutation, ReviewTqMutationVariables>(REVIEW_TQ)
-  const [respondTQM] = useMutation<RespondToTqMutation, RespondToTqMutationVariables>(RESPOND_TO_TQ)
-  const [closeTQM] = useMutation<CloseTqMutation, CloseTqMutationVariables>(CLOSE_TQ)
-  const [deleteTQM] = useMutation<DeleteTqMutation, DeleteTqMutationVariables>(DELETE_TQ)
-  const [uploadTQFile] = useMutation<UploadTqFileMutation, UploadTqFileMutationVariables>(UPLOAD_TQ_FILE, {
-    onCompleted: () => {
-      void refetch()
-    },
-    onError: (e) => {
-      addToast({ type: 'error', message: e.message })
-    },
-  })
-  const [deleteTQFile] = useMutation<DeleteTqFileMutation, DeleteTqFileMutationVariables>(DELETE_TQ_FILE, {
-    onCompleted: () => {
-      void refetch()
-    },
-    onError: (e) => {
-      addToast({ type: 'error', message: e.message })
-    },
-  })
-
-  const kpi = {
-    open: tqs.filter((tx) => tx.status === 'open').length,
-    under_review: tqs.filter((tx) => tx.status === 'under_review').length,
-    responded: tqs.filter((tx) => tx.status === 'responded').length,
-    closed: tqs.filter((tx) => tx.status === 'closed').length,
-    overdue: tqs.filter((tx) => tx.isOverdue).length,
-  }
-
-  const handleSave = async () => {
-    if (!form.subject.trim()) {
-      addToast({ type: 'error', message: t('proj.detail.subjectIsRequired') })
-      return
-    }
-    try {
-      const vars = {
-        projectId,
-        discipline: form.discipline || null,
-        priority: form.priority,
-        subject: form.subject,
-        description: form.description || null,
-        raisedBy: form.raisedBy || null,
-        raisedDate: form.raisedDate || null,
-        documentRef: form.documentRef || null,
-        documentRevision: form.documentRevision || null,
-        dueDate: form.dueDate || null,
-      }
-      if (editTQ) {
-        await updateTQ({ variables: { id: editTQ.id, ...vars } })
-        addToast({ type: 'success', message: t('proj.detail.tqUpdated') })
-      } else {
-        await createTQ({ variables: vars })
-        addToast({ type: 'success', message: t('proj.detail.tqCreated') })
-      }
-      setShowModal(false)
-      setEditTQ(null)
-      setForm(emptyForm)
-      void refetch()
-    } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message })
-    }
-  }
-
-  const handleRespond = async () => {
-    if (!respondId || !responseText.trim()) return
-    try {
-      await respondTQM({
-        variables: { id: respondId, response: responseText, responseBy: responseBy || null },
-      })
-      addToast({ type: 'success', message: t('proj.detail.responseRecorded') })
-      setRespondId(null)
-      setResponseText('')
-      setResponseBy('')
-      void refetch()
-    } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message })
-    }
-  }
-
-  const inp = (v: string, fn: (x: string) => void, ph?: string, type = 'text') => (
-    <input
-      type={type}
-      value={v}
-      placeholder={ph}
-      onChange={(e) => { fn(e.target.value); }}
-      style={{
-        width: '100%',
-        padding: '9px 12px',
-        border: `1px solid ${theme.border}`,
-        borderRadius: 8,
-        background: theme.bgCanvas,
-        color: theme.textPrimary,
-        fontSize: 13,
-        boxSizing: 'border-box' as const,
-        outline: 'none',
-      }}
-    />
-  )
-  const lbl = (tx: string, req = false) => (
-    <div
-      style={{
-        fontSize: 11,
-        fontWeight: 700,
-        color: theme.textMuted,
-        marginBottom: 5,
-        textTransform: 'uppercase' as const,
-        letterSpacing: '0.05em',
-      }}
-    >
-      {tx}
-      {req && <span style={{ color: '#ef4444', marginInlineStart: 2 }}>*</span>}
-    </div>
-  )
-  const statusPill = (s: string) => {
-    const c = TQ_STATUS[s] ?? TQ_STATUS.open
-    return (
-      <span
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 5,
-          padding: '3px 10px',
-          borderRadius: 999,
-          background: c.bg,
-          fontSize: 11,
-          fontWeight: 600,
-          color: c.text,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <span
-          style={{ width: 6, height: 6, borderRadius: '50%', background: c.dot, flexShrink: 0 }}
-        />
-        {c.label}
-      </span>
-    )
-  }
-  const priorityBadge = (p: string) => {
-    const c = TQ_PRIORITY[p] ?? TQ_PRIORITY.normal
-    return (
-      <span
-        style={{
-          padding: '2px 8px',
-          borderRadius: 4,
-          background: c.bg,
-          border: `1px solid ${c.border}`,
-          color: c.color,
-          fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: '0.04em',
-        }}
-      >
-        {c.label}
-      </span>
-    )
-  }
-
-  return (
-    <div style={{ padding: '2px 0 20px' }}>
-      {/* KPI */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
-        {[
-          { label: t('proj.detail.open'), value: kpi.open, color: '#92400e', bg: '#fffbeb' },
-          { label: t('proj.detail.underReview'), value: kpi.under_review, color: '#1d4ed8', bg: '#eff6ff' },
-          { label: t('proj.detail.responded'), value: kpi.responded, color: '#5b21b6', bg: '#ede9fe' },
-          { label: t('proj.detail.closed'), value: kpi.closed, color: '#15803d', bg: '#f0fdf4' },
-          { label: t('proj.detail.overdue'), value: kpi.overdue, color: '#dc2626', bg: '#fee2e2' },
-        ].map((k) => (
-          <div
-            key={k.label}
-            style={{
-              padding: '10px 18px',
-              borderRadius: 10,
-              background: k.bg,
-              border: `1px solid ${k.color}20`,
-              textAlign: 'center',
-              minWidth: 90,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: 800,
-                color: k.color,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {k.value}
-            </div>
-            <div style={{ fontSize: 11, color: k.color, fontWeight: 600, marginTop: 2 }}>
-              {k.label}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Toolbar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: 16,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            gap: 0,
-            borderRadius: 8,
-            border: `1px solid ${theme.border}`,
-            overflow: 'hidden',
-          }}
-        >
-          {(['all', 'open', 'under_review', 'responded', 'closed'] as const).map((s, i, arr) => (
-            <button
-              key={s}
-              onClick={() => { setStatusFilter(s); }}
-              style={{
-                padding: '7px 13px',
-                background: statusFilter === s ? theme.accent : theme.bgCanvas,
-                color: statusFilter === s ? '#fff' : theme.textSecondary,
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: 11,
-                fontWeight: statusFilter === s ? 600 : 400,
-                borderInlineEnd: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none',
-              }}
-            >
-              {s === 'all' ? t('proj.detail.all') : (TQ_STATUS[s]?.label ?? s)}
-            </button>
-          ))}
-        </div>
-        <div style={{ flex: 1 }} />
-        <button
-          onClick={() => {
-            setEditTQ(null)
-            setForm(emptyForm)
-            setShowModal(true)
-          }}
-          style={{
-            padding: '8px 18px',
-            borderRadius: 8,
-            background: theme.accent,
-            color: '#fff',
-            border: 'none',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 7,
-          }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-            <line
-              x1="12"
-              y1="5"
-              x2="12"
-              y2="19"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            />
-            <line
-              x1="5"
-              y1="12"
-              x2="19"
-              y2="12"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            />
-          </svg>
-          {t('proj.detail.raiseTq')}
-        </button>
-      </div>
-
-      {/* List */}
-      {loading ? (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 12,
-            padding: 60,
-            color: theme.textMuted,
-          }}
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            style={{ animation: 'spin 0.8s linear infinite' }}
-          >
-            <circle cx="12" cy="12" r="10" stroke={theme.border} strokeWidth="3" />
-            <path
-              d="M12 2a10 10 0 0 1 10 10"
-              stroke={theme.accent}
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-          </svg>
-          {t('proj.detail.loading')}
-        </div>
-      ) : tqs.length === 0 ? (
-        <div
-          style={{
-            border: `2px dashed ${theme.border}`,
-            borderRadius: 16,
-            padding: '64px 32px',
-            textAlign: 'center',
-          }}
-        >
-          <div style={{ fontSize: 36, marginBottom: 12 }}>❓</div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>
-            {t('proj.detail.noTechnicalQueries')}
-          </div>
-          <div
-            style={{ fontSize: 13, color: theme.textMuted, maxWidth: 380, margin: '0 auto 24px' }}
-          >
-            {t('proj.detail.raiseATqWhenAQuestion')}
-          </div>
-          <button
-            onClick={() => {
-              setEditTQ(null)
-              setForm(emptyForm)
-              setShowModal(true)
-            }}
-            style={{
-              padding: '8px 20px',
-              borderRadius: 8,
-              background: theme.accent,
-              color: '#fff',
-              border: 'none',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {t('proj.detail.raiseFirstTq')}
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {tqs.map((tq) => {
-            const isExpanded = expandedId === tq.id
-            return (
-              <div
-                key={tq.id}
-                style={{
-                  border: `1px solid ${tq.isOverdue ? '#fca5a5' : theme.border}`,
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                  background: tq.isOverdue ? '#fff5f5' : theme.bgCanvas,
-                }}
-              >
-                {/* Header */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '14px 18px',
-                    cursor: 'pointer',
-                  }}
-                  onClick={() => { setExpandedId(isExpanded ? null : tq.id); }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        flexWrap: 'wrap',
-                        marginBottom: 3,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: 'monospace',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: theme.accent,
-                          background: theme.accentBg,
-                          padding: '1px 7px',
-                          borderRadius: 4,
-                        }}
-                      >
-                        {tq.tqNumber}
-                      </span>
-                      {priorityBadge(tq.priority)}
-                      {tq.discipline && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            color: theme.textMuted,
-                            background: theme.bgSurface,
-                            padding: '1px 6px',
-                            borderRadius: 4,
-                            border: `1px solid ${theme.border}`,
-                          }}
-                        >
-                          {tq.discipline}
-                        </span>
-                      )}
-                      {tq.isOverdue && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: '1px 6px',
-                            borderRadius: 999,
-                            background: '#fee2e2',
-                            color: '#dc2626',
-                          }}
-                        >
-                          {t('proj.detail.overdue2')}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: theme.textPrimary }}>
-                      {tq.subject}
-                    </div>
-                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
-                      {tq.raisedBy && `By: ${tq.raisedBy}`}
-                      {tq.dueDate && ` · Due: ${tq.dueDate}`}
-                      {tq.documentRef && ` · Ref: ${tq.documentRef}`}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {statusPill(tq.status)}
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      style={{
-                        color: theme.textMuted,
-                        transition: 'transform 0.15s',
-                        transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <path
-                        d="M9 18l6-6-6-6"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Expanded */}
-                {isExpanded && (
-                  <div
-                    style={{
-                      borderTop: `1px solid ${theme.border}`,
-                      padding: '16px 18px',
-                      background: theme.bgSurface,
-                    }}
-                  >
-                    {tq.description && (
-                      <div
-                        style={{
-                          marginBottom: 14,
-                          padding: '10px 14px',
-                          background: theme.bgCanvas,
-                          borderRadius: 8,
-                          border: `1px solid ${theme.border}`,
-                          fontSize: 13,
-                          color: theme.textPrimary,
-                          lineHeight: 1.6,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: theme.textMuted,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            marginBottom: 6,
-                          }}
-                        >
-                          {t('proj.detail.description')}
-                        </div>
-                        {tq.description}
-                      </div>
-                    )}
-
-                    {/* Document reference */}
-                    {(tq.documentRef ?? tq.documentRevision) && (
-                      <div style={{ marginBottom: 14, display: 'flex', gap: 16 }}>
-                        {tq.documentRef && (
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                color: theme.textMuted,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.05em',
-                                marginBottom: 2,
-                              }}
-                            >
-                              {t('proj.detail.documentRef')}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 12,
-                                color: theme.textPrimary,
-                                fontFamily: 'monospace',
-                              }}
-                            >
-                              {tq.documentRef}
-                              {tq.documentRevision ? t('proj.detail.rev7', { documentRevision: tq.documentRevision }) : ''}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Response section */}
-                    {tq.response && (
-                      <div
-                        style={{
-                          marginBottom: 14,
-                          padding: '12px 14px',
-                          background: '#f0fdf4',
-                          borderRadius: 8,
-                          border: '1px solid #bbf7d0',
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: '#15803d',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            marginBottom: 6,
-                          }}
-                        >{t('proj.detail.response2', { value: tq.responseBy ? ` — ${tq.responseBy}` : '', value2: tq.responseDate ? `, ${tq.responseDate}` : '' })}</div>
-                        <div style={{ fontSize: 13, color: '#14532d', lineHeight: 1.6 }}>
-                          {tq.response}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Respond inline panel */}
-                    {respondId === tq.id && (
-                      <div
-                        style={{
-                          marginBottom: 14,
-                          padding: '12px 14px',
-                          background: theme.bgCanvas,
-                          borderRadius: 8,
-                          border: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: theme.textMuted,
-                            textTransform: 'uppercase',
-                            marginBottom: 10,
-                          }}
-                        >
-                          {t('proj.detail.writeResponse')}
-                        </div>
-                        <textarea
-                          value={responseText}
-                          onChange={(e) => { setResponseText(e.target.value); }}
-                          placeholder={t('proj.detail.enterFormalResponse')}
-                          style={{
-                            width: '100%',
-                            padding: '9px 12px',
-                            border: `1px solid ${theme.border}`,
-                            borderRadius: 8,
-                            background: theme.bgSurface,
-                            color: theme.textPrimary,
-                            fontSize: 13,
-                            minHeight: 80,
-                            resize: 'vertical',
-                            boxSizing: 'border-box' as const,
-                            outline: 'none',
-                            marginBottom: 8,
-                          }}
-                        />
-                        <input
-                          value={responseBy}
-                          onChange={(e) => { setResponseBy(e.target.value); }}
-                          placeholder={t('proj.detail.respondedByName')}
-                          style={{
-                            width: '100%',
-                            padding: '7px 12px',
-                            border: `1px solid ${theme.border}`,
-                            borderRadius: 8,
-                            background: theme.bgSurface,
-                            color: theme.textPrimary,
-                            fontSize: 13,
-                            boxSizing: 'border-box' as const,
-                            outline: 'none',
-                            marginBottom: 10,
-                          }}
-                        />
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button
-                            onClick={() => {
-                              setRespondId(null)
-                              setResponseText('')
-                              setResponseBy('')
-                            }}
-                            style={{
-                              padding: '6px 14px',
-                              borderRadius: 7,
-                              background: 'transparent',
-                              border: `1px solid ${theme.border}`,
-                              color: theme.textSecondary,
-                              fontSize: 12,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {t('proj.detail.cancel')}
-                          </button>
-                          <button
-                            onClick={() => void handleRespond()}
-                            style={{
-                              padding: '6px 14px',
-                              borderRadius: 7,
-                              background: '#8b5cf6',
-                              color: '#fff',
-                              border: 'none',
-                              fontSize: 12,
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {t('proj.detail.submitResponse')}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Attachments */}
-                    {(tq.files.length > 0 || tq.status !== 'closed') && (
-                      <div style={{ marginBottom: 14 }}>
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            marginBottom: 6,
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              color: theme.textMuted,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.06em',
-                            }}
-                          >{t('proj.detail.attachments2', { value: tq.files.length > 0 && `(${tq.files.length})` })}</span>
-                          {tq.status !== 'closed' && (
-                            <ExecUploadButton
-                              entityId={tq.id}
-                              entityType="tq"
-                              onUpload={(v) => void uploadTQFile({ variables: v as UploadTqFileMutationVariables })}
-                              th={theme as unknown as Record<string, string>}
-                            />
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          {execFileList(
-                            tq.files,
-                            tq.status !== 'closed'
-                              ? (aId) => void deleteTQFile({ variables: { attachmentId: aId, tqId: tq.id } })
-                              : null,
-                            tq.status !== 'closed',
-                            theme as unknown as Record<string, string>,
-                          )}
-                          {tq.files.length === 0 && (
-                            <div style={{ fontSize: 12, color: theme.textMuted }}>
-                              {t('proj.detail.noAttachments')}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    <div
-                      style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}
-                    >
-                      {tq.status === 'open' && (
-                        <>
-                          <button
-                            onClick={() => {
-                              setEditTQ(tq)
-                              setForm({
-                                discipline: tq.discipline ?? '',
-                                priority: tq.priority,
-                                subject: tq.subject,
-                                description: tq.description ?? '',
-                                raisedBy: tq.raisedBy ?? '',
-                                raisedDate: tq.raisedDate ?? '',
-                                documentRef: tq.documentRef ?? '',
-                                documentRevision: tq.documentRevision ?? '',
-                                dueDate: tq.dueDate ?? '',
-                              })
-                              setShowModal(true)
-                            }}
-                            style={{
-                              padding: '6px 13px',
-                              borderRadius: 7,
-                              background: theme.bgCanvas,
-                              border: `1px solid ${theme.border}`,
-                              color: theme.textSecondary,
-                              fontSize: 12,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {t('proj.detail.edit')}
-                          </button>
-                          <button
-                            onClick={() => {
-                              void reviewTQM({ variables: { id: tq.id } })
-                                .then(() => {
-                                  addToast({ type: 'success', message: t('proj.detail.tqUnderReview') })
-                                  void refetch()
-                                })
-                                .catch((e: unknown) =>
-                                  { addToast({ type: 'error', message: (e as Error).message }); },
-                                )
-                            }}
-                            style={{
-                              padding: '6px 13px',
-                              borderRadius: 7,
-                              background: '#eff6ff',
-                              border: '1px solid #bfdbfe',
-                              color: '#1d4ed8',
-                              fontSize: 12,
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {t('proj.detail.markUnderReview')}
-                          </button>
-                          <button
-                            onClick={() => {
-                              setRespondId(tq.id)
-                              setResponseText('')
-                              setResponseBy('')
-                            }}
-                            style={{
-                              padding: '6px 13px',
-                              borderRadius: 7,
-                              background: '#ede9fe',
-                              border: '1px solid #c4b5fd',
-                              color: '#5b21b6',
-                              fontSize: 12,
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {t('proj.detail.respond')}
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (window.confirm(t('proj.detail.delete5', { tqNumber: tq.tqNumber })))
-                                void deleteTQM({ variables: { id: tq.id } })
-                                  .then(() => {
-                                    void refetch()
-                                  })
-                                  .catch((e: unknown) =>
-                                    { addToast({ type: 'error', message: (e as Error).message }); },
-                                  )
-                            }}
-                            style={{
-                              padding: '6px 13px',
-                              borderRadius: 7,
-                              background: '#fff1f2',
-                              border: '1px solid #fca5a5',
-                              color: '#dc2626',
-                              fontSize: 12,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {t('proj.detail.delete')}
-                          </button>
-                        </>
-                      )}
-                      {tq.status === 'under_review' && (
-                        <button
-                          onClick={() => {
-                            setRespondId(tq.id)
-                            setResponseText('')
-                            setResponseBy('')
-                          }}
-                          style={{
-                            padding: '6px 13px',
-                            borderRadius: 7,
-                            background: '#ede9fe',
-                            border: '1px solid #c4b5fd',
-                            color: '#5b21b6',
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {t('proj.detail.respond')}
-                        </button>
-                      )}
-                      {(tq.status === 'responded' || tq.status === 'under_review') && (
-                        <button
-                          onClick={() =>
-                            void closeTQM({ variables: { id: tq.id } })
-                              .then(() => {
-                                addToast({ type: 'success', message: t('proj.detail.tqClosed') })
-                                void refetch()
-                              })
-                              .catch((e: unknown) =>
-                                { addToast({ type: 'error', message: (e as Error).message }); },
-                              )
-                          }
-                          style={{
-                            padding: '6px 13px',
-                            borderRadius: 7,
-                            background: '#f0fdf4',
-                            border: '1px solid #bbf7d0',
-                            color: '#15803d',
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {t('proj.detail.closeTq')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Create / Edit Modal */}
-      {showModal && (
-        <Modal
-          open={true}
-          title={editTQ ? t('proj.detail.edit2', { tqNumber: editTQ.tqNumber }) : t('proj.detail.raiseTechnicalQuery')}
-          onClose={() => {
-            setShowModal(false)
-            setEditTQ(null)
-            setForm(emptyForm)
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div style={{ gridColumn: '1 / -1' }}>
-                {lbl(t('proj.detail.subject2'), true)}
-                {inp(
-                  form.subject,
-                  (v) => { setForm((f) => ({ ...f, subject: v })); },
-                  t('proj.detail.briefDescriptionOfTheQuery'),
-                )}
-              </div>
-              <div>
-                {lbl(t('proj.detail.discipline'))}
-                <select
-                  value={form.discipline}
-                  onChange={(e) => { setForm((f) => ({ ...f, discipline: e.target.value })); }}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 8,
-                    background: theme.bgCanvas,
-                    color: theme.textPrimary,
-                    fontSize: 13,
-                    boxSizing: 'border-box' as const,
-                  }}
-                >
-                  <option value="">{t('proj.detail.select')}</option>
-                  {TQ_DISCIPLINES.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                {lbl(t('proj.detail.priority'))}
-                <select
-                  value={form.priority}
-                  onChange={(e) => { setForm((f) => ({ ...f, priority: e.target.value })); }}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 8,
-                    background: theme.bgCanvas,
-                    color: theme.textPrimary,
-                    fontSize: 13,
-                    boxSizing: 'border-box' as const,
-                  }}
-                >
-                  <option value="urgent">{t('proj.detail.urgent2')}</option>
-                  <option value="normal">{t('proj.detail.normal')}</option>
-                  <option value="low">{t('proj.detail.low')}</option>
-                </select>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                {lbl(t('proj.detail.description'))}
-                <textarea
-                  value={form.description}
-                  onChange={(e) => { setForm((f) => ({ ...f, description: e.target.value })); }}
-                  placeholder={t('proj.detail.detailedDescriptionOfTheQuestionOr')}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 8,
-                    background: theme.bgCanvas,
-                    color: theme.textPrimary,
-                    fontSize: 13,
-                    minHeight: 80,
-                    resize: 'vertical',
-                    boxSizing: 'border-box' as const,
-                    outline: 'none',
-                  }}
-                />
-              </div>
-              <div>
-                {lbl(t('proj.detail.raisedBy'))}
-                {inp(
-                  form.raisedBy,
-                  (v) => { setForm((f) => ({ ...f, raisedBy: v })); },
-                  t('proj.detail.nameOfPersonRaisingTq'),
-                )}
-              </div>
-              <div>
-                {lbl(t('proj.detail.dateRaised'))}
-                {inp(form.raisedDate, (v) => { setForm((f) => ({ ...f, raisedDate: v })); }, '', 'date')}
-              </div>
-              <div>
-                {lbl(t('proj.detail.documentSpecRef'))}
-                {inp(
-                  form.documentRef,
-                  (v) => { setForm((f) => ({ ...f, documentRef: v })); },
-                  t('proj.detail.eGFncCivDrg0001'),
-                )}
-              </div>
-              <div>
-                {lbl(t('proj.detail.revision'))}
-                {inp(
-                  form.documentRevision,
-                  (v) => { setForm((f) => ({ ...f, documentRevision: v })); },
-                  t('proj.detail.eGRevA'),
-                )}
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                {lbl(t('proj.detail.responseDueDate'))}
-                {inp(form.dueDate, (v) => { setForm((f) => ({ ...f, dueDate: v })); }, '', 'date')}
-              </div>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 10,
-                paddingTop: 4,
-                borderTop: `1px solid ${theme.border}`,
-                marginTop: 4,
-              }}
-            >
-              <button
-                onClick={() => {
-                  setShowModal(false)
-                  setEditTQ(null)
-                  setForm(emptyForm)
-                }}
-                style={{
-                  padding: '8px 18px',
-                  borderRadius: 8,
-                  background: 'transparent',
-                  border: `1px solid ${theme.border}`,
-                  color: theme.textSecondary,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
-              >
-                {t('proj.detail.cancel')}
-              </button>
-              <button
-                disabled={!form.subject.trim()}
-                onClick={() => void handleSave()}
-                style={{
-                  padding: '8px 22px',
-                  borderRadius: 8,
-                  background: form.subject.trim() ? theme.accent : theme.border,
-                  color: '#fff',
-                  border: 'none',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: form.subject.trim() ? 'pointer' : 'not-allowed',
-                }}
-              >
-                {editTQ ? t('proj.detail.saveChanges') : t('proj.detail.raiseTq')}
-              </button>
             </div>
           </div>
         </Modal>

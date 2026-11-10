@@ -2223,7 +2223,7 @@ export type ResolvePoLineCommentMutationVariables = Exact<{
 
 export type ResolvePoLineCommentMutation = { resolvePOLineComment: { id: string, resolved: boolean, resolved_at: string | null } };
 
-export type ProjectFieldsFragment = { id: string, code: string, name: string, description: string | null, projectType: string, status: string, rfqNumber: string | null, contractName: string | null, projectLocation: string | null, projectValue: number | null, projectValueCurrency: string | null, clientName: string | null, clientContact: string | null, managerId: string | null, managerName: string | null, plannedStartDate: string | null, plannedEndDate: string | null, budgetAmount: number | null, budgetCurrency: string | null, budgets: unknown, holdReason: string | null, cancelReason: string | null, receivingDate: string | null, submissionDate: string | null, submissionTime: string | null, siteVisitDate: string | null, siteVisitTime: string | null, questionDate: string | null, questionTime: string | null, submittedAt: string | null, approvedAt: string | null, completedAt: string | null, cancelledAt: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, stagesCompleted: number | null, stagesTotal: number | null, currentStageName: string | null, analyticAccountId: string | null, analyticAccountName: string | null, allowedActions: Array<string> | null, lifecyclePhase: string | null, clientDocCount: number | null, rfqLineCount: number | null, openOverdueRfiCount: number | null, openSafetyIncidentCount: number | null, overdueCorrectiveActionCount: number | null, isRfq: boolean, rfqEstimatedCost: number | null, rfqOutcome: string | null, rfqOutcomeReason: string | null, costSummary: unknown, stages: unknown, team: unknown, statusHistory: unknown, activityLog: unknown, recentPos: unknown, createdAt: string, updatedAt: string | null };
+export type ProjectFieldsFragment = { id: string, code: string, name: string, description: string | null, projectType: string, status: string, rfqNumber: string | null, contractName: string | null, projectLocation: string | null, projectValue: number | null, projectValueCurrency: string | null, whtApplies: boolean | null, whtScenario: string | null, whtRate: number | null, whtAmount: number | null, clientName: string | null, clientContact: string | null, managerId: string | null, managerName: string | null, plannedStartDate: string | null, plannedEndDate: string | null, budgetAmount: number | null, budgetCurrency: string | null, budgets: unknown, holdReason: string | null, cancelReason: string | null, receivingDate: string | null, submissionDate: string | null, submissionTime: string | null, siteVisitDate: string | null, siteVisitTime: string | null, questionDate: string | null, questionTime: string | null, submittedAt: string | null, approvedAt: string | null, completedAt: string | null, cancelledAt: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, stagesCompleted: number | null, stagesTotal: number | null, currentStageName: string | null, analyticAccountId: string | null, analyticAccountName: string | null, allowedActions: Array<string> | null, lifecyclePhase: string | null, clientDocCount: number | null, rfqLineCount: number | null, openOverdueRfiCount: number | null, openSafetyIncidentCount: number | null, overdueCorrectiveActionCount: number | null, isRfq: boolean, rfqEstimatedCost: number | null, rfqOutcome: string | null, rfqOutcomeReason: string | null, costSummary: unknown, stages: unknown, team: unknown, statusHistory: unknown, activityLog: unknown, recentPos: unknown, createdAt: string, updatedAt: string | null };
 
 export type ProjectsQueryVariables = Exact<{
   status?: Array<string | null | undefined> | string | null | undefined;
@@ -2244,7 +2244,7 @@ export type ProjectQueryVariables = Exact<{
 }>;
 
 
-export type ProjectQuery = { project: { id: string, code: string, name: string, description: string | null, projectType: string, status: string, rfqNumber: string | null, contractName: string | null, projectLocation: string | null, projectValue: number | null, projectValueCurrency: string | null, clientName: string | null, clientContact: string | null, managerId: string | null, managerName: string | null, plannedStartDate: string | null, plannedEndDate: string | null, budgetAmount: number | null, budgetCurrency: string | null, budgets: unknown, holdReason: string | null, cancelReason: string | null, receivingDate: string | null, submissionDate: string | null, submissionTime: string | null, siteVisitDate: string | null, siteVisitTime: string | null, questionDate: string | null, questionTime: string | null, submittedAt: string | null, approvedAt: string | null, completedAt: string | null, cancelledAt: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, stagesCompleted: number | null, stagesTotal: number | null, currentStageName: string | null, analyticAccountId: string | null, analyticAccountName: string | null, allowedActions: Array<string> | null, lifecyclePhase: string | null, clientDocCount: number | null, rfqLineCount: number | null, openOverdueRfiCount: number | null, openSafetyIncidentCount: number | null, overdueCorrectiveActionCount: number | null, isRfq: boolean, rfqEstimatedCost: number | null, rfqOutcome: string | null, rfqOutcomeReason: string | null, costSummary: unknown, stages: unknown, team: unknown, statusHistory: unknown, activityLog: unknown, recentPos: unknown, createdAt: string, updatedAt: string | null } | null };
+export type ProjectQuery = { project: { id: string, code: string, name: string, description: string | null, projectType: string, status: string, rfqNumber: string | null, contractName: string | null, projectLocation: string | null, projectValue: number | null, projectValueCurrency: string | null, whtApplies: boolean | null, whtScenario: string | null, whtRate: number | null, whtAmount: number | null, clientName: string | null, clientContact: string | null, managerId: string | null, managerName: string | null, plannedStartDate: string | null, plannedEndDate: string | null, budgetAmount: number | null, budgetCurrency: string | null, budgets: unknown, holdReason: string | null, cancelReason: string | null, receivingDate: string | null, submissionDate: string | null, submissionTime: string | null, siteVisitDate: string | null, siteVisitTime: string | null, questionDate: string | null, questionTime: string | null, submittedAt: string | null, approvedAt: string | null, completedAt: string | null, cancelledAt: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, stagesCompleted: number | null, stagesTotal: number | null, currentStageName: string | null, analyticAccountId: string | null, analyticAccountName: string | null, allowedActions: Array<string> | null, lifecyclePhase: string | null, clientDocCount: number | null, rfqLineCount: number | null, openOverdueRfiCount: number | null, openSafetyIncidentCount: number | null, overdueCorrectiveActionCount: number | null, isRfq: boolean, rfqEstimatedCost: number | null, rfqOutcome: string | null, rfqOutcomeReason: string | null, costSummary: unknown, stages: unknown, team: unknown, statusHistory: unknown, activityLog: unknown, recentPos: unknown, createdAt: string, updatedAt: string | null } | null };
 
 export type LifecycleConfigQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2365,7 +2365,7 @@ export type UpdateProjectMutationVariables = Exact<{
 }>;
 
 
-export type UpdateProjectMutation = { updateProject: { id: string, code: string, name: string, status: string, projectValue: number | null, budgetAmount: number | null, overallCompletionPct: number | null, allowedActions: Array<string> | null } };
+export type UpdateProjectMutation = { updateProject: { id: string, code: string, name: string, status: string, projectValue: number | null, projectValueCurrency: string | null, whtApplies: boolean | null, whtScenario: string | null, whtRate: number | null, whtAmount: number | null, budgetAmount: number | null, overallCompletionPct: number | null, allowedActions: Array<string> | null } };
 
 export type AddProjectBudgetMutationVariables = Exact<{
   projectId: string | number;
@@ -4736,99 +4736,6 @@ export type CreateMaterialReturnMutationVariables = Exact<{
 
 
 export type CreateMaterialReturnMutation = { createMaterialReturn: { id: string, returnNumber: string, returnDate: string, poId: string | null, poNumber: string | null, requisitionId: string | null, requisitionNumber: string | null, projectId: string | null, projectCode: string | null, projectName: string | null, notes: string | null, createdByName: string | null, createdAt: string, lines: Array<{ id: string, issueLineId: string | null, poLineId: string | null, productId: string, productName: string | null, sku: string | null, toLocationId: string, toLocationName: string | null, qtyReturned: number, unitCost: number, totalCost: number }> } };
-
-export type TqFieldsFragment = { id: string, projectId: string, tqNumber: string, discipline: string | null, priority: string, subject: string, description: string | null, raisedBy: string | null, raisedDate: string | null, documentId: string | null, documentRef: string | null, documentRevision: string | null, status: string, response: string | null, responseBy: string | null, responseDate: string | null, dueDate: string | null, closedAt: string | null, createdAt: string, updatedAt: string, isOverdue: boolean, files: Array<{ id: string, fileId: string, filename: string, mimeType: string, sizeBytes: number, title: string | null, createdAt: string, downloadUrl: string | null }> };
-
-export type ProjectTQsQueryVariables = Exact<{
-  projectId: string | number;
-  status?: string | null | undefined;
-  discipline?: string | null | undefined;
-  priority?: string | null | undefined;
-}>;
-
-
-export type ProjectTQsQuery = { projectTQs: Array<{ id: string, projectId: string, tqNumber: string, discipline: string | null, priority: string, subject: string, description: string | null, raisedBy: string | null, raisedDate: string | null, documentId: string | null, documentRef: string | null, documentRevision: string | null, status: string, response: string | null, responseBy: string | null, responseDate: string | null, dueDate: string | null, closedAt: string | null, createdAt: string, updatedAt: string, isOverdue: boolean, files: Array<{ id: string, fileId: string, filename: string, mimeType: string, sizeBytes: number, title: string | null, createdAt: string, downloadUrl: string | null }> }> };
-
-export type CreateTqMutationVariables = Exact<{
-  projectId: string | number;
-  discipline?: string | null | undefined;
-  priority?: string | null | undefined;
-  subject: string;
-  description?: string | null | undefined;
-  raisedBy?: string | null | undefined;
-  raisedDate?: string | null | undefined;
-  documentId?: string | number | null | undefined;
-  documentRef?: string | null | undefined;
-  documentRevision?: string | null | undefined;
-  dueDate?: string | null | undefined;
-}>;
-
-
-export type CreateTqMutation = { createTQ: { id: string, projectId: string, tqNumber: string, discipline: string | null, priority: string, subject: string, description: string | null, raisedBy: string | null, raisedDate: string | null, documentId: string | null, documentRef: string | null, documentRevision: string | null, status: string, response: string | null, responseBy: string | null, responseDate: string | null, dueDate: string | null, closedAt: string | null, createdAt: string, updatedAt: string, isOverdue: boolean, files: Array<{ id: string, fileId: string, filename: string, mimeType: string, sizeBytes: number, title: string | null, createdAt: string, downloadUrl: string | null }> } };
-
-export type UpdateTqMutationVariables = Exact<{
-  id: string | number;
-  discipline?: string | null | undefined;
-  priority?: string | null | undefined;
-  subject?: string | null | undefined;
-  description?: string | null | undefined;
-  raisedBy?: string | null | undefined;
-  raisedDate?: string | null | undefined;
-  documentId?: string | number | null | undefined;
-  documentRef?: string | null | undefined;
-  documentRevision?: string | null | undefined;
-  dueDate?: string | null | undefined;
-}>;
-
-
-export type UpdateTqMutation = { updateTQ: { id: string, projectId: string, tqNumber: string, discipline: string | null, priority: string, subject: string, description: string | null, raisedBy: string | null, raisedDate: string | null, documentId: string | null, documentRef: string | null, documentRevision: string | null, status: string, response: string | null, responseBy: string | null, responseDate: string | null, dueDate: string | null, closedAt: string | null, createdAt: string, updatedAt: string, isOverdue: boolean, files: Array<{ id: string, fileId: string, filename: string, mimeType: string, sizeBytes: number, title: string | null, createdAt: string, downloadUrl: string | null }> } };
-
-export type ReviewTqMutationVariables = Exact<{
-  id: string | number;
-}>;
-
-
-export type ReviewTqMutation = { reviewTQ: { id: string, projectId: string, tqNumber: string, discipline: string | null, priority: string, subject: string, description: string | null, raisedBy: string | null, raisedDate: string | null, documentId: string | null, documentRef: string | null, documentRevision: string | null, status: string, response: string | null, responseBy: string | null, responseDate: string | null, dueDate: string | null, closedAt: string | null, createdAt: string, updatedAt: string, isOverdue: boolean, files: Array<{ id: string, fileId: string, filename: string, mimeType: string, sizeBytes: number, title: string | null, createdAt: string, downloadUrl: string | null }> } };
-
-export type RespondToTqMutationVariables = Exact<{
-  id: string | number;
-  response: string;
-  responseBy?: string | null | undefined;
-}>;
-
-
-export type RespondToTqMutation = { respondToTQ: { id: string, projectId: string, tqNumber: string, discipline: string | null, priority: string, subject: string, description: string | null, raisedBy: string | null, raisedDate: string | null, documentId: string | null, documentRef: string | null, documentRevision: string | null, status: string, response: string | null, responseBy: string | null, responseDate: string | null, dueDate: string | null, closedAt: string | null, createdAt: string, updatedAt: string, isOverdue: boolean, files: Array<{ id: string, fileId: string, filename: string, mimeType: string, sizeBytes: number, title: string | null, createdAt: string, downloadUrl: string | null }> } };
-
-export type CloseTqMutationVariables = Exact<{
-  id: string | number;
-}>;
-
-
-export type CloseTqMutation = { closeTQ: { id: string, projectId: string, tqNumber: string, discipline: string | null, priority: string, subject: string, description: string | null, raisedBy: string | null, raisedDate: string | null, documentId: string | null, documentRef: string | null, documentRevision: string | null, status: string, response: string | null, responseBy: string | null, responseDate: string | null, dueDate: string | null, closedAt: string | null, createdAt: string, updatedAt: string, isOverdue: boolean, files: Array<{ id: string, fileId: string, filename: string, mimeType: string, sizeBytes: number, title: string | null, createdAt: string, downloadUrl: string | null }> } };
-
-export type DeleteTqMutationVariables = Exact<{
-  id: string | number;
-}>;
-
-
-export type DeleteTqMutation = { deleteTQ: boolean };
-
-export type UploadTqFileMutationVariables = Exact<{
-  tqId: string | number;
-  fileId: string | number;
-  title?: string | null | undefined;
-}>;
-
-
-export type UploadTqFileMutation = { uploadTQFile: { id: string, projectId: string, tqNumber: string, discipline: string | null, priority: string, subject: string, description: string | null, raisedBy: string | null, raisedDate: string | null, documentId: string | null, documentRef: string | null, documentRevision: string | null, status: string, response: string | null, responseBy: string | null, responseDate: string | null, dueDate: string | null, closedAt: string | null, createdAt: string, updatedAt: string, isOverdue: boolean, files: Array<{ id: string, fileId: string, filename: string, mimeType: string, sizeBytes: number, title: string | null, createdAt: string, downloadUrl: string | null }> } };
-
-export type DeleteTqFileMutationVariables = Exact<{
-  attachmentId: string | number;
-  tqId: string | number;
-}>;
-
-
-export type DeleteTqFileMutation = { deleteTQFile: boolean };
 
 export type PunchPhotoFieldsFragment = { id: string, punchId: string, fileId: string | null, url: string | null, caption: string | null, uploadedBy: string | null, createdAt: string };
 
