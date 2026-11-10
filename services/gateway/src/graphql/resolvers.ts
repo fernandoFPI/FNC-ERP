@@ -17,8 +17,11 @@ import {
   PostingAccountNotConfiguredError,
   POSTING_ACCOUNT_ROLES,
   type PostingAccountRole,
+  getProjectCloseoutInvoiceState,
+  projectCloseoutBlocker,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
+import { isProjectLifecyclePhaseKey } from '../lib/projectLifecycle.js'
 import { notifyProjectFileUploadGW, notifyProjectEventGW } from '../lib/projectNotify.js'
 import {
   resolveContractBillingMethod,
@@ -7406,6 +7409,35 @@ async function assertProjectCancellable(projectId: string): Promise<void> {
 
   if (blockers.length > 0)
     throw new Error(`Cannot cancel project — resolve the following first: ${blockers.join('; ')}`)
+}
+
+// Who may end a project's Execution phase (Execution → Financing) and close it out of
+// Financing (Financing → Closeout): the project's own manager, or anyone holding
+// projects.approve (system/company admins pass, as everywhere else). Both steps use this
+// one function so they cannot drift. A project manager without projects.approve can
+// close out only the project they manage.
+async function callerCanCloseOutProjectGW(
+  auth: { userId: string; companyId: string; role: string },
+  projectId: string,
+): Promise<boolean> {
+  if (isPermissionBypassGW(auth.role)) return true
+  const perms = await loadPermissions(auth.userId, auth.companyId)
+  if (meetsLevel(perms['projects.approve'], 'approve')) return true
+  const pm = await query(
+    `SELECT 1 FROM projects p
+      WHERE p.id=$1 AND p.company_id=$2
+        AND p.project_manager_id IN (SELECT id FROM employees WHERE user_id=$3)`,
+    [projectId, auth.companyId, auth.userId],
+  )
+  return pm.rows.length > 0
+}
+
+async function assertCanCloseOutProjectGW(
+  auth: { userId: string; companyId: string; role: string },
+  projectId: string,
+): Promise<void> {
+  if (await callerCanCloseOutProjectGW(auth, projectId)) return
+  throw new Error("Requires 'approve' access to 'projects.approve', or being this project's manager")
 }
 
 // Human-readable past-tense label per projectTransition action — drives the
@@ -25288,9 +25320,28 @@ export const resolvers = {
       )
     },
 
+    // Financing → Closeout. The project must be in the Financing phase (End Execution comes
+    // first) and every invoice must be settled; a project with no invoices at all can only
+    // be closed by an administrator. See packages/db/src/projectCloseout.ts.
     completeProject: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.approve', 'approve')
+      await assertCanCloseOutProjectGW(ctx.auth, args.id)
+      const cur = await query<{ lifecycle_phase: string }>(
+        `SELECT lifecycle_phase FROM projects WHERE id=$1 AND company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
+      if (!cur.rows[0]) throw new Error('Project not found')
+      if (cur.rows[0].lifecycle_phase !== 'financing')
+        throw new Error(
+          'Cannot close the project: it is not in Financing. End its execution first, then close it once its invoices are paid.',
+        )
+      const isAdmin =
+        isPermissionBypassGW(ctx.auth.role) || (await isProjectsModuleAdminGW(ctx.auth))
+      const blocker = projectCloseoutBlocker(
+        await getProjectCloseoutInvoiceState(args.id, ctx.auth.companyId),
+        isAdmin,
+      )
+      if (blocker) throw new Error(blocker)
       return projectTransition(
         args.id,
         ctx.auth.companyId,
@@ -25369,15 +25420,7 @@ export const resolvers = {
       // See adminSetProjectStatus's comment just above — same gap, same fix.
       if (!isPermissionBypassGW(ctx.auth.role) && !(await isProjectsModuleAdminGW(ctx.auth)))
         throw new Error('Forbidden: admin only')
-      const VALID = [
-        'enquiry',
-        'scope_review',
-        'bidding',
-        'client_approval',
-        'execution',
-        'closeout',
-      ]
-      if (!VALID.includes(args.phase)) throw new Error('Invalid lifecycle phase')
+      if (!isProjectLifecyclePhaseKey(args.phase)) throw new Error('Invalid lifecycle phase')
       const r = await query(
         `UPDATE projects SET lifecycle_phase=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3 RETURNING *`,
         [args.phase, args.id, ctx.auth.companyId],
@@ -25398,8 +25441,15 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.edit', 'edit')
-      const VALID_ADVANCES: Record<string, string> = { bidding: 'scope_review' }
+      // Scope Review → Bidding keeps its original gate (projects.edit). Execution →
+      // Financing ends the execution and is gated like closing the project out of it
+      // (the project's manager, or projects.approve), see callerCanCloseOutProjectGW.
+      if (args.targetPhase === 'financing') await assertCanCloseOutProjectGW(ctx.auth, args.id)
+      else await requirePermGW(ctx.auth, 'projects.edit', 'edit')
+      const VALID_ADVANCES: Record<string, string> = {
+        bidding: 'scope_review',
+        financing: 'execution',
+      }
       const requiredCurrent = VALID_ADVANCES[args.targetPhase]
       if (!requiredCurrent)
         throw new Error(`Use standard workflow actions to advance to ${args.targetPhase}`)
@@ -25408,6 +25458,9 @@ export const resolvers = {
         [args.id, ctx.auth.companyId],
       )
       if (!proj.rows[0]) throw new Error('Project not found')
+      // A cancelled-after-approval project keeps phase 'execution'; it must not enter Financing.
+      if (args.targetPhase === 'financing' && proj.rows[0].status !== 'approved')
+        throw new Error('Only an approved project can move to Financing')
       const currentPhase = proj.rows[0].lifecycle_phase as string
       if (currentPhase !== requiredCurrent)
         throw new Error(

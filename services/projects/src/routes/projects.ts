@@ -1,6 +1,12 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
-import { pool, query, withTransaction } from '@fnc-erp/db'
+import {
+  pool,
+  query,
+  withTransaction,
+  getProjectCloseoutInvoiceState,
+  projectCloseoutBlocker,
+} from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { getAuth } from '@fnc-erp/auth'
@@ -827,6 +833,13 @@ projectsRouter.post(
       if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
       const blockers = await checkCompletionBlockers(id)
+      // Same invoice rule as the gateway's completeProject (one shared function): no unpaid
+      // invoice, and no invoice-less project unless an administrator closes it.
+      const invoiceBlocker = projectCloseoutBlocker(
+        await getProjectCloseoutInvoiceState(id, companyId),
+        ['system_admin', 'company_admin'].includes(role),
+      )
+      if (invoiceBlocker) blockers.push(invoiceBlocker)
       if (blockers.length > 0) {
         return sendError(
           res,
