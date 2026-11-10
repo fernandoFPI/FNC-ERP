@@ -170,7 +170,8 @@ companyManagementRouter.post(
              ('bidding',         'Bidding',         3, false),
              ('client_approval', 'Client Approval', 4, false),
              ('execution',       'Execution',       5, false),
-             ('closeout',        'Closeout',        6, false)
+             ('financing',       'Financing',       6, false),
+             ('closeout',        'Closeout',        7, false)
            ) AS p(key, label, sequence, optional)
            ON CONFLICT (company_id, key) DO NOTHING`,
           [cid],

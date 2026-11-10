@@ -58,3 +58,12 @@ export {
   POSTING_ACCOUNT_ROLES,
 } from './posting-accounts.js'
 export type { PostingAccountRole, CompanyPostingAccount } from './posting-accounts.js'
+export {
+  getProjectCloseoutInvoiceState,
+  summariseInvoiceStatusCounts,
+  projectCloseoutBlocker,
+  OPEN_INVOICE_STATUSES,
+  PAID_INVOICE_STATUS,
+  DEAD_INVOICE_STATUSES,
+} from './projectCloseout.js'
+export type { ProjectCloseoutInvoiceState } from './projectCloseout.js'
