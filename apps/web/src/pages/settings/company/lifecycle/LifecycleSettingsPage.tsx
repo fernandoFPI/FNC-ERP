@@ -218,7 +218,7 @@ export default function LifecycleSettingsPage() {
           {t('settings.lifecycle.phases')}
         </div>
         <div style={{ fontSize: '12px', color: th.textMuted, marginBottom: '14px' }}>
-          {t('settings.lifecycle.theSixPhasesAreFixedThey')}
+          {t('settings.lifecycle.theSevenPhasesAreFixedThey')}
         </div>
         <div
           style={{

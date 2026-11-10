@@ -39,25 +39,29 @@ const LIFECYCLE_STAGES = [
   'Bidding',
   'Client Approval',
   'Execution',
+  'Financing',
   'Closeout',
 ]
 
 // Direct Supply skips the whole tender flow (no enquiry/scope review/
 // bidding/client approval) — createRFQ creates it straight into execution,
 // same as a normal project would land there only after approveRFQ. Just
-// the two phases that are actually reachable.
-const DIRECT_SUPPLY_STAGES = ['Execution', 'Closeout']
+// the phases that are actually reachable.
+const DIRECT_SUPPLY_STAGES = ['Execution', 'Financing', 'Closeout']
 
-function stageFromStatus(status: string): number {
-  if (status === 'completed') return 5
-  if (status === 'approved') return 4
+// An approved project is in Execution until its execution is ended; then it sits in Financing
+// (status stays 'approved') until it is closed out.
+function stageFromStatus(status: string, phase?: string | null): number {
+  if (status === 'completed') return 6
+  if (status === 'approved') return phase === 'financing' ? 5 : 4
   if (status === 'submitted') return 3
   if (status === 'ongoing') return 1
   return 0
 }
 
-function directSupplyStageFromStatus(status: string): number {
-  return status === 'completed' ? 1 : 0
+function directSupplyStageFromStatus(status: string, phase?: string | null): number {
+  if (status === 'completed') return 2
+  return status === 'approved' && phase === 'financing' ? 1 : 0
 }
 
 interface FormState {
@@ -164,8 +168,8 @@ export default function ProjectForm() {
   const lifecycleStages = isDirectSupply ? DIRECT_SUPPLY_STAGES : LIFECYCLE_STAGES
   const stageIdx = isEdit
     ? isDirectSupply
-      ? directSupplyStageFromStatus(project?.status ?? 'approved')
-      : stageFromStatus(project?.status ?? 'pending')
+      ? directSupplyStageFromStatus(project?.status ?? 'approved', project?.lifecyclePhase)
+      : stageFromStatus(project?.status ?? 'pending', project?.lifecyclePhase)
     : 0
   const projectCode = isEdit ? project?.code : null
 

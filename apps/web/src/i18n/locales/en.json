@@ -3575,7 +3575,7 @@
       "skippable": "Skippable",
       "tabAppearsFrom": "Tab now appears from \"{{phase}}\"",
       "tabRenamed": "Tab renamed to \"{{label}}\"",
-      "theSixPhasesAreFixedThey": "The six phases are fixed (they map to contract events). You can rename them and mark a phase optional (skippable, e.g. a design gate some tenders don't need)."
+      "theSevenPhasesAreFixedThey": "The seven phases are fixed (they map to contract events). You can rename them and mark a phase optional (skippable, e.g. a design gate some tenders don't need)."
     },
     "numbering": {
       "configurePrefixFormatAndStartingNumber": "Configure prefix, format, and starting number for each document type",
@@ -5712,11 +5712,15 @@
       "cancelProject": "Cancel Project",
       "cancelled": "Cancelled",
       "cancelledAfterApproval": "Cancelled After Approval",
+      "closeBlockedNoInvoices": "No invoices yet. Only an administrator can close a project that has none.",
+      "closeBlockedUnpaid": "Every invoice must be paid first ({{open}} still open).",
       "closeProject": "Close Project",
       "confirm": "Confirm",
       "confirm2": "Confirm & {{label}}",
       "confirmBidSubmissionDetails": "Confirm bid submission details",
       "confirmSubmitBid": "Confirm & Submit Bid",
+      "endExecution": "End Execution",
+      "endExecutionConfirm": "End the execution and move this project to Financing? The finance team invoices it from there, and it can only be closed once every invoice is paid.",
       "markAsAwarded": "Mark as Awarded",
       "onHold": "On Hold",
       "putOnHold": "Put On Hold",
@@ -5889,6 +5893,7 @@
         "Bidding": "Bidding",
         "Client Approval": "Client Approval",
         "Execution": "Execution",
+        "Financing": "Financing",
         "Closeout": "Closeout"
       }
     },
@@ -6740,6 +6745,7 @@
       "fileUploadFailed": "File upload failed",
       "files": "Files",
       "financialSummary": "Financial Summary",
+      "financing": "Financing",
       "finish": "Finish",
       "finishToFinishFf": "Finish-to-Finish (FF)",
       "finishToStartFs": "Finish-to-Start (FS)",

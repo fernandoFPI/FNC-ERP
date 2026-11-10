@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import React, { useState } from 'react'
 import { useMutation } from '@apollo/client'
 import { useTheme } from '../../theme/ThemeContext'
+import { useToastStore } from '../../store/toastStore'
 import type { ThemeTokens } from '../../theme/tokens'
 import {
   START_PROJECT,
@@ -49,6 +50,11 @@ interface Props {
   isRfq?: boolean
   onTransitioned?: () => void
   timeline?: ProjectTimeline
+  /**
+   * Why Close Project cannot be pressed yet (shown on the disabled button), or null/omitted when it can.
+   * Only the Financing phase uses it. The server enforces the same rule; this just says so up front.
+   */
+  closeoutGate?: string | null
 }
 
 // ── Phase-aware button definitions ─────────────────────────────────────────
@@ -62,6 +68,8 @@ interface PhaseButton {
   gate?: string | null
   isAdvancePhase?: boolean
   targetPhase?: string
+  /** Ask "are you sure?" first (a step that is hard to take back without an administrator). */
+  requiresConfirm?: boolean
 }
 
 function getPhaseButtons(
@@ -69,6 +77,7 @@ function getPhaseButtons(
   status: ProjectStatus,
   allowedActions: string[],
   isRfq: boolean,
+  closeoutGate: string | null,
 ): PhaseButton[] {
   const { t } = useTranslation()
   const has = (a: string) => allowedActions.includes(a)
@@ -158,8 +167,19 @@ function getPhaseButtons(
     }
     case 'execution': {
       const btns: PhaseButton[] = []
+      // Ending the execution hands the project to the finance team (Financing phase); closing it
+      // out comes after, once every invoice is paid. `complete` is the status-level action that
+      // is available for an approved project, so it also gates this button.
       if (has('complete'))
-        btns.push({ key: 'complete', label: t('proj.statusBar.closeProject'), variant: 'success' })
+        btns.push({
+          key: 'end_execution',
+          label: t('proj.statusBar.endExecution'),
+          variant: 'primary',
+          isAdvancePhase: true,
+          targetPhase: 'financing',
+          requiresConfirm: true,
+          gate: null,
+        })
       if (has('hold'))
         btns.push({ key: 'hold', label: t('proj.statusBar.putOnHold'), variant: 'warning', requiresReason: true })
       if (has('cancel_after_approval'))
@@ -168,6 +188,19 @@ function getPhaseButtons(
           label: t('proj.statusBar.cancelProject'),
           variant: 'danger',
           requiresReason: true,
+        })
+      return btns
+    }
+    case 'financing': {
+      // The finance team invoices the project and watches the invoices get paid (Contract Management
+      // tab). Only then can it be closed out; the button says why while it cannot.
+      const btns: PhaseButton[] = []
+      if (has('complete'))
+        btns.push({
+          key: 'complete',
+          label: t('proj.statusBar.closeProject'),
+          variant: 'success',
+          gate: closeoutGate,
         })
       return btns
     }
@@ -213,9 +246,11 @@ export function ProjectStatusBar({
   isRfq = false,
   onTransitioned,
   timeline,
+  closeoutGate = null,
 }: Props) {
   const { t } = useTranslation()
   const { theme } = useTheme()
+  const addToast = useToastStore((s) => s.addToast)
   const [pendingBtn, setPendingBtn] = useState<PhaseButton | null>(null)
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
@@ -263,6 +298,10 @@ export function ProjectStatusBar({
 
   const handleClick = (btn: PhaseButton) => {
     if (btn.gate) return // gated — button is disabled
+    if (btn.requiresConfirm) {
+      setPendingBtn(btn)
+      return
+    }
     if (btn.requiresReason) {
       setPendingBtn(btn)
       setReason('')
@@ -296,21 +335,31 @@ export function ProjectStatusBar({
   }
 
   const executeBtn = async (btn: PhaseButton, reasonArg?: string) => {
-    if (btn.isAdvancePhase && btn.targetPhase) {
-      await advancePhaseMut({ variables: { id: projectId, targetPhase: btn.targetPhase } })
+    setSaving(true)
+    try {
+      if (btn.isAdvancePhase && btn.targetPhase) {
+        await advancePhaseMut({ variables: { id: projectId, targetPhase: btn.targetPhase } })
+        setPendingBtn(null)
+        setReason('')
+        onTransitioned?.()
+        return
+      }
+      const mut = mutationFor(btn.key)
+      if (!mut) return
+      const variables: Record<string, unknown> = { id: projectId }
+      if (btn.requiresReason) variables.reason = reasonArg ?? reason
+      await mut({ variables })
       setPendingBtn(null)
       setReason('')
       onTransitioned?.()
-      return
+    } catch (err) {
+      // The server explains why it refused (an unpaid invoice, the wrong phase, no permission);
+      // without this the rejection was unhandled and the button just seemed to do nothing.
+      addToast({ type: 'error', message: err instanceof Error ? err.message : String(err) })
+      if (btn.requiresConfirm) setPendingBtn(null)
+    } finally {
+      setSaving(false)
     }
-    const mut = mutationFor(btn.key)
-    if (!mut) return
-    const variables: Record<string, unknown> = { id: projectId }
-    if (btn.requiresReason) variables.reason = reasonArg ?? reason
-    await mut({ variables })
-    setPendingBtn(null)
-    setReason('')
-    onTransitioned?.()
   }
 
   const handleTimelineConfirm = async (skip = false) => {
@@ -343,7 +392,7 @@ export function ProjectStatusBar({
   }
 
   const phase = lifecyclePhase
-  const buttons = getPhaseButtons(phase, status, allowedActions, isRfq)
+  const buttons = getPhaseButtons(phase, status, allowedActions, isRfq, closeoutGate)
 
   const isSideState = ['on_hold', 'cancelled', 'cancelled_after_approval'].includes(status)
   const sideLabel: Record<string, string> = {
@@ -445,6 +494,66 @@ export function ProjectStatusBar({
               border: `1px solid ${theme.border}`,
               color: theme.textMuted,
               cursor: 'pointer',
+              fontSize: '13px',
+            }}
+          >
+            {t('proj.statusBar.cancel')}
+          </button>
+        </div>
+      )}
+
+      {/* Confirm — End Execution hands the project to Financing; only an administrator can undo it */}
+      {pendingBtn?.requiresConfirm && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '8px 12px',
+            background: theme.accentBg,
+            border: `1px solid ${theme.accentBorder}`,
+            borderRadius: '8px',
+            padding: '10px 12px',
+          }}
+        >
+          <span
+            style={{
+              flex: '1 1 260px',
+              fontSize: '13px',
+              color: theme.textPrimary,
+              lineHeight: 1.45,
+            }}
+          >
+            {t('proj.statusBar.endExecutionConfirm')}
+          </span>
+          <button
+            disabled={saving}
+            onClick={() => void executeBtn(pendingBtn)}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '6px',
+              background: saving ? theme.border : theme.accent,
+              color: '#fff',
+              border: 'none',
+              cursor: saving ? 'not-allowed' : 'pointer',
+              fontSize: '13px',
+              fontWeight: 500,
+            }}
+          >
+            {saving ? t('proj.statusBar.saving') : t('proj.statusBar.confirm')}
+          </button>
+          <button
+            disabled={saving}
+            onClick={() => {
+              setPendingBtn(null)
+            }}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+              background: 'transparent',
+              border: `1px solid ${theme.border}`,
+              color: theme.textMuted,
+              cursor: saving ? 'not-allowed' : 'pointer',
               fontSize: '13px',
             }}
           >

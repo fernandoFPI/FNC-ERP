@@ -257,6 +257,7 @@ import {
   DEFAULT_CONTRACT_BILLING_METHOD,
 } from '../../../lib/contractBilling'
 import { CONTRACT_STATUSES } from '../../../lib/contractStatus'
+import { projectCloseoutGate } from '../../../lib/projectFinancing'
 import { uploadMimeType, uploadFailureMessage } from '../../../lib/uploadMimeType'
 import { projectFileTabs, visibleProjectFiles, countByTab } from '../../../lib/projectFiles'
 import type { ProjectFilesQuery, ProjectFilesQueryVariables } from '../../../graphql/generated'
@@ -326,6 +327,7 @@ const DEFAULT_LIFECYCLE_STAGES = [
   { key: 'bidding', get label() { return i18n.t('proj.detail.bidding', { defaultValue: "Bidding" }) } },
   { key: 'client_approval', get label() { return i18n.t('proj.detail.clientApproval', { defaultValue: "Client Approval" }) } },
   { key: 'execution', get label() { return i18n.t('proj.detail.execution', { defaultValue: "Execution" }) } },
+  { key: 'financing', get label() { return i18n.t('proj.detail.financing', { defaultValue: "Financing" }) } },
   { key: 'closeout', get label() { return i18n.t('proj.detail.closeout', { defaultValue: "Closeout" }) } },
 ]
 // Tab → minimum phase fallback (mirrors the migration-166 seed).
@@ -1469,9 +1471,12 @@ export default function ProjectDetail() {
     skip: skipContracts,
     fetchPolicy: 'cache-and-network',
   })
+  // The Close Project button in the Financing phase says why it is disabled (an unpaid invoice), from
+  // whichever tab is open, so the invoices load there too, not only on the Contract Management tab.
+  const inFinancingPhase = data?.project?.lifecyclePhase === 'financing'
   const { data: invoicesData, refetch: refetchInvoices } = useQuery<ProjectInvoicesQuery, ProjectInvoicesQueryVariables>(PROJECT_INVOICES_QUERY, {
     variables: { projectId: id },
-    skip: skipContracts,
+    skip: !id || (tab !== 'contracts' && !inFinancingPhase),
     fetchPolicy: 'cache-and-network',
   })
   const contractError = (e: Error) => { addToast({ type: 'error', message: e.message }); }
@@ -1653,6 +1658,17 @@ export default function ProjectDetail() {
   const phase = p.lifecyclePhase ?? 'enquiry'
   const simpleBidMode: boolean = lifecycleData?.lifecycleConfig.bidSimpleModeEnabled ?? false
   const hideRiskRegister: boolean = lifecycleData?.lifecycleConfig.hideRiskRegister ?? true
+  // Close Project (Financing phase): why it cannot be pressed yet. The server enforces the same rule
+  // (an unpaid invoice blocks everyone; no invoices at all blocks all but an administrator).
+  const closeoutGateInfo =
+    phase === 'financing'
+      ? projectCloseoutGate(invoicesData?.projectInvoices, can('projects.view', 'admin'))
+      : null
+  const closeoutGateText = !closeoutGateInfo
+    ? null
+    : closeoutGateInfo.kind === 'unpaid'
+      ? t('proj.statusBar.closeBlockedUnpaid', { open: closeoutGateInfo.open })
+      : t('proj.statusBar.closeBlockedNoInvoices')
 
   // Lifecycle from company config, with hardcoded fallback until it loads.
   const lifecycleStages: { key: string; label: string }[] = lifecycleData?.lifecycleConfig.phases
@@ -2044,6 +2060,7 @@ export default function ProjectDetail() {
                               | 'cancelled_after_approval'
                           }
                           lifecyclePhase={p.lifecyclePhase ?? 'enquiry'}
+                          closeoutGate={closeoutGateText}
                           allowedActions={p.allowedActions ?? []}
                           clientDocCount={p.clientDocCount ?? 0}
                           rfqLineCount={p.rfqLineCount ?? 0}
@@ -2177,6 +2194,7 @@ export default function ProjectDetail() {
                                 { value: 'bidding', label: t('proj.detail.bidding') },
                                 { value: 'client_approval', label: t('proj.detail.clientApproval') },
                                 { value: 'execution', label: t('proj.detail.execution') },
+                                { value: 'financing', label: t('proj.detail.financing') },
                                 { value: 'closeout', label: t('proj.detail.closeout') },
                               ]}
                             />

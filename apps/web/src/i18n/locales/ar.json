@@ -3750,7 +3750,7 @@
       "skippable": "قابلة للتخطي",
       "tabAppearsFrom": "يظهر التبويب الآن من «{{phase}}»",
       "tabRenamed": "تمت إعادة تسمية التبويب إلى «{{label}}»",
-      "theSixPhasesAreFixedThey": "المراحل الست ثابتة (ترتبط بأحداث العقد). يمكنك إعادة تسميتها وتحديد مرحلة كاختيارية (قابلة للتخطي، مثل بوابة تصميم لا تحتاجها بعض المناقصات)."
+      "theSevenPhasesAreFixedThey": "المراحل السبع ثابتة (ترتبط بأحداث العقد). يمكنك إعادة تسميتها وتحديد مرحلة كاختيارية (قابلة للتخطي، مثل بوابة تصميم لا تحتاجها بعض المناقصات)."
     },
     "numbering": {
       "configurePrefixFormatAndStartingNumber": "اضبط البادئة والتنسيق ورقم البداية لكل نوع مستند",
@@ -5899,11 +5899,15 @@
       "cancelProject": "إلغاء المشروع",
       "cancelled": "ملغى",
       "cancelledAfterApproval": "ملغى بعد الاعتماد",
+      "closeBlockedNoInvoices": "لا توجد فواتير بعد. لا يستطيع إغلاق مشروع بلا فواتير إلا المسؤول.",
+      "closeBlockedUnpaid": "يجب سداد جميع الفواتير أولًا (لا تزال {{open}} مفتوحة).",
       "closeProject": "إغلاق المشروع",
       "confirm": "تأكيد",
       "confirm2": "تأكيد: {{label}}",
       "confirmBidSubmissionDetails": "تأكيد تفاصيل تقديم العطاء",
       "confirmSubmitBid": "تأكيد وتقديم العطاء",
+      "endExecution": "إنهاء التنفيذ",
+      "endExecutionConfirm": "إنهاء التنفيذ ونقل هذا المشروع إلى مرحلة التمويل؟ يصدر الفريق المالي الفواتير منها، ولا يمكن إغلاق المشروع إلا بعد سداد جميع الفواتير.",
       "markAsAwarded": "تسجيل الترسية",
       "onHold": "معلّق",
       "putOnHold": "تعليق المشروع",
@@ -6076,6 +6080,7 @@
         "Bidding": "العطاءات",
         "Client Approval": "موافقة العميل",
         "Execution": "التنفيذ",
+        "Financing": "التمويل",
         "Closeout": "الإغلاق"
       }
     },
@@ -6955,6 +6960,7 @@
       "fileUploadFailed": "فشل رفع الملف",
       "files": "الملفات",
       "financialSummary": "الملخص المالي",
+      "financing": "التمويل",
       "finish": "الانتهاء",
       "finishToFinishFf": "من الانتهاء إلى الانتهاء (FF)",
       "finishToStartFs": "من الانتهاء إلى البدء (FS)",
