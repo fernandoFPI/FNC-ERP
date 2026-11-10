@@ -206,17 +206,16 @@ export const PROJECT_FILE_SOURCES: ProjectFileSource[] = [
     ],
   },
   {
-    key: 'tq',
+    key: 'bid_cost_analysis',
     tab: 'bidding',
-    selects: [
-      attached(
-        'tq',
-        'tq',
-        'JOIN project_tqs t ON t.id = da.entity_id',
-        't.project_id = $1',
-        't.tq_number',
-      ),
-    ],
+    commercial: true,
+    selects: [attached('bid_cost_analysis', 'bid_package_cost_analysis', '', 'da.entity_id = $1')],
+  },
+  // The Clarifications Bid sub-tab: plain files since migration 321 (it used to be Technical Queries).
+  {
+    key: 'bid_clarifications',
+    tab: 'bidding',
+    selects: [attached('bid_clarifications', 'bid_package_clarifications', '', 'da.entity_id = $1')],
   },
   {
     key: 'meetings',

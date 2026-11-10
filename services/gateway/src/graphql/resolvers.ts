@@ -22,6 +22,18 @@ import {
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { isProjectLifecyclePhaseKey } from '../lib/projectLifecycle.js'
+import {
+  PROJECT_WHT_OFF,
+  projectWhtAmount,
+  projectWhtFromRow,
+  resolveProjectWht,
+} from '../lib/projectWht.js'
+import {
+  BID_PACKAGE_TYPES,
+  bidPackageEntityTypes,
+  bidTypeFromEntityType,
+  parseBidPackageType,
+} from '../lib/bidPackages.js'
 import { notifyProjectFileUploadGW, notifyProjectEventGW } from '../lib/projectNotify.js'
 import {
   resolveContractBillingMethod,
@@ -6047,13 +6059,15 @@ async function fetchLifecycleConfig(companyId: string) {
   }
 }
 
-async function bidPackageFileList(projectId: string, companyId: string) {
+// `entityTypes` is what THIS caller may see (bidPackageEntityTypes): Cost Analysis is left out for a
+// technical-only team member, so the API never returns what the page hides.
+async function bidPackageFileList(projectId: string, companyId: string, entityTypes: string[]) {
   const files = await query(
     `SELECT da.id, da.file_id, da.entity_type, f.original_filename, f.mime_type, f.size_bytes, da.label, da.description, da.created_at, f.file_key
      FROM document_attachments da JOIN files f ON f.id=da.file_id
-     WHERE da.entity_type IN ('bid_package_technical','bid_package_commercial') AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted'
+     WHERE da.entity_type = ANY($3::text[]) AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted'
      ORDER BY da.created_at`,
-    [projectId, companyId],
+    [projectId, companyId, entityTypes],
   )
   return Promise.all(
     files.rows.map(async (f: Record<string, unknown>) => {
@@ -6067,7 +6081,7 @@ async function bidPackageFileList(projectId: string, companyId: string) {
       return {
         id: f.id,
         fileId: f.file_id,
-        bidType: f.entity_type === 'bid_package_technical' ? 'technical' : 'commercial',
+        bidType: bidTypeFromEntityType(f.entity_type as string),
         filename: f.original_filename,
         mimeType: f.mime_type,
         sizeBytes: f.size_bytes,
@@ -6558,6 +6572,21 @@ async function fetchOneMachineryRow(id: string): Promise<Record<string, unknown>
   return mapMachineryRow(r.rows[0] as Record<string, unknown>)
 }
 
+// The project's withholding tax settings plus the amount they come to on its Bid Price (never stored:
+// see migration 320 and lib/projectWht.ts).
+function projectWhtToGQL(row: Record<string, unknown>) {
+  const wht = projectWhtFromRow(row)
+  return {
+    whtApplies: wht.applies,
+    whtScenario: wht.scenario,
+    whtRate: wht.rate,
+    whtAmount: projectWhtAmount(
+      row.project_value != null ? parseFloat(String(row.project_value)) : null,
+      wht,
+    ),
+  }
+}
+
 function projectRowToGQL(row: Record<string, unknown>): Record<string, unknown> {
   return {
     ...row,
@@ -6577,6 +6606,7 @@ function projectRowToGQL(row: Record<string, unknown>): Record<string, unknown> 
     daysToSubmission: row.days_to_submission,
     projectValue: row.project_value != null ? parseFloat(String(row.project_value)) : null,
     projectValueCurrency: row.project_value_currency,
+    ...projectWhtToGQL(row),
     clientName: row.client_name,
     clientContact: row.client_contact,
     plannedStartDate: row.planned_start_date,
@@ -7287,75 +7317,6 @@ async function refetchHandoverCert(
     cRes.rows[0] as Record<string, unknown>,
     iRes.rows as Record<string, unknown>[],
     files,
-  )
-}
-
-function tqToGQL(row: Record<string, unknown>): Record<string, unknown> {
-  const dueDate = row.due_date ? new Date(String(row.due_date)) : null
-  const status = String(row.status)
-  const isOverdue = dueDate != null && status !== 'closed' && dueDate < new Date()
-  return {
-    id: row.id,
-    projectId: row.project_id,
-    tqNumber: row.tq_number,
-    discipline: row.discipline ?? null,
-    priority: row.priority ?? 'normal',
-    subject: row.subject,
-    description: row.description ?? null,
-    raisedBy: row.raised_by ?? null,
-    raisedDate: row.raised_date ?? null,
-    documentId: row.document_id ?? null,
-    documentRef: row.document_ref ?? null,
-    documentRevision: row.document_revision ?? null,
-    status: status,
-    response: row.response ?? null,
-    responseBy: row.response_by ?? null,
-    responseDate: row.response_date ?? null,
-    dueDate: row.due_date ?? null,
-    closedAt: row.closed_at ?? null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    isOverdue,
-    // Empty by default — every caller except createTQ (a brand-new TQ
-    // genuinely has none yet) overrides this with a real fetchTQFilesGW
-    // call, so an existing TQ's attachment list is never dropped from the
-    // response of an unrelated mutation (update/review/respond/close).
-    files: [],
-  }
-}
-
-// Shared by projectTQs/projectTQ/uploadTQFile — same document_attachments +
-// download-url pattern as RFI/NCR/etc. (see e.g. projectRFIs), factored out
-// here since TQ needs it from more than one call site.
-async function fetchTQFilesGW(tqId: string, companyId: string): Promise<Record<string, unknown>[]> {
-  const files = await query(
-    `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key
-     FROM document_attachments da JOIN files f ON f.id=da.file_id
-     WHERE da.entity_type='tq' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted'
-     ORDER BY da.created_at`,
-    [tqId, companyId],
-  )
-  return Promise.all(
-    files.rows.map(async (f: Record<string, unknown>) => {
-      let dl: string | null = null
-      try {
-        const r2 = await generateDownloadUrl(f.file_key as string, f.original_filename as string)
-        dl = r2.downloadUrl
-      } catch {
-        /**/
-      }
-      return {
-        id: f.id,
-        fileId: f.file_id,
-        filename: f.original_filename,
-        mimeType: f.mime_type,
-        sizeBytes: f.size_bytes,
-        title: f.label ?? f.original_filename,
-        description: null,
-        createdAt: f.created_at,
-        downloadUrl: dl,
-      }
-    }),
   )
 }
 
@@ -12741,55 +12702,6 @@ export const resolvers = {
       return r.rows.map((row: Record<string, unknown>) => ddmToGQL(row))
     },
 
-    // ── Phase 3: Technical Queries ──────────────────────────────────────────────
-
-    projectTQs: async (
-      _: unknown,
-      args: { projectId: string; status?: string; discipline?: string; priority?: string },
-      ctx: GQLContext,
-    ) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.qaqc.view', 'view')
-      const conditions = [`pt.project_id = $1`, `p.company_id = $2`]
-      const params: unknown[] = [args.projectId, ctx.auth.companyId]
-      if (args.status) {
-        conditions.push(`pt.status = $${params.length + 1}`)
-        params.push(args.status)
-      }
-      if (args.discipline) {
-        conditions.push(`pt.discipline = $${params.length + 1}`)
-        params.push(args.discipline)
-      }
-      if (args.priority) {
-        conditions.push(`pt.priority = $${params.length + 1}`)
-        params.push(args.priority)
-      }
-      const res = await query(
-        `SELECT pt.* FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
-         WHERE ${conditions.join(' AND ')} ORDER BY pt.created_at DESC`,
-        params,
-      )
-      return Promise.all(
-        res.rows.map(async (row) => ({
-          ...tqToGQL(row as Record<string, unknown>),
-          files: await fetchTQFilesGW((row as { id: string }).id, requireAuth(ctx).companyId),
-        })),
-      )
-    },
-
-    projectTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.qaqc.view', 'view')
-      const res = await query(
-        `SELECT pt.* FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
-         WHERE pt.id=$1 AND p.company_id=$2`,
-        [args.id, ctx.auth.companyId],
-      )
-      const r = res.rows[0] as Record<string, unknown> | undefined
-      if (!r) throw new Error('TQ not found')
-      return { ...tqToGQL(r), files: await fetchTQFilesGW(args.id, ctx.auth.companyId) }
-    },
-
     // ── Phase 5: Punch List ─────────────────────────────────────────────────────
 
     projectPunchItems: async (
@@ -16697,6 +16609,8 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'projects.edit', 'edit')
       const i = args.input
+      // Checked before a document number or an analytic account is made, so a bad rate leaves nothing behind.
+      const wht = resolveProjectWht(i) ?? PROJECT_WHT_OFF
       const code =
         (i.code as string | undefined) ??
         (await nextDocumentNumber(ctx.auth.companyId, 'project', 'PRJ'))
@@ -16716,8 +16630,8 @@ export const resolvers = {
           planned_start_date, planned_end_date, budget_amount, budget_currency,
           project_manager_id, cost_center_id, analytic_account_id, remarks,
           submission_time, site_visit_date, site_visit_time, question_date, question_time,
-          status, created_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,'pending',$28)
+          status, created_by, wht_applies, wht_scenario, wht_rate
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,'pending',$28,$29,$30,$31)
         RETURNING *`,
         [
           ctx.auth.companyId,
@@ -16748,6 +16662,9 @@ export const resolvers = {
           i.questionDate ?? null,
           i.questionTime ?? null,
           ctx.auth.userId,
+          wht.applies,
+          wht.scenario,
+          wht.rate,
         ],
       )
       await query(
@@ -16771,6 +16688,20 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'projects.edit', 'edit')
       const i = args.input
+      // WHT settings change only when the input mentions them: the status bar's schedule update, for one,
+      // sends none of the three fields. Validated against what is stored, before anything is written.
+      const whtMentioned = ['whtApplies', 'whtScenario', 'whtRate'].some(
+        (k) => i[k] !== undefined && i[k] !== null,
+      )
+      let wht: ReturnType<typeof resolveProjectWht> = null
+      if (whtMentioned) {
+        const cur = await query(
+          `SELECT wht_applies, wht_scenario, wht_rate FROM projects WHERE id=$1 AND company_id=$2`,
+          [args.id, ctx.auth.companyId],
+        )
+        if (!cur.rows[0]) throw new Error('Project not found')
+        wht = resolveProjectWht(i, projectWhtFromRow(cur.rows[0] as Record<string, unknown>))
+      }
       const r = await query(
         `UPDATE projects SET
           name                   = COALESCE($3,  name),
@@ -16797,6 +16728,9 @@ export const resolvers = {
           site_visit_time        = COALESCE($24, site_visit_time),
           question_date          = COALESCE($25, question_date),
           question_time          = COALESCE($26, question_time),
+          wht_applies            = CASE WHEN $27::boolean THEN $28::boolean ELSE wht_applies END,
+          wht_scenario           = CASE WHEN $27::boolean THEN $29::varchar(20) ELSE wht_scenario END,
+          wht_rate               = CASE WHEN $27::boolean THEN $30::numeric ELSE wht_rate END,
           updated_at             = NOW()
         WHERE id = $1 AND company_id = $2 RETURNING *`,
         [
@@ -16826,6 +16760,10 @@ export const resolvers = {
           i.siteVisitTime ?? null,
           i.questionDate ?? null,
           i.questionTime ?? null,
+          wht !== null,
+          wht?.applies ?? false,
+          wht?.scenario ?? null,
+          wht?.rate ?? 0,
         ],
       )
       if (!r.rows[0]) throw new Error('Project not found')
@@ -16857,6 +16795,9 @@ export const resolvers = {
         plannedStartDate: 'start date',
         plannedEndDate: 'end date',
         budgetAmount: 'budget amount',
+        whtApplies: 'withholding tax',
+        whtScenario: 'withholding tax scenario',
+        whtRate: 'withholding tax rate',
         remarks: 'remarks',
       }
       const changed = Object.entries(FIELD_LABELS)
@@ -16878,6 +16819,8 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'projects.bidding.edit', 'edit')
       const i = args.input
+      // Checked before the project number is taken, so a bad rate does not burn one.
+      const wht = resolveProjectWht(i) ?? PROJECT_WHT_OFF
       const code = await nextDocumentNumber(ctx.auth.companyId, 'project', 'PRJ')
       const rfqNum = await deriveRfqNumber(ctx.auth.companyId, code)
 
@@ -16906,8 +16849,8 @@ export const resolvers = {
           project_manager_id, cost_center_id, remarks,
           submission_time, site_visit_date, site_visit_time, question_date, question_time,
           rfq_estimated_cost, is_rfq, status, lifecycle_phase, rfq_outcome, approved_at,
-          analytic_account_id, created_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,true,$28,$29,$30,$31,$32,$33)
+          analytic_account_id, created_by, wht_applies, wht_scenario, wht_rate
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,true,$28,$29,$30,$31,$32,$33,$34,$35,$36)
         RETURNING *`,
         [
           ctx.auth.companyId,
@@ -16943,6 +16886,9 @@ export const resolvers = {
           isDirectSupply ? new Date() : null,
           analyticAccountId,
           ctx.auth.userId,
+          wht.applies,
+          wht.scenario,
+          wht.rate,
         ],
       )
       const projectId = r.rows[0].id as string
@@ -19549,21 +19495,24 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'projects.bidding.edit', 'edit')
-      if (args.bidType !== 'technical' && args.bidType !== 'commercial')
-        throw new Error('bidType must be "technical" or "commercial"')
+      const bidType = parseBidPackageType(args.bidType)
       const projR = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
       ])
       if (!projR.rows[0]) throw new Error('Project not found')
+      const visibleTypes = bidPackageEntityTypes(
+        await canSeeProjectCommercialFilesGW(ctx.auth, args.projectId),
+      )
+      if (!visibleTypes.includes(BID_PACKAGE_TYPES[bidType].entityType))
+        throw new Error(`You do not have access to ${BID_PACKAGE_TYPES[bidType].label} files`)
       const fileR = await query(
         `SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`,
         [args.fileId, ctx.auth.companyId],
       )
       if (!fileR.rows[0]) throw new Error('File not found')
       const f = fileR.rows[0] as Record<string, unknown>
-      const entityType =
-        args.bidType === 'technical' ? 'bid_package_technical' : 'bid_package_commercial'
+      const { entityType, label } = BID_PACKAGE_TYPES[bidType]
       await query(
         `INSERT INTO document_attachments (file_id, entity_type, entity_id, label, description, uploaded_by) VALUES ($1,$2,$3,$4,$5,$6)`,
         [
@@ -19579,18 +19528,16 @@ export const resolvers = {
         args.projectId,
         ctx.auth.userId,
         'bid_package_file',
-        `${args.bidType === 'technical' ? 'Technical' : 'Commercial'} bid package file attached: ${String(f.original_filename)}`,
+        `${label} bid package file attached: ${String(f.original_filename)}`,
       )
       void notifyProjectFileUploadGW(
         args.projectId,
         ctx.auth.companyId,
         ctx.auth.userId,
-        args.bidType === 'technical'
-          ? 'Bid Package File (Technical)'
-          : 'Bid Package File (Commercial)',
+        `Bid Package File (${label})`,
         String(args.title ?? f.original_filename),
       )
-      return bidPackageFileList(args.projectId, ctx.auth.companyId)
+      return bidPackageFileList(args.projectId, ctx.auth.companyId, visibleTypes)
     },
 
     deleteBidPackageFile: async (
@@ -19605,9 +19552,13 @@ export const resolvers = {
         ctx.auth.companyId,
       ])
       if (!projR.rows[0]) throw new Error('Project not found')
+      // Only the areas this caller may see: a technical-only member cannot delete a Cost Analysis file.
+      const visibleTypes = bidPackageEntityTypes(
+        await canSeeProjectCommercialFilesGW(ctx.auth, args.projectId),
+      )
       await query(
-        `DELETE FROM document_attachments WHERE id=$1 AND entity_type IN ('bid_package_technical','bid_package_commercial') AND entity_id=$2`,
-        [args.attachmentId, args.projectId],
+        `DELETE FROM document_attachments WHERE id=$1 AND entity_type = ANY($3::text[]) AND entity_id=$2`,
+        [args.attachmentId, args.projectId, visibleTypes],
       )
       return true
     },
@@ -32767,7 +32718,11 @@ const phase5QueryResolvers = {
     ]).then((r) => {
       if (!r.rows[0]) throw new Error('Project not found')
     })
-    return bidPackageFileList(args.projectId, ctx.auth.companyId)
+    return bidPackageFileList(
+      args.projectId,
+      ctx.auth.companyId,
+      bidPackageEntityTypes(await canSeeProjectCommercialFilesGW(ctx.auth, args.projectId)),
+    )
   },
 
   bidCostItems: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
@@ -41014,247 +40969,6 @@ Object.assign(resolvers.Mutation, {
     if (r.is_system) throw new Error('Cannot delete system templates')
     await query(`DELETE FROM role_template_permissions WHERE template_id=$1`, [args.id])
     await query(`DELETE FROM role_templates WHERE id=$1`, [args.id])
-    return true
-  },
-
-  createTQ: async (
-    _: unknown,
-    args: {
-      projectId: string
-      discipline?: string
-      priority?: string
-      subject: string
-      description?: string
-      raisedBy?: string
-      raisedDate?: string
-      documentId?: string
-      documentRef?: string
-      documentRevision?: string
-      dueDate?: string
-    },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
-    const projOwn = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
-      args.projectId,
-      ctx.auth.companyId,
-    ])
-    if (!projOwn.rows[0]) throw new Error('Project not found')
-    const ym = new Date().toISOString().slice(0, 7).replace('-', '')
-    const countRes = await query(
-      `SELECT COUNT(*) FROM project_tqs WHERE project_id=$1 AND tq_number LIKE $2`,
-      [args.projectId, `TQ-${ym}-%`],
-    )
-    const seq = String(Number((countRes.rows[0] as Record<string, unknown>).count) + 1).padStart(
-      3,
-      '0',
-    )
-    const tqNumber = `TQ-${ym}-${seq}`
-    const res = await query(
-      `INSERT INTO project_tqs
-        (project_id,tq_number,discipline,priority,subject,description,raised_by,raised_date,
-         document_id,document_ref,document_revision,due_date,created_by_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-      [
-        args.projectId,
-        tqNumber,
-        args.discipline ?? null,
-        args.priority ?? 'normal',
-        args.subject,
-        args.description ?? null,
-        args.raisedBy ?? null,
-        args.raisedDate ?? null,
-        args.documentId ?? null,
-        args.documentRef ?? null,
-        args.documentRevision ?? null,
-        args.dueDate ?? null,
-        ctx.auth.userId,
-      ],
-    )
-    return tqToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  updateTQ: async (
-    _: unknown,
-    args: {
-      id: string
-      discipline?: string
-      priority?: string
-      subject?: string
-      description?: string
-      raisedBy?: string
-      raisedDate?: string
-      documentId?: string
-      documentRef?: string
-      documentRevision?: string
-      dueDate?: string
-    },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
-    const existing = await query(
-      `SELECT pt.status FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
-       WHERE pt.id=$1 AND p.company_id=$2`,
-      [args.id, ctx.auth.companyId],
-    )
-    const r0 = existing.rows[0] as Record<string, unknown> | undefined
-    if (!r0) throw new Error('TQ not found')
-    if (r0.status === 'closed') throw new Error('Cannot edit a closed TQ')
-    const res = await query(
-      `UPDATE project_tqs pt SET
-        discipline=$2, priority=COALESCE($3,priority), subject=COALESCE($4,subject),
-        description=$5, raised_by=$6, raised_date=$7,
-        document_id=$8, document_ref=$9, document_revision=$10, due_date=$11,
-        updated_at=NOW()
-       FROM projects p
-       WHERE p.id=pt.project_id AND p.company_id=$12 AND pt.id=$1 RETURNING pt.*`,
-      [
-        args.id,
-        args.discipline ?? null,
-        args.priority ?? null,
-        args.subject ?? null,
-        args.description ?? null,
-        args.raisedBy ?? null,
-        args.raisedDate ?? null,
-        args.documentId ?? null,
-        args.documentRef ?? null,
-        args.documentRevision ?? null,
-        args.dueDate ?? null,
-        ctx.auth.companyId,
-      ],
-    )
-    return {
-      ...tqToGQL(res.rows[0] as Record<string, unknown>),
-      files: await fetchTQFilesGW(args.id, ctx.auth.companyId),
-    }
-  },
-
-  reviewTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
-    const res = await query(
-      `UPDATE project_tqs pt SET status='under_review', updated_at=NOW()
-       FROM projects p
-       WHERE p.id=pt.project_id AND p.company_id=$2 AND pt.id=$1 AND pt.status='open' RETURNING pt.*`,
-      [args.id, ctx.auth.companyId],
-    )
-    if (!res.rows[0]) throw new Error('TQ not found or not in open status')
-    return {
-      ...tqToGQL(res.rows[0] as Record<string, unknown>),
-      files: await fetchTQFilesGW(args.id, ctx.auth.companyId),
-    }
-  },
-
-  respondToTQ: async (
-    _: unknown,
-    args: { id: string; response: string; responseBy?: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
-    const res = await query(
-      `UPDATE project_tqs pt SET status='responded', response=$2, response_by=$3,
-        response_date=CURRENT_DATE, updated_at=NOW()
-       FROM projects p
-       WHERE p.id=pt.project_id AND p.company_id=$4 AND pt.id=$1 AND pt.status IN ('open','under_review') RETURNING pt.*`,
-      [args.id, args.response, args.responseBy ?? null, ctx.auth.companyId],
-    )
-    if (!res.rows[0]) throw new Error('TQ not found or already responded/closed')
-    return {
-      ...tqToGQL(res.rows[0] as Record<string, unknown>),
-      files: await fetchTQFilesGW(args.id, ctx.auth.companyId),
-    }
-  },
-
-  closeTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
-    const res = await query(
-      `UPDATE project_tqs pt SET status='closed', closed_at=NOW(), updated_at=NOW()
-       FROM projects p
-       WHERE p.id=pt.project_id AND p.company_id=$2 AND pt.id=$1 AND pt.status != 'closed' RETURNING pt.*`,
-      [args.id, ctx.auth.companyId],
-    )
-    if (!res.rows[0]) throw new Error('TQ not found or already closed')
-    return {
-      ...tqToGQL(res.rows[0] as Record<string, unknown>),
-      files: await fetchTQFilesGW(args.id, ctx.auth.companyId),
-    }
-  },
-
-  deleteTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
-    const existing = await query(
-      `SELECT pt.status FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
-       WHERE pt.id=$1 AND p.company_id=$2`,
-      [args.id, ctx.auth.companyId],
-    )
-    const r = existing.rows[0] as Record<string, unknown> | undefined
-    if (!r) throw new Error('TQ not found')
-    if (r.status !== 'open') throw new Error('Only open TQs can be deleted')
-    await query(
-      `DELETE FROM project_tqs pt USING projects p WHERE p.id=pt.project_id AND p.company_id=$2 AND pt.id=$1`,
-      [args.id, ctx.auth.companyId],
-    )
-    return true
-  },
-
-  uploadTQFile: async (
-    _: unknown,
-    args: { tqId: string; fileId: string; title?: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
-    const tqR = await query(
-      `SELECT pt.*, p.company_id FROM project_tqs pt JOIN projects p ON p.id=pt.project_id WHERE pt.id=$1 AND p.company_id=$2`,
-      [args.tqId, ctx.auth.companyId],
-    )
-    if (!tqR.rows[0]) throw new Error('TQ not found')
-    const d = tqR.rows[0] as Record<string, unknown>
-    const fileR = await query(
-      `SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`,
-      [args.fileId, ctx.auth.companyId],
-    )
-    if (!fileR.rows[0]) throw new Error('File not found')
-    const f = fileR.rows[0] as Record<string, unknown>
-    await query(
-      `INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'tq',$2,$3,$4)`,
-      [args.fileId, args.tqId, args.title ?? f.original_filename, ctx.auth.userId],
-    )
-    await logActivity(
-      String(d.project_id),
-      ctx.auth.userId,
-      'tq_file',
-      `File attached to TQ ${String(d.tq_number)}`,
-    )
-    void notifyProjectFileUploadGW(
-      String(d.project_id),
-      ctx.auth.companyId,
-      ctx.auth.userId,
-      'TQ File',
-      `${String(args.title ?? f.original_filename)} (TQ ${String(d.tq_number)})`,
-    )
-    return {
-      ...tqToGQL(d),
-      files: await fetchTQFilesGW(args.tqId, ctx.auth.companyId),
-    }
-  },
-
-  deleteTQFile: async (
-    _: unknown,
-    args: { attachmentId: string; tqId: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
-    await query(
-      `DELETE FROM document_attachments da USING project_tqs pt JOIN projects p ON p.id=pt.project_id WHERE pt.id=da.entity_id AND da.entity_type='tq' AND p.company_id=$1 AND da.id=$2`,
-      [ctx.auth.companyId, args.attachmentId],
-    )
     return true
   },
 

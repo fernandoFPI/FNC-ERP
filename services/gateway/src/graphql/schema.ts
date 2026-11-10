@@ -1049,6 +1049,13 @@
 
     projectValue: Float
     projectValueCurrency: String
+    # Withholding tax on the project (migration 320), the same three settings an invoice carries.
+    # whtAmount is calculated on read (projectValue x whtRate) and is null when WHT is off or there
+    # is no bid price yet. All four are nullable: a non-null violation would null the whole project.
+    whtApplies: Boolean
+    whtScenario: String
+    whtRate: Float
+    whtAmount: Float
 
     clientName: String
     clientContact: String
@@ -3342,6 +3349,9 @@
     questionTime: String
     projectValue: Float
     projectValueCurrency: String
+    whtApplies: Boolean
+    whtScenario: String
+    whtRate: Float
     plannedStartDate: String
     plannedEndDate: String
     budgetAmount: Float
@@ -3371,6 +3381,9 @@
     questionTime: String
     projectValue: Float
     projectValueCurrency: String
+    whtApplies: Boolean
+    whtScenario: String
+    whtRate: Float
     plannedStartDate: String
     plannedEndDate: String
     budgetAmount: Float
@@ -6115,74 +6128,6 @@
     createdAt: String!
   }
 
-  # ── Phase 3: Technical Queries ────────────────────────────────────────────────
-
-  type ProjectTQ {
-    id: ID!
-    projectId: ID!
-    tqNumber: String!
-    discipline: String
-    priority: String!
-    subject: String!
-    description: String
-    raisedBy: String
-    raisedDate: String
-    documentId: ID
-    documentRef: String
-    documentRevision: String
-    status: String!
-    response: String
-    responseBy: String
-    responseDate: String
-    dueDate: String
-    closedAt: String
-    createdAt: String!
-    updatedAt: String!
-    isOverdue: Boolean!
-    files: [RFQPhaseFile!]!
-  }
-
-  extend type Query {
-    projectTQs(projectId: ID!, status: String, discipline: String, priority: String): [ProjectTQ!]!
-    projectTQ(id: ID!): ProjectTQ
-  }
-
-  extend type Mutation {
-    createTQ(
-      projectId: ID!
-      discipline: String
-      priority: String
-      subject: String!
-      description: String
-      raisedBy: String
-      raisedDate: String
-      documentId: ID
-      documentRef: String
-      documentRevision: String
-      dueDate: String
-    ): ProjectTQ!
-
-    updateTQ(
-      id: ID!
-      discipline: String
-      priority: String
-      subject: String
-      description: String
-      raisedBy: String
-      raisedDate: String
-      documentId: ID
-      documentRef: String
-      documentRevision: String
-      dueDate: String
-    ): ProjectTQ!
-
-    reviewTQ(id: ID!): ProjectTQ!
-    respondToTQ(id: ID!, response: String!, responseBy: String): ProjectTQ!
-    closeTQ(id: ID!): ProjectTQ!
-    deleteTQ(id: ID!): Boolean!
-    uploadTQFile(tqId: ID!, fileId: ID!, title: String): ProjectTQ!
-    deleteTQFile(attachmentId: ID!, tqId: ID!): Boolean!
-  }
   # ── Phase 5: Punch List & Completions ────────────────────────────────────────
 
   type PunchPhoto {

@@ -89,6 +89,8 @@ async function seedEverySource(): Promise<void> {
   )
   await attach(await f('bid_technical'), 'bid_package_technical', projectId)
   await attach(await f('bid_commercial'), 'bid_package_commercial', projectId)
+  await attach(await f('bid_cost_analysis'), 'bid_package_cost_analysis', projectId)
+  await attach(await f('bid_clarifications'), 'bid_package_clarifications', projectId)
   await attach(
     await f('bid_deliverables'),
     'bid_deliverable',
@@ -97,11 +99,6 @@ async function seedEverySource(): Promise<void> {
   await pool.query(
     `INSERT INTO bid_supplier_quotations (project_id, supplier_name, item_description, file_id) VALUES ($1,'Acme Steel','Rebar',$2)`,
     [projectId, await f('bid_quotations')],
-  )
-  await attach(
-    await f('tq'),
-    'tq',
-    await one(`INSERT INTO project_tqs (project_id, tq_number, subject) VALUES ($1,'TQ-001','Clarify') RETURNING id`, [projectId]),
   )
   const meetingId = await one(
     `INSERT INTO project_meetings (project_id, meeting_number, title, meeting_date) VALUES ($1,'MOM-001','Kick-off',CURRENT_DATE) RETURNING id`,
@@ -200,7 +197,6 @@ async function cleanup(): Promise<void> {
     ['bid_supplier_quotations', `project_id IN (${projects})`],
     ['bid_deliverables', `project_id IN (${projects})`],
     ['rfq_phases', `project_id IN (${projects})`],
-    ['project_tqs', `project_id IN (${projects})`],
     ['project_meetings', `project_id IN (${projects})`],
     ['project_handover_certificates', `project_id IN (${projects})`],
     ['project_punch_items', `project_id IN (${projects})`],
@@ -399,9 +395,9 @@ describe('projectFiles - who sees which tab\'s files', () => {
     const rows = await list('techMember', 'user', ALL_TABS)
     const sources = new Set(rows.map((r) => r.source))
 
-    for (const hidden of ['bid_commercial', 'bid_quotations', 'contract_documents', 'invoice_documents'])
+    for (const hidden of ['bid_commercial', 'bid_cost_analysis', 'bid_quotations', 'contract_documents', 'invoice_documents'])
       expect(sources.has(hidden), hidden).toBe(false)
-    for (const shown of ['bid_technical', 'bid_deliverables', 'tq', 'client_documents', 'engineering', 'meetings', 'rfis'])
+    for (const shown of ['bid_technical', 'bid_deliverables', 'bid_clarifications', 'client_documents', 'engineering', 'meetings', 'rfis'])
       expect(sources.has(shown), shown).toBe(true)
   })
 
@@ -410,7 +406,7 @@ describe('projectFiles - who sees which tab\'s files', () => {
     for (const [who] of [['commercialMember'], ['pm'], ['techEditor']] as const) {
       const rows = await list(who, 'user', ALL_TABS)
       const sources = new Set(rows.map((r) => r.source))
-      for (const key of ['bid_commercial', 'bid_quotations', 'contract_documents', 'invoice_documents'])
+      for (const key of ['bid_commercial', 'bid_cost_analysis', 'bid_quotations', 'contract_documents', 'invoice_documents'])
         expect(sources.has(key), `${who} ${key}`).toBe(true)
       expect(rows.length, who).toBe(everything)
     }
