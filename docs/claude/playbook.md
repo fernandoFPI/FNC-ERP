@@ -1718,3 +1718,75 @@ Don't re-derive, check these first.
     `i18n/__tests__/projectDetailKeys.test.ts`. 11 mutations on the gateway, 10 on the web and 6 on the translations,
     all killed (one survived at first: nothing pinned the placeholder of the phrase box). Related to #20 (the CHECK
     constraint), #24, #25, #29, #30, #51, #52.
+
+74. **A line's currency guessed by a fallback chain on the screen, defaulted to IQD by three writers, and a form that
+    cannot see what is stored.** NF-PO-2026-0163 (Nishtimani Factory, USD): the Order total read "24 IQD + 695.25 USD"
+    while the Lines table printed that line as "24 USD". Line 3 ("Corner angle") was ADDED by an approved edit request on
+    7 Nov. The requisition's edit form had no currency for an added line, so the payload carried none and the server
+    filled in `?? 'IQD'` (`applyRequisitionEditChanges`; the PO side fell back to the company base currency). The totals
+    group by `po_lines.currency_code` (IQD); the page printed `market_price_currency ?? requested_currency_code ??
+    po.currency_code` and never looked at the stored column, so it showed the PO's USD. Nothing here was caused by the
+    9 Nov backfills: they write `stock_moves`, `stock_balances` and `purchase_orders.created_by`, never `po_lines`, and
+    this line was IQD two days before any of them ran (audit_log lists every backfill row; none points at it).
+    Four separate faults, one symptom:
+    (a) *The screen's fallback chain.* The Actual price, Unit price, Total and Initial price cells, the buying panel, the
+    print and the Edit PO form all repeated the chain. Fix: one function, `poLineCurrency`
+    (`apps/web/src/lib/poLineCurrency.ts`), stored currency first; the old columns only when the stored one was not
+    loaded, and the page query now asks for `currency_code` (a test reads the query document, because the page tests mock
+    Apollo and could not tell). The Market pricing form's default currency keeps the old chain on purpose: it answers "what
+    should this be priced in", not "what is it stored in".
+    (b) *A form that compares against the same wrong guess.* The Edit PO form started each line's currency from the chain
+    and decided "did it change" by comparing to the chain, so a user setting line 3 to USD compared USD with USD and saved
+    NOTHING, with no error ("I fixed it and it still shows the same"). A control and the check of whether it changed
+    must read the stored value, not a display heuristic.
+    (c) *A silent default for a new row's currency.* `resolveAddedLineCurrency` (`lib/poEditChanges.ts`): the currency
+    the request names, else the one every existing line shares, else an error naming the currencies; never IQD. It runs
+    at submission (the request itself then carries the currency and the Edit Request card shows it, and the person
+    asking is refused, not the approver) and again at approval for requests already pending. The requisition edit form
+    gained a currency box (starts on the shared currency, empty on a mixed requisition, submit waits for one). The two
+    older creation paths (`createPurchaseOrder`, `createRequisition`) set only `requested_currency_code` and left the
+    stored one at the column default; they now store it. An existing test (`po-edit-request-impact`) had a mixed
+    IQD/USD PO adding a line with no currency and relied on the old fallback; it now names the currency like the form.
+    (d) *Store In labelled every receipt IQD.* `confirmReceipt` and `completeStoreInLineForResolvedProduct` inserted
+    `stock_moves` without `currency_code` (migration 258 had already said the column was dead), and booked the product's
+    cost against the BASE currency whatever the line was in. The cost written is `unit_price x fx_rate_to_base`, so only a
+    converted line (rate other than 1) is really in the base currency; a G1 line (no rate) is in its own. Production, 8
+    weeks to 11 Nov: 142 of 485 Store In moves were USD lines labelled IQD (the location's "last cost" copies that label,
+    so receipts kept re-creating the kind of wrong Stock Balances currency the 9 Nov backfill relabelled once; most of
+    those 716 rows came from opening balances, not receipts), and 37 product costs were
+    recorded as IQD from USD lines (36 Factory, 1 Yakam). Reproduced through the real receipt flow before the fix: a USD
+    product at 6.25 USD, receiving a 6.25 USD line, became 6.25 IQD. One function, `receiptCostCurrency`
+    (`lib/receiptCost.ts`: base currency when converted, else the line's), used for the move, the product cost and, through
+    `original.currency_code`, the reversal / repost helper. Consequence to know: with the correct currency a USD
+    receipt that moves a USD product's price beyond the company tolerance now PARKS in Cost Change Approvals instead of
+    silently flipping the product to IQD. How to spot it: a total and a row on one page in different currencies; a Store
+    Out / balance labelled IQD under a USD product; `stock_moves.currency_code <> po_lines.currency_code` for
+    `source_type='po_receipt'`; a request that "saves" and changes nothing (compare the payload with the form's initial value).
+    What the data looked like (production, read-only, 11 Nov): 29 lines on 12 POs print a currency different from the stored
+    one, in four families that need different answers, so none was bulk-changed. Stored IQD with no other hint on a USD PO
+    (0163 line 3, 0102 lines 4 to 6, PO-2026-0011, 0014, 0015): the stored IQD is almost certainly the default and the PO's
+    USD was the intent. Stored IQD but requested USD (0028, 0029, 0030, PO-2026-0008, all closed or payment pending, 0029
+    with purchases recorded in IQD at prices like 5.625): the creator asked for USD, the column kept its default. Stored
+    USD but a stale requested IQD (0041, 0046): the stored USD is right and the old chain printed the wrong one. 0095:
+    stored IQD at 3,792 a unit with market and verified labels USD. After this change the table prints what is stored, so
+    the first two families now LOOK wrong (they are, in the data); fixing the stored values, and what the journals of the
+    closed ones posted, is a finance decision, not a code one.
+    Tooling traps met. (1) `grep -c $'\r'` in Git Bash reports 0 on a CRLF file (it strips the CR before matching), so I
+    called a CRLF file LF, wrote a mutation script with `\n` patterns and half of them matched nothing ("SKIPPED"):
+    detect line endings with node (`text.includes('\r\n')`) and write patterns in the file's own ending; the Edit tool
+    is ending-tolerant, a node swap is not. (2) A mutation SURVIVED because the assertion found "24 IQD" in the order
+    summary box instead of the buying panel it meant: scope an assertion to the element it is about. (3) A mutation
+    result of "pattern matched 2 times" is not a result: add a neighbouring line until it is unique. (4) The first run of
+    the neighbouring suites in the same pass caught the fixture that relied on the old fallback; run the suites that
+    share a function before calling it done.
+    Not done, on purpose: the data (line 3 of 0163 and the other 28 lines; the 37 product costs; stock moves and location
+    labels written since the 9 Nov backfill, 13 on 8 receipts at the time of writing, are covered by re-running
+    `scripts/backfill-location-cost-currency.ts` after this is deployed, not before); the other `recordProductCostChange`
+    call sites were not read for the same base-currency label; the requisition page's own lines table already read
+    `line.currency_code` and was not changed. Tests: `lib/__tests__/poLineCurrency.test.ts`,
+    `pages/procurement/__tests__/poLineCurrencyPage.test.tsx` (the table, the order total agreeing with it, the Edit PO
+    form, the print, the query), the "added line" block in `RequisitionDetail.test.tsx`,
+    `services/gateway/tests/added-line-currency.test.ts` (28, real Postgres, both documents, requests pending from before)
+    and `store-in-currency.test.ts` (11, through the real receipt, reversal, admin correction and cataloguing paths); 33
+    mutations, all killed. Related to #43 (a currency shown without conversion), #65 (a hard-coded IQD label), #67 (the
+    location's currency label) and #23 (one thing, several code paths).
