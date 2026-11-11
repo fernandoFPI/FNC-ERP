@@ -624,6 +624,7 @@ export const PO_LIFECYCLE_QUERY = gql`
         market_price
         market_price_currency
         fx_rate_to_base
+        currency_code
         requested_currency_code
         verified_price
         verified_price_currency

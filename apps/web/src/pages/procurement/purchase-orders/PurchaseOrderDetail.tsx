@@ -89,6 +89,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { buildPurchaseOrderHTML } from '../../../lib/poHtml'
 import { poTotalEntries } from '../../../lib/poTotals'
+import { poLineCurrency } from '../../../lib/poLineCurrency'
 import {
   TOUR_DEMO_PO_ID,
   buildTourDemoPO,
@@ -114,6 +115,8 @@ export interface POLine {
   market_price?: number
   market_price_currency?: string | null
   fx_rate_to_base?: number | null
+  /** What the line is stored in (po_lines.currency_code): the currency the totals are counted in. */
+  currency_code?: string | null
   requested_currency_code?: string | null
   verified_price?: number
   verified_price_currency?: string | null
@@ -3636,11 +3639,7 @@ export default function PurchaseOrderDetail() {
                                 )}
                                 <AmountDisplay
                                   amount={line.total}
-                                  currency={
-                                    line.market_price_currency ??
-                                    line.requested_currency_code ??
-                                    po.currency_code
-                                  }
+                                  currency={poLineCurrency(line, po.currency_code)}
                                   size="sm"
                                 />
                               </div>
@@ -5085,7 +5084,7 @@ export default function PurchaseOrderDetail() {
                     }}
                   >
                     {fmtN(line.initial_unit_price)}{' '}
-                    {line.requested_currency_code ?? po.currency_code}
+                    {line.requested_currency_code ?? poLineCurrency(line, po.currency_code)}
                   </span>
                 ) : (
                   <span style={{ color: theme.textMuted, fontSize: '12px' }} title={t('po.detail.notRecordedBeforeThisWasTracked')}>
@@ -5106,7 +5105,7 @@ export default function PurchaseOrderDetail() {
                   }}
                 >
                   {fmtN(line.unit_price)}{' '}
-                  {line.market_price_currency ?? line.requested_currency_code ?? po.currency_code}
+                  {poLineCurrency(line, po.currency_code)}
                 </span>
               ),
             },
@@ -5170,8 +5169,7 @@ export default function PurchaseOrderDetail() {
               mobilePriority: 7,
               render: (line) => {
                 const ap = parseFloat(String(line.actual_unit_price ?? 0))
-                const ccy =
-                  line.market_price_currency ?? line.requested_currency_code ?? po.currency_code
+                const ccy = poLineCurrency(line, po.currency_code)
                 return ap > 0 ? (
                   <span
                     style={{
@@ -5193,7 +5191,7 @@ export default function PurchaseOrderDetail() {
               mobilePriority: 2,
               render: (line) => {
                 const total = poLineTotalNative(line)
-                const ccy = line.market_price_currency ?? line.requested_currency_code ?? po.currency_code
+                const ccy = poLineCurrency(line, po.currency_code)
                 return (
                   <span
                     style={{
@@ -6083,7 +6081,7 @@ export default function PurchaseOrderDetail() {
               // them so the edit-request inputs don't show trailing zeros.
               qty: parseFloat(String(l.qty)) || 0,
               unit_price: parseFloat(String(l.unit_price)) || 0,
-              currency_code: l.market_price_currency ?? l.requested_currency_code ?? po.currency_code,
+              currency_code: poLineCurrency(l, po.currency_code),
               store_price: parseFloat(String(l.store_price ?? 0)) || 0,
               actual_unit_price: parseFloat(String(l.actual_unit_price ?? 0)) || 0,
               uom: l.uom,
@@ -6130,8 +6128,7 @@ export default function PurchaseOrderDetail() {
                   from: orig.unit_price,
                   to: dl.unit_price,
                 })
-              const origCurrency =
-                orig.market_price_currency ?? orig.requested_currency_code ?? po.currency_code
+              const origCurrency = poLineCurrency(orig, po.currency_code)
               if (dl.currency_code !== origCurrency)
                 edited.push({
                   id: dl.id,
@@ -8058,7 +8055,7 @@ export default function PurchaseOrderDetail() {
                     product_name_ar: l.product_name_ar,
                     qty: l.qty,
                     uom: l.uom,
-                    currency_code: l.market_price_currency ?? l.requested_currency_code ?? po.currency_code,
+                    currency_code: poLineCurrency(l, po.currency_code),
                     unit_price: l.unit_price,
                     total: l.total,
                     notes: printWithNotes
