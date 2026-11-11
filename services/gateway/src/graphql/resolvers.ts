@@ -77,6 +77,7 @@ import {
   stampAddedLineCurrencies,
   type PoLineSnapshot,
 } from '../lib/poEditChanges.js'
+import { receiptCostCurrency } from '../lib/receiptCost.js'
 import {
   buildEditImpact,
   snapshotEditLines,
@@ -1226,6 +1227,8 @@ interface StockMoveRow {
   source_id: string
   po_line_id: string | null
   po_receipt_line_id: string | null
+  /** What currency unit_cost is in; the rows come from `SELECT *`, so it is there at run time. */
+  currency_code?: string | null
 }
 
 // Refuses a correction that would remove more stock from a location than is
@@ -1348,8 +1351,8 @@ async function reverseAndRepostStockMove(
   // never picks it up as something to correct again; only the repost row
   // below stays live.
   await client.query(
-    `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id,superseded_at)
-     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,
+    `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id,superseded_at,currency_code)
+     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),COALESCE($14,'IQD'))`,
     [
       original.company_id,
       original.product_id,
@@ -1364,14 +1367,15 @@ async function reverseAndRepostStockMove(
       actorId,
       linkIds.poLineId,
       linkIds.poReceiptLineId,
+      original.currency_code ?? null,
     ],
   )
   const newQty = correction.qty ?? origQty
   if (newQty <= 0) return
   const newUnitCost = correction.unitCost ?? origUnitCost
   await client.query(
-    `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id)
-     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id,currency_code)
+     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14,'IQD'))`,
     [
       original.company_id,
       correction.productId ?? original.product_id,
@@ -1386,6 +1390,7 @@ async function reverseAndRepostStockMove(
       actorId,
       linkIds.poLineId,
       linkIds.poReceiptLineId,
+      original.currency_code ?? null,
     ],
   )
 }
@@ -3257,7 +3262,7 @@ async function completeStoreInLineForResolvedProduct(
   userId: string,
 ): Promise<void> {
   const lineRes = await client.query(
-    `SELECT product_id, unit_price, fx_rate_to_base FROM po_lines WHERE id=$1`,
+    `SELECT product_id, unit_price, fx_rate_to_base, currency_code FROM po_lines WHERE id=$1`,
     [poLineId],
   )
   const line = lineRes.rows[0] as Record<string, unknown> | undefined
@@ -3282,6 +3287,20 @@ async function completeStoreInLineForResolvedProduct(
 
   const fxRate = parseFloat(String(line.fx_rate_to_base ?? 1)) || 1
   const unitCost = parseFloat(String(line.unit_price ?? 0)) * fxRate
+  // The same label confirmReceipt gives it (lib/receiptCost.ts); the base currency is only needed when it was converted.
+  let baseCurrency = 'IQD'
+  if (fxRate !== 1) {
+    const baseRes = await client.query<{ default_currency: string }>(
+      `SELECT default_currency FROM system_configuration WHERE company_id=$1`,
+      [companyId],
+    )
+    baseCurrency = baseRes.rows[0]?.default_currency ?? 'IQD'
+  }
+  const costCurrency = receiptCostCurrency(
+    line.currency_code as string | null | undefined,
+    fxRate,
+    baseCurrency,
+  )
 
   let virtualInId: string | undefined
   for (const rl of missingRes.rows) {
@@ -3332,8 +3351,8 @@ async function completeStoreInLineForResolvedProduct(
     }
 
     await client.query(
-      `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'po_receipt',$9,$10,$11,$12,$13)`,
+      `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id,currency_code)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'po_receipt',$9,$10,$11,$12,$13,$14)`,
       [
         companyId,
         line.product_id,
@@ -3348,6 +3367,7 @@ async function completeStoreInLineForResolvedProduct(
         userId,
         poLineId,
         rl.id,
+        costCurrency,
       ],
     )
   }
@@ -14614,9 +14634,11 @@ export const resolvers = {
           )
           const lines = linesRes.rows as Record<string, unknown>[]
 
-          // polUnitPrice below is already converted to this — see its own
-          // comment — so this is the correct currency to log a cost change
-          // in, not each line's own (possibly foreign) currency_code.
+          // The company's base currency. Only a line converted at receipt (a
+          // rate other than 1) is booked in it; every other line is booked in
+          // its own currency (costCurrency below, lib/receiptCost.ts). It used
+          // to be used for every line, which relabelled a 6.25 USD price as
+          // 6.25 IQD on the stock move and on the product's cost.
           const baseCcyRes = await client.query<{ default_currency: string }>(
             `SELECT default_currency FROM system_configuration WHERE company_id=$1`,
             [requireAuth(ctx).companyId],
@@ -14674,6 +14696,14 @@ export const resolvers = {
             // priced in a foreign currency (e.g. USD via market pricing) would
             // otherwise record its raw foreign-currency number as the IQD cost.
             const polUnitPrice = parseFloat(String(polRes.rows[0]?.unit_price ?? 0)) * polFxRate
+            // The currency that figure is in: the base currency only when it was converted above, the line's own
+            // currency when it was not (see lib/receiptCost.ts). Used for the stock move and the product cost.
+            const polLine = polRes.rows[0] as { currency_code?: string | null } | undefined
+            const costCurrency = receiptCostCurrency(
+              polLine?.currency_code,
+              polFxRate,
+              receiptBaseCurrency,
+            )
             if (!polProductId) {
               // Buyer typed a free-text item with no catalog product picked —
               // queue it for the store keeper to catalog or link to an existing
@@ -14713,8 +14743,8 @@ export const resolvers = {
                   ).rows[0].id as string)
               }
               await client.query(
-                `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'po_receipt',$9,$10,$11,$12,$13)`,
+                `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id,currency_code)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'po_receipt',$9,$10,$11,$12,$13,$14)`,
                 [
                   requireAuth(ctx).companyId,
                   polProductId,
@@ -14729,12 +14759,13 @@ export const resolvers = {
                   requireAuth(ctx).userId,
                   l.po_line_id,
                   l.id,
+                  costCurrency,
                 ],
               )
               await recordProductCostChange(client, {
                 productId: polProductId,
                 newCost: polUnitPrice,
-                currencyCode: receiptBaseCurrency,
+                currencyCode: costCurrency,
                 sourceType: 'po_receipt',
                 sourceId: receipt.po_id as string,
                 sourceLabel: (receipt.po_number as string | null) ?? null,
