@@ -73,6 +73,8 @@ import {
   AUTO_APPLIED_REVIEW_NOTE,
   isAutoAppliedEditRequest,
   recordLineNamesInEditChanges,
+  resolveAddedLineCurrency,
+  stampAddedLineCurrencies,
   type PoLineSnapshot,
 } from '../lib/poEditChanges.js'
 import {
@@ -873,6 +875,14 @@ async function applyPOEditChanges(
     }
     const companyId = poCurrencyInfo.company_id
     const baseCurrencyCode = poCurrencyInfo.base_currency_code
+    // What the PO's lines are already in: a line added without a currency takes it when they all share one, instead
+    // of the company's base currency (a USD order's new line used to be stored in IQD).
+    const existingCurrencies = (
+      await client.query<{ currency_code: string | null }>(
+        `SELECT currency_code FROM po_lines WHERE po_id=$1`,
+        [poId],
+      )
+    ).rows.map((r) => r.currency_code)
     for (const line of changes.lines?.added ?? []) {
       // The frontend's added-line draft shape uses `qty` (matching the form
       // field name), not `qty_ordered` (the po_lines column name used for
@@ -882,7 +892,7 @@ async function applyPOEditChanges(
       // since the frontend's mutation call has no onError handler.
       const qty = Number(line.qty ?? 0),
         price = Number(line.unit_price ?? 0)
-      const currencyCode = (line.currency_code as string | undefined) ?? baseCurrencyCode
+      const currencyCode = resolveAddedLineCurrency(line.currency_code, existingCurrencies)
       const fxRateToBase = await resolveFxRateToBase(
         client,
         companyId,
@@ -1067,10 +1077,18 @@ async function applyRequisitionEditChanges(
     )
   }
   if ((changes.lines?.added ?? []).length > 0) {
+    // The currency the requisition's lines already share, for an added line that names none (a request submitted
+    // before the currency was recorded). It used to fall back to IQD here, whatever the requisition was in.
+    const existingCurrencies = (
+      await client.query<{ currency_code: string | null }>(
+        `SELECT currency_code FROM po_lines WHERE requisition_id=$1`,
+        [reqId],
+      )
+    ).rows.map((r) => r.currency_code)
     for (const line of changes.lines?.added ?? []) {
       const qty = Number(line.qty ?? 0)
       const price = Number(line.unit_price ?? 0)
-      const currencyCode = (line.currency_code as string | undefined) ?? 'IQD'
+      const currencyCode = resolveAddedLineCurrency(line.currency_code, existingCurrencies)
       await client.query(
         `INSERT INTO po_lines (requisition_id,line_number,description,product_id,qty_ordered,unit_price,initial_unit_price,currency_code,uom,total_price)
          VALUES ($1,(SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE requisition_id=$1),$2,$3,$4,$5,$5,$6,$7,$8)`,
@@ -14285,7 +14303,10 @@ export const resolvers = {
           for (let idx = 0; idx < i.lines.length; idx++) {
             const l = i.lines[idx]
             await client.query(
-              `INSERT INTO po_lines (po_id,product_id,description,line_number,qty_ordered,unit_price,initial_unit_price,total_price,uom,requested_currency_code) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9)`,
+              // currency_code is what the totals count in, so a line is stored in the currency it was asked for
+              // from the start; it used to be left at the column default (IQD) until market pricing, so a USD
+              // request was counted as IQD and printed as USD on the same page.
+              `INSERT INTO po_lines (po_id,product_id,description,line_number,qty_ordered,unit_price,initial_unit_price,total_price,uom,requested_currency_code,currency_code) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10)`,
               [
                 poRow.id,
                 l.product_id ?? null,
@@ -14296,6 +14317,7 @@ export const resolvers = {
                 l.qty * l.unit_price,
                 l.uom ?? 'unit',
                 l.requested_currency_code ?? null,
+                l.requested_currency_code ?? baseCurrencyCode,
               ],
             )
           }
@@ -34124,6 +34146,9 @@ const phase5MutationResolvers = {
         [reqId],
       )
       changesObj = recordLineNamesInEditChanges(changesObj as EditChanges, reqLines.rows)
+      // A line added by the edit names its currency in the request itself, so the reviewer sees it and a missing one
+      // is refused here, to the person asking, not when somebody approves (see resolveAddedLineCurrency).
+      changesObj = stampAddedLineCurrencies(changesObj as EditChanges, reqLines.rows)
 
       if (!POST_APPROVAL_REQUISITION_STATUSES.includes(reqStatus)) {
         const client = await pool.connect()
@@ -34261,6 +34286,7 @@ const phase5MutationResolvers = {
       [args.id],
     )
     changesObj = recordLineNamesInEditChanges(changesObj as EditChanges, poLines.rows)
+    changesObj = stampAddedLineCurrencies(changesObj as EditChanges, poLines.rows)
 
     // A PO that hasn't been approved yet doesn't need admin sign-off to change —
     // apply it immediately, but still record it as an (auto-approved) edit request
@@ -34642,8 +34668,8 @@ const phase5MutationResolvers = {
         for (let idx = 0; idx < i.lines.length; idx++) {
           const l = i.lines[idx]
           await client.query(
-            `INSERT INTO po_lines (requisition_id, description, line_number, qty_ordered, unit_price, initial_unit_price, total_price, uom, requested_currency_code, product_id, account_id, cost_center_id)
-             VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,$10,$11)`,
+            `INSERT INTO po_lines (requisition_id, description, line_number, qty_ordered, unit_price, initial_unit_price, total_price, uom, requested_currency_code, product_id, account_id, cost_center_id, currency_code)
+             VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,$10,$11,$12)`,
             [
               reqRow.id,
               l.description ?? '',
@@ -34656,6 +34682,8 @@ const phase5MutationResolvers = {
               l.product_id ?? null,
               l.accountId ?? defaultAccountId,
               l.costCenterId ?? defaultCostCenterId,
+              // stored in the currency it was asked for: the column default is IQD, and the totals count what is stored
+              l.requested_currency_code ?? 'IQD',
             ],
           )
         }

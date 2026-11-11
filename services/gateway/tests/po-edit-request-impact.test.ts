@@ -144,7 +144,7 @@ describe('dry-running a pending PO edit request', () => {
       lines: {
         removed: [boxId],
         edited: [{ id: usdId, field: 'unit_price', from: 50, to: 60 }],
-        added: [{ description: 'Cable tie', qty: 100, unit_price: 25, uom: 'ea' }],
+        added: [{ description: 'Cable tie', qty: 100, unit_price: 25, uom: 'ea', currency_code: 'IQD' }],
       },
     })
     const i = (await impactFor(req.id))!
@@ -162,7 +162,7 @@ describe('dry-running a pending PO edit request', () => {
   it('leaves the PO exactly as it was, and the request unchanged', async () => {
     const { poId, cableId, boxId } = await makePO('approved')
     const req = await submit(poId, {
-      lines: { edited: [{ id: cableId, field: 'qty_ordered', from: 12, to: 99 }], removed: [boxId], added: [{ description: 'x', qty: 1, unit_price: 1 }] },
+      lines: { edited: [{ id: cableId, field: 'qty_ordered', from: 12, to: 99 }], removed: [boxId], added: [{ description: 'x', qty: 1, unit_price: 1, currency_code: 'IQD' }] },
     })
     const before = await fingerprint(poId)
     const requestRow = JSON.stringify((await pool.query(`SELECT changes, status FROM po_edit_requests WHERE id=$1`, [req.id])).rows)
@@ -183,7 +183,7 @@ describe('dry-running a pending PO edit request', () => {
           { id: usdId, field: 'unit_price', from: 50, to: 61.25 },
         ],
         removed: [boxId],
-        added: [{ description: 'Cable tie', qty: 3, unit_price: 12.5, uom: 'ea' }],
+        added: [{ description: 'Cable tie', qty: 3, unit_price: 12.5, uom: 'ea', currency_code: 'IQD' }],
       },
     })
     const predicted = (await impactFor(req.id))!

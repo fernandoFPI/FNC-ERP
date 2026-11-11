@@ -233,7 +233,15 @@ interface EditDraft {
   delivery_destination: string
   priority: string
   lines: EditLineDraft[]
-  linesAdded: { product_id: string; description: string; qty: number; unit_price: number; uom: string }[]
+  linesAdded: {
+    product_id: string
+    description: string
+    qty: number
+    unit_price: number
+    uom: string
+    /** Empty until chosen, on a requisition whose lines are in more than one currency. */
+    currency_code: string
+  }[]
 }
 type Tab = 'lines' | 'log' | 'changes'
 
@@ -1154,6 +1162,19 @@ export default function RequisitionDetail() {
     return !o || lineViewOn(o)
   })
 
+  // A line added by an edit needs a currency of its own. When every line already on the requisition shares one, a
+  // new line starts on it; on a mixed requisition the person has to choose. The server refuses a line with none
+  // rather than guessing IQD, which is what used to put a USD requisition's new line in IQD (NF-PO-2026-0163).
+  const sharedLineCurrency = (() => {
+    const codes = [
+      ...new Set(req.lines.map((l) => l.currency_code?.trim()).filter((c): c is string => !!c)),
+    ]
+    return codes.length === 1 ? codes[0] : ''
+  })()
+  const addedLineCurrencyOptions = [
+    ...new Set([...CURRENCIES, ...req.lines.map((l) => l.currency_code?.trim() ?? '')]),
+  ].filter((c) => c !== '')
+
   // ── Edit requests: diff builder (mirrors PurchaseOrderDetail's own
   // 'changes' tab, scoped to the fields applyRequisitionEditChanges allows)
   const initEditDraft = (): EditDraft => ({
@@ -1955,7 +1976,14 @@ export default function RequisitionDetail() {
                               ...editDraft,
                               linesAdded: [
                                 ...editDraft.linesAdded,
-                                { product_id: '', description: '', qty: 1, unit_price: 0, uom: 'unit' },
+                                {
+                                  product_id: '',
+                                  description: '',
+                                  qty: 1,
+                                  unit_price: 0,
+                                  uom: 'unit',
+                                  currency_code: sharedLineCurrency,
+                                },
                               ],
                             })
                           }}
@@ -2050,6 +2078,35 @@ export default function RequisitionDetail() {
                                 />
                               ),
                             },
+                            {
+                              key: 'currency_code',
+                              label: t('req.detail.currency'),
+                              width: '100px',
+                              render: (al, i) => (
+                                <select
+                                  value={al.currency_code}
+                                  aria-label={t('req.detail.currency')}
+                                  style={inputStyle}
+                                  onChange={(e) => {
+                                    const linesAdded = [...editDraft.linesAdded]
+                                    linesAdded[i] = {
+                                      ...linesAdded[i],
+                                      currency_code: e.target.value,
+                                    }
+                                    setEditDraft({ ...editDraft, linesAdded })
+                                  }}
+                                >
+                                  <option value="" disabled>
+                                    {t('req.detail.currency')}
+                                  </option>
+                                  {addedLineCurrencyOptions.map((c) => (
+                                    <option key={c} value={c}>
+                                      {c}
+                                    </option>
+                                  ))}
+                                </select>
+                              ),
+                            },
                           ]
                           return (
                             <div style={{ marginTop: '4px' }}>
@@ -2088,6 +2145,13 @@ export default function RequisitionDetail() {
                               changes.lines.removed.length
                             if (totalChanges === 0) {
                               addToast({ type: 'error', message: t('req.detail.noChangesToSubmit') })
+                              return
+                            }
+                            if (editDraft.linesAdded.some((al) => !al.currency_code)) {
+                              addToast({
+                                type: 'error',
+                                message: t('req.detail.chooseNewLineCurrency'),
+                              })
                               return
                             }
                             void submitEditRequest({

@@ -838,6 +838,92 @@ describe('RequisitionDetail', () => {
     expect(changes.header.notes).toEqual({ from: '', to: 'Please expedite' })
   })
 
+  // Regression (NF-PO-2026-0163): a line added by an edit had no currency, so the server stored it as IQD on a USD
+  // requisition. The form now carries one, starting from the currency the lines already share.
+  describe('Edit requests tab: a line added by an edit names its currency', () => {
+    const reqLine = (id: string, n: number, currency: string) => ({
+      id,
+      line_number: n,
+      description: `Item ${n}`,
+      product_id: null,
+      product_name: null,
+      sku: null,
+      qty: '5',
+      uom: 'bag',
+      currency_code: currency,
+      unit_price: '100',
+      qty_from_stock: '0',
+      store_price: null,
+      market_price: null,
+      verified_price: null,
+      total: '500',
+      purchases: [],
+    })
+    type SubmitArgs = [{ variables: { requisitionId: string; changes: string } }]
+    const makeSubmit = () => vi.fn<SubmitArgs, Promise<unknown>>().mockResolvedValue({})
+    type Submit = ReturnType<typeof makeSubmit>
+
+    const startAddingALine = async (currencies: string[]): Promise<Submit> => {
+      const submitMock = makeSubmit()
+      mockUseMutation.mockReturnValue([submitMock, { loading: false }])
+      mockReq({ lines: currencies.map((c, i) => reqLine(`line-${i + 1}`, i + 1, c)) })
+      const RequisitionDetail = (await import('../RequisitionDetail')).default
+      wrap(<RequisitionDetail />)
+      fireEvent.click(screen.getByRole('button', { name: /edit requests/i }))
+      fireEvent.click(screen.getByRole('button', { name: /start editing/i }))
+      fireEvent.click(screen.getAllByRole('button', { name: /add line/i })[0])
+      fireEvent.change(screen.getByPlaceholderText('Description'), {
+        target: { value: 'Corner angle' },
+      })
+      return submitMock
+    }
+    const currencyBox = () => screen.getByRole<HTMLSelectElement>('combobox', { name: 'Currency' })
+    const submit = () =>
+      fireEvent.click(screen.getByRole('button', { name: /submit edit request/i }))
+    interface Changes {
+      lines: { added: { description: string; currency_code?: string }[] }
+    }
+    const addedLines = (submitMock: Submit) => {
+      const [call] = submitMock.mock.calls[0]
+      return (JSON.parse(call.variables.changes) as Changes).lines.added
+    }
+
+    it('starts a new line on the currency every line already has, and sends it', async () => {
+      const submitMock = await startAddingALine(['USD', 'USD'])
+      expect(currencyBox()).toHaveValue('USD')
+      submit()
+      expect(submitMock).toHaveBeenCalledTimes(1)
+      expect(addedLines(submitMock)).toEqual([
+        expect.objectContaining({ description: 'Corner angle', currency_code: 'USD' }),
+      ])
+    })
+
+    it('does not guess when the requisition mixes currencies: nothing is sent until one is chosen', async () => {
+      const submitMock = await startAddingALine(['IQD', 'USD'])
+      expect(currencyBox()).toHaveValue('')
+      submit()
+      expect(submitMock).not.toHaveBeenCalled()
+
+      fireEvent.change(currencyBox(), { target: { value: 'USD' } })
+      submit()
+      expect(submitMock).toHaveBeenCalledTimes(1)
+      expect(addedLines(submitMock)[0]).toMatchObject({ currency_code: 'USD' })
+    })
+
+    it('lets the person pick another currency than the one the lines share', async () => {
+      const submitMock = await startAddingALine(['USD', 'USD'])
+      fireEvent.change(currencyBox(), { target: { value: 'EUR' } })
+      submit()
+      expect(addedLines(submitMock)[0]).toMatchObject({ currency_code: 'EUR' })
+    })
+
+    it("offers the requisition's own currency even when it is not one of the usual ones", async () => {
+      await startAddingALine(['JPY', 'JPY'])
+      expect(currencyBox()).toHaveValue('JPY')
+      expect(within(currencyBox()).getByRole('option', { name: 'IQD' })).toBeInTheDocument()
+    })
+  })
+
   it('Edit requests tab: shows a pending edit request with Approve/Reject for an admin', async () => {
     mockReq({
       edit_requests: [

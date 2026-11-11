@@ -72,6 +72,64 @@ const toNumber = (v: string | number | null | undefined): number => {
   return Number.isFinite(n) ? n : 0
 }
 
+const CURRENCY_CODE = /^[A-Z]{3}$/
+
+// The currency of a line that an approved edit ADDS. Used when the request is submitted (so the request itself
+// says it, and the person who asked is told if it cannot) and again when it is approved (for a request that was
+// submitted before this existed). The currency the request names wins. Without one, the line takes the currency
+// every existing line of the document already shares, and a document that mixes currencies (or has none) must be
+// told: there used to be a silent `?? 'IQD'` here, which put a USD purchase order's new line in IQD and left the
+// Lines table (printing the order's USD) disagreeing with the Order total (counting 24 IQD). Nothing is converted.
+export function resolveAddedLineCurrency(
+  given: unknown,
+  existingCurrencies: (string | null | undefined)[],
+): string {
+  if (given != null && String(given).trim() !== '') {
+    const code = String(given).trim().toUpperCase()
+    if (!CURRENCY_CODE.test(code))
+      throw new Error(
+        `"${String(given).trim()}" is not a currency code. Use the three-letter code, for example USD or IQD.`,
+      )
+    return code
+  }
+  const shared = [
+    ...new Set(
+      existingCurrencies.map((c) => c?.trim().toUpperCase()).filter((c): c is string => !!c),
+    ),
+  ]
+  if (shared.length === 1) return shared[0]
+  throw new Error(
+    shared.length === 0
+      ? 'Choose a currency for the line you are adding.'
+      : `Choose a currency for the line you are adding: the lines on this document are in ${shared.join(' and ')}.`,
+  )
+}
+
+interface AddableChanges {
+  lines?: { added?: Record<string, unknown>[] }
+}
+
+// Returns a copy of `changes` in which every added line names its currency (see resolveAddedLineCurrency). A
+// request with no added lines comes back as it was.
+export function stampAddedLineCurrencies<T extends AddableChanges>(
+  changes: T,
+  existingLines: { currency_code: string | null }[],
+): T {
+  const added = changes.lines?.added
+  if (!added || added.length === 0) return changes
+  const existing = existingLines.map((l) => l.currency_code)
+  return {
+    ...changes,
+    lines: {
+      ...changes.lines,
+      added: added.map((line) => ({
+        ...line,
+        currency_code: resolveAddedLineCurrency(line.currency_code, existing),
+      })),
+    },
+  }
+}
+
 // Returns a copy of `changes` with each edited line's description, each removed line's
 // index / description / quantity / price / unit, and a `touched` list holding every
 // edited or removed line as it is right now. Anything already recorded is kept, and a

@@ -1149,6 +1149,7 @@
       "nextStepVerifyPrices": "Next step: verify prices",
       "noActivityYet": "No activity yet.",
       "noChangesToSubmit": "No changes to submit",
+      "chooseNewLineCurrency": "Choose a currency for each new line.",
       "noLinesOnThisRequisitionAre": "No lines on this requisition are being fulfilled from stock — there's nothing to price here.",
       "noLongerEditableBuyingAlreadyForked": "No longer editable — buying already forked this into one or more Purchase Orders, each with its own frozen copy of this value.",
       "noNewLinesAdded": "No new lines added",

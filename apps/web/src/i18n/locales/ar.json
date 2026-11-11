@@ -1229,6 +1229,7 @@
       "nextStepVerifyPrices": "الخطوة التالية: التحقق من الأسعار",
       "noActivityYet": "لا يوجد نشاط بعد.",
       "noChangesToSubmit": "لا توجد تغييرات لتقديمها",
+      "chooseNewLineCurrency": "اختر عملة لكل سطر جديد.",
       "noLinesOnThisRequisitionAre": "لا توجد بنود في طلب الشراء هذا تُلبّى من المخزون — لا شيء للتسعير هنا.",
       "noLongerEditableBuyingAlreadyForked": "لم يعد قابلًا للتعديل — فقد تفرّع الشراء منه إلى أمر شراء واحد أو أكثر، لكل منها نسخة مجمّدة من هذه القيمة.",
       "noNewLinesAdded": "لم تُضف بنود جديدة",
