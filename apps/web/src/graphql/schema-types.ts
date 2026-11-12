@@ -2605,6 +2605,7 @@ export type Mutation = {
   rejectVariationOrder: VariationOrder;
   /** Explicitly release a lock you hold (navigating away, closing the editor, saving). */
   releaseLock: Scalars['Boolean']['output'];
+  removeInvoicePrintAttachment: Scalars['Boolean']['output'];
   removePOPosition: Scalars['Boolean']['output'];
   removeProjectBudget: Scalars['Boolean']['output'];
   removeProjectMember: Scalars['Boolean']['output'];
@@ -2646,6 +2647,7 @@ export type Mutation = {
   setIntercoTransactionAccount: IntercoTransactionDetail;
   setInvoiceBankAccount: Scalars['Boolean']['output'];
   setInvoicePaymentType: Scalars['Boolean']['output'];
+  setInvoicePrintAttachment: ProjectInvoicePrintAttachment;
   setPOFunding: PurchaseOrder;
   setPOLineAccounting: PoLine;
   setPOLineActualPrice: PoLine;
@@ -4636,6 +4638,11 @@ export type MutationReleaseLockArgs = {
 };
 
 
+export type MutationRemoveInvoicePrintAttachmentArgs = {
+  invoiceId: Scalars['ID']['input'];
+};
+
+
 export type MutationRemovePoPositionArgs = {
   id: Scalars['ID']['input'];
 };
@@ -4869,6 +4876,12 @@ export type MutationSetInvoiceBankAccountArgs = {
 export type MutationSetInvoicePaymentTypeArgs = {
   invoiceId: Scalars['ID']['input'];
   paymentType: Scalars['String']['input'];
+};
+
+
+export type MutationSetInvoicePrintAttachmentArgs = {
+  fileId: Scalars['ID']['input'];
+  invoiceId: Scalars['ID']['input'];
 };
 
 
@@ -7111,6 +7124,7 @@ export type ProjectInvoice = {
   paymentType: Scalars['String']['output'];
   payments: Array<InvoicePayment>;
   periodOfPerformance?: Maybe<Scalars['String']['output']>;
+  printAttachment?: Maybe<ProjectInvoicePrintAttachment>;
   projectCode?: Maybe<Scalars['String']['output']>;
   projectName?: Maybe<Scalars['String']['output']>;
   rejectedAt?: Maybe<Scalars['String']['output']>;
@@ -7183,6 +7197,15 @@ export type ProjectInvoiceLineInput = {
   taxPct?: InputMaybe<Scalars['Float']['input']>;
   unitCost: Scalars['Float']['input'];
   uom?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type ProjectInvoicePrintAttachment = {
+  fileId: Scalars['ID']['output'];
+  filename: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  mimeType: Scalars['String']['output'];
+  sizeBytes: Scalars['Int']['output'];
+  uploadedAt?: Maybe<Scalars['String']['output']>;
 };
 
 export type ProjectList = {

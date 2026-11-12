@@ -1447,8 +1447,21 @@
     # Fields of the printed header the approver flagged (migration 314). Nullable on purpose: the other
     # mutations that return a ProjectInvoice do not fill it, and a non-null list would null the invoice.
     headerFlags: [InvoiceHeaderFlag!]
+    # The picture or PDF printed after the invoice's last page, or null. Nullable on purpose: it is read by its own
+    # query and must never null the whole invoice (see headerFlags). Not on the public verification page.
+    printAttachment: ProjectInvoicePrintAttachment
     lines: [ProjectInvoiceLine!]!
     payments: [InvoicePayment!]!
+  }
+
+  # The one file an invoice prints after its last page (JPG, PNG or PDF, at most 10 MB; a PDF prints one sheet per page).
+  type ProjectInvoicePrintAttachment {
+    id: ID!
+    fileId: ID!
+    filename: String!
+    mimeType: String!
+    sizeBytes: Int!
+    uploadedAt: String
   }
 
   # A flagged field of the invoice's printed header: field is one of invoice_date, due_date, invoice_number,
@@ -4985,6 +4998,9 @@
     deleteBankAccount(id: ID!): Boolean!
     setInvoiceBankAccount(invoiceId: ID!, bankAccountId: ID): Boolean!
     setInvoicePaymentType(invoiceId: ID!, paymentType: String!): Boolean!
+    # Needs projects.invoices.edit. fileId is a file the caller just uploaded; a new one replaces the old.
+    setInvoicePrintAttachment(invoiceId: ID!, fileId: ID!): ProjectInvoicePrintAttachment!
+    removeInvoicePrintAttachment(invoiceId: ID!): Boolean!
   }
 
   # ─── Permission System ────────────────────────────────────────────────────────

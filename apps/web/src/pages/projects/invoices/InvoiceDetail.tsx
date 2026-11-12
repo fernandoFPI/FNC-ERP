@@ -1,6 +1,6 @@
 ﻿import i18n, { enumLabel, tlh } from '../../../i18n'
 import { useTranslation } from 'react-i18next'
-import { Fragment, useState, useRef, useEffect } from 'react'
+import { Fragment, useState, useRef, useEffect, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -32,6 +32,8 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { ActivityLog } from '../../../components/ui/ActivityLog'
 import { ExpenseLineFlag } from '../../../components/finance/ExpenseLineFlag'
 import { InvoiceHeaderReview } from '../../../components/projects/InvoiceHeaderReview'
+import { InvoiceAttachmentPanel } from '../../../components/projects/InvoiceAttachmentPanel'
+import { usePrintAttachmentPages } from '../../../hooks/usePrintAttachmentPages'
 import { lineFlagState } from '../../../lib/expenseClaimFlags'
 import { usePermission } from '../../../hooks/usePermission'
 import { useToastStore } from '../../../store/toastStore'
@@ -165,6 +167,32 @@ export default function InvoiceDetail() {
       color: { dark: '#1a3c5e', light: '#ffffff' },
     }).then(setQrDataUrl)
   }, [tab, inv?.verificationToken])
+
+  // The picture or PDF printed after the invoice. Its pages are built only while the PDF tab is open. Printing is held
+  // back while they load or when they could not be made: an invoice that silently prints WITHOUT the attachment someone
+  // attached would look finished and be wrong.
+  const printAttachment = inv?.printAttachment ?? null
+  const { state: attachmentState, retry: retryAttachment } = usePrintAttachmentPages(
+    printAttachment,
+    tab === 'pdf',
+  )
+  const attachmentPages = attachmentState.status === 'ready' ? attachmentState.pages : null
+  const attachmentHoldsPrint =
+    attachmentState.status === 'loading' || attachmentState.status === 'failed'
+  const invoiceHtml = useMemo(
+    () =>
+      inv
+        ? buildInvoiceHTML(
+            inv,
+            selectedBank,
+            inv.paymentType,
+            inv.companyStampImage,
+            qrDataUrl,
+            attachmentPages,
+          )
+        : '',
+    [inv, selectedBank, qrDataUrl, attachmentPages],
+  )
 
   async function handleSetBank(bankAccountId: string | null) {
     try {
@@ -1331,10 +1359,32 @@ export default function InvoiceDetail() {
         {/* PDF tab */}
         {tab === 'pdf' && (
           <div>
+            <InvoiceAttachmentPanel
+              invoiceId={inv.id}
+              attachment={printAttachment}
+              pages={attachmentState}
+              onRetry={retryAttachment}
+              // The same key the server asks for when attaching or removing.
+              canEdit={canReview}
+              onChanged={() => {
+                void refetch()
+              }}
+            />
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              <Button variant="primary" size="sm" onClick={handlePrint}>
-                {t('proj.invDetail.printSaveAsPdf')}
-              </Button>
+              <span
+                title={
+                  attachmentHoldsPrint ? t('proj.invDetail.printAttachmentWaiting') : undefined
+                }
+              >
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handlePrint}
+                  disabled={attachmentHoldsPrint}
+                >
+                  {t('proj.invDetail.printSaveAsPdf')}
+                </Button>
+              </span>
             </div>
             <div
               style={{
@@ -1346,13 +1396,7 @@ export default function InvoiceDetail() {
             >
               <iframe
                 ref={iframeRef}
-                srcDoc={buildInvoiceHTML(
-                  inv,
-                  selectedBank,
-                  inv.paymentType,
-                  inv.companyStampImage,
-                  qrDataUrl,
-                )}
+                srcDoc={invoiceHtml}
                 style={{ width: '100%', height: '820px', border: 'none', display: 'block' }}
                 title={t('proj.invDetail.invoice', { invoiceNumber: inv.invoiceNumber })}
               />

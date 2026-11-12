@@ -79,6 +79,12 @@ import {
 } from '../lib/poEditChanges.js'
 import { receiptCostCurrency } from '../lib/receiptCost.js'
 import {
+  INVOICE_PRINT_ATTACHMENT_LABEL,
+  checkPrintAttachmentFile,
+  getInvoicePrintAttachment,
+  type PrintAttachmentFileRow,
+} from '../lib/invoicePrintAttachment.js'
+import {
   buildEditImpact,
   snapshotEditLines,
   type EditImpact,
@@ -40411,6 +40417,13 @@ Object.assign(resolvers, {
 
 // ── Live updates (GraphQL subscriptions over graphql-ws) ─────────────────────
 Object.assign(resolvers, {
+  ProjectInvoice: {
+    // Read only when a query asks for it, and scoped to the caller's company on both the invoice and the file.
+    // Never reached by the public verification page, which maps its own fields (routes/verify.ts).
+    printAttachment: async (parent: { id: string }, _args: unknown, ctx: GQLContext) =>
+      ctx.auth ? getInvoicePrintAttachment(parent.id, ctx.auth.companyId) : null,
+  },
+
   Subscription: {
     sessionsChanged: {
       subscribe: (_: unknown, args: { userId?: string }) =>
@@ -40846,6 +40859,110 @@ Object.assign(resolvers.Mutation, {
     if (!ctx.auth || ctx.auth.role !== 'system_admin') throw new Error('Unauthorized')
     await query(`DELETE FROM bank_accounts WHERE id=$1`, [args.id])
     return true
+  },
+
+  // The one picture or PDF an invoice prints after its last page (lib/invoicePrintAttachment.ts). Needs edit access to
+  // invoices, an invoice in the caller's company, and a file the caller uploaded that nothing else uses. A new file
+  // replaces the old one. Any invoice status: the rule is the user's ("any time").
+  setInvoicePrintAttachment: async (
+    _: unknown,
+    args: { invoiceId: string; fileId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.invoices.edit', 'edit')
+    const auth = ctx.auth
+    await withTransaction(
+      { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+      async (client) => {
+        const inv = await client.query(
+          `SELECT id FROM project_invoices WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+          [args.invoiceId, auth.companyId],
+        )
+        if (!inv.rows[0]) throw new Error('Invoice not found')
+        const file = await client.query<PrintAttachmentFileRow>(
+          `SELECT mime_type, size_bytes, status, uploaded_by, category FROM files
+            WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+          [args.fileId, auth.companyId],
+        )
+        if (!file.rows[0]) throw new Error('File not found')
+        const problem = checkPrintAttachmentFile(file.rows[0], auth.userId)
+        if (problem) throw new Error(problem)
+
+        const old = await client.query<{ id: string; file_id: string }>(
+          `SELECT id, file_id FROM document_attachments
+            WHERE entity_type='project_invoice' AND entity_id=$1 AND label=$2`,
+          [args.invoiceId, INVOICE_PRINT_ATTACHMENT_LABEL],
+        )
+        for (const o of old.rows)
+          await removeAttachment(client, o.id, 'project_invoice', args.invoiceId)
+        await createAttachment(client, {
+          entityType: 'project_invoice',
+          entityId: args.invoiceId,
+          fileId: args.fileId,
+          label: INVOICE_PRINT_ATTACHMENT_LABEL,
+          isPrimary: false,
+          uploadedBy: auth.userId,
+        })
+        // plain SQL, in this transaction: logAudit swallows its own errors (playbook #48)
+        await client.query(
+          `INSERT INTO audit_log (user_id, company_id, action, table_name, record_id, old_values, new_values)
+           VALUES ($1,$2,'UPDATE','project_invoices',$3,$4::jsonb,$5::jsonb)`,
+          [
+            auth.userId,
+            auth.companyId,
+            args.invoiceId,
+            JSON.stringify({ print_attachment_file_id: old.rows[0]?.file_id ?? null }),
+            JSON.stringify({ print_attachment_file_id: args.fileId }),
+          ],
+        )
+      },
+    )
+    // read after the commit, never inside the callback (playbook #27)
+    const saved = await getInvoicePrintAttachment(args.invoiceId, auth.companyId)
+    if (!saved) throw new Error('The attachment was not saved')
+    return saved
+  },
+
+  removeInvoicePrintAttachment: async (
+    _: unknown,
+    args: { invoiceId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.invoices.edit', 'edit')
+    const auth = ctx.auth
+    return withTransaction(
+      { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+      async (client) => {
+        const inv = await client.query(
+          `SELECT id FROM project_invoices WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+          [args.invoiceId, auth.companyId],
+        )
+        if (!inv.rows[0]) throw new Error('Invoice not found')
+        const rows = await client.query<{ id: string; file_id: string }>(
+          `SELECT id, file_id FROM document_attachments
+            WHERE entity_type='project_invoice' AND entity_id=$1 AND label=$2`,
+          [args.invoiceId, INVOICE_PRINT_ATTACHMENT_LABEL],
+        )
+        for (const r of rows.rows)
+          await removeAttachment(client, r.id, 'project_invoice', args.invoiceId)
+        if (rows.rows.length > 0) {
+          await client.query(
+            `INSERT INTO audit_log (user_id, company_id, action, table_name, record_id, old_values, new_values)
+             VALUES ($1,$2,'UPDATE','project_invoices',$3,$4::jsonb,$5::jsonb)`,
+            [
+              auth.userId,
+              auth.companyId,
+              args.invoiceId,
+              JSON.stringify({ print_attachment_file_id: rows.rows[0]?.file_id ?? null }),
+              JSON.stringify({ print_attachment_file_id: null }),
+            ],
+          )
+        }
+        return rows.rows.length > 0
+      },
+    )
   },
 
   setInvoiceBankAccount: async (

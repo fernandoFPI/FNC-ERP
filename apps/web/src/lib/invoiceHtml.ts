@@ -114,6 +114,12 @@ export function buildInvoiceHTML(
   paymentType?: string,
   stampImage?: string | null,
   qrDataUrlInput?: string | null,
+  /**
+   * The pages of the file attached to the invoice (a picture, or a PDF drawn page by page), as image data URLs.
+   * Each prints as its own sheet after the invoice's last page. Absent or empty: the output is exactly what it was
+   * before attachments existed.
+   */
+  attachmentPages?: readonly string[] | null,
 ): string {
   const cur = inv.currencyCode
   const pt = paymentType ?? inv.paymentType ?? 'wire_transfer'
@@ -803,6 +809,42 @@ export function buildInvoiceHTML(
       ${sel('.p2-print-divider')} { display: block !important; border-bottom: 2px solid #1a3c5e; margin-bottom: 22px; }`
   }
 
+  // ── Attachment sheets ─────────────────────────────────────────────────────
+  // One sheet per page of the attached file, after the last invoice page. They are siblings of `.page` and carry none of
+  // the classes the pagination script looks for (.page, .page2-break, .page-footer-bar, .page-count), so the script never
+  // sees them and "Page N of M" keeps counting invoice pages only. The sheet is opaque and sits above the fixed
+  // letterhead artwork and stamp (which print on every sheet), so the attachment is not printed over them. It is 296 mm
+  // tall, not 297: a block as tall as the sheet prints an empty sheet after it (playbook #53f, #63), and the 2 mm
+  // shadow below covers the last millimetre of artwork. The image source goes through safeImageSrc like every other
+  // image in this page (playbook #54).
+  const attachmentSrcs = (attachmentPages ?? [])
+    .map((p) => safeImageSrc(p))
+    .filter((s): s is string => s !== null)
+  const attachmentCss =
+    attachmentSrcs.length === 0
+      ? ''
+      : `
+    .inv-att { position: relative; z-index: 20; box-sizing: border-box; background: #fff; display: flex; flex-direction: column; align-items: center; break-before: page; page-break-before: always; }
+    .inv-att img { display: block; max-width: 100%; height: auto; object-fit: contain; }
+    .inv-att-label { align-self: stretch; text-align: center; font-size: 11px; color: #64748b; padding-bottom: 12px; }
+    @media screen {
+      .inv-att { max-width: 210mm; margin: 48px auto 0; padding: 24px 0 0; border-top: 3px dashed #e2e8f0; }
+    }
+    @media print {
+      .inv-att { width: 210mm; height: 296mm; padding: 12mm; justify-content: center; overflow: hidden; box-shadow: 0 2mm 0 0 #fff; }
+      .inv-att img { max-height: 272mm; }
+      .inv-att-label { display: none; }
+    }`
+  const attachmentSheetsHtml = attachmentSrcs
+    .map(
+      (src, i) => `
+<div class="inv-att" data-attachment-page="${i + 1}">
+  <div class="inv-att-label">Attachment, page ${i + 1} of ${attachmentSrcs.length} (printed after the invoice)</div>
+  <img src="${src}" alt="Attachment page ${i + 1} of ${attachmentSrcs.length}"/>
+</div>`,
+    )
+    .join('')
+
   const continuationPagesHtml = continuationChunks
     .map((chunk, idx) => {
       const isLast = idx === continuationChunks.length - 1
@@ -897,7 +939,7 @@ export function buildInvoiceHTML(
       @page { size: A4; margin: 0; }
     }
     `
-    }
+    }${attachmentCss}
   </style>
   ${
     letterhead
@@ -1025,7 +1067,7 @@ ${
 
   ${!isMultiPage ? pageFooterBar(1) : ''}
 
-</div>
+</div>${attachmentSheetsHtml}
 ${overflowFixScript}
 </body>
 </html>`

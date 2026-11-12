@@ -789,6 +789,14 @@ export const PROJECT_INVOICE_QUERY = gql`
     projectInvoice(id: $id) {
       id
       invoiceNumber
+      printAttachment {
+        id
+        fileId
+        filename
+        mimeType
+        sizeBytes
+        uploadedAt
+      }
       billingMethod
       displayMode
       grossTotal
@@ -917,6 +925,26 @@ export const CREATE_PROJECT_INVOICE = gql`
   }
 `
 
+// The one picture or PDF an invoice prints after its last page.
+export const SET_INVOICE_PRINT_ATTACHMENT = gql`
+  mutation SetInvoicePrintAttachment($invoiceId: ID!, $fileId: ID!) {
+    setInvoicePrintAttachment(invoiceId: $invoiceId, fileId: $fileId) {
+      id
+      fileId
+      filename
+      mimeType
+      sizeBytes
+      uploadedAt
+    }
+  }
+`
+
+export const REMOVE_INVOICE_PRINT_ATTACHMENT = gql`
+  mutation RemoveInvoicePrintAttachment($invoiceId: ID!) {
+    removeInvoicePrintAttachment(invoiceId: $invoiceId)
+  }
+`
+
 export const UPDATE_PROJECT_INVOICE = gql`
   mutation UpdateProjectInvoice(
     $id: ID!
@@ -944,6 +972,14 @@ export const UPDATE_PROJECT_INVOICE = gql`
     ) {
       id
       invoiceNumber
+      printAttachment {
+        id
+        fileId
+        filename
+        mimeType
+        sizeBytes
+        uploadedAt
+      }
       billingMethod
       displayMode
       grossTotal
