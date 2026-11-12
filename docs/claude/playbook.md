@@ -1864,3 +1864,62 @@ Don't re-derive, check these first.
     `components/projects/__tests__/InvoiceAttachmentPanel.test.tsx` and
     `pages/projects/invoices/__tests__/InvoiceDetailPrintAttachment.test.tsx` (100; 62 mutations killed). Related to #48, #20,
     #53, #54, #55, #58, #63 and #38.
+    **A mistake worth keeping, same day it shipped:** `InvoiceAttachmentPanel.tsx` imported `ActionButton`, a component of the
+    requisition redesign that was NOT committed, so the commit did not build in CI (TS2307) and the first production deploy
+    stopped at its build gate (nothing was deployed; "Deploy to VPS" was skipped). My working tree held that file, so every
+    local `tsc` and test passed, and I had not re-run `tsc` after writing the test files either (a second error, TS2322, was in a
+    test). When a working tree holds another session's uncommitted work, "it builds here" proves nothing about the commit. Before
+    pushing: extract the committed tree (`git archive -o x.tar HEAD apps/web`, then `tar -xf`; piping `git archive` through
+    PowerShell corrupts the bytes), overlay your fixes, junction the installed `node_modules` in, and run `tsc` and `vite build`
+    there; keep a negative control (put the committed versions of the changed files back and see the same errors CI reported)
+    so a pass means something. Then push to `dev` first and promote to `production` only after the dev CI "Test" job (build, migrations, full tests) is
+    green. The dev "Lint" job has been red for days on old prettier findings in other files; read WHICH job failed, not just
+    that the run is red.
+
+83. **A screen built on its own tables, next to a system that moved on: the Cost Control tab showed 0 for everything on a project
+    with real cost.** NY-PRJ-2026-0032 (Nishtimani Yakam, "Mr.Rizgar's House") had 170 cost rows (about 8.9 million IQD and 6.7
+    thousand USD), 20 purchase orders waiting on payment and 0 on the Cost Control Overview: Total Budget, Committed, Actual
+    Cost, Forecast, Remaining, Variance all `USD 0`, while the project header showed "Actual 550.50 USD" and an "Other Currency
+    Budgets" card showed 8,886,863.05 IQD. Three screens, three sources:
+    (a) *The header* reads the cost ledger, `v_project_cost_by_currency` (migration 304), per currency, in `project`'s
+    `cost_summary`. (b) *The Cost Control Overview* (`projectCostSummary`) read only its OWN planning tables: budget from
+    `project_cost_codes`, committed from `project_committed_costs` (filled only by a "Sync PO" button), actual from
+    `project_labor_entries` and `project_equipment_log`. Production had 0 rows in all four of those tables, anywhere, while 23
+    projects had ledger cost, so on 23 of 23 the tab showed zero actual. (c) *The Sync PO button* selected POs by
+    `status IN ('approved','ordered','partially_received','received','closed')`, the statuses of the flow before the requisition
+    split (G1); 'ordered', 'partially_received' and 'received' no longer exist and these POs are all `payment_pending`, so
+    pressing it would have found nothing. A status list that drifted, same family as #29, #33 and #71. How to spot it: a tile
+    that reads 0 while another screen of the same project shows a number; compare the SQL behind each, and grep the statuses a
+    query lists against `purchase_orders_status_check`.
+    Fix (`lib/costControlPurchases.ts`, `projectCostSummary`, `syncPOCommitments`; no migration, nothing in the database
+    changed): ACTUAL adds the ledger cost of the selected currency, from the same view the header reads (so the two agree, and a
+    row whose journal is not posted is not counted); `availableCurrencies` also lists currencies that have cost, not only
+    committed rows. COMMITTED from a PO is what was ordered and NOT yet received, per line and per line currency:
+    `GREATEST(qty_ordered - qty_from_stock - qty_received, 0) x COALESCE(actual_unit_price, unit_price)`, summed in SQL, for POs
+    in `COMMITTED_PO_STATUSES` (approved through payment_pending, not draft/pending/cancelled/completed/closed). A received line
+    is already Actual (delivered to the jobsite) or is stock (cost reaches the project when issued), so counting it in both
+    would charge the project twice. Sync PO now writes that figure, brings the row of a PO that has since been received in full,
+    cancelled or completed down to 0 (it used to leave the old amount), leaves manual commitments alone, and is scoped to the
+    caller's company on the PO and its vendor. Opening the tab as someone who may edit cost control runs the sync once
+    (idempotent upsert); a view-only user sees the figure as of the last sync. The sync takes a transaction.
+    Decisions to confirm (mine, taken from "fix the gaps"): "committed = ordered and not yet received", and that a purchase
+    delivered to INVENTORY is committed only until received. Not changed on purpose: the project header's Remaining Budget
+    (it subtracts every open PO's header total on top of the cost already booked, and sums that total under the header currency,
+    not the line currencies; with no budget set it reads -18,053.41 USD where the spent amount is about 6,682), the "Pending POs"
+    / "Approved POs" tiles (they count `NOT IN ('completed','deleted')` and `= 'approved'`: 20 awaiting payment plus 1 cancelled,
+    and 0), the 73 jobsite deliveries of USD purchases still labelled IQD (#65b: the 7 Nov fix covers new rows only; the
+    backfill's step 1 was never applied), and G17 (below).
+    **G17 is real in the code, not yet in the data.** `postPOCompletionJournal` posts the WHOLE PO's net total to the project
+    expense when the PO is completed, with nothing that excludes lines already booked as `po_direct_delivery` cost. When Finance
+    posts that entry, a jobsite PO is charged a second time. Production has only 2 completed jobsite POs and 1 completion cost
+    row, none with both, so it has not happened yet; it will when these 20 payment_pending POs are paid and completed. Decide
+    before completing them (do not complete POs to tidy a tile).
+    Tests: `services/gateway/tests/cost-control-purchases.test.ts` (real Postgres, through the real resolvers, 16; 19 mutations
+    killed: the remainder rule, each status, the company scope, the counted-rows view, the currency filter, the zeroing of
+    finished POs and the manual-row guard; one survived first, a line received OVER its quantity, and got its own test),
+    `apps/web/src/pages/projects/detail/__tests__/CostControlSyncOnOpen.test.tsx` (5; 5 mutations killed); the two older tests that
+    share these resolvers (`sync-po-commitments-multicurrency`, `project-cost-codes-per-currency`) pass unchanged. Traps met: a
+    test that creates a PO of ANOTHER company pointing at this project blocks deleting the project, so clean up purchase orders of
+    all test companies before projects, and find leftovers by company-name prefix so one aborted run cannot poison the next;
+    `\echo` with an apostrophe makes psql print "unterminated quoted string" (#67b). Not verified in a browser. Related to #6,
+    #29, #33, #65, #71, #74.
