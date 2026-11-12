@@ -1790,3 +1790,77 @@ Don't re-derive, check these first.
     and `store-in-currency.test.ts` (11, through the real receipt, reversal, admin correction and cataloguing paths); 33
     mutations, all killed. Related to #43 (a currency shown without conversion), #65 (a hard-coded IQD label), #67 (the
     location's currency label) and #23 (one thing, several code paths).
+
+82. **A file that prints with the invoice: a dedicated attach path, sheets that sit above fixed print furniture, and a
+    print button that must not outrun the file.** The request: "add an attachment (a picture or a PDF) that displays as
+    the last page of the printed invoice, after the bank information". The user chose: exactly ONE attachment per invoice,
+    changeable at ANY status (nothing locks after issue), and NOT on the public QR verification page. Everything else
+    (JPG, PNG, PDF; 10 MB; at most 10 printed sheets; PDF pages drawn as pictures; letterhead not repeated; invoices
+    without an attachment unchanged) was proposed and accepted. No migration: the file is a `document_attachments` row on
+    the invoice (`project_invoice` was already allowed, migration 025), told apart from any other file attached to the
+    invoice by its label `invoice_print_page`.
+    (a) *Never the generic attach routes (#48, #20).* The gateway's `/files/attach` asks only that the caller is logged in,
+    the projects service mount asks only for VIEW access, and `verifyAttachmentEntityOwnershipGW` answers `true` for
+    `project_invoice`, so anyone could have put any file of the company, including another document's, on an invoice that
+    prints for the client. `setInvoicePrintAttachment` / `removeInvoicePrintAttachment` (`resolvers.ts`) need
+    `projects.invoices.edit`, lock the invoice row in the caller's company, lock the file row in the caller's company, and
+    run `checkPrintAttachmentFile` (`services/gateway/src/lib/invoicePrintAttachment.ts`): JPG / PNG / PDF, at most 10 MB,
+    status `uploaded` (confirmed and used by nothing, so a file id cannot be borrowed from elsewhere), uploaded by the caller,
+    category `attachment`. A new file removes the old one in the same transaction; the audit row is plain SQL inside it
+    (`logAudit` swallows errors, #48); the value returned is read AFTER the commit (#27). `ProjectInvoice.printAttachment`
+    is a field resolver, so every reader of the invoice shape gets it (#23, #55), and it is NULLABLE so a failure cannot
+    null the invoice (#38). The public route maps explicit fields and was never touched; a test fetches it with an
+    attachment present and finds no filename, id or label.
+    (b) *Fixed elements print on EVERY sheet, including these.* The letterhead (`.lh-bg`, z-index -1) and the stamp
+    (`.lh-stamp`, z-index 10) are `position: fixed`, so Chrome repeats them on each printed sheet (#53). An attachment
+    sheet would have carried the letterhead artwork and the stamp over the client's own document. The sheet is an opaque
+    `position: relative; z-index: 20` block, 210 x 296 mm with a 2 mm white shadow below (296, not 297: a block as tall as
+    the sheet prints an empty sheet after it, #53f, #63; the shadow covers the last millimetre of footer artwork). It is a
+    SIBLING after the last `.page` and carries none of the classes the pagination script looks for (`.page`,
+    `.page2-break`, `.page-footer-bar`, `.page-count`), so the script never sees it, the sheets always land after the
+    pages the script inserts (it inserts with `insertBefore(newPage, currentPage.nextSibling)`), and "Page N of M" counts
+    invoice pages only. The CSS and the markup exist ONLY when there are pages: `buildInvoiceHTML` with no attachment
+    returns exactly the bytes it did before (compared with the committed version for 10 shapes x 3 absent forms). Every
+    image source goes through `safeImageSrc` (#54), and a 14 MB data URL passes it quickly (the check is a linear character
+    class, not a backtracking pattern). Known and left: the stamp's text ("AUTHORIZED BY") still sits in the PDF's text
+    layer under the white sheet; nothing is visible.
+    (c) *A PDF cannot be embedded in a printed page.* Chrome prints an iframe/embed PDF as a grey box. `lib/pdfToImages.ts`
+    draws each page to a canvas (about 1654 px wide, JPEG 0.88) with pdfjs, so the text in the print is not selectable. Traps
+    met: `destroy()` is on the pdfjs LOADING TASK, not on the document proxy (tsc caught it); pdfjs takes ownership of the
+    bytes it is given (it transfers them to its worker), so the File itself is what gets uploaded, never those bytes; a JPEG
+    has no alpha, so a page drawn on a clear canvas would print black where it is blank (fill white first); a PDF over the
+    page limit is refused BEFORE any page is drawn. A picture is checked against its first bytes (a renamed file would
+    otherwise print as a broken image icon). The page checks the file (type, size, "opens", page count) BEFORE uploading, and
+    keeps the pages it just drew under the new file id so the preview does not download them again.
+    (d) *Print must not outrun the file.* While the attachment loads, or when it could not be made (download failed, file
+    unreadable, too many pages), the Print button is disabled with a reason, because an invoice that prints without the
+    file someone attached looks finished and is wrong. The hook's answer belongs to a file id: after a replace, one render
+    shows "loading", never the old file's pages (a test records every render). Only a failed DOWNLOAD offers Try again.
+    The pages are built only while the PDF tab is open.
+    (e) *Tests that could not see the bug until a second company existed.* The first 33 gateway tests killed 21 of 24
+    mutations; the three survivors (the file's company scope on write, the file's and the invoice's on read) all needed an
+    invoice of a SECOND company plus a file of the first, uploaded by the second company's user; with a single company the
+    unscoped query returns the same row. A web mutation survived because the test file's type already equalled the one
+    sent; a file with an EMPTY type (what a PC with no program registered for the extension reports) is what distinguishes
+    them. How to spot it: a scoped query whose mutation "removed the company filter" and nothing failed.
+    (f) *Verified in real Chrome, because layout is invisible to unit tests.* A bundle of the real `buildInvoiceHTML` and the
+    real `renderPdfPages` (esbuild, served locally with the fonts and the pdfjs worker) printed to PDF in headless Chrome 157
+    for letterhead and plain layouts x 1, 6, 12, 30 rows x no attachment / PNG / landscape JPEG / 1-page PDF / 3-page PDF
+    (40 cases), analysed with PyMuPDF: page count = pages without the attachment + one sheet per picture; the invoice pages'
+    text is identical with and without; no navy (letterhead) or magenta (stamp) pixel on an attachment sheet; the picture
+    sits inside a 12 mm margin; no blank sheet; "Page N of M" unchanged. The real pdfjs path gave 1 / 3 pictures for 1 / 3 page
+    PDFs, refused a 12-page PDF with both numbers, and refused a broken PDF. Harness traps: a Windows path with backslashes
+    written into a generated TS import string loses its backslashes (convert to `/`); `page.setContent` keeps the origin of
+    the page it replaces, so go to the local server first or `/fonts/...` does not load; `ActionButton` with `loading`
+    changes its accessible name, so find a busy button by its text.
+    NOT verified: the panel and the preview in the running app (layout, Arabic, a phone), and the print from the user's own
+    browser. Not done on purpose: more than one attachment, downscaling a large photo (a 10 MB JPEG is about 13 MB inside the
+    page), the worker's own invoice PDF template (`packages/pdf`, not in use), attachments on the public QR page. Existing
+    behaviour seen on the way, not changed: the PLAIN (no letterhead) layout prints a 1-row wire-transfer invoice with
+    intermediary bank details on two sheets.
+    Tests: `services/gateway/tests/invoice-print-attachment.test.ts` (real Postgres through the real ApolloServer and the
+    public route, 33; 24 mutations killed), `apps/web` `lib/__tests__/{invoicePrintAttachment,invoiceHtmlAttachment,
+    pdfToImages,loadPrintAttachment}.test.ts`, `hooks/__tests__/usePrintAttachmentPages.test.tsx`,
+    `components/projects/__tests__/InvoiceAttachmentPanel.test.tsx` and
+    `pages/projects/invoices/__tests__/InvoiceDetailPrintAttachment.test.tsx` (100; 62 mutations killed). Related to #48, #20,
+    #53, #54, #55, #58, #63 and #38.
