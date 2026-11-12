@@ -9,7 +9,7 @@ let getDocumentError: Error | null = null
 let renderError: Error | null = null
 
 const task = {
-  promise: Promise.resolve(),
+  promise: Promise.resolve() as Promise<unknown>,
   destroy: vi.fn(() => {
     calls.push('task.destroy')
     return Promise.resolve()

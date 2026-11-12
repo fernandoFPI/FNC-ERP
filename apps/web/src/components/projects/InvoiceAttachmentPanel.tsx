@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { useMutation } from '@apollo/client'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
-import { ActionButton } from '../ui/ActionButton'
+import { Button } from '../ui/Button'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { Spinner } from '../ui/Spinner'
 import { useToastStore } from '../../store/toastStore'
@@ -227,17 +227,17 @@ export function InvoiceAttachmentPanel({
         </div>
         {canEdit && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <ActionButton
-              variant="outline"
+            <Button
+              variant="secondary"
               size="sm"
               disabled={working}
               loading={busy === 'preparing' || busy === 'uploading'}
               onClick={() => inputRef.current?.click()}
             >
               {attachment ? key('printAttachmentReplace') : key('printAttachmentAdd')}
-            </ActionButton>
+            </Button>
             {attachment && (
-              <ActionButton
+              <Button
                 variant="danger"
                 size="sm"
                 disabled={working}
@@ -246,7 +246,7 @@ export function InvoiceAttachmentPanel({
                 }}
               >
                 {key('printAttachmentRemove')}
-              </ActionButton>
+              </Button>
             )}
           </div>
         )}
@@ -309,9 +309,9 @@ export function InvoiceAttachmentPanel({
             attachment &&
             busy === null &&
             pages.reason === 'download' && (
-              <ActionButton variant="ghost" size="sm" onClick={onRetry}>
+              <Button variant="ghost" size="sm" onClick={onRetry}>
                 {key('printAttachmentRetry')}
-              </ActionButton>
+              </Button>
             )}
         </div>
       )}
