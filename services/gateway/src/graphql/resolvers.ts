@@ -84,6 +84,7 @@ import {
   getInvoicePrintAttachment,
   type PrintAttachmentFileRow,
 } from '../lib/invoicePrintAttachment.js'
+import { costControlCategoryForLedger, projectPOCommitments } from '../lib/costControlPurchases.js'
 import {
   buildEditImpact,
   snapshotEditLines,
@@ -23666,47 +23667,66 @@ export const resolvers = {
       ]).then((r) => {
         if (!r.rows[0]) throw new Error('Not found')
       })
-      const pos = await query(
-        `SELECT po.id, po.po_number, v.name AS supplier_name, po.created_at FROM purchase_orders po LEFT JOIN vendors v ON v.id = po.vendor_id WHERE po.project_id=$1 AND po.status IN ('approved','ordered','partially_received','received','closed')`,
-        [args.projectId],
-      )
-      for (const po of pos.rows) {
-        // D10: po.total_amount/currency_code collapse to NULL/a single
-        // label once a PO spans more than one currency, so read the real
-        // per-currency breakdown instead and keep one committed_costs row
-        // per (PO, currency) -- this table is already read per-currency
-        // elsewhere (cost-control reports filter committed_amount by
-        // currency_code), so multiple rows per PO is the existing shape,
-        // not a new one.
-        const currencyTotals = await getPOCurrencyTotals(query, po.id as string)
-        for (const ct of currencyTotals) {
-          const existing = await query(
-            `SELECT id FROM project_committed_costs WHERE project_id=$1 AND reference_id=$2 AND currency_code=$3`,
-            [args.projectId, po.id, ct.currency_code],
-          )
-          if (existing.rows[0]) {
-            await query(
-              `UPDATE project_committed_costs SET committed_amount=$1, vendor_name=$2, updated_at=NOW() WHERE id=$3`,
-              [ct.subtotal, po.supplier_name, existing.rows[0].id],
+      // What is committed on a purchase order is what was ordered and NOT yet received, per line currency
+      // (lib/costControlPurchases.ts). This used to list the statuses of the flow before the requisition split
+      // ('approved','ordered','partially_received','received','closed'), so a project whose POs sit at payment_pending
+      // got nothing, and it wrote each PO's full subtotal even once the goods were delivered and already counted as
+      // actual cost. One committed_costs row per (PO, currency), as before (D10).
+      const auth = ctx.auth
+      await withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client) => {
+          const run = (text: string, params: unknown[]) => client.query(text, params)
+          const commitments = await projectPOCommitments(run, args.projectId, auth.companyId)
+          const keep = new Set<string>()
+          for (const c of commitments) {
+            keep.add(`${c.po_id}|${c.currency_code}`)
+            const existing = await client.query<{ id: string }>(
+              `SELECT id FROM project_committed_costs WHERE project_id=$1 AND reference_id=$2 AND currency_code=$3 AND commitment_type='po'`,
+              [args.projectId, c.po_id, c.currency_code],
             )
-          } else {
-            await query(
-              `INSERT INTO project_committed_costs (project_id,commitment_type,reference_id,reference_number,description,vendor_name,committed_amount,currency_code,commitment_date,created_by) VALUES ($1,'po',$2,$3,$4,$5,$6,$7,$8,$9)`,
-              [
-                args.projectId,
-                po.id,
-                po.po_number,
-                `PO: ${po.po_number}`,
-                po.supplier_name,
-                ct.subtotal,
-                ct.currency_code,
-                String(po.created_at).slice(0, 10),
-                ctx.auth.userId,
-              ],
+            if (existing.rows.length > 0) {
+              await client.query(
+                `UPDATE project_committed_costs SET committed_amount=$1, vendor_name=$2, updated_at=NOW() WHERE id=$3`,
+                [c.remaining, c.vendor_name, existing.rows[0].id],
+              )
+            } else {
+              await client.query(
+                `INSERT INTO project_committed_costs (project_id,commitment_type,reference_id,reference_number,description,vendor_name,committed_amount,currency_code,commitment_date,created_by) VALUES ($1,'po',$2,$3,$4,$5,$6,$7,$8,$9)`,
+                [
+                  args.projectId,
+                  c.po_id,
+                  c.po_number,
+                  `PO: ${c.po_number}`,
+                  c.vendor_name,
+                  c.remaining,
+                  c.currency_code,
+                  String(c.created_at).slice(0, 10),
+                  auth.userId,
+                ],
+              )
+            }
+          }
+          // A PO that has since been received in full, cancelled or completed no longer commits anything: bring its
+          // row to 0 instead of leaving the amount it had (only rows this sync made: commitment_type 'po').
+          const stale = await client.query<{
+            id: string
+            reference_id: string
+            currency_code: string
+          }>(
+            `SELECT id, reference_id, currency_code FROM project_committed_costs
+              WHERE project_id=$1 AND commitment_type='po' AND status <> 'cancelled' AND committed_amount <> 0`,
+            [args.projectId],
+          )
+          for (const row of stale.rows) {
+            if (keep.has(`${row.reference_id}|${row.currency_code}`)) continue
+            await client.query(
+              `UPDATE project_committed_costs SET committed_amount=0, updated_at=NOW() WHERE id=$1`,
+              [row.id],
             )
           }
-        }
-      }
+        },
+      )
       return true
     },
 
@@ -33274,8 +33294,12 @@ const phase5QueryResolvers = {
     )
     if (!projRes.rows[0]) throw new Error('Not found')
     // 0.1 sweep: same currency-blind SUM as projectCostCodes above.
+    // A currency is offered when something was committed OR actually spent in it. It used to be committed-only, so a
+    // project with real cost and no committed rows had nothing to choose.
     const availableCurrenciesRes = await query<{ currency_code: string }>(
-      `SELECT DISTINCT currency_code FROM project_committed_costs WHERE project_id=$1 ORDER BY 1`,
+      `SELECT currency_code FROM project_committed_costs WHERE project_id=$1
+       UNION SELECT currency_code FROM v_project_cost_by_currency WHERE project_id=$1
+       ORDER BY 1`,
       [args.projectId],
     )
     const availableCurrencies = availableCurrenciesRes.rows.map((r) => r.currency_code)
@@ -33295,6 +33319,11 @@ const phase5QueryResolvers = {
     const equipAct = await query(
       `SELECT pcc.category, SUM(el.total_cost) AS total FROM project_equipment_log el LEFT JOIN project_cost_codes pcc ON pcc.id=el.cost_code_id WHERE el.project_id=$1 GROUP BY pcc.category`,
       [args.projectId],
+    )
+    const ledgerAct = await query(
+      `SELECT cost_category AS category, SUM(amount) AS total FROM v_project_cost_by_currency
+        WHERE project_id=$1 AND currency_code=$2 GROUP BY cost_category`,
+      [args.projectId, committedCurrency],
     )
     const forecasts = await query(
       `SELECT DISTINCT ON (cost_code_id) cost_code_id, eac_amount FROM project_cost_forecast WHERE project_id=$1 ORDER BY cost_code_id, forecast_date DESC`,
@@ -33329,6 +33358,13 @@ const phase5QueryResolvers = {
     const actByCat = new Map<string, number>()
     for (const r of [...laborAct.rows, ...equipAct.rows]) {
       const k = String(r.category ?? 'other')
+      actByCat.set(k, (actByCat.get(k) ?? 0) + Number(r.total))
+    }
+    // What procurement and stock have cost the project, in the selected currency: the same ledger the project header
+    // reads (v_project_cost_by_currency: posted journals plus stock issues and direct deliveries), so the two screens
+    // agree. The money is summed in SQL; project_id was checked against the caller's company above.
+    for (const r of ledgerAct.rows) {
+      const k = costControlCategoryForLedger(r.category as string | null)
       actByCat.set(k, (actByCat.get(k) ?? 0) + Number(r.total))
     }
     const codeIdToCat = new Map<string, string>()

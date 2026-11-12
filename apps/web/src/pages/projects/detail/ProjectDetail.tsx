@@ -31181,6 +31181,15 @@ export function CostControlTab(props: CostControlProps) {
     | 'billing'
   const [section, setSection] = React.useState<CCSection>('overview')
 
+  // Committed is filled from the purchase orders by "Sync PO", which nobody had to press for the other tiles and which
+  // left Committed at 0 until someone knew to. Opening the tab now brings it up to date once (the sync is an idempotent
+  // upsert that the server only allows with the same right this tab needs to edit); a view-only user sees the figure
+  // as of the last sync, and the Committed sub-tab keeps its button.
+  React.useEffect(() => {
+    if (isEditable) onSyncPO({ projectId })
+    // once per project, not on every render: onSyncPO is a new function each render
+  }, [projectId, isEditable])
+
   const [codeModal, setCodeModal] = React.useState<{
     open: boolean
     mode: 'create' | 'edit'
