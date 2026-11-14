@@ -5,6 +5,7 @@ import { query, withTransaction, nextDocumentNumber, type PoolClient, firstRowOr
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
+import { SETTLEABLE_PO_STATUSES, PROJECT_COST_ALREADY_BOOKED_SQL } from '../lib/advancePOLines.js'
 
 export const employeeAdvancesRouter: Router = Router()
 
@@ -857,10 +858,10 @@ employeeAdvancesRouter.get(
          LEFT JOIN chart_of_accounts coa ON coa.id = pl.account_id
          LEFT JOIN cost_centers cc ON cc.id = pl.cost_center_id
          LEFT JOIN projects p ON p.id = po.project_id
-         WHERE po.company_id=$1 AND po.funding_advance_id=$2 AND po.status='completed'
+         WHERE po.company_id=$1 AND po.funding_advance_id=$2 AND po.status = ANY($3::text[])
            AND pl.advance_settlement_id IS NULL
          ORDER BY po.po_number, pl.line_number`,
-        [getAuth(req).companyId, req.params['id']],
+        [getAuth(req).companyId, req.params['id'], [...SETTLEABLE_PO_STATUSES]],
       )
       sendOk(res, r.rows)
     } catch (err) {
@@ -1135,20 +1136,26 @@ async function createSettlementFromPOLines(req: Request, res: Response): Promise
         const linesRes = await client.query(
           `SELECT pl.id, pl.description, pl.total_price, pl.account_id AS gl_account_id,
                   pl.cost_center_id, po.id AS po_id, po.project_id,
-                  aa.id AS project_analytic_account_id
+                  aa.id AS project_analytic_account_id,
+                  ${PROJECT_COST_ALREADY_BOOKED_SQL} AS project_cost_booked
            FROM po_lines pl
            JOIN purchase_orders po ON po.id = pl.po_id
            LEFT JOIN projects p ON p.id = po.project_id
            LEFT JOIN analytic_accounts aa ON aa.id = p.analytic_account_id
            WHERE pl.id = ANY($1::uuid[]) AND po.company_id=$2 AND po.funding_advance_id=$3
-             AND po.status='completed' AND pl.advance_settlement_id IS NULL`,
-          [d.po_line_ids, getAuth(req).companyId, d.advance_id],
+             AND po.status = ANY($4::text[]) AND pl.advance_settlement_id IS NULL`,
+          [d.po_line_ids, getAuth(req).companyId, d.advance_id, [...SETTLEABLE_PO_STATUSES]],
         )
         if (linesRes.rows.length !== d.po_line_ids.length) {
           return { error: 'INELIGIBLE_LINES' as const }
         }
         for (const line of linesRes.rows as Record<string, unknown>[]) {
-          if (line['project_id'] && !line['project_analytic_account_id']) {
+          // Only a line that will carry the project tag needs the project to have an analytic account.
+          if (
+            line['project_id'] &&
+            !line['project_cost_booked'] &&
+            !line['project_analytic_account_id']
+          ) {
             return { error: 'PROJECT_MISSING_ANALYTIC_ACCOUNT' as const }
           }
         }
@@ -1228,7 +1235,10 @@ async function createSettlementFromPOLines(req: Request, res: Response): Promise
             [
               jeId,
               line['gl_account_id'],
-              line['project_analytic_account_id'] ?? null,
+              // A line whose cost is already on the project (jobsite delivery, or stock that a Store Out will charge)
+              // is booked to its GL account and cost center only: the analytic tag is what copies a posted journal
+              // line into project cost, and it would charge the project a second time.
+              line['project_cost_booked'] ? null : (line['project_analytic_account_id'] ?? null),
               line['cost_center_id'],
               line['description'],
               amt,
