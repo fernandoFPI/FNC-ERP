@@ -54,6 +54,9 @@ import {
 } from '../../../components/procurement/ListKit'
 import { RequisitionPreviewPanel } from '../../../components/procurement/PreviewPanels'
 import { MyExpenseClaimModal } from '../../../components/finance/MyExpenseClaimModal'
+import { MyAdvanceModal, type MyAdvance } from '../../../components/finance/MyAdvanceModal'
+import { IssueAdvanceModal } from '../../../components/finance/IssueAdvanceModal'
+import { advanceStatusLabel, ADVANCE_OPEN_STATUSES } from '../../../lib/advanceStatus'
 import { useToastStore } from '../../../store/toastStore'
 import type { RequisitionsQuery, RequisitionsQueryVariables } from '../../../graphql/generated'
 
@@ -205,6 +208,52 @@ function settlementToRow(s: SettlementApiRow): Requisition {
   }
 }
 
+// Advance requests (filed from this same page via Purpose: Advance — see RequisitionForm.tsx) live in
+// employee_advances, reached through the finance REST service, and are merged into the list the same way expense
+// claims are. They follow the same road as an expense claim: the employee asks, a manager approves, and a rejected
+// request is corrected and sent again by whoever filed it. Unlike a claim they have one more step: after the
+// approval the cashbox handler pays the cash out of a cashbox of their choice (status pending_issue).
+interface AdvanceApiRow extends MyAdvance {
+  employee_id: string
+  employee_name: string
+  created_at: string
+  updated_at: string | null
+}
+
+const ADVANCE_STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  draft: 'neutral',
+  pending_approval: 'warning',
+  pending_issue: 'warning',
+  approved: 'info',
+  partially_settled: 'info',
+  settled: 'success',
+  rejected: 'danger',
+  cancelled: 'neutral',
+}
+
+function advanceToRow(a: AdvanceApiRow): Requisition {
+  return {
+    id: a.id,
+    requisition_number: a.advance_number,
+    status: a.status,
+    priority: null,
+    purpose: 'advance',
+    project_id: a.project_id,
+    projectName: a.project_name ? `${a.project_code ?? ''} ${a.project_name}`.trim() : null,
+    branch_id: null,
+    branch_name: null,
+    organizer_id: a.employee_id,
+    organizerName: a.employee_name,
+    notes: a.purpose,
+    created_at: a.created_at,
+    updated_at: a.updated_at ?? a.created_at,
+    itemSearchText: null,
+    __kind: 'advance',
+    amount: Number(a.amount),
+    currencyCode: a.currency_code,
+  }
+}
+
 // myRequisitionsOnly stored as 'true'/'false' — FilterPreset.filters is a
 // flat Record<string, string>, same as every other tracked field here.
 const FILTER_DEFAULTS = {
@@ -233,16 +282,24 @@ const REQ_CLOSED = new Set<string>([...REQUISITION_TERMINAL_STATUSES])
 
 const isRowOpen = (r: Requisition): boolean => {
   if (r.__kind === 'expense') return EXPENSE_OPEN.has(r.status)
+  if (r.__kind === 'advance') return ADVANCE_OPEN_STATUSES.has(r.status)
   if (r.__kind) return false
   return !REQ_CLOSED.has(r.status)
 }
-// Awaiting someone's approval: a requisition at pending_approval, or an expense claim submitted.
+// Awaiting someone's approval: a requisition at pending_approval, an expense claim submitted, or an advance request
+// waiting for its manager.
 const isPendingApproval = (r: Requisition): boolean =>
-  r.__kind === 'expense' ? r.status === 'submitted' : !r.__kind && r.status === 'pending_approval'
-// Needs a person to act: an open emergency requisition, or an approved expense claim waiting for Finance's funding decision.
+  r.__kind === 'expense'
+    ? r.status === 'submitted'
+    : r.__kind === 'advance'
+      ? r.status === 'pending_approval'
+      : !r.__kind && r.status === 'pending_approval'
+// Needs a person to act: an open emergency requisition, an approved expense claim waiting for Finance's funding
+// decision, or an approved advance waiting for the cashbox handler to pay it out.
 const isNeedAction = (r: Requisition): boolean =>
   (!r.__kind && isRowOpen(r) && r.priority === 'emergency') ||
-  (r.__kind === 'expense' && r.status === 'approved')
+  (r.__kind === 'expense' && r.status === 'approved') ||
+  (r.__kind === 'advance' && r.status === 'pending_issue')
 const isDelayedReq = (r: Requisition): boolean =>
   !r.__kind && isRowOpen(r) && isPastDate(r.expected_delivery_date)
 
@@ -282,7 +339,7 @@ interface Requisition {
   created_at: string
   updated_at: string
   itemSearchText?: string | null
-  __kind?: 'expense' | 'settlement'
+  __kind?: 'expense' | 'settlement' | 'advance'
   amount?: number
   currencyCode?: string
   settlementAdvanceId?: string
@@ -299,6 +356,7 @@ const PURPOSE_OPTIONS = [
   { value: 'project', label: 'Project Supply' },
   { value: 'manufacturing', label: 'Manufacturing / BOM' },
   { value: 'expense', label: 'Expense' },
+  { value: 'advance', label: 'Advance' },
 ]
 
 const expenseStatusLabel = (s: string) =>
@@ -309,11 +367,13 @@ const settlementStatusLabel = (s: string) =>
 function rowStatusLabel(r: Requisition): string {
   if (r.__kind === 'expense') return expenseStatusLabel(r.status)
   if (r.__kind === 'settlement') return settlementStatusLabel(r.status)
+  if (r.__kind === 'advance') return advanceStatusLabel(r.status)
   return getRequisitionStatusLabel(r.status)
 }
 function rowStatusVariant(r: Requisition): BadgeVariant {
   if (r.__kind === 'expense') return EXPENSE_STATUS_VARIANTS[r.status] ?? 'neutral'
   if (r.__kind === 'settlement') return SETTLEMENT_STATUS_VARIANTS[r.status] ?? 'neutral'
+  if (r.__kind === 'advance') return ADVANCE_STATUS_VARIANTS[r.status] ?? 'neutral'
   return getRequisitionStatusVariant(r.status)
 }
 
@@ -337,6 +397,8 @@ export default function RequisitionsPage() {
   const { can } = usePermission()
   const canViewAllExpenses = can('finance.expenses.view', 'view')
   const canViewAllAdvances = can('finance.advances.view', 'view')
+  // The cashbox handler: pays an approved advance out of a cashbox. May hold no Advances permission at all.
+  const canIssueAdvances = can('finance.petty_cash.edit', 'edit')
   // 'mine' has no permission gate and includes each line's detail — used
   // both to merge the current user's own expense claims into the list for
   // everyone, and as the data source for the read-only modal shown to
@@ -347,6 +409,11 @@ export default function RequisitionsPage() {
   const [mySettlements, setMySettlements] = useState<SettlementApiRow[]>([])
   const [allSettlements, setAllSettlements] = useState<SettlementApiRow[]>([])
   const [viewSettlement, setViewSettlement] = useState<SettlementApiRow | null>(null)
+  const [myAdvances, setMyAdvances] = useState<AdvanceApiRow[]>([])
+  const [allAdvances, setAllAdvances] = useState<AdvanceApiRow[]>([])
+  const [awaitingAdvances, setAwaitingAdvances] = useState<AdvanceApiRow[]>([])
+  const [viewAdvance, setViewAdvance] = useState<AdvanceApiRow | null>(null)
+  const [issueAdvanceId, setIssueAdvanceId] = useState<string | null>(null)
 
   const loadExpenseClaims = useCallback(() => {
     api
@@ -390,12 +457,46 @@ export default function RequisitionsPage() {
     }
   }, [canViewAllAdvances])
 
+  const loadAdvances = useCallback(() => {
+    api
+      .get<AdvanceApiRow[]>('/finance/advances/mine')
+      .then((r) => {
+        setMyAdvances(r.data)
+      })
+      .catch(() => {
+        /* self-service fetch — silent, list just won't include them */
+      })
+    if (canViewAllAdvances) {
+      api
+        .get<AdvanceApiRow[]>('/finance/advances', { params: { limit: 200 } })
+        .then((r) => {
+          setAllAdvances(r.data)
+        })
+        .catch(() => {
+          /* handled — merged list just falls back to "mine" */
+        })
+    }
+    if (canIssueAdvances) {
+      // The cashbox handler's worklist: approved advances waiting to be paid out.
+      api
+        .get<AdvanceApiRow[]>('/finance/advances/awaiting-issue')
+        .then((r) => {
+          setAwaitingAdvances(r.data)
+        })
+        .catch(() => {
+          /* handled — the handler still sees their own requests */
+        })
+    }
+  }, [canViewAllAdvances, canIssueAdvances])
+
   useEffect(() => {
     loadExpenseClaims()
     loadSettlements()
-  }, [loadExpenseClaims, loadSettlements])
+    loadAdvances()
+  }, [loadExpenseClaims, loadSettlements, loadAdvances])
   useEntityChanged('expense_claim', loadExpenseClaims)
   useEntityChanged('advance_settlement', loadSettlements)
+  useEntityChanged('employee_advance', loadAdvances)
   // Filters survive refresh and navigating into a requisition and back.
   const [saved] = useState(loadSavedFilters)
   const [search, setSearch] = useState(saved.search)
@@ -475,7 +576,15 @@ export default function RequisitionsPage() {
   const settlementRows: Requisition[] = myRequisitionsOnly
     ? mySettlements.map(settlementToRow)
     : (canViewAllAdvances ? allSettlements : mySettlements).map(settlementToRow)
-  // Expense/settlement rows come from separate REST fetches, not the
+  // Advances: everyone sees their own; Finance (finance.advances.view) sees all of them; a cashbox handler without that
+  // permission also sees the ones waiting to be paid out (what they have to act on), without duplicating their own.
+  const advanceSource: AdvanceApiRow[] = myRequisitionsOnly
+    ? myAdvances
+    : canViewAllAdvances
+      ? allAdvances
+      : [...myAdvances, ...awaitingAdvances.filter((a) => !myAdvances.some((m) => m.id === a.id))]
+  const advanceRows: Requisition[] = advanceSource.map(advanceToRow)
+  // Expense/settlement/advance rows come from separate REST fetches, not the
   // GraphQL query's own (already newest-first) ordering — merge and
   // re-sort by date so a fresh one lands at the top instead of trailing
   // after every real requisition regardless of how recent it is.
@@ -483,6 +592,7 @@ export default function RequisitionsPage() {
     ...(data?.requisitions ?? []),
     ...expenseRows,
     ...settlementRows,
+    ...advanceRows,
   ].sort((a, b) => b.created_at.localeCompare(a.created_at))
   const filtered = requisitions.filter((r) => {
     // Status chips use the procurement vocabulary (REQUISITION_STATUSES) —
@@ -652,6 +762,21 @@ export default function RequisitionsPage() {
       }
       const raw = mySettlements.find((s) => s.id === r.id)
       if (raw) setViewSettlement(raw)
+      return
+    }
+    if (r.__kind === 'advance') {
+      // Finance opens the full advance page (approve, issue cash, void, settlements).
+      if (canViewAllAdvances) {
+        navigate(`/finance/advances/${r.id}`)
+        return
+      }
+      // A cashbox handler without the Advances permission pays it out from a dialog.
+      if (canIssueAdvances && r.status === 'pending_issue') {
+        setIssueAdvanceId(r.id)
+        return
+      }
+      const raw = myAdvances.find((a) => a.id === r.id)
+      if (raw) setViewAdvance(raw)
       return
     }
     navigate(`/procurement/requisitions/${r.id}`)
@@ -1074,6 +1199,7 @@ export default function RequisitionsPage() {
                 void refetch()
                 loadExpenseClaims()
                 loadSettlements()
+                loadAdvances()
               }}
             >
               <Icon name="refresh" size={16} />
@@ -1165,6 +1291,32 @@ export default function RequisitionsPage() {
         onChanged={() => {
           setViewClaim(null)
           loadExpenseClaims()
+        }}
+      />
+
+      <MyAdvanceModal
+        advance={viewAdvance}
+        statusLabel={viewAdvance ? advanceStatusLabel(viewAdvance.status) : ''}
+        statusVariant={
+          viewAdvance ? (ADVANCE_STATUS_VARIANTS[viewAdvance.status] ?? 'neutral') : 'neutral'
+        }
+        onClose={() => {
+          setViewAdvance(null)
+        }}
+        onChanged={() => {
+          setViewAdvance(null)
+          loadAdvances()
+        }}
+      />
+
+      <IssueAdvanceModal
+        advanceId={issueAdvanceId}
+        onClose={() => {
+          setIssueAdvanceId(null)
+        }}
+        onIssued={() => {
+          setIssueAdvanceId(null)
+          loadAdvances()
         }}
       />
 

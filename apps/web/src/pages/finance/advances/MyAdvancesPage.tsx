@@ -19,6 +19,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { Badge, type BadgeVariant } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
+import { advanceStatusLabel } from '../../../lib/advanceStatus'
 
 interface Advance {
   id: string
@@ -38,17 +39,9 @@ interface Project {
   name: string
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  get pending_approval() { return i18n.t('fin.myAdv.pendingApproval', { defaultValue: "Pending approval" }) },
-  get approved() { return i18n.t('fin.myAdv.approved', { defaultValue: "Approved" }) },
-  get partially_settled() { return i18n.t('fin.myAdv.partiallySettled', { defaultValue: "Partially settled" }) },
-  get settled() { return i18n.t('fin.myAdv.settled', { defaultValue: "Settled" }) },
-  get rejected() { return i18n.t('fin.myAdv.rejected', { defaultValue: "Rejected" }) },
-  get cancelled() { return i18n.t('fin.myAdv.cancelled', { defaultValue: "Cancelled" }) },
-}
-
 const STATUS_VARIANTS: Record<string, BadgeVariant> = {
   pending_approval: 'info',
+  pending_issue: 'warning',
   approved: 'warning',
   partially_settled: 'warning',
   settled: 'success',
@@ -268,7 +261,7 @@ export default function MyAdvancesPage() {
                     </td>
                     <td style={{ padding: '10px 16px' }}>
                       <Badge variant={STATUS_VARIANTS[a.status] ?? 'neutral'}>
-                        {STATUS_LABELS[a.status] ?? a.status}
+                        {advanceStatusLabel(a.status)}
                       </Badge>
                     </td>
                     <td

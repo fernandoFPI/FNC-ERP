@@ -79,6 +79,8 @@ const emptyLine = (): ReqLineDraft => ({
   uom: 'pc',
 })
 
+type RequisitionPurpose = 'stock' | 'project' | 'manufacturing' | 'expense' | 'advance'
+
 export default function RequisitionForm() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -104,7 +106,10 @@ export default function RequisitionForm() {
   const isTourMode = useTourStore((s) => s.isActive)
   const [searchParams] = useSearchParams()
 
-  const [purpose, setPurpose] = useState<'stock' | 'project' | 'manufacturing' | 'expense'>('stock')
+  const [purpose, setPurpose] = useState<RequisitionPurpose>('stock')
+  // Expense and Advance are requests for MONEY, not goods: no branch, priority, receiver or delivery date, and the
+  // request goes to Finance's own endpoint instead of creating a requisition.
+  const isMoneyRequest = purpose === 'expense' || purpose === 'advance'
   const [projectId, setProjectId] = useState('')
   const [deliveryDestination, setDeliveryDestination] = useState<'' | 'inventory' | 'jobsite'>('')
   const [linkedMoId, setLinkedMoId] = useState('')
@@ -114,7 +119,10 @@ export default function RequisitionForm() {
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<ReqLineDraft[]>([emptyLine()])
-  const [expenseCurrency, setExpenseCurrency] = useState('IQD')
+  // The currency of an expense claim or of an advance request (the two share the one selector).
+  const [cashCurrency, setCashCurrency] = useState('IQD')
+  const [advanceAmount, setAdvanceAmount] = useState('')
+  const [submittingAdvance, setSubmittingAdvance] = useState(false)
   const [expenseLines, setExpenseLines] = useState<ExpenseLineDraft[]>([emptyExpenseLine()])
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([])
   const [submittingExpense, setSubmittingExpense] = useState(false)
@@ -188,7 +196,7 @@ export default function RequisitionForm() {
     // (Math.min(100, ...)), same value already used the same way by
     // MaterialReturnsPage/StoreOutPage/POPositionsPage.
     variables: { includeAll: true, limit: 100 },
-    skip: purpose !== 'project' && purpose !== 'expense',
+    skip: purpose !== 'project' && !isMoneyRequest,
   })
   const { data: mosData } = useQuery<ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables>(MANUFACTURING_ORDERS_QUERY, {
     variables: {},
@@ -459,7 +467,7 @@ export default function RequisitionForm() {
         '/finance/expense-claims/request-self',
         {
           description: notes || undefined,
-          currency_code: expenseCurrency,
+          currency_code: cashCurrency,
           project_id: projectId || undefined,
           receipt_pending: receiptPending,
           lines: realExpenseLines.map(({ line }) => ({
@@ -505,10 +513,43 @@ export default function RequisitionForm() {
     }
   }
 
+  // An advance request goes through the same self-service endpoint the My Advances page uses: it lands waiting for the
+  // manager, then the cashbox handler issues the cash. The reason typed in the notes box is the advance's purpose.
+  async function handleAdvanceSubmit() {
+    const amount = parseFloat(advanceAmount)
+    if (!(amount > 0)) {
+      addToast({ type: 'error', message: t('req.form.enterTheAdvanceAmount') })
+      return
+    }
+    setSubmittingAdvance(true)
+    try {
+      await api.post('/finance/advances/request-self', {
+        amount,
+        currency_code: cashCurrency,
+        purpose: notes.trim() || undefined,
+        project_id: projectId || undefined,
+      })
+      addToast({ type: 'success', message: t('req.form.advanceRequestSubmittedForApproval') })
+      navigate('/procurement/requisitions')
+    } catch (err: unknown) {
+      const apiError = err as { response?: { data?: { error?: { message?: string } } } }
+      addToast({
+        type: 'error',
+        message: apiError.response?.data?.error?.message ?? (err as Error).message,
+      })
+    } finally {
+      setSubmittingAdvance(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (purpose === 'expense') {
       await handleExpenseSubmit()
+      return
+    }
+    if (purpose === 'advance') {
+      await handleAdvanceSubmit()
       return
     }
     if (!isTourMode) {
@@ -575,6 +616,9 @@ export default function RequisitionForm() {
   const selectedProject = projects.find((p) => p.id === projectId)
   const realExpenseLines = expenseLines.filter((l) => l.amount && l.category_id)
   const expenseTotal = realExpenseLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0)
+  // The submit button spins for whichever kind of request is being sent.
+  const submitting =
+    purpose === 'expense' ? submittingExpense : purpose === 'advance' ? submittingAdvance : loading
 
   return (
     <div style={{ padding: '24px' }}>
@@ -587,7 +631,7 @@ export default function RequisitionForm() {
             data-tour="submit-req-btn"
             type="button"
             variant="primary"
-            loading={purpose === 'expense' ? submittingExpense : loading}
+            loading={submitting}
             onClick={() => formRef.current?.requestSubmit()}
           >
             {t('req.form.createRequisition')}
@@ -613,16 +657,17 @@ export default function RequisitionForm() {
                 label={t('req.form.purpose')}
                 value={purpose}
                 onChange={(e) => {
-                  setPurpose(e.target.value as 'stock' | 'project' | 'manufacturing' | 'expense')
+                  setPurpose(e.target.value as RequisitionPurpose)
                 }}
               >
                 <option value="stock">{t('req.form.generalStock')}</option>
                 <option value="project">{t('req.form.projectSupply')}</option>
                 <option value="manufacturing">{t('req.form.manufacturingBom')}</option>
                 <option value="expense">{t('req.form.expense')}</option>
+                <option value="advance">{t('req.form.advance')}</option>
               </Select>
             </div>
-            {purpose !== 'expense' && (
+            {!isMoneyRequest && (
               <div style={{ flex: '1 1 200px' }}>
                 <Select
                   label={branches.length > 0 ? t('req.form.branch') : t('req.form.branch2')}
@@ -632,7 +677,7 @@ export default function RequisitionForm() {
                 />
               </div>
             )}
-            {purpose !== 'expense' && (
+            {!isMoneyRequest && (
               <div style={{ flex: '1 1 160px' }}>
                 <Select
                   label={t('req.form.priority')}
@@ -647,7 +692,7 @@ export default function RequisitionForm() {
             )}
           </div>
 
-          {purpose !== 'expense' && (
+          {!isMoneyRequest && (
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
               <div style={{ flex: '1 1 200px' }}>
                 <SearchableSelect
@@ -670,19 +715,31 @@ export default function RequisitionForm() {
             </div>
           )}
 
-          {purpose === 'expense' && (
+          {isMoneyRequest && (
             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 160px' }}>
                 <Select
                   label={t('req.form.currency')}
-                  value={expenseCurrency}
-                  onChange={(e) => { setExpenseCurrency(e.target.value); }}
+                  value={cashCurrency}
+                  onChange={(e) => { setCashCurrency(e.target.value); }}
                 >
                   <option value="IQD">IQD</option>
                   <option value="USD">USD</option>
                   <option value="EUR">EUR</option>
                 </Select>
               </div>
+              {purpose === 'advance' && (
+                <div style={{ flex: '1 1 180px' }}>
+                  <Input
+                    label={t('req.form.advanceAmount')}
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={advanceAmount}
+                    onChange={(e) => { setAdvanceAmount(e.target.value); }}
+                  />
+                </div>
+              )}
               <div style={{ flex: '1 1 240px' }}>
                 <SearchableSelect
                   label={t('req.form.projectOptional')}
@@ -799,7 +856,12 @@ export default function RequisitionForm() {
           )}
 
           <div data-tour="req-notes">
-            <Textarea label={t('req.form.notes')} value={notes} onChange={(e) => { setNotes(e.target.value); }} rows={2} />
+            <Textarea
+              label={purpose === 'advance' ? t('req.form.advanceReason') : t('req.form.notes')}
+              value={notes}
+              onChange={(e) => { setNotes(e.target.value); }}
+              rows={2}
+            />
           </div>
         </Card>
           </div>
@@ -814,10 +876,17 @@ export default function RequisitionForm() {
                 {t('req.form.summary')}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
-                {(purpose === 'expense'
+                {(purpose === 'advance'
+                  ? [
+                      {
+                        label: t('req.form.advanceAmount'),
+                        value: `${(parseFloat(advanceAmount) || 0).toLocaleString()} ${cashCurrency}`,
+                      },
+                    ]
+                  : purpose === 'expense'
                   ? [
                       { label: t('req.form.lineItems'), value: String(realExpenseLines.length) },
-                      { label: t('req.form.total'), value: `${expenseTotal.toLocaleString()} ${expenseCurrency}` },
+                      { label: t('req.form.total'), value: `${expenseTotal.toLocaleString()} ${cashCurrency}` },
                     ]
                   : [
                       { label: t('req.form.lineItems'), value: String(realLines.length) },
@@ -868,6 +937,8 @@ export default function RequisitionForm() {
                   </>
                 ) : purpose === 'expense' ? (
                   t('req.form.expenseSubmitHint')
+                ) : purpose === 'advance' ? (
+                  t('req.form.advanceSubmitHint')
                 ) : (
                   t('req.form.generalStockHint')
                 )}
@@ -876,37 +947,40 @@ export default function RequisitionForm() {
           </div>
         </div>
 
-        <Card data-tour="req-lines-card" style={{ marginTop: '20px' }}>
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
-            <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>{t('req.form.lines')}</div>
-            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-              {purpose === 'expense'
-                ? t('req.form.addEachExpenseCategoryDecidesThe')
-                : t('req.form.addEachItemYouNeedGl')}
+        {/* An advance is one amount and a reason, so it has no lines to enter. */}
+        {purpose !== 'advance' && (
+          <Card data-tour="req-lines-card" style={{ marginTop: '20px' }}>
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>{t('req.form.lines')}</div>
+              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                {purpose === 'expense'
+                  ? t('req.form.addEachExpenseCategoryDecidesThe')
+                  : t('req.form.addEachItemYouNeedGl')}
+              </div>
             </div>
-          </div>
-          <div style={{ padding: '16px 20px' }}>
-            {purpose === 'expense' ? (
-              <LineItemEditor
-                fields={expenseLineFields}
-                rows={expenseLines}
-                onRemoveRow={(idx) => { setExpenseLines((p) => p.filter((_, i) => i !== idx)); }}
-                removeDisabled={() => expenseLines.length <= 1}
-                onAddRow={() => { setExpenseLines((p) => [...p, emptyExpenseLine()]); }}
-                addButtonDataTour="req-add-line-btn"
-              />
-            ) : (
-              <LineItemEditor
-                fields={lineFields}
-                rows={lines}
-                onRemoveRow={(idx) => { setLines((p) => p.filter((_, i) => i !== idx)); }}
-                removeDisabled={() => lines.length <= 1}
-                onAddRow={() => { setLines((p) => [...p, emptyLine()]); }}
-                addButtonDataTour="req-add-line-btn"
-              />
-            )}
-          </div>
-        </Card>
+            <div style={{ padding: '16px 20px' }}>
+              {purpose === 'expense' ? (
+                <LineItemEditor
+                  fields={expenseLineFields}
+                  rows={expenseLines}
+                  onRemoveRow={(idx) => { setExpenseLines((p) => p.filter((_, i) => i !== idx)); }}
+                  removeDisabled={() => expenseLines.length <= 1}
+                  onAddRow={() => { setExpenseLines((p) => [...p, emptyExpenseLine()]); }}
+                  addButtonDataTour="req-add-line-btn"
+                />
+              ) : (
+                <LineItemEditor
+                  fields={lineFields}
+                  rows={lines}
+                  onRemoveRow={(idx) => { setLines((p) => p.filter((_, i) => i !== idx)); }}
+                  removeDisabled={() => lines.length <= 1}
+                  onAddRow={() => { setLines((p) => [...p, emptyLine()]); }}
+                  addButtonDataTour="req-add-line-btn"
+                />
+              )}
+            </div>
+          </Card>
+        )}
       </form>
     </div>
   )

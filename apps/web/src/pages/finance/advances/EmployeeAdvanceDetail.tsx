@@ -11,6 +11,10 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { api } from '../../../lib/axios'
 import { usePermission } from '../../../hooks/usePermission'
+import { useToastStore } from '../../../store/toastStore'
+import { advanceStatusLabel } from '../../../lib/advanceStatus'
+import { IssueAdvanceModal } from '../../../components/finance/IssueAdvanceModal'
+import { MyAdvanceModal } from '../../../components/finance/MyAdvanceModal'
 
 interface Settlement {
   id: string
@@ -67,6 +71,16 @@ interface Advance {
   created_at: string
   submitted_at: string | null
   approved_at: string | null
+  // Paid out by the cashbox handler (after the manager's approval), and from which cashbox.
+  issued_at?: string | null
+  cashbox_name?: string | null
+  // Chosen by whoever paid it out (not by the approving manager); what settlements of this advance are booked against.
+  cost_center_code?: string | null
+  cost_center_name?: string | null
+  project_code?: string | null
+  project_name?: string | null
+  // The filer (or an admin) may correct and resend a rejected request; the server decides.
+  can_revise?: boolean
   settlements: Settlement[]
   returns: Return[]
 }
@@ -109,6 +123,7 @@ interface PendingPOLine {
 const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | 'warning'> = {
   draft: 'neutral',
   pending_approval: 'info',
+  pending_issue: 'warning',
   submitted: 'info',
   approved: 'warning',
   partially_settled: 'warning',
@@ -117,7 +132,7 @@ const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | '
   cancelled: 'neutral',
 }
 
-const FLOW = ['draft', 'pending_approval', 'approved', 'settled']
+const FLOW = ['draft', 'pending_approval', 'pending_issue', 'approved', 'settled']
 
 interface LineForm {
   line_date: string
@@ -162,6 +177,11 @@ export default function EmployeeAdvanceDetail() {
   const { can } = usePermission()
   const canEdit = can('finance.advances.edit', 'edit')
   const canApprove = can('finance.advances.approve', 'approve')
+  // The cashbox handler: pays an approved advance out of a cashbox of their choice.
+  const canIssue = can('finance.petty_cash.edit', 'edit')
+  const addToast = useToastStore((s) => s.addToast)
+  const [showIssue, setShowIssue] = useState(false)
+  const [showRevise, setShowRevise] = useState(false)
   const [advance, setAdvance] = useState<Advance | null>(null)
   const [glAccounts, setGlAccounts] = useState<GLAccount[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
@@ -171,7 +191,6 @@ export default function EmployeeAdvanceDetail() {
   const [acting, setActing] = useState(false)
   const [showReject, setShowReject] = useState(false)
   const [showApprove, setShowApprove] = useState(false)
-  const [approveCostCenterId, setApproveCostCenterId] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [showSettlementForm, setShowSettlementForm] = useState(false)
   const [lines, setLines] = useState<LineForm[]>([emptyLine()])
@@ -234,8 +253,13 @@ export default function EmployeeAdvanceDetail() {
     try {
       await api.post(`/finance/advances/${id}/${action}`, body ?? {})
       void load()
-    } catch {
-      /* handled */
+    } catch (err: unknown) {
+      // Show the server's reason: a refused approval or void used to leave a button that seemed to do nothing.
+      const apiError = err as { response?: { data?: { error?: { message?: string } } } }
+      addToast({
+        type: 'error',
+        message: apiError.response?.data?.error?.message ?? t('fin.advRequest.actionFailed'),
+      })
     } finally {
       setActing(false)
     }
@@ -408,10 +432,13 @@ export default function EmployeeAdvanceDetail() {
     return <div style={{ padding: '24px', color: theme.textMuted }}>{t('fin.advDetail.advanceNotFound')}</div>
 
   const canSettle = ['approved', 'partially_settled'].includes(advance.status)
+  // An advance that is approved but not yet paid out can be cancelled (nothing to reverse); an issued one only while
+  // nothing has been settled or returned against it.
   const canVoid =
-    advance.status === 'approved' &&
-    Number(advance.settled_amount) === 0 &&
-    Number(advance.returned_amount) === 0
+    advance.status === 'pending_issue' ||
+    (advance.status === 'approved' &&
+      Number(advance.settled_amount) === 0 &&
+      Number(advance.returned_amount) === 0)
   const stepStatus = ['partially_settled', 'settled'].includes(advance.status)
     ? 'settled'
     : advance.status
@@ -568,7 +595,7 @@ export default function EmployeeAdvanceDetail() {
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <Badge variant={STATUS_BADGE[advance.status] ?? 'neutral'}>
-              {advance.status.replace(/_/g, ' ')}
+              {advanceStatusLabel(advance.status)}
             </Badge>
             <Button
               variant="ghost"
@@ -602,15 +629,37 @@ export default function EmployeeAdvanceDetail() {
                     variant="primary"
                     size="sm"
                     onClick={() => {
-                      setApproveCostCenterId(advance.cost_center_id ?? '')
                       setShowApprove(true)
                     }}
                     disabled={acting}
                   >
-                    {t('fin.advDetail.approveIssue')}
+                    {t('fin.advDetail.approve')}
                   </Button>
                 )}
               </>
+            )}
+            {advance.status === 'pending_issue' && canIssue && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setShowIssue(true)
+                }}
+                disabled={acting}
+              >
+                {t('fin.advRequest.issueCash')}
+              </Button>
+            )}
+            {advance.status === 'rejected' && advance.can_revise && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setShowRevise(true)
+                }}
+              >
+                {t('fin.advRequest.editResubmit')}
+              </Button>
             )}
             {canEdit && canSettle && (
               <Button
@@ -675,7 +724,7 @@ export default function EmployeeAdvanceDetail() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {step.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}
+                  {advanceStatusLabel(step)}
                 </span>
               </div>
               {i < FLOW.length - 1 && (
@@ -734,6 +783,24 @@ export default function EmployeeAdvanceDetail() {
                     t('fin.advDetail.approved'),
                     advance.approved_at ? new Date(advance.approved_at).toLocaleDateString() : '—',
                   ],
+                  ...(advance.cost_center_name
+                    ? [
+                        [
+                          t('fin.advDetail.costCenter'),
+                          `${advance.cost_center_code ?? ''} · ${advance.cost_center_name}`.trim(),
+                        ],
+                      ]
+                    : []),
+                  // Paid out of which cashbox, and when — only once the cashbox handler has issued it.
+                  ...(advance.issued_at
+                    ? [
+                        [
+                          t('fin.advRequest.issuedOn'),
+                          new Date(advance.issued_at).toLocaleDateString(),
+                        ],
+                        [t('fin.advRequest.cashbox'), advance.cashbox_name ?? '—'],
+                      ]
+                    : []),
                 ].map(([k, v]) => (
                   <tr key={k} style={{ borderBottom: `1px solid ${theme.border}` }}>
                     <td style={{ padding: '7px 0', color: theme.textMuted, width: '45%' }}>{k}</td>
@@ -1220,33 +1287,16 @@ export default function EmployeeAdvanceDetail() {
         >
           <Card padding="lg" style={{ width: '420px' }}>
             <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              {t('fin.advDetail.approveIssueAdvance')}
+              {t('fin.advRequest.approveAdvance')}
             </h3>
+            <p style={{ fontSize: '12px', color: theme.textSecondary, margin: '0 0 12px' }}>
+              {t('fin.advRequest.approveHint')}
+            </p>
             {advance.purpose && (
               <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
                 <strong>{t('fin.advDetail.purpose')}</strong> {advance.purpose}
               </p>
             )}
-            <div style={{ marginBottom: '4px' }}>
-              <label style={labelStyle}>{t('fin.advDetail.costCenterOptional')}</label>
-              <select
-                style={inputStyle}
-                value={approveCostCenterId}
-                onChange={(e) => {
-                  setApproveCostCenterId(e.target.value)
-                }}
-              >
-                <option value="">{t('fin.advDetail.notSet')}</option>
-                {costCenters.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.code} · {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <p style={{ fontSize: '11px', color: theme.textMuted, margin: '4px 0 0' }}>
-              {t('fin.advDetail.classifyThisAdvanceNowThatYou')}
-            </p>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
               <Button
                 variant="ghost"
@@ -1261,17 +1311,43 @@ export default function EmployeeAdvanceDetail() {
                 variant="primary"
                 size="sm"
                 onClick={() => void (async () => {
-                  await act('approve', { cost_center_id: approveCostCenterId || undefined })
+                  await act('approve')
                   setShowApprove(false)
                 })()}
                 disabled={acting}
               >
-                {t('fin.advDetail.approveIssue')}
+                {t('fin.advDetail.approve')}
               </Button>
             </div>
           </Card>
         </div>
       )}
+
+      {/* The cashbox handler's step: choose the cashbox and pay the approved advance out. */}
+      <IssueAdvanceModal
+        advanceId={showIssue ? advance.id : null}
+        onClose={() => {
+          setShowIssue(false)
+        }}
+        onIssued={() => {
+          setShowIssue(false)
+          void load()
+        }}
+      />
+
+      {/* A rejected request, corrected and sent again by whoever filed it (or an admin). */}
+      <MyAdvanceModal
+        advance={showRevise ? advance : null}
+        statusLabel={advanceStatusLabel(advance.status)}
+        statusVariant={STATUS_BADGE[advance.status] ?? 'neutral'}
+        onClose={() => {
+          setShowRevise(false)
+        }}
+        onChanged={() => {
+          setShowRevise(false)
+          void load()
+        }}
+      />
 
       {showReject && (
         <div

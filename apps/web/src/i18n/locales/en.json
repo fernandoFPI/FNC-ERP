@@ -910,7 +910,13 @@
       "totalQty": "Total Qty",
       "uom": "UOM",
       "uploadFailed": "Upload failed: {{reason}}",
-      "whatWasThisFor": "What was this for?"
+      "whatWasThisFor": "What was this for?",
+      "advance": "Advance",
+      "advanceAmount": "Advance amount",
+      "advanceReason": "What is the advance for?",
+      "advanceSubmitHint": "Your manager approves the request, then the cashbox handler pays it out of a cashbox. You can follow it in the Requisitions list.",
+      "advanceRequestSubmittedForApproval": "Advance request submitted for approval",
+      "enterTheAdvanceAmount": "Enter the advance amount"
     },
     "status": {
       "draft": "Draft",
@@ -936,7 +942,8 @@
       "stock": "General Stock",
       "project": "Project Supply",
       "manufacturing": "Manufacturing / BOM",
-      "expense": "Expense"
+      "expense": "Expense",
+      "advance": "Advance"
     },
     "expenseStatus": {
       "draft": "Draft",
@@ -1253,6 +1260,16 @@
       "whyIsThisRequisitionBeingCancelled": "Why is this requisition being cancelled?",
       "wrongItemReselect": "Wrong item? Reselect",
       "linesAlwaysVisible": "Item, Qty and Total always stay visible"
+    },
+    "advanceStatus": {
+      "draft": "Draft",
+      "pending_approval": "Pending Approval",
+      "pending_issue": "Awaiting Cash Issue",
+      "approved": "Issued",
+      "partially_settled": "Partly Settled",
+      "settled": "Settled",
+      "rejected": "Rejected",
+      "cancelled": "Cancelled"
     }
   },
   "queue": {
@@ -3995,7 +4012,6 @@
       "categoriesMarkedWithRequireAProject": "Categories marked with * require a project.",
       "category": "Category",
       "category2": "— Category —",
-      "classifyThisAdvanceNowThatYou": "Classify this advance now that you know what it's for — it's informational at issuance, but helps track which department the spend belongs to.",
       "completedPosFundedByThisAdvance": "Completed POs funded by this advance, awaiting settlement",
       "costCenter": "Cost Center",
       "costCenterOptional": "Cost Center (optional)",
@@ -5702,6 +5718,45 @@
       "couldNotSave": "Could not save changes.",
       "newLine": "New line",
       "flagLabel": "Fix this: {{reason}}"
+    },
+    "advRequest": {
+      "hintPendingApproval": "Waiting for a manager to approve it.",
+      "hintPendingIssue": "Approved. Waiting for the cashbox handler to pay it out.",
+      "hintIssued": "Paid out. You can settle it with your expenses.",
+      "noProject": "No project",
+      "editResubmit": "Edit & resubmit",
+      "rejected": "Rejected:",
+      "sentBackHint": "Change what the manager asked for, then send it again.",
+      "resubmit": "Send again",
+      "cancel": "Cancel",
+      "changeSomething": "Change the amount, currency, reason or project before sending it again.",
+      "resubmitted": "Advance request sent again",
+      "couldNotResubmit": "Could not send the request again",
+      "noReason": "No reason given",
+      "couldNotLoadCashboxes": "Could not load the cashboxes",
+      "advanceIssued": "Advance issued",
+      "couldNotIssue": "Could not issue the advance",
+      "issueTitle": "Issue advance {{number}}",
+      "issueCash": "Issue cash",
+      "issueButton": "Issue {{amount}} {{currency}}",
+      "loadingCashboxes": "Loading cashboxes…",
+      "chooseCashbox": "Choose the cashbox the cash comes out of",
+      "noCashboxes": "This company has no active cashbox. Create one in Petty Cash first.",
+      "noUsableCashbox": "None of the cashboxes can pay this advance. See the reason under each one.",
+      "heldBy": "Held by {{name}}",
+      "balance": "Balance",
+      "problem": {
+        "CASHBOX_INACTIVE": "Not active",
+        "CURRENCY_MISMATCH": "In a different currency than the advance",
+        "NO_GL_ACCOUNT": "Has no GL account set up",
+        "INSUFFICIENT_BALANCE": "Not enough cash for this advance"
+      },
+      "actionFailed": "The action could not be completed",
+      "issuedOn": "Issued on",
+      "cashbox": "Cashbox",
+      "approveAdvance": "Approve Advance",
+      "approveHint": "Approving sends the request to the cashbox handler, who pays it out of a cashbox.",
+      "costCenterHint": "An expense claim or settlement against this advance is booked to it, and is refused without one. Choose it if you know it."
     }
   },
   "proj": {
@@ -8950,7 +9005,8 @@
     "non_current_assets": "non_current_assets",
     "current_liabilities": "current_liabilities",
     "non_current_liabilities": "non_current_liabilities",
-    "revoked": "revoked"
+    "revoked": "revoked",
+    "pending_issue": "pending_issue"
   },
   "mfg": {
     "layout": {},

@@ -970,7 +970,13 @@
       "totalQty": "إجمالي الكمية",
       "uom": "وحدة القياس",
       "uploadFailed": "فشل الرفع: {{reason}}",
-      "whatWasThisFor": "ما الغرض من هذا؟"
+      "whatWasThisFor": "ما الغرض من هذا؟",
+      "advance": "سلفة",
+      "advanceAmount": "مبلغ السلفة",
+      "advanceReason": "ما الغرض من السلفة؟",
+      "advanceSubmitHint": "يوافق مديرك على الطلب، ثم يصرف أمين الصندوق المبلغ من أحد الصناديق. يمكنك متابعته في قائمة طلبات الشراء.",
+      "advanceRequestSubmittedForApproval": "تم إرسال طلب السلفة للموافقة",
+      "enterTheAdvanceAmount": "أدخل مبلغ السلفة"
     },
     "status": {
       "draft": "مسودة",
@@ -996,7 +1002,8 @@
       "stock": "مخزون عام",
       "project": "توريد مشروع",
       "manufacturing": "تصنيع / قائمة مواد",
-      "expense": "مصروف"
+      "expense": "مصروف",
+      "advance": "سلفة"
     },
     "expenseStatus": {
       "draft": "مسودة",
@@ -1337,6 +1344,16 @@
       "whyIsThisRequisitionBeingCancelled": "لماذا يُلغى طلب الشراء هذا؟",
       "wrongItemReselect": "مادة خاطئة؟ أعد الاختيار",
       "linesAlwaysVisible": "المادة والكمية والإجمالي تظهر دائمًا"
+    },
+    "advanceStatus": {
+      "draft": "مسودة",
+      "pending_approval": "بانتظار الموافقة",
+      "pending_issue": "بانتظار صرف المبلغ",
+      "approved": "تم الصرف",
+      "partially_settled": "مسوّاة جزئيًا",
+      "settled": "مسوّاة",
+      "rejected": "مرفوض",
+      "cancelled": "ملغى"
     }
   },
   "queue": {
@@ -4174,7 +4191,6 @@
       "categoriesMarkedWithRequireAProject": "الفئات المعلَّمة بـ * تتطلب مشروعًا.",
       "category": "الفئة",
       "category2": "— الفئة —",
-      "classifyThisAdvanceNowThatYou": "صنّف هذه السلفة الآن بعد أن عرفت غرضها — فهي معلوماتية عند الصرف، لكنها تساعد في تتبع القسم الذي يتبعه الإنفاق.",
       "completedPosFundedByThisAdvance": "أوامر شراء مكتملة ممولة من هذه السلفة وبانتظار التسوية",
       "costCenter": "مركز التكلفة",
       "costCenterOptional": "مركز التكلفة (اختياري)",
@@ -5889,6 +5905,45 @@
       "couldNotSave": "تعذّر حفظ التعديلات.",
       "newLine": "بند جديد",
       "flagLabel": "يرجى تصحيح: {{reason}}"
+    },
+    "advRequest": {
+      "hintPendingApproval": "بانتظار موافقة المدير.",
+      "hintPendingIssue": "تمت الموافقة. بانتظار أن يصرف أمين الصندوق المبلغ.",
+      "hintIssued": "تم صرف المبلغ. يمكنك تسويته بمصروفاتك.",
+      "noProject": "بدون مشروع",
+      "editResubmit": "تعديل وإعادة إرسال",
+      "rejected": "مرفوض:",
+      "sentBackHint": "عدّل ما طلبه المدير ثم أعد إرسال الطلب.",
+      "resubmit": "إعادة الإرسال",
+      "cancel": "إلغاء",
+      "changeSomething": "غيّر المبلغ أو العملة أو السبب أو المشروع قبل إعادة الإرسال.",
+      "resubmitted": "أُعيد إرسال طلب السلفة",
+      "couldNotResubmit": "تعذّر إعادة إرسال الطلب",
+      "noReason": "لم يُذكر سبب",
+      "couldNotLoadCashboxes": "تعذّر تحميل الصناديق",
+      "advanceIssued": "تم صرف السلفة",
+      "couldNotIssue": "تعذّر صرف السلفة",
+      "issueTitle": "صرف السلفة {{number}}",
+      "issueCash": "صرف المبلغ",
+      "issueButton": "صرف {{amount}} {{currency}}",
+      "loadingCashboxes": "جارٍ تحميل الصناديق…",
+      "chooseCashbox": "اختر الصندوق الذي يُصرف منه المبلغ",
+      "noCashboxes": "لا يوجد صندوق نشط لهذه الشركة. أنشئ صندوقًا في النثرية أولًا.",
+      "noUsableCashbox": "لا يمكن لأي صندوق صرف هذه السلفة. انظر السبب تحت كل صندوق.",
+      "heldBy": "بعهدة {{name}}",
+      "balance": "الرصيد",
+      "problem": {
+        "CASHBOX_INACTIVE": "غير نشط",
+        "CURRENCY_MISMATCH": "بعملة مختلفة عن السلفة",
+        "NO_GL_ACCOUNT": "لا يوجد له حساب في دليل الحسابات",
+        "INSUFFICIENT_BALANCE": "لا يكفي رصيده لهذه السلفة"
+      },
+      "actionFailed": "تعذّر إكمال الإجراء",
+      "issuedOn": "تاريخ الصرف",
+      "cashbox": "الصندوق",
+      "approveAdvance": "الموافقة على السلفة",
+      "approveHint": "بالموافقة يُحال الطلب إلى أمين الصندوق ليصرف المبلغ من أحد الصناديق.",
+      "costCenterHint": "تُسجَّل مطالبات المصروفات والتسويات على هذه السلفة على مركز التكلفة، وتُرفض إن لم يكن محددًا. اختره إن كنت تعرفه."
     }
   },
   "proj": {
@@ -9201,7 +9256,8 @@
     "non_current_assets": "الأصول غير المتداولة",
     "current_liabilities": "الالتزامات المتداولة",
     "non_current_liabilities": "الالتزامات غير المتداولة",
-    "revoked": "ملغاة"
+    "revoked": "ملغاة",
+    "pending_issue": "بانتظار الصرف"
   },
   "mfg": {
     "layout": {},

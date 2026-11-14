@@ -9,6 +9,7 @@ import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
 import { usePermission } from '../../../hooks/usePermission'
+import { advanceStatusLabel } from '../../../lib/advanceStatus'
 
 interface Advance {
   id: string
@@ -47,6 +48,7 @@ interface Project {
 const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | 'warning'> = {
   draft: 'neutral',
   pending_approval: 'info',
+  pending_issue: 'warning',
   approved: 'warning',
   partially_settled: 'warning',
   settled: 'success',
@@ -234,6 +236,7 @@ export default function EmployeeAdvancesPage() {
           {[
             'draft',
             'pending_approval',
+            'pending_issue',
             'approved',
             'partially_settled',
             'settled',
@@ -241,7 +244,7 @@ export default function EmployeeAdvancesPage() {
             'cancelled',
           ].map((s) => (
             <option key={s} value={s}>
-              {s.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}
+              {advanceStatusLabel(s)}
             </option>
           ))}
         </select>
@@ -326,7 +329,7 @@ export default function EmployeeAdvancesPage() {
                 </td>
                 <td style={{ padding: '9px 12px' }}>
                   <Badge variant={STATUS_BADGE[a.status] ?? 'neutral'}>
-                    {a.status.replace(/_/g, ' ')}
+                    {advanceStatusLabel(a.status)}
                   </Badge>
                 </td>
                 <td
