@@ -40117,6 +40117,13 @@ const phase5MutationResolvers = {
        VALUES ($1,'material_issue','SO',1,5,false,'-') ON CONFLICT (company_id, doc_type) DO NOTHING`,
       [company.id],
     )
+    // Expense claims are numbered by this rule (migration 323 seeded it for the companies that existed then): the same
+    // EXP-<year>-NNNN the service used before it was configurable, editable at Settings -> Document Numbering.
+    await query(
+      `INSERT INTO document_sequences (company_id, doc_type, prefix, next_number, pad_length, year_in_number, separator)
+       VALUES ($1,'expense_claim','EXP',1,4,true,'-') ON CONFLICT (company_id, doc_type) DO NOTHING`,
+      [company.id],
+    )
     // Same provisional policy 259_seed_price_tolerance backfilled onto every
     // company that already existed then — a company created since has had
     // none at all, which both the purchase-side over_tolerance check and

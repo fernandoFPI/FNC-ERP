@@ -16,6 +16,9 @@ export type { TransactionContext } from './transaction.js'
 export { getSystemConfig } from './system-config.js'
 export {
   nextDocumentNumber,
+  nextDocumentNumberInTransaction,
+  formatDocumentNumber,
+  documentNumberPattern,
   listDocumentSequences,
   upsertDocumentSequence,
   DOC_TYPES,

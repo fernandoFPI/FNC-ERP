@@ -3,6 +3,9 @@
 // claims were moved to another company, so count+1 = 0026 already existed and
 // every submit failed on the (company_id, claim_number) unique key. Same
 // real-Postgres + supertest pattern as expense-claims-funding.test.ts.
+// This file covers a company WITH NO numbering rule (the original format); the rule-driven numbering is in
+// expense-claim-numbering-rule.test.ts. The rule row is removed up front because migration 323 seeds one for every
+// company that existed when it ran, including this fixture company on a database that was already set up.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import request from 'supertest'
 import { createApp } from '../src/app.js'
@@ -22,6 +25,7 @@ async function cleanFixtures(): Promise<void> {
   await pool.query(`DELETE FROM expense_claims WHERE company_id=$1`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM expense_categories WHERE company_id=$1`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM employees WHERE employee_number='EXP-NUMBERING-TEST'`)
+  await pool.query(`DELETE FROM document_sequences WHERE company_id=$1 AND doc_type='expense_claim'`, [TEST_COMPANY_ID])
 }
 
 async function seedClaim(claimNumber: string): Promise<void> {

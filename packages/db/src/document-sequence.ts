@@ -1,4 +1,4 @@
-import { pool, firstRowOrThrow } from './client.js'
+import { pool, firstRowOrThrow, type PoolClient } from './client.js'
 
 export const DOC_TYPES = [
   { key: 'rfq', label: 'RFQ Number', defaultPrefix: 'RFQ' },
@@ -13,6 +13,7 @@ export const DOC_TYPES = [
   { key: 'employee_advance', label: 'Employee Advance', defaultPrefix: 'ADV' },
   { key: 'advance_settlement', label: 'Advance Settlement', defaultPrefix: 'SET' },
   { key: 'advance_return', label: 'Advance Return', defaultPrefix: 'RET' },
+  { key: 'expense_claim', label: 'Expense Claim', defaultPrefix: 'EXP' },
   { key: 'material_issue', label: 'Store Out', defaultPrefix: 'SO' },
   { key: 'store_in', label: 'Store In', defaultPrefix: 'RCPT' },
   { key: 'product', label: 'Product SKU', defaultPrefix: 'PRD' },
@@ -44,6 +45,62 @@ interface SequenceRow {
   separator: string
 }
 
+// How a rule writes a number: PREFIX SEP [YEAR SEP] zero-padded number. The one place that decides it, used by every
+// generator below, so the Settings > Document Numbering preview and the numbers actually issued cannot differ.
+export function formatDocumentNumber(
+  rule: Pick<SequenceRow, 'prefix' | 'pad_length' | 'year_in_number' | 'separator'>,
+  n: number,
+  year: number = new Date().getFullYear(),
+): string {
+  const num = String(n).padStart(rule.pad_length, '0')
+  const sep = rule.separator
+  if (rule.year_in_number) return `${rule.prefix}${sep}${year}${sep}${num}`
+  return `${rule.prefix}${sep}${num}`
+}
+
+// A Postgres regular expression matching every number this rule can issue (its own prefix, separator and, when it carries
+// one, the given year, then digits). Prefix and separator are literal text typed by an admin, so they are escaped.
+export function documentNumberPattern(
+  rule: Pick<SequenceRow, 'prefix' | 'year_in_number' | 'separator'>,
+  year: number = new Date().getFullYear(),
+): string {
+  const head = rule.year_in_number
+    ? `${rule.prefix}${rule.separator}${year}${rule.separator}`
+    : `${rule.prefix}${rule.separator}`
+  return `^${head.replace(/[.*+?^${}()|[\]\\/-]/g, '\\$&')}[0-9]+$`
+}
+
+/**
+ * The next number of a document type, taken INSIDE the caller's transaction (unlike nextDocumentNumber below), for a
+ * document whose table has a unique number per company. The counter is read and advanced under a row lock, so a failed
+ * save gives the number back, and it never issues a number that already exists: `highestExisting` is handed the pattern of
+ * this rule's numbers and answers the highest one in use (0 for none), so an admin lowering the counter, or numbers
+ * created before the rule, cannot cause a duplicate. Returns null when the company has no rule for the type, and the
+ * caller decides what that means.
+ */
+export async function nextDocumentNumberInTransaction(
+  client: PoolClient,
+  companyId: string,
+  docType: string,
+  highestExisting: (pattern: string) => Promise<number>,
+): Promise<string | null> {
+  const res = await client.query<SequenceRow>(
+    `SELECT prefix, next_number, pad_length, year_in_number, separator
+       FROM document_sequences WHERE company_id = $1 AND doc_type = $2 FOR UPDATE`,
+    [companyId, docType],
+  )
+  const rule = res.rows[0]
+  if (!rule) return null
+  const year = new Date().getFullYear()
+  const existing = await highestExisting(documentNumberPattern(rule, year))
+  const n = Math.max(Number(rule.next_number), existing + 1)
+  await client.query(
+    `UPDATE document_sequences SET next_number = $3, updated_at = NOW() WHERE company_id = $1 AND doc_type = $2`,
+    [companyId, docType, n + 1],
+  )
+  return formatDocumentNumber(rule, n, year)
+}
+
 /**
  * Atomically increments and returns the next formatted document number.
  * Uses a separate pool query (intentionally outside any caller transaction)
@@ -66,13 +123,7 @@ export async function nextDocumentNumber(
     )
     if (result.rows.length > 0) {
       const row = firstRowOrThrow(result)
-      const num = String(row.next_number).padStart(row.pad_length, '0')
-      const sep = row.separator
-      if (row.year_in_number) {
-        const yr = new Date().getFullYear()
-        return `${row.prefix}${sep}${yr}${sep}${num}`
-      }
-      return `${row.prefix}${sep}${num}`
+      return formatDocumentNumber(row, row.next_number)
     }
   } catch {
     // DB unavailable or table missing — fall through to timestamp fallback

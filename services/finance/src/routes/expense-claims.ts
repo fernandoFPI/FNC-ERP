@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
-import { query, withTransaction, nextDocumentNumber, type PoolClient, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
+import { query, withTransaction, nextDocumentNumber, nextDocumentNumberInTransaction, type PoolClient, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import {
   requirePermission,
@@ -109,11 +109,30 @@ async function resolveLineGlAccount(
 // Must run on the caller's transaction client: the advisory lock serialises
 // concurrent submits for one company and releases at COMMIT/ROLLBACK, so two
 // simultaneous submits can't both read the same maximum.
+//
+// The format is the company's own numbering rule (Settings > Document Numbering > Expense Claim: prefix, separator,
+// digits, year, next number), read and advanced in this same transaction; it still goes past the highest number in use,
+// so an admin lowering the counter cannot cause the duplicate described above. A company with no rule keeps the
+// original EXP-YYYY-NNNN (highest of the year plus one).
 async function nextClaimNumber(client: PoolClient, companyId: string): Promise<string> {
   const yr = new Date().getFullYear()
   await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
     `expense_claim_number:${companyId}`,
   ])
+  const fromRule = await nextDocumentNumberInTransaction(
+    client,
+    companyId,
+    'expense_claim',
+    async (pattern) => {
+      const highest = await client.query<{ n: string | null }>(
+        `SELECT MAX(substring(claim_number FROM '[0-9]+$')::bigint) AS n
+           FROM expense_claims WHERE company_id=$1 AND claim_number ~ $2`,
+        [companyId, pattern],
+      )
+      return Number(highest.rows[0]?.n ?? 0)
+    },
+  )
+  if (fromRule) return fromRule
   const res = await client.query<{ n: number }>(
     `SELECT COALESCE(MAX(substring(claim_number FROM '[0-9]+$')::int), 0) + 1 AS n
      FROM expense_claims
