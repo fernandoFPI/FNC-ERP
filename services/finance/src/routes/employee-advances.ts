@@ -37,6 +37,37 @@ async function resolveAdvancesCurrency(
   return { currencyCode: companyRes.rows[0]?.currency_code ?? 'IQD', availableCurrencies }
 }
 
+// A request names a project and a cost center by id; they must be this company's (a foreign id would otherwise reach the
+// foreign-key and, worse, link the advance to another company's project).
+async function validateRequestRefs(
+  client: PoolClient,
+  companyId: string,
+  projectId: string | undefined,
+  costCenterId: string | undefined,
+): Promise<'INVALID_PROJECT' | 'INVALID_COST_CENTER' | null> {
+  if (projectId) {
+    const r = await client.query(`SELECT 1 FROM projects WHERE id=$1 AND company_id=$2`, [projectId, companyId])
+    if (!r.rows[0]) return 'INVALID_PROJECT'
+  }
+  if (costCenterId) {
+    const r = await client.query(`SELECT 1 FROM cost_centers WHERE id=$1 AND company_id=$2`, [costCenterId, companyId])
+    if (!r.rows[0]) return 'INVALID_COST_CENTER'
+  }
+  return null
+}
+
+// Who may edit a rejected request and send it again: whoever filed it (or the employee it is for), or an admin. The one
+// answer used by the revise route and by `can_revise` on the reads, so the button and the server cannot drift (the same
+// rule as an expense claim, canReviseClaim).
+function canReviseAdvance(role: string, status: string, isOwner: boolean): boolean {
+  if (status !== 'rejected') return false
+  return role === 'system_admin' || role === 'company_admin' || isOwner
+}
+
+// Owner test for an advance read as alias `a`, with the caller's user id as the parameter named by `p`.
+const advanceOwnerSql = (p: string) =>
+  `(a.created_by = ${p} OR EXISTS (SELECT 1 FROM employees e WHERE e.id = a.employee_id AND e.company_id = a.company_id AND e.user_id = ${p}))`
+
 // ─── Account auto-resolution ────────────────────────────────────────────────
 //
 // Cash account is picked by currency (one designated account per currency
@@ -178,12 +209,16 @@ employeeAdvancesRouter.get(
         params.push(project_id)
       }
 
+      const callerParam = `$${p + 2}`
       const r = await query(
-        `SELECT a.* FROM employee_advances a
+        `SELECT a.*, pr.code AS project_code, pr.name AS project_name,
+                (a.status = 'rejected' AND (${advanceOwnerSql(callerParam)} OR $${p + 3}::boolean)) AS can_revise
+         FROM employee_advances a
+         LEFT JOIN projects pr ON pr.id = a.project_id AND pr.company_id = a.company_id
          WHERE ${conditions.join(' AND ')}
          ORDER BY a.created_at DESC
          LIMIT $${p} OFFSET $${p + 1}`,
-        [...params, limit, offset],
+        [...params, limit, offset, getAuth(req).userId, ['system_admin', 'company_admin'].includes(getAuth(req).role)],
       )
       sendOk(res, r.rows)
     } catch (err) {
@@ -235,10 +270,22 @@ employeeAdvancesRouter.get(
   requirePermission('finance.advances.view', 'view'),
   asyncHandler(async (req, res) => {
     try {
-      const a = await query(`SELECT * FROM employee_advances WHERE id=$1 AND company_id=$2`, [
-        req.params['id'],
-        getAuth(req).companyId,
-      ])
+      const a = await query(
+        `SELECT a.*, pr.code AS project_code, pr.name AS project_name, f.name AS cashbox_name,
+                cc.code AS cost_center_code, cc.name AS cost_center_name,
+                (a.status = 'rejected' AND (${advanceOwnerSql('$3')} OR $4::boolean)) AS can_revise
+         FROM employee_advances a
+         LEFT JOIN projects pr ON pr.id = a.project_id AND pr.company_id = a.company_id
+         LEFT JOIN petty_cash_floats f ON f.id = a.petty_cash_float_id AND f.company_id = a.company_id
+         LEFT JOIN cost_centers cc ON cc.id = a.cost_center_id AND cc.company_id = a.company_id
+         WHERE a.id=$1 AND a.company_id=$2`,
+        [
+          req.params['id'],
+          getAuth(req).companyId,
+          getAuth(req).userId,
+          ['system_admin', 'company_admin'].includes(getAuth(req).role),
+        ],
+      )
       if (!a.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Advance not found')
         return
@@ -345,6 +392,8 @@ employeeAdvancesRouter.post('/request-self', asyncHandler(async (req, res) => {
         )
         const emp = empRes.rows[0] as Record<string, unknown> | undefined
         if (!emp) return { error: 'NO_EMPLOYEE_LINK' as const }
+        const badRef = await validateRequestRefs(client, getAuth(req).companyId, d.project_id, d.cost_center_id)
+        if (badRef) return { error: badRef }
 
         const { cashAccountId, advanceAccountId } = await resolveAdvanceAccounts(
           client,
@@ -382,6 +431,14 @@ employeeAdvancesRouter.post('/request-self', asyncHandler(async (req, res) => {
       },
     )
     if ('error' in result) {
+      if (result.error === 'INVALID_PROJECT') {
+        sendError(res, 400, 'INVALID_PROJECT', 'Project not found in this company')
+        return
+      }
+      if (result.error === 'INVALID_COST_CENTER') {
+        sendError(res, 400, 'INVALID_COST_CENTER', 'Cost center not found in this company')
+        return
+      }
       sendError(res, 403, 'NO_EMPLOYEE_LINK', 'No employee record linked to your account')
       return
     }
@@ -430,14 +487,17 @@ employeeAdvancesRouter.get('/mine', asyncHandler(async (req, res) => {
       return
     }
     const r = await query(
-      `SELECT id, advance_number, purpose, project_id, amount, settled_amount, outstanding_amount,
-              currency_code, status, created_at
-       FROM employee_advances
-       WHERE company_id=$1 AND employee_id=$2
-       ORDER BY created_at DESC`,
+      `SELECT a.id, a.advance_number, a.employee_id, a.employee_name, a.purpose, a.project_id,
+              p.code AS project_code, p.name AS project_name, a.amount, a.settled_amount, a.outstanding_amount,
+              a.currency_code, a.status, a.rejection_reason, a.rejected_at, a.created_at, a.updated_at
+       FROM employee_advances a
+       LEFT JOIN projects p ON p.id = a.project_id AND p.company_id = a.company_id
+       WHERE a.company_id=$1 AND a.employee_id=$2
+       ORDER BY a.created_at DESC`,
       [getAuth(req).companyId, emp.id],
     )
-    sendOk(res, r.rows)
+    // These are the caller's own, so the owner test is already true: a rejected one can be revised.
+    sendOk(res, r.rows.map((row) => ({ ...row, can_revise: row['status'] === 'rejected' })))
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load your advances', err)
   }
@@ -530,16 +590,11 @@ employeeAdvancesRouter.post(
   }),
 )
 
-// ─── Approve advance (issues cash, posts journal) ───────────────────────────
+// ─── Approve advance (the manager's step; the cash is issued separately) ──────
 //
-// Single-step: approving an advance immediately disburses it and posts the
-// issuance journal — no separate "pay" step, matching how vendor-invoice
-// approval and journal posting already work in this system. Issuance lines
-// deliberately carry no analytic_account_id/cost_center_id: journal_lines'
-// trg_sync_project_costs trigger auto-inserts into project_cost_actuals for
-// any line with a resolvable analytic_account_id, and issuance must NOT
-// create project cost — only settlement does. Tagging the issuance line
-// would double-count the same money as project cost twice.
+// Approving only says "yes, this person may have this advance": pending_approval -> pending_issue. Paying it out is the
+// next step, by the cashbox handler (POST /:id/issue), who chooses which cashbox the money comes out of. Before this
+// existed approving also issued the cash against the advance's default cash account in one click.
 
 const approveAdvanceSchema = z.object({
   cost_center_id: z.string().uuid().optional(),
@@ -561,68 +616,14 @@ employeeAdvancesRouter.post(
           return
         }
       }
-      const result = await withTransaction(
-        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
-        async (client) => {
-          const advRes = await client.query(
-            `SELECT * FROM employee_advances WHERE id=$1 AND company_id=$2 AND status='pending_approval' FOR UPDATE`,
-            [req.params['id'], getAuth(req).companyId],
-          )
-          if (!advRes.rows[0]) return null
-          const adv = advRes.rows[0] as Record<string, unknown>
-
-          const jeRes = await client.query(
-            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
-             VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'employee_advance_issuance', $4, $5)
-             RETURNING id`,
-            [
-              getAuth(req).companyId,
-              adv['advance_number'],
-              `Employee advance issued: ${adv['employee_name'] as string}`,
-              adv['id'],
-              getAuth(req).userId,
-            ],
-          )
-          const jeId = firstRowOrThrow(jeRes).id as string
-          const amountCompanyCurrency = (adv['amount'] as number) * (adv['fx_rate'] as number)
-
-          await client.query(
-            `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, currency_code, fx_rate, amount_company_currency)
-             VALUES ($1,$2,$3,$4,0,$5,$6,$7)`,
-            [
-              jeId,
-              adv['advance_account_id'],
-              `Advance ${adv['advance_number'] as string}`,
-              adv['amount'],
-              adv['currency_code'],
-              adv['fx_rate'],
-              amountCompanyCurrency,
-            ],
-          )
-          await client.query(
-            `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, currency_code, fx_rate, amount_company_currency)
-             VALUES ($1,$2,$3,0,$4,$5,$6,$7)`,
-            [
-              jeId,
-              adv['cash_account_id'],
-              `Advance ${adv['advance_number'] as string}`,
-              adv['amount'],
-              adv['currency_code'],
-              adv['fx_rate'],
-              amountCompanyCurrency,
-            ],
-          )
-
-          const updated = await client.query(
-            `UPDATE employee_advances SET status='approved', approved_by=$1, approved_at=NOW(), journal_entry_id=$2,
-               cost_center_id=COALESCE($3, cost_center_id), updated_at=NOW()
-             WHERE id=$4 RETURNING *`,
-            [getAuth(req).userId, jeId, d.cost_center_id ?? null, req.params['id']],
-          )
-          return updated.rows[0]
-        },
+      // One atomic UPDATE: the WHERE is the guard, so two managers clicking together cannot both approve.
+      const updated = await query(
+        `UPDATE employee_advances SET status='pending_issue', approved_by=$1, approved_at=NOW(),
+           cost_center_id=COALESCE($2, cost_center_id), updated_at=NOW()
+         WHERE id=$3 AND company_id=$4 AND status='pending_approval' RETURNING *`,
+        [getAuth(req).userId, d.cost_center_id ?? null, req.params['id'], getAuth(req).companyId],
       )
-      if (!result) {
+      if (!updated.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Advance is not pending approval')
         return
       }
@@ -632,11 +633,365 @@ employeeAdvancesRouter.post(
         action: 'UPDATE',
         tableName: 'employee_advances',
         recordId: req.params['id'],
-        newValues: { status: 'approved' },
+        newValues: { status: 'pending_issue' },
       })
-      sendOk(res, result)
+      sendOk(res, updated.rows[0])
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve advance', err)
+    }
+  }),
+)
+
+// ─── Issue advance (the cashbox handler's step) ───────────────────────────────
+//
+// pending_issue -> approved ("issued, open for settlement"). The handler chooses the cashbox (a petty cash float) the
+// money comes out of: it must be this company's, active, in the advance's currency, hold enough, and have a GL account.
+// Cash leaves the box (balance down, a petty-cash spend logged, the same as spending from it directly) and the issuance
+// journal is made as a draft: Dr the employee's advance account, Cr the cashbox's GL account. Issuance lines carry no
+// analytic account or cost center: trg_sync_project_costs copies any line with an analytic account into project cost, and
+// handing out cash is not a project cost — only settling it is.
+
+// The cost center is optional here on purpose: it is chosen by whoever pays the advance out (Finance side), not by the manager
+// who approved it. It is what later settlements of this advance (an expense claim settled against it, a self-settlement) copy
+// onto their lines, and they are refused for an advance that has none. A cost center the handler picks replaces the advance's
+// own; none picked leaves whatever it had.
+const issueAdvanceSchema = z.object({
+  petty_cash_float_id: z.string().uuid(),
+  cost_center_id: z.string().uuid().optional(),
+})
+
+// Why a cashbox cannot pay this advance, or null when it can. The one rule used by the issue route and by the options
+// list the screen offers, so a cashbox shown as usable is one the server will accept.
+function cashboxProblem(
+  box: { is_active: boolean; currency_code: string; gl_account_id: string | null; current_balance: string | number },
+  adv: { currency_code: string; amount: string | number },
+): 'CASHBOX_INACTIVE' | 'CURRENCY_MISMATCH' | 'NO_GL_ACCOUNT' | 'INSUFFICIENT_BALANCE' | null {
+  if (!box.is_active) return 'CASHBOX_INACTIVE'
+  if (box.currency_code !== adv.currency_code) return 'CURRENCY_MISMATCH'
+  if (!box.gl_account_id) return 'NO_GL_ACCOUNT'
+  if (Number(box.current_balance) < Number(adv.amount)) return 'INSUFFICIENT_BALANCE'
+  return null
+}
+
+const CASHBOX_MESSAGES = {
+  INVALID_STATUS: 'Advance is not waiting to be issued',
+  CASHBOX_NOT_FOUND: 'Cashbox not found in this company',
+  CASHBOX_INACTIVE: 'This cashbox is not active',
+  CURRENCY_MISMATCH: 'The cashbox is in a different currency than the advance',
+  NO_GL_ACCOUNT: 'This cashbox has no GL account configured',
+  INSUFFICIENT_BALANCE: 'The cashbox does not hold enough to issue this advance',
+  INVALID_COST_CENTER: 'Cost center not found in this company, or it is not active',
+}
+
+employeeAdvancesRouter.post(
+  '/:id([0-9a-fA-F-]{36})/issue',
+  requirePermission('finance.petty_cash.edit', 'edit'),
+  asyncHandler(async (req, res) => {
+    try {
+      const d = issueAdvanceSchema.parse(req.body)
+      const result = await withTransaction(
+        { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
+        async (client) => {
+          const advRes = await client.query(
+            `SELECT * FROM employee_advances WHERE id=$1 AND company_id=$2 AND status='pending_issue' FOR UPDATE`,
+            [req.params['id'], getAuth(req).companyId],
+          )
+          if (!advRes.rows[0]) return { error: 'INVALID_STATUS' as const }
+          const adv = advRes.rows[0] as Record<string, unknown>
+
+          if (d.cost_center_id) {
+            const cc = await client.query(
+              `SELECT 1 FROM cost_centers WHERE id=$1 AND company_id=$2 AND is_active=true`,
+              [d.cost_center_id, getAuth(req).companyId],
+            )
+            if (!cc.rows[0]) return { error: 'INVALID_COST_CENTER' as const }
+          }
+
+          const boxRes = await client.query(
+            `SELECT * FROM petty_cash_floats WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+            [d.petty_cash_float_id, getAuth(req).companyId],
+          )
+          if (!boxRes.rows[0]) return { error: 'CASHBOX_NOT_FOUND' as const }
+          const box = boxRes.rows[0] as Record<string, unknown>
+          const problem = cashboxProblem(
+            box as never,
+            { currency_code: adv['currency_code'] as string, amount: adv['amount'] as string },
+          )
+          if (problem) return { error: problem }
+
+          const je = await client.query(
+            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
+             VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'employee_advance_issuance', $4, $5)
+             RETURNING id`,
+            [
+              getAuth(req).companyId,
+              adv['advance_number'],
+              `Employee advance issued: ${adv['employee_name'] as string} (from ${box['name'] as string})`,
+              adv['id'],
+              getAuth(req).userId,
+            ],
+          )
+          const jeId = firstRowOrThrow(je).id as string
+          // Dr the employee's advance account, Cr the cashbox's GL account; the company-currency amount is worked out
+          // in SQL (numeric), not in JavaScript.
+          await client.query(
+            `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, currency_code, fx_rate, amount_company_currency)
+             VALUES ($1,$2,$3,$4::numeric,0,$5,$6::numeric,ROUND($4::numeric * $6::numeric, 4)),
+                    ($1,$7,$3,0,$4::numeric,$5,$6::numeric,ROUND($4::numeric * $6::numeric, 4))`,
+            [
+              jeId,
+              adv['advance_account_id'],
+              `Advance ${adv['advance_number'] as string}`,
+              adv['amount'],
+              adv['currency_code'],
+              adv['fx_rate'],
+              box['gl_account_id'],
+            ],
+          )
+          // Cash out of the box, logged like any spend from it.
+          const balance = await client.query(
+            `UPDATE petty_cash_floats SET current_balance = current_balance - $1::numeric, updated_at = NOW()
+              WHERE id=$2 RETURNING current_balance`,
+            [adv['amount'], d.petty_cash_float_id],
+          )
+          await client.query(
+            `INSERT INTO petty_cash_transactions
+               (float_id, company_id, transaction_date, description, gl_account_id, amount, transaction_type, balance_after, journal_entry_id, created_by)
+             VALUES ($1,$2,CURRENT_DATE,$3,$4,$5::numeric,'spend',$6::numeric,$7,$8)`,
+            [
+              d.petty_cash_float_id,
+              getAuth(req).companyId,
+              `Advance ${adv['advance_number'] as string} issued to ${adv['employee_name'] as string}`,
+              adv['advance_account_id'],
+              adv['amount'],
+              firstRowOrThrow(balance).current_balance,
+              jeId,
+              getAuth(req).userId,
+            ],
+          )
+          const updated = await client.query(
+            `UPDATE employee_advances SET status='approved', issued_by=$1, issued_at=NOW(), petty_cash_float_id=$2,
+               cash_account_id=$3, journal_entry_id=$4, cost_center_id=COALESCE($6::uuid, cost_center_id), updated_at=NOW()
+             WHERE id=$5 RETURNING *`,
+            [
+              getAuth(req).userId,
+              d.petty_cash_float_id,
+              box['gl_account_id'],
+              jeId,
+              req.params['id'],
+              d.cost_center_id ?? null,
+            ],
+          )
+          // plain SQL in the same transaction: logAudit swallows its own errors, and an issue must never be saved without its record
+          await client.query(
+            `INSERT INTO audit_log (user_id, company_id, action, table_name, record_id, old_values, new_values)
+             VALUES ($1,$2,'UPDATE','employee_advances',$3,$4::jsonb,$5::jsonb)`,
+            [
+              getAuth(req).userId,
+              getAuth(req).companyId,
+              req.params['id'],
+              JSON.stringify({ status: 'pending_issue' }),
+              JSON.stringify({
+                status: 'approved',
+                issued: true,
+                petty_cash_float_id: d.petty_cash_float_id,
+                cost_center_id: (updated.rows[0] as Record<string, unknown>)['cost_center_id'] ?? null,
+              }),
+            ],
+          )
+          return { advance: updated.rows[0] }
+        },
+      )
+      if ('error' in result) {
+        const statusByError: Record<string, number> = {
+          INVALID_STATUS: 409,
+          CASHBOX_NOT_FOUND: 404,
+          INVALID_COST_CENTER: 400,
+        }
+        sendError(res, statusByError[result.error] ?? 422, result.error, CASHBOX_MESSAGES[result.error])
+        return
+      }
+      sendOk(res, result.advance)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to issue advance', err)
+    }
+  }),
+)
+
+// The cashbox handler's worklist, and what they need to see to pay one out (they may not hold finance.advances.view):
+// every advance of the company waiting to be issued.
+employeeAdvancesRouter.get(
+  '/awaiting-issue',
+  requirePermission('finance.petty_cash.edit', 'edit'),
+  asyncHandler(async (req, res) => {
+    try {
+      const r = await query(
+        `SELECT a.id, a.advance_number, a.employee_id, a.employee_name, a.purpose, a.project_id,
+                p.code AS project_code, p.name AS project_name, a.amount, a.currency_code, a.status,
+                a.approved_at, a.created_at, a.updated_at
+         FROM employee_advances a
+         LEFT JOIN projects p ON p.id = a.project_id AND p.company_id = a.company_id
+         WHERE a.company_id=$1 AND a.status='pending_issue'
+         ORDER BY a.approved_at, a.created_at`,
+        [getAuth(req).companyId],
+      )
+      sendOk(res, r.rows)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load advances awaiting issue', err)
+    }
+  }),
+)
+
+// The advance and the cashboxes the handler can choose from, each with whether it can pay this one and, if not, why.
+employeeAdvancesRouter.get(
+  '/:id([0-9a-fA-F-]{36})/issue-options',
+  requirePermission('finance.petty_cash.edit', 'edit'),
+  asyncHandler(async (req, res) => {
+    try {
+      const advRes = await query(
+        `SELECT a.id, a.advance_number, a.employee_name, a.purpose, a.amount, a.currency_code, a.status, a.cost_center_id,
+                p.code AS project_code, p.name AS project_name
+         FROM employee_advances a
+         LEFT JOIN projects p ON p.id = a.project_id AND p.company_id = a.company_id
+         WHERE a.id=$1 AND a.company_id=$2`,
+        [req.params['id'], getAuth(req).companyId],
+      )
+      const adv = advRes.rows[0] as Record<string, unknown> | undefined
+      if (!adv) {
+        sendError(res, 404, 'NOT_FOUND', 'Advance not found')
+        return
+      }
+      if (adv['status'] !== 'pending_issue') {
+        sendError(res, 409, 'INVALID_STATUS', CASHBOX_MESSAGES.INVALID_STATUS)
+        return
+      }
+      // The cost centers the handler can choose from. Listed here because the handler holds the cashbox permission, not
+      // necessarily the one that lists cost centers.
+      const costCenters = await query(
+        `SELECT id, code, name FROM cost_centers WHERE company_id=$1 AND is_active=true ORDER BY code`,
+        [getAuth(req).companyId],
+      )
+      const boxes = await query(
+        `SELECT id, name, location, custodian_name, currency_code, current_balance, gl_account_id, is_active
+         FROM petty_cash_floats WHERE company_id=$1 AND is_active=true ORDER BY name`,
+        [getAuth(req).companyId],
+      )
+      sendOk(res, {
+        advance: adv,
+        cost_centers: costCenters.rows,
+        cashboxes: boxes.rows.map((b) => ({
+          id: b['id'],
+          name: b['name'],
+          location: b['location'],
+          custodian_name: b['custodian_name'],
+          currency_code: b['currency_code'],
+          current_balance: b['current_balance'],
+          problem: cashboxProblem(
+            b as never,
+            { currency_code: adv['currency_code'] as string, amount: adv['amount'] as string },
+          ),
+        })),
+      })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load cashboxes', err)
+    }
+  }),
+)
+
+// ─── Revise a rejected advance and send it again ─────────────────────────────
+//
+// The same as an expense claim: once the manager has rejected a request, the employee who filed it (or an admin) corrects
+// it and sends it again (rejected -> pending_approval) instead of starting over. The rejection reason stays on the row as
+// history. Something must change, or it is only the same request sent again.
+
+const reviseAdvanceSchema = z.object({
+  amount: z.coerce.number().positive().optional(),
+  currency_code: z.string().length(3).optional(),
+  purpose: z.string().optional(),
+  project_id: z.string().uuid().nullable().optional(),
+})
+
+employeeAdvancesRouter.post(
+  '/:id([0-9a-fA-F-]{36})/revise',
+  asyncHandler(async (req, res) => {
+    try {
+      const d = reviseAdvanceSchema.parse(req.body)
+      const auth = getAuth(req)
+      const result = await withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client) => {
+          const cur = await client.query(
+            `SELECT a.*, ${advanceOwnerSql('$3')} AS is_owner FROM employee_advances a
+             WHERE a.id=$1 AND a.company_id=$2 FOR UPDATE OF a`,
+            [req.params['id'], auth.companyId, auth.userId],
+          )
+          const adv = cur.rows[0] as Record<string, unknown> | undefined
+          if (!adv) return { error: 'NOT_FOUND' as const }
+          if (adv['status'] !== 'rejected') return { error: 'INVALID_STATUS' as const }
+          if (!canReviseAdvance(auth.role, adv['status'] as string, adv['is_owner'] === true))
+            return { error: 'FORBIDDEN' as const }
+
+          const nextAmount = d.amount ?? Number(adv['amount'])
+          const nextCurrency = d.currency_code ?? (adv['currency_code'] as string)
+          const nextPurpose = d.purpose === undefined ? ((adv['purpose'] as string | null) ?? null) : d.purpose.trim() || null
+          const nextProject = d.project_id === undefined ? ((adv['project_id'] as string | null) ?? null) : d.project_id
+          const changed =
+            nextAmount !== Number(adv['amount']) ||
+            nextCurrency !== adv['currency_code'] ||
+            nextPurpose !== ((adv['purpose'] as string | null) ?? null) ||
+            nextProject !== ((adv['project_id'] as string | null) ?? null)
+          if (!changed) return { error: 'NO_CHANGES' as const }
+
+          const badRef = await validateRequestRefs(client, auth.companyId, nextProject ?? undefined, undefined)
+          if (badRef) return { error: badRef }
+
+          // A different currency needs that currency's cash and advance accounts.
+          let cashAccountId = adv['cash_account_id']
+          let advanceAccountId = adv['advance_account_id']
+          if (nextCurrency !== adv['currency_code']) {
+            const accounts = await resolveAdvanceAccounts(client, auth.companyId, adv['employee_id'] as string, nextCurrency)
+            cashAccountId = accounts.cashAccountId
+            advanceAccountId = accounts.advanceAccountId
+          }
+          const updated = await client.query(
+            `UPDATE employee_advances SET amount=$1::numeric, currency_code=$2, purpose=$3, project_id=$4,
+               cash_account_id=$5, advance_account_id=$6, status='pending_approval', submitted_at=NOW(), updated_at=NOW()
+             WHERE id=$7 RETURNING *`,
+            [nextAmount, nextCurrency, nextPurpose, nextProject, cashAccountId, advanceAccountId, req.params['id']],
+          )
+          await client.query(
+            `INSERT INTO audit_log (user_id, company_id, action, table_name, record_id, old_values, new_values)
+             VALUES ($1,$2,'UPDATE','employee_advances',$3,$4::jsonb,$5::jsonb)`,
+            [
+              auth.userId,
+              auth.companyId,
+              req.params['id'],
+              JSON.stringify({ status: 'rejected', amount: adv['amount'], currency_code: adv['currency_code'], purpose: adv['purpose'], project_id: adv['project_id'] }),
+              JSON.stringify({ status: 'pending_approval', amount: nextAmount, currency_code: nextCurrency, purpose: nextPurpose, project_id: nextProject, revised: true }),
+            ],
+          )
+          return { advance: { ...updated.rows[0], can_revise: false } }
+        },
+      )
+      if ('error' in result) {
+        const table = {
+          NOT_FOUND: [404, 'Advance not found'],
+          INVALID_STATUS: [409, 'Only a rejected advance can be revised and sent again'],
+          FORBIDDEN: [403, 'Only the person who filed this advance, or an admin, can revise it'],
+          NO_CHANGES: [422, 'Change something (amount, currency, reason or project) before sending it again'],
+          INVALID_PROJECT: [400, 'Project not found in this company'],
+        } as const
+        const [code, message] = table[result.error as keyof typeof table]
+        sendError(res, code, result.error, message)
+        return
+      }
+      sendOk(res, result.advance)
+    } catch (err) {
+      if (err instanceof AdvanceConfigError) {
+        sendError(res, 422, 'ADVANCE_CONFIG_MISSING', err.message)
+        return
+      }
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to revise advance', err)
     }
   }),
 )
@@ -686,11 +1041,21 @@ employeeAdvancesRouter.post(
         { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
         async (client) => {
           const advRes = await client.query(
-            `SELECT * FROM employee_advances WHERE id=$1 AND company_id=$2 AND status='approved' FOR UPDATE`,
+            `SELECT * FROM employee_advances WHERE id=$1 AND company_id=$2 AND status IN ('approved','pending_issue') FOR UPDATE`,
             [req.params['id'], getAuth(req).companyId],
           )
           if (!advRes.rows[0]) return { error: 'INVALID_STATUS' as const }
           const adv = advRes.rows[0] as Record<string, unknown>
+
+          // Approved but not paid out yet: no cash moved and no journal exists, so cancelling is only a status change.
+          if (adv['status'] === 'pending_issue') {
+            const cancelled = await client.query(
+              `UPDATE employee_advances SET status='cancelled', voided_by=$1, voided_at=NOW(), void_reason=$2, updated_at=NOW()
+               WHERE id=$3 RETURNING *`,
+              [getAuth(req).userId, reason, req.params['id']],
+            )
+            return { advance: cancelled.rows[0] }
+          }
 
           if (
             parseFloat(String(adv['settled_amount'])) > 0 ||
@@ -742,6 +1107,33 @@ employeeAdvancesRouter.post(
             `UPDATE journal_entries SET status='cancelled', updated_at=NOW() WHERE id=$1`,
             [adv['journal_entry_id']],
           )
+
+          // Issued from a cashbox: the cash goes back into it, logged as an adjustment, so the box's balance still
+          // agrees with its GL account now that the issuance journal is reversed.
+          if (adv['petty_cash_float_id']) {
+            const back = await client.query(
+              `UPDATE petty_cash_floats SET current_balance = current_balance + $1::numeric, updated_at = NOW()
+                WHERE id=$2 AND company_id=$3 RETURNING current_balance`,
+              [adv['amount'], adv['petty_cash_float_id'], getAuth(req).companyId],
+            )
+            if (back.rows[0]) {
+              await client.query(
+                `INSERT INTO petty_cash_transactions
+                   (float_id, company_id, transaction_date, description, gl_account_id, amount, transaction_type, balance_after, journal_entry_id, created_by)
+                 VALUES ($1,$2,CURRENT_DATE,$3,$4,$5::numeric,'adjustment',$6::numeric,$7,$8)`,
+                [
+                  adv['petty_cash_float_id'],
+                  getAuth(req).companyId,
+                  `Advance ${adv['advance_number'] as string} voided: cash returned to the box`,
+                  adv['advance_account_id'],
+                  adv['amount'],
+                  firstRowOrThrow(back).current_balance,
+                  revId,
+                  getAuth(req).userId,
+                ],
+              )
+            }
+          }
 
           const updated = await client.query(
             `UPDATE employee_advances SET status='cancelled', voided_by=$1, voided_at=NOW(), void_reason=$2, updated_at=NOW()
