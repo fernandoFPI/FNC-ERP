@@ -815,6 +815,9 @@ export default function PurchaseOrderDetail() {
   // on the PO creation form, just moved here so Finance decides once the
   // real cost is known instead of the requester guessing up front.
   const [fundingChoice, setFundingChoice] = useState<'vendor_ap' | 'employee_advance' | ''>('')
+  // Finance can change a funding decision already made, while the PO is still waiting and nothing has used it (the
+  // server enforces both): this re-opens the same picker. It used to be final after one click.
+  const [changingFunding, setChangingFunding] = useState(false)
   const [fundingEmployeeId, setFundingEmployeeId] = useState('')
   const [fundingAdvanceId, setFundingAdvanceId] = useState('')
   const [fundingAdvances, setFundingAdvances] = useState<
@@ -1166,6 +1169,7 @@ export default function PurchaseOrderDetail() {
       setFundingChoice('')
       setFundingEmployeeId('')
       setFundingAdvanceId('')
+      setChangingFunding(false)
       void refetch()
     },
     onError: onErr,
@@ -1348,6 +1352,33 @@ export default function PurchaseOrderDetail() {
     value: c.id,
     label: `${c.code} — ${c.name}`,
   }))
+
+  // The small "Change funding source" control of the payment-pending panels. It is only drawn inside the views of a PO whose
+  // funding is already decided (the picker takes their place while it is open), so it needs no check of that here. The server
+  // decides whether a change is still allowed (not completed, no line settled, no vendor invoice); the page shows it only to
+  // Finance, while the PO waits.
+  // True while the picker should be on screen: funding not decided yet, or Finance chose to change it.
+  const showFundingPicker = !!po && (!po.funding_decided || changingFunding)
+
+  function renderChangeFundingButton() {
+    if (!po || !can('finance.ap.approve', 'approve')) return null
+    return (
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setFundingChoice('')
+            setFundingEmployeeId('')
+            setFundingAdvanceId('')
+            setChangingFunding(true)
+          }}
+        >
+          {t('po.detail.changeFundingSource')}
+        </Button>
+      </div>
+    )
+  }
 
   // Shared between the employee_advance and vendor_ap payment-pending
   // panels below — same per-line GL Account/Cost Center review either
@@ -4529,9 +4560,42 @@ export default function PurchaseOrderDetail() {
 
               {(po.status === 'invoiced' || po.status === 'payment_pending') &&
                 (isSystemLevel || po.callerIsFinanceTeam) &&
-                (!po.funding_decided ? (
+                (showFundingPicker ? (
                   can('finance.ap.approve', 'approve') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {changingFunding && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '8px',
+                            fontSize: '12px',
+                            color: theme.textSecondary,
+                          }}
+                        >
+                          <span>
+                            {t('po.detail.currentFunding', {
+                              source:
+                                po.funding_source === 'employee_advance'
+                                  ? t('po.detail.employeeAdvance')
+                                  : t('po.detail.vendorAccountsPayable'),
+                            })}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setChangingFunding(false)
+                              setFundingChoice('')
+                              setFundingEmployeeId('')
+                              setFundingAdvanceId('')
+                            }}
+                          >
+                            {t('po.detail.keepFundingSource')}
+                          </Button>
+                        </div>
+                      )}
                       <div
                         style={{
                           padding: '10px 14px',
@@ -4679,6 +4743,7 @@ export default function PurchaseOrderDetail() {
                       ).length
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {renderChangeFundingButton()}
                           {renderGlClassificationPanel(
                             t('po.detail.fundedByAdvanceClassifyHint'),
                           )}
@@ -4715,6 +4780,7 @@ export default function PurchaseOrderDetail() {
                   )
                 ) : can('finance.ap.view') ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {!apInvoice && renderChangeFundingButton()}
                     {can('finance.ap.approve', 'approve') &&
                       renderGlClassificationPanel(
                         t('po.detail.classifyHint'),

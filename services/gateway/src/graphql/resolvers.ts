@@ -38607,7 +38607,8 @@ const phase5MutationResolvers = {
     if (!['vendor_ap', 'employee_advance'].includes(args.fundingSource))
       throw new Error('fundingSource must be vendor_ap or employee_advance')
     const poRow = await query(
-      `SELECT status, company_id, currency_code, funding_decided FROM purchase_orders WHERE id=$1`,
+      `SELECT status, company_id, currency_code, funding_decided, funding_source, funding_advance_id
+         FROM purchase_orders WHERE id=$1`,
       [args.id],
     )
     if (!poRow.rows[0] || poRow.rows[0].company_id !== auth.companyId)
@@ -38616,8 +38617,26 @@ const phase5MutationResolvers = {
     // see sendPOToAudit's comment.
     if (!['invoiced', 'payment_pending'].includes(poRow.rows[0].status as string))
       throw new Error('PO must be in invoiced status to set funding')
-    if (poRow.rows[0].funding_decided)
-      throw new Error('Funding source has already been set for this PO')
+    // A decision already made can be CHANGED while the PO is still waiting (the status check above is the "not yet
+    // completed" rule), as long as nothing has used it. It used to be final after one click, so a PO confirmed as
+    // vendor AP by mistake (the default, and what every cash purchase got) could not be moved to an employee advance.
+    const previouslyDecided = poRow.rows[0].funding_decided === true
+    if (previouslyDecided) {
+      const used = await query(
+        `SELECT
+           EXISTS (SELECT 1 FROM po_lines WHERE po_id=$1 AND advance_settlement_id IS NOT NULL) AS settled,
+           EXISTS (SELECT 1 FROM vendor_invoices WHERE po_id=$1 AND company_id=$2 AND status <> 'cancelled') AS invoiced`,
+        [args.id, auth.companyId],
+      )
+      if (used.rows[0]?.settled)
+        throw new Error(
+          'Funding cannot be changed: lines of this PO are already settled against an advance',
+        )
+      if (used.rows[0]?.invoiced)
+        throw new Error(
+          'Funding cannot be changed: a vendor invoice already exists for this PO (cancel it first)',
+        )
+    }
     if (args.fundingSource === 'employee_advance') {
       if (!args.fundingAdvanceId) {
         throw new Error('An advance must be selected when funding source is Employee Advance')
@@ -38635,20 +38654,60 @@ const phase5MutationResolvers = {
         throw new Error('PO currency must match the selected advance’s currency')
       }
     }
-    // funding_decided=false in the WHERE makes this the actual guard
-    // against a double-click or concurrent tab racing past the read above
-    // — the earlier check is just a fast, friendly error for the common case.
-    const updateRes = await query(
-      `UPDATE purchase_orders
-          SET funding_source=$1, funding_advance_id=$2, funding_decided=true
-        WHERE id=$3 AND funding_decided=false`,
-      [
-        args.fundingSource,
-        args.fundingSource === 'employee_advance' ? args.fundingAdvanceId : null,
-        args.id,
-      ],
+    const newAdvanceId =
+      args.fundingSource === 'employee_advance' ? (args.fundingAdvanceId ?? null) : null
+    const before = {
+      funding_source: poRow.rows[0].funding_source as string | null,
+      funding_advance_id: poRow.rows[0].funding_advance_id as string | null,
+      funding_decided: previouslyDecided,
+    }
+    // The UPDATE's WHERE clause repeats what was read (decided / source / advance), so it is the actual guard against a
+    // double-click or a second tab changing the funding between the read above and this write; the checks above are the
+    // friendly errors for the common case. The audit row is plain SQL in the same transaction (logAudit swallows its own
+    // errors, playbook #48), so a change is never saved without its record.
+    const changed = await withTransaction(
+      { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+      async (client) => {
+        const upd = await client.query(
+          `UPDATE purchase_orders
+              SET funding_source=$1, funding_advance_id=$2, funding_decided=true
+            WHERE id=$3 AND company_id=$4
+              AND funding_decided = $5
+              AND funding_source IS NOT DISTINCT FROM $6
+              AND funding_advance_id IS NOT DISTINCT FROM $7::uuid`,
+          [
+            args.fundingSource,
+            newAdvanceId,
+            args.id,
+            auth.companyId,
+            before.funding_decided,
+            before.funding_source,
+            before.funding_advance_id,
+          ],
+        )
+        if (upd.rowCount === 0) return false
+        await client.query(
+          `INSERT INTO audit_log (user_id, company_id, action, table_name, record_id, old_values, new_values)
+           VALUES ($1,$2,'UPDATE','purchase_orders',$3,$4::jsonb,$5::jsonb)`,
+          [
+            auth.userId,
+            auth.companyId,
+            args.id,
+            JSON.stringify(before),
+            JSON.stringify({
+              funding_source: args.fundingSource,
+              funding_advance_id: newAdvanceId,
+              funding_decided: true,
+            }),
+          ],
+        )
+        return true
+      },
     )
-    if (updateRes.rowCount === 0) throw new Error('Funding source has already been set for this PO')
+    if (!changed)
+      throw new Error(
+        'The funding of this PO was changed by someone else: reload the page and try again',
+      )
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
