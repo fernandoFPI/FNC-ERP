@@ -1923,3 +1923,153 @@ Don't re-derive, check these first.
     all test companies before projects, and find leftovers by company-name prefix so one aborted run cannot poison the next;
     `\echo` with an apostrophe makes psql print "unterminated quoted string" (#67b). Not verified in a browser. Related to #6,
     #29, #33, #65, #71, #74.
+
+84. **The employee-advance flow was written for the statuses before the requisition split, the funding choice could not be
+    undone, and every PO sat on the default funding.** NY-PO-2026-0090 (Nishtimani Yakam, vendor "Cash Purchase", jobsite,
+    750,000 IQD) showed the AP panel (GL Account, Cost Center, "Create in AP", Mark as Completed) and the question was what to
+    choose. Cash purchases are paid from an employee advance, so they belong on the advance flow. Read-only checks on production
+    (12 Nov): all 315 POs had `funding_source = 'vendor_ap'` (the column default); 186 of the 187 at payment_pending had
+    `funding_decided = false` (0090 was the one confirmed, as AP); 5 advances existed and 0 settlements; 0 vendor invoices, 0 payment
+    vouchers and 1 completion journal had ever been made; 154 requisitions sat at "sourcing" only because their POs never
+    completed. The advance flow had never been used end to end, and three things in it were wrong:
+    (a) *Status drift (#29, #33, #83).* The settlement queue (`GET /advances/:id/pending-po-lines`) and the bundle-and-settle path
+    selected `po.status = 'completed'`; a child PO of the current flow closes as `closed` (completePO: payment_pending -> closed),
+    so an advance-funded PO of the current flow could never be settled. Both statuses are now settleable
+    (`SETTLEABLE_PO_STATUSES`, `services/finance/src/lib/advancePOLines.ts`).
+    (b) *A second source of project cost (G17, #65, #83).* The settlement journal tagged every project line with the project's
+    analytic account, and `sync_project_cost_actuals` copies every journal line with an analytic account into project cost, so a
+    line whose cost was already booked at jobsite delivery (`po_direct_delivery`, source_id = the PO line) was charged again, and
+    so was stock bought for a project (a Store Out charges it). A line whose cost is already on the project, or that is delivered
+    to inventory, now settles on its GL account and cost center only (`PROJECT_COST_ALREADY_BOOKED_SQL`); the tag stays for older
+    POs, where the settlement is the only place the cost is booked. The "project has no analytic account" refusal now applies only
+    to a line that would carry the tag.
+    (c) *A decision that could not be corrected.* `setPOFunding` refused a second call ("Funding source has already been set"),
+    and the PO page only showed the picker while `funding_decided` was false. Now Finance (`finance.ap.approve`, the same key as
+    before) can change it while the PO is at invoiced or payment_pending, unless a line is already settled against an advance or
+    a vendor invoice other than a cancelled one exists. The write repeats what was read (decided, source, advance) in its WHERE
+    clause so two people cannot overwrite each other, and the old and new values go into `audit_log` in the same transaction.
+    The page shows "Change funding source" (and "Currently: ...", "Keep current funding") only inside the views of a PO whose funding
+    is decided, and not while a vendor invoice exists.
+    What I found but did NOT change, to settle before the backlog is touched: (1) completing a `vendor_ap` PO posts the whole PO
+    to project expense and to payable (`postPOCompletionJournal`), which charges the project twice for a delivered jobsite PO (G17,
+    #83), and it needs the company's `expense_default` posting account, which no company has, so today it is refused with
+    `POSTING_ACCOUNT_NOT_CONFIGURED: expense_default`. DO NOT set that account to make the error go away: it would turn the refusal
+    into silent double booking (draft journals). (2) Which advance pays which cash purchase is not recorded anywhere (the advance
+    belongs to an employee; the PO has the buyer): Finance picks per PO, or a rule has to be agreed. (3) The 186 undecided POs, and
+    0090 itself, are data: 0090 can now be moved to an advance in the page; nothing was bulk-changed. (4) An AP invoice tagged with
+    the project's analytic account would add the project cost again for a jobsite PO; not yet exercised, nobody has made one.
+    Tests: `services/finance/tests/advance-settlement-po-lines.test.ts` (real Postgres through the real routes, 7; 10 mutations
+    killed), `services/gateway/tests/po-funding-change.test.ts` (12; 11 of 12 mutations killed, the survivor is the company
+    scope on the write, redundant because the PO's company is checked before it), `apps/web/src/pages/procurement/__tests__/
+    poFundingChangePage.test.tsx` (14; 9 mutations killed after two dead guards were removed). Traps met: a trigger (migration
+    139) gives every new project an analytic account, so a "project without one" fixture must clear the link afterwards;
+    `cost_centers.type` is NOT NULL and `purchase_orders.purpose` allows only project, manufacturing, stock; a PO page rendered
+    without a `<Route path=":id">` has no `id` and silently skips the vendor-invoice lookup; a race can be tested deterministically
+    by holding the row lock in a second connection, starting the call, waiting, then committing; and a bash heredoc swallowed the
+    backslashes of a regex again (#69), found because the script failed to parse and touched nothing. Related to #29, #33, #44,
+    #48, #65, #83.
+
+85. **Splitting one click into two steps by two people: what the old path did silently, the cash that has to move with it,
+    and a status whose meaning must not change.** The request: file an advance from Requisitions (Purpose: Advance) exactly
+    like an Expense, except that the manager's approval and the paying out are two steps by two people, the second by the
+    cashbox handler who chooses which cashbox the money leaves; a rejected request is edited and sent again like a rejected
+    expense claim (#57). Before: `POST /finance/advances/:id/approve` approved AND issued in one click, posting the issuance
+    journal against the advance's default cash account; no cashbox was involved and nobody chose one.
+    Design (migration 322): `pending_approval` -> (manager, `finance.advances.approve`) `pending_issue` -> (cashbox handler,
+    `finance.petty_cash.edit`) `approved`. `approved` KEEPS its meaning, "issued and open for settlement", so the settlement
+    queue, the funding choice on a PO and the dashboards, which all select `('approved','partially_settled')`, needed no change
+    and the advances already issued stay as they are; only the label changed ("Issued", `lib/advanceStatus.ts`, one name for
+    every screen). New columns `issued_by`, `issued_at`, `petty_cash_float_id`; `approved_by/at` still mean the manager.
+    Approve is one atomic UPDATE whose WHERE holds the status guard (two managers approve it once). Issue is one transaction
+    that locks the advance AND the cashbox (`FOR UPDATE`) and checks the box in ONE function, `cashboxProblem` (this company's,
+    active, the advance's currency, a GL account, holding at least the amount), used by the route and by `GET /:id/issue-options`
+    so a box shown as usable is one the server accepts. It posts a DRAFT journal (Dr the employee's advance account, Cr the
+    box's GL account), takes the cash out of the box and logs it as a petty-cash `spend`, and writes its audit row in plain
+    SQL inside the transaction (#48). The issuance lines carry NO analytic account: `trg_sync_project_costs` copies any journal
+    line with one into project cost, and handing out cash is not a project cost, only settling it is (#84b).
+    Things worth keeping:
+    (a) *The void would have left the cashbox short.* The existing void of an issued advance reversed the journal only. With the
+    cash now coming out of a box, that leaves the box's balance 200,000 below its GL account for ever. Found while writing
+    the void's test (my first version asserted the cash "left as it was paid"), before the first run; the void now returns the cash to the box as an `adjustment` row (the
+    petty-cash page shows anything that is not a spend as "+"). An advance approved but not yet paid out can be cancelled with
+    nothing to reverse. Same family as #65a: for every path that moves cash OUT, ask where its undo writes.
+    (b) *A reference the request names was never checked against the company.* `request-self` accepted any `project_id` (no
+    company check, the foreign key does not care), so a request could point at another company's project; the request and the
+    revise route now check project and cost center by company (`validateRequestRefs`). Tenancy again: joins and references count.
+    (c) *One function for "who may edit a rejected request".* `canReviseAdvance` (owner = `created_by` or the employee the advance
+    belongs to, or an admin; only a `rejected` request) is used by the revise route and returned as `can_revise` by the three
+    reads (`/mine`, the list, the detail), so the button cannot drift from the server (#24). The popup also requires status
+    `rejected` itself. Revise demands a real change (`NO_CHANGES`), keeps the rejection reason on the row as history, and a
+    different currency re-resolves that currency's accounts.
+    (d) *A refused action that nobody saw.* `EmployeeAdvanceDetail.act()` caught every error with a comment "handled" and did
+    nothing, so a refused approve or void looked like a dead button (#71b). It now shows the server's message.
+    (e) *The Approve dialog asked the manager for something only Finance knows.* The old one-click Approve & Issue carried an
+    optional Cost Center picker ("classify this advance now that you know what it's for"); the split moved it, unchanged, onto
+    the manager, who cannot know it (user: "approver does not know which CC to select, this placement is incorrect"). It is not
+    decoration: `employee_advances.cost_center_id` is what an expense claim settled against the advance (post-payment) and the
+    employee's self-settlement copy onto the settlement line, and both refuse an advance without one (`NO_COST_CENTER`;
+    `advance_settlement_lines.cost_center_id` is NOT NULL). So it moved to the step done on the Finance side, the issue (the
+    user's choice of three: at issue / Finance sets it on the advance page / at settlement): an optional picker in the Issue
+    dialog, validated as this company's AND active (400 `INVALID_COST_CENTER`, nothing moves), replacing the advance's own only
+    when the handler picks one (`COALESCE`), recorded in the audit row, named on the advance page (the join is company-scoped, so
+    an old advance pointing at another company's cost center shows none). `issue-options` carries the company's active cost
+    centers because the handler holds the cashbox permission, not necessarily the one that lists cost centers. Approve is a plain
+    confirmation; its route still accepts an optional `cost_center_id` so a tab opened before the change keeps working, and
+    nothing sends it. **Still open:** if the handler leaves it empty, nothing in the app sets it afterwards, so that advance cannot
+    be settled by the employee or through an expense claim (`NO_COST_CENTER`) until a cost center is set in SQL; the other two
+    placements would have covered this. Lesson: when one step is split between two people, ask for each input of the old step who
+    actually knows it; do not carry the form over. Cost center mutations: 16 of 17 killed (11 on the finance routes, 5 on the web screens); the survivor removes a redundant reset of the picker, which is hidden while the options load and then overwritten by the loaded value, so it is an equivalent change.
+    (f) *Not done, on purpose or not known yet.* No notification is sent to the cashbox handler when a request is approved (the list
+    has a Need Action tile and the handler's worklist `GET /awaiting-issue`). `request-self` still demands the company's default
+    cash account for the currency (Settings > Advance Automation) even though the cash account is now the box's: a company that never
+    configured it cannot file, though the account is no longer used at issue. A company with no active cashbox cannot issue (the dialog
+    says so). The hard stop on a box holding less than the amount, and "anyone holding `finance.petty_cash.edit` may issue", were my defaults, accepted with the user's "go"; say so if either is wrong. Production: apply
+    migration 322 only through the deploy pipeline; requests already waiting at `pending_approval` simply get the new two-step road.
+    Test traps met: (1) a permission granted to a user in the middle of a test is not seen (their permissions were already loaded):
+    grant everything in `beforeAll`. (2) Finance's request route needs the company's default cash account and the employee's
+    advance control account configured, or every request is a 422 that looks like a test failure. (3) The `min="0"` on the amount
+    box stops `requestSubmit()` before the handler runs, which is correct: assert the attribute and that nothing was sent, not a toast.
+    (4) A component that runs a query while closed (`MyAdvanceModal`'s project list) crashed every EXISTING test of the page that
+    mounts it under a blanket Apollo mock: the editor (and its query) is mounted only while editing, which also stops a needless
+    fetch on each list visit; edit state is keyed by request id and cleared on close, or the same request reopens in its form.
+    (5) `eslint --fix` on a new test turned `as HTMLInputElement` into forbidden `!` again (#52, #80): use a helper that throws.
+    (6) `PillSelect` is a native `<select aria-label>`; `SearchableSelect` opens on click and chooses on `mouseDown` (#59).
+    Mutation-checked: 41 on the finance routes (one survived first, `can_revise` on the detail read for a request that is not
+    rejected, and got its own assertion), 53 on the web screens (52 killed; the one that survived changed only the never-shown `defaultValue` fallback of the "Issued" label, and the same mutation on the `en.json` value that really shows is killed by 2 tests). Tests: `services/finance/tests/advance-issue-step.test.ts` (real Postgres
+    through the real routes, 45: a manager with only the approve permission, a cashier with only the cashbox permission, a plain
+    owner, another company), `components/finance/__tests__/{IssueAdvanceModal,MyAdvanceModal}.test.tsx`,
+    `pages/procurement/requisitions/__tests__/{RequisitionFormAdvance,RequisitionsPageAdvances}.test.tsx`,
+    `pages/finance/advances/__tests__/EmployeeAdvanceDetailIssue.test.tsx`. Not verified in a browser. Related to #57, #58, #84,
+    #71, #65, #48, #24.
+
+86. **A document number written in code cannot be controlled, and a number taken from a counter must still never collide.**
+    The user pointed at an advance numbered `ADV-1794641600903-f89d2f` and asked to control numbering in Settings > Document
+    Numbering, and the same for expenses. Read-only looks at both databases first: (a) the long number is the fallback
+    `nextDocumentNumber` returns for a company with NO saved rule for the type (#69a). Local dev had no `employee_advance` rule
+    for any company; production's three companies already had `NY-ADV`, `AW-ADV`, `NF-ADV`, so advances were already
+    controllable there (the page lists every type in `DOC_TYPES`, saved or not). (b) Expense claims were not a type at all:
+    `nextClaimNumber` hard-coded `EXP-<year>-NNNN`, the highest of the year plus one (#28).
+    Fix: `expense_claim` is a document type; migration 323 seeds, for every existing company, the rule that reproduces today's
+    numbers and continues from them (prefix EXP, year on, 4 digits, next = highest of this year + 1; production 54 / 15 / 52);
+    `createCompany` seeds it for new companies; `nextClaimNumber` builds the number from the rule. The user chose "A": one running
+    counter like every other document type, which does not restart each January by itself (reset it in Settings).
+    Design that mattered. The counter is read and advanced INSIDE the submitting transaction under a row lock
+    (`nextDocumentNumberInTransaction`, packages/db), unlike `nextDocumentNumber`, whose separate pool query keeps the counter on
+    a rollback: for a document with a unique number a failed save should give the number back (tested). It never issues a number
+    already in use: the floor is `MAX(existing) + 1` over numbers of THIS rule's shape (`documentNumberPattern`; prefix and
+    separator are admin-typed text, so they are regex-escaped, checked against Postgres's own regex engine with prefixes like
+    `A.B`, `A+B`, `A|B`, `A(B)`), so an admin lowering the counter, or numbers from before the rule, cannot reproduce #28. A
+    company with no rule keeps the original format and no rule is created behind its back. One formatter
+    (`formatDocumentNumber`) now serves both generators.
+    Traps: (1) a company that existed before the migration on an already-set-up test database gets the seeded rule, so the older
+    numbering tests, which assume none, delete it up front (in CI the fixture company is created after the migration). (2) The
+    mutation "the year is left out of the pattern" survived the first tests because every guard test used a rule without the year;
+    a year-numbered "existing number of this year is in use" test killed it. (3) A heredoc ate the backslashes of a script's regex
+    again (#69); write scripts with the file tool.
+    Not done: the optional "create the default rule on first use for any type that has none" (it changes number generation for
+    every document type; the user did not answer), and the other generators with a hard-coded or count-based number
+    (`nextReplenNumber` in petty cash, see #28). Rebuild `packages/db` and restart gateway and finance for the Settings list and
+    the numbering to change (#9). Tests: `services/finance/tests/expense-claim-numbering-rule.test.ts` (27, real Postgres
+    through the routes), `expense-claim-numbering.test.ts` (the no-rule path),
+    `services/gateway/tests/create-company-expense-numbering.test.ts` (3, including the migration file's SQL run against known
+    claims); 21 mutations, all killed. Related to #28, #69, #9.
