@@ -229,7 +229,7 @@ export function IssueAdvanceModal({
                     textAlign: 'start',
                     padding: '12px 14px',
                     borderRadius: '10px',
-                    border: `1px solid ${active ? theme.accent : theme.borderField}`,
+                    border: `1px solid ${active ? theme.accent : theme.borderInput}`,
                     background: active ? theme.accentBg : theme.bgSurface,
                     opacity: disabled ? 0.55 : 1,
                     cursor: disabled ? 'not-allowed' : 'pointer',
