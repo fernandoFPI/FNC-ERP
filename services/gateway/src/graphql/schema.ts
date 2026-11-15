@@ -3459,6 +3459,31 @@
     blockers: [String!]!
   }
 
+  # One entry of a project's cost ledger (project_cost_actuals, posted journals only), newest first. amount is NUMERIC kept
+  # as text, in currencyCode; nothing is converted or added across currencies. reference is the PO / Store Out / return
+  # number the cost came from, or the journal reference, when there is one.
+  type ProjectCostLedgerEntry {
+    id: ID!
+    entryDate: String
+    sourceType: String
+    costCategory: String
+    amount: String!
+    currencyCode: String!
+    reference: String
+  }
+
+  type ProjectCostLedgerTotal {
+    currencyCode: String!
+    amount: String!
+  }
+
+  type ProjectCostLedger {
+    entries: [ProjectCostLedgerEntry!]!
+    totals: [ProjectCostLedgerTotal!]!
+    # more rows exist than are listed; the totals still count all of them
+    truncated: Boolean!
+  }
+
   input StageInput {
     name: String!
     sequence: Int
@@ -3490,6 +3515,8 @@
   extend type Query {
     projectTeamMembers(projectId: ID!): [ProjectTeamMember!]!
     projectCompletionBlockers(id: ID!): ProjectCompletionBlockers!
+    # The project's cost ledger as a list (the analytic account page). Needs the right to see the project.
+    projectCostLedger(projectId: ID!): ProjectCostLedger!
   }
 
   extend type Query {

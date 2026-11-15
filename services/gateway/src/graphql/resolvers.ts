@@ -19,6 +19,7 @@ import {
   type PostingAccountRole,
   getProjectCloseoutInvoiceState,
   projectCloseoutBlocker,
+  FINISHED_PO_STATUSES_SQL,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { isProjectLifecyclePhaseKey } from '../lib/projectLifecycle.js'
@@ -84,7 +85,13 @@ import {
   getInvoicePrintAttachment,
   type PrintAttachmentFileRow,
 } from '../lib/invoicePrintAttachment.js'
-import { costControlCategoryForLedger, projectPOCommitments } from '../lib/costControlPurchases.js'
+import {
+  COMMITTED_LINE_VALUE_SQL,
+  COMMITTED_PO_STATUSES_SQL,
+  costControlCategoryForLedger,
+  projectPOCommitments,
+} from '../lib/costControlPurchases.js'
+import { projectCostLedger } from '../lib/projectCostLedger.js'
 import { assertLineAccountingChoice } from '../lib/poLineAccounting.js'
 import {
   advanceProblem,
@@ -7403,7 +7410,7 @@ async function assertProjectCancellable(projectId: string): Promise<void> {
     `
     SELECT
       (SELECT COUNT(*)::int FROM purchase_orders
-       WHERE project_id = $1 AND status NOT IN ('completed','deleted','cancelled')) AS open_pos,
+       WHERE project_id = $1 AND status NOT IN ${FINISHED_PO_STATUSES_SQL}) AS open_pos,
       (SELECT COUNT(*)::int FROM manufacturing_requests mr
        JOIN interco_transactions it ON it.id = mr.interco_transaction_id
        WHERE mr.project_id = $1 AND it.status = 'pending') AS pending_interco,
@@ -9537,7 +9544,7 @@ export const resolvers = {
             COUNT(ps.id) FILTER (WHERE ps.status = 'completed') AS stages_completed,
             COUNT(ps.id) AS stages_total,
             COUNT(DISTINCT pm.id) FILTER (WHERE pm.is_active = true) AS team_count,
-            COUNT(DISTINCT po.id) FILTER (WHERE po.status NOT IN ('completed','deleted')) AS open_po_count
+            COUNT(DISTINCT po.id) FILTER (WHERE po.status NOT IN ${FINISHED_PO_STATUSES_SQL}) AS open_po_count
           FROM projects p
           LEFT JOIN employees e ON e.id = p.project_manager_id
           LEFT JOIN project_stages ps ON ps.project_id = p.id
@@ -9571,7 +9578,7 @@ export const resolvers = {
           -- currency-safe: completion_pct is a schedule percentage, not money
           COALESCE(ROUND(AVG(ps.completion_pct))::integer, 0) AS overall_completion_pct,
           (SELECT COUNT(*) FROM project_members pm2 WHERE pm2.project_id = p.id AND pm2.is_active = true)::integer AS team_count,
-          (SELECT COUNT(*) FROM purchase_orders po2 WHERE po2.project_id = p.id AND po2.status NOT IN ('completed','deleted'))::integer AS open_po_count,
+          (SELECT COUNT(*) FROM purchase_orders po2 WHERE po2.project_id = p.id AND po2.status NOT IN ${FINISHED_PO_STATUSES_SQL})::integer AS open_po_count,
           (SELECT COUNT(*) FROM project_client_documents pcd WHERE pcd.project_id = p.id)::integer AS client_doc_count,
           (SELECT COUNT(*) FROM rfq_lines rl WHERE rl.project_id = p.id)::integer AS rfq_line_count,
           (SELECT COUNT(*) FROM project_rfis pr WHERE pr.project_id = p.id AND pr.status = 'open' AND pr.required_date < CURRENT_DATE)::integer AS open_overdue_rfi_count,
@@ -9633,6 +9640,15 @@ export const resolvers = {
                'id', po.id, 'po_number', po.po_number,
                'vendor_name', v.name, 'status', po.status,
                'total_amount', po.total_amount, 'currency_code', po.currency_code,
+               -- what the lines really hold, one entry per LINE currency. The header total_amount is one number in
+               -- one currency: it is NULL for some mixed POs and, for older ones, adds an IQD line into a USD total
+               -- (NY-PO-2026-0063), so a screen that sums money by currency reads this instead (playbook #92).
+               'line_totals', COALESCE(
+                 (SELECT json_agg(json_build_object('currency_code', lt.currency_code, 'amount', lt.amount)
+                                  ORDER BY lt.currency_code)
+                  FROM (SELECT pl.currency_code, SUM(pl.total_price) AS amount
+                        FROM po_lines pl WHERE pl.po_id = po.id GROUP BY pl.currency_code) lt),
+                 '[]'::json),
                'created_at', po.created_at
              ) ORDER BY po.created_at DESC)
              FROM purchase_orders po
@@ -9656,7 +9672,8 @@ export const resolvers = {
                'equipmentRentalCosts', COALESCE(ac_eq.amount, 0),
                'storeCosts', COALESCE(sc.amount, 0),
                'committedCosts', COALESCE(po_c.amount, 0) + COALESCE(sc.amount, 0),
-               'budgetRemaining', CASE WHEN pb.id IS NOT NULL
+               -- a budget row with 0 in it is "no budget set" (every new project gets one): NULL, not minus everything spent
+               'budgetRemaining', CASE WHEN pb.id IS NOT NULL AND pb.budget_amount > 0
                  THEN pb.budget_amount - COALESCE(ac.amount, 0) - COALESCE(po_c.amount, 0) - COALESCE(sc.amount, 0)
                  ELSE NULL END,
                'grossMargin', CASE WHEN ccy.currency_code = p.project_value_currency
@@ -9665,12 +9682,15 @@ export const resolvers = {
              FROM (
                SELECT currency_code FROM project_budgets WHERE project_id = p.id
                UNION SELECT currency_code FROM v_project_cost_by_currency WHERE project_id = p.id
-               UNION SELECT currency_code FROM purchase_orders WHERE project_id = p.id AND status NOT IN ('completed','deleted')
+               -- a currency with something still ordered and not received (same rule as the Cost Control tab)
+               UNION SELECT pl.currency_code FROM purchase_orders po_cc JOIN po_lines pl ON pl.po_id = po_cc.id
+                      WHERE po_cc.project_id = p.id AND po_cc.status IN ${COMMITTED_PO_STATUSES_SQL}
+                      GROUP BY pl.currency_code HAVING SUM(${COMMITTED_LINE_VALUE_SQL}) > 0
                UNION SELECT COALESCE(pol0.store_price_currency, 'IQD') FROM po_lines pol0
                       JOIN purchase_orders po0 ON po0.id = pol0.po_id
                       WHERE po0.project_id = p.id AND pol0.in_stock = true
                         AND COALESCE(pol0.store_price, 0) > 0 AND COALESCE(pol0.qty_from_stock, 0) > 0
-                        AND po0.status NOT IN ('completed','deleted','cancelled')
+                        AND po0.status NOT IN ${FINISHED_PO_STATUSES_SQL}
              ) ccy
              LEFT JOIN project_budgets pb ON pb.project_id = p.id AND pb.currency_code = ccy.currency_code
              LEFT JOIN (
@@ -9682,8 +9702,13 @@ export const resolvers = {
                WHERE project_id = p.id AND cost_category = 'equipment_rental' GROUP BY currency_code
              ) ac_eq ON ac_eq.currency_code = ccy.currency_code
              LEFT JOIN (
-               SELECT currency_code, SUM(total_amount) AS amount FROM purchase_orders
-               WHERE project_id = p.id AND status NOT IN ('completed','deleted') GROUP BY currency_code
+               -- committed = ordered and NOT yet received, per line currency, for POs from approved to payment pending:
+               -- the Cost Control tab's rule (lib/costControlPurchases.ts). The old figure added up the HEADER total
+               -- of every PO that was not 'completed', so a closed PO (everything received and paid) counted in full.
+               SELECT pl.currency_code, SUM(${COMMITTED_LINE_VALUE_SQL}) AS amount
+               FROM purchase_orders po_c0 JOIN po_lines pl ON pl.po_id = po_c0.id
+               WHERE po_c0.project_id = p.id AND po_c0.status IN ${COMMITTED_PO_STATUSES_SQL}
+               GROUP BY pl.currency_code
              ) po_c ON po_c.currency_code = ccy.currency_code
              LEFT JOIN (
                SELECT COALESCE(pol1.store_price_currency, 'IQD') AS currency_code,
@@ -9691,7 +9716,7 @@ export const resolvers = {
                FROM po_lines pol1 JOIN purchase_orders po1 ON po1.id = pol1.po_id
                WHERE po1.project_id = p.id AND pol1.in_stock = true
                  AND COALESCE(pol1.store_price, 0) > 0 AND COALESCE(pol1.qty_from_stock, 0) > 0
-                 AND po1.status NOT IN ('completed','deleted','cancelled')
+                 AND po1.status NOT IN ${FINISHED_PO_STATUSES_SQL}
                GROUP BY COALESCE(pol1.store_price_currency, 'IQD')
              ) sc ON sc.currency_code = ccy.currency_code
             ),
@@ -9730,7 +9755,7 @@ export const resolvers = {
       const blockers: string[] = []
       const [openPOs, activeMOs, incompleteStages] = await Promise.all([
         query(
-          `SELECT COUNT(*) FROM purchase_orders WHERE project_id=$1 AND status NOT IN ('completed','deleted')`,
+          `SELECT COUNT(*) FROM purchase_orders WHERE project_id=$1 AND status NOT IN ${FINISHED_PO_STATUSES_SQL}`,
           [args.id],
         ),
         query(
@@ -9749,6 +9774,36 @@ export const resolvers = {
       if (mo > 0) blockers.push(`${mo} active manufacturing order(s) must be completed first`)
       if (st > 0) blockers.push(`${st} stage(s) are not yet completed`)
       return { canComplete: blockers.length === 0, blockers }
+    },
+
+    // The project's cost ledger as a list (lib/projectCostLedger.ts, playbook #92). The project's own view guard decides
+    // who may read it, so it never shows more than the project does.
+    projectCostLedger: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requireProjectViewGW(ctx.auth, args.projectId)
+      const project = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.projectId,
+        ctx.auth.companyId,
+      ])
+      if (!project.rows[0]) throw new Error('Project not found')
+      const ledger = await projectCostLedger(
+        (text, params) => query(text, params),
+        args.projectId,
+        ctx.auth.companyId,
+      )
+      return {
+        entries: ledger.entries.map((e) => ({
+          id: e.id,
+          entryDate: e.entry_date,
+          sourceType: e.source_type,
+          costCategory: e.cost_category,
+          amount: e.amount,
+          currencyCode: e.currency_code,
+          reference: e.reference,
+        })),
+        totals: ledger.totals.map((t) => ({ currencyCode: t.currency_code, amount: t.amount })),
+        truncated: ledger.truncated,
+      }
     },
 
     // Manufacturing
@@ -31243,12 +31298,12 @@ const phase5QueryResolvers = {
         ),
         query(
           `SELECT COUNT(*) AS v FROM purchase_orders
-             WHERE company_id=$1 AND status NOT IN ('completed','deleted')`,
+             WHERE company_id=$1 AND status NOT IN ${FINISHED_PO_STATUSES_SQL}`,
           [cid],
         ),
         query(
           `SELECT COUNT(*) AS v FROM purchase_orders
-             WHERE company_id=$1 AND status NOT IN ('completed','deleted')
+             WHERE company_id=$1 AND status NOT IN ${FINISHED_PO_STATUSES_SQL}
                AND created_at >= date_trunc('month', CURRENT_DATE - interval '1 month')
                AND created_at < date_trunc('month', CURRENT_DATE)`,
           [cid],

@@ -70,3 +70,4 @@ export {
   DEAD_INVOICE_STATUSES,
 } from './projectCloseout.js'
 export type { ProjectCloseoutInvoiceState } from './projectCloseout.js'
+export { FINISHED_PO_STATUSES, FINISHED_PO_STATUSES_SQL, isOpenPOStatus } from './poStatus.js'

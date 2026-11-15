@@ -6,6 +6,7 @@ import {
   withTransaction,
   getProjectCloseoutInvoiceState,
   projectCloseoutBlocker,
+  FINISHED_PO_STATUSES_SQL,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
@@ -155,7 +156,7 @@ async function checkCompletionBlockers(projectId: string): Promise<string[]> {
 
   const [openPOs, activeMOs, incompleteStages] = await Promise.all([
     query(
-      `SELECT COUNT(*) FROM purchase_orders WHERE project_id = $1 AND status NOT IN ('completed','deleted')`,
+      `SELECT COUNT(*) FROM purchase_orders WHERE project_id = $1 AND status NOT IN ${FINISHED_PO_STATUSES_SQL}`,
       [projectId],
     ),
     query(
@@ -293,7 +294,7 @@ projectsRouter.get('/', requirePermission('projects.view', 'view'), async (req, 
             ORDER BY ps2.sequence LIMIT 1
           ) AS current_stage_name,
           COUNT(DISTINCT pm.id) FILTER (WHERE pm.is_active = true) AS team_count,
-          COUNT(DISTINCT po.id) FILTER (WHERE po.status NOT IN ('completed','deleted')) AS open_po_count
+          COUNT(DISTINCT po.id) FILTER (WHERE po.status NOT IN ${FINISHED_PO_STATUSES_SQL}) AS open_po_count
         FROM projects p
         LEFT JOIN employees e ON e.id = p.project_manager_id
         LEFT JOIN project_stages ps ON ps.project_id = p.id
@@ -403,7 +404,7 @@ projectsRouter.get('/:id', requirePermission('projects.view', 'view'), async (re
           ) rp),
           '[]'
         ) AS recent_pos,
-        (SELECT COUNT(*) FROM purchase_orders WHERE project_id = p.id AND status NOT IN ('completed','deleted'))
+        (SELECT COUNT(*) FROM purchase_orders WHERE project_id = p.id AND status NOT IN ${FINISHED_PO_STATUSES_SQL})
           AS open_po_count,
         CASE WHEN p.submission_date IS NOT NULL
           THEN (p.submission_date - CURRENT_DATE)::integer

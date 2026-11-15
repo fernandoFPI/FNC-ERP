@@ -27,6 +27,18 @@ export const COMMITTED_PO_STATUSES = [
   'payment_pending',
 ] as const
 
+/** The same list as a SQL tuple (`status IN ${COMMITTED_PO_STATUSES_SQL}`); built from the constant, never from input. */
+export const COMMITTED_PO_STATUSES_SQL = `(${COMMITTED_PO_STATUSES.map((s) => `'${s}'`).join(',')})`
+
+/**
+ * SQL expression (needs `pl` = po_lines in scope): what is still ordered and NOT received on a line, never below zero, at
+ * the price paid or quoted. ONE copy, used by the Cost Control tab (`projectPOCommitments`) and by the project header's
+ * Committed / Remaining Budget (the `project` query), so the two screens cannot disagree (playbook #92: the header used to
+ * add up the whole header total of every PO that was not `completed`, so closed POs counted as committed).
+ */
+export const COMMITTED_LINE_VALUE_SQL = `GREATEST(pl.qty_ordered - COALESCE(pl.qty_from_stock, 0) - COALESCE(pl.qty_received, 0), 0)
+                      * COALESCE(pl.actual_unit_price, pl.unit_price, 0)`
+
 export type CostControlCategory =
   | 'labor'
   | 'material'
@@ -85,15 +97,13 @@ export async function projectPOCommitments(
 ): Promise<POCommitmentRow[]> {
   const r = await run(
     `SELECT po.id AS po_id, po.po_number, v.name AS vendor_name, po.created_at, pl.currency_code,
-            ROUND(SUM(GREATEST(pl.qty_ordered - COALESCE(pl.qty_from_stock, 0) - COALESCE(pl.qty_received, 0), 0)
-                      * COALESCE(pl.actual_unit_price, pl.unit_price, 0)), 2)::text AS remaining
+            ROUND(SUM(${COMMITTED_LINE_VALUE_SQL}), 2)::text AS remaining
        FROM purchase_orders po
        JOIN po_lines pl ON pl.po_id = po.id
        LEFT JOIN vendors v ON v.id = po.vendor_id AND v.company_id = po.company_id
       WHERE po.project_id = $1 AND po.company_id = $2 AND po.status = ANY($3::text[])
       GROUP BY po.id, po.po_number, v.name, po.created_at, pl.currency_code
-     HAVING SUM(GREATEST(pl.qty_ordered - COALESCE(pl.qty_from_stock, 0) - COALESCE(pl.qty_received, 0), 0)
-                * COALESCE(pl.actual_unit_price, pl.unit_price, 0)) > 0
+     HAVING SUM(${COMMITTED_LINE_VALUE_SQL}) > 0
       ORDER BY po.created_at, po.po_number, pl.currency_code`,
     [projectId, companyId, [...COMMITTED_PO_STATUSES]],
   )
