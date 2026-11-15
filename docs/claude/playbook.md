@@ -2405,3 +2405,39 @@ Don't re-derive, check these first.
     `services/projects/tests/project-create-answers-after-commit.test.ts` (installs the slow-commit trigger for its own run, 8
     follow-ups in a row, plus the 201 body and a refused create leaving nothing behind; mutation-checked: the old code gives
     `[200, 200, 404, 200, 404, 404, ...]`). Related to #27, #17 and #92.
+
+94. **A cost row labelled by a literal, in a flow where the currency lives on the item.** "Why is Actual only 6,981.94 USD?"
+    (NY-PRJ-2026-0032, whose closed POs hold 10,269.69 USD). Two things explained the gap and only one was a bug. By design,
+    USD goods delivered to INVENTORY (9 lines, 3,330.65 USD; 79,950 IQD of IQD lines) cost the project nothing until a Store Out
+    issues them (#44, #65). The bug: `issueMaterialIssue` wrote ONE `project_cost_actuals` row per Store Out with `'IQD'`
+    hard-coded, and a return of stock offset it with another `'IQD'` literal. A Store Out line has a unit cost and NO
+    currency, and most of what the group issues is priced in USD, so the project's 14 Store Outs sat in the ledger as 99,835.60
+    "IQD" that was really 97,365.03 IQD-tagged items plus 2,470.57 USD of USD-tagged items (174 lines): USD Actual understated,
+    IQD Actual overstated by the same amount. The same family as #65(b) (a hard-coded `'IQD'` label next to an amount), which had
+    been fixed for deliveries and left for Store Outs ("still open" in #65, #43 and #67).
+    Scale on production when found (read-only, 2026-11-15): 92 Store Out cost rows in 3 companies and 11 projects, all labelled
+    IQD, over issued lines priced USD 28,931.43 (Al Watanyia 10,411.69, Nishtimani Factory 16,040.29, Nishtimani Yakam 2,479.45),
+    plus Factory lines whose products have no currency (44 lines, 6,404.51: kept IQD, never guessed); 20 stock-return lines.
+    Fix (`lib/stockIssueCost.ts`, migration 325): a Store Out books ONE ROW PER CURRENCY, the currency being the PRODUCT's cost
+    currency (`products.cost_currency`, the trusted one per the domain rules; a missing or blank one is `'IQD'`, exactly as
+    before; the code is trimmed and upper-cased). The amounts are summed in SQL (NUMERIC), so what is booked adds up to what the
+    Store Out holds to the cent. One SQL fragment (`stockCostCurrencySql`) decides the currency for BOTH the confirm and the
+    return, so they cannot drift; a return of stock now offsets per project AND per currency. Migration 325 replaces the unique
+    index `(source_id)` of migration 141 with `(source_id, currency_code)`: without it the second currency's row is refused;
+    every existing row (one per source) already satisfies it. Cancelling already deleted every row of the Store Out by source_id,
+    so it needed no change. `bookStockIssueCost` is idempotent and removes a currency the Store Out no longer has.
+    NOT done by this change: the existing 92 rows are still IQD (they are split by a separate, rehearsed SQL file after a backup,
+    one project at a time, and only after Finance has confirmed the currency of the products that look mis-tagged: on
+    NY-PRJ-2026-0032 Thermal pad 21.65 (its PO line was USD), Pipe 4" PVC 33.50, Clear Nylon 57, Welding Wire 4.63, Hole Saw 2.40,
+    Grinder Cutter 0.35, light gauge frame sheet 0.88 are tagged IQD with USD-sized prices, about 1,065 in all: #74(d) recorded 37
+    product costs as IQD from USD receipts and the data was left to a person). The product tag is read at booking time, so a
+    product corrected later does not change a row already booked.
+    How to spot the class: `grep "INSERT INTO project_cost_actuals"` for a quoted currency; a ledger row whose amount is a
+    mixture of items priced differently; a Store Out whose lines show a USD-sized unit cost under an IQD total; a project whose
+    USD Actual is lower than the USD of what was delivered to it. Also: "Actual" is what the project CONSUMED (deliveries to the
+    jobsite plus Store Outs minus returns), not what was ordered, so it will not equal a PO total.
+    Tests: `services/gateway/tests/store-out-cost-currency.test.ts` (real Postgres through the real `issueMaterialIssue`,
+    `cancelMaterialIssue` and `createMaterialReturn`, 16: mixed, USD-only, no-currency, lower-case and blank codes, zero cost, no
+    project, conservation, the project header, cancel, return per currency, idempotent booking, the index); every safeguard
+    mutation-checked. The ten older gateway files that touch Store Out cost rows pass unchanged (their products have no
+    currency, which keeps IQD). Apply migration 325 to `fnc_erp_dev` AND `fnc_erp_test` (#11). Related to #65, #43, #67, #74, #83, #92.
