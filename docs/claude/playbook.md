@@ -2211,3 +2211,95 @@ Don't re-derive, check these first.
     `pages/procurement/__tests__/poFundingPerCurrencyPage.test.tsx` (14, renders the real page; `poFundingChangePage.test.tsx`
     passes unchanged); 34 mutations, all killed (14 on the gateway rules and the page field, 4 on the settlement joins, 16 on the web picker). Not verified in a browser. Related to #84 (the advance flow), #83 (status drift), #65 and #74 (a
     hard-coded or guessed currency), #38 (a nullable list) and #89 (lock first, compare second).
+
+91. **A picker that offers accounts the database will refuse, a save that never checks them, and an error swallowed on the
+    screen where it finally shows.** The first settlement of an advance ever attempted on production (Nishtimani Yakam, the
+    cash purchases funded by NY-ADV-2026-0006 and NY-ADV-2026-0007) failed with `Failed to create settlement`. The raw error was
+    P0001 from `fn_enforce_postable_account()` (migration 237): a journal line may not post to a header account. All 68 funded PO
+    lines carried GL account `1000 Assets`, a header account (`is_postable = false`); the user had picked it while testing,
+    because it is the first entry of the PO page's GL Account picker. Nothing was half-posted (the settlement is one transaction,
+    and production held 0 settlement lines). Four separate faults, one symptom:
+    (a) *The picker offered it.* `glAccountOptions` mapped every active account of `ACCOUNTS_QUERY`, headers included, although
+    `is_postable` was already in the query. (b) *The save never checked.* `setPOLineAccounting` wrote whatever id it was sent: a
+    header account, an inactive one, and an account or cost center of ANOTHER company (the ids were never compared with the
+    caller's company; tenancy again, #48). (c) *No way back.* Classification is allowed only at invoiced / payment pending, and by
+    the time Finance settles, the PO is `closed`; the Advance page only printed the line's account. (d) *The refusal was
+    swallowed twice.* The settlement route let the trigger raise, so the answer was a bare 500, and the page's
+    `handleBundleSettlement` ended in `catch { /* handled */ }` (the shared axios client shows nothing on error, #85d), so the
+    reason existed only in the browser's Network tab. How to spot it: a value that only a database trigger or CHECK judges, at a
+    later step than the one where it is chosen; a dropdown fed by an unfiltered list of something that has a flag
+    (`is_postable`, `is_active`); a closed document with lines nobody can edit; `/* handled */` around a mutation that Finance
+    depends on. Query: `po_lines JOIN chart_of_accounts ON ... WHERE NOT is_postable` for lines already in a funding table.
+    Fix (no migration; the user chose the in-app control over a SQL fix because they did not know which account is right):
+    ONE rule in small libs (finance `lib/poLineAccounting.ts` and `lib/settlementLineAccounts.ts`, gateway
+    `lib/poLineAccounting.ts`) feeding every reader. The pending-lines list (`loadPendingPOLines`) now returns `account_problem`
+    (`missing` | `not_found` | `not_postable`) and `cost_center_problem` (`missing` | `not_found`) from the same SQL fragments the
+    settlement uses, joined WITH the PO's company so another company's account never reads as fine. `createSettlementFromPOLines`
+    checks BEFORE writing anything and answers 422 `LINES_NEED_ACCOUNTING` naming the PO, the line, the item and the reason for
+    every offending line (five, then "and N more"), plus `ADVANCE_ACCOUNT_NOT_POSTABLE` when the advance's own (credit) account
+    is a header account; the whole bundle is refused, good lines included. `PUT /finance/advances/:id/po-lines/:lineId/accounting`
+    (new) changes a line's GL account and cost center from the Advance page: gate `finance.ap.approve`, the same as the PO
+    page's own picker, so nobody gained a permission (an advances editor who can settle but does not hold it gets 403); only a line
+    that is already in THIS advance's queue (finished PO, this advance for the line's currency, not yet settled, this company)
+    and it takes the line's row lock (`FOR UPDATE OF pl`) so a settlement claiming it at the same moment either goes first (404
+    here) or waits; the replacement must be this company's, active and postable (cost center: this company's and active); old
+    and new values go to `audit_log` (`po_line_accounting_changed`) in the same transaction; the answer is read AFTER the commit
+    (#27). `setPOLineAccounting` (PO page) validates the same way, but only a CHOICE is judged: a value the line already holds
+    and that is sent back unchanged passes, because the page sends the line's current account along when only the cost center
+    changes, and a line that already holds a header account must still get its cost center fixed. Web: the PO picker lists only
+    postable accounts (`is_postable !== false`, the server is the authority); the Advance page flags each line's problem in
+    words, holds flagged lines back from the selection (box disabled with the reason, a click on the row does nothing), has a
+    Change control (inline editor, accounts from `/finance/accounts?is_postable=true&is_active=true`, inactive cost centers
+    hidden, nothing pre-selected for a bad account, Save waits for both) and a note above the list, and toasts the server's
+    message for a refused settlement, a refused manual settlement and a refused change (the editor stays open with what was
+    chosen).
+    The manual "New Settlement" path (same hole on its own routes) was fixed in the same change, at the user's request. Its
+    dropdown listed the whole chart (`/finance/accounts?limit=500`, headers and inactive accounts included), `POST /settlements`
+    inserted `gl_account_id` and `cost_center_id` without looking at them (another company's too), and `POST
+    /settlements/:id/approve` posted to the account and died in the trigger. Now: the form's account list is the postable-only one
+    the page loads for the line editor, fetched for anyone who can edit advances (not only those who hold finance.ap.approve),
+    and its cost center list hides inactive ones; `POST /settlements` judges EVERY line with the same functions as the edit route
+    (`manualLinesRefusal`: this company's, postable and active; cost center this company's and active) BEFORE a settlement number is
+    taken, and answers 422 or 400 with "Line N (item): ..." for every bad line (five, then a count; status and code from the first);
+    `POST /settlements/:id/approve` pre-checks what the DATABASE would refuse (`postedLinesRefusal`: a header account or another
+    company's, plus the advance's own account) and answers 422 `LINES_NEED_ACCOUNTING` / `ADVANCE_ACCOUNT_NOT_POSTABLE` naming the
+    line, leaving the draft submitted, nothing posted and the advance balance untouched. Approve deliberately does NOT apply the
+    choice rules: a draft made before them may hold an account deactivated since, which the database accepts, and judging old
+    data by new choice rules would block drafts that post fine (a test pins it). `actOnSettlement` (Submit, Approve, Reject)
+    now shows the server's reason; it used to swallow it.
+    Decision, so it is not re-litigated: the 68 lines were NOT changed by script. The user was testing and did not know the right
+    account; the candidates in Yakam's chart are the postable accounts under Project Materials (3211 to 3219) and Supplies and
+    Consumables (3251, 3254), and Finance picks per line in the new editor. Until then those lines stay flagged and unsettled.
+    Found and NOT changed (reported to the user): the returns form's Cash Account dropdown still lists the whole chart, and
+    `actOnReturn` / `handleCreateReturn` still swallow errors, same as `/* handled */` in the page's initial load; the manual create
+    does not check `project_id` against the company; the self-service settlement (`request-self`) resolves its account from the
+    expense CATEGORY, so a category pointed at a header account is only caught at approval (now with the message); the RETURNING
+    sub-selects of `setPOLineAccounting` read the account code without a company filter (only reachable with an id the line already
+    held); the old advance `ADV-1786869944615` points at an inactive account (`5600-LEGACY`), which the trigger allows.
+    Traps met. (1) A heredoc ate the backslashes of a regex in a script AGAIN (#69, three times in this change: the locale-key
+    script, a test patch and a patch script); each failed to parse and wrote nothing, which is the only reason it did not matter.
+    Write scripts with the file tool, or use the edit tool for a patch. (2) `eslint --fix` on a new file reformatted lines that
+    the mutation script pattern-matches (`if (!account.is_active) return` became two lines, an `addToast({...})` call became a
+    block), so those mutations were skipped, not killed: reread the patterns after any auto-fix, and treat SKIPPED as a gap.
+    (3) Prettier wanted a long `const [a, b, ...] = await Promise.all([...])` re-indented as a whole when one element was added;
+    fetching the extra list in its own statement kept the diff to my own lines. (4) My option matcher for "the account list" also
+    matched the cost center's SHOWN value (`CC1 — Site`); match the shape you mean. (5) The page already made an unrelated
+    `/finance/accounts?limit=500` call, so an assertion on "the accounts calls" must name the `is_postable` one; and a test that
+    needs "the whole chart" must make that call return one that CONTAINS the header account, or it proves nothing about the
+    filter. (6) In Arabic the section heading is not English, so a helper that waits for it fails only in the Arabic test: wait
+    for the rows. (7) A mutation of "the reply is the changed line" survived because the changed line happened to sort first in
+    the queue: make the line under test sort LAST and be the second line of its PO. (8) `tar` on Windows reads `C:` as a host
+    name: pass `--force-local` (found while verifying the committed tree for the previous change). (9) A test line that compares a
+    value with itself (`expect(x).toBe(x)`) passes forever; read the assertions back. Related to #48 (a write path with no check),
+    #85 (a refused action nobody saw), #84 (the advance flow), #23 (two paths for one thing: the manual form is the second) and #27
+    (read after commit).
+    Tests: finance `po-line-accounting-advance.test.ts` (real Postgres through the real routes, 31: the message builder alone,
+    the list's flags, every refusal naming its lines and leaving nothing written, the fix then settle on the new account, the
+    change's validations, the claimed-while-waiting race, who may change it), `manual-settlement-accounts.test.ts` (17: the rules
+    alone, create refusing each kind of bad account and cost center and naming the lines, create / submit / approve end to end,
+    approve refusing drafts that already hold a header or foreign account, approve still posting an account deactivated since,
+    the advance's own account, the balance not moving), gateway `po-line-accounting.test.ts` (17, the resolver against real
+    Postgres: each refusal, the unchanged-value rule, clearing, another PO's line, permission), `g1-child-dual-vocab` and the two
+    older settlement files unchanged and green, web `EmployeeAdvanceDetailAccounting.test.tsx` (30, renders the real page, English
+    and Arabic: flags, held-back lines, the editor, the manual form's lists, approve's refusal) and `poLineAccountPicker.test.tsx`
+    (3, renders the real PO page); 72 of 73 mutations killed (the survivor is the Save handler's own "both chosen" guard, redundant with the disabled Save button and unreachable from the screen). Some mutations first survived or did not run for test-side reasons and were fixed: the change route's reply was only asserted for a line that happened to sort first in the queue (the test now changes the SECOND line of a PO that sorts last), and reformatting changed patterns the script matches (a SKIPPED mutation is a gap, not a pass). Not verified in a browser.
