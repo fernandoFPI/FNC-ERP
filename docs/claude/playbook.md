@@ -2073,3 +2073,141 @@ Don't re-derive, check these first.
     through the routes), `expense-claim-numbering.test.ts` (the no-rule path),
     `services/gateway/tests/create-company-expense-numbering.test.ts` (3, including the migration file's SQL run against known
     claims); 21 mutations, all killed. Related to #28, #69, #9.
+
+89. **A form that hard-codes a field the server accepts, with no edit path behind it, leaves a wrong value for ever; and
+    a page total that adds across currencies hides it.** Two USD petty cash floats on production were stored as IQD:
+    Nishtimani Yakam "Main Cash USD" (created 15 Nov) and Nishtimani Factory "Main Cash Box USD" (5 Oct). The user
+    "could not change it on production". Why: `POST /finance/petty-cash/floats` accepted `currency_code` (default IQD), but
+    the New Float form had no currency box and posted its state default, `currency_code: 'IQD'`; `PUT /floats/:id` did not
+    accept the field at all; and the page had no Edit button. It mattered beyond the label: every journal line a spend,
+    top-up or advance issue writes against a float carries the float's currency, and an advance can only be issued from a
+    box in its own currency (`cashboxProblem`, `CURRENCY_MISMATCH`), so an IQD-tagged "USD" box could not pay a USD advance.
+    The page's three summary cards also added every float into one number labelled IQD (58,797,839.94 IQD was 58,603,502
+    IQD plus 194,337.94 of the "USD" float), the same trap as the Stock Balances page (#67).
+    How to spot it: a form whose state has a field with a default and no input for it; the POST body compared with the
+    form's inputs; a PUT schema that omits a column the POST takes; `SELECT name, currency_code FROM petty_cash_floats`
+    where the name says USD and the column says IQD; a "total" card with a hard-coded currency over rows that have their own.
+    Production fix (the user said "fix it on production for both companies"): a manual `pg_dump`
+    (`/var/backups/fnc-erp/manual_pre_petty_cash_float_currency_*.sql.gz`), then ONE transaction from a file that aborts
+    unless exactly those two ids are still IQD and no advance, expense claim or payment voucher points at them, changes only
+    `petty_cash_floats.currency_code`, and writes one `audit_log` row per float (action
+    `petty_cash_float_currency_corrected`, old and new value); re-read on a second connection afterwards (amounts,
+    transactions and the journal untouched). A first draft had `SELECT count(*) ... FOR UPDATE`, which Postgres refuses
+    ("FOR UPDATE is not allowed with aggregate functions"); it would have failed safely, but lock with `PERFORM 1 ... FOR
+    UPDATE` and count in the next statement.
+    Left alone, on purpose, and reported: Factory's float is not just an opening balance. It has a top-up (PCR-2026-0002,
+    847,491.68, posted on 14 Nov as a DRAFT journal whose two lines, both on account 1211, are still labelled IQD with
+    `amount_company_currency` equal to the same number), and its balance (972,039.68) is far above its authorized limit
+    (124,548.00). Whether that top-up was IQD or USD, and what the draft should say, is a Finance decision; both lines net
+    to zero on 1211 either way. All four floats share GL account 1211 "Main Cashbox", which is tagged IQD in the chart; the
+    company's default cash account for USD is also 1211 and 1211 already carries USD-labelled lines (an expense claim, an
+    advance), so a USD float on it matches how the companies already run USD cash.
+    Code fix. (1) New Float has a Currency box (IQD, USD, EUR, TRY, AED, the list the other finance screens use; the
+    server takes any three letters, normalises to upper case and answers 422 for anything else). (2) Edit Float (new
+    button and dialog, `finance.petty_cash.edit` as before, no permission change) can change the currency, but only while
+    the float holds nothing but its opening balance: no spend, no top-up request (even a pending one: its journal would be
+    written in the float's currency at approval), no advance issued from it, no expense claim or payment voucher paid from
+    it. After that the server answers 409 `FLOAT_HAS_ACTIVITY` with a plain sentence and the dialog shows the currency box
+    disabled with the same reason; changing a currency under posted journals would relabel history. One SQL fragment,
+    `FLOAT_HAS_ACTIVITY_SQL` (`services/finance/src/lib/floatCurrency.ts`), feeds the list's and the detail's
+    `has_activity` and the guard on the edit route, so the screen's lock cannot drift from the server's refusal (#24); a
+    server that does not send the flag is treated as locked. A change writes an `audit_log` row (`petty_cash_float_currency_
+    changed`) in plain SQL inside the same transaction (`logAudit` swallows its own errors, #48). A request that does not
+    mention the currency keeps the stored one (an older tab). (3) The summary cards give one row per currency
+    (`lib/pettyCashTotals.ts`), nothing converted; the float header names the currency on the authorized limit too.
+    (4) Create and Edit now toast the server's message on a refusal. The shared axios client shows nothing on error and this
+    page's handlers were `catch { /* handled */ }`, so a refused create (duplicate name) looked like a dead button (#85d);
+    the spend, top-up and approve handlers on the same page still swallow errors and were not changed.
+    Race, and a trap worth keeping: the edit takes the float's row lock FIRST and reads the history in a SECOND statement.
+    In one `SELECT ... EXISTS (...) ... FOR UPDATE` the subqueries use the snapshot taken before the lock wait, so a top-up that
+    committed while the edit was waiting would not be seen and the currency would flip under it. The test holds the lock from
+    a second connection, starts the edit, commits a top-up, and expects the 409 (without the lock the edit goes through).
+    Still open: the spend, top-up and issue routes read the float outside their own transaction and never lock it, so a spend
+    and a currency edit landing in the same few milliseconds on a float with no history could still leave one IQD-labelled
+    journal under a USD float (closing it means locking the float first in each of those routes); and spend / top-up journals
+    write `amount_company_currency` equal to the raw amount for any float, so a USD float writes a USD number into a
+    base-currency column (the existing ambiguity, `feedback_amount_company_currency_ambiguity`).
+    Test traps: an active chart account needs a four-digit code (`chk_code_format`), so a fixture for another company's cash
+    account needs `9941-07`, not a readable code (find it for cleanup by name); two floats made in one test share a name
+    unless the helper numbers every call (a 409 turns the second into `undefined`); `PageHeader` needs a `MemoryRouter`
+    (`useNavigate`); `Table`-less pages find a field by the label's sibling when the label has no `htmlFor`.
+    Tests: `services/finance/tests/petty-cash-float-currency.test.ts` (real Postgres through the real routes, 27: create
+    with and without a currency, malformed codes, change on a fresh float with and without an opening row, the audit row,
+    the five kinds of history each refusing, the lock race, the flag in list and detail, view-only, edit-only and another
+    company's administrator; 18 mutations killed), `apps/web/src/lib/__tests__/pettyCashTotals.test.ts` (6) and
+    `pages/finance/petty-cash/__tests__/PettyCashPage.test.tsx` (21; 21 mutations killed (the first run of the mutation script was not a result: apps/web runs vitest 1.6, which names a failing test on a `FAIL  file > test` line, not the `×` line vitest 2 prints in the services, so every mutation read as "suite did not run"; check the classifier against one known kill first)). Not verified in a browser. Related to #48
+    (an unwired write path), #67 (a total across currencies), #85 (a refused action nobody saw) and #24 (a gate and the
+    flag that mirrors it).
+
+90. **A link that holds ONE value on a document whose lines are in several currencies.** A PO paid from employee advances
+    could be linked to one advance only: `purchase_orders.funding_advance_id` is a single column (migration 197) and
+    `setPOFunding` refused any advance whose currency was not the PO's one HEADER currency. A PO with lines in IQD and USD
+    (21 were waiting on production on 2026-11-15, all at payment pending, none funded; header currency IQD on some, USD on
+    others) could therefore be linked to an IQD advance or a USD one, never both: "I can only select one advance, either IQD
+    or USD". The page made it look like a choice (one dropdown listing every currency of the employee's advances) and the server
+    then refused the one that was not the header's. Worse, the settlement side joined on the same single column and bundled lines by
+    `po.funding_advance_id = advance`, then booked the SUM of `total_price` in the advance's currency
+    (`createSettlementFromPOLines`): a USD line settled against an IQD advance would have become an IQD amount, with no
+    conversion and no error. Nothing had gone wrong yet (7 POs linked to advances on production, all single-currency, none
+    settled; no settled line with a currency different from its advance), because nobody had funded a mixed PO.
+    How to spot it: a column holding one id on a document that has per-line currencies; a check against `po.currency_code`
+    (the header) where the money is in the lines; a queue or settlement that joins on the header link.
+    `SELECT po_id FROM po_lines GROUP BY po_id HAVING count(DISTINCT currency_code) > 1` against the funding state.
+    Fix (migration 324): ONE ADVANCE PER CURRENCY of the PO, chosen by Finance, not one per line. `po_funding_advances (po_id,
+    currency_code, advance_id, company_id)`, primary key (po, currency); the migration backfills the 7 existing links in the
+    advance's own currency. `setPOFunding` takes `fundingAdvances: [{ currencyCode, advanceId }]`: every currency the PO has
+    lines in needs exactly one advance, none may be named for a currency the PO has no lines in, none twice, each must be usable
+    (approved or partially settled), this company's and in the currency of its slot. The currencies come from the LINES (stored
+    `po_lines.currency_code`), not the header (an all-IQD PO with a USD header needs an IQD advance); a PO with no lines yet
+    falls back to the header. The old single `fundingAdvanceId` is still accepted for a PO in one currency (a browser tab opened
+    before the change) and refused, with the reason, for a mixed one. The rules are plain functions
+    (`services/gateway/src/lib/poFundingAdvances.ts`: `planFundingSlots`, `advanceProblem`, `primaryAdvanceId`) so one test
+    file pins each. `purchase_orders.funding_advance_id` stays as the PO's PRIMARY advance (the one in the header currency, else
+    the first by currency) so the PO page link, the two resolver joins and the GraphQL fields that read it keep working; the
+    per-currency rows are the source of truth and `setPOFunding` writes both in one transaction. Settlement (finance
+    `pending-po-lines` and the bundle) now joins `po_funding_advances` on the advance AND on the line's own currency, so an IQD
+    advance only ever sees a PO's IQD lines and a USD advance its USD lines, each settled in its own currency; the "over
+    settlement" check is therefore in the advance's currency by construction. A line added later in a currency that already has
+    an advance inherits it; one added in a NEW currency has none, and `completePO` refuses to close an advance-funded PO that has
+    lines in a currency with no advance linked, naming it and pointing at "Change funding source" (otherwise those lines could never
+    be settled). `PurchaseOrder.fundingAdvances` (nullable list, #38) carries the rows to the page. Page: after the employee is
+    chosen, one advance box per currency of the PO (each listing only that currency's usable advances, labelled "IQD advance" /
+    "USD advance" when there are several, with what the PO holds in that currency), the only advance on offer for a currency is
+    taken for you, the confirm button waits until every currency has one, a currency with none says "No open USD advance for this
+    employee"; a one-currency PO keeps its single "Advance" box (which now lists only that currency). The "Funded by advance" tile
+    names both advances with their currency, each linking to its own page.
+    Decisions, so they are not re-litigated: per currency, not per line (the user asked "do I have to decide for each line?";
+    no, at most one choice per currency); one employee picker on the page (the server does not require the two advances to
+    belong to the same employee; the page offers one employee at a time); completion is blocked when a currency has no advance.
+    Traps met. (1) *Lock first, compare in a second statement.* The guard against two people changing the funding at once reads
+    the per-currency rows as well as the primary advance, and a change that touched ONLY the USD advance would not change the
+    primary column. A subquery in the same statement as `FOR UPDATE` uses the snapshot taken before the lock wait, so it would
+    not see the other session's committed change; the guard now locks the PO row, then re-reads the columns and an aggregate of
+    the rows in a new statement and compares them with what the request read (same pattern as the float currency edit, #89). The
+    test holds the lock from a second connection, changes only the USD row, commits, and expects "changed by someone else";
+    without the lock or without the aggregate the edit overwrites it. (2) *A fixture that writes only the old column has
+    no settleable lines any more:* the finance settlement fixture and the audit assertion of `po-funding-change.test.ts` were
+    updated on purpose (the audit record now also carries `funding_advances`, before and after); any new code, script or
+    fixture that sets `funding_advance_id` must write the per-currency row too. (3) `employee_advances.outstanding_amount` is a
+    GENERATED column: a fixture cannot insert it. (4) `exactOptionalPropertyTypes`: a parameter object that passes `undefined`
+    for an optional property needs `| undefined` in its type. (5) A page test whose `useQuery` mock builds a fresh result object
+    on every call runs the worker out of memory on any component with an effect that depends on query data (#60.3 again, found
+    the same way): build the results once. (6) Run against `fnc_erp_dev` AND `fnc_erp_test` (`run-migrate.sh dev|test`; the
+    runner does not read `.env`, so `DATABASE_URL` was empty on the first try).
+    Open, not changed: the vendor-AP path (Create in AP) for a mixed-currency PO was not looked at; the PO header
+    `currency_code` is still one value and still decides the legacy column's primary; a code-only rollback past migration 324 is
+    safe only while no mixed PO has been funded with two advances (old code would see just the primary one and bundle by it,
+    which is the mislabel above); the 21 waiting mixed POs were NOT funded or changed: Finance chooses the advances in the page.
+    After a deploy, check that nothing slipped through the window between the migration and the restart (old code writing only the
+    legacy column): `SELECT count(*) FROM purchase_orders po WHERE po.funding_advance_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM
+    po_funding_advances f WHERE f.po_id = po.id)` must be 0 (Finance re-saves the funding of any that is not).
+    Tests: `services/gateway/tests/po-funding-advances-per-currency.test.ts` (through the real ApolloServer and real Postgres, 31:
+    the planning rules alone, both advances saved and read back, primary by header currency, audit before and after, every
+    refusal leaving nothing written, another company's advance, one-currency POs and a PO with no lines, change and clear, the
+    second-session race, the page field and its company scope, completion), `po-funding-change.test.ts` (13, one audit assertion
+    updated), finance `advance-settlement-per-currency.test.ts` (11, real routes: each advance's queue, every wrong-currency
+    bundle refused, the two halves settled in their own currencies with the journal in USD, over-settlement judged in the line
+    currency), `advance-settlement-po-lines.test.ts` (7, fixture updated), web `lib/__tests__/poFundingAdvances.test.ts` (17) and
+    `pages/procurement/__tests__/poFundingPerCurrencyPage.test.tsx` (14, renders the real page; `poFundingChangePage.test.tsx`
+    passes unchanged); 34 mutations, all killed (14 on the gateway rules and the page field, 4 on the settlement joins, 16 on the web picker). Not verified in a browser. Related to #84 (the advance flow), #83 (status drift), #65 and #74 (a
+    hard-coded or guessed currency), #38 (a nullable list) and #89 (lock first, compare second).
