@@ -460,6 +460,7 @@ projectsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req,
 
     if (!b['name']) return sendError(res, 400, 'MISSING_NAME', 'Project name is required')
 
+    let created: Record<string, unknown> | undefined
     await withTransaction({ companyId, userId, role }, async (client) => {
       const projectCode =
         (b['code'] as string | undefined) ?? (await generateProjectCode(client, companyId))
@@ -552,8 +553,12 @@ projectsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req,
         client,
       })
 
-      sendOk(res, row, 201)
+      created = row
     })
+    // Answer only AFTER the commit. Sending the 201 from inside the transaction let a client that follows up at once (the
+    // web page opening the new project, a script, a test) reach the next request while the row was still uncommitted:
+    // "Project not found" on the very next call, whenever COMMIT was slow (playbook #93, found by a CI deploy gate).
+    sendOk(res, created, 201)
   } catch (err) {
     log.error(err, 'Failed to create project')
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create project', err)
