@@ -2292,6 +2292,13 @@ export type ProjectCompletionBlockersQueryVariables = Exact<{
 
 export type ProjectCompletionBlockersQuery = { projectCompletionBlockers: { canComplete: boolean, blockers: Array<string> } };
 
+export type ProjectCostLedgerQueryVariables = Exact<{
+  projectId: string | number;
+}>;
+
+
+export type ProjectCostLedgerQuery = { projectCostLedger: { truncated: boolean, entries: Array<{ id: string, entryDate: string | null, sourceType: string | null, costCategory: string | null, amount: string, currencyCode: string, reference: string | null }>, totals: Array<{ currencyCode: string, amount: string }> } };
+
 export type CreateProjectMutationVariables = Exact<{
   input: Types.ProjectCreateInput;
 }>;

@@ -225,6 +225,28 @@ export const PROJECT_COMPLETION_BLOCKERS_QUERY = gql`
   }
 `
 
+// The project's cost ledger as a list: what the analytic account page shows (playbook #92). Needs the right to see the project.
+export const PROJECT_COST_LEDGER_QUERY = gql`
+  query ProjectCostLedger($projectId: ID!) {
+    projectCostLedger(projectId: $projectId) {
+      entries {
+        id
+        entryDate
+        sourceType
+        costCategory
+        amount
+        currencyCode
+        reference
+      }
+      totals {
+        currencyCode
+        amount
+      }
+      truncated
+    }
+  }
+`
+
 export const CREATE_PROJECT = gql`
   mutation CreateProject($input: ProjectCreateInput!) {
     createProject(input: $input) {

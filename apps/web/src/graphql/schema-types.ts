@@ -6889,6 +6889,27 @@ export type ProjectContractInput = {
   status?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type ProjectCostLedger = {
+  entries: Array<ProjectCostLedgerEntry>;
+  totals: Array<ProjectCostLedgerTotal>;
+  truncated: Scalars['Boolean']['output'];
+};
+
+export type ProjectCostLedgerEntry = {
+  amount: Scalars['String']['output'];
+  costCategory?: Maybe<Scalars['String']['output']>;
+  currencyCode: Scalars['String']['output'];
+  entryDate?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  reference?: Maybe<Scalars['String']['output']>;
+  sourceType?: Maybe<Scalars['String']['output']>;
+};
+
+export type ProjectCostLedgerTotal = {
+  amount: Scalars['String']['output'];
+  currencyCode: Scalars['String']['output'];
+};
+
 export type ProjectCreateInput = {
   budgetAmount?: InputMaybe<Scalars['Float']['input']>;
   budgetCurrency?: InputMaybe<Scalars['String']['input']>;
@@ -7662,6 +7683,7 @@ export type Query = {
   projectContracts: Array<ProjectContract>;
   projectCostCodes: Array<CostCode>;
   projectCostForecast: Array<CostForecast>;
+  projectCostLedger: ProjectCostLedger;
   projectCostSummary: CostControlSummary;
   projectDailyReports: Array<ProjectDailyReport>;
   projectDependencies: Array<ActivityDependency>;
@@ -8414,6 +8436,11 @@ export type QueryProjectCostCodesArgs = {
 
 
 export type QueryProjectCostForecastArgs = {
+  projectId: Scalars['ID']['input'];
+};
+
+
+export type QueryProjectCostLedgerArgs = {
   projectId: Scalars['ID']['input'];
 };
 

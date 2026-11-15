@@ -9,6 +9,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { ProjectCostLedgerCard } from '../../../components/finance/ProjectCostLedgerCard'
 import { formatCurrency } from '../../../lib/format'
 
 interface JournalLine {
@@ -207,6 +208,10 @@ export default function AnalyticAccountDetail() {
           </div>
         </Card>
       )}
+
+      {/* The project's cost ledger (deliveries, Store Outs, returns): the cost of a project is not journal-tagged, so
+          this is where it shows (playbook #92) */}
+      {account.project_id && <ProjectCostLedgerCard projectId={account.project_id} />}
 
       {/* Journal lines */}
       <Card padding="none">

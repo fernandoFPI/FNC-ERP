@@ -254,6 +254,14 @@ import { visibleBidPackageKinds, type BidPackageKind } from '../../../lib/bidPac
 import { OtherCurrencyBudgets } from '../../../components/projects/OtherCurrencyBudgets'
 import { uploadMimeType, uploadFailureMessage } from '../../../lib/uploadMimeType'
 import { projectFileTabs, visibleProjectFiles, countByTab } from '../../../lib/projectFiles'
+import {
+  approvedOrLaterAmount,
+  countApprovedOrLater,
+  currenciesWithMoney,
+  pendingApprovalAmount,
+  poAmountLines,
+  summarisePosByStatus,
+} from '../../../lib/projectPoSummary'
 import type { ProjectFilesQuery, ProjectFilesQueryVariables } from '../../../graphql/generated'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
@@ -1767,21 +1775,18 @@ export default function ProjectDetail() {
   const hdrActual = Number(cs?.actualCosts ?? 0)
   const hdrBudget = Number(cs?.budgetAmount ?? p.budgetAmount ?? 0)
   const hdrRemain = Number(cs?.budgetRemaining ?? hdrBudget - hdrActual)
+  // No budget set (0, which every new project starts with): "remaining" would just be minus everything spent, so the tile
+  // says so instead of showing a large negative number.
+  const hdrHasBudget = hdrBudget > 0
   const hdrUtilPct = hdrBudget > 0 ? Math.round((hdrActual / hdrBudget) * 100) : 0
-  // recentPos is raw JSON from the resolver (keys: total_amount,
-  // currency_code, not camelCase) -- the old `.totalAmount ?? .amount`
-  // lookup matched neither real key, so these always summed to 0
-  // regardless of PO amount. Also only sums POs in the header's own
-  // currency now: a PO in a different currency than hdrCcy would
-  // otherwise have its raw number added as if it were hdrCcy.
-  const hdrApprPOs = recentPos.filter(
-    (po) => (po).status === 'approved' && String((po).currency_code ?? hdrCcy) === hdrCcy,
-  )
-  const hdrPendPOs = recentPos.filter(
-    (po) => (po).status === 'pending_approval' && String((po).currency_code ?? hdrCcy) === hdrCcy,
-  )
-  const hdrApprAmt = hdrApprPOs.reduce((s, po) => s + Number((po).total_amount ?? 0), 0)
-  const hdrPendAmt = hdrPendPOs.reduce((s, po) => s + Number((po).total_amount ?? 0), 0)
+  // recentPos is raw JSON from the resolver (snake_case keys, and `line_totals`: what the lines hold per currency).
+  // Counts and amounts come from lib/projectPoSummary.ts (playbook #92): "approved" means approved OR LATER (a PO that has
+  // been bought, received and closed was approved too), and money is read from the lines in the header currency only, so a
+  // PO's header total (one number, sometimes empty or mixed) is never added up as if it were this currency.
+  const hdrApprCount = countApprovedOrLater(recentPos)
+  const hdrPendCount = recentPos.filter((po) => po.status === 'pending_approval').length
+  const hdrApprAmt = approvedOrLaterAmount(recentPos, hdrCcy)
+  const hdrPendAmt = pendingApprovalAmount(recentPos, hdrCcy)
   const remainDays = p.plannedEndDate
     ? Math.max(0, Math.ceil((new Date(p.plannedEndDate).getTime() - Date.now()) / 86400000))
     : null
@@ -2401,27 +2406,24 @@ export default function ProjectDetail() {
           {isAdmin &&
             kpiTile(
               t('proj.detail.remainingBudget'),
-              formatCurrency(hdrRemain, hdrCcy),
+              hdrHasBudget ? formatCurrency(hdrRemain, hdrCcy) : t('proj.detail.noBudget'),
               null,
               <svg
                 width="16"
                 height="16"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke={hdrRemain < 0 ? '#ef4444' : '#22c55e'}
+                stroke={!hdrHasBudget ? theme.textMuted : hdrRemain < 0 ? '#ef4444' : '#22c55e'}
                 strokeWidth="2"
               >
                 <circle cx="12" cy="12" r="10" />
                 <polyline points="12 6 12 12 16 14" />
               </svg>,
-              hdrRemain < 0 ? '#ef4444' : '#22c55e',
+              !hdrHasBudget ? theme.textMuted : hdrRemain < 0 ? '#ef4444' : '#22c55e',
             )}
           {kpiTile(
             t('proj.detail.approvedPos'),
-            String(
-              hdrApprPOs.length ||
-                (p.openPoCount != null ? recentPos.length - p.openPoCount : 0),
-            ),
+            String(hdrApprCount),
             hdrApprAmt > 0 ? formatCurrency(hdrApprAmt, hdrCcy) : null,
             <svg
               width="16"
@@ -2438,7 +2440,7 @@ export default function ProjectDetail() {
           )}
           {kpiTile(
             t('proj.detail.pendingPos'),
-            String(p.openPoCount ?? hdrPendPOs.length),
+            String(p.openPoCount ?? hdrPendCount),
             hdrPendAmt > 0 ? formatCurrency(hdrPendAmt, hdrCcy) : null,
             <svg
               width="16"
@@ -2686,42 +2688,25 @@ export default function ProjectDetail() {
                 const execOk = execKey === 'onSchedule' || execKey === 'completed'
                 const execColor = execOk ? '#22c55e' : execKey === 'behind' ? '#f59e0b' : '#ef4444'
 
-                // PO summary
-                const ovPoMap: Record<string, { count: number; amount: number }> = {}
-                recentPos.forEach((po) => {
-                  const st = String((po).status ?? 'draft')
-                  if (!ovPoMap[st]) ovPoMap[st] = { count: 0, amount: 0 }
-                  ovPoMap[st].count++
-                  ovPoMap[st].amount += Number(
-                    (po).totalAmount ??
-                      (po).amount ??
-                      0,
-                  )
-                })
-                const PO_ORDER = ['draft', 'pending_approval', 'approved', 'closed']
-                const PO_LABELS: Record<string, string> = {
-                  draft: t('proj.detail.draft'),
-                  pending_approval: t('proj.detail.pendingApproval'),
-                  approved: t('proj.detail.approved'),
-                  closed: t('proj.detail.closed'),
-                }
-                const PO_DOT: Record<string, string> = {
-                  draft: theme.textMuted,
-                  pending_approval: '#f59e0b',
-                  approved: '#22c55e',
-                  closed: theme.accent,
-                }
-                const poTotal = recentPos.length
-                const poTotalAmt = recentPos.reduce(
-                  (s, po) =>
-                    s +
-                    Number(
-                      (po).totalAmount ??
-                        (po).amount ??
-                        0,
-                    ),
-                  0,
-                )
+                // PO summary (lib/projectPoSummary.ts, playbook #92): one row per status that has POs, the money per
+                // currency read from the lines, cancelled and deleted POs left out of rows and total alike.
+                const poSummary = summarisePosByStatus(recentPos)
+                const poDotColour = (status: string): string =>
+                  status === 'pending_approval'
+                    ? '#f59e0b'
+                    : status === 'closed' || status === 'completed'
+                      ? theme.accent
+                      : [
+                            'draft',
+                            'inventory_check',
+                            'store_pricing',
+                            'market_pricing',
+                            'price_verification',
+                            'rejected',
+                          ].includes(status)
+                        ? theme.textMuted
+                        : '#22c55e'
+                const poTotal = poSummary.total
 
                 // Health score — Engineering is driven by overdue open RFIs
                 // (unanswered past their required date blocks engineering
@@ -2760,11 +2745,14 @@ export default function ProjectDetail() {
                 // Alerts
                 const ovAlerts: string[] = []
                 if (ovUtilPct > 80) ovAlerts.push(t('proj.detail.alertBudgetUtil', { pct: ovUtilPct }))
-                if ((ovPoMap.pending_approval?.count ?? 0) > 0)
+                const poAwaitingApproval =
+                  poSummary.rows.find((r) => r.status === 'pending_approval')?.count ?? 0
+                if (poAwaitingApproval > 0)
                   ovAlerts.push(
-                    t('proj.detail.alertPoAwaiting', { count: ovPoMap.pending_approval.count }),
+                    t('proj.detail.alertPoAwaiting', { count: poAwaitingApproval }),
                   )
-                if (ovRemaining < 0) ovAlerts.push(t('proj.detail.alertOverBudget'))
+                // "over budget" needs a budget: with none set, remaining is just minus what was spent
+                if (ovBudget > 0 && ovRemaining < 0) ovAlerts.push(t('proj.detail.alertOverBudget'))
                 ;(
                   [
                     [p.submissionDate, t('proj.detail.bidSubmission')],
@@ -2956,9 +2944,11 @@ export default function ProjectDetail() {
                     : []),
                   {
                     label: t('proj.detail.remainingBudget'),
-                    val: ovRemaining,
-                    color: ovRemaining < 0 ? '#ef4444' : '#22c55e',
+                    val: ovBudget > 0 ? ovRemaining : null,
+                    color:
+                      ovBudget <= 0 ? theme.textMuted : ovRemaining < 0 ? '#ef4444' : '#22c55e',
                     bold: true,
+                    ...(ovBudget > 0 ? {} : { text: t('proj.detail.noBudget') }),
                   },
                   {
                     label: t('proj.detail.forecastCostAtCompletion'),
@@ -3011,16 +3001,21 @@ export default function ProjectDetail() {
 
                 interface PoSummaryRow {
                   status: string
+                  label: string
                   count: number
-                  amount: number
+                  amounts: Record<string, number>
                 }
-                const poSummaryRows: PoSummaryRow[] = PO_ORDER.filter((st) => ovPoMap[st]).map(
-                  (st) => ({
-                    status: st,
-                    count: ovPoMap[st].count,
-                    amount: ovPoMap[st].amount,
-                  }),
-                )
+                const poSummaryRows: PoSummaryRow[] = poSummary.rows
+                // one line per currency that holds money: nothing is converted or added across currencies
+                const renderPoAmounts = (amounts: Record<string, number>): React.ReactNode => {
+                  const ccys = currenciesWithMoney(amounts)
+                  if (ccys.length === 0) return '—'
+                  return ccys.map((c) => (
+                    <span key={c} style={{ display: 'block' }}>
+                      {formatCurrency(amounts[c] ?? 0, c)}
+                    </span>
+                  ))
+                }
                 const poSummaryColumns: Column<PoSummaryRow>[] = [
                   {
                     key: 'status',
@@ -3033,13 +3028,13 @@ export default function ProjectDetail() {
                             width: '7px',
                             height: '7px',
                             borderRadius: '50%',
-                            background: PO_DOT[row.status],
+                            background: poDotColour(row.status),
                             flexShrink: 0,
                             display: 'inline-block',
                           }}
                         />
                         <span style={{ color: theme.textPrimary }}>
-                          {PO_LABELS[row.status] ?? row.status}
+                          {row.label}
                         </span>
                       </span>
                     ),
@@ -3066,10 +3061,12 @@ export default function ProjectDetail() {
                   },
                   {
                     key: 'amount',
-                    header: t('proj.detail.amount2', { ovCcy }),
+                    header: t('proj.detail.amount'),
                     mobilePriority: 2,
                     renderHeader: () => (
-                      <span style={{ display: 'block', textAlign: 'end', whiteSpace: 'nowrap' }}>{t('proj.detail.amount2', { ovCcy })}</span>
+                      <span style={{ display: 'block', textAlign: 'end', whiteSpace: 'nowrap' }}>
+                        {t('proj.detail.amount')}
+                      </span>
                     ),
                     render: (row) => (
                       <span
@@ -3080,13 +3077,13 @@ export default function ProjectDetail() {
                           fontVariantNumeric: 'tabular-nums',
                         }}
                       >
-                        {formatCurrency(row.amount, ovCcy)}
+                        {renderPoAmounts(row.amounts)}
                       </span>
                     ),
                   },
                 ]
                 const poSummaryFooter: Record<string, React.ReactNode> = {
-                  status: 'Total',
+                  status: t('proj.detail.total'),
                   count: (
                     <span
                       style={{
@@ -3106,7 +3103,7 @@ export default function ProjectDetail() {
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      {formatCurrency(poTotalAmt, ovCcy)}
+                      {renderPoAmounts(poSummary.totals)}
                     </span>
                   ),
                 }
@@ -5265,7 +5262,13 @@ export default function ProjectDetail() {
                                   </div>
                                   <div style={{ textAlign: 'end' }}>
                                     <div style={{ fontWeight: 600, fontSize: '13px' }}>
-                                      {String(po.total_amount ?? '—')}
+                                      {poAmountLines(po).length === 0
+                                        ? '—'
+                                        : poAmountLines(po).map((l) => (
+                                            <span key={l.currency} style={{ display: 'block' }}>
+                                              {formatCurrency(l.amount, l.currency)}
+                                            </span>
+                                          ))}
                                     </div>
                                     <Badge variant="neutral">{String(po.status ?? '—')}</Badge>
                                   </div>
@@ -5348,7 +5351,13 @@ export default function ProjectDetail() {
                                       fontVariantNumeric: 'tabular-nums',
                                     }}
                                   >
-                                    {String(po.total_amount ?? '—')}
+                                    {poAmountLines(po).length === 0
+                                      ? '—'
+                                      : poAmountLines(po).map((l) => (
+                                          <span key={l.currency} style={{ display: 'block' }}>
+                                            {formatCurrency(l.amount, l.currency)}
+                                          </span>
+                                        ))}
                                   </div>
                                   <div>
                                     <Badge variant="neutral">{String(po.status ?? '—')}</Badge>
