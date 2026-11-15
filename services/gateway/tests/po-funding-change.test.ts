@@ -166,8 +166,14 @@ describe('a decided funding can be changed while the PO is waiting', () => {
     expect(await fundingOf(po)).toEqual({ funding_source: 'employee_advance', funding_advance_id: advIqd, funding_decided: true })
     const a = await auditOf(po)
     expect(a).toHaveLength(1)
-    expect(a[0]!.old_values).toEqual({ funding_source: 'vendor_ap', funding_advance_id: null, funding_decided: true })
-    expect(a[0]!.new_values).toEqual({ funding_source: 'employee_advance', funding_advance_id: advIqd, funding_decided: true })
+    // the audit record also carries the advance of each currency (migration 324): none before, the IQD one after
+    expect(a[0]!.old_values).toEqual({ funding_source: 'vendor_ap', funding_advance_id: null, funding_decided: true, funding_advances: [] })
+    expect(a[0]!.new_values).toEqual({
+      funding_source: 'employee_advance',
+      funding_advance_id: advIqd,
+      funding_decided: true,
+      funding_advances: [{ currency_code: 'IQD', advance_id: advIqd }],
+    })
   })
 
   it('an employee advance to vendor AP clears the advance', async () => {

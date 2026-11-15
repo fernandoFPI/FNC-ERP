@@ -593,6 +593,12 @@ export const PO_LIFECYCLE_QUERY = gql`
       funding_advance_id
       funding_advance_number
       funding_employee_name
+      fundingAdvances {
+        currency_code
+        advance_id
+        advance_number
+        employee_name
+      }
       assigned_buyer_user_id
       assigned_buyer_name
       buyerNames
@@ -1046,14 +1052,30 @@ export const FINISH_BUYING_PO = gql`
 `
 
 export const SET_PO_FUNDING = gql`
-  mutation SetPOFunding($id: ID!, $fundingSource: String!, $fundingAdvanceId: ID) {
-    setPOFunding(id: $id, fundingSource: $fundingSource, fundingAdvanceId: $fundingAdvanceId) {
+  mutation SetPOFunding(
+    $id: ID!
+    $fundingSource: String!
+    $fundingAdvanceId: ID
+    $fundingAdvances: [POFundingAdvanceInput!]
+  ) {
+    setPOFunding(
+      id: $id
+      fundingSource: $fundingSource
+      fundingAdvanceId: $fundingAdvanceId
+      fundingAdvances: $fundingAdvances
+    ) {
       id
       funding_source
       funding_decided
       funding_advance_id
       funding_advance_number
       funding_employee_name
+      fundingAdvances {
+        currency_code
+        advance_id
+        advance_number
+        employee_name
+      }
     }
   }
 `

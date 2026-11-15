@@ -274,7 +274,9 @@
     setPOLineAccounting(poId: ID!, lineId: ID!, glAccountId: ID, costCenterId: ID): POLine!
     markPOLineBought(poId: ID!, lineId: ID!, bought: Boolean!): POLine!
     finishBuyingPO(poId: ID!): PurchaseOrder!
-    setPOFunding(id: ID!, fundingSource: String!, fundingAdvanceId: ID): PurchaseOrder!
+    # fundingAdvances: one advance per currency of the PO (what the page sends). fundingAdvanceId is the older single-advance
+    # argument, still accepted for a PO with lines in one currency and refused, with a message, for a PO with several.
+    setPOFunding(id: ID!, fundingSource: String!, fundingAdvanceId: ID, fundingAdvances: [POFundingAdvanceInput!]): PurchaseOrder!
     completePO(id: ID!, receiptNotes: String): PurchaseOrder!
     deletePO(id: ID!, reason: String): PurchaseOrder!
     adminSetPOStatus(id: ID!, status: String!): PurchaseOrder!
@@ -2591,7 +2593,26 @@
     auto_applied: Boolean
   }
 
+  # The advance that pays one currency of a purchase order (migration 324): a PO funded from advances has one per currency
+  # it has lines in, and each line is settled against the advance of its own currency. Nothing is converted.
+  type POFundingAdvance {
+    currency_code: String!
+    advance_id: ID!
+    advance_number: String
+    employee_name: String
+    outstanding_amount: String
+    status: String
+  }
+
+  input POFundingAdvanceInput {
+    currencyCode: String!
+    advanceId: ID!
+  }
+
   extend type PurchaseOrder {
+    # One entry per currency of the PO's lines once Finance has chosen the advances (null/empty otherwise). The nullable
+    # list is deliberate: a failure here must not null the whole purchase order.
+    fundingAdvances: [POFundingAdvance!]
     # Populated by purchaseOrders (the list query) — true when this caller is
     # an admin or on the finance team; false means total_amount on every row
     # in that list is a withheld placeholder ('0'), not a real figure. Not

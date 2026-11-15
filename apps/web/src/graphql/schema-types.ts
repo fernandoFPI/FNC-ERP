@@ -4887,6 +4887,7 @@ export type MutationSetInvoicePrintAttachmentArgs = {
 
 export type MutationSetPoFundingArgs = {
   fundingAdvanceId?: InputMaybe<Scalars['ID']['input']>;
+  fundingAdvances?: InputMaybe<Array<PoFundingAdvanceInput>>;
   fundingSource: Scalars['String']['input'];
   id: Scalars['ID']['input'];
 };
@@ -6120,6 +6121,20 @@ export type PoEditRequest = {
   reviewed_by_email?: Maybe<Scalars['String']['output']>;
   reviewed_by_name?: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
+};
+
+export type PoFundingAdvance = {
+  advance_id: Scalars['ID']['output'];
+  advance_number?: Maybe<Scalars['String']['output']>;
+  currency_code: Scalars['String']['output'];
+  employee_name?: Maybe<Scalars['String']['output']>;
+  outstanding_amount?: Maybe<Scalars['String']['output']>;
+  status?: Maybe<Scalars['String']['output']>;
+};
+
+export type PoFundingAdvanceInput = {
+  advanceId: Scalars['ID']['input'];
+  currencyCode: Scalars['String']['input'];
 };
 
 export type PoFxRate = {
@@ -7465,6 +7480,7 @@ export type PurchaseOrder = {
   delivery_destination?: Maybe<Scalars['String']['output']>;
   edit_requests?: Maybe<Array<PoEditRequest>>;
   expected_delivery_date?: Maybe<Scalars['String']['output']>;
+  fundingAdvances?: Maybe<Array<PoFundingAdvance>>;
   funding_advance_id?: Maybe<Scalars['ID']['output']>;
   funding_advance_number?: Maybe<Scalars['String']['output']>;
   funding_decided?: Maybe<Scalars['Boolean']['output']>;

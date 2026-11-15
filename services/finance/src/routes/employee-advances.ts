@@ -1239,7 +1239,7 @@ employeeAdvancesRouter.get(
         return
       }
       const r = await query(
-        `SELECT pl.id, pl.description, pl.qty_ordered, pl.unit_price, pl.total_price,
+        `SELECT pl.id, pl.description, pl.qty_ordered, pl.unit_price, pl.total_price, pl.currency_code,
                 pl.account_id AS gl_account_id, pl.cost_center_id,
                 coa.code AS account_code, coa.name AS account_name,
                 cc.code AS cost_center_code, cc.name AS cost_center_name,
@@ -1247,10 +1247,14 @@ employeeAdvancesRouter.get(
                 p.code AS project_code, p.name AS project_name
          FROM po_lines pl
          JOIN purchase_orders po ON po.id = pl.po_id
+         -- A line is paid from the advance of ITS OWN currency (po_funding_advances, migration 324): a PO with IQD and USD
+         -- lines has an IQD advance and a USD one, and each only ever sees its own currency's lines.
+         JOIN po_funding_advances pfa ON pfa.po_id = po.id AND pfa.company_id = po.company_id
+                                     AND pfa.advance_id = $2 AND pfa.currency_code = pl.currency_code
          LEFT JOIN chart_of_accounts coa ON coa.id = pl.account_id
          LEFT JOIN cost_centers cc ON cc.id = pl.cost_center_id
          LEFT JOIN projects p ON p.id = po.project_id
-         WHERE po.company_id=$1 AND po.funding_advance_id=$2 AND po.status = ANY($3::text[])
+         WHERE po.company_id=$1 AND po.status = ANY($3::text[])
            AND pl.advance_settlement_id IS NULL
          ORDER BY po.po_number, pl.line_number`,
         [getAuth(req).companyId, req.params['id'], [...SETTLEABLE_PO_STATUSES]],
@@ -1532,9 +1536,13 @@ async function createSettlementFromPOLines(req: Request, res: Response): Promise
                   ${PROJECT_COST_ALREADY_BOOKED_SQL} AS project_cost_booked
            FROM po_lines pl
            JOIN purchase_orders po ON po.id = pl.po_id
+           -- same rule as the queue above: only lines whose own currency has this advance linked (migration 324), so the
+           -- total below is in the advance's currency by construction and nothing is booked in the wrong one
+           JOIN po_funding_advances pfa ON pfa.po_id = po.id AND pfa.company_id = po.company_id
+                                       AND pfa.advance_id = $3 AND pfa.currency_code = pl.currency_code
            LEFT JOIN projects p ON p.id = po.project_id
            LEFT JOIN analytic_accounts aa ON aa.id = p.analytic_account_id
-           WHERE pl.id = ANY($1::uuid[]) AND po.company_id=$2 AND po.funding_advance_id=$3
+           WHERE pl.id = ANY($1::uuid[]) AND po.company_id=$2
              AND po.status = ANY($4::text[]) AND pl.advance_settlement_id IS NULL`,
           [d.po_line_ids, getAuth(req).companyId, d.advance_id, [...SETTLEABLE_PO_STATUSES]],
         )
@@ -1682,7 +1690,7 @@ async function createSettlementFromPOLines(req: Request, res: Response): Promise
       const messages = {
         INVALID_STATUS: 'Advance is not approved or partially settled',
         INELIGIBLE_LINES:
-          'One or more selected PO lines are no longer eligible (already settled, PO not completed, or not funded by this advance)',
+          'One or more selected PO lines are no longer eligible (already settled, PO not completed, not funded by this advance, or in a different currency than this advance)',
         OVER_SETTLEMENT: 'Selected total exceeds the advance’s outstanding balance',
         PROJECT_MISSING_ANALYTIC_ACCOUNT:
           'A project-tagged PO line references a project with no analytic account configured — set one before this line can settle',

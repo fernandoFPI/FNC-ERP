@@ -46,6 +46,12 @@ async function makePO(opts: {
      VALUES ($1,$2,'IQD','IQD',$3,$4,$5,$5,$6,'employee_advance',true,$7,$8) RETURNING id`,
     [TEST_COMPANY_ID, `${PREFIX}${opts.key}`, opts.status, opts.project ? 'project' : 'stock', opts.project, userId, opts.advance ?? advanceA, opts.destination],
   )
+  // The per-currency link the settlement reads (migration 324, po_funding_advances): this advance pays this PO's IQD lines.
+  // setPOFunding writes it together with the legacy column; a fixture that writes only the column has no settleable lines.
+  await pool.query(
+    `INSERT INTO po_funding_advances (po_id, currency_code, advance_id, company_id) VALUES ($1,'IQD',$2,$3)`,
+    [po.rows[0]!.id, opts.advance ?? advanceA, TEST_COMPANY_ID],
+  )
   const line = await pool.query<{ id: string }>(
     `INSERT INTO po_lines (po_id, line_number, description, qty_ordered, unit_price, total_price, currency_code, account_id, cost_center_id)
      VALUES ($1,1,$2,1,$3,$3,'IQD',$4,$5) RETURNING id`,

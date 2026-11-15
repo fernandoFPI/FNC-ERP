@@ -1,6 +1,16 @@
 ﻿import { useTranslation } from 'react-i18next'
 import { enumLabel } from '../../../i18n'
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import {
+  SETTLEABLE_ADVANCE_STATUSES,
+  advancesForCurrency,
+  autoSelectAdvances,
+  fundingAdvancesInput,
+  fundingCurrencies,
+  fundingSelectionComplete,
+  type FundingAdvanceOption,
+  type FundingSelection,
+} from '../../../lib/poFundingAdvances'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -237,6 +247,15 @@ export interface PO {
   funding_advance_id?: string | null
   funding_advance_number?: string | null
   funding_employee_name?: string | null
+  // The advance that pays each currency of the PO (one per currency). funding_advance_id / _number above are the primary one.
+  fundingAdvances?:
+    | {
+        currency_code: string
+        advance_id: string
+        advance_number?: string | null
+        employee_name?: string | null
+      }[]
+    | null
   assigned_buyer_user_id?: string | null
   assigned_buyer_name?: string | null
   buyerNames?: string[] | null
@@ -819,45 +838,24 @@ export default function PurchaseOrderDetail() {
   // server enforces both): this re-opens the same picker. It used to be final after one click.
   const [changingFunding, setChangingFunding] = useState(false)
   const [fundingEmployeeId, setFundingEmployeeId] = useState('')
-  const [fundingAdvanceId, setFundingAdvanceId] = useState('')
-  const [fundingAdvances, setFundingAdvances] = useState<
-    {
-      id: string
-      advance_number: string
-      outstanding_amount: number
-      currency_code: string
-      status: string
-    }[]
-  >([])
+  // The advance chosen for each currency of the PO (one per currency, playbook #90): { IQD: <id>, USD: <id> }.
+  const [fundingAdvanceIds, setFundingAdvanceIds] = useState<FundingSelection>({})
+  const [fundingAdvances, setFundingAdvances] = useState<FundingAdvanceOption[]>([])
   useEffect(() => {
-    // Reset on every employee change, not just when cleared — otherwise a
-    // previously-picked advance for a different employee survives the
-    // switch (invisible in the dropdown, but still submitted).
-    setFundingAdvanceId('')
-    if (!fundingEmployeeId) {
-      setFundingAdvances([])
-      return
-    }
+    // Reset on every employee change, not just when cleared — otherwise a previously-picked advance for a different
+    // employee survives the switch (invisible in the dropdown, but still submitted). The previous employee's list goes at
+    // once too, so none of their advances is offered or auto-picked while the new list loads.
+    setFundingAdvanceIds({})
+    setFundingAdvances([])
+    if (!fundingEmployeeId) return
     let cancelled = false
     void api
-      .get<
-        {
-          id: string
-          advance_number: string
-          outstanding_amount: number
-          currency_code: string
-          status: string
-        }[]
-      >('/finance/advances', { params: { employee_id: fundingEmployeeId } })
+      .get<FundingAdvanceOption[]>('/finance/advances', {
+        params: { employee_id: fundingEmployeeId },
+      })
       .then((res) => {
         if (cancelled) return
-        const settleable = res.data.filter((a) =>
-          ['approved', 'partially_settled'].includes(a.status),
-        )
-        setFundingAdvances(settleable)
-        if (settleable.length === 1) {
-          setFundingAdvanceId((prev) => prev || settleable[0].id)
-        }
+        setFundingAdvances(res.data.filter((a) => SETTLEABLE_ADVANCE_STATUSES.includes(a.status)))
       })
       .catch(() => {
         /* handled */
@@ -1168,7 +1166,7 @@ export default function PurchaseOrderDetail() {
     onCompleted: () => {
       setFundingChoice('')
       setFundingEmployeeId('')
-      setFundingAdvanceId('')
+      setFundingAdvanceIds({})
       setChangingFunding(false)
       void refetch()
     },
@@ -1359,6 +1357,18 @@ export default function PurchaseOrderDetail() {
   // Finance, while the PO waits.
   // True while the picker should be on screen: funding not decided yet, or Finance chose to change it.
   const showFundingPicker = !!po && (!po.funding_decided || changingFunding)
+  // One advance per currency the PO has lines in. The key keeps the effect below from re-running on every refetch, which
+  // hands back a new `po` object with the same lines.
+  const poFundingCurrencies = po ? fundingCurrencies(po) : []
+  const poFundingCurrenciesKey = poFundingCurrencies.join(',')
+  const fundingCurrencyList = useMemo(
+    () => (poFundingCurrenciesKey ? poFundingCurrenciesKey.split(',') : []),
+    [poFundingCurrenciesKey],
+  )
+  useEffect(() => {
+    // An advance that is the only one on offer for its currency is taken for you; a choice that is still on offer stays.
+    setFundingAdvanceIds((prev) => autoSelectAdvances(fundingCurrencyList, fundingAdvances, prev))
+  }, [fundingAdvances, fundingCurrencyList])
 
   function renderChangeFundingButton() {
     if (!po || !can('finance.ap.approve', 'approve')) return null
@@ -1370,7 +1380,7 @@ export default function PurchaseOrderDetail() {
           onClick={() => {
             setFundingChoice('')
             setFundingEmployeeId('')
-            setFundingAdvanceId('')
+            setFundingAdvanceIds({})
             setChangingFunding(true)
           }}
         >
@@ -2247,19 +2257,42 @@ export default function PurchaseOrderDetail() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {po.funding_advance_id ? (
-                  <a
-                    href={`/finance/advances/${po.funding_advance_id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ color: BRAND_BLUE }}
-                  >
-                    {po.funding_advance_number ?? t('po.detail.viewAdvance')}
-                  </a>
+                {(po.fundingAdvances?.length ?? 0) > 1 ? (
+                  // paid from several advances, one per currency: each is named with its currency and links to its page
+                  (po.fundingAdvances ?? []).map((fa) => (
+                    <div
+                      key={fa.currency_code}
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    >
+                      <span style={{ color: theme.textSecondary }}>{fa.currency_code} · </span>
+                      <a
+                        href={`/finance/advances/${fa.advance_id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: BRAND_BLUE }}
+                      >
+                        {fa.advance_number ?? t('po.detail.viewAdvance')}
+                      </a>
+                      {fa.employee_name ? ` · ${fa.employee_name}` : ''}
+                    </div>
+                  ))
                 ) : (
-                  '—'
+                  <>
+                    {po.funding_advance_id ? (
+                      <a
+                        href={`/finance/advances/${po.funding_advance_id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: BRAND_BLUE }}
+                      >
+                        {po.funding_advance_number ?? t('po.detail.viewAdvance')}
+                      </a>
+                    ) : (
+                      '—'
+                    )}
+                    {po.funding_employee_name ? ` · ${po.funding_employee_name}` : ''}
+                  </>
                 )}
-                {po.funding_employee_name ? ` · ${po.funding_employee_name}` : ''}
               </div>
             </div>
           )}
@@ -4589,7 +4622,7 @@ export default function PurchaseOrderDetail() {
                               setChangingFunding(false)
                               setFundingChoice('')
                               setFundingEmployeeId('')
-                              setFundingAdvanceId('')
+                              setFundingAdvanceIds({})
                             }}
                           >
                             {t('po.detail.keepFundingSource')}
@@ -4633,66 +4666,100 @@ export default function PurchaseOrderDetail() {
                         </Button>
                       </div>
                       {fundingChoice === 'employee_advance' && (
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                            gap: '8px',
-                          }}
-                        >
-                          <SearchableSelect
-                            label={t('po.detail.employee')}
-                            value={fundingEmployeeId}
-                            onChange={setFundingEmployeeId}
-                            options={[
-                              { value: '', label: t('po.detail.selectEmployee') },
-                              ...employees.map((e) => ({
-                                value: e.id,
-                                label: `${e.first_name} ${e.last_name}`,
-                              })),
-                            ]}
-                            placeholder={t('po.detail.searchEmployee')}
-                            minDropdownWidth={320}
-                          />
-                          <div>
-                            <label
-                              style={{
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                color: theme.textMuted,
-                                display: 'block',
-                                marginBottom: '4px',
-                              }}
-                            >
-                              {t('po.detail.advance')}
-                            </label>
-                            <select
-                              value={fundingAdvanceId}
-                              onChange={(e) => {
-                                setFundingAdvanceId(e.target.value)
-                              }}
-                              style={{
-                                width: '100%',
-                                padding: '7px 10px',
-                                borderRadius: '6px',
-                                border: `1px solid ${theme.border}`,
-                                background: theme.bgCanvas,
-                                color: theme.textPrimary,
-                                fontSize: '13px',
-                                boxSizing: 'border-box' as const,
-                              }}
-                            >
-                              <option value="">
-                                {fundingEmployeeId ? t('po.detail.selectAdvance') : t('po.detail.selectEmployeeFirst')}
-                              </option>
-                              {fundingAdvances.map((a) => (
-                                <option key={a.id} value={a.id}>
-                                  {t('po.detail.advanceOption', { number: a.advance_number, amount: Number(a.outstanding_amount).toLocaleString(), currency: a.currency_code })}
-                                </option>
-                              ))}
-                            </select>
+                        <>
+                          {/* A PO with lines in two currencies is paid from two advances, one per currency; each line is
+                              settled against the advance of its own currency. One currency: one box, as before. */}
+                          {fundingCurrencyList.length > 1 && (
+                            <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+                              {t('po.detail.fundingNeedsAdvancePerCurrency', {
+                                currencies: fundingCurrencyList.join(' + '),
+                              })}
+                            </div>
+                          )}
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                              gap: '8px',
+                            }}
+                          >
+                            <SearchableSelect
+                              label={t('po.detail.employee')}
+                              value={fundingEmployeeId}
+                              onChange={setFundingEmployeeId}
+                              options={[
+                                { value: '', label: t('po.detail.selectEmployee') },
+                                ...employees.map((e) => ({
+                                  value: e.id,
+                                  label: `${e.first_name} ${e.last_name}`,
+                                })),
+                              ]}
+                              placeholder={t('po.detail.searchEmployee')}
+                              minDropdownWidth={320}
+                            />
+                            {fundingCurrencyList.map((currency) => {
+                              const options = advancesForCurrency(fundingAdvances, currency)
+                              const poTotal = po.currencyTotals.find((c) => c.currency_code === currency)
+                              return (
+                                <div key={currency}>
+                                  <label
+                                    htmlFor={`funding-advance-${currency}`}
+                                    style={{
+                                      fontSize: '12px',
+                                      fontWeight: 600,
+                                      color: theme.textMuted,
+                                      display: 'block',
+                                      marginBottom: '4px',
+                                    }}
+                                  >
+                                    {fundingCurrencyList.length > 1
+                                      ? t('po.detail.advanceForCurrency', { currency })
+                                      : t('po.detail.advance')}
+                                  </label>
+                                  <select
+                                    id={`funding-advance-${currency}`}
+                                    value={fundingAdvanceIds[currency] ?? ''}
+                                    onChange={(e) => {
+                                      const advanceId = e.target.value
+                                      setFundingAdvanceIds((prev) => ({ ...prev, [currency]: advanceId }))
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      padding: '7px 10px',
+                                      borderRadius: '6px',
+                                      border: `1px solid ${theme.border}`,
+                                      background: theme.bgCanvas,
+                                      color: theme.textPrimary,
+                                      fontSize: '13px',
+                                      boxSizing: 'border-box' as const,
+                                    }}
+                                  >
+                                    <option value="">
+                                      {!fundingEmployeeId
+                                        ? t('po.detail.selectEmployeeFirst')
+                                        : options.length === 0
+                                          ? t('po.detail.noAdvanceInCurrency', { currency })
+                                          : t('po.detail.selectAdvance')}
+                                    </option>
+                                    {options.map((a) => (
+                                      <option key={a.id} value={a.id}>
+                                        {t('po.detail.advanceOption', { number: a.advance_number, amount: Number(a.outstanding_amount).toLocaleString(), currency: a.currency_code })}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {fundingCurrencyList.length > 1 && poTotal && (
+                                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
+                                      {t('po.detail.poAmountInCurrency', {
+                                        amount: Number(poTotal.subtotal).toLocaleString(),
+                                        currency,
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
                           </div>
-                        </div>
+                        </>
                       )}
                       <Button
                         variant="primary"
@@ -4700,16 +4767,17 @@ export default function PurchaseOrderDetail() {
                         loading={settingFunding}
                         disabled={
                           !fundingChoice ||
-                          (fundingChoice === 'employee_advance' && !fundingAdvanceId)
+                          (fundingChoice === 'employee_advance' &&
+                            !fundingSelectionComplete(fundingCurrencyList, fundingAdvanceIds))
                         }
                         onClick={() =>
                           void setPOFunding({
                             variables: {
                               id: po.id,
                               fundingSource: fundingChoice,
-                              fundingAdvanceId:
+                              fundingAdvances:
                                 fundingChoice === 'employee_advance'
-                                  ? fundingAdvanceId
+                                  ? fundingAdvancesInput(fundingCurrencyList, fundingAdvanceIds)
                                   : undefined,
                             },
                           })

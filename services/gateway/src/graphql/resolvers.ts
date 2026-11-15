@@ -86,6 +86,18 @@ import {
 } from '../lib/invoicePrintAttachment.js'
 import { costControlCategoryForLedger, projectPOCommitments } from '../lib/costControlPurchases.js'
 import {
+  advanceProblem,
+  getPOFundingAdvances,
+  planFundingSlots,
+  poFundingFingerprintSql,
+  poFundingRowsSql,
+  poLineCurrencies,
+  primaryAdvanceId,
+  uncoveredFundingCurrencies,
+  joinCurrencies,
+  type FundingSlot,
+} from '../lib/poFundingAdvances.js'
+import {
   buildEditImpact,
   snapshotEditLines,
   type EditImpact,
@@ -38597,7 +38609,13 @@ const phase5MutationResolvers = {
   // existing AP-invoice or advance-completion panel, whichever applies.
   setPOFunding: async (
     _: unknown,
-    args: { id: string; fundingSource: string; fundingAdvanceId?: string },
+    args: {
+      id: string
+      fundingSource: string
+      // The old single-advance argument (a browser tab opened before one advance per currency) and the list the page sends.
+      fundingAdvanceId?: string
+      fundingAdvances?: { currencyCode: string; advanceId: string }[]
+    },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -38607,8 +38625,9 @@ const phase5MutationResolvers = {
     if (!['vendor_ap', 'employee_advance'].includes(args.fundingSource))
       throw new Error('fundingSource must be vendor_ap or employee_advance')
     const poRow = await query(
-      `SELECT status, company_id, currency_code, funding_decided, funding_source, funding_advance_id
-         FROM purchase_orders WHERE id=$1`,
+      `SELECT po.status, po.company_id, po.currency_code, po.funding_decided, po.funding_source, po.funding_advance_id,
+              ${poFundingFingerprintSql('po')} AS funding_fingerprint, ${poFundingRowsSql('po')} AS funding_rows
+         FROM purchase_orders po WHERE po.id=$1`,
       [args.id],
     )
     if (!poRow.rows[0] || poRow.rows[0].company_id !== auth.companyId)
@@ -38637,37 +38656,78 @@ const phase5MutationResolvers = {
           'Funding cannot be changed: a vendor invoice already exists for this PO (cancel it first)',
         )
     }
+    // One advance per currency of the PO (migration 324, playbook #90). A PO whose lines are in IQD and USD needs an IQD
+    // advance and a USD one; planFundingSlots says what is missing and advanceProblem why a chosen advance cannot be used.
+    let slots: FundingSlot[] = []
     if (args.fundingSource === 'employee_advance') {
-      if (!args.fundingAdvanceId) {
-        throw new Error('An advance must be selected when funding source is Employee Advance')
-      }
-      const advCheck = await query(
-        `SELECT status, currency_code FROM employee_advances WHERE id=$1 AND company_id=$2`,
-        [args.fundingAdvanceId, auth.companyId],
+      slots = planFundingSlots({
+        lineCurrencies: await poLineCurrencies(args.id),
+        headerCurrency: String(poRow.rows[0].currency_code),
+        fundingAdvances: args.fundingAdvances,
+        fundingAdvanceId: args.fundingAdvanceId,
+      })
+      const advRows = await query(
+        `SELECT id, status, currency_code, advance_number FROM employee_advances
+          WHERE id = ANY($1::uuid[]) AND company_id=$2`,
+        [slots.map((s) => s.advanceId), auth.companyId],
       )
-      const adv = advCheck.rows[0] as Record<string, unknown> | undefined
-      if (!adv) throw new Error('Selected advance not found')
-      if (!['approved', 'partially_settled'].includes(adv.status as string)) {
-        throw new Error('Selected advance is not in a settleable state')
-      }
-      if (adv.currency_code !== poRow.rows[0].currency_code) {
-        throw new Error('PO currency must match the selected advance’s currency')
+      const advById = new Map(
+        advRows.rows.map((a) => [
+          String(a.id),
+          a as { status: string; currency_code: string; advance_number: string },
+        ]),
+      )
+      for (const slot of slots) {
+        const problem = advanceProblem(advById.get(slot.advanceId), slot)
+        if (problem) throw new Error(problem)
       }
     }
-    const newAdvanceId =
-      args.fundingSource === 'employee_advance' ? (args.fundingAdvanceId ?? null) : null
+    // The legacy single column keeps the PO's primary advance (header currency, else the first), so everything that still
+    // reads it (the PO page link, the list joins) keeps working; the per-currency rows are the source of truth.
+    const newAdvanceId = primaryAdvanceId(slots, String(poRow.rows[0].currency_code))
     const before = {
       funding_source: poRow.rows[0].funding_source as string | null,
       funding_advance_id: poRow.rows[0].funding_advance_id as string | null,
       funding_decided: previouslyDecided,
+      funding_advances: poRow.rows[0].funding_rows as {
+        currency_code: string
+        advance_id: string
+      }[],
     }
-    // The UPDATE's WHERE clause repeats what was read (decided / source / advance), so it is the actual guard against a
-    // double-click or a second tab changing the funding between the read above and this write; the checks above are the
-    // friendly errors for the common case. The audit row is plain SQL in the same transaction (logAudit swallows its own
-    // errors, playbook #48), so a change is never saved without its record.
+    // The guard against a double-click or a second tab changing the funding between the read above and this write: lock
+    // the PO row, then compare what is stored NOW with what was read (decided / source / primary advance / the advance of
+    // each currency). Lock first and compare in a second statement: a subquery in one statement uses the snapshot taken
+    // before the lock wait, so a change that touched only the second currency's advance and committed meanwhile would not
+    // be seen. The UPDATE's WHERE below repeats the column checks. The checks above are the friendly errors for the common
+    // case. The audit row is plain SQL in the same transaction (logAudit swallows its own errors, playbook #48), so a
+    // change is never saved without its record.
     const changed = await withTransaction(
       { companyId: auth.companyId, userId: auth.userId, role: auth.role },
       async (client) => {
+        await client.query(
+          `SELECT id FROM purchase_orders WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+          [args.id, auth.companyId],
+        )
+        const now = await client.query<{
+          funding_decided: boolean
+          funding_source: string
+          funding_advance_id: string | null
+          funding_fingerprint: string
+        }>(
+          `SELECT po.funding_decided, po.funding_source, po.funding_advance_id,
+                  ${poFundingFingerprintSql('po')} AS funding_fingerprint
+             FROM purchase_orders po WHERE po.id=$1`,
+          [args.id],
+        )
+        const stored = now.rows[0]
+        if (
+          !stored ||
+          stored.funding_decided !== before.funding_decided ||
+          stored.funding_source !== before.funding_source ||
+          stored.funding_advance_id !== before.funding_advance_id ||
+          stored.funding_fingerprint !== poRow.rows[0].funding_fingerprint
+        )
+          return false
         const upd = await client.query(
           `UPDATE purchase_orders
               SET funding_source=$1, funding_advance_id=$2, funding_decided=true
@@ -38686,6 +38746,17 @@ const phase5MutationResolvers = {
           ],
         )
         if (upd.rowCount === 0) return false
+        // The PO row is locked by the UPDATE above, so replacing its per-currency rows cannot interleave with another change.
+        await client.query(`DELETE FROM po_funding_advances WHERE po_id=$1 AND company_id=$2`, [
+          args.id,
+          auth.companyId,
+        ])
+        for (const slot of slots) {
+          await client.query(
+            `INSERT INTO po_funding_advances (po_id, currency_code, advance_id, company_id) VALUES ($1,$2,$3,$4)`,
+            [args.id, slot.currencyCode, slot.advanceId, auth.companyId],
+          )
+        }
         await client.query(
           `INSERT INTO audit_log (user_id, company_id, action, table_name, record_id, old_values, new_values)
            VALUES ($1,$2,'UPDATE','purchase_orders',$3,$4::jsonb,$5::jsonb)`,
@@ -38698,6 +38769,10 @@ const phase5MutationResolvers = {
               funding_source: args.fundingSource,
               funding_advance_id: newAdvanceId,
               funding_decided: true,
+              funding_advances: slots.map((s) => ({
+                currency_code: s.currencyCode,
+                advance_id: s.advanceId,
+              })),
             }),
           ],
         )
@@ -38745,6 +38820,15 @@ const phase5MutationResolvers = {
       if (unclassified > 0) {
         throw new Error(
           `Cannot complete: ${unclassified} line${unclassified > 1 ? 's need' : ' needs'} a GL account and cost center assigned`,
+        )
+      }
+      // A line is settled against the advance of its own currency (migration 324). A currency with no advance linked, for
+      // example a line added in a new currency after the funding was confirmed, could never be settled, so stop here and
+      // say which one is missing instead of closing the PO on lines nothing can pay.
+      const uncovered = await uncoveredFundingCurrencies(args.id)
+      if (uncovered.length > 0) {
+        throw new Error(
+          `Cannot complete: this PO has ${joinCurrencies(uncovered)} lines but no ${joinCurrencies(uncovered)} advance is linked. Use "Change funding source" to choose one.`,
         )
       }
     }
@@ -40514,6 +40598,10 @@ Object.assign(resolvers, {
       id: string
     }): Promise<{ currency_code: string; ordered: string; returned: string; net: string }[]> =>
       getPOReturnedTotals(query, parent.id),
+    // The advance that pays each currency of the PO (migration 324), scoped to the caller's company on the link and on the
+    // advance. Nullable list in the schema: a failure here must not null the whole purchase order.
+    fundingAdvances: async (parent: { id: string }, _args: unknown, ctx: GQLContext) =>
+      ctx.auth ? getPOFundingAdvances(parent.id, ctx.auth.companyId) : [],
   },
 })
 
