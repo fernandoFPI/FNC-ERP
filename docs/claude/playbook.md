@@ -2303,3 +2303,83 @@ Don't re-derive, check these first.
     older settlement files unchanged and green, web `EmployeeAdvanceDetailAccounting.test.tsx` (30, renders the real page, English
     and Arabic: flags, held-back lines, the editor, the manual form's lists, approve's refusal) and `poLineAccountPicker.test.tsx`
     (3, renders the real PO page); 72 of 73 mutations killed (the survivor is the Save handler's own "both chosen" guard, redundant with the disabled Save button and unreachable from the screen). Some mutations first survived or did not run for test-side reasons and were fixed: the change route's reply was only asserted for a line that happened to sort first in the queue (the test now changes the SECOND line of a PO that sorts last), and reformatting changed patterns the script matches (a SKIPPED mutation is a gap, not a pass). Not verified in a browser.
+
+92. **A figure that counts finished purchase orders as open because its status list drifted, a total that reads one header
+    number where the lines are in several currencies, and a page that lists only what is tagged.** NY-PRJ-2026-0032
+    (Nishtimani Yakam, 22 POs `closed` and 1 cancelled, every advance settled, every journal posted) showed Pending POs 23,
+    Committed (incl. store) 17,802.91 USD, Remaining Budget -18,653.41 USD, "Project is over budget" and, on the Overview, a
+    PO Summary of "Closed 22 ... 0.00 USD"; its analytic account said "Total Lines 0 / No journal lines yet". None of it was a
+    posting problem. Five separate faults:
+    (a) *Every "is this PO open?" carried its own copy of `status NOT IN ('completed','deleted')`*, a list from before the
+    requisition split (G1): a child PO of the current flow ends as `closed` (payment_pending -> closed), never `completed`,
+    so every finished PO counted as open. Found nine copies, not one: the project header's open count and its Committed /
+    Remaining Budget, the projects list (gateway and REST), the project detail REST route, the GraphQL completion blockers, the
+    REST `/projects/:id/complete` blocker (a project whose POs were all closed could not be completed through it), the cancel
+    guard `assertProjectCancellable` (a closed PO blocked cancelling for ever) and the company dashboard's openPOs. Fix: one
+    definition, `FINISHED_PO_STATUSES` (`completed`, `closed`, `cancelled`, `deleted`) with a SQL tuple built from it, in
+    `packages/db/src/poStatus.ts`, used by all of them; the web mirror (`lib/projectPoSummary.ts`) is pinned to that file by a
+    test, and a test reads `purchase_orders_status_check` and fails until a status added there is classified. `rejected` stays
+    OPEN on purpose (the old flow can reopen it to draft). It is a deny-list of finished statuses, so an unknown status counts as
+    open (visible), never silently hidden: the opposite default from #33. Same family as #29, #33 and #83.
+    (b) *The header's Committed added up the HEADER total of every PO that was not `completed`.* The 9 USD-header closed POs summed
+    to exactly 17,802.91, and Remaining was 0 - 850.50 actual - 17,802.91 (the arithmetic matched to the cent, which is how the
+    cause was proved). One of them, NY-PO-2026-0063, holds 1,276.96 USD of lines and one 10,000 IQD line, and its header total adds
+    them into 11,276.96 "USD". Committed is now the Cost Control tab's rule (#83): ordered and NOT yet received, per LINE currency,
+    for POs from approved to payment pending, from ONE SQL expression (`COMMITTED_LINE_VALUE_SQL`, `lib/costControlPurchases.ts`)
+    used by both screens so they cannot disagree. Visible consequence to know: a draft or pending-approval PO no longer counts as
+    committed on the header (it did before), and a currency with nothing left to receive is no longer listed.
+    (c) *The Overview read a key the data does not have.* The PO Summary used `totalAmount ?? amount`; the resolver's key is
+    `total_amount`, so every amount was 0 (the header tiles had been fixed for this once, the Overview block had not). It also
+    added every amount into one number labelled with the project's currency, counted the cancelled PO in the total but gave it no
+    row (total 23, rows 22), and "Approved POs" counted only status exactly `approved` (0 for a project of 22 received and closed
+    POs). Now `recentPos` carries `line_totals` (what the lines hold, per currency) and `lib/projectPoSummary.ts` does the
+    counting: rows per status in workflow order, money per currency, cancelled and deleted POs out of rows and total alike,
+    "approved" = approved OR LATER. The PO tab list shows each PO's money per currency instead of the raw header total.
+    (d) *A budget row of 0 is "no budget", not minus everything spent.* Every new project gets a `project_budgets` row of 0 (Budget
+    Amount left the forms in #72), so Remaining Budget and the "Project is over budget" alert were -(all spending). The resolver
+    returns `budgetRemaining` NULL unless the budget is above 0; the tile and the Overview row say "No budget", and the alert needs a
+    budget. Not changed: Forecast Cost at Completion, Expected Profit and Profit Margin still print 0 with no budget.
+    (e) *The analytic account page lists only journal lines tagged with the account, and almost nothing is tagged on purpose.* The
+    project's two settlement journals (154 lines on 3211: 8,916,887.30 IQD and 10,269.69 USD, equal to the PO lines) carry no tag
+    (#84b: `sync_project_cost_actuals` copies every tagged line into project cost, so a delivery already booked must not be tagged
+    again), and a project's cost lives in `project_cost_actuals` (deliveries, Store Outs, returns), written without a journal. 14 of
+    the 15 projects with the most cost rows have 0 tagged lines; only that trigger and this page read the tag. Fix, no accounting
+    change: a gateway query `projectCostLedger(projectId)` (`lib/projectCostLedger.ts`) behind the project's own view guard
+    (`requireProjectViewGW`, deliberately NOT a copy of that rule in the finance service, #24), listing the cost rows newest first
+    with the PO and line, Store Out, return or journal reference, totals per currency taken from the same view the header reads, a
+    limit of 500 with a "cut short" note, and every reference lookup scoped to the company; `ProjectCostLedgerCard` shows it on the
+    analytic account page of a project. A person who can open the account but not the project sees a note, not figures.
+    Production data (2026-11-15, the user's "fix everything"): the Actual Cost of 850.50 USD was also understated. 73 jobsite-delivery
+    cost rows of USD PO lines were labelled IQD (6,131.44, a USD amount under the wrong label, the #65(b) hard-coded IQD; the
+    backfill's step 1 was never applied); the project's USD cost is 6,981.94 once relabelled. Fixed for THIS project only, with a
+    one-off SQL file (`psql -f`, one transaction, aborts unless it finds exactly 73 rows totalling 6131.44, all IQD -> USD, with a
+    rehearsal that ends in ROLLBACK first), after a manual `pg_dump` (`/var/backups/fnc-erp/manual_pre_cost_label_ny0032_*.sql.gz`).
+    Only the label changed; one `audit_log` row (`relabel_direct_delivery_cost_currency`) holds the 73 ids, so it is reversible
+    (`UPDATE project_cost_actuals SET currency_code='IQD' WHERE id IN (...)`). The script `backfill-direct-delivery-cost.ts` was
+    NOT used: it applies relabel, offsets and material-return steps together and cannot be limited to one project. STILL WRONG, not
+    changed: the same fault on 10 other projects (Al Watanyia 7 projects, 36 rows, about 21,085 USD; Nishtimani Factory 3 projects,
+    18 rows, about 11,208 USD); decide and run the backfill's step 1 for them. Also left: Store Out (`stock_issue`) cost rows are
+    still booked as IQD whatever the product's currency (#43, #67); 2 IQD jobsite-delivery rows (860.50) of this project have no PO
+    line behind them any more.
+    How to spot the class: a tile that reads a count of "open" things after the work is done (grep every `NOT IN ('completed'` for
+    purchase_orders, not only the screen reported); a figure that equals the sum of header totals instead of lines; a 0 on a screen
+    whose neighbour shows a number (compare the keys the code reads with the keys the resolver returns); an "empty" page for data
+    that is tagged in a different place. The arithmetic of the wrong tile against production (committed + actual = the tile) is the
+    quickest proof of which rows feed it.
+    Traps met. (1) A diagnostic query joined a journal to every PO line it settled, so each journal's lines were counted once per PO
+    line (12,254 lines from 2 journals); count over DISTINCT journals first. (2) A `psql` script whose first line lacked its
+    backslash (`set ON_ERROR_ROLLBACK on` without `\`) fused with the next statement and failed, so the `BEGIN READ ONLY` never ran
+    and the rest ran outside a transaction (only SELECTs, but check the first lines). (3) A `sed` replacement lost a backslash in
+    a psql meta-command (#69 again): write such files with the file tool. (4) `cancelProjectAfterApproval` really cancels the
+    project when nothing blocks it, so a test of "not blocked" must put the status back. (5) The projects list resolver returns
+    `{ data, pagination }` and the REST list wraps it once more (`body.data.data`). (6) A failing `expect(src).toContain(...)` on a
+    36,000-line source prints the whole file, which overflowed the mutation runner's buffer and made three kills look like "not a
+    result": write source pins as booleans with a message. (7) A pin that forbids a string must be scoped to the block it is about
+    (`amount2` is legitimate in the Financial Summary table).
+    Not verified in a browser (the Overview, the tiles, the analytic account page in Arabic and on a phone); `ProjectDetail.tsx` has
+    no render harness, so its wiring is pinned at the source and its logic tested in the lib.
+    Tests: `services/gateway/tests/project-open-po-rule.test.ts` (real Postgres through the real ApolloServer and resolvers, 31),
+    `services/projects/tests/project-close-open-pos.test.ts` (REST, 5), `apps/web/src/lib/__tests__/projectPoSummary.test.ts` (20),
+    `components/finance/__tests__/ProjectCostLedgerCard.test.tsx` (14), `pages/finance/analytic-accounts/__tests__/AnalyticAccountDetail.test.tsx`
+    (4), `pages/projects/detail/__tests__/projectDetailPoWiring.test.ts` (8); 44 mutations (23 backend, 21 web), all killed. Needs
+    `packages/db` rebuilt and gateway and projects restarted (#9). Related to #29, #33, #65, #83, #84, #38, #24.
