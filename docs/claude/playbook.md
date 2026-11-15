@@ -2383,3 +2383,25 @@ Don't re-derive, check these first.
     `components/finance/__tests__/ProjectCostLedgerCard.test.tsx` (14), `pages/finance/analytic-accounts/__tests__/AnalyticAccountDetail.test.tsx`
     (4), `pages/projects/detail/__tests__/projectDetailPoWiring.test.ts` (8); 44 mutations (23 backend, 21 web), all killed. Needs
     `packages/db` rebuilt and gateway and projects restarted (#9). Related to #29, #33, #65, #83, #84, #38, #24.
+
+93. **A route that sends its response from INSIDE the transaction callback answers before the commit, and a client that follows up
+    at once gets "not found".** `POST /projects` (projects service) called `sendOk(res, row, 201)` as the last line of
+    `withTransaction`'s callback, so the 201 left before the COMMIT. A caller that went straight on (the web page opening the
+    new project, a script, a test helper) could reach its next request while the row was still uncommitted, and
+    `transitionProject`'s `SELECT status FROM projects WHERE id = $1 FOR UPDATE` found nothing: `404 Project not found` on the
+    very next call. It never showed on a fast local database (a commit takes well under a millisecond: 0 misses in 150
+    attempts) and it failed the production deploy gate once, in the `a rejected PO can be reopened` test of
+    `project-close-open-pos.test.ts` (setup: create a project, then `/start`), with `expected 404 to be 200`, while the same
+    commit had passed the dev CI run. The deploy gate stopped before "Deploy to VPS", so nothing reached the server. Not a flaky
+    test: the older `project-close-invoices.test.ts` has the same helper and had only been lucky. Proved, not assumed: a
+    deferred constraint trigger on `projects` that sleeps 50 ms at COMMIT (test database only, dropped afterwards) makes the old
+    code fail 17 of 20 follow-ups, and the same probe passes 20 of 20 with the fix.
+    Fix: build the response value inside the transaction, send it AFTER `await withTransaction(...)` resolves. Same family as #27
+    (a read on another connection racing the commit), from the other side: there the READ ran too early, here the ANSWER did.
+    How to spot it: `sendOk(` / `res.json(` / `res.status(` inside a `withTransaction(... async (client) => { ... })` callback;
+    a 404 or empty result on the first request after a create that "always works locally"; a failure whose only symptom is
+    timing. Only two transactions exist in `services/projects/src/routes` (this one and `transitionProject`, whose callers answer
+    after the await); other services were not searched. Regression test:
+    `services/projects/tests/project-create-answers-after-commit.test.ts` (installs the slow-commit trigger for its own run, 8
+    follow-ups in a row, plus the 201 body and a refused create leaving nothing behind; mutation-checked: the old code gives
+    `[200, 200, 404, 200, 404, 404, ...]`). Related to #27, #17 and #92.
