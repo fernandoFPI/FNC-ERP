@@ -1338,12 +1338,15 @@ export default function PurchaseOrderDetail() {
     fetchPolicy: 'cache-first',
     skip: !needsLineAccountingOptions,
   })
-  const glAccountOptions: { value: string; label: string }[] = (accountsData?.accounts ?? []).filter((v): v is NonNullable<typeof v> => v !== null).map(
-    (a) => ({
+  // Only accounts a journal can post to: a header account such as 1000 Assets was the first entry of this list, and picking
+  // it was accepted here and only refused weeks later when the advance was settled (playbook #91). The server refuses it
+  // too; `!== false` keeps an account whose flag was not loaded, since the server is the authority.
+  const glAccountOptions: { value: string; label: string }[] = (accountsData?.accounts ?? [])
+    .filter((v): v is NonNullable<typeof v> => v !== null && v.is_postable !== false)
+    .map((a) => ({
       value: a.id,
       label: `${a.code} — ${a.name}`,
-    }),
-  )
+    }))
   const costCenterOptions: { value: string; label: string }[] = (
     costCentersData?.costCenters ?? []
   ).map((c: { id: string; code: string; name: string }) => ({

@@ -85,6 +85,7 @@ import {
   type PrintAttachmentFileRow,
 } from '../lib/invoicePrintAttachment.js'
 import { costControlCategoryForLedger, projectPOCommitments } from '../lib/costControlPurchases.js'
+import { assertLineAccountingChoice } from '../lib/poLineAccounting.js'
 import {
   advanceProblem,
   getPOFundingAdvances,
@@ -38462,6 +38463,18 @@ const phase5MutationResolvers = {
       !['employee_advance', 'vendor_ap'].includes(poRow.rows[0].funding_source as string)
     )
       throw new Error('PO must be invoiced and have a funding source decided to classify lines')
+    // A newly chosen account must be postable, active and this company's (a header account such as 1000 Assets used to be
+    // saved and only refused at settlement, after the PO was closed: playbook #91); same for a cost center. A value the
+    // line already holds is not a new choice, so changing only the cost center never trips over the line's old account.
+    const currentRow = await query<{ account_id: string | null; cost_center_id: string | null }>(
+      `SELECT account_id, cost_center_id FROM po_lines WHERE id=$1 AND po_id=$2`,
+      [args.lineId, args.poId],
+    )
+    if (!currentRow.rows[0]) throw new Error('PO line not found')
+    await assertLineAccountingChoice(auth.companyId, currentRow.rows[0], {
+      glAccountId: args.glAccountId ?? null,
+      costCenterId: args.costCenterId ?? null,
+    })
     const result = await query(
       `UPDATE po_lines
           SET account_id = $1, cost_center_id = $2
