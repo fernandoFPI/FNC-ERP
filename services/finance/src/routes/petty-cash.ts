@@ -5,6 +5,11 @@ import { query, withTransaction, firstRowOrThrow, asyncHandler } from '@fnc-erp/
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
+import {
+  FLOAT_CURRENCY_LOCKED_MESSAGE,
+  FLOAT_HAS_ACTIVITY_SQL,
+  normaliseFloatCurrency,
+} from '../lib/floatCurrency.js'
 
 export const pettyCashRouter: Router = Router()
 
@@ -27,7 +32,8 @@ pettyCashRouter.get(
       const r = await query(
         `SELECT f.*, a.code AS account_code, a.name AS account_name,
               COALESCE(e.first_name || ' ' || e.last_name, f.custodian_name) AS custodian_display_name,
-              ROUND((f.current_balance::NUMERIC / NULLIF(f.authorized_limit,0))*100, 1) AS pct_remaining
+              ROUND((f.current_balance::NUMERIC / NULLIF(f.authorized_limit,0))*100, 1) AS pct_remaining,
+              ${FLOAT_HAS_ACTIVITY_SQL} AS has_activity
        FROM petty_cash_floats f
        LEFT JOIN chart_of_accounts a ON a.id = f.gl_account_id
        LEFT JOIN employees e ON e.id = f.custodian_employee_id
@@ -73,7 +79,8 @@ pettyCashRouter.post(
     const schema = z.object({
       name: z.string().min(1),
       custodian_employee_id: z.string().uuid().optional(),
-      currency_code: z.string().length(3).default('IQD'),
+      // The New Float form sends the chosen currency. A caller that sends none still gets IQD, as before.
+      currency_code: z.string().default('IQD'),
       authorized_limit: z.coerce.number().positive(),
       opening_balance: z.coerce.number().min(0).default(0),
       gl_account_id: z.string().uuid(),
@@ -81,6 +88,7 @@ pettyCashRouter.post(
     })
     try {
       const d = schema.parse(req.body)
+      const currencyCode = normaliseFloatCurrency(d.currency_code)
       await assertCashAccount(getAuth(req).companyId, d.gl_account_id)
       const result = await withTransaction(
         { companyId: getAuth(req).companyId, userId: getAuth(req).userId, role: getAuth(req).role },
@@ -92,7 +100,7 @@ pettyCashRouter.post(
               getAuth(req).companyId,
               d.name,
               d.custodian_employee_id ?? null,
-              d.currency_code,
+              currencyCode,
               d.authorized_limit,
               d.opening_balance,
               d.gl_account_id,
@@ -137,29 +145,83 @@ pettyCashRouter.put(
       gl_account_id: z.string().uuid(),
       is_active: z.boolean().default(true),
       notes: z.string().optional(),
+      // Optional: a caller that leaves it out (an older browser tab) keeps the stored currency.
+      currency_code: z.string().optional(),
     })
     try {
       const d = schema.parse(req.body)
+      const wantedCurrency =
+        d.currency_code === undefined ? null : normaliseFloatCurrency(d.currency_code)
       await assertCashAccount(getAuth(req).companyId, d.gl_account_id)
-      const r = await query(
-        `UPDATE petty_cash_floats SET name=$1, custodian_employee_id=$2, authorized_limit=$3, gl_account_id=$4, is_active=$5, notes=$6, updated_at=NOW()
-       WHERE id=$7 AND company_id=$8 RETURNING *`,
-        [
-          d.name,
-          d.custodian_employee_id ?? null,
-          d.authorized_limit,
-          d.gl_account_id,
-          d.is_active,
-          d.notes ?? null,
-          req.params['id'],
-          getAuth(req).companyId,
-        ],
+      const auth = getAuth(req)
+      type Outcome =
+        | { kind: 'not_found' }
+        | { kind: 'locked' }
+        | { kind: 'ok'; row: Record<string, unknown> }
+      const outcome = await withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client): Promise<Outcome> => {
+          // Lock the float FIRST and read its history in a SECOND statement. One statement would be wrong: the
+          // EXISTS subqueries of a `SELECT ... FOR UPDATE` use the snapshot taken before the lock wait, so a top-up
+          // that committed while this edit waited would not be seen and the currency would flip under it.
+          const cur = await client.query<{ currency_code: string }>(
+            `SELECT currency_code FROM petty_cash_floats WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+            [req.params['id'], auth.companyId],
+          )
+          const before = cur.rows[0]
+          if (!before) return { kind: 'not_found' }
+          const changingCurrency =
+            wantedCurrency !== null && wantedCurrency !== before.currency_code
+          if (changingCurrency) {
+            const activity = await client.query<{ has_activity: boolean }>(
+              `SELECT ${FLOAT_HAS_ACTIVITY_SQL} AS has_activity FROM petty_cash_floats f WHERE f.id=$1`,
+              [req.params['id']],
+            )
+            if (activity.rows[0]?.has_activity) return { kind: 'locked' }
+          }
+
+          const r = await client.query(
+            `UPDATE petty_cash_floats SET name=$1, custodian_employee_id=$2, authorized_limit=$3, gl_account_id=$4, is_active=$5, notes=$6,
+                    currency_code=COALESCE($9::varchar(3), currency_code), updated_at=NOW()
+           WHERE id=$7 AND company_id=$8 RETURNING *`,
+            [
+              d.name,
+              d.custodian_employee_id ?? null,
+              d.authorized_limit,
+              d.gl_account_id,
+              d.is_active,
+              d.notes ?? null,
+              req.params['id'],
+              auth.companyId,
+              changingCurrency ? wantedCurrency : null,
+            ],
+          )
+          if (changingCurrency) {
+            // Plain SQL inside the transaction, not logAudit: logAudit swallows its own errors (playbook #48).
+            await client.query(
+              `INSERT INTO audit_log (user_id, company_id, action, table_name, record_id, old_values, new_values)
+               VALUES ($1,$2,'petty_cash_float_currency_changed','petty_cash_floats',$3,$4::jsonb,$5::jsonb)`,
+              [
+                auth.userId,
+                auth.companyId,
+                req.params['id'],
+                JSON.stringify({ currency_code: before.currency_code }),
+                JSON.stringify({ currency_code: wantedCurrency }),
+              ],
+            )
+          }
+          return { kind: 'ok', row: firstRowOrThrow(r) as Record<string, unknown> }
+        },
       )
-      if (!r.rows[0]) {
+      if (outcome.kind === 'not_found') {
         sendError(res, 404, 'NOT_FOUND', 'Float not found')
         return
       }
-      sendOk(res, r.rows[0])
+      if (outcome.kind === 'locked') {
+        sendError(res, 409, 'FLOAT_HAS_ACTIVITY', FLOAT_CURRENCY_LOCKED_MESSAGE)
+        return
+      }
+      sendOk(res, outcome.row)
     } catch (err) {
       if ((err as { isValidation?: boolean }).isValidation) {
         sendError(res, 422, 'VALIDATION', (err as Error).message)
@@ -179,7 +241,8 @@ pettyCashRouter.get(
     try {
       const fRes = await query(
         `SELECT f.*, a.code AS account_code, a.name AS account_name,
-              COALESCE(e.first_name || ' ' || e.last_name, f.custodian_name) AS custodian_display_name
+              COALESCE(e.first_name || ' ' || e.last_name, f.custodian_name) AS custodian_display_name,
+              ${FLOAT_HAS_ACTIVITY_SQL} AS has_activity
        FROM petty_cash_floats f
        LEFT JOIN chart_of_accounts a ON a.id=f.gl_account_id
        LEFT JOIN employees e ON e.id = f.custodian_employee_id

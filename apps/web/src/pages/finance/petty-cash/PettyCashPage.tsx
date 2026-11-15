@@ -9,6 +9,19 @@ import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
 import { usePermission } from '../../../hooks/usePermission'
+import { useToastStore } from '../../../store/toastStore'
+import { totalsByCurrency } from '../../../lib/pettyCashTotals'
+
+// The server's own sentence for a refusal (for example "the currency is locked"), else a fallback. The shared axios
+// client shows nothing on error, so a handler that does not toast leaves a refused action looking like a dead button.
+const serverMessage = (err: unknown, fallback: string): string => {
+  const apiError = err as { response?: { data?: { error?: { message?: string } } } }
+  return apiError.response?.data?.error?.message ?? fallback
+}
+
+// The same list the other finance screens offer (advance settings, product cost, ...). The server accepts any
+// three-letter code, so this is a convenience, not a second source of truth.
+const FLOAT_CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 
 interface Float_ {
   id: string
@@ -30,6 +43,10 @@ interface Float_ {
   account_name: string | null
   is_active: boolean
   gl_account_id: string | null
+  notes?: string | null
+  // True once the float has a spend, top-up, advance, claim or voucher: from then on its currency is locked. Left out
+  // by a server that predates it, which the screen treats as locked (the safe answer).
+  has_activity?: boolean
 }
 
 interface Transaction {
@@ -84,6 +101,7 @@ export default function PettyCashPage() {
   const { t } = useTranslation()
   const { theme } = useTheme()
   const { can } = usePermission()
+  const addToast = useToastStore((s) => s.addToast)
   const canEdit = can('finance.petty_cash.edit', 'edit')
   const canApprove = can('finance.petty_cash.approve', 'approve')
   const [floats, setFloats] = useState<Float_[]>([])
@@ -102,6 +120,16 @@ export default function PettyCashPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
 
   const [showNewFloat, setShowNewFloat] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+  const [editForm, setEditForm] = useState({
+    name: '',
+    custodian_employee_id: '',
+    currency_code: 'IQD',
+    authorized_limit: '',
+    gl_account_id: '',
+    is_active: true,
+    notes: '',
+  })
   const [showSpend, setShowSpend] = useState(false)
   const [showReplen, setShowReplen] = useState(false)
   const [showApprove, setShowApprove] = useState<Replenishment | null>(null)
@@ -189,8 +217,52 @@ export default function PettyCashPage() {
       })
       const r = await api.get<Float_[]>('/finance/petty-cash/floats')
       setFloats(r.data)
-    } catch {
-      /* handled */
+    } catch (err: unknown) {
+      addToast({ type: 'error', message: serverMessage(err, t('fin.petty.couldNotSaveFloat')) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openEdit() {
+    if (!selected) return
+    setEditForm({
+      name: selected.name,
+      custodian_employee_id: selected.custodian_employee_id ?? '',
+      currency_code: selected.currency_code,
+      authorized_limit: String(Number(selected.authorized_limit)),
+      gl_account_id: selected.gl_account_id ?? '',
+      is_active: selected.is_active,
+      notes: selected.notes ?? '',
+    })
+    setShowEdit(true)
+  }
+
+  async function handleEditFloat() {
+    if (!selected || !editForm.gl_account_id) return
+    setSaving(true)
+    try {
+      await api.put(`/finance/petty-cash/floats/${selected.id}`, {
+        name: editForm.name,
+        custodian_employee_id: editForm.custodian_employee_id || undefined,
+        authorized_limit: Number(editForm.authorized_limit),
+        gl_account_id: editForm.gl_account_id,
+        is_active: editForm.is_active,
+        notes: editForm.notes || undefined,
+        currency_code: editForm.currency_code,
+      })
+      setShowEdit(false)
+      addToast({ type: 'success', message: t('fin.petty.floatUpdated') })
+      try {
+        const r = await api.get<Float_[]>('/finance/petty-cash/floats')
+        setFloats(r.data)
+        await loadFloat(selected.id)
+      } catch {
+        /* the save itself worked; the next load shows it */
+      }
+    } catch (err: unknown) {
+      // the dialog stays open with what was typed, and says why (for example that the currency is now locked)
+      addToast({ type: 'error', message: serverMessage(err, t('fin.petty.couldNotSaveFloat')) })
     } finally {
       setSaving(false)
     }
@@ -276,8 +348,11 @@ export default function PettyCashPage() {
     display: 'block' as const,
   }
 
-  const totalBalance = floats.reduce((s, f) => s + Number(f.current_balance), 0)
-  const totalAuthorized = floats.reduce((s, f) => s + Number(f.authorized_limit), 0)
+  // One figure per currency: a USD float is never added to the IQD ones (nothing here is converted).
+  const totals = totalsByCurrency(floats)
+  const totalRows = totals.length
+    ? totals
+    : [{ currency: 'IQD', held: 0, authorized: 0, spentPct: 0 }]
 
   return (
     <div style={{ padding: '24px' }}>
@@ -320,28 +395,47 @@ export default function PettyCashPage() {
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
             {t('fin.petty.totalCashHeld')}
           </p>
-          <AmountDisplay amount={totalBalance} currency="IQD" size="md" colored />
+          <div data-testid="total-held">
+            {totalRows.map((row) => (
+              <div key={row.currency}>
+                <AmountDisplay amount={row.held} currency={row.currency} size="md" colored />
+              </div>
+            ))}
+          </div>
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
             {t('fin.petty.totalAuthorized')}
           </p>
-          <AmountDisplay amount={totalAuthorized} currency="IQD" size="md" />
+          <div data-testid="total-authorized">
+            {totalRows.map((row) => (
+              <div key={row.currency}>
+                <AmountDisplay amount={row.authorized} currency={row.currency} size="md" />
+              </div>
+            ))}
+          </div>
         </Card>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
             {t('fin.petty.overallUtilization')}
           </p>
-          <p
-            style={{
-              fontSize: '20px',
-              fontWeight: 700,
-              color: theme.accent,
-              fontFamily: 'monospace',
-            }}
-          >
-            {totalAuthorized > 0 ? Math.round((1 - totalBalance / totalAuthorized) * 100) : 0}%
-          </p>
+          <div data-testid="total-utilization">
+            {totalRows.map((row) => (
+              <p
+                key={row.currency}
+                style={{
+                  margin: 0,
+                  fontSize: totalRows.length > 1 ? '15px' : '20px',
+                  fontWeight: 700,
+                  color: theme.accent,
+                  fontFamily: 'monospace',
+                }}
+              >
+                {totalRows.length > 1 ? `${row.currency} ` : ''}
+                {row.spentPct}%
+              </p>
+            ))}
+          </div>
           <p style={{ fontSize: '10px', color: theme.textMuted }}>{t('fin.petty.spentOfAuthorized')}</p>
         </Card>
       </div>
@@ -495,6 +589,11 @@ export default function PettyCashPage() {
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {canEdit && (
+                      <Button variant="ghost" size="sm" onClick={openEdit}>
+                        {t('fin.petty.editFloat')}
+                      </Button>
+                    )}
+                    {canEdit && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -556,7 +655,7 @@ export default function PettyCashPage() {
                         fontFamily: 'monospace',
                       }}
                     >
-                      {Number(selected.authorized_limit).toLocaleString()}
+                      {Number(selected.authorized_limit).toLocaleString()} {selected.currency_code}
                     </p>
                   </div>
                   <div>
@@ -896,6 +995,30 @@ export default function PettyCashPage() {
                   }}
                 />
               </div>
+              <div>
+                <label htmlFor="new-float-currency" style={labelStyle}>
+                  {t('fin.petty.currency')}
+                </label>
+                <select
+                  id="new-float-currency"
+                  style={inputStyle}
+                  value={floatForm.currency_code}
+                  onChange={(e) => {
+                    setFloatForm((f) => ({ ...f, currency_code: e.target.value }))
+                  }}
+                >
+                  {FLOAT_CURRENCIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p
+                style={{ gridColumn: '1/-1', fontSize: '10px', color: theme.textMuted, margin: 0 }}
+              >
+                {t('fin.petty.currencyHintEditable')}
+              </p>
             </div>
             <div
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '20px' }}
@@ -918,6 +1041,202 @@ export default function PettyCashPage() {
                 }
               >
                 {saving ? t('fin.petty.creating') : t('fin.petty.createFloat')}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit Float Modal */}
+      {showEdit && selected && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <Card padding="lg" style={{ width: '480px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '20px',
+              }}
+            >
+              <h3 style={{ margin: 0, color: theme.textPrimary, fontSize: '15px' }}>
+                {t('fin.petty.editPettyCashFloat')}
+              </h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowEdit(false)
+                }}
+              >
+                ✕
+              </Button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label htmlFor="edit-float-name" style={labelStyle}>
+                  {t('fin.petty.floatName')}
+                </label>
+                <input
+                  id="edit-float-name"
+                  style={inputStyle}
+                  value={editForm.name}
+                  onChange={(e) => {
+                    setEditForm((f) => ({ ...f, name: e.target.value }))
+                  }}
+                />
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label htmlFor="edit-float-gl" style={labelStyle}>
+                  {t('fin.petty.cashboxGlAccount')}
+                </label>
+                <select
+                  id="edit-float-gl"
+                  style={inputStyle}
+                  value={editForm.gl_account_id}
+                  onChange={(e) => {
+                    setEditForm((f) => ({ ...f, gl_account_id: e.target.value }))
+                  }}
+                >
+                  <option value="">{t('fin.petty.selectCashbox')}</option>
+                  {cashAccounts.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.code} · {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="edit-float-custodian" style={labelStyle}>
+                  {t('fin.petty.custodian')}
+                </label>
+                <select
+                  id="edit-float-custodian"
+                  style={inputStyle}
+                  value={editForm.custodian_employee_id}
+                  onChange={(e) => {
+                    setEditForm((f) => ({ ...f, custodian_employee_id: e.target.value }))
+                  }}
+                >
+                  <option value="">{t('fin.petty.selectEmployee')}</option>
+                  {employees.map((em) => (
+                    <option key={em.id} value={em.id}>
+                      {em.first_name} {em.last_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="edit-float-limit" style={labelStyle}>
+                  {t('fin.petty.authorizedLimit2')}
+                </label>
+                <input
+                  id="edit-float-limit"
+                  type="number"
+                  style={inputStyle}
+                  value={editForm.authorized_limit}
+                  onChange={(e) => {
+                    setEditForm((f) => ({ ...f, authorized_limit: e.target.value }))
+                  }}
+                />
+              </div>
+              <div>
+                <label htmlFor="edit-float-currency" style={labelStyle}>
+                  {t('fin.petty.currency')}
+                </label>
+                <select
+                  id="edit-float-currency"
+                  style={{ ...inputStyle, opacity: selected.has_activity !== false ? 0.7 : 1 }}
+                  // locked once anything is recorded in the current currency; the server refuses it too (409)
+                  disabled={selected.has_activity !== false}
+                  value={editForm.currency_code}
+                  onChange={(e) => {
+                    setEditForm((f) => ({ ...f, currency_code: e.target.value }))
+                  }}
+                >
+                  {(FLOAT_CURRENCIES.includes(selected.currency_code)
+                    ? FLOAT_CURRENCIES
+                    : [selected.currency_code, ...FLOAT_CURRENCIES]
+                  ).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p
+                data-testid="edit-float-currency-hint"
+                style={{ gridColumn: '1/-1', fontSize: '10px', color: theme.textMuted, margin: 0 }}
+              >
+                {selected.has_activity !== false
+                  ? t('fin.petty.currencyLocked', { currency: selected.currency_code })
+                  : t('fin.petty.currencyHintEditable')}
+              </p>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '12px',
+                    color: theme.textSecondary,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={editForm.is_active}
+                    onChange={(e) => {
+                      setEditForm((f) => ({ ...f, is_active: e.target.checked }))
+                    }}
+                  />
+                  {t('fin.petty.floatIsActive')}
+                </label>
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label htmlFor="edit-float-notes" style={labelStyle}>
+                  {t('fin.petty.notes')}
+                </label>
+                <textarea
+                  id="edit-float-notes"
+                  style={{ ...inputStyle, minHeight: '56px', resize: 'vertical' }}
+                  value={editForm.notes}
+                  onChange={(e) => {
+                    setEditForm((f) => ({ ...f, notes: e.target.value }))
+                  }}
+                />
+              </div>
+            </div>
+            <div
+              style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '20px' }}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowEdit(false)
+                }}
+              >
+                {t('fin.petty.cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void handleEditFloat()}
+                disabled={
+                  saving || !editForm.name || !editForm.authorized_limit || !editForm.gl_account_id
+                }
+              >
+                {saving ? t('fin.petty.saving') : t('fin.petty.saveChanges')}
               </Button>
             </div>
           </Card>
