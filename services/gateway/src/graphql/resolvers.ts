@@ -92,6 +92,7 @@ import {
   projectPOCommitments,
 } from '../lib/costControlPurchases.js'
 import { projectCostLedger } from '../lib/projectCostLedger.js'
+import { bookStockIssueCost, stockCostCurrencySql } from '../lib/stockIssueCost.js'
 import { assertLineAccountingChoice } from '../lib/poLineAccounting.js'
 import {
   advanceProblem,
@@ -25794,7 +25795,6 @@ export const resolvers = {
         if (!isAdmin && !hasPosition)
           throw new Error('store_keeper or admin required to confirm this store-out')
       }
-      const totalCost = parseFloat(String(issue.total_cost ?? '0'))
       const client = await pool.connect()
       // Accumulated per source company across the whole issue, then flushed
       // to one interco_stock_transfer (+ lines) and one linked, pending
@@ -26202,15 +26202,10 @@ export const resolvers = {
         )
         // Store-outs with no project (allowed since migration 213) are a
         // plain stock decrement — nothing to post to project cost actuals.
-        if (totalCost > 0 && issue.project_id) {
-          await client.query(
-            `INSERT INTO project_cost_actuals
-               (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
-             VALUES ($1, 'stock_issue', $2, 'materials', $3, 'IQD', NOW()::date)
-             ON CONFLICT (source_id) WHERE source_type = 'stock_issue' AND source_id IS NOT NULL
-             DO UPDATE SET amount = EXCLUDED.amount`,
-            [issue.project_id, args.id, totalCost],
-          )
+        // One cost row per CURRENCY of the items issued (lib/stockIssueCost.ts, playbook #94): this used to be a single row
+        // labelled 'IQD' whatever the items were priced in, so a project's USD Actual missed every USD-priced Store Out.
+        if (issue.project_id) {
+          await bookStockIssueCost(client, String(issue.project_id), args.id)
         }
         // G1 PR 5 — confirming this Store Out is one of the four
         // completion-evaluator triggers, but only for a requisition-
@@ -26490,7 +26485,9 @@ export const resolvers = {
         // Store Out's OWN project_id, so a requisition return reverses exactly
         // that one (see the issue-line branch); a PO return keeps using the
         // PO's project, as before.
-        const returnCostByProject = new Map<string, number>()
+        // Keyed by project, then by the CURRENCY the Store Out booked this stock in (the product's cost currency, the same
+        // rule issueMaterialIssue used: lib/stockIssueCost.ts), so a return of USD-priced stock reduces the USD cost.
+        const returnCostByProject = new Map<string, Map<string, number>>()
         // Direct-delivery cost is in the PO line's own currency, so its offset is too (per currency).
         const directReturnCostByCurrency = new Map<string, number>()
         // Lazily resolved on first direct-delivery line — the per-company
@@ -26725,12 +26722,14 @@ export const resolvers = {
             issue_company_id: string
             sku: string | null
             product_name: string | null
+            product_cost_currency: string
           }>(
             `SELECT pmil.product_id, pmil.qty_issued, pmil.unit_cost, pmil.to_location_id,
                     pmi.status AS issue_status, pmi.po_id AS issue_po_id,
                     pmi.requisition_id AS issue_requisition_id, pmi.project_id AS issue_project_id,
                     pmi.company_id AS issue_company_id,
-                    p.sku, p.name AS product_name
+                    p.sku, p.name AS product_name,
+                    ${stockCostCurrencySql('p')} AS product_cost_currency
              FROM project_material_issue_lines pmil
              JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
              LEFT JOIN products p ON p.id = pmil.product_id
@@ -26795,8 +26794,10 @@ export const resolvers = {
           const totalCost = qty * unitCost
           const offsetProjectId = input.requisitionId ? issueLine.issue_project_id : projectId
           if (offsetProjectId) {
-            const soFar = returnCostByProject.get(offsetProjectId) ?? 0
-            returnCostByProject.set(offsetProjectId, soFar + totalCost)
+            const returnCurrency = issueLine.product_cost_currency
+            const byCurrency = returnCostByProject.get(offsetProjectId) ?? new Map<string, number>()
+            byCurrency.set(returnCurrency, (byCurrency.get(returnCurrency) ?? 0) + totalCost)
+            returnCostByProject.set(offsetProjectId, byCurrency)
           }
 
           let returnMoveId: string
@@ -26952,13 +26953,15 @@ export const resolvers = {
         // than one pooled total) because the two branches can in principle
         // point at different projects if project_id and linked_project_id
         // ever diverge on the same PO.
-        for (const [offsetProjectId, offsetCost] of returnCostByProject) {
-          if (offsetCost <= 0) continue
-          await client.query(
-            `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
-             VALUES ($1,'material_return',$2,'materials',$3,'IQD',NOW()::date)`,
-            [offsetProjectId, returnId, -offsetCost],
-          )
+        for (const [offsetProjectId, offsetByCurrency] of returnCostByProject) {
+          for (const [offsetCurrency, offsetCost] of offsetByCurrency) {
+            if (offsetCost <= 0) continue
+            await client.query(
+              `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
+               VALUES ($1,'material_return',$2,'materials',$3,$4,NOW()::date)`,
+              [offsetProjectId, returnId, -offsetCost, offsetCurrency],
+            )
+          }
         }
         if (linkedProjectId) {
           for (const [currency, directReturnCost] of directReturnCostByCurrency) {
