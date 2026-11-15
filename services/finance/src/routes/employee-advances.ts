@@ -2,10 +2,30 @@ import { Router, type Request, type Response } from 'express'
 import { getAuth } from '@fnc-erp/auth'
 import { z } from 'zod'
 import { query, withTransaction, nextDocumentNumber, type PoolClient, firstRowOrThrow, asyncHandler } from '@fnc-erp/db'
-import { sendOk, sendError } from '../lib/errors.js'
+import { sendOk, sendError, requireParam } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 import { SETTLEABLE_PO_STATUSES, PROJECT_COST_ALREADY_BOOKED_SQL } from '../lib/advancePOLines.js'
+import {
+  ACCOUNT_PROBLEM_SQL,
+  ACCOUNTING_JOINS_SQL,
+  COST_CENTER_PROBLEM_SQL,
+  blockedLinesMessage,
+  loadPendingPOLines,
+  type AccountProblem,
+  type CostCenterProblem,
+} from '../lib/poLineAccounting.js'
+import {
+  accountChoice,
+  advanceAccountRefusal,
+  costCenterChoice,
+  manualLinesRefusal,
+  postedLinesRefusal,
+  type AccountRow,
+  type CostCenterRow,
+  type RunSql,
+  type SettlementLineInput,
+} from '../lib/settlementLineAccounts.js'
 
 export const employeeAdvancesRouter: Router = Router()
 
@@ -1238,30 +1258,127 @@ employeeAdvancesRouter.get(
         sendError(res, 404, 'NOT_FOUND', 'Advance not found')
         return
       }
-      const r = await query(
-        `SELECT pl.id, pl.description, pl.qty_ordered, pl.unit_price, pl.total_price, pl.currency_code,
-                pl.account_id AS gl_account_id, pl.cost_center_id,
-                coa.code AS account_code, coa.name AS account_name,
-                cc.code AS cost_center_code, cc.name AS cost_center_name,
-                po.id AS po_id, po.po_number, po.project_id,
-                p.code AS project_code, p.name AS project_name
-         FROM po_lines pl
-         JOIN purchase_orders po ON po.id = pl.po_id
-         -- A line is paid from the advance of ITS OWN currency (po_funding_advances, migration 324): a PO with IQD and USD
-         -- lines has an IQD advance and a USD one, and each only ever sees its own currency's lines.
-         JOIN po_funding_advances pfa ON pfa.po_id = po.id AND pfa.company_id = po.company_id
-                                     AND pfa.advance_id = $2 AND pfa.currency_code = pl.currency_code
-         LEFT JOIN chart_of_accounts coa ON coa.id = pl.account_id
-         LEFT JOIN cost_centers cc ON cc.id = pl.cost_center_id
-         LEFT JOIN projects p ON p.id = po.project_id
-         WHERE po.company_id=$1 AND po.status = ANY($3::text[])
-           AND pl.advance_settlement_id IS NULL
-         ORDER BY po.po_number, pl.line_number`,
-        [getAuth(req).companyId, req.params['id'], [...SETTLEABLE_PO_STATUSES]],
-      )
-      sendOk(res, r.rows)
+      // Each line carries `account_problem` / `cost_center_problem` (null when it can be posted), the same rule the
+      // settlement below refuses on, so the page can show what is wrong before anyone ticks the line.
+      sendOk(res, await loadPendingPOLines(getAuth(req).companyId, requireParam(req, 'id')))
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load pending PO line items', err)
+    }
+  }),
+)
+
+// Change the GL account and cost center of a line that is waiting to be settled against this advance.
+//
+// Finance classifies a PO's lines while it is at payment pending, but the page offered header accounts such as `1000 Assets`
+// (the database refuses to post to them) and, once the PO was completed, there was no way left to change the account: the
+// first settlement failed and the line was stuck (playbook #91). Same gate as the PO page's own account picker
+// (finance.ap.approve), so nobody gains a permission; it only reaches lines that are already in this advance's queue (so a
+// settled line, a PO still waiting for payment and another company's line are all refused), validates the replacement the
+// same way the PO page's mutation does, and records the old and new values in the audit log in the same transaction.
+const lineAccountingSchema = z.object({
+  gl_account_id: z.string().uuid(),
+  cost_center_id: z.string().uuid(),
+})
+
+employeeAdvancesRouter.put(
+  '/:id([0-9a-fA-F-]{36})/po-lines/:lineId([0-9a-fA-F-]{36})/accounting',
+  requirePermission('finance.ap.approve', 'approve'),
+  asyncHandler(async (req, res) => {
+    const parsed = lineAccountingSchema.safeParse(req.body)
+    if (!parsed.success) {
+      sendError(res, 400, 'VALIDATION', 'Choose a GL account and a cost center for the line')
+      return
+    }
+    const d = parsed.data
+    const auth = getAuth(req)
+    const advanceId = requireParam(req, 'id')
+    const lineId = requireParam(req, 'lineId')
+    try {
+      type Outcome =
+        | { kind: 'refused'; status: number; code: string; message: string }
+        | { kind: 'ok' }
+      const outcome = await withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client): Promise<Outcome> => {
+          // The line must be in THIS advance's queue, and is locked so a settlement that claims it at the same moment
+          // either goes first (this is then refused) or waits for this to finish.
+          const found = await client.query<{
+            id: string
+            account_id: string | null
+            cost_center_id: string | null
+          }>(
+            `SELECT pl.id, pl.account_id, pl.cost_center_id
+               FROM po_lines pl
+               JOIN purchase_orders po ON po.id = pl.po_id
+               JOIN employee_advances adv ON adv.id = $2 AND adv.company_id = po.company_id
+               JOIN po_funding_advances pfa ON pfa.po_id = po.id AND pfa.company_id = po.company_id
+                                           AND pfa.advance_id = adv.id AND pfa.currency_code = pl.currency_code
+              WHERE pl.id = $1 AND po.company_id = $3 AND po.status = ANY($4::text[])
+                AND pl.advance_settlement_id IS NULL
+              FOR UPDATE OF pl`,
+            [lineId, advanceId, auth.companyId, [...SETTLEABLE_PO_STATUSES]],
+          )
+          const before = found.rows[0]
+          if (!before)
+            return {
+              kind: 'refused',
+              status: 404,
+              code: 'LINE_NOT_PENDING',
+              message:
+                'This line is not waiting to be settled against this advance (it may already be settled)',
+            }
+
+          // The shared rules (lib/settlementLineAccounts.ts): this company's, postable and active; cost center this company's
+          // and active. The manual settlement form judges its lines with the very same functions.
+          const acct = await client.query<AccountRow>(
+            `SELECT code, name, is_postable, is_active FROM chart_of_accounts WHERE id = $1 AND company_id = $2`,
+            [d.gl_account_id, auth.companyId],
+          )
+          const accountRefusal = accountChoice(acct.rows[0])
+          if (accountRefusal) return { kind: 'refused', ...accountRefusal }
+
+          const cc = await client.query<CostCenterRow>(
+            `SELECT code, name, is_active FROM cost_centers WHERE id = $1 AND company_id = $2`,
+            [d.cost_center_id, auth.companyId],
+          )
+          const costCenterRefusal = costCenterChoice(cc.rows[0])
+          if (costCenterRefusal) return { kind: 'refused', ...costCenterRefusal }
+
+          await client.query(
+            `UPDATE po_lines SET account_id = $1, cost_center_id = $2 WHERE id = $3`,
+            [d.gl_account_id, d.cost_center_id, lineId],
+          )
+          // Plain SQL inside the transaction, not logAudit: logAudit swallows its own errors (playbook #48).
+          await client.query(
+            `INSERT INTO audit_log (user_id, company_id, action, table_name, record_id, old_values, new_values)
+             VALUES ($1,$2,'po_line_accounting_changed','po_lines',$3,$4::jsonb,$5::jsonb)`,
+            [
+              auth.userId,
+              auth.companyId,
+              lineId,
+              JSON.stringify({
+                account_id: before.account_id,
+                cost_center_id: before.cost_center_id,
+              }),
+              JSON.stringify({
+                account_id: d.gl_account_id,
+                cost_center_id: d.cost_center_id,
+                advance_id: advanceId,
+              }),
+            ],
+          )
+          return { kind: 'ok' }
+        },
+      )
+      if (outcome.kind === 'refused') {
+        sendError(res, outcome.status, outcome.code, outcome.message)
+        return
+      }
+      // Read AFTER the commit (a read inside the callback would use another connection and see the old row, #27).
+      const [row] = await loadPendingPOLines(auth.companyId, advanceId, lineId)
+      sendOk(res, row ?? null)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to change the line account', err)
     }
   }),
 )
@@ -1531,11 +1648,14 @@ async function createSettlementFromPOLines(req: Request, res: Response): Promise
         // journal_lines INSERT and crash on its FK constraint instead.
         const linesRes = await client.query(
           `SELECT pl.id, pl.description, pl.total_price, pl.account_id AS gl_account_id,
-                  pl.cost_center_id, po.id AS po_id, po.project_id,
+                  pl.cost_center_id, po.id AS po_id, po.po_number, pl.line_number, po.project_id,
+                  coa.code AS account_code, coa.name AS account_name,
+                  ${ACCOUNT_PROBLEM_SQL} AS account_problem, ${COST_CENTER_PROBLEM_SQL} AS cost_center_problem,
                   aa.id AS project_analytic_account_id,
                   ${PROJECT_COST_ALREADY_BOOKED_SQL} AS project_cost_booked
            FROM po_lines pl
            JOIN purchase_orders po ON po.id = pl.po_id
+           ${ACCOUNTING_JOINS_SQL}
            -- same rule as the queue above: only lines whose own currency has this advance linked (migration 324), so the
            -- total below is in the advance's currency by construction and nothing is booked in the wrong one
            JOIN po_funding_advances pfa ON pfa.po_id = po.id AND pfa.company_id = po.company_id
@@ -1549,6 +1669,29 @@ async function createSettlementFromPOLines(req: Request, res: Response): Promise
         if (linesRes.rows.length !== d.po_line_ids.length) {
           return { error: 'INELIGIBLE_LINES' as const }
         }
+        // Say so before anything is written. A header account (for example 1000 Assets) used to reach the journal insert
+        // and die in the database trigger as a bare "Failed to create settlement" (playbook #91); a line with no account or
+        // cost center died on a NOT NULL. Every offending line is named, so Finance fixes them in one go.
+        const blocked = blockedLinesMessage(
+          linesRes.rows as unknown as {
+            po_number: string
+            line_number: number
+            description: string | null
+            account_code: string | null
+            account_name: string | null
+            account_problem: AccountProblem
+            cost_center_problem: CostCenterProblem
+          }[],
+        )
+        if (blocked) return { error: 'LINES_NEED_ACCOUNTING' as const, detail: blocked }
+        // The credit side is the advance's own account: the trigger refuses a header account there too.
+        const advAcct = await client.query<{ code: string; name: string; is_postable: boolean }>(
+          `SELECT code, name, is_postable FROM chart_of_accounts WHERE id = $1 AND company_id = $2`,
+          [advance['advance_account_id'], getAuth(req).companyId],
+        )
+        const advRefusal = advanceAccountRefusal(advAcct.rows[0])
+        if (advRefusal)
+          return { error: 'ADVANCE_ACCOUNT_NOT_POSTABLE' as const, detail: advRefusal.message }
         for (const line of linesRes.rows as Record<string, unknown>[]) {
           // Only a line that will carry the project tag needs the project to have an analytic account.
           if (
@@ -1694,9 +1837,13 @@ async function createSettlementFromPOLines(req: Request, res: Response): Promise
         OVER_SETTLEMENT: 'Selected total exceeds the advance’s outstanding balance',
         PROJECT_MISSING_ANALYTIC_ACCOUNT:
           'A project-tagged PO line references a project with no analytic account configured — set one before this line can settle',
+        // these two carry their own sentence (they name the lines / the account)
+        LINES_NEED_ACCOUNTING: 'Some selected lines cannot be settled yet',
+        ADVANCE_ACCOUNT_NOT_POSTABLE: "This advance's own account cannot be posted to",
       }
       const statusCode = result.error === 'INVALID_STATUS' ? 409 : 422
-      sendError(res, statusCode, result.error, messages[result.error])
+      const message = 'detail' in result ? result.detail : messages[result.error]
+      sendError(res, statusCode, result.error, message)
       return
     }
     const settlement = result.settlement as Record<string, unknown>
@@ -1741,6 +1888,19 @@ employeeAdvancesRouter.post(
       const advance = adv.rows[0] as Record<string, unknown>
       if (!['approved', 'partially_settled'].includes(advance['status'] as string)) {
         sendError(res, 409, 'INVALID_STATUS', 'Advance must be approved before it can be settled')
+        return
+      }
+
+      // Judge every line's account and cost center BEFORE a settlement number is taken (a refusal after it would burn one):
+      // the dropdown of the form listed the whole chart, header accounts included, and approving a settlement on one died
+      // in the database trigger (playbook #91). Another company's account or cost center is refused here too.
+      const refusal = await manualLinesRefusal(
+        (sql, params) => query(sql, params),
+        getAuth(req).companyId,
+        d.lines,
+      )
+      if (refusal) {
+        sendError(res, refusal.status, refusal.code, refusal.message)
         return
       }
 
@@ -2209,6 +2369,23 @@ employeeAdvancesRouter.post(
             }
           }
 
+          // The database refuses to post to a header account (migration 237). Say which line and why, instead of the bare
+          // 500 an approval on a header account used to end in (playbook #91). Only what the database would refuse is judged
+          // here: a draft made before these rules existed may hold an account that has been deactivated since.
+          const run: RunSql = (sql, params) => client.query(sql, params)
+          const linesRefusal = await postedLinesRefusal(
+            run,
+            getAuth(req).companyId,
+            lines.rows as unknown as SettlementLineInput[],
+          )
+          if (linesRefusal) return { refusal: linesRefusal }
+          const advAcct = await client.query<{ code: string; name: string; is_postable: boolean }>(
+            `SELECT code, name, is_postable FROM chart_of_accounts WHERE id = $1 AND company_id = $2`,
+            [s['advance_account_id'], getAuth(req).companyId],
+          )
+          const advanceRefusal = advanceAccountRefusal(advAcct.rows[0])
+          if (advanceRefusal) return { refusal: advanceRefusal }
+
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by)
              VALUES ($1, CURRENT_DATE, $2, $3, 'draft', 'advance_settlement', $4, $5)
@@ -2278,6 +2455,10 @@ employeeAdvancesRouter.post(
           return { settlement: updatedSettlement.rows[0] }
         },
       )
+      if ('refusal' in result) {
+        sendError(res, result.refusal.status, result.refusal.code, result.refusal.message)
+        return
+      }
       if ('error' in result) {
         const messages = {
           INVALID_STATUS: 'Settlement is not in submitted status',

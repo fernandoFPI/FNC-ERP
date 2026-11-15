@@ -1,6 +1,6 @@
 import i18n, { enumLabel, tlh } from '../../../i18n'
 import { useTranslation } from 'react-i18next'
-import { useState, useEffect, useCallback } from 'react'
+import { Fragment, useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -8,6 +8,7 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { api } from '../../../lib/axios'
 import { usePermission } from '../../../hooks/usePermission'
@@ -94,6 +95,7 @@ interface CostCenter {
   id: string
   code: string
   name: string
+  is_active?: boolean
 }
 interface Project {
   id: string
@@ -112,13 +114,28 @@ interface PendingPOLine {
   total_price: number
   po_id: string
   po_number: string
+  gl_account_id?: string | null
+  cost_center_id?: string | null
   account_code: string | null
   account_name: string | null
+  // Why the line cannot be posted yet, from the server (null = it can). A header account such as 1000 Assets makes the
+  // database refuse the settlement, so those lines are held back here and can be changed in place (playbook #91).
+  account_problem?: 'missing' | 'not_found' | 'not_postable' | null
   cost_center_code: string | null
   cost_center_name: string | null
+  cost_center_problem?: 'missing' | 'not_found' | null
   project_code: string | null
   project_name: string | null
 }
+
+// The server's own sentence for a refusal, else a fallback: the shared client shows nothing on error, so a handler that
+// does not toast leaves a refused action looking like a dead button (the settlement used to fail this way).
+const serverMessage = (err: unknown, fallback: string): string => {
+  const apiError = err as { response?: { data?: { error?: { message?: string } } } }
+  return apiError.response?.data?.error?.message ?? fallback
+}
+
+const lineHasProblem = (l: PendingPOLine): boolean => !!l.account_problem || !!l.cost_center_problem
 
 const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | 'warning'> = {
   draft: 'neutral',
@@ -179,6 +196,10 @@ export default function EmployeeAdvanceDetail() {
   const canApprove = can('finance.advances.approve', 'approve')
   // The cashbox handler: pays an approved advance out of a cashbox of their choice.
   const canIssue = can('finance.petty_cash.edit', 'edit')
+  // Changing the GL account / cost center of a pending line: the same gate as the PO page's own account picker.
+  const canClassify = can('finance.ap.approve', 'approve')
+  // The postable-only account list serves both the line editor (canClassify) and the manual settlement form (canEdit).
+  const needsPostableAccounts = canClassify || canEdit
   const addToast = useToastStore((s) => s.addToast)
   const [showIssue, setShowIssue] = useState(false)
   const [showRevise, setShowRevise] = useState(false)
@@ -212,6 +233,14 @@ export default function EmployeeAdvanceDetail() {
   const [pendingPOLines, setPendingPOLines] = useState<PendingPOLine[]>([])
   const [selectedPOLineIds, setSelectedPOLineIds] = useState<Set<string>>(new Set())
   const [bundling, setBundling] = useState(false)
+  // Only accounts a settlement can post to (active and not a header account), for the line editor.
+  const [postableAccounts, setPostableAccounts] = useState<GLAccount[]>([])
+  const [editingLine, setEditingLine] = useState<{
+    lineId: string
+    accountId: string
+    costCenterId: string
+  } | null>(null)
+  const [savingAccounting, setSavingAccounting] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -228,6 +257,13 @@ export default function EmployeeAdvanceDetail() {
         api.get<LedgerEntry[]>(`/finance/advances/${id}/ledger`),
         api.get<PendingPOLine[]>(`/finance/advances/${id}/pending-po-lines`),
       ])
+      // The accounts an editor may offer (postable and active), fetched only for someone who can use it.
+      if (needsPostableAccounts) {
+        const postableRes = await api.get<GLAccount[]>(
+          '/finance/accounts?is_postable=true&is_active=true',
+        )
+        setPostableAccounts(postableRes.data)
+      }
       setAdvance(advRes.data)
       setGlAccounts(glRes.data)
       setCostCenters(ccRes.data)
@@ -236,12 +272,13 @@ export default function EmployeeAdvanceDetail() {
       setLedger(ledgerRes.data)
       setPendingPOLines(poLinesRes.data)
       setSelectedPOLineIds(new Set())
+      setEditingLine(null)
     } catch {
       /* handled */
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [id, needsPostableAccounts])
 
   useEffect(() => {
     void load()
@@ -270,8 +307,10 @@ export default function EmployeeAdvanceDetail() {
     try {
       await api.post(`/finance/advances/settlements/${settlementId}/${action}`, body ?? {})
       void load()
-    } catch {
-      /* handled */
+    } catch (err: unknown) {
+      // Submit, approve and reject used to swallow a refusal (an approval onto a header account came back as a bare 500
+      // that nobody saw): show the server's reason.
+      addToast({ type: 'error', message: serverMessage(err, t('fin.advRequest.actionFailed')) })
     } finally {
       setActing(false)
     }
@@ -377,14 +416,22 @@ export default function EmployeeAdvanceDetail() {
       setLines([emptyLine()])
       setSettlementDescription('')
       void load()
-    } catch {
-      /* handled */
+    } catch (err: unknown) {
+      // the form stays open with what was typed, and says why
+      addToast({
+        type: 'error',
+        message: serverMessage(err, t('fin.advDetail.couldNotCreateSettlement')),
+      })
     } finally {
       setSavingSettlement(false)
     }
   }
 
   function togglePOLine(lineId: string) {
+    // A line the server says cannot be posted (a header account, no account, no cost center) cannot be ticked: it would only
+    // be refused. Fix it with "Change" first.
+    const line = pendingPOLines.find((l) => l.id === lineId)
+    if (line && lineHasProblem(line)) return
     setSelectedPOLineIds((prev) => {
       const next = new Set(prev)
       if (next.has(lineId)) next.delete(lineId)
@@ -402,10 +449,51 @@ export default function EmployeeAdvanceDetail() {
         po_line_ids: Array.from(selectedPOLineIds),
       })
       void load()
-    } catch {
-      /* handled */
+    } catch (err: unknown) {
+      // This used to be swallowed: a refused settlement looked like a dead button and the reason was only in the browser's
+      // Network tab. The selection stays so nothing has to be ticked again.
+      addToast({
+        type: 'error',
+        message: serverMessage(err, t('fin.advDetail.couldNotCreateSettlement')),
+      })
     } finally {
       setBundling(false)
+    }
+  }
+
+  function openAccountingEditor(line: PendingPOLine) {
+    setEditingLine({
+      lineId: line.id,
+      // a header or missing account is not offered back as the starting choice: the person has to pick a real one
+      accountId: line.account_problem ? '' : (line.gl_account_id ?? ''),
+      costCenterId: line.cost_center_problem ? '' : (line.cost_center_id ?? ''),
+    })
+  }
+
+  async function handleSaveAccounting() {
+    if (!id || !editingLine?.accountId || !editingLine.costCenterId) return
+    setSavingAccounting(true)
+    try {
+      const res = await api.put<PendingPOLine | null>(
+        `/finance/advances/${id}/po-lines/${editingLine.lineId}/accounting`,
+        { gl_account_id: editingLine.accountId, cost_center_id: editingLine.costCenterId },
+      )
+      const fresh = res.data
+      if (fresh) {
+        setPendingPOLines((prev) => prev.map((l) => (l.id === fresh.id ? { ...l, ...fresh } : l)))
+        setEditingLine(null)
+      } else {
+        void load()
+      }
+      addToast({ type: 'success', message: t('fin.advDetail.accountingSaved') })
+    } catch (err: unknown) {
+      // the editor stays open with what was chosen, and says why
+      addToast({
+        type: 'error',
+        message: serverMessage(err, t('fin.advDetail.accountingCouldNotSave')),
+      })
+    } finally {
+      setSavingAccounting(false)
     }
   }
 
@@ -499,7 +587,8 @@ export default function EmployeeAdvanceDetail() {
           }}
         >
           <option value="">{t('fin.advDetail.account')}</option>
-          {glAccounts.map((g) => (
+          {/* only accounts a journal can post to: the whole chart used to be listed here, header accounts included */}
+          {postableAccounts.map((g) => (
             <option key={g.id} value={g.id}>
               {g.code} · {g.name}
             </option>
@@ -544,11 +633,13 @@ export default function EmployeeAdvanceDetail() {
           }}
         >
           <option value="">{t('fin.advDetail.required')}</option>
-          {costCenters.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.code} · {c.name}
-            </option>
-          ))}
+          {costCenters
+            .filter((c) => c.is_active !== false)
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.code} · {c.name}
+              </option>
+            ))}
         </select>
       ),
     },
@@ -904,6 +995,19 @@ export default function EmployeeAdvanceDetail() {
                   {t('fin.advDetail.completedPosFundedByThisAdvance')}
                 </span>
               </div>
+              {pendingPOLines.some(lineHasProblem) && (
+                <div
+                  role="note"
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '12px',
+                    color: theme.danger,
+                    borderBottom: `1px solid ${theme.border}`,
+                  }}
+                >
+                  {t('fin.advDetail.linesNeedAccounting')}
+                </div>
+              )}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
@@ -925,48 +1029,217 @@ export default function EmployeeAdvanceDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingPOLines.map((l) => (
-                    <tr
-                      key={l.id}
-                      onClick={() => {
-                        togglePOLine(l.id)
-                      }}
-                      style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer' }}
-                    >
-                      <td style={{ padding: '8px 12px' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedPOLineIds.has(l.id)}
-                          onChange={() => {
+                  {pendingPOLines.map((l) => {
+                    const blocked = lineHasProblem(l)
+                    const editing = editingLine?.lineId === l.id ? editingLine : null
+                    const problemText = (kind: 'account' | 'cost_center'): string | null => {
+                      const p = kind === 'account' ? l.account_problem : l.cost_center_problem
+                      if (!p) return null
+                      if (kind === 'account')
+                        return p === 'missing'
+                          ? t('fin.advDetail.accountProblemMissing')
+                          : p === 'not_postable'
+                            ? t('fin.advDetail.accountProblemNotPostable')
+                            : t('fin.advDetail.accountProblemNotFound')
+                      return p === 'missing'
+                        ? t('fin.advDetail.costCenterProblemMissing')
+                        : t('fin.advDetail.costCenterProblemNotFound')
+                    }
+                    return (
+                      <Fragment key={l.id}>
+                        <tr
+                          data-line-id={l.id}
+                          onClick={() => {
                             togglePOLine(l.id)
                           }}
-                          onClick={(e) => {
-                            e.stopPropagation()
+                          style={{
+                            borderBottom: editing ? 'none' : `1px solid ${theme.border}`,
+                            cursor: blocked ? 'default' : 'pointer',
                           }}
-                        />
-                      </td>
-                      <td style={{ padding: '8px 12px', color: theme.accent, fontFamily: 'monospace', fontSize: '11px' }}>
-                        {l.po_number}
-                      </td>
-                      <td style={{ padding: '8px 12px', color: theme.textSecondary, fontSize: '11px' }}>
-                        {l.project_code ? (
-                          `${l.project_code} · ${l.project_name ?? ''}`
-                        ) : (
-                          <span style={{ fontStyle: 'italic' }}>{t('fin.advDetail.general')}</span>
+                        >
+                          <td style={{ padding: '8px 12px' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedPOLineIds.has(l.id)}
+                              disabled={blocked}
+                              title={blocked ? t('fin.advDetail.lineNeedsFixing') : undefined}
+                              onChange={() => {
+                                togglePOLine(l.id)
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                              }}
+                            />
+                          </td>
+                          <td
+                            style={{
+                              padding: '8px 12px',
+                              color: theme.accent,
+                              fontFamily: 'monospace',
+                              fontSize: '11px',
+                            }}
+                          >
+                            {l.po_number}
+                          </td>
+                          <td
+                            style={{
+                              padding: '8px 12px',
+                              color: theme.textSecondary,
+                              fontSize: '11px',
+                            }}
+                          >
+                            {l.project_code ? (
+                              `${l.project_code} · ${l.project_name ?? ''}`
+                            ) : (
+                              <span style={{ fontStyle: 'italic' }}>
+                                {t('fin.advDetail.general')}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '8px 12px', color: theme.textSecondary }}>
+                            {l.description}
+                          </td>
+                          <td
+                            style={{
+                              padding: '8px 12px',
+                              color: theme.textSecondary,
+                              fontSize: '11px',
+                            }}
+                          >
+                            {l.account_code ? `${l.account_code} · ${l.account_name ?? ''}` : '—'}
+                            {problemText('account') && (
+                              <div
+                                data-testid="account-problem"
+                                style={{ color: theme.danger, fontWeight: 600 }}
+                              >
+                                {problemText('account')}
+                              </div>
+                            )}
+                            {canClassify && (
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                }}
+                              >
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    openAccountingEditor(l)
+                                  }}
+                                >
+                                  {t('fin.advDetail.accountingChange')}
+                                </Button>
+                              </span>
+                            )}
+                          </td>
+                          <td
+                            style={{
+                              padding: '8px 12px',
+                              color: theme.textSecondary,
+                              fontSize: '11px',
+                            }}
+                          >
+                            {l.cost_center_code
+                              ? `${l.cost_center_code} · ${l.cost_center_name ?? ''}`
+                              : '—'}
+                            {problemText('cost_center') && (
+                              <div
+                                data-testid="cost-center-problem"
+                                style={{ color: theme.danger, fontWeight: 600 }}
+                              >
+                                {problemText('cost_center')}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '8px 12px', textAlign: 'end' }}>
+                            <AmountDisplay
+                              amount={Number(l.total_price)}
+                              currency={advance.currency_code}
+                              size="sm"
+                            />
+                          </td>
+                        </tr>
+                        {editing && (
+                          <tr
+                            style={{
+                              borderBottom: `1px solid ${theme.border}`,
+                              background: theme.bgSurface,
+                            }}
+                          >
+                            <td colSpan={7} style={{ padding: '10px 12px' }}>
+                              <div
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                                  gap: '10px',
+                                  alignItems: 'end',
+                                }}
+                              >
+                                <SearchableSelect
+                                  label={t('fin.advDetail.glAccount')}
+                                  required
+                                  value={editing.accountId}
+                                  onChange={(v) => {
+                                    setEditingLine((prev) =>
+                                      prev ? { ...prev, accountId: v } : prev,
+                                    )
+                                  }}
+                                  options={postableAccounts.map((a) => ({
+                                    value: a.id,
+                                    label: `${a.code} — ${a.name}`,
+                                  }))}
+                                  placeholder={t('fin.advDetail.searchPostableAccounts')}
+                                  minDropdownWidth={320}
+                                />
+                                <SearchableSelect
+                                  label={t('fin.advDetail.costCenter')}
+                                  required
+                                  value={editing.costCenterId}
+                                  onChange={(v) => {
+                                    setEditingLine((prev) =>
+                                      prev ? { ...prev, costCenterId: v } : prev,
+                                    )
+                                  }}
+                                  options={costCenters
+                                    .filter((c) => c.is_active !== false)
+                                    .map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))}
+                                  placeholder={t('fin.advDetail.searchCostCenters')}
+                                  minDropdownWidth={320}
+                                />
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => void handleSaveAccounting()}
+                                    disabled={
+                                      savingAccounting ||
+                                      !editing.accountId ||
+                                      !editing.costCenterId
+                                    }
+                                  >
+                                    {savingAccounting
+                                      ? t('fin.advDetail.accountingSaving')
+                                      : t('fin.advDetail.accountingSave')}
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingLine(null)
+                                    }}
+                                    disabled={savingAccounting}
+                                  >
+                                    {t('fin.advDetail.cancel')}
+                                  </Button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td style={{ padding: '8px 12px', color: theme.textSecondary }}>{l.description}</td>
-                      <td style={{ padding: '8px 12px', color: theme.textSecondary, fontSize: '11px' }}>
-                        {l.account_code ? `${l.account_code} · ${l.account_name ?? ''}` : '—'}
-                      </td>
-                      <td style={{ padding: '8px 12px', color: theme.textSecondary, fontSize: '11px' }}>
-                        {l.cost_center_code ? `${l.cost_center_code} · ${l.cost_center_name ?? ''}` : '—'}
-                      </td>
-                      <td style={{ padding: '8px 12px', textAlign: 'end' }}>
-                        <AmountDisplay amount={Number(l.total_price)} currency={advance.currency_code} size="sm" />
-                      </td>
-                    </tr>
-                  ))}
+                      </Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
               <div
