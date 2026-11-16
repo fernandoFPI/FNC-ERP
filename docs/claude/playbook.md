@@ -2441,3 +2441,80 @@ Don't re-derive, check these first.
     project, conservation, the project header, cancel, return per currency, idempotent booking, the index); every safeguard
     mutation-checked. The ten older gateway files that touch Store Out cost rows pass unchanged (their products have no
     currency, which keeps IQD). Apply migration 325 to `fnc_erp_dev` AND `fnc_erp_test` (#11). Related to #65, #43, #67, #74, #83, #92.
+
+95. **One project, three screens, three different totals, and none of them labelled with what it counts.** NY-PRJ-2026-0032
+    (Mr.Rizgar's House): the Overview's Purchase Order Summary said 8,916,887.30 IQD and 10,269.69 USD, the analytic account's
+    cost ledger 10,131,604.55 IQD and 10,359.00 USD, and the SAME analytic page's top cards "Total Lines 18" and 1,210,250 IQD.
+    "Two different numbers on the analytic account and the overview." Nothing was wrong in the data; each screen counts a different
+    thing and said so nowhere. (1) The PO Summary is the value ORDERED on the project's POs (`po_lines.total_price`, per line
+    currency). (2) The cost ledger, the project header's Actual and the Cost Control Actual are what has been BOOKED
+    (`v_project_cost_by_currency`: jobsite deliveries, Store Outs, returns, posted journals). (3) The analytic account's old top
+    cards counted only the journal lines TAGGED with the account, which is the expense claims and nothing else, because settlement
+    journals are untagged on purpose (#84b); I had added the ledger card below them for #92 and left the old cards above it, so one
+    page carried two contradicting numbers.
+    The reconciliation, rebuilt from the database on 2026-11-16, matches to the cent and is the way to explain any such gap (per
+    currency, never across): USD ordered 10,269.69 - 3,330.65 delivered to INVENTORY (not a project cost until a Store Out issues
+    it, #44/#65) = 6,939.04 ordered for the jobsite; + 42.90 (a price edited after delivery, the cost was booked at the old price)
+    = 6,981.94 jobsite deliveries booked; + 3,377.06 Store Outs net of returns (stock from the central warehouse, never on these POs)
+    = 10,359.00. IQD ordered 8,916,887.30 - 79,950.00 inventory-bound = 8,836,937.30; - 4,743.25 price drift = 8,832,194.05; + 860.50
+    (two delivery rows that point at no PO line) = 8,833,054.55; + 88,300.00 Store Outs net; + 1,210,250.00 expense claims posted
+    that morning = 10,131,604.55. The price drift and the two orphan rows are the only real errors in it (fix 3, still waiting for the
+    user to read the list); the rest are different questions.
+    Fix: the analytic account page of a PROJECT shows `ProjectCostSummaryCards` instead of the tagged-journal cards: one card per
+    currency, the project cost as the headline and its kinds (jobsite delivery, Store Out, return, combined journal...) under it,
+    from the same ledger the header reads. The kinds come from the gateway (`projectCostLedger.byKind`, summed in SQL over the same
+    view, grouped by currency and kind) and NOT from the listed entries, which are cut at 500; a test proves they add up to each
+    currency's total even when the list is cut. Any other analytic account keeps its journal cards unchanged. The journal table of a
+    project account is headed "Journal lines tagged to this account" with one line saying the full cost is in the ledger above. The PO
+    Summary's money column is headed "Ordered" (was "Amount") with a note under the table: value ordered, goods delivered to inventory
+    are not a project cost until issued, the project cost ledger shows what is booked. The kind names live in one place
+    (`lib/projectCostKinds.ts`, with a fixed display order) and the ledger list uses it too, so a combined journal reads "Combined
+    journal entry" there as well instead of the raw word `combined`.
+    How to spot the class: two screens of one project with different totals, or one page with two numbers for what looks like the same
+    thing. Ask what each counts, then rebuild the reconciliation per currency before changing a figure; the fix is almost always a
+    label and the sentence that says what the number leaves out, not new arithmetic. Related to #41 (a number shown in two places
+    with two rules), #83 and #92.
+    Found on the way, NOT changed: the 18 expense-claim cost rows of this project exist TWICE in `project_cost_actuals`: 18 live rows
+    with `source_type 'combined'` behind the posted journal COMB-MWIV5D1D, and 18 `source_type 'expense_claim'` rows (same 18 amounts,
+    1,210,250 IQD) whose `journal_line_id` points at journal lines that no longer exist (the posting replaced the claims' own
+    journal). The view counts a journal-backed row only while its journal is posted, so the orphans are invisible to the ledger, the
+    header and every figure on this page; a reader of the RAW table would count 1,210,250 twice (`services/projects/src/routes/projects.ts`
+    lists `SELECT * FROM project_cost_actuals`; the older `v_project_profitability`, migration 019, joins the raw table and was not
+    checked). Not known yet: whether every combined posting leaves such orphans, or only this one.
+    Tests: `services/gateway/tests/project-open-po-rule.test.ts` (real Postgres through the real ApolloServer: the kinds per currency, the
+    kinds adding up when the list is cut, a cost with no source kept as its own kind, an unposted journal absent until posted, another
+    company's id giving nothing), `apps/web` `components/finance/__tests__/ProjectCostSummaryCards.test.tsx`,
+    `lib/__tests__/projectCostKinds.test.ts`, `pages/finance/analytic-accounts/__tests__/AnalyticAccountDetail.test.tsx` (a project account
+    has the cost cards and not the tagged totals, a plain account keeps them), `pages/projects/detail/__tests__/projectDetailPoWiring.test.ts`
+    (the column and the note); the safeguards were each mutation-checked. Not verified in a browser.
+
+96. **A product has ONE cost and ONE currency, so a price typed in the other currency replaces both, and a label fix needs the
+    number fixed with it.** Seven Nishtimani Factory products on NY-PRJ-2026-0032's Store Outs were tagged IQD with USD-sized costs, and
+    Store Out cost is booked in the product's cost currency (#94), so the project's USD Actual stayed low. Two causes, found from
+    `product_cost_history`: FOUR (FRAME-003, Hole Saw GEN-175, Welding Wire GEN-392, Pipe 4" PVC PLMB-527) were USD until USD-line
+    RECEIPTS on 8 to 10 Nov flipped the tag to IQD (the Store In currency bug of #74(d), fixed in `receiptCost.ts` since); THREE
+    (Thermal pad FACT-277, Clear Nylon GEN-431, Grinder Cutter GEN-415) were changed by a requisition MARKET PRICE typed in IQD
+    (REQ-2026-0125 and REQ-2026-0126, earlier REQ-2026-0025): `recordProductCostChange` writes the new price AND its currency into the
+    single `products.standard_cost` / `cost_currency`, and a change of currency is never flagged for approval (no honest way to compare
+    magnitudes across currencies), so 21.65 USD became 33,470.90 IQD (exactly 1,546 times) and 57 USD became 85,000 IQD. A label flip
+    alone would have made Thermal pad 33,470.90 USD: for those three the cost number had to be chosen with the currency (the user
+    took my defaults: 21.65, 57, 0.35 USD; the other candidates were the last IQD purchase converted at 1,546, or 250 IQD = 0.16 USD).
+    Four other products on the same Store Outs (Expansion Bolt 150, drinking water 1,750, Cross Plastic 2,000, Square wood 2,150) are
+    genuinely IQD and stay IQD: "all the products should be USD" cannot be applied by rule (the user has both kinds, domain.md).
+    How it was fixed (2026-11-16, production data, no code): ONE SQL transaction from a file after a `pg_dump` and a rolled-back
+    rehearsal, guarded (aborts unless the 7 products still hold exactly the values read, no pending cost change request, exactly the 6
+    Factory Main Warehouse rows with the quantities read), which wrote the product cost and USD tag with a `product_cost_history` row each
+    (source_type `cost_correction`), a `cost_correction` self-move for each location holding stock (the 9 Nov backfill method: the
+    trigger sets the location's cost and label from the move, quantity unchanged, `last_move_at` restored), and an `audit_log` row per
+    product and per location with the old values (reversible); re-read on a fresh connection. Then the 14 Store Out and 16 return cost
+    rows of NY-PRJ-2026-0032 were split by currency from the corrected tags, also one rehearsed transaction with per-row audit rows
+    (`split_cost_row_currency`: old currency and amount, ids of the rows added): USD Actual 6,981.94 to 10,359.00, IQD 10,134,981.61 to
+    10,131,604.55, the numbers unchanged per source type, only their labels. The rule for each row: a Store Out by the product cost
+    currency of its lines; a return of Store Out lines by the issue line's product; a return of direct-delivery lines by the PO LINE's
+    currency (what `createMaterialReturn` does), which relabelled two USD returns (-30.00, -24.30) that had been booked as IQD. The 78
+    Store Out rows of the other 10 projects were NOT split: their products may be mis-tagged the same way and need their own review.
+    How to spot it: a `product_cost_history` row whose currency differs from the one before it with a magnitude jump of about 1,500
+    (`new_cost / old_cost` near the exchange rate); a product whose `standard_cost` is thousands under an IQD tag while its location cost
+    is single digits under the same tag; a Store Out line with a USD-sized unit cost under an IQD total. Not guarded in code: nothing stops
+    the next IQD market price on a USD product from doing this again (options: refuse or flag a currency change from market pricing, or
+    keep a price per currency; a product decision). Related to #43, #67, #74, #94.
