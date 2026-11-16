@@ -3477,9 +3477,19 @@
     amount: String!
   }
 
+  # The same money as ProjectCostLedger.totals, split by kind of cost (sourceType: jobsite delivery, Store Out, return, posted
+  # journal ...), per currency. Summed over ALL rows, so for each currency the kinds add up to that currency's total.
+  type ProjectCostLedgerKindTotal {
+    currencyCode: String!
+    sourceType: String
+    amount: String!
+    entryCount: Int!
+  }
+
   type ProjectCostLedger {
     entries: [ProjectCostLedgerEntry!]!
     totals: [ProjectCostLedgerTotal!]!
+    byKind: [ProjectCostLedgerKindTotal!]!
     # more rows exist than are listed; the totals still count all of them
     truncated: Boolean!
   }

@@ -32,9 +32,22 @@ export interface ProjectCostLedgerTotal {
   amount: string
 }
 
+/** What one kind of cost (jobsite deliveries, Store Outs, returns, posted journals ...) adds up to, in one currency. */
+export interface ProjectCostLedgerKindTotal {
+  currency_code: string
+  source_type: string | null
+  amount: string
+  entry_count: number
+}
+
 export interface ProjectCostLedger {
   entries: ProjectCostLedgerEntry[]
   totals: ProjectCostLedgerTotal[]
+  /**
+   * The same money as `totals`, split by kind. Summed in SQL over ALL rows (never from `entries`, which is cut at the limit),
+   * so for every currency the kinds add up to that currency's total.
+   */
+  byKind: ProjectCostLedgerKindTotal[]
   /** More rows exist than were listed; the totals still count all of them. */
   truncated: boolean
 }
@@ -87,10 +100,21 @@ export async function projectCostLedger(
       ORDER BY v.currency_code`,
     [projectId, companyId],
   )
+  // the same view and the same company scope as the totals, one more grouping level: per currency and per kind
+  const kindsRes = await run(
+    `SELECT v.currency_code::text AS currency_code, v.source_type, SUM(v.amount)::text AS amount, COUNT(*)::int AS entry_count
+       FROM v_project_cost_by_currency v
+       JOIN projects p ON p.id = v.project_id AND p.company_id = $2
+      WHERE v.project_id = $1
+      GROUP BY v.currency_code, v.source_type
+      ORDER BY v.currency_code, v.source_type`,
+    [projectId, companyId],
+  )
   const rows = entriesRes.rows as ProjectCostLedgerEntry[]
   return {
     entries: rows.slice(0, limit),
     totals: totalsRes.rows as ProjectCostLedgerTotal[],
+    byKind: kindsRes.rows as ProjectCostLedgerKindTotal[],
     truncated: rows.length > limit,
   }
 }

@@ -451,6 +451,7 @@ describe('the project cost ledger list (analytic account page)', () => {
     projectCostLedger(projectId: $projectId) {
       entries { id entryDate sourceType costCategory amount currencyCode reference }
       totals { currencyCode amount }
+      byKind { currencyCode sourceType amount entryCount }
       truncated
     }
   }`
@@ -458,6 +459,7 @@ describe('the project cost ledger list (analytic account page)', () => {
     projectCostLedger: {
       entries: { id: string; sourceType: string | null; amount: string; currencyCode: string; reference: string | null }[]
       totals: { currencyCode: string; amount: string }[]
+      byKind: { currencyCode: string; sourceType: string | null; amount: string; entryCount: number }[]
       truncated: boolean
     }
   }
@@ -470,6 +472,50 @@ describe('the project cost ledger list (analytic account page)', () => {
     expect(l.truncated).toBe(false)
     const totals = Object.fromEntries(l.totals.map((t) => [t.currencyCode, Number(t.amount)]))
     expect(totals).toEqual({ IQD: 10000, USD: 945.5 })
+  })
+
+  it('splits the totals by kind of cost, per currency, through the real schema', async () => {
+    const r = await gql<Ledger>(LEDGER, { projectId })
+    expect(r.errors).toBeUndefined()
+    // seeded: USD 850.5 delivery, USD 100 stock issue, IQD 10000 delivery, USD -5 return; ordered by currency, then kind
+    expect(
+      r.data!.projectCostLedger.byKind.map((k) => [k.currencyCode, k.sourceType, Number(k.amount), k.entryCount]),
+    ).toEqual([
+      ['IQD', 'po_direct_delivery', 10000, 1],
+      ['USD', 'material_return', -5, 1],
+      ['USD', 'po_direct_delivery', 850.5, 1],
+      ['USD', 'stock_issue', 100, 1],
+    ])
+  })
+
+  it('the kinds of each currency add up to that currency total, even when the list is cut short', async () => {
+    const run = (text: string, params: unknown[]) => pool.query(text, params)
+    // limit 2 lists 2 of the 4 rows; the kinds are summed over all of them, not over the listed ones
+    const cut = await projectCostLedger(run, projectId, companyId, 2)
+    expect(cut.entries).toHaveLength(2)
+    expect(cut.truncated).toBe(true)
+    for (const t of cut.totals) {
+      const kinds = cut.byKind.filter((k) => k.currency_code === t.currency_code)
+      expect(kinds.length).toBeGreaterThan(0)
+      expect(kinds.reduce((s, k) => s + Number(k.amount), 0)).toBeCloseTo(Number(t.amount), 4)
+    }
+    expect(cut.byKind.reduce((n, k) => n + k.entry_count, 0)).toBe(4)
+  })
+
+  it('keeps a cost with no source as its own kind instead of dropping it from the split', async () => {
+    await pool.query(
+      `INSERT INTO project_cost_actuals (project_id, amount, currency_code, entry_date, source_type, cost_category)
+       VALUES ($1,7,'USD',CURRENT_DATE,NULL,'materials')`,
+      [storeProjectId],
+    )
+    try {
+      const l = (await gql<Ledger>(LEDGER, { projectId: storeProjectId })).data!.projectCostLedger
+      expect(l.byKind).toHaveLength(1)
+      expect(l.byKind[0]).toMatchObject({ currencyCode: 'USD', sourceType: null, entryCount: 1 })
+      expect(Number(l.byKind[0]!.amount)).toBe(7)
+    } finally {
+      await pool.query(`DELETE FROM project_cost_actuals WHERE project_id=$1`, [storeProjectId])
+    }
   })
 
   it('the listed rows add up to the totals (the totals come from the view the header reads)', async () => {
@@ -497,12 +543,18 @@ describe('the project cost ledger list (analytic account page)', () => {
       const l = (await gql<Ledger>(LEDGER, { projectId })).data!.projectCostLedger
       expect(l.entries).toHaveLength(4)
       expect(Number(l.totals.find((t) => t.currencyCode === 'USD')!.amount)).toBeCloseTo(945.5, 2)
-      // posting it makes it count, in the list and in the totals
+      // the split by kind reads the same view: the unposted journal is no kind yet
+      expect(l.byKind.some((k) => k.sourceType === 'manual')).toBe(false)
+      // posting it makes it count, in the list, in the totals and in the split by kind
       await pool.query(`UPDATE journal_entries SET status='posted' WHERE id=$1`, [je.rows[0]!.id])
       const after = (await gql<Ledger>(LEDGER, { projectId })).data!.projectCostLedger
       expect(after.entries).toHaveLength(5)
       expect(after.entries.find((e) => e.reference === `${PREFIX}JE-DRAFT`)).toBeTruthy()
       expect(Number(after.totals.find((t) => t.currencyCode === 'USD')!.amount)).toBeCloseTo(1445.5, 2)
+      const manual = after.byKind.find((k) => k.sourceType === 'manual')
+      expect(manual, 'a posted journal shows up as its own kind').toBeTruthy()
+      expect(manual).toMatchObject({ currencyCode: 'USD', entryCount: 1 })
+      expect(Number(manual!.amount)).toBe(500)
     } finally {
       await pool.query(`DELETE FROM project_cost_actuals WHERE journal_line_id=$1`, [jl.rows[0]!.id])
       await pool.query(`DELETE FROM journal_lines WHERE id=$1`, [jl.rows[0]!.id])
@@ -573,6 +625,7 @@ describe('the project cost ledger list (analytic account page)', () => {
     const crossed = await projectCostLedger(run, projectId, otherCompanyId)
     expect(crossed.entries).toEqual([])
     expect(crossed.totals).toEqual([])
+    expect(crossed.byKind).toEqual([])
   })
 
   it("never names a document of another company, even if a cost row points at it", async () => {

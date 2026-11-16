@@ -9803,6 +9803,12 @@ export const resolvers = {
           reference: e.reference,
         })),
         totals: ledger.totals.map((t) => ({ currencyCode: t.currency_code, amount: t.amount })),
+        byKind: ledger.byKind.map((k) => ({
+          currencyCode: k.currency_code,
+          sourceType: k.source_type,
+          amount: k.amount,
+          entryCount: k.entry_count,
+        })),
         truncated: ledger.truncated,
       }
     },
