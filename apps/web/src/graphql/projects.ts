@@ -242,6 +242,12 @@ export const PROJECT_COST_LEDGER_QUERY = gql`
         currencyCode
         amount
       }
+      byKind {
+        currencyCode
+        sourceType
+        amount
+        entryCount
+      }
       truncated
     }
   }

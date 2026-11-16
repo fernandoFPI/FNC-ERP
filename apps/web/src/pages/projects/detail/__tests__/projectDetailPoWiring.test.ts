@@ -68,6 +68,43 @@ describe('purchase orders on the project page', () => {
   })
 })
 
+// playbook #95: the PO Summary card counts what was ORDERED on the project's closed POs, which is not the project's cost
+// (goods delivered to inventory cost the project nothing until issued, Store Outs and expense claims never pass through these
+// POs). The column said "Amount" and sat beside screens that show the cost ledger, so the two were read as one number.
+describe('the PO summary says what it counts', () => {
+  const block = () => {
+    const start = src.indexOf('const poSummaryColumns')
+    const end = src.indexOf('const poSummaryFooter')
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    return src.slice(start, end)
+  }
+
+  it('heads its money column "Ordered", in the header and in the custom header, not "Amount"', () => {
+    const b = block()
+    expect(
+      b.split("t('proj.detail.poSummaryOrdered')").length - 1,
+      'header and renderHeader both say Ordered',
+    ).toBe(2)
+    expect(
+      b.includes("t('proj.detail.amount')"),
+      'the generic Amount label is gone from this column',
+    ).toBe(false)
+  })
+
+  it('draws one note under the table saying it is not the project cost', () => {
+    has("t('proj.detail.poSummaryNote')")
+    has('data-testid="po-summary-note"')
+    // the note belongs to the PO Summary card: it comes after the table and before the Project Health card
+    const note = src.indexOf("t('proj.detail.poSummaryNote')")
+    const table = src.indexOf('footerRow={poSummaryFooter}')
+    const health = src.indexOf("t('proj.detail.projectHealth')")
+    expect(table).toBeGreaterThan(-1)
+    expect(note).toBeGreaterThan(table)
+    expect(health).toBeGreaterThan(note)
+  })
+})
+
 describe('a project with no budget set', () => {
   it('the Remaining Budget tile says "No budget" instead of a negative number', () => {
     has('const hdrHasBudget = hdrBudget > 0')

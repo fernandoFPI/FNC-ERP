@@ -133,6 +133,13 @@ describe('the rows', () => {
     expect(within(rows[2]).getAllByText('—').length).toBeGreaterThanOrEqual(1)
   })
 
+  it('names the combined journal entry Finance posts, instead of the raw word "combined"', () => {
+    show({ data: ledger([entry('a', { sourceType: 'combined', reference: 'COMB-MWIV5D1D' })]) })
+    const row = within(screen.getAllByTestId('cost-ledger-row')[0])
+    expect(row.getByText('Combined journal entry')).toBeInTheDocument()
+    expect(row.queryByText('combined')).toBeNull()
+  })
+
   it('never prints a raw translation key', () => {
     const { container } = show({ data: ledger([entry('a')]) })
     expect(container.textContent).not.toMatch(/fin\.analyticDetail/)

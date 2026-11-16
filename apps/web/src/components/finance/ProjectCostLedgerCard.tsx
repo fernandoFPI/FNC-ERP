@@ -19,19 +19,7 @@ import { enumLabel } from '../../i18n'
 import { useTheme } from '../../theme/ThemeContext'
 import { Card } from '../ui/Card'
 import { formatCurrency } from '../../lib/format'
-
-// The label of each cost source: the four ways cost reaches the ledger without a journal, then the journal sources the page
-// already knew. A source nobody has named shows its own text (never blank).
-const SOURCE_KEYS: Record<string, string> = {
-  po_direct_delivery: 'fin.analyticDetail.costSourceDelivery',
-  stock_issue: 'fin.analyticDetail.costSourceStockIssue',
-  material_return: 'fin.analyticDetail.costSourceMaterialReturn',
-  po_vendor_return: 'fin.analyticDetail.costSourceVendorReturn',
-  mo_completion: 'fin.analyticDetail.moCompletion',
-  po_completion: 'fin.analyticDetail.poCompletion',
-  interco_transaction: 'fin.analyticDetail.intercoTransaction',
-  manual: 'fin.analyticDetail.manual',
-}
+import { COST_SOURCE_KEYS } from '../../lib/projectCostKinds'
 
 export function ProjectCostLedgerCard({ projectId }: { projectId: string }) {
   const { t } = useTranslation()
@@ -44,7 +32,7 @@ export function ProjectCostLedgerCard({ projectId }: { projectId: string }) {
   const ledger = data?.projectCostLedger
   const sourceLabel = (sourceType: string | null): string => {
     if (!sourceType) return '—'
-    const key = SOURCE_KEYS[sourceType]
+    const key = COST_SOURCE_KEYS[sourceType]
     return key ? t(key) : sourceType.replace(/_/g, ' ')
   }
 

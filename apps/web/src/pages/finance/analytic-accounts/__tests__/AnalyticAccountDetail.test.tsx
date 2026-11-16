@@ -2,7 +2,7 @@
 // for a project with 175 cost entries, because the cost of a project is not journal-tagged. The page now carries the
 // project's cost ledger above its journal lines, for an account that belongs to a project, and only then.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import type * as ApolloClientModule from '@apollo/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
@@ -49,6 +49,14 @@ const ledgerResult = {
         },
       ],
       totals: [{ currencyCode: 'USD', amount: '850.5000' }],
+      byKind: [
+        {
+          currencyCode: 'USD',
+          sourceType: 'po_direct_delivery',
+          amount: '850.5000',
+          entryCount: 1,
+        },
+      ],
       truncated: false,
     },
   },
@@ -101,6 +109,67 @@ describe('the analytic account of a project', () => {
     const journalTitle = screen.getByText(/^Journal Lines/i)
     // Node.DOCUMENT_POSITION_FOLLOWING (4): the journal heading comes after the ledger heading
     expect(ledgerTitle.compareDocumentPosition(journalTitle) & 4).toBeTruthy()
+  })
+})
+
+// playbook #95: the top row counted only the journal lines TAGGED with the account ("Total Lines 18", 1,210,250 IQD, the
+// expense claims) right above a cost ledger of 10,131,604.55 IQD and 10,359.00 USD: two numbers on one page.
+describe('the top row of the page', () => {
+  const taggedOnly = {
+    journal_line_count: 18,
+    currency_totals: [
+      { currency_code: 'IQD', total_debits: '1210250.0000', total_credits: '0.0000' },
+    ],
+  }
+
+  it("shows the project's cost per currency, not the tagged journal lines, for an account of a project", async () => {
+    apiGet.mockResolvedValue({ data: account(taggedOnly) })
+    open()
+    const summary = await screen.findByTestId('cost-summary')
+    expect(within(summary).getByTestId('cost-summary-total')).toHaveTextContent('850.50 USD')
+    // the second, smaller number is gone
+    expect(screen.queryByText('Total Lines')).toBeNull()
+    expect(screen.queryByText(/Total Debits/)).toBeNull()
+    expect(screen.queryByText(/1,210,250/)).toBeNull()
+  })
+
+  it('puts the cost summary above the cost ledger', async () => {
+    apiGet.mockResolvedValue({ data: account(taggedOnly) })
+    open()
+    const summary = await screen.findByTestId('cost-summary')
+    const ledgerTitle = screen.getByText('Project cost ledger')
+    // Node.DOCUMENT_POSITION_FOLLOWING (4): the ledger heading comes after the summary row
+    expect(summary.compareDocumentPosition(ledgerTitle) & 4).toBeTruthy()
+  })
+
+  it('says its journal table holds only the lines tagged to the account, and where the full cost is', async () => {
+    apiGet.mockResolvedValue({ data: account(taggedOnly) })
+    open()
+    expect(await screen.findByText('Journal lines tagged to this account')).toBeInTheDocument()
+    expect(screen.getByTestId('journal-lines-tagged-hint')).toHaveTextContent(
+      "Only entries tagged with this account. The project's full cost is in the cost ledger above.",
+    )
+  })
+
+  it('keeps the journal totals and the plain heading for an account that is not a project', async () => {
+    apiGet.mockResolvedValue({
+      data: account({
+        ...taggedOnly,
+        project_id: undefined,
+        project_name: undefined,
+        project_status: undefined,
+        code: 'CC-ADMIN',
+        name: 'Admin overhead',
+      }),
+    })
+    open()
+    expect(await screen.findByText('Total Lines')).toBeInTheDocument()
+    expect(screen.getByText('18')).toBeInTheDocument()
+    expect(screen.getByText(/Total Debits: 1,210,250\.00 IQD/)).toBeInTheDocument()
+    expect(screen.getByText('Journal Lines')).toBeInTheDocument()
+    expect(screen.queryByText('Journal lines tagged to this account')).toBeNull()
+    expect(screen.queryByTestId('journal-lines-tagged-hint')).toBeNull()
+    expect(screen.queryByTestId('cost-summary')).toBeNull()
   })
 })
 

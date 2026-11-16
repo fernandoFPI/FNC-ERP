@@ -2297,7 +2297,7 @@ export type ProjectCostLedgerQueryVariables = Exact<{
 }>;
 
 
-export type ProjectCostLedgerQuery = { projectCostLedger: { truncated: boolean, entries: Array<{ id: string, entryDate: string | null, sourceType: string | null, costCategory: string | null, amount: string, currencyCode: string, reference: string | null }>, totals: Array<{ currencyCode: string, amount: string }> } };
+export type ProjectCostLedgerQuery = { projectCostLedger: { truncated: boolean, entries: Array<{ id: string, entryDate: string | null, sourceType: string | null, costCategory: string | null, amount: string, currencyCode: string, reference: string | null }>, totals: Array<{ currencyCode: string, amount: string }>, byKind: Array<{ currencyCode: string, sourceType: string | null, amount: string, entryCount: number }> } };
 
 export type CreateProjectMutationVariables = Exact<{
   input: Types.ProjectCreateInput;

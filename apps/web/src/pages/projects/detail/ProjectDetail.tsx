@@ -3061,11 +3061,11 @@ export default function ProjectDetail() {
                   },
                   {
                     key: 'amount',
-                    header: t('proj.detail.amount'),
+                    header: t('proj.detail.poSummaryOrdered'),
                     mobilePriority: 2,
                     renderHeader: () => (
                       <span style={{ display: 'block', textAlign: 'end', whiteSpace: 'nowrap' }}>
-                        {t('proj.detail.amount')}
+                        {t('proj.detail.poSummaryOrdered')}
                       </span>
                     ),
                     render: (row) => (
@@ -3267,6 +3267,18 @@ export default function ProjectDetail() {
                             rowKey="status"
                             footerRow={poSummaryFooter}
                           />
+                          {/* what this card counts, so it is not mistaken for the project's cost (playbook #95) */}
+                          <div
+                            style={{
+                              marginTop: '10px',
+                              fontSize: '11px',
+                              lineHeight: 1.5,
+                              color: theme.textSecondary,
+                            }}
+                            data-testid="po-summary-note"
+                          >
+                            {t('proj.detail.poSummaryNote')}
+                          </div>
                         </>,
                       )}
 

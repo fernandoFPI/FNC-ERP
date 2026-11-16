@@ -6890,6 +6890,7 @@ export type ProjectContractInput = {
 };
 
 export type ProjectCostLedger = {
+  byKind: Array<ProjectCostLedgerKindTotal>;
   entries: Array<ProjectCostLedgerEntry>;
   totals: Array<ProjectCostLedgerTotal>;
   truncated: Scalars['Boolean']['output'];
@@ -6902,6 +6903,13 @@ export type ProjectCostLedgerEntry = {
   entryDate?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   reference?: Maybe<Scalars['String']['output']>;
+  sourceType?: Maybe<Scalars['String']['output']>;
+};
+
+export type ProjectCostLedgerKindTotal = {
+  amount: Scalars['String']['output'];
+  currencyCode: Scalars['String']['output'];
+  entryCount: Scalars['Int']['output'];
   sourceType?: Maybe<Scalars['String']['output']>;
 };
 

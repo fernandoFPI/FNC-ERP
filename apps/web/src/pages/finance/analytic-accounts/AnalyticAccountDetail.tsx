@@ -10,6 +10,7 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { ProjectCostLedgerCard } from '../../../components/finance/ProjectCostLedgerCard'
+import { ProjectCostSummaryCards } from '../../../components/finance/ProjectCostSummaryCards'
 import { formatCurrency } from '../../../lib/format'
 
 interface JournalLine {
@@ -124,50 +125,66 @@ export default function AnalyticAccountDetail() {
         }
       />
 
-      {/* KPI row — one card per currency actually used by this account's
-          journal lines (no-conversion policy: there's no single "the
-          total" once more than one currency is involved). */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '12px',
-          marginBottom: '20px',
-        }}
-      >
-        <Card padding="sm">
-          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-            {t('fin.analyticDetail.totalLines')}
-          </div>
-          <div style={{ fontWeight: 700, fontSize: '15px', color: theme.textPrimary }}>
-            {account.journal_line_count.toLocaleString()}
-          </div>
-        </Card>
-        {account.currency_totals.map((ct) => {
-          const debit = parseFloat(ct.total_debits)
-          const credit = parseFloat(ct.total_credits)
-          const balance = debit - credit
-          return (
-            <Card key={ct.currency_code} padding="sm">
-              <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-                {ct.currency_code}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontFamily: 'monospace', fontSize: '13px' }}>
-                <span style={{ color: theme.textPrimary }}>
-                  {t('fin.analyticDetail.totalDebits')}: {formatCurrency(debit, ct.currency_code)}
-                </span>
-                <span style={{ color: theme.textPrimary }}>
-                  {t('fin.analyticDetail.totalCredits')}: {formatCurrency(credit, ct.currency_code)}
-                </span>
-                <span style={{ color: theme.textPrimary, fontWeight: 700 }}>
-                  {t('fin.analyticDetail.balanceDrCr')}: {formatCurrency(Math.abs(balance), ct.currency_code)}
-                  {balance < 0 ? ' Cr' : ''}
-                </span>
-              </div>
-            </Card>
-          )
-        })}
-      </div>
+      {/* KPI row. A project's account shows what the project's cost adds up to (the cost ledger, per currency and kind: the
+          same figures as the project header and the ledger card below). Counting only the tagged journal lines here put a
+          second, smaller number right above the ledger (playbook #95). Any other account keeps one card per currency
+          actually used by its journal lines (no-conversion policy: there's no single "the total" once more than one
+          currency is involved). */}
+      {account.project_id ? (
+        <ProjectCostSummaryCards projectId={account.project_id} />
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '12px',
+            marginBottom: '20px',
+          }}
+        >
+          <Card padding="sm">
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
+              {t('fin.analyticDetail.totalLines')}
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '15px', color: theme.textPrimary }}>
+              {account.journal_line_count.toLocaleString()}
+            </div>
+          </Card>
+          {account.currency_totals.map((ct) => {
+            const debit = parseFloat(ct.total_debits)
+            const credit = parseFloat(ct.total_credits)
+            const balance = debit - credit
+            return (
+              <Card key={ct.currency_code} padding="sm">
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
+                  {ct.currency_code}
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px',
+                    fontFamily: 'monospace',
+                    fontSize: '13px',
+                  }}
+                >
+                  <span style={{ color: theme.textPrimary }}>
+                    {t('fin.analyticDetail.totalDebits')}: {formatCurrency(debit, ct.currency_code)}
+                  </span>
+                  <span style={{ color: theme.textPrimary }}>
+                    {t('fin.analyticDetail.totalCredits')}:{' '}
+                    {formatCurrency(credit, ct.currency_code)}
+                  </span>
+                  <span style={{ color: theme.textPrimary, fontWeight: 700 }}>
+                    {t('fin.analyticDetail.balanceDrCr')}:{' '}
+                    {formatCurrency(Math.abs(balance), ct.currency_code)}
+                    {balance < 0 ? ' Cr' : ''}
+                  </span>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      )}
 
       {/* Linked project */}
       {account.project_id && (
@@ -224,11 +241,26 @@ export default function AnalyticAccountDetail() {
             color: theme.textPrimary,
           }}
         >
-          {t('fin.analyticDetail.journalLines')}{' '}
+          {account.project_id
+            ? t('fin.analyticDetail.journalLinesTagged')
+            : t('fin.analyticDetail.journalLines')}{' '}
           {account.lines.length >= 200 && (
             <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: 400 }}>
               {t('fin.analyticDetail.showingLatest200')}
             </span>
+          )}
+          {account.project_id && (
+            <div
+              style={{
+                fontSize: '12px',
+                color: theme.textSecondary,
+                fontWeight: 400,
+                marginTop: '2px',
+              }}
+              data-testid="journal-lines-tagged-hint"
+            >
+              {t('fin.analyticDetail.journalLinesTaggedHint')}
+            </div>
           )}
         </div>
         {account.lines.length === 0 ? (
