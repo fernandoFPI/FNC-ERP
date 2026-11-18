@@ -14,6 +14,7 @@ import { TOUR_DEMO_PO_ID, buildTourDemoReceiptPO } from '../../../components/hel
 import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { EMPLOYEES_QUERY, ATTACH_FILE, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
 import { hasBuyerReceipt } from '../../../lib/buyerReceipt'
+import { receivableLocations } from '../../../lib/receivingLocations'
 import {
   AdminPhotoBypass,
   photoBypassReady,
@@ -318,7 +319,9 @@ export default function ReceiptForm() {
   const [bypassPhotos, setBypassPhotos] = useState(false)
   const [bypassReason, setBypassReason] = useState('')
   const bypassReady = isSystemAdmin && photoBypassReady(bypassPhotos, bypassReason)
-  const locations = locationsData?.stockLocations ?? []
+  // Never offer Virtual Receipts / Virtual Consumption: stock put there counts as used up, so the goods would
+  // never become stock and the project would never be charged (playbook #105). The server refuses them too.
+  const locations = receivableLocations(locationsData?.stockLocations ?? [])
   const employees: {
     id: string
     first_name: string

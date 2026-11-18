@@ -100,6 +100,7 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { buildPurchaseOrderHTML } from '../../../lib/poHtml'
 import { poTotalEntries } from '../../../lib/poTotals'
 import { poLineCurrency } from '../../../lib/poLineCurrency'
+import { receivableLocationsKeeping } from '../../../lib/receivingLocations'
 import {
   TOUR_DEMO_PO_ID,
   buildTourDemoPO,
@@ -7326,6 +7327,11 @@ export default function PurchaseOrderDetail() {
 
                   {adminCorrectionDraft.receipts.map((dr, ri) => {
                     const orig = po.receipts.find((r) => r.id === dr.id)
+                    // Real locations only, plus the one this receipt already sits in (playbook #105).
+                    const locationChoices = receivableLocationsKeeping(
+                      stockLocations,
+                      orig?.location_id,
+                    )
                     const receiptLineRows = adminCorrectionDraft.receiptLines.filter((rl) =>
                       orig?.lines.some((l) => l.id === rl.id),
                     )
@@ -7367,7 +7373,7 @@ export default function PurchaseOrderDetail() {
                               }}
                             >
                               <option value="">{t('po.detail.defaultWarehouse')}</option>
-                              {stockLocations.map((l) => (
+                              {locationChoices.map((l) => (
                                 <option key={l.id} value={l.id}>
                                   {l.name}
                                 </option>
