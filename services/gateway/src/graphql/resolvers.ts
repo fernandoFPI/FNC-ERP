@@ -94,6 +94,7 @@ import {
 import { projectCostLedger } from '../lib/projectCostLedger.js'
 import { bookStockIssueCost, stockCostCurrencySql } from '../lib/stockIssueCost.js'
 import { assertLineAccountingChoice } from '../lib/poLineAccounting.js'
+import { assertReceivableLocation } from '../lib/receivingLocation.js'
 import {
   advanceProblem,
   getPOFundingAdvances,
@@ -1842,6 +1843,8 @@ async function applyAdminPOCorrection(
   for (const re of changes.receipts?.edited ?? []) {
     if (!receiptAllowed.includes(re.field)) continue
     if (re.field === 'warehouse_location_id') {
+      // Moving a receipt to a virtual location would take its stock out of the warehouse (playbook #105).
+      if (typeof re.to === 'string' && re.to) await assertReceivableLocation(client, re.to)
       const receiptRes = await client.query<{ status: string }>(
         `SELECT status FROM po_receipts WHERE id=$1 AND po_id=$2`,
         [re.id, poId],
@@ -14528,6 +14531,8 @@ export const resolvers = {
           if (!['approved', 'bought', 'goods_received'].includes(poStatus)) {
             throw new Error(`Cannot record receipt on a PO with status '${poStatus}'`)
           }
+          // Never into a virtual location: those goods would never become stock (playbook #105).
+          if (i.location_id) await assertReceivableLocation(client, i.location_id)
 
           // Guard against the same submission being accidentally repeated —
           // recording a draft receipt doesn't change the PO's status (only
@@ -14732,13 +14737,18 @@ export const resolvers = {
           // used elsewhere for stock-issuance moves, see issueStockForPOLines above)
           // rather than crash when no location was picked.
           let resolvedToLocationId = receipt.warehouse_location_id as string | null
+          // A draft recorded before the rule (playbook #105) may still name a virtual location: refuse it here, with
+          // the reason, instead of confirming stock into the consumption sink.
+          if (resolvedToLocationId) await assertReceivableLocation(client, resolvedToLocationId)
           if (!resolvedToLocationId) {
             const warehouseRes = await client.query(
               `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
               [requireAuth(ctx).companyId],
             )
+            // The last resort is any real location, never a virtual one (playbook #105): a company with no warehouse
+            // used to get whichever active location came first, which could be Virtual Consumption.
             const fallbackRes = await client.query(
-              `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true LIMIT 1`,
+              `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true AND type NOT IN ('virtual_in','virtual_out') ORDER BY name LIMIT 1`,
               [requireAuth(ctx).companyId],
             )
             resolvedToLocationId =
