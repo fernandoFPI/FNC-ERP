@@ -2518,3 +2518,68 @@ Don't re-derive, check these first.
     is single digits under the same tag; a Store Out line with a USD-sized unit cost under an IQD total. Not guarded in code: nothing stops
     the next IQD market price on a USD product from doing this again (options: refuse or flag a currency change from market pricing, or
     keep a price per currency; a product decision). Related to #43, #67, #74, #94.
+
+105. **A pick list fed by an unfiltered query of something that has a type, and a project that was never charged because
+    the goods went into the system's "used up" bucket.** The reconciliation of NY-PRJ-2026-0032 (Mr. Rizgar's House)
+    against a colleague's sheet ended on one gap that no screen could explain: USD 3,330.65 and IQD 79,950 of goods on the
+    project's purchase orders that were received, and never cost. The project's inventory-destination POs
+    (NY-PO-2026-0032, 0033, 0040, 0041) had been received into the location **Virtual Consumption**. Every company has two
+    SYSTEM locations, `virtual_in` ("Virtual Receipts") and `virtual_out` ("Virtual Consumption"): a receipt moves stock
+    from Virtual Receipts into a real place, a Store Out moves it from a real place into Virtual Consumption, and stock
+    "in" Virtual Consumption is by definition used up. A receipt booked into it therefore moved the goods from the one
+    virtual place to the other: they never became stock, no Store Out could ever issue them, and a project PO delivered to
+    inventory costs the project nothing until a Store Out (#65), so nothing ever reached the project's cost. Nothing
+    errored: the location exists, is active, and the move is a valid ledger entry.
+    Three faults, one symptom. (a) The Record Receipt form listed every active location (`stockLocations(isActive: true)`),
+    virtual ones included. (b) `recordReceipt` and `confirmReceipt` took whatever location id arrived and wrote it (the
+    admin correction's `warehouse_location_id` too). (c) `confirmReceipt`, given no location, fell back to the company's
+    warehouse and, failing that, to "any active location", which could be a virtual one. On production: 13 confirmed
+    receipts system-wide (10 in October, 3 in November): this project's four POs, and 8 on stock POs (Nishtimani Factory
+    5 POs, IQD 1,170,000 and USD 37,223; Al Watanyia 2 POs, IQD 1,143,500; Yakam 1 PO, IQD 28,000), which were NOT touched.
+    How to spot it: a purchase order that is closed and fully received whose goods are on no stock balance and on no cost
+    row; `SELECT ... FROM po_receipts r JOIN stock_locations sl ON sl.id = r.location_id WHERE sl.type IN
+    ('virtual_in','virtual_out')`; a pick list built from an unfiltered list of rows that carry a `type` or `is_*` flag
+    (same family as #91, where the GL account picker offered header accounts): for every select, ask what each row TYPE of
+    the list means and whether the action behind it can accept it.
+    Fix (no migration): ONE rule per side. Server: `services/gateway/src/lib/receivingLocation.ts`
+    (`assertReceivableLocation`: an unknown id and any virtual type are refused with a sentence that names the location),
+    called by `recordReceipt`, by `confirmReceipt` for old drafts that already name a virtual location, and by the admin
+    correction when it moves a receipt; the no-location fallback now skips virtual locations (the company's warehouse, else
+    the first real active location by name, else the existing "No active stock location is configured" refusal). Web:
+    `apps/web/src/lib/receivingLocations.ts` (`receivableLocations`; `receivableLocationsKeeping` for the admin
+    correction, which still shows the location a receipt already sits in so the box tells the truth); the receipt form and
+    the PO page's admin-correction select use them. The rule is the location TYPE, never its name (a warehouse called
+    "Virtual stock room" is a real place, tested). Left alone on purpose: `completeStoreInLineForResolvedProduct` (it
+    finishes historic receipts, which may already sit in a virtual location); the PO line's "source location" select on
+    the PO page (not a receiving location); and the location lookup is not scoped to the PO's company (a real location of
+    another company passes the type check; reported, not changed).
+    The data: the project was charged by one audited SQL file, after a manual `pg_dump`
+    (`manual_pre_charge_virtual_receipts_ny0032_202611180902`) and a rehearsal with ROLLBACK: 11 `po_direct_delivery` cost
+    rows, one per received line of POs 0032 (2), 0033 (3) and 0041 (6), amount `ROUND(qty_received * unit_price, 4)` in the
+    LINE's currency (#65b), dated the last confirmed receipt, plus 11 `audit_log` rows (`charge_project_virtual_receipt`).
+    Its guards aborted unless exactly 11 lines matched (closed inventory-destination PO of this project, no cost row yet,
+    fully received into virtual locations) and the totals were USD 3,330.65 and IQD 79,950.00. The project's ledger went from
+    USD 11,107.48 / IQD 10,149,104.55 to USD 14,438.13 / IQD 10,229,054.55, re-read on a second connection; reversible by
+    deleting the audited ids. NY-PO-2026-0040 (cancelled, yet RCPT-00006 was confirmed for 2 units, IQD 12,000, with no
+    cancel entry in the PO log) was NOT charged: a cancelled PO that was received is a question for a person.
+    Two lessons from the reconciliation itself. (1) *A bridge with a plug is not a bridge.* The 16 Nov explanation of the
+    USD gap contained two plug items (22.00 and 50.85) that I had not traced; the real causes were a requisition not yet
+    issued (72.50) and one line priced 22.00 on the PO and 21.65 in the store (0.35). Trace every difference to a row, and
+    say "unexplained" for what is left. (2) *A sheet of printed totals is not the ledger.* The colleague's sheet adds each
+    requisition's printed Total (line currency) plus "From stock" at store price: it does not net returns, counts goods
+    bound for inventory and a cancelled PO, and includes a row of another project. The per-requisition bridge to the ledger
+    was exact once those were named; the remaining USD 115.99 and IQD 23,195.45 (before expense claims) are returns, price
+    drift and stale rows, listed in the project memory.
+    Test traps: the shared test company has other real locations, so "no warehouse, so the one real location" needs the
+    others switched off for the test and restored in a `finally` (`withOnlyRealLocations`); a mutation script that writes a
+    1.8 MB file on OneDrive can fail with `UNKNOWN: open` (a file lock) and, because the restore is in a `finally` that
+    throws the same way, leaves the file mutated: write through a retry loop and keep a byte-exact backup first.
+    Tests: `services/gateway/tests/receipt-location-virtual.test.ts` (real Postgres through the real mutations, 14: the rule
+    alone, record refusing virtual and unknown ids and writing no receipt, real warehouse and site accepted, confirm of a
+    legacy draft refused and still a draft, the fallback with and without a warehouse, the admin correction),
+    `apps/web/src/lib/__tests__/receivingLocations.test.ts`, `receivingLocationsWiring.test.ts` (pins the PO page, which has
+    no render harness) and `pages/procurement/receipts/__tests__/ReceiptFormLocations.test.tsx` (renders the real form; finds
+    the box by its "Select location…" choice so it also works on the older form). Mutation-checked: 8 on the server (each of the three call sites and the fallback, both virtual types, the unknown-id refusal, the named refusal) and 7 on the web (the form's filter, each virtual type, name instead of type, the keep-current variant both ways, the PO page's select), all killed; one server mutation first read as surviving and was killed by 3 tests on a rerun alone (#17), so a runner "SURVIVED" is a reason to rerun, not to conclude.
+    Not verified in a browser. Related to #44 (what a destination decides), #65 (a project PO delivered to inventory costs
+    nothing until a Store Out), #91 (a picker offering what the database refuses) and #83 (a screen that reads zero while
+    the money exists).
