@@ -2536,6 +2536,16 @@ Don't re-derive, check these first.
     warehouse and, failing that, to "any active location", which could be a virtual one. On production: 13 confirmed
     receipts system-wide (10 in October, 3 in November): this project's four POs, and 8 on stock POs (Nishtimani Factory
     5 POs, IQD 1,170,000 and USD 37,223; Al Watanyia 2 POs, IQD 1,143,500; Yakam 1 PO, IQD 28,000), which were NOT touched.
+    Looked at afterwards (read-only, 2026-11-18, the user asked for "any of the same cases"): there is no other project PO in this
+    situation (this project's four POs are the only ones; the three live ones are charged, NY-PO-2026-0040 is cancelled and was
+    left uncharged on the user's word). The 8 stock-PO receipts are services and consumables catalogued as raw materials in the
+    Logistics and Kitchen stores (labour, security guards, a municipal fee, a crane rental, fuel, groceries; only 7 units of concrete
+    and 14 oranges are materials, both used up), so moving them into a real location would invent stock nobody holds: they are left
+    as booked. Receiving into Virtual Consumption was the exception, not the practice (44 of about 760 receipt lines in the last 90
+    days, against 645 into the default warehouse), so refusing it removes a way of saying "used up on receipt", which now means
+    receiving into the warehouse and issuing it. Same family, NOT traced: 5 cancelled POs still hold a confirmed receipt
+    (NF-PO-2026-0108, 0117, 0126 in the default warehouse, PO-2026-0002 legacy, and 0040), and four of them have no cancel entry
+    in the PO log, so some cancel path logs nothing and reverses no receipt.
     How to spot it: a purchase order that is closed and fully received whose goods are on no stock balance and on no cost
     row; `SELECT ... FROM po_receipts r JOIN stock_locations sl ON sl.id = r.location_id WHERE sl.type IN
     ('virtual_in','virtual_out')`; a pick list built from an unfiltered list of rows that carry a `type` or `is_*` flag
