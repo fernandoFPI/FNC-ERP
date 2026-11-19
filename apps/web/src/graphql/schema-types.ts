@@ -1376,6 +1376,41 @@ export type EquipmentLog = {
   workingHours: Scalars['Float']['output'];
 };
 
+export type EquipmentReturn = {
+  id: Scalars['ID']['output'];
+  lines: Array<EquipmentReturnLine>;
+  notes?: Maybe<Scalars['String']['output']>;
+  receivedByName?: Maybe<Scalars['String']['output']>;
+  returnDate: Scalars['String']['output'];
+  returnNumber: Scalars['String']['output'];
+};
+
+export type EquipmentReturnInput = {
+  lines: Array<EquipmentReturnLineInput>;
+  notes?: InputMaybe<Scalars['String']['input']>;
+  receivedByName?: InputMaybe<Scalars['String']['input']>;
+  returnDate?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type EquipmentReturnLine = {
+  condition: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  issueLineId: Scalars['ID']['output'];
+  productId: Scalars['ID']['output'];
+  productName?: Maybe<Scalars['String']['output']>;
+  qtyReturned: Scalars['Float']['output'];
+  remarks?: Maybe<Scalars['String']['output']>;
+  toLocationName?: Maybe<Scalars['String']['output']>;
+};
+
+export type EquipmentReturnLineInput = {
+  condition: Scalars['String']['input'];
+  issueLineId: Scalars['ID']['input'];
+  qtyReturned: Scalars['Float']['input'];
+  remarks?: InputMaybe<Scalars['String']['input']>;
+  toLocationId?: InputMaybe<Scalars['ID']['input']>;
+};
+
 export type EventConfig = {
   alertOnDlq: Scalars['Boolean']['output'];
   backoffMultiplier: Scalars['Float']['output'];
@@ -2182,10 +2217,13 @@ export type MarketPricingSide =
 
 export type MaterialIssue = {
   createdAt: Scalars['String']['output'];
+  department?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   issueDate: Scalars['String']['output'];
   issueNumber: Scalars['String']['output'];
   issuedByName?: Maybe<Scalars['String']['output']>;
+  issuedToEmployeeId?: Maybe<Scalars['ID']['output']>;
+  issuedToName?: Maybe<Scalars['String']['output']>;
   lines: Array<MaterialIssueLine>;
   notes?: Maybe<Scalars['String']['output']>;
   poId?: Maybe<Scalars['ID']['output']>;
@@ -2198,14 +2236,18 @@ export type MaterialIssue = {
 };
 
 export type MaterialIssueLine = {
+  expectedReturnDate?: Maybe<Scalars['String']['output']>;
   fromLocationName?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   isInvoiced: Scalars['Boolean']['output'];
+  isReturnable?: Maybe<Scalars['Boolean']['output']>;
   poLineId?: Maybe<Scalars['ID']['output']>;
   productId: Scalars['ID']['output'];
   productName?: Maybe<Scalars['String']['output']>;
   productNameAr?: Maybe<Scalars['String']['output']>;
   qtyIssued: Scalars['Float']['output'];
+  qtyReturned?: Maybe<Scalars['Float']['output']>;
+  serialNote?: Maybe<Scalars['String']['output']>;
   sku?: Maybe<Scalars['String']['output']>;
   toLocationName?: Maybe<Scalars['String']['output']>;
   totalCost: Scalars['Float']['output'];
@@ -2385,6 +2427,7 @@ export type Mutation = {
   cancelReceipt: PoReceipt;
   cancelRechargeRequest: RechargeRequest;
   cancelRequisition: Requisition;
+  cancelStoreTransfer: StoreTransfer;
   closeAccountingPeriod: AccountingPeriod;
   closeEngClientComment: EngClientComment;
   closeMeeting: Meeting;
@@ -2422,6 +2465,7 @@ export type Mutation = {
   createEngineeringDoc: EngineeringDoc;
   createEquipmentAsset: EquipmentAsset;
   createEquipmentLog: EquipmentLog;
+  createEquipmentReturn: EquipmentReturn;
   createHSERecord: ProjectHseRecord;
   createHandoverCertificate: HandoverCertificate;
   createHandoverItem: HandoverItem;
@@ -2467,6 +2511,7 @@ export type Mutation = {
   createSiteInstruction: ProjectSiteInstruction;
   createStockAdjustment?: Maybe<StockMove>;
   createStockLocation: StockLocation;
+  createStoreTransfer: StoreTransfer;
   createSubcontract: Subcontract;
   createSubcontractBilling: SubcontractBilling;
   createUser: UserDetail;
@@ -2576,6 +2621,7 @@ export type Mutation = {
   processPayrollRun?: Maybe<PayrollRun>;
   reachMilestone: ProjectMilestone;
   recalculateCPM: Scalars['Boolean']['output'];
+  receiveStoreTransfer: StoreTransfer;
   recordDirectDelivery: DirectDeliveryResult;
   recordITPItemResult: ProjectItpItem;
   recordInvoicePayment: InvoicePayment;
@@ -2672,6 +2718,7 @@ export type Mutation = {
   submitPOStorePricing: PurchaseOrder;
   submitPOToInventoryCheck: PurchaseOrder;
   submitProject: Project;
+  submitRequisitionDirectSupply: Requisition;
   submitRequisitionMarketPricing: Requisition;
   submitRequisitionStorePricing: Requisition;
   submitRequisitionToInventoryCheck: Requisition;
@@ -2836,11 +2883,14 @@ export type MutationAddEngClientCommentArgs = {
 
 
 export type MutationAddMaterialIssueLineArgs = {
+  expectedReturnDate?: InputMaybe<Scalars['String']['input']>;
   fromLocationId?: InputMaybe<Scalars['ID']['input']>;
+  isReturnable?: InputMaybe<Scalars['Boolean']['input']>;
   issueId: Scalars['ID']['input'];
   poLineId?: InputMaybe<Scalars['ID']['input']>;
   productId: Scalars['ID']['input'];
   qtyIssued: Scalars['Float']['input'];
+  serialNote?: InputMaybe<Scalars['String']['input']>;
   unitCost: Scalars['Float']['input'];
 };
 
@@ -3193,6 +3243,11 @@ export type MutationCancelRequisitionArgs = {
 };
 
 
+export type MutationCancelStoreTransferArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationCloseAccountingPeriodArgs = {
   id: Scalars['ID']['input'];
 };
@@ -3474,6 +3529,11 @@ export type MutationCreateEquipmentLogArgs = {
 };
 
 
+export type MutationCreateEquipmentReturnArgs = {
+  input: EquipmentReturnInput;
+};
+
+
 export type MutationCreateHseRecordArgs = {
   approvedBy?: InputMaybe<Scalars['String']['input']>;
   attendeeCount?: InputMaybe<Scalars['Int']['input']>;
@@ -3593,7 +3653,10 @@ export type MutationCreateManufacturingRequestArgs = {
 
 
 export type MutationCreateMaterialIssueArgs = {
+  department?: InputMaybe<Scalars['String']['input']>;
   issueDate: Scalars['String']['input'];
+  issuedToEmployeeId?: InputMaybe<Scalars['ID']['input']>;
+  issuedToName?: InputMaybe<Scalars['String']['input']>;
   notes?: InputMaybe<Scalars['String']['input']>;
   poId?: InputMaybe<Scalars['ID']['input']>;
   projectId?: InputMaybe<Scalars['ID']['input']>;
@@ -3829,6 +3892,11 @@ export type MutationCreateStockAdjustmentArgs = {
 
 export type MutationCreateStockLocationArgs = {
   input: LocationInput;
+};
+
+
+export type MutationCreateStoreTransferArgs = {
+  input: StoreTransferInput;
 };
 
 
@@ -4452,6 +4520,12 @@ export type MutationRecalculateCpmArgs = {
 };
 
 
+export type MutationReceiveStoreTransferArgs = {
+  id: Scalars['ID']['input'];
+  input: ReceiveStoreTransferInput;
+};
+
+
 export type MutationRecordDirectDeliveryArgs = {
   input: DirectDeliveryInput;
   poId: Scalars['ID']['input'];
@@ -5030,6 +5104,12 @@ export type MutationSubmitPoToInventoryCheckArgs = {
 
 export type MutationSubmitProjectArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type MutationSubmitRequisitionDirectSupplyArgs = {
+  id: Scalars['ID']['input'];
+  notes?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -6642,14 +6722,17 @@ export type Product = {
   category?: Maybe<Scalars['String']['output']>;
   costHistory?: Maybe<Array<ProductCostHistoryEntry>>;
   cost_currency?: Maybe<Scalars['String']['output']>;
+  default_return_days?: Maybe<Scalars['Int']['output']>;
   description?: Maybe<Scalars['String']['output']>;
   has_stock_moves?: Maybe<Scalars['Boolean']['output']>;
   id: Scalars['ID']['output'];
   is_active: Scalars['Boolean']['output'];
+  is_returnable?: Maybe<Scalars['Boolean']['output']>;
   name: Scalars['String']['output'];
   name_ar?: Maybe<Scalars['String']['output']>;
   pendingCostChanges?: Maybe<Array<ProductCostChangeRequest>>;
   qty_on_hand?: Maybe<Scalars['String']['output']>;
+  qty_out?: Maybe<Scalars['String']['output']>;
   reorder_point?: Maybe<Scalars['String']['output']>;
   reorder_qty?: Maybe<Scalars['String']['output']>;
   sku: Scalars['String']['output'];
@@ -6709,8 +6792,10 @@ export type ProductCostHistoryEntry = {
 export type ProductInput = {
   category?: InputMaybe<Scalars['String']['input']>;
   cost_currency?: InputMaybe<Scalars['String']['input']>;
+  default_return_days?: InputMaybe<Scalars['Int']['input']>;
   description?: InputMaybe<Scalars['String']['input']>;
   is_active?: InputMaybe<Scalars['Boolean']['input']>;
+  is_returnable?: InputMaybe<Scalars['Boolean']['input']>;
   name: Scalars['String']['input'];
   name_ar?: InputMaybe<Scalars['String']['input']>;
   reorder_point?: InputMaybe<Scalars['Float']['input']>;
@@ -7749,6 +7834,8 @@ export type Query = {
   requisitionStockAvailability: Array<PoLineAvailability>;
   requisitions: Array<Requisition>;
   returnableDirectDeliveryLines: Array<ReturnableDirectDeliveryLine>;
+  returnableItems: Array<ReturnableItem>;
+  returnableItemsSummary: ReturnableItemsSummary;
   returnableMaterialIssueLines: Array<ReturnableIssueLine>;
   revenueVsTarget: Array<RevenueMonth>;
   rfqLines: Array<RfqLine>;
@@ -7764,7 +7851,11 @@ export type Query = {
   stockLot?: Maybe<StockLot>;
   stockLots: Array<StockLot>;
   stockMoves: Array<StockMove>;
+  storeDocuments: Array<StoreDocument>;
+  storeTransfers: Array<StoreTransfer>;
   systemHealth: Array<ServiceHealth>;
+  tempStoreItems: Array<TempStoreItem>;
+  tempStoreSummary: TempStoreSummary;
   trialBalance?: Maybe<Array<Maybe<TrialBalanceLine>>>;
   unreadNotificationCount: Scalars['Int']['output'];
   user?: Maybe<UserDetail>;
@@ -8770,6 +8861,12 @@ export type QueryReturnableDirectDeliveryLinesArgs = {
 };
 
 
+export type QueryReturnableItemsArgs = {
+  search?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type QueryReturnableMaterialIssueLinesArgs = {
   poId?: InputMaybe<Scalars['ID']['input']>;
   productId?: InputMaybe<Scalars['ID']['input']>;
@@ -8842,6 +8939,19 @@ export type QueryStockMovesArgs = {
   sourceType?: InputMaybe<Scalars['String']['input']>;
   toDate?: InputMaybe<Scalars['String']['input']>;
   toLocationId?: InputMaybe<Scalars['ID']['input']>;
+};
+
+
+export type QueryStoreDocumentsArgs = {
+  locationId?: InputMaybe<Scalars['ID']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
+  type?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryStoreTransfersArgs = {
+  id?: InputMaybe<Scalars['ID']['input']>;
+  status?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -8978,6 +9088,7 @@ export type RfqPhaseFile = {
 };
 
 export type ReceiptInput = {
+  final_destination_location_id?: InputMaybe<Scalars['ID']['input']>;
   lines: Array<ReceiptLineInput>;
   location_id?: InputMaybe<Scalars['ID']['input']>;
   location_notes?: InputMaybe<Scalars['String']['input']>;
@@ -9011,6 +9122,18 @@ export type ReceivablePo = {
   project_id?: Maybe<Scalars['ID']['output']>;
   status: Scalars['String']['output'];
   vendor_name?: Maybe<Scalars['String']['output']>;
+};
+
+export type ReceiveStoreTransferInput = {
+  lines: Array<ReceiveStoreTransferLineInput>;
+  receivedByName?: InputMaybe<Scalars['String']['input']>;
+  receivedDate?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type ReceiveStoreTransferLineInput = {
+  lineId: Scalars['ID']['input'];
+  qtyReceived: Scalars['Float']['input'];
+  remarks?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type RechargeAccountsInfo = {
@@ -9338,6 +9461,45 @@ export type ReturnableIssueLine = {
   uom?: Maybe<Scalars['String']['output']>;
 };
 
+export type ReturnableItem = {
+  borrowerCompanyName?: Maybe<Scalars['String']['output']>;
+  canReceiveBack: Scalars['Boolean']['output'];
+  daysOverdue?: Maybe<Scalars['Int']['output']>;
+  department?: Maybe<Scalars['String']['output']>;
+  expectedReturnDate?: Maybe<Scalars['String']['output']>;
+  fromLocationId?: Maybe<Scalars['ID']['output']>;
+  isEquipment: Scalars['Boolean']['output'];
+  isLoan: Scalars['Boolean']['output'];
+  issueDate: Scalars['String']['output'];
+  issueId: Scalars['ID']['output'];
+  issueLineId: Scalars['ID']['output'];
+  issueNumber: Scalars['String']['output'];
+  issuedToName?: Maybe<Scalars['String']['output']>;
+  lastReturnDate?: Maybe<Scalars['String']['output']>;
+  ownerCompanyName?: Maybe<Scalars['String']['output']>;
+  productId: Scalars['ID']['output'];
+  productName?: Maybe<Scalars['String']['output']>;
+  productNameAr?: Maybe<Scalars['String']['output']>;
+  projectCode?: Maybe<Scalars['String']['output']>;
+  projectName?: Maybe<Scalars['String']['output']>;
+  qtyIssued: Scalars['Float']['output'];
+  qtyLost: Scalars['Float']['output'];
+  qtyOutstanding: Scalars['Float']['output'];
+  qtyReturned: Scalars['Float']['output'];
+  serialNote?: Maybe<Scalars['String']['output']>;
+  sku?: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+  storeName?: Maybe<Scalars['String']['output']>;
+  uom?: Maybe<Scalars['String']['output']>;
+};
+
+export type ReturnableItemsSummary = {
+  dueSoonLines: Scalars['Int']['output'];
+  openLines: Scalars['Int']['output'];
+  overdueLines: Scalars['Int']['output'];
+  unitsOut: Scalars['Float']['output'];
+};
+
 export type RevenueByEntity = {
   factory: Scalars['Float']['output'];
   month: Scalars['String']['output'];
@@ -9622,6 +9784,69 @@ export type StockSnapshotTotal = {
   total_value: Scalars['String']['output'];
 };
 
+export type StoreDocument = {
+  date: Scalars['String']['output'];
+  docType: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  lineCount: Scalars['Int']['output'];
+  number: Scalars['String']['output'];
+  party?: Maybe<Scalars['String']['output']>;
+  reference?: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+  storeId?: Maybe<Scalars['ID']['output']>;
+  storeName?: Maybe<Scalars['String']['output']>;
+};
+
+export type StoreTransfer = {
+  daysInTransit?: Maybe<Scalars['Int']['output']>;
+  driverName?: Maybe<Scalars['String']['output']>;
+  fromLocationId: Scalars['ID']['output'];
+  fromLocationName?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  lines: Array<StoreTransferLine>;
+  notes?: Maybe<Scalars['String']['output']>;
+  receivedByName?: Maybe<Scalars['String']['output']>;
+  receivedDate?: Maybe<Scalars['String']['output']>;
+  reference?: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+  toLocationId: Scalars['ID']['output'];
+  toLocationName?: Maybe<Scalars['String']['output']>;
+  transferDate: Scalars['String']['output'];
+  transferNumber: Scalars['String']['output'];
+  vehicleNo?: Maybe<Scalars['String']['output']>;
+  waybillNo?: Maybe<Scalars['String']['output']>;
+};
+
+export type StoreTransferInput = {
+  driverName?: InputMaybe<Scalars['String']['input']>;
+  fromLocationId: Scalars['ID']['input'];
+  lines: Array<StoreTransferLineInput>;
+  notes?: InputMaybe<Scalars['String']['input']>;
+  reference?: InputMaybe<Scalars['String']['input']>;
+  toLocationId: Scalars['ID']['input'];
+  transferDate?: InputMaybe<Scalars['String']['input']>;
+  vehicleNo?: InputMaybe<Scalars['String']['input']>;
+  waybillNo?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type StoreTransferLine = {
+  id: Scalars['ID']['output'];
+  productId: Scalars['ID']['output'];
+  productName?: Maybe<Scalars['String']['output']>;
+  qtyReceived?: Maybe<Scalars['Float']['output']>;
+  qtySent: Scalars['Float']['output'];
+  receiveRemarks?: Maybe<Scalars['String']['output']>;
+  remarks?: Maybe<Scalars['String']['output']>;
+  sku?: Maybe<Scalars['String']['output']>;
+  uom?: Maybe<Scalars['String']['output']>;
+};
+
+export type StoreTransferLineInput = {
+  productId: Scalars['ID']['input'];
+  qty: Scalars['Float']['input'];
+  remarks?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type Subcontract = {
   billings: Array<SubcontractBilling>;
   certifiedAmount: Scalars['Float']['output'];
@@ -9695,6 +9920,31 @@ export type SubscriptionPermissionsChangedArgs = {
 
 export type SubscriptionSessionsChangedArgs = {
   userId?: InputMaybe<Scalars['ID']['input']>;
+};
+
+export type TempStoreItem = {
+  daysWaiting: Scalars['Int']['output'];
+  destinationLocationId?: Maybe<Scalars['ID']['output']>;
+  destinationName?: Maybe<Scalars['String']['output']>;
+  late: Scalars['Boolean']['output'];
+  locationId: Scalars['ID']['output'];
+  locationName?: Maybe<Scalars['String']['output']>;
+  poNumbers?: Maybe<Scalars['String']['output']>;
+  productId: Scalars['ID']['output'];
+  productName?: Maybe<Scalars['String']['output']>;
+  productNameAr?: Maybe<Scalars['String']['output']>;
+  qty: Scalars['Float']['output'];
+  since?: Maybe<Scalars['String']['output']>;
+  sku?: Maybe<Scalars['String']['output']>;
+  suppliers?: Maybe<Scalars['String']['output']>;
+  uom?: Maybe<Scalars['String']['output']>;
+};
+
+export type TempStoreSummary = {
+  inTransit: Scalars['Int']['output'];
+  itemsWaiting: Scalars['Int']['output'];
+  oldestDays: Scalars['Int']['output'];
+  waitingTooLong: Scalars['Int']['output'];
 };
 
 export type TransferInput = {

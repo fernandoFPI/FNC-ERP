@@ -618,6 +618,7 @@ export const PO_LIFECYCLE_QUERY = gql`
         product_id
         product_name
         product_name_ar
+        sku
         description
         qty
         uom
@@ -1221,6 +1222,32 @@ export const RESOLVE_PO_LINE_COMMENT = gql`
       id
       resolved
       resolved_at
+    }
+  }
+`
+
+// The pictures of one purchase order's receipts, for the viewer window (pages/procurement/purchase-orders/PoPhotoViewerPage.tsx).
+// The buyers' receipts and the delivery photos come from entityAttachments(purchase_order); these are the ones on the receipts.
+export const PO_PHOTOS_QUERY = gql`
+  query POPhotos($id: ID!) {
+    purchaseOrder(id: $id) {
+      id
+      po_number
+      status
+      receipts {
+        id
+        status
+        receipt_date
+        photos {
+          id
+          fileId
+          label
+          category
+          originalFilename
+          downloadUrl
+          createdAt
+        }
+      }
     }
   }
 `

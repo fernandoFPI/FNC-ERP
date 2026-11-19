@@ -17,6 +17,8 @@ export const PRODUCTS_QUERY = gql`
       is_active
       reorder_point
       qty_on_hand
+      is_returnable
+      default_return_days
     }
   }
 `
@@ -39,6 +41,9 @@ export const PRODUCT_QUERY = gql`
       is_active
       reorder_point
       reorder_qty
+      is_returnable
+      default_return_days
+      qty_out
       has_stock_moves
       balances {
         location_id
@@ -359,6 +364,189 @@ export const STOCK_LOT_QUERY = gql`
         reference
         moved_by_email
       }
+    }
+  }
+`
+
+// Equipment that must come back (returnable Store Out lines). One rule behind the list and its summary: services/gateway/src/lib/equipmentReturns.ts
+export const RETURNABLE_ITEMS_QUERY = gql`
+  query ReturnableItems($status: String, $search: String) {
+    returnableItems(status: $status, search: $search) {
+      issueLineId
+      issueId
+      issueNumber
+      issueDate
+      productId
+      productName
+      productNameAr
+      sku
+      uom
+      isEquipment
+      qtyIssued
+      qtyReturned
+      qtyLost
+      qtyOutstanding
+      expectedReturnDate
+      daysOverdue
+      status
+      serialNote
+      issuedToName
+      department
+      projectCode
+      projectName
+      storeName
+      fromLocationId
+      isLoan
+      ownerCompanyName
+      borrowerCompanyName
+      lastReturnDate
+      canReceiveBack
+    }
+  }
+`
+
+export const RETURNABLE_ITEMS_SUMMARY_QUERY = gql`
+  query ReturnableItemsSummary {
+    returnableItemsSummary {
+      openLines
+      overdueLines
+      dueSoonLines
+      unitsOut
+    }
+  }
+`
+
+export const CREATE_EQUIPMENT_RETURN = gql`
+  mutation CreateEquipmentReturn($input: EquipmentReturnInput!) {
+    createEquipmentReturn(input: $input) {
+      id
+      returnNumber
+      returnDate
+      receivedByName
+      lines {
+        id
+        issueLineId
+        productName
+        qtyReturned
+        condition
+        toLocationName
+      }
+    }
+  }
+`
+
+// One history of Store In, Store Out, transfers and equipment returns. One query: services/gateway/src/lib/storeDocuments.ts
+export const STORE_DOCUMENTS_QUERY = gql`
+  query StoreDocuments($type: String, $locationId: ID, $search: String) {
+    storeDocuments(type: $type, locationId: $locationId, search: $search) {
+      id
+      docType
+      number
+      date
+      storeId
+      storeName
+      party
+      reference
+      lineCount
+      status
+    }
+  }
+`
+
+// Temporary stores and store transfers (sent, in transit, received). One rule behind each: services/gateway/src/lib/storeTransfers.ts
+const STORE_TRANSFER_FIELDS = gql`
+  fragment StoreTransferFields on StoreTransfer {
+  id
+  transferNumber
+  transferDate
+  status
+  fromLocationId
+  fromLocationName
+  toLocationId
+  toLocationName
+  driverName
+  vehicleNo
+  waybillNo
+  reference
+  notes
+  daysInTransit
+  receivedDate
+  receivedByName
+  lines {
+    id
+    productId
+    productName
+    sku
+    uom
+    qtySent
+    qtyReceived
+    remarks
+    receiveRemarks
+  }
+  }
+`
+
+export const STORE_TRANSFERS_QUERY = gql`${STORE_TRANSFER_FIELDS}
+  query StoreTransfers($status: String, $id: ID) {
+    storeTransfers(status: $status, id: $id) {
+      ...StoreTransferFields
+    }
+  }
+`
+
+export const TEMP_STORE_ITEMS_QUERY = gql`
+  query TempStoreItems {
+    tempStoreItems {
+      productId
+      productName
+      productNameAr
+      sku
+      uom
+      locationId
+      locationName
+      qty
+      since
+      daysWaiting
+      late
+      poNumbers
+      suppliers
+      destinationLocationId
+      destinationName
+    }
+  }
+`
+
+export const TEMP_STORE_SUMMARY_QUERY = gql`
+  query TempStoreSummary {
+    tempStoreSummary {
+      itemsWaiting
+      waitingTooLong
+      inTransit
+      oldestDays
+    }
+  }
+`
+
+export const CREATE_STORE_TRANSFER = gql`${STORE_TRANSFER_FIELDS}
+  mutation CreateStoreTransfer($input: StoreTransferInput!) {
+    createStoreTransfer(input: $input) {
+      ...StoreTransferFields
+    }
+  }
+`
+
+export const RECEIVE_STORE_TRANSFER = gql`${STORE_TRANSFER_FIELDS}
+  mutation ReceiveStoreTransfer($id: ID!, $input: ReceiveStoreTransferInput!) {
+    receiveStoreTransfer(id: $id, input: $input) {
+      ...StoreTransferFields
+    }
+  }
+`
+
+export const CANCEL_STORE_TRANSFER = gql`${STORE_TRANSFER_FIELDS}
+  mutation CancelStoreTransfer($id: ID!) {
+    cancelStoreTransfer(id: $id) {
+      ...StoreTransferFields
     }
   }
 `

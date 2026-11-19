@@ -4910,12 +4910,12 @@ export const DELETE_MEETING_ACTION = gql`
 
 const MI_LINE_FIELDS = gql`
   fragment MILineFields on MaterialIssueLine {
-id productId productName productNameAr sku uom poLineId fromLocationName toLocationName qtyIssued unitCost totalCost isInvoiced
+id productId productName productNameAr sku uom poLineId fromLocationName toLocationName qtyIssued unitCost totalCost isInvoiced isReturnable expectedReturnDate serialNote qtyReturned
   }
 `
 const MI_FIELDS = gql`
   fragment MIFields on MaterialIssue {
-id issueNumber issueDate status notes poId requisitionId poNumber requisitionNumber projectCode projectName issuedByName createdAt lines { ...MILineFields }
+id issueNumber issueDate status notes poId requisitionId poNumber requisitionNumber projectCode projectName issuedByName issuedToName issuedToEmployeeId department createdAt lines { ...MILineFields }
   }
 `
 
@@ -4935,14 +4935,14 @@ export const MATERIAL_ISSUE_QUERY = gql`${MI_LINE_FIELDS}
 
 export const CREATE_MATERIAL_ISSUE = gql`${MI_LINE_FIELDS}
   ${MI_FIELDS}
-  mutation CreateMaterialIssue($projectId: ID, $poId: ID, $issueDate: String!, $notes: String) {
-    createMaterialIssue(projectId: $projectId, poId: $poId, issueDate: $issueDate, notes: $notes) { ...MIFields }
+  mutation CreateMaterialIssue($projectId: ID, $poId: ID, $issueDate: String!, $notes: String, $issuedToEmployeeId: ID, $issuedToName: String, $department: String) {
+    createMaterialIssue(projectId: $projectId, poId: $poId, issueDate: $issueDate, notes: $notes, issuedToEmployeeId: $issuedToEmployeeId, issuedToName: $issuedToName, department: $department) { ...MIFields }
   }
 `
 
 export const ADD_MATERIAL_ISSUE_LINE = gql`${MI_LINE_FIELDS}
-  mutation AddMaterialIssueLine($issueId: ID!, $productId: ID!, $poLineId: ID, $qtyIssued: Float!, $unitCost: Float!, $fromLocationId: ID) {
-    addMaterialIssueLine(issueId: $issueId, productId: $productId, poLineId: $poLineId, qtyIssued: $qtyIssued, unitCost: $unitCost, fromLocationId: $fromLocationId) { ...MILineFields }
+  mutation AddMaterialIssueLine($issueId: ID!, $productId: ID!, $poLineId: ID, $qtyIssued: Float!, $unitCost: Float!, $fromLocationId: ID, $isReturnable: Boolean, $expectedReturnDate: String, $serialNote: String) {
+    addMaterialIssueLine(issueId: $issueId, productId: $productId, poLineId: $poLineId, qtyIssued: $qtyIssued, unitCost: $unitCost, fromLocationId: $fromLocationId, isReturnable: $isReturnable, expectedReturnDate: $expectedReturnDate, serialNote: $serialNote) { ...MILineFields }
   }
 `
 

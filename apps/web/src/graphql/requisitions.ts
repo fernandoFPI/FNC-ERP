@@ -264,6 +264,16 @@ export const SUBMIT_REQUISITION_TO_INVENTORY_CHECK = gql`
   }
 `
 
+// Direct supply: straight from draft to the approver, no inventory check and no pricing step.
+export const SUBMIT_REQUISITION_DIRECT_SUPPLY = gql`
+  mutation SubmitRequisitionDirectSupply($id: ID!, $notes: String) {
+    submitRequisitionDirectSupply(id: $id, notes: $notes) {
+      id
+      status
+    }
+  }
+`
+
 export const CONFIRM_REQUISITION_INVENTORY_CHECK = gql`
   mutation ConfirmRequisitionInventoryCheck(
     $id: ID!

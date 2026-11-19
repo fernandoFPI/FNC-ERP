@@ -1088,14 +1088,14 @@ export type ProductsQueryVariables = Exact<{
 }>;
 
 
-export type ProductsQuery = { products: Array<{ id: string, sku: string, name: string, name_ar: string | null, category: string | null, sub_category: string | null, uom: string, valuation_method: string, average_cost: string, standard_cost: string | null, cost_currency: string | null, is_active: boolean, reorder_point: string | null, qty_on_hand: string | null } | null> | null };
+export type ProductsQuery = { products: Array<{ id: string, sku: string, name: string, name_ar: string | null, category: string | null, sub_category: string | null, uom: string, valuation_method: string, average_cost: string, standard_cost: string | null, cost_currency: string | null, is_active: boolean, reorder_point: string | null, qty_on_hand: string | null, is_returnable: boolean | null, default_return_days: number | null } | null> | null };
 
 export type ProductQueryVariables = Exact<{
   id: string | number;
 }>;
 
 
-export type ProductQuery = { product: { id: string, sku: string, name: string, name_ar: string | null, description: string | null, category: string | null, sub_category: string | null, uom: string, valuation_method: string, standard_cost: string | null, cost_currency: string | null, average_cost: string, is_active: boolean, reorder_point: string | null, reorder_qty: string | null, has_stock_moves: boolean | null, balances: Array<{ location_id: string, location_name: string | null, location_type: string | null, qty_on_hand: string, qty_reserved: string, available: string, average_cost: string, last_cost_currency: string, total_value: string }> | null, costHistory: Array<{ id: string, old_cost: string | null, new_cost: string, currency_code: string, source_type: string, source_label: string | null, changed_by_name: string | null, changed_at: string }> | null, pendingCostChanges: Array<{ id: string, old_cost: string | null, new_cost: string, currency_code: string, source_type: string, source_label: string | null, requested_by_name: string | null, created_at: string }> | null } | null };
+export type ProductQuery = { product: { id: string, sku: string, name: string, name_ar: string | null, description: string | null, category: string | null, sub_category: string | null, uom: string, valuation_method: string, standard_cost: string | null, cost_currency: string | null, average_cost: string, is_active: boolean, reorder_point: string | null, reorder_qty: string | null, is_returnable: boolean | null, default_return_days: number | null, qty_out: string | null, has_stock_moves: boolean | null, balances: Array<{ location_id: string, location_name: string | null, location_type: string | null, qty_on_hand: string, qty_reserved: string, available: string, average_cost: string, last_cost_currency: string, total_value: string }> | null, costHistory: Array<{ id: string, old_cost: string | null, new_cost: string, currency_code: string, source_type: string, source_label: string | null, changed_by_name: string | null, changed_at: string }> | null, pendingCostChanges: Array<{ id: string, old_cost: string | null, new_cost: string, currency_code: string, source_type: string, source_label: string | null, requested_by_name: string | null, created_at: string }> | null } | null };
 
 export type CreateProductMutationVariables = Exact<{
   input: Types.ProductInput;
@@ -1243,6 +1243,77 @@ export type StockLotQueryVariables = Exact<{
 
 
 export type StockLotQuery = { stockLot: { id: string, lot_number: string, product_id: string, product_name: string | null, sku: string | null, expiry_date: string | null, created_at: string, current_qty: string | null, current_location_id: string | null, current_location_name: string | null, moves: Array<{ id: string, move_date: string, direction: string, from_location_name: string | null, to_location_name: string | null, qty: string, source_type: string, reference: string | null, moved_by_email: string | null }> | null } | null };
+
+export type ReturnableItemsQueryVariables = Exact<{
+  status?: string | null | undefined;
+  search?: string | null | undefined;
+}>;
+
+
+export type ReturnableItemsQuery = { returnableItems: Array<{ issueLineId: string, issueId: string, issueNumber: string, issueDate: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, isEquipment: boolean, qtyIssued: number, qtyReturned: number, qtyLost: number, qtyOutstanding: number, expectedReturnDate: string | null, daysOverdue: number | null, status: string, serialNote: string | null, issuedToName: string | null, department: string | null, projectCode: string | null, projectName: string | null, storeName: string | null, fromLocationId: string | null, isLoan: boolean, ownerCompanyName: string | null, borrowerCompanyName: string | null, lastReturnDate: string | null, canReceiveBack: boolean }> };
+
+export type ReturnableItemsSummaryQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ReturnableItemsSummaryQuery = { returnableItemsSummary: { openLines: number, overdueLines: number, dueSoonLines: number, unitsOut: number } };
+
+export type CreateEquipmentReturnMutationVariables = Exact<{
+  input: Types.EquipmentReturnInput;
+}>;
+
+
+export type CreateEquipmentReturnMutation = { createEquipmentReturn: { id: string, returnNumber: string, returnDate: string, receivedByName: string | null, lines: Array<{ id: string, issueLineId: string, productName: string | null, qtyReturned: number, condition: string, toLocationName: string | null }> } };
+
+export type StoreDocumentsQueryVariables = Exact<{
+  type?: string | null | undefined;
+  locationId?: string | number | null | undefined;
+  search?: string | null | undefined;
+}>;
+
+
+export type StoreDocumentsQuery = { storeDocuments: Array<{ id: string, docType: string, number: string, date: string, storeId: string | null, storeName: string | null, party: string | null, reference: string | null, lineCount: number, status: string }> };
+
+export type StoreTransferFieldsFragment = { id: string, transferNumber: string, transferDate: string, status: string, fromLocationId: string, fromLocationName: string | null, toLocationId: string, toLocationName: string | null, driverName: string | null, vehicleNo: string | null, waybillNo: string | null, reference: string | null, notes: string | null, daysInTransit: number | null, receivedDate: string | null, receivedByName: string | null, lines: Array<{ id: string, productId: string, productName: string | null, sku: string | null, uom: string | null, qtySent: number, qtyReceived: number | null, remarks: string | null, receiveRemarks: string | null }> };
+
+export type StoreTransfersQueryVariables = Exact<{
+  status?: string | null | undefined;
+  id?: string | number | null | undefined;
+}>;
+
+
+export type StoreTransfersQuery = { storeTransfers: Array<{ id: string, transferNumber: string, transferDate: string, status: string, fromLocationId: string, fromLocationName: string | null, toLocationId: string, toLocationName: string | null, driverName: string | null, vehicleNo: string | null, waybillNo: string | null, reference: string | null, notes: string | null, daysInTransit: number | null, receivedDate: string | null, receivedByName: string | null, lines: Array<{ id: string, productId: string, productName: string | null, sku: string | null, uom: string | null, qtySent: number, qtyReceived: number | null, remarks: string | null, receiveRemarks: string | null }> }> };
+
+export type TempStoreItemsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type TempStoreItemsQuery = { tempStoreItems: Array<{ productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, locationId: string, locationName: string | null, qty: number, since: string | null, daysWaiting: number, late: boolean, poNumbers: string | null, suppliers: string | null, destinationLocationId: string | null, destinationName: string | null }> };
+
+export type TempStoreSummaryQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type TempStoreSummaryQuery = { tempStoreSummary: { itemsWaiting: number, waitingTooLong: number, inTransit: number, oldestDays: number } };
+
+export type CreateStoreTransferMutationVariables = Exact<{
+  input: Types.StoreTransferInput;
+}>;
+
+
+export type CreateStoreTransferMutation = { createStoreTransfer: { id: string, transferNumber: string, transferDate: string, status: string, fromLocationId: string, fromLocationName: string | null, toLocationId: string, toLocationName: string | null, driverName: string | null, vehicleNo: string | null, waybillNo: string | null, reference: string | null, notes: string | null, daysInTransit: number | null, receivedDate: string | null, receivedByName: string | null, lines: Array<{ id: string, productId: string, productName: string | null, sku: string | null, uom: string | null, qtySent: number, qtyReceived: number | null, remarks: string | null, receiveRemarks: string | null }> } };
+
+export type ReceiveStoreTransferMutationVariables = Exact<{
+  id: string | number;
+  input: Types.ReceiveStoreTransferInput;
+}>;
+
+
+export type ReceiveStoreTransferMutation = { receiveStoreTransfer: { id: string, transferNumber: string, transferDate: string, status: string, fromLocationId: string, fromLocationName: string | null, toLocationId: string, toLocationName: string | null, driverName: string | null, vehicleNo: string | null, waybillNo: string | null, reference: string | null, notes: string | null, daysInTransit: number | null, receivedDate: string | null, receivedByName: string | null, lines: Array<{ id: string, productId: string, productName: string | null, sku: string | null, uom: string | null, qtySent: number, qtyReceived: number | null, remarks: string | null, receiveRemarks: string | null }> } };
+
+export type CancelStoreTransferMutationVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type CancelStoreTransferMutation = { cancelStoreTransfer: { id: string, transferNumber: string, transferDate: string, status: string, fromLocationId: string, fromLocationName: string | null, toLocationId: string, toLocationName: string | null, driverName: string | null, vehicleNo: string | null, waybillNo: string | null, reference: string | null, notes: string | null, daysInTransit: number | null, receivedDate: string | null, receivedByName: string | null, lines: Array<{ id: string, productId: string, productName: string | null, sku: string | null, uom: string | null, qtySent: number, qtyReceived: number | null, remarks: string | null, receiveRemarks: string | null }> } };
 
 export type OnEntityChangedSubscriptionVariables = Exact<{
   companyId: string | number;
@@ -1876,7 +1947,7 @@ export type PurchaseOrderLifecycleQueryVariables = Exact<{
 }>;
 
 
-export type PurchaseOrderLifecycleQuery = { purchaseOrder: { id: string, po_number: string, status: string, priority: string, requisition_id: string | null, requisitionNumber: string | null, viewerRestricted: boolean | null, currency_code: string, base_currency_code: string | null, total_amount: string | null, subtotal: string | null, vendor_id: string | null, vendor_name: string | null, analytic_account_id: string | null, project_id: string | null, organizer_id: string | null, assigned_approver_id: string | null, store_keeper_id: string | null, store_pricing_id: string | null, procurement_officer_id: string | null, procurement_2nd_id: string | null, assigned_receiver_id: string | null, assigned_receiver_name: string | null, purpose: string | null, delivery_destination: string | null, linkedProjectId: string | null, linkedMoId: string | null, projectCode: string | null, projectName: string | null, branch_id: string | null, branch_name: string | null, company_name: string | null, funding_source: string | null, funding_decided: boolean | null, funding_advance_id: string | null, funding_advance_number: string | null, funding_employee_name: string | null, assigned_buyer_user_id: string | null, assigned_buyer_name: string | null, buyerNames: Array<string> | null, callerIsBuyer: boolean | null, callerHasStorePricingPosition: boolean | null, callerHasMarketPricingPosition: boolean | null, callerHasStoreKeeperPosition: boolean | null, callerIsFinanceTeam: boolean | null, expected_delivery_date: string | null, notes: string | null, created_by_email: string | null, created_at: string, updated_at: string, machineryPhotoAlert: boolean, currencyTotals: Array<{ currency_code: string, subtotal: string, line_count: number }>, returnedTotals: Array<{ currency_code: string, ordered: string, returned: string, net: string }>, fundingAdvances: Array<{ currency_code: string, advance_id: string, advance_number: string | null, employee_name: string | null }> | null, lines: Array<{ id: string, product_id: string | null, product_name: string | null, product_name_ar: string | null, description: string | null, qty: string, uom: string | null, qty_received: string | null, actual_unit_price: string | null, store_price: string | null, store_price_currency: string | null, inventory_cost: string | null, inventory_cost_currency: string | null, market_price: string | null, market_price_currency: string | null, fx_rate_to_base: number | null, currency_code: string | null, requested_currency_code: string | null, verified_price: string | null, verified_price_currency: string | null, in_stock: boolean | null, qty_from_stock: string | null, source_location_id: string | null, source_location_name: string | null, source_company_id: string | null, source_company_name: string | null, source_average_cost: number | null, unit_price: string, initial_unit_price: string | null, total: string, audit_status: string | null, audit_note: string | null, audit_flagged_by_email: string | null, audit_flagged_at: string | null, flag_reason: string | null, flagged_at: string | null, flagged_by_name: string | null, flagged_from_status: string | null, flag_addressed_at: string | null, flag_resolved_at: string | null, flag_resolved_by_name: string | null, account_id: string | null, account_code: string | null, account_name: string | null, cost_center_id: string | null, cost_center_name: string | null, advance_settlement_id: string | null, is_bought: boolean | null }> | null, receipts: Array<{ id: string, receipt_number: string | null, status: string, receipt_date: string | null, location_id: string | null, location_name: string | null, received_by_email: string | null, received_by_name: string | null, received_from_name: string | null, location_notes: string | null, notes: string | null, created_at: string | null, lines: Array<{ id: string | null, po_line_id: string, description: string | null, qty_received: string, actual_unit_price: string | null }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> }> | null, approval_log: Array<{ id: string, action: string, user_email: string | null, notes: string | null, created_at: string }> | null, edit_requests: Array<{ id: string, po_id: string | null, status: string, changes: string, request_notes: string | null, requested_by: string | null, requested_by_email: string | null, requested_by_name: string | null, reviewed_by: string | null, reviewed_by_email: string | null, reviewed_by_name: string | null, review_notes: string | null, reviewed_at: string | null, created_at: string, auto_applied: boolean | null }> | null } | null };
+export type PurchaseOrderLifecycleQuery = { purchaseOrder: { id: string, po_number: string, status: string, priority: string, requisition_id: string | null, requisitionNumber: string | null, viewerRestricted: boolean | null, currency_code: string, base_currency_code: string | null, total_amount: string | null, subtotal: string | null, vendor_id: string | null, vendor_name: string | null, analytic_account_id: string | null, project_id: string | null, organizer_id: string | null, assigned_approver_id: string | null, store_keeper_id: string | null, store_pricing_id: string | null, procurement_officer_id: string | null, procurement_2nd_id: string | null, assigned_receiver_id: string | null, assigned_receiver_name: string | null, purpose: string | null, delivery_destination: string | null, linkedProjectId: string | null, linkedMoId: string | null, projectCode: string | null, projectName: string | null, branch_id: string | null, branch_name: string | null, company_name: string | null, funding_source: string | null, funding_decided: boolean | null, funding_advance_id: string | null, funding_advance_number: string | null, funding_employee_name: string | null, assigned_buyer_user_id: string | null, assigned_buyer_name: string | null, buyerNames: Array<string> | null, callerIsBuyer: boolean | null, callerHasStorePricingPosition: boolean | null, callerHasMarketPricingPosition: boolean | null, callerHasStoreKeeperPosition: boolean | null, callerIsFinanceTeam: boolean | null, expected_delivery_date: string | null, notes: string | null, created_by_email: string | null, created_at: string, updated_at: string, machineryPhotoAlert: boolean, currencyTotals: Array<{ currency_code: string, subtotal: string, line_count: number }>, returnedTotals: Array<{ currency_code: string, ordered: string, returned: string, net: string }>, fundingAdvances: Array<{ currency_code: string, advance_id: string, advance_number: string | null, employee_name: string | null }> | null, lines: Array<{ id: string, product_id: string | null, product_name: string | null, product_name_ar: string | null, sku: string | null, description: string | null, qty: string, uom: string | null, qty_received: string | null, actual_unit_price: string | null, store_price: string | null, store_price_currency: string | null, inventory_cost: string | null, inventory_cost_currency: string | null, market_price: string | null, market_price_currency: string | null, fx_rate_to_base: number | null, currency_code: string | null, requested_currency_code: string | null, verified_price: string | null, verified_price_currency: string | null, in_stock: boolean | null, qty_from_stock: string | null, source_location_id: string | null, source_location_name: string | null, source_company_id: string | null, source_company_name: string | null, source_average_cost: number | null, unit_price: string, initial_unit_price: string | null, total: string, audit_status: string | null, audit_note: string | null, audit_flagged_by_email: string | null, audit_flagged_at: string | null, flag_reason: string | null, flagged_at: string | null, flagged_by_name: string | null, flagged_from_status: string | null, flag_addressed_at: string | null, flag_resolved_at: string | null, flag_resolved_by_name: string | null, account_id: string | null, account_code: string | null, account_name: string | null, cost_center_id: string | null, cost_center_name: string | null, advance_settlement_id: string | null, is_bought: boolean | null }> | null, receipts: Array<{ id: string, receipt_number: string | null, status: string, receipt_date: string | null, location_id: string | null, location_name: string | null, received_by_email: string | null, received_by_name: string | null, received_from_name: string | null, location_notes: string | null, notes: string | null, created_at: string | null, lines: Array<{ id: string | null, po_line_id: string, description: string | null, qty_received: string, actual_unit_price: string | null }>, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> }> | null, approval_log: Array<{ id: string, action: string, user_email: string | null, notes: string | null, created_at: string }> | null, edit_requests: Array<{ id: string, po_id: string | null, status: string, changes: string, request_notes: string | null, requested_by: string | null, requested_by_email: string | null, requested_by_name: string | null, reviewed_by: string | null, reviewed_by_email: string | null, reviewed_by_name: string | null, review_notes: string | null, reviewed_at: string | null, created_at: string, auto_applied: boolean | null }> | null } | null };
 
 export type PoEditRequestImpactQueryVariables = Exact<{
   requestId: string | number;
@@ -2223,6 +2294,13 @@ export type ResolvePoLineCommentMutationVariables = Exact<{
 
 
 export type ResolvePoLineCommentMutation = { resolvePOLineComment: { id: string, resolved: boolean, resolved_at: string | null } };
+
+export type PoPhotosQueryVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type PoPhotosQuery = { purchaseOrder: { id: string, po_number: string, status: string, receipts: Array<{ id: string, status: string, receipt_date: string | null, photos: Array<{ id: string, fileId: string, label: string | null, category: string, originalFilename: string, downloadUrl: string | null, createdAt: string }> }> | null } | null };
 
 export type ProjectFieldsFragment = { id: string, code: string, name: string, description: string | null, projectType: string, status: string, rfqNumber: string | null, contractName: string | null, projectLocation: string | null, projectValue: number | null, projectValueCurrency: string | null, whtApplies: boolean | null, whtScenario: string | null, whtRate: number | null, whtAmount: number | null, clientName: string | null, clientContact: string | null, managerId: string | null, managerName: string | null, plannedStartDate: string | null, plannedEndDate: string | null, budgetAmount: number | null, budgetCurrency: string | null, budgets: unknown, holdReason: string | null, cancelReason: string | null, receivingDate: string | null, submissionDate: string | null, submissionTime: string | null, siteVisitDate: string | null, siteVisitTime: string | null, questionDate: string | null, questionTime: string | null, submittedAt: string | null, approvedAt: string | null, completedAt: string | null, cancelledAt: string | null, overallCompletionPct: number | null, teamCount: number | null, openPoCount: number | null, stagesCompleted: number | null, stagesTotal: number | null, currentStageName: string | null, analyticAccountId: string | null, analyticAccountName: string | null, allowedActions: Array<string> | null, lifecyclePhase: string | null, clientDocCount: number | null, rfqLineCount: number | null, openOverdueRfiCount: number | null, openSafetyIncidentCount: number | null, overdueCorrectiveActionCount: number | null, isRfq: boolean, rfqEstimatedCost: number | null, rfqOutcome: string | null, rfqOutcomeReason: string | null, costSummary: unknown, stages: unknown, team: unknown, statusHistory: unknown, activityLog: unknown, recentPos: unknown, createdAt: string, updatedAt: string | null };
 
@@ -4656,9 +4734,9 @@ export type DeleteMeetingActionMutationVariables = Exact<{
 
 export type DeleteMeetingActionMutation = { deleteMeetingAction: boolean };
 
-export type MiLineFieldsFragment = { id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean };
+export type MiLineFieldsFragment = { id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean, isReturnable: boolean | null, expectedReturnDate: string | null, serialNote: string | null, qtyReturned: number | null };
 
-export type MiFieldsFragment = { id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean }> };
+export type MiFieldsFragment = { id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, issuedToName: string | null, issuedToEmployeeId: string | null, department: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean, isReturnable: boolean | null, expectedReturnDate: string | null, serialNote: string | null, qtyReturned: number | null }> };
 
 export type MaterialIssuesQueryVariables = Exact<{
   projectId?: string | number | null | undefined;
@@ -4669,24 +4747,27 @@ export type MaterialIssuesQueryVariables = Exact<{
 }>;
 
 
-export type MaterialIssuesQuery = { materialIssues: Array<{ id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean }> }> };
+export type MaterialIssuesQuery = { materialIssues: Array<{ id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, issuedToName: string | null, issuedToEmployeeId: string | null, department: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean, isReturnable: boolean | null, expectedReturnDate: string | null, serialNote: string | null, qtyReturned: number | null }> }> };
 
 export type MaterialIssueQueryVariables = Exact<{
   id: string | number;
 }>;
 
 
-export type MaterialIssueQuery = { materialIssue: { id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean }> } | null };
+export type MaterialIssueQuery = { materialIssue: { id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, issuedToName: string | null, issuedToEmployeeId: string | null, department: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean, isReturnable: boolean | null, expectedReturnDate: string | null, serialNote: string | null, qtyReturned: number | null }> } | null };
 
 export type CreateMaterialIssueMutationVariables = Exact<{
   projectId?: string | number | null | undefined;
   poId?: string | number | null | undefined;
   issueDate: string;
   notes?: string | null | undefined;
+  issuedToEmployeeId?: string | number | null | undefined;
+  issuedToName?: string | null | undefined;
+  department?: string | null | undefined;
 }>;
 
 
-export type CreateMaterialIssueMutation = { createMaterialIssue: { id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean }> } };
+export type CreateMaterialIssueMutation = { createMaterialIssue: { id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, issuedToName: string | null, issuedToEmployeeId: string | null, department: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean, isReturnable: boolean | null, expectedReturnDate: string | null, serialNote: string | null, qtyReturned: number | null }> } };
 
 export type AddMaterialIssueLineMutationVariables = Exact<{
   issueId: string | number;
@@ -4695,10 +4776,13 @@ export type AddMaterialIssueLineMutationVariables = Exact<{
   qtyIssued: number;
   unitCost: number;
   fromLocationId?: string | number | null | undefined;
+  isReturnable?: boolean | null | undefined;
+  expectedReturnDate?: string | null | undefined;
+  serialNote?: string | null | undefined;
 }>;
 
 
-export type AddMaterialIssueLineMutation = { addMaterialIssueLine: { id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean } };
+export type AddMaterialIssueLineMutation = { addMaterialIssueLine: { id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean, isReturnable: boolean | null, expectedReturnDate: string | null, serialNote: string | null, qtyReturned: number | null } };
 
 export type DeleteMaterialIssueLineMutationVariables = Exact<{
   id: string | number;
@@ -4713,14 +4797,14 @@ export type IssueMaterialIssueMutationVariables = Exact<{
 }>;
 
 
-export type IssueMaterialIssueMutation = { issueMaterialIssue: { id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean }> } };
+export type IssueMaterialIssueMutation = { issueMaterialIssue: { id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, issuedToName: string | null, issuedToEmployeeId: string | null, department: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean, isReturnable: boolean | null, expectedReturnDate: string | null, serialNote: string | null, qtyReturned: number | null }> } };
 
 export type CancelMaterialIssueMutationVariables = Exact<{
   id: string | number;
 }>;
 
 
-export type CancelMaterialIssueMutation = { cancelMaterialIssue: { id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean }> } };
+export type CancelMaterialIssueMutation = { cancelMaterialIssue: { id: string, issueNumber: string, issueDate: string, status: string, notes: string | null, poId: string | null, requisitionId: string | null, poNumber: string | null, requisitionNumber: string | null, projectCode: string | null, projectName: string | null, issuedByName: string | null, issuedToName: string | null, issuedToEmployeeId: string | null, department: string | null, createdAt: string, lines: Array<{ id: string, productId: string, productName: string | null, productNameAr: string | null, sku: string | null, uom: string | null, poLineId: string | null, fromLocationName: string | null, toLocationName: string | null, qtyIssued: number, unitCost: number, totalCost: number, isInvoiced: boolean, isReturnable: boolean | null, expectedReturnDate: string | null, serialNote: string | null, qtyReturned: number | null }> } };
 
 export type MrLineFieldsFragment = { id: string, issueLineId: string | null, poLineId: string | null, productId: string, productName: string | null, sku: string | null, toLocationId: string, toLocationName: string | null, qtyReturned: number, unitCost: number, totalCost: number };
 
@@ -5508,6 +5592,14 @@ export type SubmitRequisitionToInventoryCheckMutationVariables = Exact<{
 
 
 export type SubmitRequisitionToInventoryCheckMutation = { submitRequisitionToInventoryCheck: { id: string, status: string } };
+
+export type SubmitRequisitionDirectSupplyMutationVariables = Exact<{
+  id: string | number;
+  notes?: string | null | undefined;
+}>;
+
+
+export type SubmitRequisitionDirectSupplyMutation = { submitRequisitionDirectSupply: { id: string, status: string } };
 
 export type ConfirmRequisitionInventoryCheckMutationVariables = Exact<{
   id: string | number;
