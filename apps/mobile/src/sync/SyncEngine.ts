@@ -1,10 +1,22 @@
 import NetInfo from '@react-native-community/netinfo'
 import { Platform } from 'react-native'
 import { Q } from '@nozbe/watermelondb'
+import type { Model } from '@nozbe/watermelondb'
 import * as SecureStore from 'expo-secure-store'
 import { randomUUID } from 'expo-crypto'
 import { database } from '../db/database'
-import type { AttendanceLog, OfflineQueueItem, SyncMeta } from '../db/models'
+import type {
+  OfflineQueueItem,
+  SyncMeta,
+  EmployeeProfile,
+  AttendanceLog,
+  WorkLocation,
+  Project,
+  PendingApproval,
+  Product,
+  LeaveRequest,
+  EquipmentAsset,
+} from '../db/models'
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? ''
 const SYNC_INTERVAL_MS = 15 * 60 * 1000 // 15 minutes
@@ -212,7 +224,7 @@ class SyncEngine {
           since: sinceParam,
           entities: entities.join(','),
           device_id: this.deviceId,
-        }),
+        }).toString(),
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -232,10 +244,10 @@ class SyncEngine {
     await this.applyChanges(changes)
 
     await database.write(async () => {
-      for (const entityType of Object.keys(changes)) {
+      for (const [entityType, change] of Object.entries(changes)) {
         const existing = syncMeta.find((m) => m.entityType === entityType)
         const syncedTs = new Date(syncedAt).getTime()
-        const count = changes[entityType]!.updated?.length ?? 0
+        const count = change.updated.length
 
         if (existing) {
           await existing.update((r) => {
@@ -252,10 +264,7 @@ class SyncEngine {
       }
     })
 
-    const totalRecords = Object.values(changes).reduce(
-      (sum, c) => sum + (c.updated?.length ?? 0),
-      0,
-    )
+    const totalRecords = Object.values(changes).reduce((sum, c) => sum + c.updated.length, 0)
     return { entities: Object.keys(changes).length, records: totalRecords }
   }
 
@@ -263,63 +272,63 @@ class SyncEngine {
   async applyChanges(changes: Record<string, ServerChanges>): Promise<void> {
     await database.write(async () => {
       if (changes.profile?.updated.length) {
-        await this._upsert('employee_profile', changes.profile.updated, (r) => ({
-          server_id: r.id,
-          employee_number: r.employee_number,
-          first_name: r.first_name,
-          last_name: r.last_name,
-          job_title: r.job_title ?? null,
-          department_name: r.department_name ?? null,
-          contract_type: r.contract_type,
-          work_location_id: r.work_location_id ?? null,
-          updated_at_server: new Date(String(r.updated_at)).getTime(),
+        await this._upsert<EmployeeProfile>('employee_profile', changes.profile.updated, (r) => ({
+          serverId: String(r.id),
+          employeeNumber: String(r.employee_number),
+          firstName: String(r.first_name),
+          lastName: String(r.last_name),
+          jobTitle: r.job_title != null ? String(r.job_title) : null,
+          departmentName: r.department_name != null ? String(r.department_name) : null,
+          contractType: String(r.contract_type),
+          workLocationId: r.work_location_id != null ? String(r.work_location_id) : null,
+          updatedAtServer: new Date(String(r.updated_at)).getTime(),
         }))
       }
 
       if (changes.attendance?.updated.length) {
-        await this._upsert('attendance_logs', changes.attendance.updated, (r) => ({
-          server_id: r.id,
-          punch_type: r.punch_type,
-          gps_lat: r.gps_lat != null ? Number(r.gps_lat) : null,
-          gps_lng: r.gps_lng != null ? Number(r.gps_lng) : null,
-          is_valid: Boolean(r.is_valid),
-          rejection_reason: r.rejection_reason ?? null,
-          punched_at: new Date(String(r.punched_at)).getTime(),
-          work_location_id: r.work_location_id ?? null,
-          is_offline_submission: false,
+        await this._upsert<AttendanceLog>('attendance_logs', changes.attendance.updated, (r) => ({
+          serverId: String(r.id),
+          punchType: String(r.punch_type),
+          gpsLat: r.gps_lat != null ? Number(r.gps_lat) : null,
+          gpsLng: r.gps_lng != null ? Number(r.gps_lng) : null,
+          isValid: Boolean(r.is_valid),
+          rejectionReason: r.rejection_reason != null ? String(r.rejection_reason) : null,
+          punchedAt: new Date(String(r.punched_at)).getTime(),
+          workLocationId: r.work_location_id != null ? String(r.work_location_id) : null,
+          isOfflineSubmission: false,
         }))
       }
 
       if (changes.locations?.updated.length) {
-        await this._upsert('work_locations', changes.locations.updated, (r) => ({
-          server_id: r.id,
-          name: r.name,
-          code: r.code ?? null,
-          location_type: r.location_type,
-          geo_lat: r.geo_lat != null ? Number(r.geo_lat) : null,
-          geo_lng: r.geo_lng != null ? Number(r.geo_lng) : null,
-          geo_radius_meters: r.geo_radius_meters != null ? Number(r.geo_radius_meters) : null,
-          updated_at_server: new Date(String(r.updated_at)).getTime(),
+        await this._upsert<WorkLocation>('work_locations', changes.locations.updated, (r) => ({
+          serverId: String(r.id),
+          name: String(r.name),
+          code: r.code != null ? String(r.code) : null,
+          locationType: String(r.location_type),
+          geoLat: r.geo_lat != null ? Number(r.geo_lat) : null,
+          geoLng: r.geo_lng != null ? Number(r.geo_lng) : null,
+          geoRadiusMeters: r.geo_radius_meters != null ? Number(r.geo_radius_meters) : null,
+          updatedAtServer: new Date(String(r.updated_at)).getTime(),
         }))
       }
 
       if (changes.projects?.updated.length) {
-        await this._upsert('projects', changes.projects.updated, (r) => ({
-          server_id: r.id,
-          code: r.code,
-          name: r.name,
-          project_type: r.project_type,
-          status: r.status,
-          client_name: r.client_name ?? null,
-          budget_amount: Number(r.budget_amount),
-          budget_currency: r.budget_currency,
-          stages_json: JSON.stringify(r.stages ?? []),
-          updated_at_server: new Date(String(r.updated_at)).getTime(),
+        await this._upsert<Project>('projects', changes.projects.updated, (r) => ({
+          serverId: String(r.id),
+          code: String(r.code),
+          name: String(r.name),
+          projectType: String(r.project_type),
+          status: String(r.status),
+          clientName: r.client_name != null ? String(r.client_name) : null,
+          budgetAmount: Number(r.budget_amount),
+          budgetCurrency: String(r.budget_currency),
+          stagesJson: JSON.stringify(r.stages ?? []),
+          updatedAtServer: new Date(String(r.updated_at)).getTime(),
         }))
       }
 
       if (changes.approvals?.updated.length) {
-        await this._upsert('pending_approvals', changes.approvals.updated, (r) => {
+        await this._upsert<PendingApproval>('pending_approvals', changes.approvals.updated, (r) => {
           let title = ''
           let subtitle: string | null = null
           let amount: number | null = null
@@ -339,91 +348,94 @@ class SyncEngine {
           }
 
           return {
-            server_id: r.id,
-            approval_type: r.approval_type,
+            serverId: String(r.id),
+            approvalType: String(r.approval_type),
             title,
             subtitle,
             amount,
             currency,
-            employee_name: r.employee_name ?? null,
-            status: r.status,
-            data_json: JSON.stringify(r),
-            updated_at_server: new Date(String(r.updated_at ?? r.created_at)).getTime(),
+            employeeName: r.employee_name != null ? String(r.employee_name) : null,
+            status: String(r.status),
+            dataJson: JSON.stringify(r),
+            updatedAtServer: new Date(String(r.updated_at ?? r.created_at)).getTime(),
           }
         })
       }
 
       if (changes.products?.updated.length) {
-        await this._upsert('products', changes.products.updated, (r) => ({
-          server_id: r.id,
-          sku: r.sku,
-          name: r.name,
-          uom: r.uom,
-          category: r.category ?? null,
-          updated_at_server: new Date(String(r.updated_at)).getTime(),
+        await this._upsert<Product>('products', changes.products.updated, (r) => ({
+          serverId: String(r.id),
+          sku: String(r.sku),
+          name: String(r.name),
+          uom: String(r.uom),
+          category: r.category != null ? String(r.category) : null,
+          updatedAtServer: new Date(String(r.updated_at)).getTime(),
         }))
       }
 
       if (changes.leave?.updated.length) {
-        await this._upsert('leave_requests', changes.leave.updated, (r) => ({
-          server_id: r.id,
-          start_date: r.start_date,
-          end_date: r.end_date,
-          days_requested: Number(r.days_requested),
-          status: r.status,
-          leave_type_name: r.leave_type_name,
-          reason: r.reason ?? null,
-          review_notes: r.review_notes ?? null,
-          updated_at_server: new Date(String(r.updated_at)).getTime(),
+        await this._upsert<LeaveRequest>('leave_requests', changes.leave.updated, (r) => ({
+          serverId: String(r.id),
+          startDate: String(r.start_date),
+          endDate: String(r.end_date),
+          daysRequested: Number(r.days_requested),
+          status: String(r.status),
+          leaveTypeName: String(r.leave_type_name),
+          reason: r.reason != null ? String(r.reason) : null,
+          reviewNotes: r.review_notes != null ? String(r.review_notes) : null,
+          updatedAtServer: new Date(String(r.updated_at)).getTime(),
         }))
       }
 
       if (changes.equipment?.updated.length) {
-        await this._upsert('equipment_assets', changes.equipment.updated, (r) => ({
-          server_id: r.id,
-          asset_number: r.asset_number,
-          name: r.name,
-          category: r.category ?? null,
-          model: r.model ?? null,
-          status: r.status,
-          project_id: r.project_id ?? null,
-          project_name: r.project_name ?? null,
-          project_code: r.project_code ?? null,
-          current_location: r.current_location ?? null,
-          gps_lat: r.gps_lat != null ? Number(r.gps_lat) : null,
-          gps_lng: r.gps_lng != null ? Number(r.gps_lng) : null,
-          total_hours_operated:
+        await this._upsert<EquipmentAsset>('equipment_assets', changes.equipment.updated, (r) => ({
+          serverId: String(r.id),
+          assetNumber: String(r.asset_number),
+          name: String(r.name),
+          category: r.category != null ? String(r.category) : null,
+          model: r.model != null ? String(r.model) : null,
+          status: String(r.status),
+          projectId: r.project_id != null ? String(r.project_id) : null,
+          projectName: r.project_name != null ? String(r.project_name) : null,
+          projectCode: r.project_code != null ? String(r.project_code) : null,
+          currentLocation: r.current_location != null ? String(r.current_location) : null,
+          gpsLat: r.gps_lat != null ? Number(r.gps_lat) : null,
+          gpsLng: r.gps_lng != null ? Number(r.gps_lng) : null,
+          totalHoursOperated:
             r.total_hours_operated != null ? Number(r.total_hours_operated) : null,
-          last_usage_date: r.last_usage_date ?? null,
-          maintenance_status: r.maintenance_status ?? 'ok',
-          next_maintenance_due_date: r.next_maintenance_due_date ?? null,
-          next_maintenance_due_hours:
+          lastUsageDate: r.last_usage_date != null ? String(r.last_usage_date) : null,
+          maintenanceStatus: r.maintenance_status != null ? String(r.maintenance_status) : 'ok',
+          nextMaintenanceDueDate:
+            r.next_maintenance_due_date != null ? String(r.next_maintenance_due_date) : null,
+          nextMaintenanceDueHours:
             r.next_maintenance_due_hours != null ? Number(r.next_maintenance_due_hours) : null,
-          updated_at_server: new Date(String(r.updated_at)).getTime(),
+          updatedAtServer: new Date(String(r.updated_at)).getTime(),
         }))
       }
     })
   }
 
-  private async _upsert(
+  private async _upsert<M extends Model>(
     tableName: string,
     records: Record<string, unknown>[],
-    mapper: (r: Record<string, unknown>) => Record<string, unknown>,
+    mapper: (r: Record<string, unknown>) => Partial<M> & { serverId: string },
   ): Promise<void> {
     for (const record of records) {
       const mapped = mapper(record)
-      const serverId = String(mapped.server_id)
+      const { serverId, ...mutable } = mapped
 
-      const existing = await database.get(tableName).query(Q.where('server_id', serverId)).fetch()
+      const existing = await database
+        .get<M>(tableName)
+        .query(Q.where('server_id', serverId))
+        .fetch()
+      const first = existing[0]
 
-      if (existing.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await existing[0]!.update((local: any) => {
-          Object.assign(local, mapped)
+      if (first) {
+        await first.update((local) => {
+          Object.assign(local, mutable)
         })
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await database.get(tableName).create((local: any) => {
+        await database.get<M>(tableName).create((local) => {
           Object.assign(local, mapped)
         })
       }

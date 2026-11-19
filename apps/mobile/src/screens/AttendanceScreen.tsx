@@ -31,18 +31,8 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
-function formatDate(ts: number): string {
-  return new Date(ts).toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-  })
-}
-
 export function AttendanceScreen() {
-  const [location, setLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(
-    null,
-  )
+  const [, setLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null)
   const [workLocation, setWorkLocation] = useState<WorkLocation | null>(null)
   const [todayPunches, setTodayPunches] = useState<PunchRecord[]>([])
   const [isOnline, setIsOnline] = useState(true)
@@ -92,7 +82,7 @@ export function AttendanceScreen() {
 
   async function captureLocation() {
     const { status } = await Location.requestForegroundPermissionsAsync()
-    if (status !== 'granted') {
+    if (status !== Location.PermissionStatus.GRANTED) {
       Alert.alert('Permission denied', 'Location permission is required for attendance.')
       return null
     }
@@ -110,7 +100,7 @@ export function AttendanceScreen() {
       }
       setLocation(loc)
 
-      if (workLocation?.geoLat != null && workLocation?.geoLng != null) {
+      if (workLocation?.geoLat != null && workLocation.geoLng != null) {
         const dist = haversineMeters(loc.lat, loc.lng, workLocation.geoLat, workLocation.geoLng)
         setDistanceFromZone(Math.round(dist))
       }
@@ -143,16 +133,15 @@ export function AttendanceScreen() {
 
       // Add optimistic local record for immediate UI feedback
       await database.write(async () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await database.get('attendance_logs').create((r: any) => {
-          r.server_id = `pending_${Date.now()}`
-          r.punch_type = nextAction
-          r.gps_lat = loc?.lat ?? null
-          r.gps_lng = loc?.lng ?? null
-          r.is_valid = true
-          r.punched_at = Date.now()
-          r.work_location_id = workLocation?.serverId ?? null
-          r.is_offline_submission = true
+        await database.get<AttendanceLog>('attendance_logs').create((r) => {
+          r.serverId = `pending_${Date.now()}`
+          r.punchType = nextAction
+          r.gpsLat = loc?.lat ?? null
+          r.gpsLng = loc?.lng ?? null
+          r.isValid = true
+          r.punchedAt = Date.now()
+          r.workLocationId = workLocation?.serverId ?? null
+          r.isOfflineSubmission = true
         })
       })
 
