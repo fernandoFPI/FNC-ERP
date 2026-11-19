@@ -204,7 +204,7 @@ export default function ShiftConfigsPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Input
+          <Input field
             label={t('hr.shifts.name')}
             value={form.name}
             onChange={(e) => {
@@ -221,7 +221,7 @@ export default function ShiftConfigsPage() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('hr.shifts.startTime')}
               type="time"
               value={form.start_time}
@@ -229,7 +229,7 @@ export default function ShiftConfigsPage() {
                 updateTime('start_time', e.target.value)
               }}
             />
-            <Input
+            <Input field
               label={t('hr.shifts.endTime')}
               type="time"
               value={form.end_time}
@@ -237,7 +237,7 @@ export default function ShiftConfigsPage() {
                 updateTime('end_time', e.target.value)
               }}
             />
-            <Input
+            <Input field
               label={t('hr.shifts.breakMin')}
               type="number"
               min="0"
@@ -281,7 +281,7 @@ export default function ShiftConfigsPage() {
             />
           </div>
 
-          <Input
+          <Input field
             label={t('hr.shifts.otThresholdHrs')}
             type="number"
             step="0.5"

@@ -430,7 +430,7 @@ export default function BankAccountsPage() {
                 />
               </div>
               <div>
-                <SearchableSelect
+                <SearchableSelect field
                   label={t('admin.bank.currency')}
                   value={form.currencyCode}
                   onChange={(v) => {

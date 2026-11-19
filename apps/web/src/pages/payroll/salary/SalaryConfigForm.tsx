@@ -128,7 +128,7 @@ export default function SalaryConfigForm() {
                 gap: '12px',
               }}
             >
-              <Input
+              <Input field
                 label={t('payroll.salary.baseSalary2')}
                 type="number"
                 min="0"
@@ -136,13 +136,13 @@ export default function SalaryConfigForm() {
                 onChange={field('base_salary')}
                 required
               />
-              <Select
+              <Select field
                 label={t('payroll.salary.currency')}
                 value={form.currency_code}
                 onChange={field('currency_code')}
                 options={CURRENCIES}
               />
-              <Input
+              <Input field
                 label={t('payroll.salary.effectiveFrom')}
                 type="date"
                 value={form.effective_from}
@@ -163,21 +163,21 @@ export default function SalaryConfigForm() {
                 gap: '12px',
               }}
             >
-              <Input
+              <Input field
                 label={t('payroll.salary.housingAllowance')}
                 type="number"
                 min="0"
                 value={form.housing_allowance}
                 onChange={field('housing_allowance')}
               />
-              <Input
+              <Input field
                 label={t('payroll.salary.transportAllowance')}
                 type="number"
                 min="0"
                 value={form.transport_allowance}
                 onChange={field('transport_allowance')}
               />
-              <Input
+              <Input field
                 label={t('payroll.salary.otherAllowances')}
                 type="number"
                 min="0"
@@ -198,7 +198,7 @@ export default function SalaryConfigForm() {
                 gap: '12px',
               }}
             >
-              <Input
+              <Input field
                 label={t('payroll.salary.incomeTax')}
                 type="number"
                 min="0"
@@ -207,7 +207,7 @@ export default function SalaryConfigForm() {
                 value={form.income_tax_pct}
                 onChange={field('income_tax_pct')}
               />
-              <Input
+              <Input field
                 label={t('payroll.salary.socialSecurity')}
                 type="number"
                 min="0"

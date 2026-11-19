@@ -87,7 +87,7 @@ export default function CompleteProfilePage() {
   }
 
   const field = (key: keyof typeof form, label: string, placeholder: string, type = 'text') => (
-    <Input
+    <Input field
       key={key}
       label={label}
       type={type}

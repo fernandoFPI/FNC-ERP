@@ -137,7 +137,7 @@ export default function EventConfigsPage() {
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
           <div style={{ minWidth: '130px' }}>
-            <SearchableSelect
+            <SearchableSelect field
               value={editState.dlqPriority}
               onChange={(v) => {
                 setEditState((s) => (s ? { ...s, dlqPriority: v } : s))
@@ -179,7 +179,7 @@ export default function EventConfigsPage() {
       mobilePriority: 3,
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
-          <Input
+          <Input field
             value={editState.maxAttempts}
             onChange={(e) => {
               setEditState((s) => (s ? { ...s, maxAttempts: e.target.value } : s))
@@ -197,7 +197,7 @@ export default function EventConfigsPage() {
       mobilePriority: 4,
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
-          <Input
+          <Input field
             value={editState.initialRetryDelaySeconds}
             onChange={(e) => {
               setEditState((s) => (s ? { ...s, initialRetryDelaySeconds: e.target.value } : s))
@@ -215,7 +215,7 @@ export default function EventConfigsPage() {
       mobilePriority: 5,
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
-          <Input
+          <Input field
             value={editState.backoffMultiplier}
             onChange={(e) => {
               setEditState((s) => (s ? { ...s, backoffMultiplier: e.target.value } : s))
@@ -234,7 +234,7 @@ export default function EventConfigsPage() {
       mobilePriority: 6,
       render: (cfg) =>
         editingType === cfg.eventType && editState ? (
-          <Input
+          <Input field
             value={editState.maxRetryDelaySeconds}
             onChange={(e) => {
               setEditState((s) => (s ? { ...s, maxRetryDelaySeconds: e.target.value } : s))

@@ -857,7 +857,7 @@ export default function VendorInvoiceDetail() {
           </div>
         ))}
         <div style={{ marginBottom: '10px' }}>
-          <SearchableSelect
+          <SearchableSelect field
             label={t('fin.apInvDetail.paymentMethod')}
             value={payForm.payment_method}
             onChange={(v) => {

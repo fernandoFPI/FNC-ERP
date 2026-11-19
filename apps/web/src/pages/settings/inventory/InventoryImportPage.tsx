@@ -190,7 +190,7 @@ export default function InventoryImportPage() {
 
         {/* Location selector */}
         <div style={{ marginBottom: '24px', maxWidth: '340px' }}>
-          <Select
+          <Select field
             label={t('settings.invImport.targetStockLocation')}
             value={locationId}
             onChange={(e) => {

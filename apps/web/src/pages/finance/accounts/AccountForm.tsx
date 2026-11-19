@@ -163,7 +163,7 @@ export default function AccountForm() {
               gap: '16px',
             }}
           >
-            <Input
+            <Input field
               label={t('fin.accountForm.accountCode')}
               value={form.code}
               onChange={(e) => {
@@ -172,7 +172,7 @@ export default function AccountForm() {
               required
               placeholder="e.g. 1200 or 3111-01"
             />
-            <Select
+            <Select field
               label={t('fin.accountForm.type')}
               value={form.account_type}
               onChange={(e) => {
@@ -191,7 +191,7 @@ export default function AccountForm() {
             </Select>
           </div>
 
-          <Input
+          <Input field
             label={t('fin.accountForm.accountName')}
             value={form.name}
             onChange={(e) => {
@@ -208,7 +208,7 @@ export default function AccountForm() {
               gap: '16px',
             }}
           >
-            <Select
+            <Select field
               label={t('fin.accountForm.currency')}
               value={form.currency_code}
               onChange={(e) => {
@@ -220,7 +220,7 @@ export default function AccountForm() {
               <option value="EUR">EUR</option>
               <option value="TRY">TRY</option>
             </Select>
-            <Select
+            <Select field
               label={t('fin.accountForm.parentAccount')}
               value={form.parent_id}
               onChange={(e) => {
@@ -242,7 +242,7 @@ export default function AccountForm() {
               gap: '16px',
             }}
           >
-            <SearchableSelect
+            <SearchableSelect field
               label={t('fin.accountForm.groupAccount')}
               value={form.group_account_id}
               onChange={(v) => {
@@ -251,7 +251,7 @@ export default function AccountForm() {
               placeholder={t('fin.accountForm.mapsToWhichGroupAccount')}
               options={groupOptions}
             />
-            <Select
+            <Select field
               label={t('fin.accountForm.category')}
               value={form.account_category}
               onChange={(e) => {

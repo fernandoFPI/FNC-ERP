@@ -315,7 +315,7 @@ export default function MyAdvancesPage() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input
+            <Input field
               label={t('fin.myAdv.amount')}
               type="number"
               min="0.01"
@@ -325,7 +325,7 @@ export default function MyAdvancesPage() {
                 setForm((f) => ({ ...f, amount: e.target.value }))
               }}
             />
-            <Select
+            <Select field
               label={t('fin.myAdv.currency')}
               value={form.currency_code}
               onChange={(e) => {
@@ -338,7 +338,7 @@ export default function MyAdvancesPage() {
             </Select>
           </div>
 
-          <Textarea
+          <Textarea field
             label={t('fin.myAdv.purpose')}
             value={form.purpose}
             onChange={(e) => {
@@ -348,7 +348,7 @@ export default function MyAdvancesPage() {
             rows={2}
           />
 
-          <Select
+          <Select field
             label={t('fin.myAdv.projectOptional')}
             value={form.project_id}
             onChange={(e) => {

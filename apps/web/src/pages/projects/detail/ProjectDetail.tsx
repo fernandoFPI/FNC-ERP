@@ -4451,7 +4451,7 @@ export default function ProjectDetail() {
                           </div>
                         </div>
 
-                        <SearchableSelect
+                        <SearchableSelect field
                           label={t('proj.detail.employee')}
                           value={addForm.employee_id}
                           onChange={(v) => { setAddForm((f) => ({ ...f, employee_id: v })); }}

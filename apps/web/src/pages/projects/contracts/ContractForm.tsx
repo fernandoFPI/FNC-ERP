@@ -575,7 +575,7 @@ export default function ContractForm() {
             </div>
           )}
 
-          <Input
+          <Input field
             label={t('proj.contractForm.contractName')}
             value={form.contractName}
             onChange={(e) => {
@@ -583,7 +583,7 @@ export default function ContractForm() {
             }}
             required
           />
-          <Input
+          <Input field
             label={t('proj.contractForm.clientName')}
             value={form.clientName}
             onChange={(e) => {
@@ -599,7 +599,7 @@ export default function ContractForm() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('proj.contractForm.contractValue')}
               type="number"
               step="0.01"
@@ -610,7 +610,7 @@ export default function ContractForm() {
               required
             />
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('proj.contractForm.currency')}
                 value={form.currencyCode}
                 onChange={(v) => {
@@ -622,7 +622,7 @@ export default function ContractForm() {
           </div>
 
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('proj.contractForm.defaultBillingMethod')}
               value={form.defaultBillingMethod}
               onChange={(v) => {
@@ -639,7 +639,7 @@ export default function ContractForm() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('proj.contractForm.defaultMargin')}
               type="number"
               step="0.1"
@@ -648,7 +648,7 @@ export default function ContractForm() {
                 setForm((f) => ({ ...f, defaultMarginPct: e.target.value }))
               }}
             />
-            <Input
+            <Input field
               label={t('proj.contractForm.retention')}
               type="number"
               step="0.1"

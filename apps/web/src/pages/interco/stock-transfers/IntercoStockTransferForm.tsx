@@ -255,7 +255,7 @@ export default function IntercoStockTransferForm() {
         <Card style={{ padding: '20px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('interco.transferForm.sourceCompany')}
                 value={fromCompanyId}
                 onChange={(v) => {
@@ -270,7 +270,7 @@ export default function IntercoStockTransferForm() {
               />
             </div>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('interco.transferForm.destinationCompany')}
                 value={toCompanyId}
                 onChange={(v) => {
@@ -284,7 +284,7 @@ export default function IntercoStockTransferForm() {
                 }))}
               />
             </div>
-            <Input
+            <Input field
               label={t('interco.transferForm.transferDate')}
               type="date"
               value={transferDate}
@@ -293,7 +293,7 @@ export default function IntercoStockTransferForm() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('interco.transferForm.notes')}
               value={notes}
               onChange={(e) => {

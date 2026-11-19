@@ -329,7 +329,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                 >{t('rental.maintDetail.maintenanceStarted2', { relativeTime: relativeTime(record.started_at) })}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {record.trigger_type?.includes('hour') && (
-                    <Input
+                    <Input field
                       label={t('rental.maintDetail.engineHoursAtService')}
                       type="number"
                       value={form.engineHoursAtService}
@@ -347,7 +347,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     }}
                     currency="IQD"
                   />
-                  <Textarea
+                  <Textarea field
                     label={t('rental.maintDetail.findings')}
                     value={form.findings}
                     onChange={(e) => {
@@ -356,7 +356,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     placeholder={t('rental.maintDetail.describeTheConditionFoundDuringMaintenance')}
                     rows={3}
                   />
-                  <Textarea
+                  <Textarea field
                     label={t('rental.maintDetail.partsReplaced')}
                     value={form.partsReplaced}
                     onChange={(e) => {
@@ -365,7 +365,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     placeholder={t('rental.maintDetail.listPartsReplacedWithPartNumbers')}
                     rows={2}
                   />
-                  <Input
+                  <Input field
                     label={t('rental.maintDetail.downtimeHours')}
                     type="number"
                     step="0.5"
@@ -375,7 +375,7 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     }}
                     placeholder={t('rental.maintDetail.totalHoursAssetWasOutOf')}
                   />
-                  <Textarea
+                  <Textarea field
                     label={t('rental.maintDetail.notesForNextService')}
                     value={form.nextServiceNotes}
                     onChange={(e) => {

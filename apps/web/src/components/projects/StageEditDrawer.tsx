@@ -4,7 +4,12 @@ import { useMutation } from '@apollo/client'
 import { useTheme } from '../../theme/ThemeContext'
 import { UPDATE_PROJECT_STAGE } from '../../graphql/projects'
 import { api } from '../../lib/axios'
+import { useToastStore } from '../../store/toastStore'
 import { SearchableSelect } from '../ui/SearchableSelect'
+import { Drawer } from '../ui/Drawer'
+import { Input } from '../ui/Input'
+import { Textarea } from '../ui/Textarea'
+import { ActionButton } from '../ui/ActionButton'
 
 interface Stage {
   id: string
@@ -55,6 +60,7 @@ export function StageEditDrawer({
   const [form, setForm] = useState<Partial<Stage & { assignedTo: string }>>({})
   const [saving, setSaving] = useState(false)
   const [updateStage] = useMutation(UPDATE_PROJECT_STAGE)
+  const addToast = useToastStore((s) => s.addToast)
 
   useEffect(() => {
     if (stage) setForm({ ...stage, assignedTo: stage.assignedTo ?? '' })
@@ -111,268 +117,152 @@ export function StageEditDrawer({
       }
       onSaved?.()
       onClose()
+    } catch (err) {
+      // The shared axios client shows nothing on an error and a failed mutation only rejects, so without this a refused
+      // save looked like a dead button (and threw out of the click handler).
+      // A REST refusal carries the server's sentence; a GraphQL one is the error's own message (an axios error's
+      // message is just the status code, so it is never shown).
+      const e = err as { response?: { data?: { error?: { message?: string } } }; message?: string }
+      addToast({
+        type: 'error',
+        message:
+          e.response?.data?.error?.message ??
+          (e.response ? undefined : e.message) ??
+          t('proj.stageEdit.couldNotSave'),
+      })
     } finally {
       setSaving(false)
     }
   }
 
   const inp = (key: string, label: string, type = 'text') => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <label
-        style={{
-          fontSize: '11px',
-          fontWeight: 600,
-          color: theme.textMuted,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-        }}
-      >
-        {label}
-      </label>
-      <input
-        type={type}
-        style={{
-          padding: '8px 10px',
-          borderRadius: '7px',
-          border: `1px solid ${theme.borderInput}`,
-          background: theme.bgCanvas,
-          color: theme.textPrimary,
-          fontSize: '13px',
-        }}
-        value={String((form as Record<string, unknown>)[key] ?? '')}
-        onChange={(e) => {
-          set(key, e.target.value)
-        }}
-      />
-    </div>
+    <Input
+      field
+      label={label}
+      type={type}
+      value={String((form as Record<string, unknown>)[key] ?? '')}
+      onChange={(e) => {
+        set(key, e.target.value)
+      }}
+    />
   )
 
   return (
-    <>
-      <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 40 }}
-        onClick={onClose}
-      />
-      <div
-        style={{
-          position: 'fixed',
-          insetInlineEnd: 0,
-          top: 0,
-          height: '100%',
-          width: '100%',
-          maxWidth: '420px',
-          background: theme.bgSurface,
-          boxShadow: '-4px 0 24px rgba(0,0,0,0.15)',
-          zIndex: 50,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 20px',
-            borderBottom: `1px solid ${theme.border}`,
-          }}
-        >
-          <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '15px' }}>
-            {isCreate ? t('proj.stageEdit.addStage') : t('proj.stageEdit.editStage')}
-          </span>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '20px',
-              color: theme.textMuted,
-              lineHeight: 1,
-            }}
-          >
-            ×
-          </button>
-        </div>
-
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '14px',
-          }}
-        >
-          {inp('name', t('proj.stageEdit.stageName'))}
-
-          {/* Responsible team member */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                color: theme.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              {t('proj.stageEdit.responsibleMember')}
-            </label>
-            {isAdmin ? (
-              <>
-                <SearchableSelect
-                  value={form.assignedTo ?? ''}
-                  onChange={(v) => {
-                    set('assignedTo', v)
-                  }}
-                  placeholder={t('proj.stageEdit.unassigned')}
-                  options={teamMembers.map((m) => ({
-                    value: m.employeeId,
-                    label: `${m.name}${m.role ? ` (${m.role})` : ''}`,
-                  }))}
-                />
-                {teamMembers.length === 0 && (
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                    {t('proj.stageEdit.addTeamMembersOnTheTeam')}
-                  </span>
-                )}
-              </>
-            ) : (
-              <div
-                style={{
-                  padding: '8px 10px',
-                  borderRadius: '7px',
-                  border: `1px solid ${theme.border}`,
-                  background: theme.bgCanvas,
-                  color: stage?.assignedToName ? theme.textPrimary : theme.textMuted,
-                  fontSize: '13px',
-                }}
-              >
-                {stage?.assignedToName ?? t('proj.stageEdit.unassigned')}
-              </div>
-            )}
-          </div>
-
-          {!isCreate && (
-            <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <SearchableSelect
-                  label={t('proj.stageEdit.status')}
-                  value={form.status ?? 'pending'}
-                  onChange={handleStatusChange}
-                  options={STAGE_STATUSES.map((s) => ({ value: s, label: s.replace('_', ' ') }))}
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: theme.textMuted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  {t('proj.stageEdit.completion')}{' '}
-                  <span style={{ color: theme.accent }}>{form.completionPct ?? 0}%</span>
-                </label>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={form.completionPct ?? 0}
-                  onChange={(e) => {
-                    set('completionPct', parseInt(e.target.value))
-                  }}
-                  style={{ width: '100%', accentColor: theme.accent }}
-                />
-              </div>
-            </>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            {inp('plannedStartDate', t('proj.stageEdit.plannedStart'), 'date')}
-            {inp('plannedEndDate', t('proj.stageEdit.plannedEnd'), 'date')}
-            {!isCreate && inp('actualStartDate', t('proj.stageEdit.actualStart'), 'date')}
-            {!isCreate && inp('actualEndDate', t('proj.stageEdit.actualEnd'), 'date')}
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                color: theme.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              {t('proj.stageEdit.notes')}
-            </label>
-            <textarea
-              rows={3}
-              value={form.notes ?? ''}
-              onChange={(e) => {
-                set('notes', e.target.value)
-              }}
-              style={{
-                padding: '8px 10px',
-                borderRadius: '7px',
-                border: `1px solid ${theme.borderInput}`,
-                background: theme.bgCanvas,
-                color: theme.textPrimary,
-                fontSize: '13px',
-                resize: 'none',
-              }}
-            />
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '8px',
-            padding: '14px 20px',
-            borderTop: `1px solid ${theme.border}`,
-          }}
-        >
-          <button
-            onClick={onClose}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '7px',
-              border: `1px solid ${theme.border}`,
-              background: 'transparent',
-              color: theme.textMuted,
-              cursor: 'pointer',
-              fontSize: '13px',
-            }}
-          >
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={isCreate ? t('proj.stageEdit.addStage') : t('proj.stageEdit.editStage')}
+      width="420px"
+      footer={
+        <>
+          <ActionButton variant="outline" onClick={onClose}>
             {t('proj.stageEdit.cancel')}
-          </button>
-          <button
-            onClick={(...args: Parameters<typeof handleSave>) => void handleSave(...args)}
-            disabled={saving}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '7px',
-              background: saving ? theme.border : theme.accent,
-              color: '#fff',
-              border: 'none',
-              cursor: saving ? 'not-allowed' : 'pointer',
-              fontSize: '13px',
-              fontWeight: 500,
+          </ActionButton>
+          <ActionButton
+            variant="solid"
+            loading={saving}
+            onClick={() => {
+              void handleSave()
             }}
           >
             {saving ? t('proj.stageEdit.saving') : t('proj.stageEdit.saveStage')}
-          </button>
+          </ActionButton>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {inp('name', t('proj.stageEdit.stageName'))}
+
+        {/* Responsible team member */}
+        {isAdmin ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <SearchableSelect
+              field
+              label={t('proj.stageEdit.responsibleMember')}
+              value={form.assignedTo ?? ''}
+              onChange={(v) => {
+                set('assignedTo', v)
+              }}
+              placeholder={t('proj.stageEdit.unassigned')}
+              options={teamMembers.map((m) => ({
+                value: m.employeeId,
+                label: `${m.name}${m.role ? ` (${m.role})` : ''}`,
+              }))}
+            />
+            {teamMembers.length === 0 && (
+              <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+                {t('proj.stageEdit.addTeamMembersOnTheTeam')}
+              </span>
+            )}
+          </div>
+        ) : (
+          <Input
+            field
+            readOnly
+            label={t('proj.stageEdit.responsibleMember')}
+            value={stage?.assignedToName ?? t('proj.stageEdit.unassigned')}
+          />
+        )}
+
+        {!isCreate && (
+          <>
+            <SearchableSelect
+              field
+              label={t('proj.stageEdit.status')}
+              value={form.status ?? 'pending'}
+              onChange={handleStatusChange}
+              options={STAGE_STATUSES.map((s) => ({ value: s, label: s.replace('_', ' ') }))}
+            />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label
+                htmlFor="stage-completion"
+                style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}
+              >
+                {t('proj.stageEdit.completion')}{' '}
+                <span style={{ color: theme.accentSolid, fontWeight: 600 }}>
+                  {form.completionPct ?? 0}%
+                </span>
+              </label>
+              <input
+                id="stage-completion"
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={form.completionPct ?? 0}
+                onChange={(e) => {
+                  set('completionPct', parseInt(e.target.value))
+                }}
+                style={{ width: '100%', accentColor: theme.accentSolid }}
+              />
+            </div>
+          </>
+        )}
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: '12px',
+          }}
+        >
+          {inp('plannedStartDate', t('proj.stageEdit.plannedStart'), 'date')}
+          {inp('plannedEndDate', t('proj.stageEdit.plannedEnd'), 'date')}
+          {!isCreate && inp('actualStartDate', t('proj.stageEdit.actualStart'), 'date')}
+          {!isCreate && inp('actualEndDate', t('proj.stageEdit.actualEnd'), 'date')}
         </div>
+
+        <Textarea
+          field
+          rows={3}
+          label={t('proj.stageEdit.notes')}
+          value={form.notes ?? ''}
+          onChange={(e) => {
+            set('notes', e.target.value)
+          }}
+        />
       </div>
-    </>
+    </Drawer>
   )
 }

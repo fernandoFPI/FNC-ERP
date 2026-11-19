@@ -328,7 +328,7 @@ export default function IntercoTransactionsPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Select
+          <Select field
             label={t('interco.txns.transactionType')}
             value={form.transactionType}
             onChange={(e) => {
@@ -343,7 +343,7 @@ export default function IntercoTransactionsPage() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('interco.txns.fromCompanyId')}
               value={form.fromCompanyId}
               onChange={(e) => {
@@ -351,7 +351,7 @@ export default function IntercoTransactionsPage() {
               }}
               placeholder="e.g. 1"
             />
-            <Input
+            <Input field
               label={t('interco.txns.toCompanyId')}
               value={form.toCompanyId}
               onChange={(e) => {
@@ -361,7 +361,7 @@ export default function IntercoTransactionsPage() {
             />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
-            <Input
+            <Input field
               label={t('interco.txns.amount')}
               type="number"
               value={form.amount}
@@ -370,7 +370,7 @@ export default function IntercoTransactionsPage() {
               }}
               placeholder="0.00"
             />
-            <Select
+            <Select field
               label={t('interco.txns.currency')}
               value={form.currencyCode}
               onChange={(e) => {
@@ -383,7 +383,7 @@ export default function IntercoTransactionsPage() {
               ]}
             />
           </div>
-          <Input
+          <Input field
             label={t('interco.txns.description')}
             value={form.description}
             onChange={(e) => {
@@ -398,7 +398,7 @@ export default function IntercoTransactionsPage() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('interco.txns.fromAccountId')}
               value={form.fromAccountId}
               onChange={(e) => {
@@ -406,7 +406,7 @@ export default function IntercoTransactionsPage() {
               }}
               placeholder={t('interco.txns.accountId')}
             />
-            <Input
+            <Input field
               label={t('interco.txns.toAccountId')}
               value={form.toAccountId}
               onChange={(e) => {

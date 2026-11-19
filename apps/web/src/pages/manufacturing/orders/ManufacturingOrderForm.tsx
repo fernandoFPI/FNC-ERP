@@ -98,7 +98,7 @@ export default function ManufacturingOrderForm() {
             }}
           >
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('mfg.moForm.billOfMaterials')}
                 value={form.bom_id}
                 onChange={(v) => {
@@ -111,7 +111,7 @@ export default function ManufacturingOrderForm() {
                 }))}
               />
             </div>
-            <Input
+            <Input field
               label={t('mfg.moForm.qtyToProduce')}
               type="number"
               step="0.001"
@@ -132,7 +132,7 @@ export default function ManufacturingOrderForm() {
             }}
           >
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('mfg.moForm.workCenter')}
                 value={form.work_center_id}
                 onChange={(v) => {
@@ -146,7 +146,7 @@ export default function ManufacturingOrderForm() {
               />
             </div>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('mfg.moForm.projectOptional')}
                 value={form.project_id}
                 onChange={(v) => {
@@ -168,7 +168,7 @@ export default function ManufacturingOrderForm() {
               gap: '16px',
             }}
           >
-            <Input
+            <Input field
               label={t('mfg.moForm.scheduledStart')}
               type="date"
               value={form.scheduled_start}
@@ -176,7 +176,7 @@ export default function ManufacturingOrderForm() {
                 setForm((f) => ({ ...f, scheduled_start: e.target.value }))
               }}
             />
-            <Input
+            <Input field
               label={t('mfg.moForm.scheduledEnd')}
               type="date"
               value={form.scheduled_end}
@@ -186,7 +186,7 @@ export default function ManufacturingOrderForm() {
             />
           </div>
 
-          <Input
+          <Input field
             label={t('mfg.moForm.notes')}
             value={form.notes}
             onChange={(e) => {

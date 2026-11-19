@@ -327,7 +327,7 @@ export default function RentalContractDetail() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('rental.contractDetail.billingPeriodStart')}
               type="date"
               value={periodStart}
@@ -336,7 +336,7 @@ export default function RentalContractDetail() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('rental.contractDetail.billingPeriodEnd')}
               type="date"
               value={periodEnd}
@@ -388,7 +388,7 @@ export default function RentalContractDetail() {
             </label>
             {whtApplies && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <Select
+                <Select field
                   label={t('rental.contractDetail.whtScenario')}
                   value={whtScenario}
                   onChange={(e) => {
@@ -399,7 +399,7 @@ export default function RentalContractDetail() {
                     { value: 'fnc_pays', label: t('rental.contractDetail.fncPaysFullRemitsWhtAnnually') },
                   ]}
                 />
-                <Input
+                <Input field
                   label={t('rental.contractDetail.whtRate')}
                   type="number"
                   min="0"

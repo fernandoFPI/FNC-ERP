@@ -216,7 +216,7 @@ export default function TransferPricingPage() {
 
           {editing ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <Select
+              <Select field
                 label={t('interco.pricing.pricingMethod')}
                 value={editMethod}
                 onChange={(e) => {
@@ -230,7 +230,7 @@ export default function TransferPricingPage() {
                 ]}
               />
               {editMethod === 'cost_plus' && (
-                <Input
+                <Input field
                   label={t('interco.pricing.markupCostPlus')}
                   type="number"
                   value={editMarkupPct}

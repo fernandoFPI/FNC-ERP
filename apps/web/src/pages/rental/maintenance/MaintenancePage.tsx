@@ -409,7 +409,7 @@ export default function MaintenancePage() {
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('rental.maintenance.asset')}
               value={scheduleForm.asset_id}
               onChange={(v) => {
@@ -423,7 +423,7 @@ export default function MaintenancePage() {
             />
           </div>
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('rental.maintenance.maintenanceType')}
               value={scheduleForm.maintenance_type}
               onChange={(v) => {
@@ -432,7 +432,7 @@ export default function MaintenancePage() {
               options={MAINTENANCE_TYPES.map((mt) => ({ value: mt, label: enumLabel(mt).replace(/_/g, ' ') }))}
             />
           </div>
-          <Input
+          <Input field
             label={t('rental.maintenance.scheduledDate')}
             type="date"
             value={scheduleForm.scheduled_date}
@@ -441,7 +441,7 @@ export default function MaintenancePage() {
             }}
             required
           />
-          <Input
+          <Input field
             label={t('rental.maintenance.description')}
             value={scheduleForm.description}
             onChange={(e) => {
@@ -455,7 +455,7 @@ export default function MaintenancePage() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('rental.maintenance.estimatedCost')}
               type="number"
               step="0.01"
@@ -464,7 +464,7 @@ export default function MaintenancePage() {
                 setScheduleForm((f) => ({ ...f, estimated_cost: e.target.value }))
               }}
             />
-            <Input
+            <Input field
               label={t('rental.maintenance.assignedTo')}
               value={scheduleForm.assigned_to}
               onChange={(e) => {
@@ -502,7 +502,7 @@ export default function MaintenancePage() {
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('rental.maintenance.asset')}
               value={recordForm.asset_id}
               onChange={(v) => {
@@ -516,7 +516,7 @@ export default function MaintenancePage() {
             />
           </div>
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('rental.maintenance.maintenanceType')}
               value={recordForm.maintenance_type}
               onChange={(v) => {
@@ -525,7 +525,7 @@ export default function MaintenancePage() {
               options={MAINTENANCE_TYPES.map((mt) => ({ value: mt, label: enumLabel(mt).replace(/_/g, ' ') }))}
             />
           </div>
-          <Input
+          <Input field
             label={t('rental.maintenance.performedDate')}
             type="date"
             value={recordForm.performed_date}
@@ -534,7 +534,7 @@ export default function MaintenancePage() {
             }}
             required
           />
-          <Input
+          <Input field
             label={t('rental.maintenance.description')}
             value={recordForm.description}
             onChange={(e) => {
@@ -549,7 +549,7 @@ export default function MaintenancePage() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('rental.maintenance.cost')}
               type="number"
               step="0.01"
@@ -559,7 +559,7 @@ export default function MaintenancePage() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('rental.maintenance.performedBy')}
               value={recordForm.performed_by}
               onChange={(e) => {
@@ -568,7 +568,7 @@ export default function MaintenancePage() {
               required
             />
           </div>
-          <Input
+          <Input field
             label={t('rental.maintenance.nextDueDateOptional')}
             type="date"
             value={recordForm.next_due_date}

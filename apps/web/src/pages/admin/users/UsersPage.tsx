@@ -363,7 +363,7 @@ export default function UsersPage() {
               </div>
             </div>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('admin.users.role')}
                 value={inviteForm.role}
                 onChange={(v) => {
@@ -495,7 +495,7 @@ export default function UsersPage() {
               />
             </div>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('admin.users.company')}
                 value={createForm.companyId}
                 onChange={(v) => {
@@ -506,7 +506,7 @@ export default function UsersPage() {
               />
             </div>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('admin.users.role2')}
                 value={createForm.role}
                 onChange={(v) => {

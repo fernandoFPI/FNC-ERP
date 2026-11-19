@@ -179,7 +179,7 @@ export default function AppearancePage() {
               maxWidth: '600px',
             }}
           >
-            <Select
+            <Select field
               label={t('settings.appearance.dateFormat')}
               value={prefs?.dateFormat ?? 'MM/DD/YYYY'}
               onChange={(e) => {
@@ -187,7 +187,7 @@ export default function AppearancePage() {
               }}
               options={DATE_FORMATS}
             />
-            <Select
+            <Select field
               label={t('settings.appearance.numberFormat')}
               value={prefs?.numberFormat ?? 'en-US'}
               onChange={(e) => {

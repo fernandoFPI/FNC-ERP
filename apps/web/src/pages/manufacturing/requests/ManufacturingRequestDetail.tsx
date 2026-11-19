@@ -447,7 +447,7 @@ export default function ManufacturingRequestDetail() {
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '400px' }}>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('mfg.reqDetail.bom')}
                 value={moForm.bomId}
                 onChange={(v) => {
@@ -461,7 +461,7 @@ export default function ManufacturingRequestDetail() {
               />
             </div>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('mfg.reqDetail.workCenterOptional')}
                 value={moForm.workCenterId}
                 onChange={(v) => {

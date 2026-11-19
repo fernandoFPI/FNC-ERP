@@ -284,7 +284,7 @@ export default function CompanySettingsPage() {
           >
             {FX_PAIRS.map((pair) => (
               <div key={pair.key}>
-                <Input
+                <Input field
                   label={pair.label}
                   type="number"
                   step="0.1"

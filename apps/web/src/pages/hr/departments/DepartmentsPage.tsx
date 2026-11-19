@@ -138,7 +138,7 @@ export default function DepartmentsPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Input
+          <Input field
             label={t('hr.departments.name')}
             value={form.name}
             onChange={(e) => {

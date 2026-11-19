@@ -336,7 +336,7 @@ export default function ExpenseCategoriesPage() {
           />
         </Field>
         <Field label={t('fin.expCats.defaultGlAccountOptional')}>
-          <SearchableSelect
+          <SearchableSelect field
             value={form.gl_account_id}
             onChange={(v) => {
               setForm((p) => ({ ...p, gl_account_id: v }))

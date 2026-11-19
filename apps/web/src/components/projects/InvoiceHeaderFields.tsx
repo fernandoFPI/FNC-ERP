@@ -95,7 +95,7 @@ export function InvoiceHeaderFields({ values, onChange, disabled = false }: Prop
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
         <div>
-          <Input
+          <Input field
             label={t('proj.invHeader.clientContractNo')}
             value={values.clientContractNo}
             disabled={disabled}
@@ -107,7 +107,7 @@ export function InvoiceHeaderFields({ values, onChange, disabled = false }: Prop
             {t('proj.invHeader.clientContractNoHint')}
           </div>
         </div>
-        <Input
+        <Input field
           label={t('proj.invHeader.deliveryDate')}
           type="date"
           value={values.deliveryDate}
@@ -116,7 +116,7 @@ export function InvoiceHeaderFields({ values, onChange, disabled = false }: Prop
             onChange({ deliveryDate: e.target.value })
           }}
         />
-        <Textarea
+        <Textarea field
           label={t('proj.invHeader.billTo')}
           rows={4}
           value={values.billToAddress}
@@ -126,7 +126,7 @@ export function InvoiceHeaderFields({ values, onChange, disabled = false }: Prop
             onChange({ billToAddress: e.target.value })
           }}
         />
-        <Textarea
+        <Textarea field
           label={t('proj.invHeader.deliverTo')}
           rows={4}
           value={values.deliverToAddress}
@@ -136,7 +136,7 @@ export function InvoiceHeaderFields({ values, onChange, disabled = false }: Prop
             onChange({ deliverToAddress: e.target.value })
           }}
         />
-        <Input
+        <Input field
           label={t('proj.invHeader.periodOfPerformance')}
           value={values.periodOfPerformance}
           disabled={disabled}

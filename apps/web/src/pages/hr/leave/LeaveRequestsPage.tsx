@@ -302,7 +302,7 @@ export default function LeaveRequestsPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Select
+          <Select field
             label={t('hr.leaveList.leaveType')}
             value={form.leave_type_id}
             onChange={(e) => {
@@ -336,7 +336,7 @@ export default function LeaveRequestsPage() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('hr.leaveList.startDate')}
               type="date"
               value={form.start_date}
@@ -345,7 +345,7 @@ export default function LeaveRequestsPage() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('hr.leaveList.endDate')}
               type="date"
               value={form.end_date}
@@ -361,7 +361,7 @@ export default function LeaveRequestsPage() {
               <span style={{ color: theme.textPrimary, fontWeight: 600 }}>{t('hr.leaveList.day', { count: days })}</span>
             </div>
           )}
-          <Textarea
+          <Textarea field
             label={t('hr.leaveList.reasonOptional')}
             value={form.reason}
             onChange={(e) => {

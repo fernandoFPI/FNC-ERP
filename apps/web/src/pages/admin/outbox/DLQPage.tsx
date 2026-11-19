@@ -612,7 +612,7 @@ export default function DLQPage() {
           </>
         }
       >
-        <Textarea
+        <Textarea field
           label={t('admin.dlq.notesOptional')}
           value={notes}
           onChange={(e) => {
@@ -657,7 +657,7 @@ export default function DLQPage() {
           </>
         }
       >
-        <Textarea
+        <Textarea field
           label={t('admin.dlq.reasonRequired')}
           value={notes}
           onChange={(e) => {
@@ -717,7 +717,7 @@ export default function DLQPage() {
           <div style={{ fontSize: '12px', color: theme.textSecondary }}>
             {t('admin.dlq.notesApplied', { count: selectedIds.size })}
           </div>
-          <Textarea
+          <Textarea field
             label={t('admin.dlq.dismissReason')}
             value={bulkDismissNotes}
             onChange={(e) => {

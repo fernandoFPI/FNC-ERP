@@ -538,7 +538,7 @@ export default function ManufacturingOrderDetail() {
             <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
               {t('mfg.moDetail.thisWillCancelTheMoComponents')}
             </div>
-            <Input
+            <Input field
               label={t('mfg.moDetail.reasonOptional')}
               value={cancelNotes}
               onChange={(e) => {

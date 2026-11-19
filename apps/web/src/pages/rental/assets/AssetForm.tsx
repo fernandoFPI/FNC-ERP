@@ -109,7 +109,7 @@ export default function AssetForm() {
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}
         >
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
-            <Input
+            <Input field
               label={t('rental.assetForm.assetName')}
               value={form.name}
               onChange={(e) => {
@@ -118,7 +118,7 @@ export default function AssetForm() {
               required
             />
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('rental.assetForm.category')}
                 value={form.category}
                 onChange={(v) => {
@@ -128,7 +128,7 @@ export default function AssetForm() {
               />
             </div>
           </div>
-          <Input
+          <Input field
             label={t('rental.assetForm.description')}
             value={form.description}
             onChange={(e) => {
@@ -142,7 +142,7 @@ export default function AssetForm() {
               gap: '16px',
             }}
           >
-            <Input
+            <Input field
               label={t('rental.assetForm.serialNumber')}
               value={form.serial_number}
               onChange={(e) => {
@@ -150,7 +150,7 @@ export default function AssetForm() {
               }}
             />
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('rental.assetForm.status')}
                 value={form.status}
                 onChange={(v) => {
@@ -167,7 +167,7 @@ export default function AssetForm() {
               gap: '16px',
             }}
           >
-            <Input
+            <Input field
               label={t('rental.assetForm.purchaseDate')}
               type="date"
               value={form.purchase_date}
@@ -175,7 +175,7 @@ export default function AssetForm() {
                 setForm((f) => ({ ...f, purchase_date: e.target.value }))
               }}
             />
-            <Input
+            <Input field
               label={t('rental.assetForm.purchasePrice')}
               type="number"
               step="0.01"
@@ -186,7 +186,7 @@ export default function AssetForm() {
             />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
-            <Input
+            <Input field
               label={t('rental.assetForm.dailyRate')}
               type="number"
               step="0.01"
@@ -197,7 +197,7 @@ export default function AssetForm() {
               required
             />
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('rental.assetForm.currency')}
                 value={form.currency_code}
                 onChange={(v) => {
@@ -211,7 +211,7 @@ export default function AssetForm() {
               />
             </div>
           </div>
-          <Input
+          <Input field
             label={t('rental.assetForm.maintenanceDueHours')}
             type="number"
             step="1"

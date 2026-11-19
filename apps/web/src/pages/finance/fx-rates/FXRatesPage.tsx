@@ -244,7 +244,7 @@ export default function FXRatesPage() {
               gap: '12px',
             }}
           >
-            <Select
+            <Select field
               label={t('fin.fxRates.fromCurrency')}
               value={form.from_currency}
               onChange={(e) => {
@@ -257,7 +257,7 @@ export default function FXRatesPage() {
                 </option>
               ))}
             </Select>
-            <Select
+            <Select field
               label={t('fin.fxRates.toCurrency')}
               value={form.to_currency}
               onChange={(e) => {
@@ -278,7 +278,7 @@ export default function FXRatesPage() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('fin.fxRates.rate')}
               type="number"
               step="0.0001"
@@ -289,7 +289,7 @@ export default function FXRatesPage() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('fin.fxRates.date')}
               type="date"
               value={form.rate_date}

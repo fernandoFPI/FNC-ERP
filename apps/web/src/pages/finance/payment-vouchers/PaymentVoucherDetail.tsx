@@ -843,7 +843,7 @@ export default function PaymentVoucherDetail() {
 
                 <div>
                   <label style={labelStyle}>{t('fin.pvDetail.paidFrom')}</label>
-                  <SearchableSelect
+                  <SearchableSelect field
                     value={fundingSourceValue(
                       form.funding_source_type,
                       form.petty_cash_float_id,

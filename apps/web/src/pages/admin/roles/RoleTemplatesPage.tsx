@@ -245,7 +245,7 @@ export default function RoleTemplatesPage() {
         <div
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '80px' }}
         >
-          <Input
+          <Input field
             label={t('admin.roles.templateName')}
             value={form.name}
             onChange={(e) => {
@@ -254,7 +254,7 @@ export default function RoleTemplatesPage() {
             placeholder={t('admin.roles.eGFinanceViewer')}
             required
           />
-          <Input
+          <Input field
             label={t('admin.roles.description')}
             value={form.description}
             onChange={(e) => {

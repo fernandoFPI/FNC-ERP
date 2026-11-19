@@ -1176,7 +1176,7 @@ export default function EmployeeAdvanceDetail() {
                                   alignItems: 'end',
                                 }}
                               >
-                                <SearchableSelect
+                                <SearchableSelect field
                                   label={t('fin.advDetail.glAccount')}
                                   required
                                   value={editing.accountId}
@@ -1192,7 +1192,7 @@ export default function EmployeeAdvanceDetail() {
                                   placeholder={t('fin.advDetail.searchPostableAccounts')}
                                   minDropdownWidth={320}
                                 />
-                                <SearchableSelect
+                                <SearchableSelect field
                                   label={t('fin.advDetail.costCenter')}
                                   required
                                   value={editing.costCenterId}

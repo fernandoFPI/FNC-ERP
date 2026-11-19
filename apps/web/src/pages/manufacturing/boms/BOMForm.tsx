@@ -149,7 +149,7 @@ export default function BOMForm() {
               marginBottom: '16px',
             }}
           >
-            <SearchableSelect
+            <SearchableSelect field
               label={t('mfg.bomForm.finishedProduct')}
               value={form.finished_product_id}
               onChange={(v) => {
@@ -159,7 +159,7 @@ export default function BOMForm() {
               placeholder={t('mfg.bomForm.selectProduct')}
               required
             />
-            <Input
+            <Input field
               label={t('mfg.bomForm.version')}
               value={form.version}
               onChange={(e) => {
@@ -167,7 +167,7 @@ export default function BOMForm() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('mfg.bomForm.qtyProduced')}
               type="number"
               step="0.001"
@@ -177,7 +177,7 @@ export default function BOMForm() {
               }}
             />
           </div>
-          <Input
+          <Input field
             label={t('mfg.bomForm.notes')}
             value={form.notes}
             onChange={(e) => {

@@ -215,7 +215,7 @@ export default function WorkLocationsPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Input
+          <Input field
             label={t('hr.locations.name')}
             value={form.name}
             onChange={(e) => {
@@ -223,7 +223,7 @@ export default function WorkLocationsPage() {
             }}
             required
           />
-          <Textarea
+          <Textarea field
             label={t('hr.locations.address')}
             value={form.address}
             onChange={(e) => {
@@ -249,7 +249,7 @@ export default function WorkLocationsPage() {
                 gap: '10px',
               }}
             >
-              <Input
+              <Input field
                 label={t('hr.locations.latitude')}
                 type="number"
                 step="0.000001"
@@ -258,7 +258,7 @@ export default function WorkLocationsPage() {
                   setForm((f) => ({ ...f, latitude: e.target.value }))
                 }}
               />
-              <Input
+              <Input field
                 label={t('hr.locations.longitude')}
                 type="number"
                 step="0.000001"
@@ -267,7 +267,7 @@ export default function WorkLocationsPage() {
                   setForm((f) => ({ ...f, longitude: e.target.value }))
                 }}
               />
-              <Input
+              <Input field
                 label={t('hr.locations.radiusM')}
                 type="number"
                 min="1"

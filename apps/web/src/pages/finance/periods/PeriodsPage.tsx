@@ -153,7 +153,7 @@ export default function PeriodsPage() {
           onSubmit={(...args: Parameters<typeof handleCreate>) => void handleCreate(...args)}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
-          <Input
+          <Input field
             label={t('fin.periods.periodName')}
             value={form.name}
             onChange={(e) => {
@@ -169,7 +169,7 @@ export default function PeriodsPage() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('fin.periods.startDate')}
               type="date"
               value={form.start_date}
@@ -178,7 +178,7 @@ export default function PeriodsPage() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('fin.periods.endDate')}
               type="date"
               value={form.end_date}

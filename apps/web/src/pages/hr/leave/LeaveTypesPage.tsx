@@ -181,7 +181,7 @@ export default function LeaveTypesPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Input
+          <Input field
             label={t('hr.leaveTypes.name')}
             value={form.name}
             onChange={(e) => {
@@ -190,7 +190,7 @@ export default function LeaveTypesPage() {
             required
             placeholder={t('hr.leaveTypes.eGAnnualLeave')}
           />
-          <Input
+          <Input field
             label={t('hr.leaveTypes.maxDaysPerYear')}
             type="number"
             min="1"

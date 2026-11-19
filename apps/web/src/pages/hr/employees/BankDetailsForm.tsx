@@ -157,14 +157,14 @@ export function BankDetailsForm({ employeeId }: Props) {
         <div style={{ padding: '16px', background: theme.bgCanvas }}>
           {editing ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <Input
+              <Input field
                 label={t('hr.bankForm.bankName')}
                 value={editForm.bank_name ?? ''}
                 onChange={(e) => {
                   setEditForm((f) => ({ ...f, bank_name: e.target.value }))
                 }}
               />
-              <Input
+              <Input field
                 label={t('hr.bankForm.accountNumber')}
                 value={editForm.account_number ?? ''}
                 onChange={(e) => {
@@ -176,7 +176,7 @@ export function BankDetailsForm({ employeeId }: Props) {
                     : t('hr.bankForm.enterAccountNumber')
                 }
               />
-              <Input
+              <Input field
                 label={t('hr.bankForm.iban')}
                 value={editForm.iban ?? ''}
                 onChange={(e) => {
@@ -185,7 +185,7 @@ export function BankDetailsForm({ employeeId }: Props) {
                 placeholder={revealed?.iban ? t('hr.bankForm.leaveBlankToKeepExisting') : t('hr.bankForm.enterIban')}
               />
               <div>
-                <SearchableSelect
+                <SearchableSelect field
                   label={t('hr.bankForm.currency')}
                   value={editForm.currency_code ?? ''}
                   onChange={(v) => {

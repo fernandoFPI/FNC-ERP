@@ -108,7 +108,7 @@ function AdvanceRequestEditor({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 140px' }}>
-          <Select
+          <Select field
             label={t('req.form.currency')}
             value={currency}
             onChange={(e) => {
@@ -121,7 +121,7 @@ function AdvanceRequestEditor({
           </Select>
         </div>
         <div style={{ flex: '1 1 160px' }}>
-          <Input
+          <Input field
             label={t('req.form.advanceAmount')}
             type="number"
             min="0"
@@ -133,7 +133,7 @@ function AdvanceRequestEditor({
           />
         </div>
       </div>
-      <SearchableSelect
+      <SearchableSelect field
         label={t('req.form.projectOptional')}
         value={projectId}
         onChange={setProjectId}
@@ -141,7 +141,7 @@ function AdvanceRequestEditor({
         placeholder={t('req.form.searchProject')}
         minDropdownWidth={320}
       />
-      <Textarea
+      <Textarea field
         label={t('req.form.advanceReason')}
         value={reason}
         onChange={(e) => {

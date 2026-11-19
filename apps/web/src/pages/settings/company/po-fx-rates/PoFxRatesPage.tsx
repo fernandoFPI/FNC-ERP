@@ -269,7 +269,7 @@ export default function PoFxRatesPage() {
           {t('settings.fxrates.addACurrency')}
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-          <Input
+          <Input field
             label={t('settings.fxrates.currencyCode')}
             placeholder={t('settings.fxrates.usd')}
             maxLength={3}
@@ -279,7 +279,7 @@ export default function PoFxRatesPage() {
             }}
             style={{ width: '110px' }}
           />
-          <Input
+          <Input field
             label={t('settings.fxrates.rateTo', { base: baseCurrency })}
             type="number"
             min={0}

@@ -564,7 +564,7 @@ export default function EmployeeDetail() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('hr.empDetail.shift')}
               value={selectedShiftId}
               onChange={(v) => {
@@ -579,7 +579,7 @@ export default function EmployeeDetail() {
                 }))}
             />
           </div>
-          <Input
+          <Input field
             label={t('hr.empDetail.effectiveFrom')}
             type="date"
             value={shiftEffectiveFrom}
@@ -639,7 +639,7 @@ export default function EmployeeDetail() {
             {t('hr.empDetail.linkingAUserAllowsThemTo')}
           </p>
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('hr.empDetail.systemUser')}
               value={selectedUserId}
               onChange={(v) => {
@@ -686,7 +686,7 @@ export default function EmployeeDetail() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <p style={{ fontSize: '13px', color: theme.textSecondary, margin: 0 }}>{t('hr.empDetail.thisWillDeactivateSAccountThis', { first_name: emp.first_name, last_name: emp.last_name })}</p>
-          <Input
+          <Input field
             label={t('hr.empDetail.terminationDate')}
             type="date"
             value={terminationDate}
@@ -696,7 +696,7 @@ export default function EmployeeDetail() {
             min={new Date().toISOString().split('T')[0]}
             required
           />
-          <Textarea
+          <Textarea field
             label={t('hr.empDetail.reason')}
             value={terminationReason}
             onChange={(e) => {

@@ -223,7 +223,7 @@ export default function RechargeBundlesPage() {
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', maxWidth: '420px' }}>
           <div style={{ flex: 1 }}>
-            <Select
+            <Select field
               label={t('hr.bundles.costCenter')}
               value={selectedCCId}
               onChange={(e) => {
@@ -268,14 +268,14 @@ export default function RechargeBundlesPage() {
             maxWidth: '600px',
           }}
         >
-          <SearchableSelect
+          <SearchableSelect field
             label={t('hr.bundles.expenseAccountDebit')}
             value={expenseAccountId}
             onChange={setExpenseAccountId}
             placeholder={currentAccountsLoading ? t('hr.bundles.loading') : t('hr.bundles.none')}
             options={accounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` }))}
           />
-          <SearchableSelect
+          <SearchableSelect field
             label={t('hr.bundles.fundingAccountCredit')}
             value={fundingAccountId}
             onChange={setFundingAccountId}
@@ -402,7 +402,7 @@ export default function RechargeBundlesPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Input
+          <Input field
             label={t('hr.bundles.name')}
             value={form.name}
             onChange={(e) => {
@@ -411,7 +411,7 @@ export default function RechargeBundlesPage() {
             placeholder={t('hr.bundles.eG5000IqdData')}
           />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input
+            <Input field
               label={t('hr.bundles.amount')}
               type="number"
               min="0"
@@ -421,7 +421,7 @@ export default function RechargeBundlesPage() {
                 setForm((f) => ({ ...f, amount: e.target.value }))
               }}
             />
-            <Select
+            <Select field
               label={t('hr.bundles.currency')}
               value={form.currencyCode}
               onChange={(e) => {
@@ -435,7 +435,7 @@ export default function RechargeBundlesPage() {
               ))}
             </Select>
           </div>
-          <Input
+          <Input field
             label={t('hr.bundles.sortOrder')}
             type="number"
             value={form.sortOrder}

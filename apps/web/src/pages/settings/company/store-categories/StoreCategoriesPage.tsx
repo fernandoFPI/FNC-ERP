@@ -175,7 +175,7 @@ export default function StoreCategoriesPage() {
           {t('settings.storecats.addACategory')}
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <Input
+          <Input field
             label={t('settings.storecats.name')}
             placeholder={t('settings.storecats.eGHardwareStore')}
             value={newName}
@@ -184,7 +184,7 @@ export default function StoreCategoriesPage() {
             }}
             style={{ width: '240px' }}
           />
-          <Input
+          <Input field
             label={t('settings.storecats.skuPrefix')}
             placeholder="HW"
             maxLength={10}

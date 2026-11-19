@@ -94,7 +94,7 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
     <Modal open={true} title={t('proj.mfgReq.newManufacturingRequest')} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '420px' }}>
         <div>
-          <SearchableSelect
+          <SearchableSelect field
             label={t('proj.mfgReq.productBom')}
             value={form.bomId}
             onChange={(v) => {

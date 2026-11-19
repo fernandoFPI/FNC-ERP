@@ -420,7 +420,7 @@ export default function LoginPage() {
               onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
               style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
             >
-              <Input
+              <Input field
                 label={t('auth.login.email')}
                 type="email"
                 value={email}
@@ -433,7 +433,7 @@ export default function LoginPage() {
                 disabled={loading}
               />
 
-              <Input
+              <Input field
                 label={t('auth.login.password')}
                 type={showPassword ? 'text' : 'password'}
                 value={password}

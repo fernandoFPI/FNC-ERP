@@ -409,7 +409,7 @@ export default function CostCentersPage() {
           />
         </Field>
         <Field label={t('fin.cc.type')}>
-          <SearchableSelect
+          <SearchableSelect field
             value={form.type}
             onChange={(v) => {
               setForm((p) => ({ ...p, type: v as CostCenter['type'] }))
@@ -418,7 +418,7 @@ export default function CostCentersPage() {
           />
         </Field>
         <Field label={t('fin.cc.parentCostCenterOptional')}>
-          <SearchableSelect
+          <SearchableSelect field
             value={form.parent_id}
             onChange={(v) => {
               setForm((p) => ({ ...p, parent_id: v }))
@@ -428,7 +428,7 @@ export default function CostCentersPage() {
           />
         </Field>
         <Field label={t('fin.cc.rechargeFulfillerOptional')}>
-          <SearchableSelect
+          <SearchableSelect field
             value={form.default_recharge_fulfiller_id}
             onChange={(v) => {
               setForm((p) => ({ ...p, default_recharge_fulfiller_id: v }))
@@ -438,7 +438,7 @@ export default function CostCentersPage() {
           />
         </Field>
         <Field label={t('fin.cc.secondRechargeFulfillerOptional')}>
-          <SearchableSelect
+          <SearchableSelect field
             value={form.default_recharge_fulfiller_id_2}
             onChange={(v) => {
               setForm((p) => ({ ...p, default_recharge_fulfiller_id_2: v }))

@@ -356,7 +356,7 @@ export default function ProfilePage() {
 
                 {/* Name */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <Input
+                  <Input field
                     label={t('settings.profile.firstName')}
                     value={personalForm.firstName}
                     onChange={(e) => {
@@ -364,7 +364,7 @@ export default function ProfilePage() {
                     }}
                     placeholder={t('settings.profile.firstName2')}
                   />
-                  <Input
+                  <Input field
                     label={t('settings.profile.lastName')}
                     value={personalForm.lastName}
                     onChange={(e) => {
@@ -373,7 +373,7 @@ export default function ProfilePage() {
                     placeholder={t('settings.profile.lastName2')}
                   />
                 </div>
-                <Input
+                <Input field
                   label={t('settings.profile.jobTitle')}
                   value={personalForm.jobTitle}
                   onChange={(e) => {
@@ -409,7 +409,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                <Input
+                <Input field
                   label={t('settings.profile.phoneNumber')}
                   type="tel"
                   value={personalForm.phone}
@@ -418,7 +418,7 @@ export default function ProfilePage() {
                   }}
                   placeholder="+964 770 000 0000"
                 />
-                <Input
+                <Input field
                   label={t('settings.profile.emergencyContactPhone')}
                   type="tel"
                   value={personalForm.emergencyPhone}
@@ -493,7 +493,7 @@ export default function ProfilePage() {
               {t('settings.profile.changePassword')}
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <Input
+              <Input field
                 label={t('settings.profile.currentPassword')}
                 type="password"
                 value={currentPassword}
@@ -502,7 +502,7 @@ export default function ProfilePage() {
                 }}
                 placeholder={t('settings.profile.enterCurrentPassword')}
               />
-              <Input
+              <Input field
                 label={t('settings.profile.newPassword')}
                 type="password"
                 value={newPassword}
@@ -511,7 +511,7 @@ export default function ProfilePage() {
                 }}
                 placeholder={t('settings.profile.atLeast8Characters')}
               />
-              <Input
+              <Input field
                 label={t('settings.profile.confirmNewPassword')}
                 type="password"
                 value={confirmPwd}
@@ -635,7 +635,7 @@ export default function ProfilePage() {
                     {mfaSecret}
                   </div>
                 </details>
-                <Input
+                <Input field
                   label={t('settings.profile.enter6DigitCodeFromYour')}
                   value={totpCode}
                   onChange={(e) => {

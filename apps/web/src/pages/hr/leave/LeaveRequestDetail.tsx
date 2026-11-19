@@ -180,7 +180,7 @@ export default function LeaveRequestDetail() {
 
         {showReject && (
           <Card style={{ padding: '16px' }}>
-            <Textarea
+            <Textarea field
               label={t('hr.leaveDetail.rejectionNotesRequired')}
               value={rejectNotes}
               onChange={(e) => {

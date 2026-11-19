@@ -477,7 +477,7 @@ export default function RechargeRequestsPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {canAdmin && (
             <>
-              <Select
+              <Select field
                 label={t('hr.recharge.requestFor')}
                 value={form.requestedForUserId}
                 onChange={(e) => {
@@ -494,7 +494,7 @@ export default function RechargeRequestsPage() {
               </Select>
               {form.requestedForUserId === EXTERNAL_RECIPIENT && (
                 <div>
-                  <Input
+                  <Input field
                     label={t('hr.recharge.recipientSName')}
                     value={form.requestedForName}
                     onChange={(e) => {
@@ -510,7 +510,7 @@ export default function RechargeRequestsPage() {
             </>
           )}
           <div>
-            <Select
+            <Select field
               label={t('hr.recharge.bundle')}
               value={form.bundleId}
               onChange={(e) => {
@@ -531,7 +531,7 @@ export default function RechargeRequestsPage() {
             )}
           </div>
 
-          <Input
+          <Input field
             label={t('hr.recharge.phoneNumber')}
             type="tel"
             value={form.phoneNumber}
@@ -541,7 +541,7 @@ export default function RechargeRequestsPage() {
             placeholder={t('hr.recharge.07xxXxxXxxx')}
           />
 
-          <Textarea
+          <Textarea field
             label={t('hr.recharge.notesOptional')}
             value={form.notes}
             onChange={(e) => {

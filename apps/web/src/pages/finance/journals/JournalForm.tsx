@@ -206,7 +206,7 @@ export default function JournalForm() {
             }}
           >
             <div data-tour="journal-entry-date">
-              <Input
+              <Input field
                 label={t('fin.jrnForm.entryDate')}
                 type="date"
                 value={entryDate}
@@ -217,7 +217,7 @@ export default function JournalForm() {
               />
             </div>
             <div data-tour="journal-description">
-              <Textarea
+              <Textarea field
                 label={t('fin.jrnForm.description')}
                 value={description}
                 onChange={(e) => {

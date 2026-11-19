@@ -599,7 +599,7 @@ export default function VendorInvoiceForm() {
           }}
         >
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('fin.apInvForm.vendor')}
               value={form.vendor_id}
               onChange={(v) => {
@@ -611,7 +611,7 @@ export default function VendorInvoiceForm() {
             />
           </div>
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('fin.apInvForm.purchaseOrderOptional')}
               value={form.po_id}
               onChange={(v) => {
@@ -636,7 +636,7 @@ export default function VendorInvoiceForm() {
             />
           </div>
           <div>
-            <Select
+            <Select field
               label={t('fin.apInvForm.currency')}
               value={form.currency_code}
               onChange={(e) => {
@@ -670,7 +670,7 @@ export default function VendorInvoiceForm() {
             />
           </div>
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('fin.apInvForm.costCenter')}
               value={form.cost_center_id}
               onChange={(v) => {
@@ -681,7 +681,7 @@ export default function VendorInvoiceForm() {
             />
           </div>
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('fin.apInvForm.analyticAccount')}
               value={form.analytic_account_id}
               onChange={(v) => {

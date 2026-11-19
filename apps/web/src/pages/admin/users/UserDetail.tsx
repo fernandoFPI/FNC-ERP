@@ -995,7 +995,7 @@ export default function UserDetail() {
               >
                 {t('admin.userDetail.company2')}
               </label>
-              <SearchableSelect
+              <SearchableSelect field
                 value={roleForm.companyId}
                 onChange={(v) => {
                   setRoleForm({ ...roleForm, companyId: v })
@@ -1015,7 +1015,7 @@ export default function UserDetail() {
               >
                 {t('admin.userDetail.role2')}
               </label>
-              <SearchableSelect
+              <SearchableSelect field
                 value={roleForm.role}
                 onChange={(v) => {
                   setRoleForm({ ...roleForm, role: v, module: '', modules: [] })
@@ -1054,7 +1054,7 @@ export default function UserDetail() {
                   ))}
                 </div>
               ) : (
-                <SearchableSelect
+                <SearchableSelect field
                   value={roleForm.module}
                   onChange={(v) => {
                     setRoleForm({ ...roleForm, module: v })
@@ -1125,7 +1125,7 @@ export default function UserDetail() {
               >
                 {t('admin.userDetail.role2')}
               </label>
-              <SearchableSelect
+              <SearchableSelect field
                 value={editRoleForm.role}
                 onChange={(v) => {
                   setEditRoleForm({
@@ -1149,7 +1149,7 @@ export default function UserDetail() {
               >
                 {editRoleForm.role === 'module_admin' ? t('admin.userDetail.moduleRequired') : t('admin.userDetail.moduleOptional')}
               </label>
-              <SearchableSelect
+              <SearchableSelect field
                 value={editRoleForm.module}
                 onChange={(v) => {
                   setEditRoleForm({ ...editRoleForm, module: v })

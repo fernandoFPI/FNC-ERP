@@ -276,7 +276,7 @@ export function IssueAdvanceModal({
 
           {options.cost_centers.length > 0 && (
             <div>
-              <Select
+              <Select field
                 label={t('fin.advDetail.costCenterOptional')}
                 value={costCenterId}
                 onChange={(e) => {

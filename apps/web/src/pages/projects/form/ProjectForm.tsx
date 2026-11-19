@@ -578,7 +578,7 @@ export default function ProjectForm() {
                   </button>
                 </div>
               ) : (
-                <SearchableSelect
+                <SearchableSelect field
                   value={form.projectType}
                   onChange={(v) => {
                     if (v === '__add_new__') {
@@ -594,7 +594,7 @@ export default function ProjectForm() {
                 />
               )}
             </div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('proj.form.currency')}
               value={form.currencyCode}
               onChange={(v) => {
@@ -619,7 +619,7 @@ export default function ProjectForm() {
         {/* ── Team ──────────────────────────────────────────── */}
         <div style={card}>
           <div style={cardTitle}>{t('proj.form.team')}</div>
-          <SearchableSelect
+          <SearchableSelect field
             label={t('proj.form.projectManager')}
             value={form.managerId}
             onChange={(v) => {
@@ -682,7 +682,7 @@ export default function ProjectForm() {
             </label>
             {wht.applies ? (
               <div style={{ ...grid3, marginTop: '12px', alignItems: 'start' }}>
-                <SearchableSelect
+                <SearchableSelect field
                   label={t('proj.form.whtScenario')}
                   value={wht.scenario}
                   onChange={(v) => {

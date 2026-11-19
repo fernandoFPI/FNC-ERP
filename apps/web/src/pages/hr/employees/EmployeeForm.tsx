@@ -249,7 +249,7 @@ export default function EmployeeForm() {
               </p>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                 <div style={{ flex: 1 }}>
-                  <Input
+                  <Input field
                     label={t('hr.empForm.email')}
                     type="email"
                     value={searchEmail}
@@ -323,38 +323,38 @@ export default function EmployeeForm() {
                   gap: '14px',
                 }}
               >
-                <Input
+                <Input field
                   label={t('hr.empForm.firstName')}
                   value={form.first_name}
                   onChange={field('first_name')}
                   required
                   error={errors.first_name}
                 />
-                <Input
+                <Input field
                   label={t('hr.empForm.lastName')}
                   value={form.last_name}
                   onChange={field('last_name')}
                   required
                   error={errors.last_name}
                 />
-                <Input
+                <Input field
                   label={t('hr.empForm.nationalId')}
                   value={form.national_id}
                   onChange={field('national_id')}
                   error={errors.national_id}
                 />
-                <Input
+                <Input field
                   label={t('hr.empForm.passportNumber')}
                   value={form.passport_number}
                   onChange={field('passport_number')}
                 />
-                <Input
+                <Input field
                   label={t('hr.empForm.dateOfBirth')}
                   type="date"
                   value={form.date_of_birth}
                   onChange={field('date_of_birth')}
                 />
-                <Select
+                <Select field
                   label={t('hr.empForm.gender')}
                   value={form.gender}
                   onChange={field('gender')}
@@ -377,13 +377,13 @@ export default function EmployeeForm() {
                   gap: '14px',
                 }}
               >
-                <Input
+                <Input field
                   label={t('hr.empForm.employeeNumber')}
                   value={form.employee_number}
                   onChange={field('employee_number')}
                   placeholder={t('hr.empForm.empFnc001')}
                 />
-                <Input
+                <Input field
                   label={t('hr.empForm.hireDate')}
                   type="date"
                   value={form.hire_date}
@@ -391,14 +391,14 @@ export default function EmployeeForm() {
                   required
                   error={errors.hire_date}
                 />
-                <Select
+                <Select field
                   label={t('hr.empForm.employmentType')}
                   value={form.employment_type}
                   onChange={field('employment_type')}
                   options={EMPLOYMENT_TYPE_OPTIONS}
                 />
-                <Input label={t('hr.empForm.jobTitle')} value={form.job_title} onChange={field('job_title')} />
-                <Select
+                <Input field label={t('hr.empForm.jobTitle')} value={form.job_title} onChange={field('job_title')} />
+                <Select field
                   label={t('hr.empForm.department')}
                   value={form.department_id}
                   onChange={field('department_id')}
@@ -408,7 +408,7 @@ export default function EmployeeForm() {
                     label: d.name,
                   }))}
                 />
-                <Select
+                <Select field
                   label={t('hr.empForm.workLocation')}
                   value={form.work_location_id}
                   onChange={field('work_location_id')}
@@ -434,8 +434,8 @@ export default function EmployeeForm() {
                   gap: '14px',
                 }}
               >
-                <Input label={t('hr.empForm.email')} type="email" value={form.email} onChange={field('email')} />
-                <Input label={t('hr.empForm.phone')} value={form.phone} onChange={field('phone')} />
+                <Input field label={t('hr.empForm.email')} type="email" value={form.email} onChange={field('email')} />
+                <Input field label={t('hr.empForm.phone')} value={form.phone} onChange={field('phone')} />
               </div>
             </Card>
           </div>

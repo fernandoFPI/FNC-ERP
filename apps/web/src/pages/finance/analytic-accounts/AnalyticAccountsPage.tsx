@@ -435,7 +435,7 @@ export default function AnalyticAccountsPage() {
           />
         </Field>
         <Field label={t('fin.analytic.costCenterOptional')}>
-          <SearchableSelect
+          <SearchableSelect field
             value={form.cost_center_id}
             onChange={(v) => {
               setForm((p) => ({ ...p, cost_center_id: v }))

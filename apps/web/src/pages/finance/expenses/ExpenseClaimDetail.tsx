@@ -1040,7 +1040,7 @@ export default function ExpenseClaimDetail() {
               {t('fin.expDetail.decideFundingPost')}
             </h3>
             <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>{t('fin.expDetail.howIsThisActuallyBeingPaid', { total_amount: claim.total_amount.toLocaleString(), currency_code: claim.currency_code })}</p>
-            <Select
+            <Select field
               label={t('fin.expDetail.fundingSource')}
               value={postPaymentSource}
               onChange={(e) => {
@@ -1061,7 +1061,7 @@ export default function ExpenseClaimDetail() {
 
             {!loadingFundingOptions && postPaymentSource === 'petty_cash' && (
               <div style={{ marginTop: '12px' }}>
-                <Select
+                <Select field
                   label={t('fin.expDetail.pettyCashFloat')}
                   value={selectedFloatId}
                   onChange={(e) => {
@@ -1085,7 +1085,7 @@ export default function ExpenseClaimDetail() {
 
             {!loadingFundingOptions && postPaymentSource === 'advance' && (
               <div style={{ marginTop: '12px' }}>
-                <Select
+                <Select field
                   label={t('fin.expDetail.advance')}
                   value={selectedAdvanceId}
                   onChange={(e) => {

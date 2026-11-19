@@ -188,7 +188,7 @@ export default function WorkCentersPage() {
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
         >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
-            <Input
+            <Input field
               label={t('mfg.workCenters.code')}
               value={form.code}
               onChange={(e) => {
@@ -196,7 +196,7 @@ export default function WorkCentersPage() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('mfg.workCenters.name')}
               value={form.name}
               onChange={(e) => {
@@ -212,7 +212,7 @@ export default function WorkCentersPage() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('mfg.workCenters.capacityHoursDay')}
               type="number"
               step="0.5"
@@ -221,7 +221,7 @@ export default function WorkCentersPage() {
                 setForm((f) => ({ ...f, capacity_hours_per_day: e.target.value }))
               }}
             />
-            <Input
+            <Input field
               label={t('mfg.workCenters.costPerHour')}
               type="number"
               step="0.01"

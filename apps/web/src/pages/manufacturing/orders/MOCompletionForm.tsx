@@ -188,7 +188,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('mfg.moComplete.qtyProducedPlanned', { qty_planned: mo.qty_planned })}
               type="number"
               step="0.001"
@@ -198,7 +198,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
               }}
               required
             />
-            <Input
+            <Input field
               label={t('mfg.moComplete.workCenterHoursActual')}
               type="number"
               step="0.1"
@@ -302,7 +302,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
         </div>
 
         {/* Notes */}
-        <Input
+        <Input field
           label={t('mfg.moComplete.notesOptional')}
           value={notes}
           onChange={(e) => {

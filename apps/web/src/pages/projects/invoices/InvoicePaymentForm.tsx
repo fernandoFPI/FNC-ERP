@@ -211,7 +211,7 @@ export function InvoicePaymentForm({
           </div>
         ) : (
           <>
-            <DatePicker
+            <DatePicker field
               label={t('proj.invPay.paymentDate')}
               value={form.paymentDate}
               onChange={(v) => {
@@ -233,7 +233,7 @@ export function InvoicePaymentForm({
               }
             />
 
-            <Select
+            <Select field
               label={t('proj.invPay.paymentMethod')}
               value={form.paymentMethod}
               onChange={(e) => {
@@ -242,7 +242,7 @@ export function InvoicePaymentForm({
               options={PAYMENT_METHODS}
             />
 
-            <Input
+            <Input field
               label={t('proj.invPay.referenceTransactionId')}
               value={form.paymentReference}
               onChange={(e) => {
@@ -251,7 +251,7 @@ export function InvoicePaymentForm({
               placeholder={t('proj.invPay.bankTransferRefChequeNumber')}
             />
 
-            <Textarea
+            <Textarea field
               label={t('proj.invPay.notes')}
               value={form.notes}
               onChange={(e) => {

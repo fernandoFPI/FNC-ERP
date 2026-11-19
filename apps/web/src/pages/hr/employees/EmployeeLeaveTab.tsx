@@ -288,7 +288,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Select
+          <Select field
             label={t('hr.empLeave.leaveType')}
             value={form.leave_type_id}
             onChange={(e) => {
@@ -312,7 +312,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
               ) : null
             })()}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input
+            <Input field
               label={t('hr.empLeave.startDate')}
               type="date"
               value={form.start_date}
@@ -321,7 +321,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('hr.empLeave.endDate')}
               type="date"
               value={form.end_date}
@@ -337,7 +337,7 @@ export function EmployeeLeaveTab({ employeeId }: { employeeId: string }) {
               <span style={{ color: theme.textPrimary, fontWeight: 600 }}>{t('hr.empLeave.day', { count: days })}</span>
             </div>
           )}
-          <Textarea
+          <Textarea field
             label={t('hr.empLeave.reasonOptional')}
             value={form.reason}
             onChange={(e) => {

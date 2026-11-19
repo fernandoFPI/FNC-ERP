@@ -199,7 +199,7 @@ export default function RentalContractForm() {
             }}
           >
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('rental.contractForm.equipmentAsset')}
                 value={form.asset_id}
                 onChange={(v) => {
@@ -215,7 +215,7 @@ export default function RentalContractForm() {
               />
             </div>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('rental.contractForm.projectOptional')}
                 value={form.project_id}
                 onChange={(v) => {
@@ -236,7 +236,7 @@ export default function RentalContractForm() {
               gap: '16px',
             }}
           >
-            <Input
+            <Input field
               label={t('rental.contractForm.clientName')}
               value={form.client_name}
               onChange={(e) => {
@@ -244,7 +244,7 @@ export default function RentalContractForm() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('rental.contractForm.clientContact')}
               value={form.client_contact}
               onChange={(e) => {
@@ -262,7 +262,7 @@ export default function RentalContractForm() {
             }}
           >
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('rental.contractForm.rentalType')}
                 value={form.rental_type}
                 onChange={(v) => {
@@ -273,7 +273,7 @@ export default function RentalContractForm() {
               />
             </div>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('rental.contractForm.billingCycle')}
                 value={form.billing_cycle}
                 onChange={(v) => {
@@ -284,7 +284,7 @@ export default function RentalContractForm() {
               />
             </div>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('rental.contractForm.currency')}
                 value={form.currency_code}
                 onChange={(v) => {
@@ -307,7 +307,7 @@ export default function RentalContractForm() {
               gap: '16px',
             }}
           >
-            <Input
+            <Input field
               label={t('rental.contractForm.dailyRate')}
               type="number"
               step="0.01"
@@ -317,7 +317,7 @@ export default function RentalContractForm() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('rental.contractForm.depositAmount')}
               type="number"
               step="0.01"
@@ -335,7 +335,7 @@ export default function RentalContractForm() {
               gap: '16px',
             }}
           >
-            <Input
+            <Input field
               label={t('rental.contractForm.startDate')}
               type="date"
               value={form.start_date}
@@ -344,7 +344,7 @@ export default function RentalContractForm() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('rental.contractForm.endDateOptional')}
               type="date"
               value={form.end_date}
@@ -354,7 +354,7 @@ export default function RentalContractForm() {
             />
           </div>
 
-          <Input
+          <Input field
             label={t('rental.contractForm.notes')}
             value={form.notes}
             onChange={(e) => {
@@ -396,7 +396,7 @@ export default function RentalContractForm() {
               }}
             >
               <div>
-                <SearchableSelect
+                <SearchableSelect field
                   label={t('rental.contractForm.method')}
                   value={form.depreciation_method}
                   onChange={(v) => {
@@ -405,7 +405,7 @@ export default function RentalContractForm() {
                   options={DEPRECIATION_METHODS}
                 />
               </div>
-              <Input
+              <Input field
                 label={t('rental.contractForm.usefulLifeDays')}
                 type="number"
                 min="1"
@@ -416,7 +416,7 @@ export default function RentalContractForm() {
                 }}
                 disabled={form.depreciation_method === 'none'}
               />
-              <Input
+              <Input field
                 label={t('rental.contractForm.salvageValue')}
                 type="number"
                 step="0.01"
@@ -427,7 +427,7 @@ export default function RentalContractForm() {
                 }}
                 disabled={form.depreciation_method === 'none'}
               />
-              <Input
+              <Input field
                 label={t('rental.contractForm.depreciationDay')}
                 type="number"
                 step="0.0001"

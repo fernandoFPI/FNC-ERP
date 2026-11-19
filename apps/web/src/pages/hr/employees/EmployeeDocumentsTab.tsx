@@ -340,7 +340,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
             </div>
           )}
           <div>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('hr.empDocs.category')}
               value={uploadCategory}
               onChange={(v) => {
@@ -349,7 +349,7 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
               options={CATEGORY_OPTIONS}
             />
           </div>
-          <Input
+          <Input field
             label={t('hr.empDocs.labelOptional')}
             value={uploadLabel}
             onChange={(e) => {

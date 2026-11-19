@@ -92,7 +92,7 @@ export default function PayrollRunForm() {
             gap: '16px',
           }}
         >
-          <Input
+          <Input field
             label={t('payroll.runForm.runName')}
             value={form.period_name}
             onChange={field('period_name')}
@@ -106,7 +106,7 @@ export default function PayrollRunForm() {
               gap: '14px',
             }}
           >
-            <Input
+            <Input field
               label={t('payroll.runForm.periodStart')}
               type="date"
               value={form.start_date}
@@ -114,7 +114,7 @@ export default function PayrollRunForm() {
               required
               onBlur={checkOverlap}
             />
-            <Input
+            <Input field
               label={t('payroll.runForm.periodEnd')}
               type="date"
               value={form.end_date}

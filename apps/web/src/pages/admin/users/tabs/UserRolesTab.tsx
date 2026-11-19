@@ -564,7 +564,7 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '340px' }}>
             <div>
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('admin.userRoles.position2')}
                 value={positionForm.position}
                 onChange={(v) => {
