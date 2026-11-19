@@ -1,37 +1,22 @@
 import { useTranslation } from 'react-i18next'
-import { useTheme } from '../../theme/ThemeContext'
 import { isRtl } from '../../i18n'
+import { TopbarButton } from './shellParts'
 
 export function LanguageSwitcher() {
-  const { theme } = useTheme()
   const { t, i18n } = useTranslation()
   const rtl = isRtl(i18n.resolvedLanguage)
 
   return (
-    <button
+    <TopbarButton
       onClick={() => {
         void i18n.changeLanguage(rtl ? 'en' : 'ar')
       }}
       aria-label={t('common.switchLanguage')}
       title={t('common.switchLanguage')}
-      style={{
-        height: '34px',
-        padding: '0 10px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: theme.bgSurface,
-        border: `1px solid ${theme.border}`,
-        borderRadius: '8px',
-        color: theme.textSecondary,
-        cursor: 'pointer',
-        fontSize: '12px',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-        backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-      }}
+      style={{ padding: '0 10px', whiteSpace: 'nowrap' }}
     >
-      {rtl ? 'EN' : 'عربي'}
-    </button>
+      {/* the label is the OTHER language's own name, so a screen reader reads it in that language */}
+      <span lang={rtl ? 'en' : 'ar'}>{rtl ? 'EN' : 'عربي'}</span>
+    </TopbarButton>
   )
 }

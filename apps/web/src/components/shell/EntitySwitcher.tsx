@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { Card } from '../ui/Card'
 import { Spinner } from '../ui/Spinner'
 import { useTheme } from '../../theme/ThemeContext'
 import { useCompanyStore } from '../../store/companyStore'
@@ -8,6 +8,14 @@ import { useAuthStore } from '../../store/authStore'
 import { api } from '../../lib/axios'
 import { decodeJWT } from '../../lib/jwt'
 import { apolloClient } from '../../lib/apollo'
+import {
+  MenuCaption,
+  MenuRow,
+  MenuTick,
+  ShellMenuPanel,
+  TopbarButton,
+  useShellMenu,
+} from './shellParts'
 
 function getCompanyInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean)
@@ -15,6 +23,7 @@ function getCompanyInitials(name: string): string {
   return (words[0]?.slice(0, 2) ?? 'Co').toUpperCase()
 }
 
+// Each company has its own identity colour (a dot beside the name; never used for text).
 function getCompanyColor(companyName: string): string {
   const name = companyName.toLowerCase()
   if (name.includes('yakam')) return '#3de8c8'
@@ -23,29 +32,36 @@ function getCompanyColor(companyName: string): string {
   return '#88b4cc'
 }
 
+function CompanyDot({ color, size }: { color: string; size: number }) {
+  const { theme } = useTheme()
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        borderRadius: '50%',
+        background: color,
+        // a hairline so a pale colour still reads on a white bar
+        boxShadow: `inset 0 0 0 1px ${theme.borderStrong}`,
+        flexShrink: 0,
+      }}
+    />
+  )
+}
+
 interface EntitySwitcherProps {
   compact?: boolean
 }
 
 export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { activeCompany, companies, setActiveCompany } = useCompanyStore()
   const { setAccessToken, setUser } = useAuthStore()
-  const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => {
-      document.removeEventListener('mousedown', handler)
-    }
-  }, [])
 
   // Refreshes the switcher's own list from the source of truth — otherwise
   // this only ever gets set once at login, so a company the user was added
@@ -66,9 +82,11 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
       })
   }
 
+  const menu = useShellMenu(refreshCompanies)
+
   async function switchCompany(company: typeof activeCompany) {
     if (!company || company.id === activeCompany?.id) {
-      setOpen(false)
+      menu.close()
       return
     }
     setLoading(true)
@@ -89,7 +107,8 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
         })
       await apolloClient.clearStore()
       setActiveCompany(company)
-      setOpen(false)
+      menu.close()
+      menu.triggerRef.current?.focus()
       navigate('/dashboard')
       refreshCompanies()
     } catch (e: unknown) {
@@ -105,203 +124,135 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
   }
 
   const color = getCompanyColor(activeCompany?.name ?? '')
+  const companyName = activeCompany?.name ?? t('shell.selectCompany')
 
-  // ── Compact badge (phone) — a circular initials badge instead of a wide
-  // truncated pill, so it doesn't compete with the breadcrumb for space. ────
+  function toggle() {
+    setError(null)
+    menu.toggle()
+  }
+
+  // ── Compact badge (phone): a circular initials badge instead of a wide truncated pill, so it does not compete with
+  // the breadcrumb for space. ────────────────────────────────────────────────
   const compactButton = (
-    <button
-      onClick={() => {
-        setError(null)
-        setOpen((v) => {
-          const next = !v
-          if (next) refreshCompanies()
-          return next
-        })
-      }}
-      aria-label={activeCompany?.name ? `Switch company (${activeCompany.name})` : 'Select company'}
-      title={activeCompany?.name ?? 'Select company'}
+    <TopbarButton
+      ref={menu.triggerRef}
+      onClick={toggle}
+      aria-label={`${t('shell.switchCompany')} (${companyName})`}
+      aria-haspopup="menu"
+      aria-expanded={menu.open}
+      title={companyName}
+      bordered
+      active={menu.open}
       style={{
-        width: '34px',
-        height: '34px',
-        flexShrink: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: theme.bgSurface,
-        border: `1.5px solid ${color}`,
+        width: '36px',
+        padding: 0,
         borderRadius: '50%',
+        border: `1.5px solid ${color}`,
         color: theme.textPrimary,
-        cursor: 'pointer',
         fontSize: '11px',
-        fontFamily: 'inherit',
-        fontWeight: 700,
         letterSpacing: '0.02em',
-        WebkitTapHighlightColor: 'transparent',
       }}
     >
       {loading ? <Spinner size="sm" /> : getCompanyInitials(activeCompany?.name ?? 'Co')}
-    </button>
+    </TopbarButton>
   )
 
   // ── Full pill (tablet + desktop) ─────────────────────────────────────────────
   const fullButton = (
-    <button
-      onClick={() => {
-        setError(null)
-        setOpen((v) => {
-          const next = !v
-          if (next) refreshCompanies()
-          return next
-        })
-      }}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '5px 12px',
-        background: theme.bgSurface,
-        border: `1px solid ${theme.border}`,
-        borderRadius: '20px',
-        color: theme.textPrimary,
-        cursor: 'pointer',
-        fontSize: '13px',
-        fontFamily: 'inherit',
-        fontWeight: 500,
-        backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-      }}
+    <TopbarButton
+      ref={menu.triggerRef}
+      onClick={toggle}
+      aria-haspopup="menu"
+      aria-expanded={menu.open}
+      title={t('shell.switchCompany')}
+      bordered
+      active={menu.open}
+      style={{ padding: '0 10px 0 12px', color: theme.textPrimary }}
     >
-      {loading ? (
-        <Spinner size="sm" />
-      ) : (
-        <span
-          style={{
-            width: '7px',
-            height: '7px',
-            borderRadius: '50%',
-            background: color,
-            boxShadow: `0 0 6px ${color}`,
-            flexShrink: 0,
-          }}
-        />
-      )}
+      {loading ? <Spinner size="sm" /> : <CompanyDot color={color} size={9} />}
       <span
         style={{
-          maxWidth: '130px',
+          maxWidth: '160px',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}
       >
-        {activeCompany?.name ?? 'Select company'}
+        {companyName}
       </span>
       <svg
-        width="10"
-        height="10"
+        width="12"
+        height="12"
         viewBox="0 0 24 24"
         fill="none"
-        stroke={theme.textMuted}
-        strokeWidth="2"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        style={{
+          flexShrink: 0,
+          color: theme.textSecondary,
+          transform: menu.open ? 'rotate(180deg)' : 'none',
+          transition: 'transform 0.15s ease',
+        }}
       >
         <polyline points="6 9 12 15 18 9" />
       </svg>
-    </button>
+    </TopbarButton>
   )
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={menu.containerRef} style={{ position: 'relative' }}>
       {compact ? compactButton : fullButton}
 
-      {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            ...(compact ? { right: 0 } : { left: 0 }),
-            zIndex: 500,
-            minWidth: '220px',
-            maxWidth: 'calc(100vw - 24px)',
-          }}
-        >
-          <Card padding="none" rimHighlight>
-            <div style={{ padding: '4px' }}>
+      {menu.open && (
+        <ShellMenuPanel
+          align={compact ? 'end' : 'start'}
+          label={t('shell.switchCompany')}
+          panelRef={menu.panelRef}
+          onKeyDown={menu.onKeyDown}
+          minWidth={248}
+          header={
+            <>
+              <MenuCaption>{t('shell.switchCompany')}</MenuCaption>
               {error && (
                 <p
-                  style={{ fontSize: '12px', color: theme.danger, padding: '6px 12px', margin: 0 }}
+                  role="alert"
+                  style={{
+                    fontSize: '12px',
+                    color: theme.danger,
+                    padding: '6px 14px 0',
+                    margin: 0,
+                  }}
                 >
                   {error}
                 </p>
               )}
-              {companies.map((company) => {
-                const isActive = company.id === activeCompany?.id
-                const c = getCompanyColor(company.name)
-                return (
-                  <button
-                    key={company.id}
-                    onClick={() => void switchCompany(company)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      width: '100%',
-                      padding: '10px 12px',
-                      background: isActive ? theme.accentBg : 'none',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontFamily: 'inherit',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isActive) e.currentTarget.style.background = theme.bgSurfaceHover
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) e.currentTarget.style.background = 'none'
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        background: c,
-                        boxShadow: `0 0 6px ${c}`,
-                        flexShrink: 0,
-                      }}
-                    />
-                    <div>
-                      <p
-                        style={{
-                          fontSize: '13px',
-                          fontWeight: 500,
-                          color: isActive ? theme.accent : theme.textPrimary,
-                          margin: 0,
-                        }}
-                      >
-                        {company.name}
-                      </p>
-                      <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>
-                        {company.currencyCode}
-                      </p>
-                    </div>
-                    {isActive && (
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke={theme.accent}
-                        strokeWidth="2.5"
-                        style={{ marginLeft: 'auto' }}
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </Card>
-        </div>
+            </>
+          }
+        >
+          {companies.map((company) => {
+            const isActive = company.id === activeCompany?.id
+            return (
+              <MenuRow
+                key={company.id}
+                role="menuitemradio"
+                checked={isActive}
+                onSelect={() => void switchCompany(company)}
+              >
+                <CompanyDot color={getCompanyColor(company.name)} size={9} />
+                <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <span>{company.name}</span>
+                  <span style={{ fontSize: '11px', fontWeight: 400, color: theme.textSecondary }}>
+                    {company.currencyCode}
+                  </span>
+                </span>
+                {isActive && <MenuTick />}
+              </MenuRow>
+            )
+          })}
+        </ShellMenuPanel>
       )}
     </div>
   )

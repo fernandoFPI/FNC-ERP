@@ -1,6 +1,10 @@
 import React, { useState } from 'react'
+import type { CSSProperties } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
+import type { ThemeTokens } from '../../theme/tokens'
+import { useFocusRing } from '../ui/keyboardFocus'
+import { shellFocusRing } from './shellParts'
 import { useApprovalStore } from '../../store/approvalStore'
 import { useMyQueueCount } from '../../hooks/useMyQueueCount'
 import { useAPPendingCount } from '../../hooks/useAPPendingCount'
@@ -861,6 +865,24 @@ export const NAV_SECTIONS: NavSection[] = [
         permKeys: ['inventory.stock_moves.view'],
       },
       {
+        label: 'Returnables',
+        icon: <Icon name="tool" />,
+        path: '/inventory/returnables',
+        permKeys: ['inventory.stock_moves.view'],
+      },
+      {
+        label: 'Temp Store & Transit',
+        icon: <Icon name="truck" />,
+        path: '/inventory/temp-store',
+        permKeys: ['inventory.stock_moves.view'],
+      },
+      {
+        label: 'Store History',
+        icon: <Icon name="activity" />,
+        path: '/inventory/history',
+        permKeys: ['inventory.stock_moves.view'],
+      },
+      {
         label: 'Lots',
         icon: <Icon name="tag" />,
         path: '/inventory/lots',
@@ -1057,6 +1079,299 @@ export const NAV_SECTIONS: NavSection[] = [
   },
 ]
 
+// ── Rows ─────────────────────────────────────────────────────────────────────
+//
+// Every row of the sidebar (a page, a group, a page inside a group, Settings, Help) is one pill: 8px corners inset from the
+// edge, the accent tint and the solid-accent text for the page you are on (the pale accent is 4.19:1 on its own tint, the
+// solid one is above 4.5:1), the readable grey for the rest, and a keyboard ring that shows for keyboard focus only.
+
+interface RowLook {
+  /** This is the page (the text turns accent). */
+  active: boolean
+  /** Draws the tint: the page itself, or a closed group that holds the page. */
+  tinted: boolean
+  /** Icon-only rail. */
+  collapsed: boolean
+  /** Phone drawer: taller rows for a finger. */
+  touch: boolean
+  child?: boolean
+}
+
+function rowStyle(
+  theme: ThemeTokens,
+  { active, tinted, collapsed, touch, child = false }: RowLook,
+  hover: boolean,
+  ring: boolean,
+): CSSProperties {
+  return {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: collapsed ? 'center' : 'flex-start',
+    gap: '10px',
+    boxSizing: 'border-box',
+    width: collapsed ? '40px' : '100%',
+    minHeight: touch ? (child ? '44px' : '48px') : collapsed ? '40px' : child ? '34px' : '38px',
+    margin: collapsed ? '2px auto' : '1px 0',
+    padding: collapsed ? 0 : '0 8px',
+    borderRadius: '8px',
+    border: 'none',
+    background: tinted ? theme.accentBg : hover ? theme.bgSurfaceHover : 'transparent',
+    color: active ? theme.accentSolid : hover ? theme.textPrimary : theme.textSecondary,
+    fontSize: '13px',
+    fontWeight: active ? 600 : 500,
+    fontFamily: 'inherit',
+    textAlign: 'start',
+    textDecoration: 'none',
+    cursor: 'pointer',
+    outline: 'none',
+    boxShadow: ring ? shellFocusRing(theme) : 'none',
+    transition: 'background 0.12s ease, color 0.12s ease',
+    WebkitTapHighlightColor: 'transparent',
+  }
+}
+
+interface RowFaceProps {
+  icon?: React.ReactNode
+  label: string
+  collapsed: boolean
+  badge?: number
+  /** `count` is a number of things waiting (a solid pill); `alert` is something overdue (the danger tint). */
+  badgeTone?: 'count' | 'alert'
+  chevron?: React.ReactNode
+}
+
+// What a row shows inside: the icon, the label, the count, the chevron of a group. In the icon-only rail the label goes and
+// a count becomes a dot, so a waiting queue is not invisible there.
+function RowFace({ icon, label, collapsed, badge, badgeTone = 'count', chevron }: RowFaceProps) {
+  const { theme } = useTheme()
+  const hasBadge = badge !== undefined
+  return (
+    <>
+      {icon && (
+        <span aria-hidden="true" style={{ display: 'flex', flexShrink: 0 }}>
+          {icon}
+        </span>
+      )}
+      {!collapsed && (
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {label}
+        </span>
+      )}
+      {!collapsed && hasBadge && (
+        <span
+          style={{
+            minWidth: '20px',
+            height: '20px',
+            boxSizing: 'border-box',
+            padding: '0 6px',
+            borderRadius: '10px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '11px',
+            fontWeight: 700,
+            fontVariantNumeric: 'tabular-nums',
+            flexShrink: 0,
+            ...(badgeTone === 'alert'
+              ? {
+                  background: theme.dangerBg,
+                  color: theme.danger,
+                  border: `1px solid ${theme.dangerBorder}`,
+                }
+              : { background: theme.accentSolid, color: theme.accentSolidText }),
+          }}
+        >
+          {badge}
+        </span>
+      )}
+      {!collapsed && chevron}
+      {collapsed && hasBadge && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: '6px',
+            insetInlineEnd: '6px',
+            width: '9px',
+            height: '9px',
+            borderRadius: '50%',
+            background: badgeTone === 'alert' ? theme.danger : theme.accentSolid,
+            boxShadow: `0 0 0 2px ${theme.bgSidebar}`,
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+interface LinkRowProps extends Omit<RowFaceProps, 'collapsed'> {
+  to: string
+  look: RowLook
+  onClick?: () => void
+}
+
+function LinkRow({ to, look, onClick, ...face }: LinkRowProps) {
+  const { theme } = useTheme()
+  const { ring, handlers } = useFocusRing()
+  const [hover, setHover] = useState(false)
+  const count = face.badge !== undefined ? ` (${face.badge})` : ''
+  return (
+    <NavLink
+      to={to}
+      onClick={onClick}
+      // an icon-only row has no visible text, so it is named (and shows a tooltip) with the page's name
+      {...(look.collapsed ? { title: face.label, 'aria-label': `${face.label}${count}` } : {})}
+      {...handlers}
+      onMouseEnter={() => {
+        setHover(true)
+      }}
+      onMouseLeave={() => {
+        setHover(false)
+      }}
+      style={rowStyle(theme, look, hover, ring)}
+    >
+      {look.active && !look.collapsed && !look.child && <ActiveBar />}
+      <RowFace {...face} collapsed={look.collapsed} />
+    </NavLink>
+  )
+}
+
+// The accent bar at the edge of the page you are on (it sits in the 8px the list leaves beside the pills).
+function ActiveBar() {
+  const { theme } = useTheme()
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        position: 'absolute',
+        insetInlineStart: '-6px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: '3px',
+        height: '18px',
+        borderStartEndRadius: '3px',
+        borderEndEndRadius: '3px',
+        background: theme.accentSolid,
+      }}
+    />
+  )
+}
+
+interface GroupRowProps extends Omit<RowFaceProps, 'collapsed' | 'chevron'> {
+  look: RowLook
+  expanded: boolean
+  controlsId: string
+  onToggle: () => void
+}
+
+// A group that opens to show its pages. A real button (the old row was a div with a click handler, which the keyboard
+// could not reach), and it says whether it is open.
+function GroupRow({ look, expanded, controlsId, onToggle, ...face }: GroupRowProps) {
+  const { theme } = useTheme()
+  const rtl = useIsRtl()
+  const { ring, handlers } = useFocusRing()
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      aria-controls={expanded ? controlsId : undefined}
+      onClick={onToggle}
+      {...handlers}
+      onMouseEnter={() => {
+        setHover(true)
+      }}
+      onMouseLeave={() => {
+        setHover(false)
+      }}
+      style={rowStyle(theme, look, hover, ring)}
+    >
+      <RowFace
+        {...face}
+        collapsed={false}
+        chevron={
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'flex',
+              color: theme.textSecondary,
+              // pointing at the side the pages are on while closed; a chevron is an icon, so the browser does not mirror it
+              transform: expanded ? 'rotate(0deg)' : `rotate(${rtl ? 90 : -90}deg)`,
+              transition: 'transform 0.15s ease',
+            }}
+          >
+            <Icon name="chevron-down" />
+          </span>
+        }
+      />
+    </button>
+  )
+}
+
+// A small ghost button for the sidebar header (collapse, expand, close).
+function HeaderButton({
+  label,
+  onClick,
+  size,
+  expanded,
+  children,
+}: {
+  label: string
+  onClick?: () => void
+  size: number
+  expanded?: boolean
+  children: React.ReactNode
+}) {
+  const { theme } = useTheme()
+  const { ring, handlers } = useFocusRing()
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      aria-expanded={expanded}
+      {...handlers}
+      onMouseEnter={() => {
+        setHover(true)
+      }}
+      onMouseLeave={() => {
+        setHover(false)
+      }}
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        border: 'none',
+        borderRadius: '8px',
+        background: hover ? theme.bgSurfaceHover : 'transparent',
+        color: hover ? theme.textPrimary : theme.textSecondary,
+        boxShadow: ring ? shellFocusRing(theme) : 'none',
+        outline: 'none',
+        cursor: 'pointer',
+        transition: 'background 0.12s ease, color 0.12s ease',
+        WebkitTapHighlightColor: 'transparent',
+        touchAction: 'manipulation',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
 interface SidebarProps {
   // Phone drawer mode — fixed overlay with X button
   mobile?: boolean
@@ -1149,8 +1464,6 @@ export function Sidebar({
     if (mobile) onClose?.()
   }
 
-  const touchMinHeight = mobile ? '48px' : undefined
-
   function renderNavItem(item: NavItem) {
     const visibleChildren = (item.children ?? []).filter((c) => {
       if (!c.permKeys || c.permKeys.length === 0) return true
@@ -1169,228 +1482,122 @@ export function Sidebar({
       !hasChildren &&
       (location.pathname === item.path || location.pathname.startsWith(item.path + '/'))
     const badgeCount = getBadgeCount(item)
+    const label = navLabel(item.label)
 
-    // In rail mode, clicking a parent with children navigates to the first visible child
-    const railNavTarget =
-      hasChildren && effectiveCollapsed ? (visibleChildren[0]?.path ?? item.path) : item.path
-
-    const itemContent = (
-      <div
-        title={effectiveCollapsed ? navLabel(item.label) : undefined}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: effectiveCollapsed ? '9px 0' : '9px 16px',
-          justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-          position: 'relative',
-          minHeight: touchMinHeight,
-          background:
-            isDirectActive || (hasChildren && isParentActive) ? theme.accentBg : 'transparent',
-          borderInlineStart:
-            isDirectActive || (hasChildren && isParentActive)
-              ? `2.5px solid ${theme.accent}`
-              : '2.5px solid transparent',
-          cursor: 'pointer',
-          transition: 'background 0.15s ease',
-          WebkitTapHighlightColor: 'transparent',
-        }}
-        onMouseEnter={(e) => {
-          if (!isDirectActive) e.currentTarget.style.background = theme.bgSurfaceHover
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background =
-            isDirectActive || (hasChildren && isParentActive) ? theme.accentBg : 'transparent'
-        }}
-        onClick={
-          hasChildren && !effectiveCollapsed
-            ? () => {
-                toggleExpand(item.path)
-              }
-            : undefined
-        }
-      >
-        <span
-          style={{
-            color: isDirectActive || isParentActive ? theme.accent : theme.textSecondary,
-            display: 'flex',
-            flexShrink: 0,
-          }}
-        >
-          {item.icon}
-        </span>
-        {!effectiveCollapsed && (
-          <>
-            <span
+    // A group that is open shows the page you are on as its own highlighted row, so the group only turns its text accent;
+    // closed (or in the icon rail), the group carries the tint so you can still see where you are.
+    if (hasChildren && !effectiveCollapsed) {
+      const groupId = `nav-group-${item.path.replace(/[^a-z0-9]+/gi, '-')}`
+      return (
+        <div key={item.path}>
+          <GroupRow
+            look={{
+              active: isParentActive,
+              tinted: isParentActive && !isExpanded,
+              collapsed: false,
+              touch: mobile,
+            }}
+            expanded={isExpanded}
+            controlsId={groupId}
+            onToggle={() => {
+              toggleExpand(item.path)
+            }}
+            icon={item.icon}
+            label={label}
+            badge={badgeCount}
+          />
+          {isExpanded && (
+            <div
+              id={groupId}
               style={{
-                fontSize: '13px',
-                fontWeight: isDirectActive || isParentActive ? 500 : 400,
-                color: isDirectActive || isParentActive ? theme.accent : theme.textSecondary,
-                whiteSpace: 'nowrap',
-                flex: 1,
+                margin: '2px 0 6px',
+                marginInlineStart: '18px',
+                paddingInlineStart: '8px',
+                borderInlineStart: `1px solid ${theme.borderStrong}`,
               }}
             >
-              {navLabel(item.label)}
-            </span>
-            {badgeCount !== undefined && (
-              <span
-                style={{
-                  fontSize: '10px',
-                  fontWeight: 600,
-                  padding: '1px 6px',
-                  borderRadius: '10px',
-                  background: theme.accentBg,
-                  color: theme.accent,
-                  border: `1px solid ${theme.accentBorder}`,
-                }}
-              >
-                {badgeCount}
-              </span>
-            )}
-            {hasChildren && (
-              <span
-                style={{
-                  color: theme.textMuted,
-                  display: 'flex',
-                  transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-                  transition: 'transform 0.15s ease',
-                }}
-              >
-                <Icon name="chevron-down" />
-              </span>
-            )}
-          </>
-        )}
-      </div>
-    )
+              {visibleChildren.map((child) => {
+                const isChildActive =
+                  location.pathname === child.path || location.pathname.startsWith(child.path + '/')
+                return (
+                  <LinkRow
+                    key={child.path}
+                    to={child.path}
+                    onClick={handleNavClick}
+                    look={{
+                      active: isChildActive,
+                      tinted: isChildActive,
+                      collapsed: false,
+                      touch: mobile,
+                      child: true,
+                    }}
+                    label={navLabel(child.label)}
+                    badge={resolveBadge(child.badge)}
+                    badgeTone="alert"
+                  />
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )
+    }
 
+    // In rail/collapsed mode, everything becomes a link (a group goes to its first page)
+    const railNavTarget =
+      hasChildren && effectiveCollapsed ? (visibleChildren[0]?.path ?? item.path) : item.path
+    const active = hasChildren ? isParentActive : isDirectActive
     return (
-      <div key={item.path}>
-        {/* In rail/collapsed mode, everything becomes a NavLink (children navigate to first child) */}
-        {hasChildren && !effectiveCollapsed ? (
-          itemContent
-        ) : (
-          <NavLink
-            to={railNavTarget}
-            style={{ textDecoration: 'none', display: 'block' }}
-            onClick={handleNavClick}
-          >
-            {itemContent}
-          </NavLink>
-        )}
-        {hasChildren && !effectiveCollapsed && isExpanded && (
-          <div>
-            {visibleChildren.map((child) => {
-              const isChildActive =
-                location.pathname === child.path || location.pathname.startsWith(child.path + '/')
-              const childBadge = resolveBadge(child.badge)
-              return (
-                <NavLink
-                  key={child.path}
-                  to={child.path}
-                  style={{ textDecoration: 'none', display: 'block' }}
-                  onClick={handleNavClick}
-                >
-                  <div
-                    style={{
-                      padding: '7px 16px 7px 42px',
-                      fontSize: '12px',
-                      color: isChildActive ? theme.accent : theme.textMuted,
-                      fontWeight: isChildActive ? 500 : 400,
-                      background: isChildActive ? theme.accentBg : 'transparent',
-                      borderInlineStart: isChildActive
-                        ? `2.5px solid ${theme.accent}`
-                        : '2.5px solid transparent',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      transition: 'background 0.15s ease',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      minHeight: touchMinHeight,
-                      WebkitTapHighlightColor: 'transparent',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isChildActive) e.currentTarget.style.background = theme.bgSurfaceHover
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isChildActive) e.currentTarget.style.background = 'transparent'
-                    }}
-                  >
-                    <span>{navLabel(child.label)}</span>
-                    {childBadge !== undefined && (
-                      <span
-                        style={{
-                          fontSize: '10px',
-                          fontWeight: 600,
-                          padding: '1px 5px',
-                          borderRadius: '10px',
-                          background: theme.dangerBg,
-                          color: theme.danger,
-                          border: `1px solid ${theme.dangerBorder}`,
-                          marginInlineEnd: '8px',
-                        }}
-                      >
-                        {childBadge}
-                      </span>
-                    )}
-                  </div>
-                </NavLink>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      <LinkRow
+        key={item.path}
+        to={railNavTarget}
+        onClick={handleNavClick}
+        look={{ active, tinted: active, collapsed: effectiveCollapsed, touch: mobile }}
+        icon={item.icon}
+        label={label}
+        badge={badgeCount}
+      />
     )
   }
 
   // ── Header — differs by mode ─────────────────────────────────────────────────
 
+  const headerStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    // 56px, the same as the top bar, so the two hairlines meet in one line
+    height: '56px',
+    borderBottom: `1px solid ${theme.border}`,
+    flexShrink: 0,
+  }
+
+  const wordmark = (
+    <span
+      style={{
+        fontSize: '15px',
+        fontWeight: 700,
+        color: theme.textPrimary,
+        letterSpacing: '-0.01em',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      FNC GROUP
+    </span>
+  )
+
+  // The chevrons are icons, so the browser does not mirror them: on the right-hand side of an Arabic page they point the other way.
+  const towardEdge = rtl ? 'chevron-right' : 'chevron-left'
+  const awayFromEdge = rtl ? 'chevron-left' : 'chevron-right'
+
   function renderHeader() {
     if (mobile) {
       // Phone drawer: title + X button
       return (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 16px',
-            height: '56px',
-            borderBottom: `0.5px solid ${theme.border}`,
-            flexShrink: 0,
-          }}
-        >
-          <span
-            style={{
-              fontSize: '16px',
-              fontWeight: 700,
-              color: theme.textPrimary,
-              letterSpacing: '-0.01em',
-            }}
-          >
-            FNC GROUP
-          </span>
-          <button
-            onClick={onClose}
-            aria-label={t('shell.closeSidebar')}
-            style={{
-              background: theme.bgSurface,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '6px',
-              color: theme.textMuted,
-              cursor: 'pointer',
-              width: '32px',
-              height: '32px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
+        <div style={{ ...headerStyle, justifyContent: 'space-between', padding: '0 8px 0 18px' }}>
+          {wordmark}
+          <HeaderButton label={t('shell.closeSidebar')} onClick={onClose} size={40}>
             <Icon name="x" />
-          </button>
+          </HeaderButton>
         </div>
       )
     }
@@ -1398,35 +1605,10 @@ export function Sidebar({
     if (rail) {
       // Tablet rail: centered toggle button
       return (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '56px',
-            borderBottom: `0.5px solid ${theme.border}`,
-            flexShrink: 0,
-          }}
-        >
-          <button
-            onClick={onToggle}
-            aria-label={t('shell.expandSidebar')}
-            title={t('shell.expandSidebar')}
-            style={{
-              background: theme.bgSurface,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '6px',
-              color: theme.textMuted,
-              cursor: 'pointer',
-              width: '28px',
-              height: '28px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Icon name="chevron-right" />
-          </button>
+        <div style={{ ...headerStyle, justifyContent: 'center' }}>
+          <HeaderButton label={t('shell.expandSidebar')} onClick={onToggle} size={36}>
+            <Icon name={awayFromEdge} />
+          </HeaderButton>
         </div>
       )
     }
@@ -1435,50 +1617,32 @@ export function Sidebar({
     return (
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
+          ...headerStyle,
           justifyContent: effectiveCollapsed ? 'center' : 'space-between',
-          padding: effectiveCollapsed ? '16px 0' : '16px 16px',
-          height: '56px',
-          borderBottom: `0.5px solid ${theme.border}`,
-          flexShrink: 0,
+          padding: effectiveCollapsed ? 0 : '0 10px 0 18px',
         }}
       >
-        {!effectiveCollapsed && (
-          <span
-            style={{
-              fontSize: '16px',
-              fontWeight: 700,
-              color: theme.textPrimary,
-              letterSpacing: '-0.01em',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            FNC GROUP
-          </span>
-        )}
-        <button
+        {!effectiveCollapsed && wordmark}
+        <HeaderButton
+          label={effectiveCollapsed ? t('shell.expandSidebar') : t('shell.collapseSidebar')}
           onClick={toggleCollapseInternal}
-          aria-label={effectiveCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          style={{
-            background: theme.bgSurface,
-            border: `1px solid ${theme.border}`,
-            borderRadius: '6px',
-            color: theme.textMuted,
-            cursor: 'pointer',
-            width: '24px',
-            height: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
+          size={effectiveCollapsed ? 36 : 32}
+          expanded={!effectiveCollapsed}
         >
-          <Icon name={effectiveCollapsed ? 'chevron-right' : 'chevron-left'} />
-        </button>
+          <Icon name={effectiveCollapsed ? awayFromEdge : towardEdge} />
+        </HeaderButton>
       </div>
     )
   }
+
+  const visibleSections = NAV_SECTIONS.map((section) => ({
+    section,
+    items: section.items.filter((item) => isItemVisible(item)),
+  })).filter((s) => s.items.length > 0)
+
+  const onProfile = location.pathname === '/settings/profile'
+  const onAdmin = location.pathname.startsWith('/admin')
+  const onSettings = location.pathname.startsWith('/settings')
 
   return (
     <div
@@ -1499,7 +1663,7 @@ export function Sidebar({
         background: theme.bgSidebar,
         backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
         WebkitBackdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-        borderInlineEnd: `0.5px solid ${theme.border}`,
+        borderInlineEnd: `1px solid ${theme.border}`,
         transition: mobile
           ? 'transform 0.25s cubic-bezier(.4,0,.2,1)'
           : 'width 0.22s cubic-bezier(.4,0,.2,1), min-width 0.22s cubic-bezier(.4,0,.2,1)',
@@ -1534,34 +1698,54 @@ export function Sidebar({
 
       {renderHeader()}
 
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
-        {NAV_SECTIONS.map((section) => {
-          const visibleItems = section.items.filter((item) => isItemVisible(item))
-          if (visibleItems.length === 0) return null
-          return (
-            <div key={section.section} style={{ marginBottom: '4px' }}>
-              {!effectiveCollapsed && (
+      <nav
+        aria-label={t('shell.mainNavigation')}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '8px 6px',
+          scrollbarWidth: 'thin',
+          scrollbarColor: `${theme.borderStrong} transparent`,
+        }}
+      >
+        {visibleSections.map(({ section, items }, index) => (
+          <div key={section.section} role="group" aria-label={navLabel(section.section)}>
+            {effectiveCollapsed ? (
+              // no room for a heading in the rail: a hairline between sections keeps them apart
+              index > 0 && (
                 <div
-                  style={{
-                    padding: '8px 16px 4px',
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
-                    color: theme.textMuted,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {navLabel(section.section)}
-                </div>
-              )}
-              {visibleItems.map(renderNavItem)}
-            </div>
-          )
-        })}
-      </div>
+                  role="separator"
+                  style={{ height: '1px', margin: '8px 6px', background: theme.border }}
+                />
+              )
+            ) : (
+              <div
+                style={{
+                  padding: index === 0 ? '4px 8px 6px' : '16px 8px 6px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: theme.textSecondary,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {navLabel(section.section)}
+              </div>
+            )}
+            {items.map(renderNavItem)}
+          </div>
+        ))}
+      </nav>
 
-      <div style={{ borderTop: `0.5px solid ${theme.border}`, padding: '8px 0', flexShrink: 0 }}>
+      <div
+        style={{
+          borderTop: `1px solid ${theme.border}`,
+          padding: '8px 6px',
+          flexShrink: 0,
+        }}
+      >
         {/* Phone drawer only — Topbar drops the avatar menu on phone, so
             identity + Profile/Sign out live here instead, reachable via
             BottomNav's "More" button. */}
@@ -1571,7 +1755,7 @@ export function Sidebar({
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
-              padding: '8px 16px 12px',
+              padding: '8px 8px 12px',
             }}
           >
             <div
@@ -1588,13 +1772,13 @@ export function Sidebar({
                 overflow: 'hidden',
                 fontSize: '12px',
                 fontWeight: 700,
-                color: theme.accent,
+                color: theme.accentSolid,
               }}
             >
               {user.profilePicture ? (
                 <img
                   src={user.profilePicture}
-                  alt="avatar"
+                  alt={t('shell.avatar')}
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
               ) : (
@@ -1619,8 +1803,8 @@ export function Sidebar({
               )}
               <p
                 style={{
-                  fontSize: '11px',
-                  color: theme.textMuted,
+                  fontSize: '12px',
+                  color: theme.textSecondary,
                   margin: 0,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
@@ -1634,180 +1818,119 @@ export function Sidebar({
         )}
 
         {mobile && (
-          <NavLink
+          <LinkRow
             to="/settings/profile"
-            style={{ textDecoration: 'none', display: 'block' }}
             onClick={handleNavClick}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '9px 16px',
-                minHeight: touchMinHeight,
-                color:
-                  location.pathname === '/settings/profile' ? theme.accent : theme.textSecondary,
-                background:
-                  location.pathname === '/settings/profile' ? theme.accentBg : 'transparent',
-                borderInlineStart:
-                  location.pathname === '/settings/profile'
-                    ? `2.5px solid ${theme.accent}`
-                    : '2.5px solid transparent',
-                cursor: 'pointer',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              <span style={{ display: 'flex', flexShrink: 0 }}>
-                <Icon name="users" />
-              </span>
-              <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>{navLabel('Profile')}</span>
-            </div>
-          </NavLink>
+            look={{ active: onProfile, tinted: onProfile, collapsed: false, touch: true }}
+            icon={<Icon name="users" />}
+            label={navLabel('Profile')}
+          />
         )}
 
         {user?.system_admin && (
-          <NavLink
+          <LinkRow
             to="/admin"
-            style={{ textDecoration: 'none', display: 'block' }}
             onClick={handleNavClick}
-          >
-            <div
-              title={effectiveCollapsed ? 'Admin' : undefined}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: effectiveCollapsed ? '9px 0' : '9px 16px',
-                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                minHeight: touchMinHeight,
-                color: location.pathname.startsWith('/admin') ? theme.accent : theme.textSecondary,
-                background: location.pathname.startsWith('/admin') ? theme.accentBg : 'transparent',
-                borderInlineStart: location.pathname.startsWith('/admin')
-                  ? `2.5px solid ${theme.accent}`
-                  : '2.5px solid transparent',
-                cursor: 'pointer',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-              onMouseEnter={(e) => {
-                if (!location.pathname.startsWith('/admin'))
-                  e.currentTarget.style.background = theme.bgSurfaceHover
-              }}
-              onMouseLeave={(e) => {
-                if (!location.pathname.startsWith('/admin'))
-                  e.currentTarget.style.background = 'transparent'
-              }}
-            >
-              <span style={{ display: 'flex', flexShrink: 0 }}>
-                <Icon name="shield" />
-              </span>
-              {!effectiveCollapsed && (
-                <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>{navLabel('Admin')}</span>
-              )}
-            </div>
-          </NavLink>
+            look={{
+              active: onAdmin,
+              tinted: onAdmin,
+              collapsed: effectiveCollapsed,
+              touch: mobile,
+            }}
+            icon={<Icon name="shield" />}
+            label={navLabel('Admin')}
+          />
         )}
 
-        <NavLink
+        <LinkRow
           to="/settings"
-          style={{ textDecoration: 'none', display: 'block' }}
           onClick={handleNavClick}
-        >
-          <div
-            title={effectiveCollapsed ? 'Settings' : undefined}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: effectiveCollapsed ? '9px 0' : '9px 16px',
-              justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-              minHeight: touchMinHeight,
-              color: location.pathname.startsWith('/settings') ? theme.accent : theme.textSecondary,
-              background: location.pathname.startsWith('/settings')
-                ? theme.accentBg
-                : 'transparent',
-              borderInlineStart: location.pathname.startsWith('/settings')
-                ? `2.5px solid ${theme.accent}`
-                : '2.5px solid transparent',
-              cursor: 'pointer',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-            onMouseEnter={(e) => {
-              if (!location.pathname.startsWith('/settings'))
-                e.currentTarget.style.background = theme.bgSurfaceHover
-            }}
-            onMouseLeave={(e) => {
-              if (!location.pathname.startsWith('/settings'))
-                e.currentTarget.style.background = 'transparent'
-            }}
-          >
-            <span style={{ display: 'flex', flexShrink: 0 }}>
-              <Icon name="settings" />
-            </span>
-            {!effectiveCollapsed && (
-              <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>{navLabel('Settings')}</span>
-            )}
-          </div>
-        </NavLink>
-        <button
-          title={effectiveCollapsed ? 'Help' : undefined}
-          onClick={() => window.dispatchEvent(new Event('fnc:open-help'))}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: effectiveCollapsed ? '9px 0' : '9px 16px',
-            justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-            minHeight: touchMinHeight,
-            color: theme.textSecondary,
-            cursor: 'pointer',
-            background: 'none',
-            border: 'none',
-            width: '100%',
-            WebkitTapHighlightColor: 'transparent',
+          look={{
+            active: onSettings,
+            tinted: onSettings,
+            collapsed: effectiveCollapsed,
+            touch: mobile,
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = theme.bgSurfaceHover
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent'
-          }}
-        >
-          <span style={{ display: 'flex', flexShrink: 0 }}>
-            <Icon name="help-circle" />
-          </span>
-          {!effectiveCollapsed && (
-            <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>{t('shell.help')}</span>
-          )}
-        </button>
+          icon={<Icon name="settings" />}
+          label={navLabel('Settings')}
+        />
+
+        <HelpRow collapsed={effectiveCollapsed} touch={mobile} label={t('shell.help')} />
 
         {mobile && (
-          <button
-            onClick={() => {
+          <SignOutRow
+            label={t('shell.signOut')}
+            onSelect={() => {
               clearAuth()
               navigate('/login')
             }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '9px 16px',
-              minHeight: touchMinHeight,
-              color: theme.danger,
-              cursor: 'pointer',
-              background: 'none',
-              border: 'none',
-              width: '100%',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            <span style={{ display: 'flex', flexShrink: 0 }}>
-              <Icon name="log-out" />
-            </span>
-            <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>{t('shell.signOut')}</span>
-          </button>
+          />
         )}
       </div>
     </div>
+  )
+}
+
+// Help opens the help drawer (a global event), so it is a button, drawn like the rows above it.
+function HelpRow({
+  collapsed,
+  touch,
+  label,
+}: {
+  collapsed: boolean
+  touch: boolean
+  label: string
+}) {
+  const { theme } = useTheme()
+  const { ring, handlers } = useFocusRing()
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      type="button"
+      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
+      onClick={() => window.dispatchEvent(new Event('fnc:open-help'))}
+      {...handlers}
+      onMouseEnter={() => {
+        setHover(true)
+      }}
+      onMouseLeave={() => {
+        setHover(false)
+      }}
+      style={rowStyle(theme, { active: false, tinted: false, collapsed, touch }, hover, ring)}
+    >
+      <RowFace icon={<Icon name="help-circle" />} label={label} collapsed={collapsed} />
+    </button>
+  )
+}
+
+function SignOutRow({ label, onSelect }: { label: string; onSelect: () => void }) {
+  const { theme } = useTheme()
+  const { ring, handlers } = useFocusRing()
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      {...handlers}
+      onMouseEnter={() => {
+        setHover(true)
+      }}
+      onMouseLeave={() => {
+        setHover(false)
+      }}
+      style={{
+        ...rowStyle(
+          theme,
+          { active: false, tinted: false, collapsed: false, touch: true },
+          false,
+          ring,
+        ),
+        color: theme.danger,
+        background: hover ? theme.dangerBg : 'transparent',
+      }}
+    >
+      <RowFace icon={<Icon name="log-out" />} label={label} collapsed={false} />
+    </button>
   )
 }

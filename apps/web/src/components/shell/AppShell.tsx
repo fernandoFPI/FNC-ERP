@@ -104,6 +104,8 @@ export function AppShell() {
       // Single printable char with no modifier (Shift OK for uppercase)
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         if (searchOpen) return
+        // A dialog is open (focus sits on its panel, not in a box): typing there must not open the search behind it.
+        if (document.querySelector('[role="dialog"][aria-modal="true"]:not([aria-hidden="true"])')) return
         const el = document.activeElement
         const tag = (el?.tagName ?? '').toLowerCase()
         if (tag === 'input' || tag === 'textarea' || tag === 'select') return
@@ -118,14 +120,13 @@ export function AppShell() {
     }
   }, [searchOpen])
 
-  // Escape closes any open drawer
+  // Escape closes the navigation drawers. The Help drawer and the search palette close themselves (they share the
+  // Modal's rule: Escape closes the TOP overlay only), so this no longer closes them from under a dialog opened on top.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setPhoneDrawerOpen(false)
         setTabletSidebarExpanded(false)
-        setHelpOpen(false)
-        setSearchOpen(false)
       }
     }
     document.addEventListener('keydown', handler)

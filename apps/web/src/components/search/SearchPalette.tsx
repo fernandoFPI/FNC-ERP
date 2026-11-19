@@ -7,6 +7,7 @@ import { api } from '../../lib/axios'
 import { NAV_SECTIONS } from '../shell/Sidebar'
 import { usePermission } from '../../hooks/usePermission'
 import { useCompanyStore } from '../../store/companyStore'
+import { trapTab, useOverlay } from '../ui/overlay'
 
 interface SearchItem {
   id: string
@@ -130,12 +131,17 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
   const activeCompany = useCompanyStore((s) => s.activeCompany)
   const isFactoryCompany = !!activeCompany?.name.toLowerCase().includes('factory')
   const inputRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState('')
   const [groups, setGroups] = useState<SearchGroup[]>([])
   const [loading, setLoading] = useState(false)
   const [activeIdx, setActiveIdx] = useState(0)
   const [recents, setRecents] = useState<RecentItem[]>([])
   const prevOpen = useRef(false)
+
+  // Escape (top overlay only), the page lock and focus back to what opened it are shared with the Modal. The search
+  // box takes focus itself (below), so the panel does not.
+  useOverlay({ open, onClose, panelRef, focusPanel: false })
 
   // Instant, local "go to page" matches — no debounce, no API round trip.
   // Lets a query like "projects" jump straight to the Projects list page
@@ -281,6 +287,13 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
       }}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('search.placeholder')}
+        onKeyDown={(e) => {
+          if (panelRef.current) trapTab(e, panelRef.current)
+        }}
         style={{
           width: '100%',
           maxWidth: '560px',

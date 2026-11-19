@@ -82,7 +82,7 @@ export function BottomNav() {
         background: theme.bgSurface,
         backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
         WebkitBackdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-        borderTop: `0.5px solid ${theme.border}`,
+        borderTop: `1px solid ${theme.border}`,
         display: 'flex',
         alignItems: 'stretch',
         zIndex: 40,
@@ -91,10 +91,13 @@ export function BottomNav() {
     >
       {NAV_ITEMS.map((item) => {
         const active = isActive(item.path)
-        const color = active ? theme.accent : theme.textMuted
+        // the readable grey for the pages you are not on (the pale one is 2.6:1), the solid accent for the one you are on
+        const color = active ? theme.accentSolid : theme.textSecondary
         return (
           <button
             key={item.path}
+            type="button"
+            aria-current={active ? 'page' : undefined}
             onClick={() => {
               navigate(item.path)
             }}
@@ -124,7 +127,7 @@ export function BottomNav() {
                   width: '4px',
                   height: '4px',
                   borderRadius: '50%',
-                  background: theme.accent,
+                  background: theme.accentSolid,
                 }}
               />
             )}
@@ -146,8 +149,8 @@ export function BottomNav() {
             {ICONS[item.icon]?.(color)}
             <span
               style={{
-                fontSize: '10px',
-                fontWeight: active ? 600 : 400,
+                fontSize: '11px',
+                fontWeight: active ? 700 : 500,
                 letterSpacing: '0.02em',
               }}
             >
@@ -159,6 +162,7 @@ export function BottomNav() {
 
       {/* More — opens sidebar drawer via global event */}
       <button
+        type="button"
         onClick={() => window.dispatchEvent(new CustomEvent('fnc:open-sidebar'))}
         style={{
           flex: 1,
@@ -170,13 +174,13 @@ export function BottomNav() {
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          color: theme.textMuted,
+          color: theme.textSecondary,
           minHeight: '44px',
           WebkitTapHighlightColor: 'transparent',
         }}
       >
-        {ICONS.grid?.(theme.textMuted)}
-        <span style={{ fontSize: '10px', fontWeight: 400 }}>{t('shell.more')}</span>
+        {ICONS.grid(theme.textSecondary)}
+        <span style={{ fontSize: '11px', fontWeight: 500 }}>{t('shell.more')}</span>
       </button>
     </nav>
   )

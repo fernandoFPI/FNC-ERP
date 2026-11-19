@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
 import { findTopic, allTopics, helpGroups, type HelpTopic } from './helpContent'
 import { startTour, tours } from './tours'
+import { trapTab, useOverlay } from '../ui/overlay'
 import 'driver.js/dist/driver.css'
 
 interface Props {
@@ -22,6 +23,11 @@ export function HelpDrawer({ open, onClose }: Props) {
   const [activeTopic, setActiveTopic] = useState<HelpTopic | null>(null)
   const [browseOpen, setBrowseOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Escape (top overlay only), the page lock, Tab kept inside and focus back to the opener are shared with the Modal.
+  // The search box takes focus itself (below), so the panel does not.
+  useOverlay({ open, onClose, panelRef, focusPanel: false })
 
   // Derive contextual topic from current route
   const routeTopic = findTopic(location.pathname)
@@ -67,6 +73,7 @@ export function HelpDrawer({ open, onClose }: Props) {
       {/* Backdrop */}
       {open && (
         <div
+          aria-hidden="true"
           onClick={onClose}
           style={{
             position: 'fixed',
@@ -79,9 +86,20 @@ export function HelpDrawer({ open, onClose }: Props) {
 
       {/* Drawer panel */}
       <div
+        ref={panelRef}
+        data-overlay-panel=""
         role="dialog"
+        aria-modal="true"
         aria-label={t('help.drawer.helpGuides')}
+        // closed, it is off screen AND out of the way of Tab and a screen reader (it stays mounted for the slide)
+        aria-hidden={!open}
+        tabIndex={-1}
+        onKeyDown={(e) => {
+          if (panelRef.current) trapTab(e, panelRef.current)
+        }}
         style={{
+          visibility: open ? 'visible' : 'hidden',
+          outline: 'none',
           position: 'fixed',
           top: 0,
           insetInlineEnd: 0,
@@ -93,7 +111,9 @@ export function HelpDrawer({ open, onClose }: Props) {
           display: 'flex',
           flexDirection: 'column',
           transform: open ? 'translateX(0)' : `translateX(${rtl ? -drawerWidth : drawerWidth}px)`,
-          transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)',
+          transition: open
+            ? 'transform 0.28s cubic-bezier(0.4,0,0.2,1)'
+            : 'transform 0.28s cubic-bezier(0.4,0,0.2,1), visibility 0s linear 0.28s',
           boxShadow: open ? `${rtl ? '' : '-'}8px 0 32px rgba(0,0,0,0.18)` : 'none',
         }}
       >

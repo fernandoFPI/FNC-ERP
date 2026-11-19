@@ -1,15 +1,19 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { EntitySwitcher } from './EntitySwitcher'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { LanguageSwitcher } from './LanguageSwitcher'
+import { MenuRow, ShellMenuPanel, TopbarButton, shellFocusRing, useShellMenu } from './shellParts'
 import { navLabel } from '../../i18n'
 import { NotificationsDrawer } from './NotificationsDrawer'
 import { useTheme } from '../../theme/ThemeContext'
 import { useAuthStore } from '../../store/authStore'
 import { useNotificationStore } from '../../store/notificationStore'
+import { useBreadcrumbStore } from '../../store/breadcrumbStore'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
+import { useFocusRing } from '../ui/keyboardFocus'
+import { menuSeparatorStyle } from '../ui/menuStyles'
 import { api } from '../../lib/axios'
 import { getInitials } from '../../lib/userDisplay'
 
@@ -104,20 +108,56 @@ function segmentLabel(seg: string): string {
   return navLabel(seg.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
 }
 
-function buildCrumbs(pathname: string) {
+// `titles` are the names record pages registered for their ids (useBreadcrumbTitle); an id with no name keeps the "#3f2b8c1e" fallback.
+function buildCrumbs(pathname: string, titles: Record<string, string>) {
   const segments = pathname.split('/').filter(Boolean)
-  return segments.map((seg, i) => ({
-    label: segmentLabel(seg),
-    path: '/' + segments.slice(0, i + 1).join('/'),
-    isLast: i === segments.length - 1,
-    isId: UUID_RE.test(seg) || /^\d+$/.test(seg),
-  }))
+  return segments.map((seg, i) => {
+    const isId = UUID_RE.test(seg) || /^\d+$/.test(seg)
+    return {
+      label: (isId ? titles[seg] : undefined) ?? segmentLabel(seg),
+      path: '/' + segments.slice(0, i + 1).join('/'),
+      isLast: i === segments.length - 1,
+      isId,
+    }
+  })
 }
 
 interface TopbarProps {
   // compact=true on phone+tablet: shows hamburger, uses compact EntitySwitcher on phone
   compact?: boolean
   onMenuToggle?: () => void
+}
+
+// A page in the trail you can go back to: a real link (middle-click and the keyboard work), quiet until it is hovered.
+function CrumbLink({ to, children }: { to: string; children: string }) {
+  const { theme } = useTheme()
+  const { ring, handlers } = useFocusRing()
+  const [hover, setHover] = useState(false)
+  return (
+    <Link
+      to={to}
+      {...handlers}
+      onMouseEnter={() => {
+        setHover(true)
+      }}
+      onMouseLeave={() => {
+        setHover(false)
+      }}
+      style={{
+        padding: '2px 4px',
+        borderRadius: '6px',
+        fontSize: '13px',
+        fontWeight: 500,
+        whiteSpace: 'nowrap',
+        textDecoration: hover ? 'underline' : 'none',
+        color: hover ? theme.textPrimary : theme.textSecondary,
+        boxShadow: ring ? shellFocusRing(theme) : 'none',
+        outline: 'none',
+      }}
+    >
+      {children}
+    </Link>
+  )
 }
 
 export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
@@ -131,9 +171,10 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
   const clearAuth = useAuthStore((s) => s.clearAuth)
   const unreadCount = useNotificationStore((s) => s.unreadCount)
   const [notifOpen, setNotifOpen] = useState(false)
-  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false)
+  const userMenu = useShellMenu()
 
-  const crumbs = buildCrumbs(location.pathname)
+  const titles = useBreadcrumbStore((s) => s.titles)
+  const crumbs = buildCrumbs(location.pathname, titles)
   const initials = user ? getInitials(user.email) : 'U'
   const displayName =
     user?.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : null
@@ -180,24 +221,49 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
   }, [user?.id])
 
   function handleSignOut() {
+    userMenu.close()
     clearAuth()
     navigate('/login')
   }
 
+  function goTo(path: string) {
+    userMenu.close()
+    navigate(path)
+  }
+
+  // The same side gutter as the page's own padding (phone 12, tablet 16, desktop 20), so the trail lines up with the page.
+  const gutter = isPhone ? 12 : compact ? 16 : 20
+
+  const avatarImage = (size: number) =>
+    user?.profilePicture ? (
+      <img
+        src={user.profilePicture}
+        alt={t('shell.avatar')}
+        style={{ width: size, height: size, objectFit: 'cover', borderRadius: '50%' }}
+      />
+    ) : (
+      initials
+    )
+
   return (
     <>
-      <div
+      <header
         className="fnc-topbar"
         style={{
-          height: '52px',
+          // 56px, the same as the sidebar's header, so the two hairlines meet in one line; on a phone with a notch the bar
+          // also owns the safe area above it (the inset is 0 everywhere else)
+          boxSizing: 'border-box',
+          height: 'calc(56px + var(--safe-top))',
           display: 'flex',
           alignItems: 'center',
-          padding: '0 16px',
-          gap: '10px',
+          paddingTop: 'var(--safe-top)',
+          paddingBottom: 0,
+          paddingInline: `${gutter}px`,
+          gap: '8px',
           background: theme.bgTopbar,
           backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
           WebkitBackdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-          borderBottom: `0.5px solid ${theme.border}`,
+          borderBottom: `1px solid ${theme.border}`,
           flexShrink: 0,
           position: 'relative',
           zIndex: 5,
@@ -205,23 +271,10 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
       >
         {/* Hamburger — phone and tablet */}
         {compact && (
-          <button
+          <TopbarButton
             onClick={onMenuToggle}
             aria-label={t('shell.openMenu')}
-            style={{
-              width: '36px',
-              height: '36px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'none',
-              border: 'none',
-              color: theme.textSecondary,
-              cursor: 'pointer',
-              flexShrink: 0,
-              touchAction: 'manipulation',
-              WebkitTapHighlightColor: 'transparent',
-            }}
+            style={{ width: '40px', height: '40px', marginInlineStart: '-6px' }}
           >
             <svg
               width="20"
@@ -230,256 +283,234 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden="true"
             >
               <line x1="3" y1="6" x2="21" y2="6" />
               <line x1="3" y1="12" x2="21" y2="12" />
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
-          </button>
+          </TopbarButton>
         )}
 
-        {/* Breadcrumb */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            flex: 1,
-            overflow: 'hidden',
-            minWidth: 0,
-          }}
-        >
-          {crumbs.map((crumb, i) => (
-            <span
-              key={crumb.path}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                flexShrink: i < crumbs.length - 1 ? 0 : 1,
-                overflow: 'hidden',
-              }}
-            >
-              {i > 0 && (
-                <span style={{ fontSize: '12px', color: theme.textMuted, userSelect: 'none' }}>
-                  ›
-                </span>
-              )}
-              {crumb.isLast || crumb.isId ? (
-                <span
-                  style={{
-                    fontSize: '13px',
-                    color: theme.textSecondary,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {crumb.label}
-                </span>
-              ) : (
-                <button
-                  onClick={() => {
-                    navigate(crumb.path)
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    padding: 0,
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    color: theme.textMuted,
-                    whiteSpace: 'nowrap',
-                    fontFamily: 'inherit',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = theme.accent
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = theme.textMuted
-                  }}
-                >
-                  {crumb.label}
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
+        {/* Breadcrumb: where you are, and the pages above it. The current page is the strongest; the ones above are links. */}
+        <nav aria-label={t('shell.breadcrumb')} style={{ flex: 1, minWidth: 0 }}>
+          <ol
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px',
+              margin: 0,
+              padding: 0,
+              listStyle: 'none',
+              minWidth: 0,
+              overflow: 'hidden',
+            }}
+          >
+            {crumbs.map((crumb, i) => (
+              <li
+                key={crumb.path}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                  minWidth: 0,
+                  flexShrink: crumb.isLast ? 1 : 0,
+                }}
+              >
+                {i > 0 && (
+                  <span
+                    aria-hidden="true"
+                    style={{ fontSize: '13px', color: theme.textSecondary, userSelect: 'none' }}
+                  >
+                    ›
+                  </span>
+                )}
+                {crumb.isLast ? (
+                  <span
+                    aria-current="page"
+                    title={crumb.label}
+                    style={{
+                      padding: '2px 4px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: theme.textPrimary,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {crumb.label}
+                  </span>
+                ) : crumb.isId ? (
+                  <span
+                    style={{
+                      padding: '2px 4px',
+                      fontSize: '13px',
+                      color: theme.textSecondary,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {crumb.label}
+                  </span>
+                ) : (
+                  <CrumbLink to={crumb.path}>{crumb.label}</CrumbLink>
+                )}
+              </li>
+            ))}
+          </ol>
+        </nav>
 
-        {/* EntitySwitcher — compact pill on phone, full on tablet+desktop */}
+        {/* EntitySwitcher — compact badge on phone, full pill on tablet+desktop */}
         <EntitySwitcher compact={compact && isPhone} />
 
         {/* Search — hidden on phone to save space */}
         {!isPhone && (
-          <button
+          <TopbarButton
             aria-label={t('shell.search')}
+            aria-keyshortcuts="Control+K"
             title={t('shell.searchTitle')}
             onClick={() =>
               window.dispatchEvent(new CustomEvent('fnc:open-search', { detail: { prefill: '' } }))
             }
-            style={{
-              height: '34px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '0 10px 0 8px',
-              background: theme.bgSurface,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
-              color: theme.textMuted,
-              cursor: 'pointer',
-              backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-              flexShrink: 0,
-            }}
+            bordered
+            style={{ padding: '0 8px 0 10px', fontWeight: 500 }}
           >
             <svg
-              width="14"
-              height="14"
+              width="15"
+              height="15"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               strokeWidth="1.8"
+              strokeLinecap="round"
+              aria-hidden="true"
               style={{ flexShrink: 0 }}
             >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <span style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{t('shell.search')}</span>
+            <span style={{ whiteSpace: 'nowrap' }}>{t('shell.search')}</span>
             <kbd
+              aria-hidden="true"
               style={{
-                fontSize: '10px',
-                padding: '1px 4px',
-                borderRadius: '4px',
+                fontSize: '11px',
+                fontWeight: 500,
+                padding: '1px 5px',
+                borderRadius: '5px',
                 background: theme.bgCanvas,
                 border: `1px solid ${theme.border}`,
+                color: theme.textSecondary,
                 fontFamily: 'inherit',
                 lineHeight: '1.4',
               }}
             >
               Ctrl K
             </kbd>
-          </button>
+          </TopbarButton>
         )}
 
         {/* Theme, notifications, and the avatar menu are all reachable via the
             phone drawer (More → Sidebar footer) and BottomNav's Notifs tab —
             dropping them here keeps the phone topbar to hamburger + breadcrumb
             + company badge. */}
+        {!isPhone && (
+          <span
+            aria-hidden="true"
+            style={{ width: '1px', height: '20px', background: theme.border, margin: '0 4px' }}
+          />
+        )}
         {!isPhone && <LanguageSwitcher />}
         {!isPhone && <ThemeSwitcher />}
 
         {/* Notifications */}
         {!isPhone && (
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => {
-                setNotifOpen(true)
-              }}
-              aria-label={t('shell.notifications')}
-              style={{
-                width: '34px',
-                height: '34px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: theme.bgSurface,
-                border: `1px solid ${theme.border}`,
-                borderRadius: '8px',
-                color: theme.textSecondary,
-                cursor: 'pointer',
-                position: 'relative',
-                WebkitTapHighlightColor: 'transparent',
-              }}
+          <TopbarButton
+            onClick={() => {
+              setNotifOpen(true)
+            }}
+            aria-label={
+              unreadCount > 0
+                ? t('shell.notificationsUnread', { count: unreadCount })
+                : t('shell.notifications')
+            }
+            active={notifOpen}
+            style={{ position: 'relative' }}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            {unreadCount > 0 && (
+              <span
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  top: '1px',
+                  insetInlineEnd: '0',
+                  minWidth: '17px',
+                  height: '17px',
+                  boxSizing: 'border-box',
+                  padding: '0 4px',
+                  borderRadius: '9px',
+                  background: theme.danger,
+                  // the page colour behind it, so the badge reads on top of the bell on either theme
+                  color: theme.bgSurface,
+                  boxShadow: `0 0 0 2px ${theme.bgTopbar}`,
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  lineHeight: '17px',
+                  textAlign: 'center',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
               >
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-              </svg>
-              {unreadCount > 0 && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '4px',
-                    insetInlineEnd: '4px',
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    background: theme.danger,
-                    boxShadow: `0 0 4px ${theme.danger}`,
-                  }}
-                />
-              )}
-            </button>
-          </div>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </TopbarButton>
         )}
 
         {/* Avatar */}
         {!isPhone && (
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => {
-                setAvatarMenuOpen((v) => !v)
-              }}
-              aria-label="User menu"
+          <div ref={userMenu.containerRef} style={{ position: 'relative' }}>
+            <TopbarButton
+              ref={userMenu.triggerRef}
+              onClick={userMenu.toggle}
+              aria-label={t('shell.userMenu')}
+              aria-haspopup="menu"
+              aria-expanded={userMenu.open}
               style={{
-                width: '34px',
-                height: '34px',
+                width: '36px',
+                padding: 0,
                 borderRadius: '50%',
                 background: theme.accentBg,
-                border: `1px solid ${theme.accentBorder}`,
-                color: theme.accent,
-                cursor: 'pointer',
+                border: `1px solid ${userMenu.open ? theme.accentSolid : theme.accentBorder}`,
+                color: theme.accentSolid,
                 fontSize: '12px',
-                fontWeight: 700,
                 letterSpacing: '0.02em',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontFamily: 'inherit',
-                WebkitTapHighlightColor: 'transparent',
                 overflow: 'hidden',
-                padding: 0,
               }}
             >
-              {user?.profilePicture ? (
-                <img
-                  src={user.profilePicture}
-                  alt={t('shell.avatar')}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-              ) : (
-                initials
-              )}
-            </button>
-            {avatarMenuOpen && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 6px)',
-                  insetInlineEnd: 0,
-                  zIndex: 500,
-                  minWidth: '180px',
-                }}
-                onMouseLeave={() => {
-                  setAvatarMenuOpen(false)
-                }}
-              >
-                <div
-                  style={{
-                    background: theme.bgSurface,
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '10px',
-                    backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-                    overflow: 'hidden',
-                  }}
-                >
+              {avatarImage(34)}
+            </TopbarButton>
+            {userMenu.open && (
+              <ShellMenuPanel
+                align="end"
+                label={t('shell.userMenu')}
+                panelRef={userMenu.panelRef}
+                onKeyDown={userMenu.onKeyDown}
+                minWidth={240}
+                header={
                   <div
                     style={{
                       padding: '12px 14px',
@@ -503,18 +534,10 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                         overflow: 'hidden',
                         fontSize: '12px',
                         fontWeight: 700,
-                        color: theme.accent,
+                        color: theme.accentSolid,
                       }}
                     >
-                      {user?.profilePicture ? (
-                        <img
-                          src={user.profilePicture}
-                          alt="avatar"
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      ) : (
-                        initials
-                      )}
+                      {avatarImage(36)}
                     </div>
                     <div style={{ minWidth: 0 }}>
                       {displayName && (
@@ -534,8 +557,8 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                       )}
                       <p
                         style={{
-                          fontSize: '11px',
-                          color: theme.textMuted,
+                          fontSize: '12px',
+                          color: theme.textSecondary,
                           margin: 0,
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
@@ -546,71 +569,30 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                       </p>
                     </div>
                   </div>
-                  <div style={{ padding: '4px' }}>
-                    {[
-                      { label: navLabel('Profile'), path: '/settings/profile' },
-                      { label: navLabel('Settings'), path: '/settings' },
-                    ].map((item) => (
-                      <button
-                        key={item.path}
-                        onClick={() => {
-                          navigate(item.path)
-                          setAvatarMenuOpen(false)
-                        }}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          padding: '8px 10px',
-                          fontSize: '13px',
-                          color: theme.textSecondary,
-                          background: 'none',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'start',
-                          fontFamily: 'inherit',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = theme.bgSurfaceHover
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'none'
-                        }}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                    <button
-                      onClick={handleSignOut}
-                      style={{
-                        display: 'block',
-                        width: '100%',
-                        padding: '8px 10px',
-                        fontSize: '13px',
-                        color: theme.danger,
-                        background: 'none',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        textAlign: 'start',
-                        fontFamily: 'inherit',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = theme.dangerBg
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'none'
-                      }}
-                    >
-                      {t('shell.signOut')}
-                    </button>
-                  </div>
-                </div>
-              </div>
+                }
+              >
+                {[
+                  { label: navLabel('Profile'), path: '/settings/profile' },
+                  { label: navLabel('Settings'), path: '/settings' },
+                ].map((item) => (
+                  <MenuRow
+                    key={item.path}
+                    onSelect={() => {
+                      goTo(item.path)
+                    }}
+                  >
+                    {item.label}
+                  </MenuRow>
+                ))}
+                <div role="separator" style={menuSeparatorStyle(theme)} />
+                <MenuRow danger onSelect={handleSignOut}>
+                  {t('shell.signOut')}
+                </MenuRow>
+              </ShellMenuPanel>
             )}
           </div>
         )}
-      </div>
+      </header>
 
       <NotificationsDrawer
         open={notifOpen}

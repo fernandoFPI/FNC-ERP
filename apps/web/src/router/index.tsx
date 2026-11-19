@@ -88,6 +88,10 @@ const PurchaseOrdersPage = lazy(
 const PurchaseOrderForm = lazy(
   () => import('../pages/procurement/purchase-orders/PurchaseOrderForm'),
 )
+// The receipts-and-photos viewer: a bare window of its own (no sidebar), opened from a PO so it can sit on a second screen
+const PoPhotoViewerPage = lazy(
+  () => import('../pages/procurement/purchase-orders/PoPhotoViewerPage'),
+)
 const PurchaseOrderDetail = lazy(
   () => import('../pages/procurement/purchase-orders/PurchaseOrderDetail'),
 )
@@ -266,6 +270,9 @@ const StoreOutDetail = lazy(() => import('../pages/inventory/store-out/StoreOutD
 const StoreInPage = lazy(() => import('../pages/inventory/store-in/StoreInPage'))
 const StoreInDetail = lazy(() => import('../pages/inventory/store-in/StoreInDetail'))
 const MaterialReturnsPage = lazy(() => import('../pages/inventory/material-returns/MaterialReturnsPage'))
+const ReturnablesPage = lazy(() => import('../pages/inventory/returnables/ReturnablesPage'))
+const TempStorePage = lazy(() => import('../pages/inventory/transit/TempStorePage'))
+const StoreHistoryPage = lazy(() => import('../pages/inventory/history/StoreHistoryPage'))
 const StockBalancesPage = lazy(() => import('../pages/inventory/balances/StockBalancesPage'))
 const ProductsPage = lazy(() => import('../pages/inventory/products/ProductsPage'))
 const ProductDetail = lazy(() => import('../pages/inventory/products/ProductDetail'))
@@ -338,6 +345,10 @@ export const router = createBrowserRouter([
   {
     path: '/verify/:token',
     element: withSuspense(<InvoiceVerifyPage />),
+  },
+  {
+    path: '/viewer/purchase-orders/:id/photos',
+    element: <PrivateRoute>{withPerm('procurement.po.view', <PoPhotoViewerPage />)}</PrivateRoute>,
   },
   {
     path: '/complete-profile',
@@ -631,6 +642,18 @@ export const router = createBrowserRouter([
           {
             path: 'material-returns',
             element: withPerm('inventory.stock_moves.view', <MaterialReturnsPage />),
+          },
+          {
+            path: 'returnables',
+            element: withPerm('inventory.stock_moves.view', <ReturnablesPage />),
+          },
+          {
+            path: 'temp-store',
+            element: withPerm('inventory.stock_moves.view', <TempStorePage />),
+          },
+          {
+            path: 'history',
+            element: withPerm('inventory.stock_moves.view', <StoreHistoryPage />),
           },
           {
             path: 'store-in/:id',

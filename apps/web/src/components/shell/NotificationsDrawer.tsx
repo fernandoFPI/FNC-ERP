@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Drawer } from '../ui/Drawer'
 import { NotificationItem } from '../ui/NotificationItem'
+import { ActionButton } from '../ui/ActionButton'
 import { useTheme } from '../../theme/ThemeContext'
 import { useNotificationStore, type AppNotification } from '../../store/notificationStore'
 import { api } from '../../lib/axios'
@@ -123,11 +124,11 @@ function SectionDivider({ label, count }: { label: string; count?: number }) {
     >
       <span
         style={{
-          fontSize: '10px',
+          fontSize: '11px',
           fontWeight: 700,
-          color: theme.textMuted,
+          color: theme.textSecondary,
           textTransform: 'uppercase',
-          letterSpacing: '0.09em',
+          letterSpacing: '0.08em',
           whiteSpace: 'nowrap',
           flexShrink: 0,
         }}
@@ -137,14 +138,14 @@ function SectionDivider({ label, count }: { label: string; count?: number }) {
       {count !== undefined && (
         <span
           style={{
-            fontSize: '10px',
+            fontSize: '11px',
             fontWeight: 600,
-            color: theme.textMuted,
+            color: theme.textSecondary,
             background: theme.bgCanvas,
             border: `1px solid ${theme.border}`,
             borderRadius: '10px',
-            padding: '0 5px',
-            lineHeight: '16px',
+            padding: '0 6px',
+            lineHeight: '18px',
             flexShrink: 0,
           }}
         >
@@ -239,23 +240,20 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                 {t('shell.notifDrawer.unread', { count: unreadCount })}
               </span>
             </div>
-            <button
-              onClick={(...args: Parameters<typeof handleMarkAllAsRead>) => void handleMarkAllAsRead(...args)}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '12px',
-                color: theme.accent,
-                fontWeight: 500,
-                padding: '4px 0',
+            <ActionButton
+              variant="soft"
+              size="sm"
+              onClick={() => {
+                void handleMarkAllAsRead()
               }}
             >
               {t('shell.notifDrawer.markAllAsRead')}
-            </button>
+            </ActionButton>
           </>
         ) : (
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>{t('shell.notifDrawer.youReAllCaughtUp')}</span>
+          <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+            {t('shell.notifDrawer.youReAllCaughtUp')}
+          </span>
         )}
       </div>
 
@@ -282,7 +280,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: theme.textMuted,
+                color: theme.textSecondary,
               }}
             >
               <svg
@@ -310,7 +308,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
               >
                 {t('shell.notifDrawer.noNotifications')}
               </div>
-              <div style={{ fontSize: '12px', color: theme.textMuted }}>
+              <div style={{ fontSize: '12px', color: theme.textSecondary }}>
                 {t('shell.notifDrawer.youReAllCaughtUpCheck')}
               </div>
             </div>
@@ -319,7 +317,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
           <>
             {unread.length > 0 && (
               <>
-                <SectionDivider label={t('shell.notifDrawer.unread')} count={unread.length} />
+                <SectionDivider label={t('shell.notifDrawer.unreadSection')} count={unread.length} />
                 {unread.map((n) => (
                   <NotificationItem
                     key={n.id}
@@ -356,22 +354,16 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
             flexShrink: 0,
           }}
         >
-          <button
-            onClick={(...args: Parameters<typeof loadMore>) => void loadMore(...args)}
-            style={{
-              width: '100%',
-              padding: '8px',
-              borderRadius: '7px',
-              border: `1px solid ${theme.border}`,
-              background: 'transparent',
-              color: theme.textSecondary,
-              fontSize: '12px',
-              fontWeight: 500,
-              cursor: 'pointer',
+          <ActionButton
+            variant="outline"
+            size="sm"
+            fullWidth
+            onClick={() => {
+              void loadMore()
             }}
           >
             {t('shell.notifDrawer.loadMore')}
-          </button>
+          </ActionButton>
         </div>
       )}
     </Drawer>
