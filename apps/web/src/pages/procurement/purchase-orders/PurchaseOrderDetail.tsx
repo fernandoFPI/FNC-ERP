@@ -74,8 +74,16 @@ import { Badge } from '../../../components/ui/Badge'
 import { EditRequestCard } from '../../../components/procurement/EditRequestCard'
 import { InventoryCost } from '../../../components/procurement/InventoryCost'
 import { EntityAttachments } from '../../../components/inventory/EntityAttachments'
-import { Button, StickyActionBar } from '../../../components/ui/Button'
-import { StatusBar } from '../../../components/ui/StatusBar'
+import { StickyActionBar } from '../../../components/ui/Button'
+import { PhaseBar } from '../../../components/procurement/PhaseBar'
+import { OverflowMenu } from '../../../components/procurement/OverflowMenu'
+import { StageActionBar } from '../../../components/procurement/StageActionBar'
+import { denseFormStyles } from '../../../components/ui/fieldStyles'
+import { useIsRtl } from '../../../i18n'
+import { ActionButton } from '../../../components/ui/ActionButton'
+import { ChipButton } from '../../../components/ui/ChipButton'
+import { Modal } from '../../../components/ui/Modal'
+import { Checkbox } from '../../../components/ui/Checkbox'
 import { TabBar } from '../../../components/ui/TabBar'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { Column } from '../../../components/ui/Table'
@@ -84,7 +92,10 @@ import { LineItemEditor, type LineItemField } from '../../../components/ui/LineI
 import {
   getPOStatusVariant,
   getPOStatusLabel,
-  getStatusesForPO,
+  getPOLogActionLabel,
+  getPOLogActionTone,
+  getPhasesForPO,
+  getPOPhaseLabel,
   PO_RETURNABLE_STATUSES,
 } from '../../../lib/po-constants'
 import { useToastStore } from '../../../store/toastStore'
@@ -96,11 +107,26 @@ import { ColumnsMenu } from '../../../components/ui/ColumnsMenu'
 import { DensityToggle } from '../../../components/ui/DensityToggle'
 import { useTableView } from '../../../hooks/useTableView'
 import { Textarea } from '../../../components/ui/Textarea'
+import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { buildPurchaseOrderHTML } from '../../../lib/poHtml'
 import { poTotalEntries } from '../../../lib/poTotals'
 import { poLineCurrency } from '../../../lib/poLineCurrency'
 import { receivableLocationsKeeping } from '../../../lib/receivingLocations'
+import { orderCoverage } from '../../../lib/poLineCoverage'
+import { ActivityTimeline } from '../../../components/procurement/ActivityTimeline'
+import {
+  AuditCheckButtons,
+  AuditFlagEditor,
+  AuditPriceNote,
+} from '../../../components/procurement/AuditControls'
+import { LineCoverageCell } from '../../../components/procurement/LineCoverageCell'
+import { auditProgress } from '../../../lib/poAudit'
+import { OpenPhotosButton } from '../../../components/procurement/OpenPhotosButton'
+import { PhotoPipPortal } from '../../../components/procurement/PhotoPipPortal'
+import { usePhotoPip } from '../../../hooks/usePhotoPip'
+import { isKeyboardFocus } from '../../../components/ui/keyboardFocus'
+import { menuFocusRing } from '../../../components/ui/menuStyles'
 import {
   TOUR_DEMO_PO_ID,
   buildTourDemoPO,
@@ -113,6 +139,7 @@ export interface POLine {
   product_id: string | null
   product_name: string | null
   product_name_ar?: string | null
+  sku?: string | null
   description: string | null
   qty: number
   uom: string
@@ -409,21 +436,6 @@ const ADMIN_CORRECTION_PO_STATUSES = [
   'finance_audit',
 ]
 
-// Same fixed enterprise accent palette used on the redesigned Record Receipt
-// and New Purchase Order pages — kept as literal values (not theme tokens)
-// so all three read as one visual system regardless of active theme.
-const BRAND_BLUE = '#2563EB'
-const BRAND_GREEN = '#16A34A'
-// Bold-fill treatment for a stage's primary CTA in the Next Step panel —
-// matches the header/footer submit buttons on the Record Receipt and New
-// Purchase Order pages, instead of Button's default soft-tint primary look.
-const PRIMARY_CTA_STYLE: React.CSSProperties = {
-  background: BRAND_BLUE,
-  border: `1px solid ${BRAND_BLUE}`,
-  color: '#ffffff',
-  fontWeight: 600,
-}
-
 function IconBarChart({ size = 17 }: { size?: number }) {
   return (
     <svg
@@ -541,10 +553,10 @@ function DraftReceiptsNotice({
       style={{
         padding: '10px 14px',
         borderRadius: '8px',
-        background: '#fffbeb',
-        border: '1px solid #fde68a',
+        background: `${theme.warning}1a`,
+        border: `1px solid ${theme.warning}`,
         fontSize: '13px',
-        color: '#92400e',
+        color: theme.textPrimary,
         display: 'flex',
         flexDirection: 'column',
         gap: '6px',
@@ -567,7 +579,7 @@ function DraftReceiptsNotice({
               padding: '3px 8px',
               fontSize: '12px',
               fontWeight: 600,
-              color: '#92400e',
+              color: theme.textPrimary,
               cursor: 'pointer',
             }}
           >
@@ -586,16 +598,17 @@ function DraftReceiptsNotice({
 // was logged. Clears itself once every gap is backfilled with a photo.
 function MachineryPhotoAlertNotice({ po }: { po: PO }) {
   const { t } = useTranslation()
+  const { theme } = useTheme()
   if (!po.machineryPhotoAlert) return null
   return (
     <div
       style={{
         padding: '10px 14px',
         borderRadius: '8px',
-        background: '#fef2f2',
-        border: '1px solid #fecaca',
+        background: theme.dangerBg,
+        border: `1px solid ${theme.dangerBorder}`,
         fontSize: '13px',
-        color: '#991b1b',
+        color: theme.danger,
         fontWeight: 600,
         marginBottom: '12px',
       }}
@@ -614,9 +627,19 @@ export default function PurchaseOrderDetail() {
   const [searchParams] = useSearchParams()
   const isTourDemo = id === TOUR_DEMO_PO_ID
   const tourStatus = searchParams.get('tourStatus') ?? 'inventory_check'
-  const { theme } = useTheme()
+  const { theme, themeKey } = useTheme()
+  const rtl = useIsRtl()
+  // The edit, correction and receipt forms share one dense field look (36px, the readable edge, the shared chevron).
+  const { inputStyle, fieldInputStyle, selectStyle, textareaStyle, labelStyle } = denseFormStyles(theme, {
+    rtl,
+    dark: themeKey === 'black',
+  })
   const lock = useRecordLock('purchase_order', id)
+  // The receipts-and-photos viewer floats in a picture-in-picture window (no address bar) where the browser has one
+  const photoPip = usePhotoPip()
   const { isPhone } = useBreakpoint()
+  // On a phone the Next Step panel can be folded away so the lines are one scroll closer; open by default.
+  const [nextStepOpen, setNextStepOpen] = useState(true)
   const pagePadding = usePagePadding()
   const [activeTab, setActiveTab] = useState<Tab>('lines')
   const [rejectReason, setRejectReason] = useState('')
@@ -788,6 +811,7 @@ export default function PurchaseOrderDetail() {
     setLineFilter('')
   }, [id])
   const [showActionsPanel, setShowActionsPanel] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
   const [confirmDeletePO, setConfirmDeletePO] = useState(false)
   const [lineComments, setLineComments] = useState<Record<string, LineComment[]>>({})
   const [commentModal, setCommentModal] = useState<{ lineId: string; description: string } | null>(
@@ -1378,7 +1402,7 @@ export default function PurchaseOrderDetail() {
     if (!po || !can('finance.ap.approve', 'approve')) return null
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Button
+        <ActionButton
           variant="ghost"
           size="sm"
           onClick={() => {
@@ -1389,7 +1413,7 @@ export default function PurchaseOrderDetail() {
           }}
         >
           {t('po.detail.changeFundingSource')}
-        </Button>
+        </ActionButton>
       </div>
     )
   }
@@ -1441,7 +1465,7 @@ export default function PurchaseOrderDetail() {
                   gap: '8px',
                 }}
               >
-                <SearchableSelect
+                <SearchableSelect field
                   label={t('po.detail.glAccount')}
                   required
                   value={line.account_id ?? ''}
@@ -1458,7 +1482,7 @@ export default function PurchaseOrderDetail() {
                   options={glAccountOptions}
                   placeholder={t('po.detail.searchGlAccounts')}
                 />
-                <SearchableSelect
+                <SearchableSelect field
                   label={t('po.detail.costCenter')}
                   required
                   value={line.cost_center_id ?? ''}
@@ -1554,6 +1578,250 @@ export default function PurchaseOrderDetail() {
     admin_correction: t('nav.Admin'),
   }
 
+  // The "forked from" link and the priority control: in the header row on a desktop, in a row of their own under it on a phone.
+  const forkedFromChip = po.requisitionNumber ? (
+    <span
+      onClick={() => {
+        navigate(`/procurement/requisitions/${po.requisition_id}`)
+      }}
+      title={t('po.detail.openTheRequisitionThisPoWas')}
+      style={{
+        padding: '4px 10px',
+        borderRadius: '7px',
+        fontSize: '11px',
+        fontWeight: 700,
+        background: `${theme.accent}18`,
+        color: theme.accent,
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}
+    >
+      {t('po.detail.forkedFrom', { ref: po.requisitionNumber })}
+    </span>
+  ) : null
+
+  const priorityControl = (() => {
+    const PRIORITIES = [
+      {
+        key: 'low',
+        label: t('po.detail.low'),
+        color: theme.textSecondary,
+        activeBg: `${theme.textSecondary}1f`,
+        border: theme.borderStrong,
+      },
+      {
+        key: 'high',
+        label: t('po.detail.high'),
+        color: theme.warning,
+        activeBg: `${theme.warning}1f`,
+        border: theme.warning,
+      },
+      {
+        key: 'emergency',
+        label: t('po.detail.emergency'),
+        color: theme.danger,
+        activeBg: `${theme.danger}1f`,
+        border: theme.danger,
+      },
+    ]
+    const current = po.priority
+    // Priority is only editable while still in draft — it shouldn't
+    // change once inventory/pricing/approval decisions have started
+    // being made around it.
+    if (po.status !== 'draft') {
+      const currentP = PRIORITIES.find((p) => p.key === current) ?? PRIORITIES[0]
+      return (
+        <span
+          style={{
+            padding: '4px 12px',
+            borderRadius: '7px',
+            fontSize: '11px',
+            fontWeight: 700,
+            background: currentP.activeBg,
+            color: currentP.color,
+            border: `1px solid ${currentP.border}`,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {currentP.label}
+        </span>
+      )
+    }
+    return (
+      <div
+        style={{
+          display: 'flex',
+          gap: '2px',
+          background: theme.bgSurface,
+          border: `1px solid ${theme.border}`,
+          borderRadius: '7px',
+          padding: '2px',
+        }}
+      >
+        {PRIORITIES.map((p) => {
+          const active = current === p.key
+          return (
+            <button
+              key={p.key}
+              disabled={settingPriority || lock.lockedByOther}
+              onClick={() => {
+                if (!active) void setPriority({ variables: { id: po.id, priority: p.key } })
+              }}
+              style={{
+                padding: '3px 10px',
+                borderRadius: '5px',
+                border: 'none',
+                cursor: active ? 'default' : 'pointer',
+                fontSize: '11px',
+                fontWeight: active ? 700 : 400,
+                background: active ? p.activeBg : 'transparent',
+                color: active ? p.color : theme.textMuted,
+                outline: active ? `1px solid ${p.border}` : 'none',
+                transition: 'all 0.12s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {p.label}
+            </button>
+          )
+        })}
+      </div>
+    )
+  })()
+
+  // On a phone the actions that used to sit in a bar fixed to the bottom of the screen (and Delete) live behind one menu.
+  // Same conditions as the desktop buttons.
+  // Who sees Actions (Cancel, and the admin override): every viewer until the PO is cancelled or deleted, system-level always.
+  const canOpenActions = !['cancelled', 'deleted'].includes(po.status) || isSystemLevel
+  const phoneMenuItems = [
+    ...(apInvoice !== undefined &&
+    po.funding_source !== 'employee_advance' &&
+    can('finance.ap.view')
+      ? apInvoice
+        ? [
+            {
+              key: 'invoice',
+              label: t('po.detail.viewInvoice'),
+              onSelect: () => {
+                navigate(`/finance/ap/${apInvoice.id}`)
+              },
+            },
+          ]
+        : can('finance.ap.edit') && (po.status === 'completed' || po.status === 'closed')
+          ? [
+              {
+                key: 'invoice',
+                label: t('po.detail.createInvoice'),
+                onSelect: () => {
+                  navigate(`/finance/ap/new?po_id=${id}`)
+                },
+              },
+            ]
+          : []
+      : []),
+    ...(PO_RETURNABLE_STATUSES.includes(po.status) && can('procurement.po.edit', 'edit')
+      ? [
+          {
+            key: 'return',
+            label: t('po.detail.createReturn'),
+            onSelect: () => {
+              navigate(`/procurement/purchase-orders/${id}/returns/new`)
+            },
+          },
+        ]
+      : []),
+    {
+      key: 'print',
+      label: t('po.detail.printPo'),
+      onSelect: () => {
+        setPrintWithNotes(false)
+        setShowPrintModal(true)
+      },
+    },
+    ...(canOpenActions
+      ? [
+          {
+            key: 'actions',
+            label: t('po.detail.actions'),
+            disabled: lock.lockedByOther,
+            onSelect: () => {
+              setShowActionsPanel(true)
+            },
+          },
+        ]
+      : []),
+    ...(po.status === 'draft' || po.status === 'inventory_check'
+      ? [
+          {
+            key: 'delete',
+            label: t('po.detail.delete'),
+            danger: true,
+            disabled: lock.lockedByOther,
+            onSelect: () => {
+              setConfirmDeletePO(true)
+            },
+          },
+        ]
+      : []),
+  ]
+
+  // A receipt is recorded when one is confirmed, or when goods already count as received: a jobsite delivery never
+  // creates a receipt row, it updates the lines directly (so the receipts alone stay empty for that kind of PO).
+  const hasAnyReceipt =
+    po.receipts.some((r) => r.status === 'confirmed') ||
+    po.lines.some((line) => parseFloat(String(line.qty_received)) > 0)
+  // These stages have no form: the step is "record what was delivered", a message and one button. That is the bar at the
+  // bottom of the page (like the requisition's steps), not a card of its own.
+  const recordReceiptStage =
+    po.status === 'approved' ||
+    po.status === 'bought' ||
+    (po.status === 'goods_received' && !hasAnyReceipt)
+  // Goods received with something recorded has one step left, "send it to Finance Audit": a bar too, and what the card used
+  // to show (a coverage list per line) is the Received column of the Lines table, so the page says it once.
+  const sendToAuditStage = po.status === 'goods_received' && hasAnyReceipt
+  const receiptCoverage = orderCoverage(po.lines)
+  // Finance review / audit: the lines are checked in a card above the tabs and the two buttons are in the bar at the bottom,
+  // so the Next Step card is not drawn. Who may check is what the old card said: system-level users and the finance team.
+  const financeAuditStage = po.status === 'finance_audit' || po.status === 'finance_review'
+  const canAudit = isSystemLevel || !!po.callerIsFinanceTeam
+  // The audit happens in the Lines table (a Check column and a progress bar), for whoever may audit
+  const auditing = financeAuditStage && canAudit
+  const auditState = auditProgress(po.lines)
+  const showNextStepCard =
+    !['completed', 'closed', 'deleted', 'cancelled'].includes(po.status) &&
+    !recordReceiptStage &&
+    !sendToAuditStage &&
+    !financeAuditStage
+  // Payment pending is a one-line question and an answer, so its strip runs the width of the card; the longer forms
+  // (a finance review, pricing) read better at a line length.
+  const wideNextStep = po.status === 'invoiced' || po.status === 'payment_pending'
+  // Confirm sits beside the two choices, or under the advance pickers once "Employee advance" opens them.
+  const confirmFundingButton = (
+    <ActionButton
+      variant="solid"
+      loading={settingFunding}
+      disabled={
+        !fundingChoice ||
+        (fundingChoice === 'employee_advance' &&
+          !fundingSelectionComplete(fundingCurrencyList, fundingAdvanceIds))
+      }
+      onClick={() => {
+        void setPOFunding({
+          variables: {
+            id: po.id,
+            fundingSource: fundingChoice,
+            fundingAdvances:
+              fundingChoice === 'employee_advance'
+                ? fundingAdvancesInput(fundingCurrencyList, fundingAdvanceIds)
+                : undefined,
+          },
+        })
+      }}
+    >
+      {t('po.detail.confirmFundingSource')}
+    </ActionButton>
+  )
+
   return (
     <div
       style={{
@@ -1574,174 +1842,78 @@ export default function PurchaseOrderDetail() {
             : ''
         }${po.branch_name ? ` • ${t('po.detail.branchColon', { name: po.branch_name })}` : ''}`}
         backPath="/procurement/purchase-orders"
+        compact
+        status={
+          isPhone ? (
+            <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
+          ) : undefined
+        }
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
-            {po.requisitionNumber && (
-              <span
-                onClick={() => { navigate(`/procurement/requisitions/${po.requisition_id}`); }}
-                title={t('po.detail.openTheRequisitionThisPoWas')}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: '7px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  background: `${theme.accent}18`,
-                  color: theme.accent,
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                }}
-              >
-                {t('po.detail.forkedFrom', { ref: po.requisitionNumber })}
-              </span>
+            {!isPhone && (
+              <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
             )}
-            {/* Priority selector */}
-            {(() => {
-              const PRIORITIES = [
-                {
-                  key: 'low',
-                  label: t('po.detail.low'),
-                  color: '#6b7280',
-                  activeBg: 'rgba(107,114,128,0.12)',
-                  border: '#9ca3af',
-                },
-                {
-                  key: 'high',
-                  label: t('po.detail.high'),
-                  color: '#d97706',
-                  activeBg: 'rgba(217,119,6,0.12)',
-                  border: '#f59e0b',
-                },
-                {
-                  key: 'emergency',
-                  label: t('po.detail.emergency'),
-                  color: '#dc2626',
-                  activeBg: 'rgba(220,38,38,0.12)',
-                  border: '#ef4444',
-                },
-              ]
-              const current = po.priority
-              // Priority is only editable while still in draft — it shouldn't
-              // change once inventory/pricing/approval decisions have started
-              // being made around it.
-              if (po.status !== 'draft') {
-                const currentP = PRIORITIES.find((p) => p.key === current) ?? PRIORITIES[0]
-                return (
-                  <span
-                    style={{
-                      padding: '4px 12px',
-                      borderRadius: '7px',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      background: currentP.activeBg,
-                      color: currentP.color,
-                      border: `1px solid ${currentP.border}`,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {currentP.label}
-                  </span>
-                )
-              }
-              return (
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '2px',
-                    background: theme.bgSurface,
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '7px',
-                    padding: '2px',
-                  }}
-                >
-                  {PRIORITIES.map((p) => {
-                    const active = current === p.key
-                    return (
-                      <button
-                        key={p.key}
-                        disabled={settingPriority || lock.lockedByOther}
-                        onClick={() => {
-                          if (!active)
-                            void setPriority({ variables: { id: po.id, priority: p.key } })
-                        }}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          border: 'none',
-                          cursor: active ? 'default' : 'pointer',
-                          fontSize: '11px',
-                          fontWeight: active ? 700 : 400,
-                          background: active ? p.activeBg : 'transparent',
-                          color: active ? p.color : theme.textMuted,
-                          outline: active ? `1px solid ${p.border}` : 'none',
-                          transition: 'all 0.12s',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {p.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })()}
+            {!isPhone && forkedFromChip}
+            {!isPhone && priorityControl}
             {/* Primary contextual actions — pinned to a bottom sticky bar on
                 phone instead of crowding the header row (StickyActionBar is a
                 no-op passthrough on tablet+desktop). */}
+            {!isPhone && (
             <StickyActionBar>
               {apInvoice !== undefined &&
                 po.funding_source !== 'employee_advance' &&
                 can('finance.ap.view') &&
                 (apInvoice ? (
-                  <Button
-                    variant="secondary"
+                  <ActionButton
+                    variant="outline"
                     size="sm"
-                    fullWidthOnMobile
+                    fullWidth={isPhone}
                     onClick={() => {
                       navigate(`/finance/ap/${apInvoice.id}`)
                     }}
                   >
                     {t('po.detail.viewInvoice')}
-                  </Button>
+                  </ActionButton>
                 ) : can('finance.ap.edit') && (po.status === 'completed' || po.status === 'closed') ? (
-                  <Button
-                    variant="secondary"
+                  <ActionButton
+                    variant="outline"
                     size="sm"
-                    fullWidthOnMobile
+                    fullWidth={isPhone}
                     onClick={() => {
                       navigate(`/finance/ap/new?po_id=${id}`)
                     }}
                   >
                     {t('po.detail.createInvoice')}
-                  </Button>
+                  </ActionButton>
                 ) : null)}
               {PO_RETURNABLE_STATUSES.includes(po.status) &&
                 can('procurement.po.edit', 'edit') && (
-                  <Button
-                    variant="secondary"
+                  <ActionButton
+                    variant="outline"
                     size="sm"
-                    fullWidthOnMobile
+                    fullWidth={isPhone}
                     onClick={() => {
                       navigate(`/procurement/purchase-orders/${id}/returns/new`)
                     }}
                   >
                     {t('po.detail.createReturn')}
-                  </Button>
+                  </ActionButton>
                 )}
-              <Button
-                variant="secondary"
+              <ActionButton
+                variant="outline"
                 size="sm"
-                fullWidthOnMobile
+                fullWidth={isPhone}
                 onClick={() => {
                   setPrintWithNotes(false)
                   setShowPrintModal(true)
                 }}
               >
                 {t('po.detail.printPo')}
-              </Button>
+              </ActionButton>
             </StickyActionBar>
-            {(po.status === 'draft' || po.status === 'inventory_check') && (
-              <Button
+            )}
+            {!isPhone && (po.status === 'draft' || po.status === 'inventory_check') && (
+              <ActionButton
                 variant="danger"
                 size="sm"
                 disabled={lock.lockedByOther}
@@ -1750,272 +1922,41 @@ export default function PurchaseOrderDetail() {
                 }}
               >
                 {t('po.detail.delete')}
-              </Button>
+              </ActionButton>
             )}
-            {/* Actions dropdown — Cancel + Admin Override */}
-            {(!['cancelled', 'deleted'].includes(po.status) || isSystemLevel) && (
-              <div style={{ position: 'relative' }}>
-                <button
-                  disabled={lock.lockedByOther}
-                  onClick={() => {
-                    setShowActionsPanel((v) => !v)
-                  }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '5px 12px',
-                    borderRadius: '7px',
-                    border: `1px solid ${theme.border}`,
-                    background: showActionsPanel ? theme.accent : theme.bgCanvas,
-                    color: showActionsPanel ? '#fff' : theme.textPrimary,
-                    fontSize: '13px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {t('po.detail.actions')}
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    style={{
-                      transition: 'transform 0.15s',
-                      transform: showActionsPanel ? 'rotate(180deg)' : 'rotate(0deg)',
-                    }}
-                  >
-                    <polyline
-                      points="6 9 12 15 18 9"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
-
-                {showActionsPanel && (
-                  <>
-                    <div
-                      onClick={() => {
-                        setShowActionsPanel(false)
-                      }}
-                      style={{ position: 'fixed', inset: 0, zIndex: 99 }}
-                    />
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: 'calc(100% + 10px)',
-                        right: 0,
-                        zIndex: 200,
-                        width: 'min(380px, calc(100vw - 32px))',
-                        background: theme.bgCanvas,
-                        border: `1px solid ${theme.border}`,
-                        borderRadius: '12px',
-                        boxShadow: '0 12px 32px rgba(0,0,0,0.14)',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {/* header */}
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '10px 16px',
-                          borderBottom: `1px solid ${theme.border}`,
-                          background: theme.bgSurface,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            color: theme.textPrimary,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.06em',
-                          }}
-                        >
-                          {t('po.detail.actions')}
-                        </span>
-                        <button
-                          onClick={() => {
-                            setShowActionsPanel(false)
-                          }}
-                          style={{
-                            border: 'none',
-                            background: 'none',
-                            cursor: 'pointer',
-                            color: theme.textMuted,
-                            fontSize: '18px',
-                            lineHeight: 1,
-                            padding: '0 2px',
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                      {/* Cancel */}
-                      {!['cancelled', 'deleted'].includes(po.status) && (
-                        <div
-                          style={{
-                            padding: '14px 16px',
-                            borderBottom: isSystemLevel ? `1px solid ${theme.border}` : 'none',
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: '13px',
-                              fontWeight: 600,
-                              color: theme.textPrimary,
-                              marginBottom: '4px',
-                            }}
-                          >
-                            {t('po.detail.cancelThisPo')}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: '12px',
-                              color: theme.textMuted,
-                              marginBottom: '10px',
-                            }}
-                          >
-                            {t('po.detail.thisActionCannotBeUndoneWithout')}
-                          </div>
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            onClick={() => {
-                              const reason = window.prompt(t('po.detail.cancelReasonOptional')) ?? ''
-                              void cancelPO({
-                                variables: { id: po.id, reason: reason || undefined },
-                              })
-                              setShowActionsPanel(false)
-                            }}
-                          >
-                            {t('po.detail.cancelPo')}
-                          </Button>
-                        </div>
-                      )}
-                      {/* Admin override */}
-                      {isSystemLevel && (
-                        <div style={{ padding: '14px 16px' }}>
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              marginBottom: '10px',
-                            }}
-                          >
-                            <svg
-                              width="11"
-                              height="11"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke={theme.danger}
-                              strokeWidth="2.2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                            </svg>
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                fontWeight: 700,
-                                color: theme.danger,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.07em',
-                              }}
-                            >
-                              {t('po.detail.adminOverride')}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                color: theme.danger,
-                                opacity: 0.6,
-                                marginLeft: 'auto',
-                              }}
-                            >
-                              {t('po.detail.bypassesWorkflow')}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <select
-                              value={adminPoStatus || po.status}
-                              disabled={adminSetting}
-                              onChange={(e) => {
-                                setAdminPoStatus(e.target.value)
-                              }}
-                              style={{
-                                flex: 1,
-                                fontSize: '13px',
-                                padding: '6px 10px',
-                                borderRadius: '6px',
-                                border: `1px solid ${theme.dangerBorder}`,
-                                background: theme.bgSurface,
-                                color: theme.textPrimary,
-                                cursor: 'pointer',
-                                outline: 'none',
-                              }}
-                            >
-                              {[
-                                { value: 'draft', label: getPOStatusLabel('draft') },
-                                { value: 'inventory_check', label: getPOStatusLabel('inventory_check') },
-                                { value: 'store_pricing', label: getPOStatusLabel('store_pricing') },
-                                { value: 'market_pricing', label: getPOStatusLabel('market_pricing') },
-                                { value: 'price_verification', label: getPOStatusLabel('price_verification') },
-                                { value: 'pending_approval', label: getPOStatusLabel('pending_approval') },
-                                { value: 'approved', label: getPOStatusLabel('approved') },
-                                { value: 'ready_to_issue', label: getPOStatusLabel('ready_to_issue') },
-                                { value: 'items_bought', label: getPOStatusLabel('items_bought') },
-                                { value: 'bought', label: getPOStatusLabel('bought') + ' (G1 child)' },
-                                { value: 'goods_received', label: getPOStatusLabel('goods_received') },
-                                { value: 'finance_audit', label: getPOStatusLabel('finance_audit') },
-                                { value: 'finance_review', label: getPOStatusLabel('finance_review') + ' (G1 child)' },
-                                { value: 'invoiced', label: getPOStatusLabel('invoiced') },
-                                { value: 'payment_pending', label: getPOStatusLabel('payment_pending') + ' (G1 child)' },
-                                { value: 'completed', label: getPOStatusLabel('completed') },
-                                { value: 'closed', label: getPOStatusLabel('closed') + ' (G1 child)' },
-                                { value: 'rejected', label: getPOStatusLabel('rejected') },
-                                { value: 'cancelled', label: getPOStatusLabel('cancelled') },
-                                { value: 'deleted', label: getPOStatusLabel('deleted') },
-                              ].map((o) => (
-                                <option key={o.value} value={o.value}>
-                                  {o.label}
-                                </option>
-                              ))}
-                            </select>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              disabled={!adminPoStatus || adminPoStatus === po.status}
-                              loading={adminSetting}
-                              onClick={() =>
-                                void adminSetPOStatus({
-                                  variables: { id: po.id, status: adminPoStatus },
-                                }).then(() => {
-                                  setShowActionsPanel(false)
-                                })
-                              }
-                            >
-                              {t('po.detail.apply')}
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
+            {/* On a phone Print, Create return, View/Create invoice and Delete sit behind one menu (same gates as the desktop buttons). */}
+            {isPhone && <OverflowMenu label={t('po.detail.moreActions')} items={phoneMenuItems} />}
+            {/* Cancel and the admin override are one dialog (the shared Modal: Escape, a focus trap, a real box for the reason
+                instead of window.prompt). On a phone it opens from the ⋯ menu. */}
+            {!isPhone && canOpenActions && (
+              <ActionButton
+                variant="outline"
+                size="sm"
+                disabled={lock.lockedByOther}
+                onClick={() => {
+                  setShowActionsPanel(true)
+                }}
+              >
+                {t('po.detail.actions')}
+              </ActionButton>
             )}
           </div>
         }
       />
+      {isPhone && (
+        <div
+          style={{
+            display: 'flex',
+            gap: '8px',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            marginTop: '8px',
+          }}
+        >
+          {forkedFromChip}
+          {priorityControl}
+        </div>
+      )}
 
       {lock.lockedByOther && (
         <div
@@ -2045,34 +1986,22 @@ export default function PurchaseOrderDetail() {
         </div>
       )}
 
-      {/* Status bar */}
+      {/* Progress: a few phases (a forked child PO shows its own five statuses), the status named under the bar */}
       <div style={{ marginTop: '16px', marginBottom: '16px' }}>
-        <StatusBar
-          steps={(po.priority === 'emergency'
-            ? getStatusesForPO(po).filter((s) =>
-                [
-                  'draft',
-                  'pending_approval',
-                  'approved',
-                  'goods_received',
-                  'finance_audit',
-                  'invoiced',
-                  'completed',
-                  // G1 child-vocabulary counterparts.
-                  'finance_review',
-                  'payment_pending',
-                  'closed',
-                ].includes(s.key),
-              )
-            : getStatusesForPO(po)
-          ).map((s) => ({ key: s.key, label: s.label }))}
-          currentStep={po.status}
-          rejectedSteps={['deleted']}
+        <PhaseBar
+          phases={getPhasesForPO(po).map((p) => ({
+            key: p.key,
+            label: getPOPhaseLabel(p.key),
+            statuses: p.statuses,
+          }))}
+          current={po.status}
+          currentLabel={getPOStatusLabel(po.status)}
+          stoppedStatuses={['rejected', 'cancelled', 'deleted']}
         />
       </div>
 
       {/* PO Summary */}
-      <Card style={{ padding: '24px', marginBottom: '16px' }}>
+      <Card style={{ padding: isPhone ? '16px' : '24px', marginBottom: '16px' }}>
         <div
           style={{
             display: 'flex',
@@ -2092,7 +2021,7 @@ export default function PurchaseOrderDetail() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+            gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(160px, 1fr))',
             gap: '12px',
           }}
         >
@@ -2114,7 +2043,7 @@ export default function PurchaseOrderDetail() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     {po.currencyTotals.map((ct) => (
-                      <span key={ct.currency_code} style={{ color: BRAND_GREEN }}>
+                      <span key={ct.currency_code} style={{ color: theme.success }}>
                         <AmountDisplay amount={parseFloat(ct.subtotal)} currency={ct.currency_code} size="lg" />
                       </span>
                     ))}
@@ -2156,24 +2085,25 @@ export default function PurchaseOrderDetail() {
             },
             { label: t('po.detail.expectedDelivery'), value: po.expected_delivery_date ?? '—' },
             { label: t('po.detail.createdBy'), value: po.created_by_email ?? '—' },
-          ].map(({ label, value }) => (
+          ].map(({ label, value }, i) => (
             <div
               key={label}
               style={{
+                // The total is the figure people look for: on a phone it takes the whole first row.
+                gridColumn: isPhone && i === 0 ? '1 / -1' : undefined,
                 padding: '14px',
-                borderRadius: '10px',
+                borderRadius: '12px',
                 background: theme.bgCanvas,
-                border: `1px solid ${theme.border}`,
                 minWidth: 0,
               }}
             >
-              <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary, marginBottom: '6px' }}>
                 {label}
               </div>
               <div
                 style={{
                   fontSize: '16px',
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: theme.textPrimary,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -2189,45 +2119,31 @@ export default function PurchaseOrderDetail() {
           <div
             style={{
               padding: '14px',
-              borderRadius: '10px',
+              borderRadius: '12px',
               background: theme.bgCanvas,
-              border: `1px solid ${theme.border}`,
               minWidth: 0,
             }}
           >
-            <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary, marginBottom: '6px' }}>
               {t('po.detail.vendor')}
             </div>
             {['draft', 'inventory_check', 'store_pricing', 'market_pricing'].includes(po.status) ? (
-              <select
+              <Select
+                field
                 value={po.vendor_id ?? ''}
-                onChange={(e) =>
+                options={[
+                  { value: '', label: t('po.detail.notYetSelected') },
+                  ...vendors.map((v) => ({ value: v.id, label: v.name })),
+                ]}
+                onChange={(e) => {
                   void setVendor({ variables: { id: po.id, vendorId: e.target.value || null } })
-                }
-                style={{
-                  width: '100%',
-                  fontSize: '16px',
-                  fontWeight: 700,
-                  color: po.vendor_id ? theme.textPrimary : theme.textMuted,
-                  background: 'transparent',
-                  border: 'none',
-                  outline: 'none',
-                  cursor: 'pointer',
-                  padding: 0,
                 }}
-              >
-                <option value="">{t('po.detail.notYetSelected')}</option>
-                {vendors.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              </select>
+              />
             ) : (
               <div
                 style={{
                   fontSize: '16px',
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: theme.textPrimary,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -2242,19 +2158,18 @@ export default function PurchaseOrderDetail() {
             <div
               style={{
                 padding: '14px',
-                borderRadius: '10px',
+                borderRadius: '12px',
                 background: theme.bgCanvas,
-                border: `1px solid ${theme.border}`,
                 minWidth: 0,
               }}
             >
-              <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary, marginBottom: '6px' }}>
                 {t('po.detail.fundedByAdvance')}
               </div>
               <div
                 style={{
                   fontSize: '16px',
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: theme.textPrimary,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -2273,7 +2188,7 @@ export default function PurchaseOrderDetail() {
                         href={`/finance/advances/${fa.advance_id}`}
                         target="_blank"
                         rel="noreferrer"
-                        style={{ color: BRAND_BLUE }}
+                        style={{ color: theme.accentSolid }}
                       >
                         {fa.advance_number ?? t('po.detail.viewAdvance')}
                       </a>
@@ -2287,7 +2202,7 @@ export default function PurchaseOrderDetail() {
                         href={`/finance/advances/${po.funding_advance_id}`}
                         target="_blank"
                         rel="noreferrer"
-                        style={{ color: BRAND_BLUE }}
+                        style={{ color: theme.accentSolid }}
                       >
                         {po.funding_advance_number ?? t('po.detail.viewAdvance')}
                       </a>
@@ -2305,46 +2220,34 @@ export default function PurchaseOrderDetail() {
           <div
             style={{
               padding: '14px',
-              borderRadius: '10px',
+              borderRadius: '12px',
               background: theme.bgCanvas,
-              border: `1px solid ${theme.border}`,
               minWidth: 0,
             }}
           >
-            <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary, marginBottom: '6px' }}>
               {t('po.detail.assignedReceiver')}
             </div>
             {po.status === 'draft' ? (
-              <select
+              <Select
+                field
                 value={po.assigned_receiver_id ?? ''}
-                onChange={(e) =>
+                options={[
+                  { value: '', label: t('po.detail.unassigned') },
+                  ...employees.map((e) => ({
+                    value: e.id,
+                    label: `${e.first_name} ${e.last_name}${e.job_title ? ` (${e.job_title})` : ''}`,
+                  })),
+                ]}
+                onChange={(e) => {
                   void setReceiver({ variables: { id: po.id, employeeId: e.target.value || null } })
-                }
-                style={{
-                  width: '100%',
-                  fontSize: '16px',
-                  fontWeight: 700,
-                  color: po.assigned_receiver_id ? theme.textPrimary : theme.textMuted,
-                  background: 'transparent',
-                  border: 'none',
-                  outline: 'none',
-                  cursor: 'pointer',
-                  padding: 0,
                 }}
-              >
-                <option value="">{t('po.detail.unassigned')}</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.first_name} {e.last_name}
-                    {e.job_title ? ` (${e.job_title})` : ''}
-                  </option>
-                ))}
-              </select>
+              />
             ) : (
               <div
                 style={{
                   fontSize: '16px',
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: theme.textPrimary,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -2358,26 +2261,14 @@ export default function PurchaseOrderDetail() {
         </div>
       </Card>
 
-      {/* Next Step (left) and Tabs/Lines (right) side by side instead of
-          stacked — both are tall on their own, and the page has plenty of
-          unused horizontal room on wide screens. Each column's content is
-          otherwise completely untouched.
-          Both columns start from the same 460px, but the lines get ten times the Next Step
-          panel's share of the spare width (grow 40 against 4): with equal growth the Next Step
-          panel took half of a wide screen and squeezed the Lines table. On a ~1750px content
-          area that leaves Next Step at about 535px. Below about 940px of room they still wrap
-          and stack, and a stacked column grows to the full width as before. */}
-      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div style={{ flex: '4 1 460px', minWidth: 0 }}>
+      {/* One column: the Next Step card (only while there is something to do and it is a form) above the tabs, the lines
+          across the whole width. It used to be a narrow column beside the lines, which left an empty column and pushed
+          the lines to the right once the PO was Closed, Completed or Cancelled. */}
+      <div>
+        <div style={{ minWidth: 0 }}>
           {/* Inline action panel — replaces the former Action tab */}
-          {!['completed', 'closed', 'deleted', 'cancelled'].includes(po.status) && (
-        <Card
-          style={{
-            marginBottom: '16px',
-            padding: '24px',
-            borderLeft: `4px solid ${BRAND_BLUE}`,
-          }}
-        >
+          {showNextStepCard && (
+        <Card style={{ marginBottom: '16px', padding: isPhone ? '14px 16px' : '16px 20px' }}>
           {/* This panel covers every PO lifecycle stage's actions in one place —
               wrapping it all in a fieldset is a single, guaranteed-complete way
               to hard-block every mutating action while someone else holds the
@@ -2389,7 +2280,7 @@ export default function PurchaseOrderDetail() {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: '8px',
-                marginBottom: '16px',
+                marginBottom: '10px',
               }}
             >
               <div
@@ -2397,20 +2288,70 @@ export default function PurchaseOrderDetail() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  fontWeight: 600,
-                  fontSize: '15px',
-                  color: theme.textPrimary,
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: theme.textSecondary,
                 }}
               >
-                <span style={{ color: BRAND_BLUE, display: 'flex' }}>
+                <span style={{ color: theme.accentSolid, display: 'flex' }}>
                   <IconArrowRight />
                 </span>
                 {t('po.detail.nextStep')}
               </div>
-              <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {isPhone && (
+                  <button
+                    type="button"
+                    aria-expanded={nextStepOpen}
+                    aria-label={nextStepOpen ? t('po.detail.hideNextStep') : t('po.detail.showNextStep')}
+                    onClick={() => {
+                      setNextStepOpen((o) => !o)
+                    }}
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      marginInlineEnd: '-10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'transparent',
+                      border: 'none',
+                      color: theme.textSecondary,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      style={{ transform: nextStepOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}
+                    >
+                      <polyline
+                        points="6 9 12 15 18 9"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div
+              style={{
+                display: isPhone && !nextStepOpen ? 'none' : 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                // forms read better at a line length, not across a 1,400px card (the one-line strips run the width)
+                maxWidth: wideNextStep ? undefined : '960px',
+              }}
+            >
               {po.status === 'draft' &&
                 (po.priority === 'emergency' ? (
                   <>
@@ -2418,54 +2359,44 @@ export default function PurchaseOrderDetail() {
                       style={{
                         padding: '10px 14px',
                         borderRadius: '8px',
-                        background: '#fff7ed',
-                        border: '1px solid #fdba74',
+                        background: `${theme.warning}1a`,
+                        border: `1px solid ${theme.warning}`,
                         fontSize: '13px',
-                        color: '#9a3412',
+                        color: theme.textPrimary,
                       }}
                     >
                       {t('po.detail.emergencyPoSkipsInventoryCheckStore')}
                     </div>
-                    <Button
-                      variant="primary"
+                    <div style={{ alignSelf: 'flex-start' }}>
+                      <ActionButton
+                        variant="solid"
+                        loading={anyLoading}
+                        icon={<IconCheckCircle size={16} />}
+                        onClick={() =>
+                          void submitToInventory({
+                            variables: { id: po.id },
+                          })
+                        }
+                      >
+                        {t('po.detail.submitForApproval')}
+                      </ActionButton>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ alignSelf: 'flex-start' }}>
+                    <ActionButton
+                      variant="solid"
                       loading={anyLoading}
                       icon={<IconCheckCircle size={16} />}
-                      style={{
-                        background: BRAND_BLUE,
-                        border: `1px solid ${BRAND_BLUE}`,
-                        color: '#ffffff',
-                        fontWeight: 600,
-                        alignSelf: 'flex-start',
-                      }}
                       onClick={() =>
                         void submitToInventory({
                           variables: { id: po.id },
                         })
                       }
                     >
-                      {t('po.detail.submitForApproval')}
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    variant="primary"
-                    loading={anyLoading}
-                    icon={<IconCheckCircle size={16} />}
-                    style={{
-                      background: BRAND_BLUE,
-                      border: `1px solid ${BRAND_BLUE}`,
-                      color: '#ffffff',
-                      fontWeight: 600,
-                      alignSelf: 'flex-start',
-                    }}
-                    onClick={() =>
-                      void submitToInventory({
-                        variables: { id: po.id },
-                      })
-                    }
-                  >
-                    {t('po.detail.submitForInventoryCheck')}
-                  </Button>
+                      {t('po.detail.submitForInventoryCheck')}
+                    </ActionButton>
+                  </div>
                 ))}
 
               {po.status === 'inventory_check' &&
@@ -2518,10 +2449,10 @@ export default function PurchaseOrderDetail() {
                       ? Math.min(avail.qtyRequired, selectedLoc.qtyAvailable)
                       : avail.qtyRequired
                     const statusColor = avail.isAvailable
-                      ? '#16a34a'
+                      ? theme.success
                       : avail.qtyOnHand > 0
-                        ? '#d97706'
-                        : '#dc2626'
+                        ? theme.warning
+                        : theme.danger
                     const statusLabel = avail.isAvailable
                       ? t('po.detail.inStock')
                       : avail.qtyOnHand > 0
@@ -2634,9 +2565,9 @@ export default function PurchaseOrderDetail() {
                                       textAlign: 'left',
                                       cursor: 'pointer',
                                       fontFamily: 'inherit',
-                                      border: `1px solid ${selected ? BRAND_BLUE : theme.border}`,
+                                      border: `1px solid ${selected ? theme.accentSolid : theme.border}`,
                                       background: selected
-                                        ? 'rgba(37,99,235,0.10)'
+                                        ? `${theme.accent}1a`
                                         : theme.bgCanvas,
                                     }}
                                   >
@@ -2648,7 +2579,7 @@ export default function PurchaseOrderDetail() {
                                           width: '14px',
                                           height: '14px',
                                           borderRadius: '50%',
-                                          border: `2px solid ${selected ? BRAND_BLUE : theme.border}`,
+                                          border: `2px solid ${selected ? theme.accentSolid : theme.border}`,
                                           display: 'flex',
                                           alignItems: 'center',
                                           justifyContent: 'center',
@@ -2661,7 +2592,7 @@ export default function PurchaseOrderDetail() {
                                               width: '6px',
                                               height: '6px',
                                               borderRadius: '50%',
-                                              background: BRAND_BLUE,
+                                              background: theme.accentSolid,
                                             }}
                                           />
                                         )}
@@ -2671,7 +2602,7 @@ export default function PurchaseOrderDetail() {
                                           style={{
                                             fontSize: '13px',
                                             fontWeight: selected ? 600 : 500,
-                                            color: selected ? BRAND_BLUE : theme.textPrimary,
+                                            color: selected ? theme.accentSolid : theme.textPrimary,
                                           }}
                                         >
                                           {loc.locationName}
@@ -2685,7 +2616,7 @@ export default function PurchaseOrderDetail() {
                                       style={{
                                         fontSize: '13px',
                                         fontWeight: 600,
-                                        color: selected ? BRAND_BLUE : theme.textSecondary,
+                                        color: selected ? theme.accentSolid : theme.textSecondary,
                                         whiteSpace: 'nowrap',
                                         flexShrink: 0,
                                       }}
@@ -2710,7 +2641,7 @@ export default function PurchaseOrderDetail() {
                         )}
                         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                           <div style={{ width: '140px' }}>
-                            <Input
+                            <Input field
                               label={t('po.detail.fromStock')}
                               type="number"
                               min="0"
@@ -2726,15 +2657,14 @@ export default function PurchaseOrderDetail() {
                             />
                           </div>
                           <div style={{ width: '140px' }}>
-                            <Input label={t('po.detail.toPurchase')} value={String(toPurchase)} disabled readOnly />
+                            <Input field label={t('po.detail.toPurchase')} value={String(toPurchase)} disabled readOnly />
                           </div>
                         </div>
                       </div>
                     )
                   })}
-                  <Button
-                    variant="primary"
-                    style={PRIMARY_CTA_STYLE}
+                  <ActionButton
+                    variant="solid"
                     loading={anyLoading}
                     onClick={() =>
                       void confirmInventory({
@@ -2750,7 +2680,7 @@ export default function PurchaseOrderDetail() {
                     }
                   >
                     {t('po.detail.confirmInventoryCheck')}
-                  </Button>
+                  </ActionButton>
                     </div>
                   )
                 })()}
@@ -2761,10 +2691,10 @@ export default function PurchaseOrderDetail() {
                     style={{
                       padding: '12px 14px',
                       borderRadius: '7px',
-                      background: '#f0fdf4',
-                      border: '1px solid #16a34a',
+                      background: theme.successBg,
+                      border: `1px solid ${theme.successBorder}`,
                       fontSize: '13px',
-                      color: '#166534',
+                      color: theme.success,
                     }}
                   >
                     {t('po.detail.allItemsConfirmedInStockApprove')}
@@ -2792,9 +2722,8 @@ export default function PurchaseOrderDetail() {
                         </span>
                       </div>
                     ))}
-                  <Button
-                    variant="primary"
-                    style={PRIMARY_CTA_STYLE}
+                  <ActionButton
+                    variant="solid"
                     loading={anyLoading}
                     onClick={() =>
                       void approveIssuance({
@@ -2803,7 +2732,7 @@ export default function PurchaseOrderDetail() {
                     }
                   >
                     {t('po.detail.approveIssueFromStock')}
-                  </Button>
+                  </ActionButton>
                 </div>
               )}
 
@@ -2859,8 +2788,8 @@ export default function PurchaseOrderDetail() {
                           <span style={{ fontSize: '12px', color: theme.textMuted }}>
                             {t('po.detail.skipEnteringPricesStorePricesWill')}
                           </span>
-                          <Button
-                            variant="secondary"
+                          <ActionButton
+                            variant="outline"
                             loading={anyLoading}
                             onClick={() =>
                               void submitStorePricing({
@@ -2876,7 +2805,7 @@ export default function PurchaseOrderDetail() {
                             }
                           >
                             {t('po.detail.skipContinueToMarketPricing')}
-                          </Button>
+                          </ActionButton>
                         </div>
                       )}
                       {stockLines.length === 0 && (
@@ -2944,17 +2873,10 @@ export default function PurchaseOrderDetail() {
                                     return { ...p, [line.id]: { ...cur, price: val } }
                                   })
                                 }}
-                                style={{
-                                  flex: 1,
-                                  padding: '6px 10px',
-                                  borderRadius: '6px',
-                                  border: `1px solid ${theme.border}`,
-                                  background: theme.bgCanvas,
-                                  color: theme.textPrimary,
-                                  fontSize: '13px',
-                                }}
+                                style={{ ...fieldInputStyle, width: 'auto', flex: 1, minWidth: 0 }}
                               />
                               <SearchableSelect
+                                field
                                 value={sp.currency}
                                 onChange={(v) => {
                                   setStorePrices((p) => {
@@ -2968,9 +2890,8 @@ export default function PurchaseOrderDetail() {
                           </div>
                         )
                       })}
-                      <Button
-                        variant="primary"
-                        style={PRIMARY_CTA_STYLE}
+                      <ActionButton
+                        variant="solid"
                         loading={anyLoading}
                         onClick={() =>
                           void submitStorePricing({
@@ -2992,7 +2913,7 @@ export default function PurchaseOrderDetail() {
                         }
                       >
                         {stockLines.length === 0 ? t('po.detail.continueToMarketPricing') : t('po.detail.submitStorePricing')}
-                      </Button>
+                      </ActionButton>
                     </div>
                   )
                 })()}
@@ -3068,7 +2989,7 @@ export default function PurchaseOrderDetail() {
                             style={{
                               padding: '10px 14px',
                               borderRadius: '7px',
-                              border: `1px solid ${priceEmpty ? '#ef4444' : theme.border}`,
+                              border: `1px solid ${priceEmpty ? theme.danger : theme.border}`,
                               background: theme.bgSurface,
                             }}
                           >
@@ -3099,17 +3020,15 @@ export default function PurchaseOrderDetail() {
                                   })
                                 }}
                                 style={{
+                                  ...fieldInputStyle,
+                                  width: 'auto',
                                   flex: 1,
                                   minWidth: '120px',
-                                  padding: '6px 10px',
-                                  borderRadius: '6px',
-                                  border: `1px solid ${priceEmpty ? '#ef4444' : theme.border}`,
-                                  background: theme.bgCanvas,
-                                  color: theme.textPrimary,
-                                  fontSize: '13px',
+                                  ...(priceEmpty ? { border: `1px solid ${theme.danger}` } : {}),
                                 }}
                               />
                               <SearchableSelect
+                                field
                                 value={mp.currency}
                                 onChange={(v) => {
                                   setMarketPrices((p) => {
@@ -3124,13 +3043,12 @@ export default function PurchaseOrderDetail() {
                         )
                       })}
                       {!allPricesEntered && (
-                        <div style={{ fontSize: '12px', color: '#ef4444' }}>
+                        <div style={{ fontSize: '12px', color: theme.danger }}>
                           {t('po.detail.allLinesRequireAPriceGreater')}
                         </div>
                       )}
-                      <Button
-                        variant="primary"
-                        style={PRIMARY_CTA_STYLE}
+                      <ActionButton
+                        variant="solid"
                         loading={anyLoading}
                         disabled={!allPricesEntered}
                         onClick={() =>
@@ -3158,7 +3076,7 @@ export default function PurchaseOrderDetail() {
                         }
                       >
                         {t('po.detail.submitMarketPricing')}
-                      </Button>
+                      </ActionButton>
                     </div>
                   )
                 })()}
@@ -3262,7 +3180,7 @@ export default function PurchaseOrderDetail() {
                                 </span>
                               </span>
                             ) : (
-                              <span style={{ color: '#ef4444', fontWeight: 600 }}>{t('po.detail.noPriceSet')}</span>
+                              <span style={{ color: theme.danger, fontWeight: 600 }}>{t('po.detail.noPriceSet')}</span>
                             )}
                           </div>
                         )
@@ -3271,19 +3189,18 @@ export default function PurchaseOrderDetail() {
                         <div
                           style={{
                             fontSize: '12px',
-                            color: '#ef4444',
+                            color: theme.danger,
                             padding: '8px 12px',
                             borderRadius: '6px',
-                            background: '#fef2f2',
-                            border: '1px solid #fecaca',
+                            background: theme.dangerBg,
+                            border: `1px solid ${theme.dangerBorder}`,
                           }}
                         >
                           {t('po.detail.warningOneOrMoreLinesHave')}
                         </div>
                       )}
-                      <Button
-                        variant="primary"
-                        style={PRIMARY_CTA_STYLE}
+                      <ActionButton
+                        variant="solid"
                         loading={anyLoading}
                         onClick={() =>
                           void submitPriceVerification({
@@ -3295,7 +3212,7 @@ export default function PurchaseOrderDetail() {
                         }
                       >
                         {t('po.detail.submitForApproval2')}
-                      </Button>
+                      </ActionButton>
 
                       <div
                         style={{
@@ -3310,7 +3227,7 @@ export default function PurchaseOrderDetail() {
                           {t('po.detail.notReadyToApprove')}
                         </div>
                         {renderLineFlagHint()}
-                        <Textarea
+                        <Textarea field
                           label={t('po.detail.overallReasonAutoFilledFromFlagged')}
                           value={effectiveRejectReason}
                           onChange={(e) => {
@@ -3323,8 +3240,8 @@ export default function PurchaseOrderDetail() {
                           {t('po.detail.sendBackTo')}
                         </div>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                          <Button
-                            variant="secondary"
+                          <ActionButton
+                            variant="outline"
                             disabled={!hasValidFlags}
                             loading={anyLoading}
                             onClick={() =>
@@ -3338,9 +3255,9 @@ export default function PurchaseOrderDetail() {
                             }
                           >
                             {t('po.detail.marketPricing')}
-                          </Button>
-                          <Button
-                            variant="secondary"
+                          </ActionButton>
+                          <ActionButton
+                            variant="outline"
                             disabled={!hasValidFlags}
                             loading={anyLoading}
                             onClick={() =>
@@ -3354,7 +3271,7 @@ export default function PurchaseOrderDetail() {
                             }
                           >
                             {t('po.detail.storePricing')}
-                          </Button>
+                          </ActionButton>
                         </div>
                       </div>
                     </div>
@@ -3364,16 +3281,15 @@ export default function PurchaseOrderDetail() {
               {po.status === 'pending_approval' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {/* ── Approve ───────────────────────────────────────────────── */}
-                  <Button
+                  <ActionButton
                     data-tour="po-approve-btn"
-                    variant="primary"
-                    style={PRIMARY_CTA_STYLE}
+                    variant="solid"
                     loading={anyLoading}
                     disabled={hasFlaggedLines}
                     onClick={() => void approvePO({ variables: { id: po.id } })}
                   >
                     {t('po.detail.approvePo')}
-                  </Button>
+                  </ActionButton>
 
                   {/* ── Reject ────────────────────────────────────────────────── */}
                   <div
@@ -3389,7 +3305,7 @@ export default function PurchaseOrderDetail() {
                       {t('po.detail.notReadyToApprove')}
                     </div>
                     {renderLineFlagHint()}
-                    <Textarea
+                    <Textarea field
                       label={t('po.detail.overallReasonAutoFilledFromFlagged')}
                       value={effectiveRejectReason}
                       onChange={(e) => {
@@ -3399,7 +3315,7 @@ export default function PurchaseOrderDetail() {
                       rows={hasFlaggedLines ? 3 : 2}
                     />
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-                      <Button
+                      <ActionButton
                         variant="danger"
                         disabled={!hasValidFlags}
                         loading={anyLoading}
@@ -3414,9 +3330,9 @@ export default function PurchaseOrderDetail() {
                         }
                       >
                         {t('po.detail.rejectPo')}
-                      </Button>
-                      <Button
-                        variant="secondary"
+                      </ActionButton>
+                      <ActionButton
+                        variant="outline"
                         disabled={!hasValidFlags}
                         loading={anyLoading}
                         onClick={() =>
@@ -3430,45 +3346,9 @@ export default function PurchaseOrderDetail() {
                         }
                       >
                         {t('po.detail.sendBackToMarketPricing')}
-                      </Button>
+                      </ActionButton>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {(po.status === 'approved' || po.status === 'bought') && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      background: '#f0fdf4',
-                      border: '1px solid #16a34a',
-                      fontSize: '13px',
-                      color: '#166534',
-                    }}
-                  >
-                    {po.status === 'bought'
-                      ? // G1 child PO: buying already happened at the requisition's
-                        // Items Bought stage (recordLinePurchase, per vendor) — this
-                        // PO's own lines were never ticked one-by-one, so there's
-                        // nothing to check off here. Record the goods receipt to
-                        // advance it to Goods Received.
-                        t('po.detail.itemsForThisPurchaseOrderWere')
-                      : t('po.detail.poIsApprovedRecordAGoods')}
-                  </div>
-                  <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
-                  <Button
-                    data-tour="po-record-receipt-btn"
-                    variant="primary"
-                    style={PRIMARY_CTA_STYLE}
-                    size="sm"
-                    onClick={() => {
-                      navigate(`/procurement/purchase-orders/${po.id}/receive`)
-                    }}
-                  >
-                    {t('po.detail.recordReceipt')}
-                  </Button>
                 </div>
               )}
 
@@ -3534,8 +3414,8 @@ export default function PurchaseOrderDetail() {
                             variance == null || variance === 0
                               ? theme.textMuted
                               : variance > 0
-                                ? '#dc2626'
-                                : '#16a34a'
+                                ? theme.danger
+                                : theme.success
                           return (
                             <div
                               key={line.id}
@@ -3543,7 +3423,7 @@ export default function PurchaseOrderDetail() {
                                 padding: '10px 12px',
                                 borderBottom:
                                   idx < po.lines.length - 1 ? `1px solid ${theme.border}` : 'none',
-                                background: line.is_bought ? '#f0fdf4' : 'transparent',
+                                background: line.is_bought ? theme.successBg : 'transparent',
                               }}
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -3564,9 +3444,11 @@ export default function PurchaseOrderDetail() {
                                     height: '20px',
                                     flexShrink: 0,
                                     borderRadius: '5px',
-                                    border: `1px solid ${line.is_bought ? '#16a34a' : theme.border}`,
-                                    background: line.is_bought ? '#16a34a' : 'transparent',
-                                    color: '#fff',
+                                    border: `1px solid ${line.is_bought ? theme.success : theme.border}`,
+                                    background: line.is_bought ? theme.success : 'transparent',
+                                    // the tick takes the pale tint of the theme, not white (white on the dark
+                                    // theme's light green is 1.7:1)
+                                    color: theme.successBg,
                                     cursor: canMarkBought ? 'pointer' : 'not-allowed',
                                     fontSize: '13px',
                                     lineHeight: 1,
@@ -3659,12 +3541,13 @@ export default function PurchaseOrderDetail() {
                                       }}
                                       style={{
                                         width: '190px',
-                                        padding: '5px 8px',
-                                        borderRadius: '5px',
+                                        height: '36px',
+                                        padding: '0 8px',
+                                        borderRadius: '8px',
                                         border: `1px solid ${
                                           actualPriceStatus[line.id] === 'saved'
-                                            ? '#16a34a'
-                                            : theme.border
+                                            ? theme.success
+                                            : theme.borderField
                                         }`,
                                         background: theme.bgSurface,
                                         color: varColor,
@@ -3684,7 +3567,7 @@ export default function PurchaseOrderDetail() {
                                     )}
                                     {actualPriceStatus[line.id] === 'saved' && (
                                       <span
-                                        style={{ fontSize: '10px', fontWeight: 600, color: '#16a34a' }}
+                                        style={{ fontSize: '10px', fontWeight: 600, color: theme.success }}
                                       >
                                         {t('po.detail.saved')}
                                       </span>
@@ -3757,16 +3640,15 @@ export default function PurchaseOrderDetail() {
                       />
                       {allBought && canMarkBought && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <Button
-                            variant="primary"
-                            style={PRIMARY_CTA_STYLE}
+                          <ActionButton
+                            variant="solid"
                             size="sm"
                             disabled={!hasBuyerReceipt}
                             loading={finishingBuying}
                             onClick={() => void finishBuyingPO({ variables: { poId: po.id } })}
                           >
                             {t('po.detail.finishBuying')}
-                          </Button>
+                          </ActionButton>
                           {!hasBuyerReceipt && (
                             <div style={{ fontSize: '11px', color: theme.textMuted }}>
                               {t('po.detail.uploadAtLeastOneBuyerReceipt')}
@@ -3774,823 +3656,6 @@ export default function PurchaseOrderDetail() {
                           )}
                         </div>
                       )}
-                    </div>
-                  )
-                })()}
-
-              {po.status === 'goods_received' &&
-                (() => {
-                  const fullyCovered = po.lines.every((line) => {
-                    const ord = parseFloat(String(line.qty))
-                    const rcv = parseFloat(String(line.qty_received))
-                    const fromStk = parseFloat(String(line.qty_from_stock))
-                    return rcv + fromStk >= ord
-                  })
-                  // sendPOToAudit only requires one confirmed receipt to exist
-                  // (restoring the guarantee that held before the Items Bought
-                  // split, not a new "everything must be fully received" rule
-                  // — recordReceipt has always allowed confirming just some
-                  // lines, and that alone was always enough to send to audit).
-                  // So Send to Audit stays available here once any receipt is
-                  // confirmed, even mid-way through receiving the rest.
-                  // A direct-to-jobsite delivery (recordDirectDelivery) never
-                  // creates a po_receipts row at all — it updates po_lines.
-                  // qty_received straight away — so po.receipts alone would
-                  // stay empty forever for that PO type, permanently stuck
-                  // showing "Record Receipt" even after delivery was recorded.
-                  const hasAnyReceipt =
-                    po.receipts.some((r) => r.status === 'confirmed') ||
-                    po.lines.some((line) => parseFloat(String(line.qty_received)) > 0)
-                  if (!hasAnyReceipt) {
-                    return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div
-                          style={{
-                            padding: '10px 14px',
-                            borderRadius: '8px',
-                            background: '#f0fdf4',
-                            border: '1px solid #16a34a',
-                            fontSize: '13px',
-                            color: '#166534',
-                          }}
-                        >
-                          {t('po.detail.buyingIsDoneRecordWhatS')}
-                        </div>
-                        <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
-                        <Button
-                          data-tour="po-record-receipt-btn"
-                          variant="primary"
-                          style={PRIMARY_CTA_STYLE}
-                          size="sm"
-                          onClick={() => {
-                            navigate(`/procurement/purchase-orders/${po.id}/receive`)
-                          }}
-                        >
-                          {t('po.detail.recordReceipt')}
-                        </Button>
-                      </div>
-                    )
-                  }
-                  return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {!fullyCovered && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                        {t('po.detail.notEveryLineIsFullyReceived')}
-                      </span>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          navigate(`/procurement/purchase-orders/${po.id}/receive`)
-                        }}
-                      >
-                        {t('po.detail.recordReceipt')}
-                      </Button>
-                    </div>
-                  )}
-                  <div
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      background: '#f0fdf4',
-                      border: '1px solid #16a34a',
-                      fontSize: '13px',
-                      color: '#166534',
-                    }}
-                  >
-                    {t('po.detail.goodsReceivedReviewReceiptsBelowThen')}
-                  </div>
-                  {/* Qty summary per line */}
-                  <div
-                    style={{
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '7px',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 90px 90px 80px',
-                        padding: '6px 12px',
-                        background: theme.bgSurface,
-                        borderBottom: `1px solid ${theme.border}`,
-                      }}
-                    >
-                      {[
-                        t('po.detail.item'),
-                        t('po.detail.ordered'),
-                        t('po.detail.received'),
-                        t('po.detail.coverage'),
-                      ].map((h) => (
-                        <span
-                          key={h}
-                          style={{
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            color: theme.textMuted,
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          {h}
-                        </span>
-                      ))}
-                    </div>
-                    {po.lines.map((line) => {
-                      const fmtQ = (n: number | string) =>
-                        parseFloat(String(n)).toLocaleString('en-US', {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 2,
-                        })
-                      const rcv = parseFloat(String(line.qty_received))
-                      const fromStk = parseFloat(String(line.qty_from_stock))
-                      const ord = parseFloat(String(line.qty))
-                      const fulfilled = Math.min(ord, rcv + fromStk)
-                      const pct = ord > 0 ? Math.min(100, Math.round((fulfilled / ord) * 100)) : 0
-                      const color =
-                        fulfilled >= ord ? '#16a34a' : fulfilled > 0 ? '#d97706' : '#dc2626'
-                      return (
-                        <div
-                          key={line.id}
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 90px 90px 80px',
-                            padding: '8px 12px',
-                            borderBottom: `1px solid ${theme.border}`,
-                            alignItems: 'center',
-                          }}
-                        >
-                          <span style={{ fontSize: '13px', color: theme.textPrimary }}>
-                            {line.description || line.product_name || '—'}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: '13px',
-                              color: theme.textMuted,
-                              fontFamily: 'monospace',
-                            }}
-                          >
-                            {fmtQ(ord)} {line.uom}
-                          </span>
-                          <div>
-                            <span
-                              style={{
-                                fontSize: '13px',
-                                fontWeight: 600,
-                                color,
-                                fontFamily: 'monospace',
-                              }}
-                            >
-                              {fmtQ(fulfilled)} {line.uom}
-                            </span>
-                            {fromStk > 0 && (
-                              <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '1px' }}>
-                                {t('po.detail.receivedPlusStock', { received: fmtQ(rcv), stock: fmtQ(fromStk) })}
-                              </div>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <div
-                              style={{
-                                flex: 1,
-                                height: '6px',
-                                borderRadius: '3px',
-                                background: theme.border,
-                                overflow: 'hidden',
-                              }}
-                            >
-                              <div
-                                style={{
-                                  height: '100%',
-                                  width: `${pct}%`,
-                                  background: color,
-                                  borderRadius: '3px',
-                                }}
-                              />
-                            </div>
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                color,
-                                fontWeight: 600,
-                                minWidth: '32px',
-                                textAlign: 'right',
-                              }}
-                            >
-                              {pct}%
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <Button
-                    variant="primary"
-                    style={PRIMARY_CTA_STYLE}
-                    loading={lAudit}
-                    onClick={() => void sendToAudit({ variables: { id: po.id } })}
-                  >
-                    {t('po.detail.sendToFinanceAudit')}
-                  </Button>
-                </div>
-                  )
-                })()}
-
-              {(po.status === 'finance_audit' || po.status === 'finance_review') &&
-                (isSystemLevel || po.callerIsFinanceTeam) &&
-                (() => {
-                  const flaggedCount = po.lines.filter((l) => l.audit_status === 'flagged').length
-                  const pendingCount = po.lines.filter(
-                    (l) => !l.audit_status || l.audit_status === 'pending',
-                  ).length
-                  const canPass = flaggedCount === 0 && pendingCount === 0
-                  return (
-                    <div
-                      data-tour="po-finance-audit"
-                      style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
-                    >
-                      <div
-                        style={{
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                        }}
-                      >
-                        {t('po.detail.financeAuditMarkEachLineOk')}
-                      </div>
-                      {po.lines.map((line) => {
-                        const auditStatus = line.audit_status ?? 'pending'
-                        const bgOk = auditStatus === 'ok' ? '#f0fdf4' : 'transparent'
-                        const bgFlag = auditStatus === 'flagged' ? '#fef2f2' : 'transparent'
-                        const borderColor =
-                          auditStatus === 'ok'
-                            ? '#16a34a'
-                            : auditStatus === 'flagged'
-                              ? '#ef4444'
-                              : theme.border
-                        return (
-                          <div
-                            key={line.id}
-                            style={{
-                              padding: '10px 14px',
-                              borderRadius: '7px',
-                              border: `1px solid ${borderColor}`,
-                              background:
-                                auditStatus === 'ok'
-                                  ? bgOk
-                                  : auditStatus === 'flagged'
-                                    ? bgFlag
-                                    : theme.bgSurface,
-                            }}
-                          >
-                            {/* Top row: name + OK/Flag buttons */}
-                            <div
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'flex-start',
-                                gap: '8px',
-                                flexWrap: 'wrap',
-                              }}
-                            >
-                              <div
-                                style={{
-                                  fontSize: '13px',
-                                  color: theme.textPrimary,
-                                  fontWeight: 500,
-                                }}
-                              >
-                                {line.description || line.product_name || '—'}
-                              </div>
-                              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                                <button
-                                  onClick={() =>
-                                    void setLineAuditStatus({
-                                      variables: {
-                                        poId: po.id,
-                                        lineId: line.id,
-                                        auditStatus: 'ok',
-                                      },
-                                    })
-                                  }
-                                  style={{
-                                    padding: '5px 12px',
-                                    borderRadius: '5px',
-                                    border: `1px solid ${auditStatus === 'ok' ? '#16a34a' : theme.border}`,
-                                    background: auditStatus === 'ok' ? '#16a34a' : 'transparent',
-                                    color: auditStatus === 'ok' ? '#fff' : theme.textMuted,
-                                    cursor: 'pointer',
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                    transition: 'all 0.1s',
-                                  }}
-                                >
-                                  {t('po.detail.ok')}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setFlaggingLines((p) => ({
-                                      ...p,
-                                      [line.id]: line.audit_note ?? '',
-                                    }))
-                                  }}
-                                  style={{
-                                    padding: '5px 12px',
-                                    borderRadius: '5px',
-                                    border: `1px solid ${auditStatus === 'flagged' ? '#ef4444' : theme.border}`,
-                                    background:
-                                      auditStatus === 'flagged' ? '#ef4444' : 'transparent',
-                                    color: auditStatus === 'flagged' ? '#fff' : theme.textMuted,
-                                    cursor: 'pointer',
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                    transition: 'all 0.1s',
-                                  }}
-                                >
-                                  {t('po.detail.flag')}
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Qty fulfilled vs ordered (received + from stock) */}
-                            {(() => {
-                              const fmtQ = (n: number | string) =>
-                                parseFloat(String(n)).toLocaleString('en-US', {
-                                  minimumFractionDigits: 0,
-                                  maximumFractionDigits: 2,
-                                })
-                              const rcv = parseFloat(String(line.qty_received))
-                              const fromStk = parseFloat(String(line.qty_from_stock))
-                              const ord = parseFloat(String(line.qty))
-                              const fulfilled = Math.min(ord, rcv + fromStk)
-                              const pct =
-                                ord > 0 ? Math.min(100, Math.round((fulfilled / ord) * 100)) : 0
-                              const short = fulfilled < ord
-                              const over = rcv > ord
-                              const qtyColor = over ? '#d97706' : short ? '#dc2626' : '#16a34a'
-                              return (
-                                <div style={{ marginTop: '8px' }}>
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      alignItems: 'center',
-                                      marginBottom: '4px',
-                                    }}
-                                  >
-                                    <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                      {t('po.detail.fulfilledOrdered')}
-                                    </span>
-                                    <div style={{ textAlign: 'right' }}>
-                                      <span
-                                        style={{
-                                          fontSize: '13px',
-                                          fontWeight: 700,
-                                          color: qtyColor,
-                                          fontFamily: 'monospace',
-                                        }}
-                                      >
-                                        {fmtQ(fulfilled)} / {fmtQ(ord)} {line.uom}
-                                        {short && (
-                                          <span
-                                            style={{
-                                              fontSize: '11px',
-                                              fontWeight: 400,
-                                              marginLeft: '6px',
-                                              color: '#dc2626',
-                                            }}
-                                          >
-                                            {t('po.detail.shortBy', { qty: fmtQ(ord - fulfilled) })}
-                                          </span>
-                                        )}
-                                        {over && (
-                                          <span
-                                            style={{
-                                              fontSize: '11px',
-                                              fontWeight: 400,
-                                              marginLeft: '6px',
-                                              color: '#d97706',
-                                            }}
-                                          >
-                                            {t('po.detail.overBy', { qty: fmtQ(rcv - ord) })}
-                                          </span>
-                                        )}
-                                      </span>
-                                      {fromStk > 0 && (
-                                        <div
-                                          style={{
-                                            fontSize: '11px',
-                                            color: '#16a34a',
-                                            marginTop: '1px',
-                                          }}
-                                        >
-                                          {t('po.detail.receivedPlusStock', { received: fmtQ(rcv), stock: fmtQ(fromStk) })}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div
-                                    style={{
-                                      height: '6px',
-                                      borderRadius: '3px',
-                                      background: theme.border,
-                                      overflow: 'hidden',
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        height: '100%',
-                                        width: `${pct}%`,
-                                        borderRadius: '3px',
-                                        background: qtyColor,
-                                        transition: 'width 0.3s',
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                              )
-                            })()}
-
-                            {/* Price comparison */}
-                            {(() => {
-                              const fmtN = (n: number | string) =>
-                                parseFloat(String(n)).toLocaleString('en-US', {
-                                  minimumFractionDigits: 0,
-                                  maximumFractionDigits: 2,
-                                })
-                              const poPrice = parseFloat(String(line.unit_price))
-                              const actualPrice =
-                                line.actual_unit_price != null
-                                  ? parseFloat(String(line.actual_unit_price))
-                                  : null
-                              const fromStock = parseFloat(String(line.qty_from_stock))
-                              const totalQty = parseFloat(String(line.qty))
-                              const toBuy = Math.max(0, totalQty - fromStock)
-                              const variance =
-                                actualPrice != null && poPrice > 0 ? actualPrice - poPrice : null
-                              const variancePct =
-                                variance != null && poPrice > 0 ? (variance / poPrice) * 100 : null
-                              const varColor =
-                                variance == null || variance === 0
-                                  ? theme.textMuted
-                                  : variance > 0
-                                    ? '#dc2626'
-                                    : '#16a34a'
-                              const purchaseTotal = toBuy * (actualPrice ?? poPrice)
-                              return (
-                                <div
-                                  style={{
-                                    marginTop: '10px',
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                                    gap: '8px',
-                                  }}
-                                >
-                                  {/* PO Price (market price per unit) */}
-                                  <div
-                                    style={{
-                                      padding: '8px 10px',
-                                      borderRadius: '6px',
-                                      background: theme.bgSurface,
-                                      border: `1px solid ${theme.border}`,
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        fontSize: '10px',
-                                        fontWeight: 700,
-                                        color: theme.textMuted,
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        marginBottom: '3px',
-                                      }}
-                                    >
-                                      {t('po.detail.poPrice')}
-                                    </div>
-                                    <div
-                                      style={{
-                                        fontSize: '14px',
-                                        fontWeight: 700,
-                                        color: theme.textPrimary,
-                                        fontFamily: 'monospace',
-                                      }}
-                                    >
-                                      {poPrice > 0 ? fmtN(poPrice) : '—'}
-                                    </div>
-                                    {toBuy > 0 && (
-                                      <div
-                                        style={{
-                                          fontSize: '11px',
-                                          color: theme.textMuted,
-                                          marginTop: '2px',
-                                        }}
-                                      >
-                                        {t('po.detail.forToBuy', { qty: fmtN(toBuy), uom: line.uom })}
-                                      </div>
-                                    )}
-                                  </div>
-                                  {/* Actual Price — for purchased qty only */}
-                                  {toBuy > 0 && (
-                                    <div
-                                      style={{
-                                        padding: '8px 10px',
-                                        borderRadius: '6px',
-                                        background:
-                                          actualPrice == null
-                                            ? '#fff7ed'
-                                            : variance === 0
-                                              ? '#f0fdf4'
-                                              : (variance ?? 0) > 0
-                                                ? '#fef2f2'
-                                                : '#f0fdf4',
-                                        border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : (variance ?? 0) > 0 ? '#fca5a5' : '#86efac'}`,
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          fontSize: '10px',
-                                          fontWeight: 700,
-                                          color: theme.textMuted,
-                                          textTransform: 'uppercase',
-                                          letterSpacing: '0.05em',
-                                          marginBottom: '4px',
-                                        }}
-                                      >
-                                        Actual Price{' '}
-                                        <span
-                                          style={{
-                                            fontWeight: 400,
-                                            textTransform: 'none',
-                                            fontSize: '10px',
-                                          }}
-                                        >
-                                          {t('po.detail.purchasedEntered', { qty: fmtN(toBuy), uom: line.uom })}
-                                        </span>
-                                      </div>
-                                      <div
-                                        style={{
-                                          padding: '4px 6px',
-                                          fontSize: '14px',
-                                          fontFamily: 'monospace',
-                                          fontWeight: 700,
-                                          color: actualPrice == null ? theme.textMuted : varColor,
-                                        }}
-                                      >
-                                        {actualPrice != null
-                                          ? fmtN(actualPrice)
-                                          : t('po.detail.notEnteredYetBuyerHasnT')}
-                                      </div>
-                                      {variance != null &&
-                                        variancePct != null &&
-                                        Math.abs(variancePct) > 0.01 && (
-                                          <div
-                                            style={{
-                                              fontSize: '11px',
-                                              fontWeight: 600,
-                                              color: varColor,
-                                              marginTop: '3px',
-                                            }}
-                                          >
-                                            {variance > 0 ? '▲' : '▼'} {variance > 0 ? '+' : ''}
-                                            {t('po.detail.pctVsPo', { pct: variancePct.toFixed(1) })}
-                                          </div>
-                                        )}
-                                    </div>
-                                  )}
-                                  {/* Purchase Total (only purchased qty) */}
-                                  {toBuy > 0 && (
-                                    <div
-                                      style={{
-                                        padding: '8px 10px',
-                                        borderRadius: '6px',
-                                        background: theme.bgSurface,
-                                        border: `1px solid ${theme.border}`,
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          fontSize: '10px',
-                                          fontWeight: 700,
-                                          color: theme.textMuted,
-                                          textTransform: 'uppercase',
-                                          letterSpacing: '0.05em',
-                                          marginBottom: '3px',
-                                        }}
-                                      >
-                                        {t('po.detail.purchaseTotal')}
-                                      </div>
-                                      <div
-                                        style={{
-                                          fontSize: '14px',
-                                          fontWeight: 700,
-                                          color: theme.textPrimary,
-                                          fontFamily: 'monospace',
-                                        }}
-                                      >
-                                        {fmtN(purchaseTotal)}
-                                      </div>
-                                      <div
-                                        style={{
-                                          fontSize: '11px',
-                                          color: theme.textMuted,
-                                          marginTop: '2px',
-                                        }}
-                                      >
-                                        {fmtN(toBuy)} {line.uom} × {fmtN(actualPrice ?? poPrice)}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {/* From Stock */}
-                                  {fromStock > 0 && (
-                                    <div
-                                      style={{
-                                        padding: '8px 10px',
-                                        borderRadius: '6px',
-                                        background: '#f0fdf4',
-                                        border: '1px solid #86efac',
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          fontSize: '10px',
-                                          fontWeight: 700,
-                                          color: '#166534',
-                                          textTransform: 'uppercase',
-                                          letterSpacing: '0.05em',
-                                          marginBottom: '3px',
-                                        }}
-                                      >
-                                        {t('po.detail.fromInventory')}
-                                      </div>
-                                      <div
-                                        style={{
-                                          fontSize: '14px',
-                                          fontWeight: 700,
-                                          color: '#166534',
-                                          fontFamily: 'monospace',
-                                        }}
-                                      >
-                                        {fmtN(fromStock)} {line.uom}
-                                      </div>
-                                      <div
-                                        style={{
-                                          fontSize: '11px',
-                                          color: '#16a34a',
-                                          marginTop: '2px',
-                                        }}
-                                      >
-                                        {t('po.detail.noCostIssuedFromStock')}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })()}
-
-                            {flaggingLines[line.id] !== undefined ? (
-                              <div
-                                style={{
-                                  marginTop: '10px',
-                                  padding: '10px',
-                                  borderRadius: '6px',
-                                  background: '#fef2f2',
-                                  border: '1px solid #fca5a5',
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    fontSize: '12px',
-                                    color: '#991b1b',
-                                    fontWeight: 600,
-                                    marginBottom: '6px',
-                                  }}
-                                >
-                                  {t('po.detail.flagReasonRequired')}
-                                </div>
-                                <textarea
-                                  autoFocus
-                                  value={flaggingLines[line.id]}
-                                  onChange={(e) => {
-                                    setFlaggingLines((p) => ({ ...p, [line.id]: e.target.value }))
-                                  }}
-                                  placeholder={t('po.detail.describeTheIssueWithThisLine')}
-                                  rows={2}
-                                  style={{
-                                    width: '100%',
-                                    padding: '6px 8px',
-                                    borderRadius: '5px',
-                                    border: '1px solid #fca5a5',
-                                    background: '#fff',
-                                    color: '#991b1b',
-                                    fontSize: '12px',
-                                    resize: 'vertical',
-                                    boxSizing: 'border-box',
-                                  }}
-                                />
-                                <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                                  <button
-                                    disabled={!flaggingLines[line.id].trim()}
-                                    onClick={() => {
-                                      if (!flaggingLines[line.id].trim()) return
-                                      void setLineAuditStatus({
-                                        variables: {
-                                          poId: po.id,
-                                          lineId: line.id,
-                                          auditStatus: 'flagged',
-                                          auditNote: flaggingLines[line.id].trim(),
-                                        },
-                                      })
-                                      setFlaggingLines((p) => {
-                                        const n = { ...p }
-                                        Reflect.deleteProperty(n, line.id)
-                                        return n
-                                      })
-                                    }}
-                                    style={{
-                                      padding: '5px 14px',
-                                      borderRadius: '5px',
-                                      border: 'none',
-                                      background: flaggingLines[line.id].trim()
-                                        ? '#ef4444'
-                                        : '#fca5a5',
-                                      color: '#fff',
-                                      cursor: flaggingLines[line.id].trim()
-                                        ? 'pointer'
-                                        : 'not-allowed',
-                                      fontSize: '12px',
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    {t('po.detail.saveFlag')}
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setFlaggingLines((p) => {
-                                        const n = { ...p }
-                                        Reflect.deleteProperty(n, line.id)
-                                        return n
-                                      })
-                                    }}
-                                    style={{
-                                      padding: '5px 12px',
-                                      borderRadius: '5px',
-                                      border: `1px solid ${theme.border}`,
-                                      background: 'transparent',
-                                      color: theme.textMuted,
-                                      cursor: 'pointer',
-                                      fontSize: '12px',
-                                    }}
-                                  >
-                                    {t('po.detail.cancel')}
-                                  </button>
-                                </div>
-                              </div>
-                            ) : auditStatus === 'flagged' && line.audit_note ? (
-                              <div
-                                style={{
-                                  marginTop: '8px',
-                                  padding: '6px 10px',
-                                  borderRadius: '5px',
-                                  background: '#fef2f2',
-                                  border: '1px solid #fca5a5',
-                                  color: '#991b1b',
-                                  fontSize: '12px',
-                                }}
-                              >
-                                ⚑ {line.audit_note}
-                              </div>
-                            ) : null}
-                          </div>
-                        )
-                      })}
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                        <Button
-                          variant="primary"
-                          style={PRIMARY_CTA_STYLE}
-                          loading={lPass}
-                          disabled={!canPass}
-                          onClick={() => void passAudit({ variables: { id: po.id } })}
-                        >
-                          {canPass
-                            ? t('po.detail.passAuditInvoiced')
-                            : pendingCount > 0
-                              ? t('po.detail.passAuditPending', { count: pendingCount })
-                              : t('po.detail.passAuditFlagged', { count: flaggedCount })}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() =>
-                            void failAudit({
-                              variables: { id: po.id },
-                            })
-                          }
-                        >
-                          {t('po.detail.returnForCorrection')}
-                        </Button>
-                      </div>
                     </div>
                   )
                 })()}
@@ -4619,7 +3684,7 @@ export default function PurchaseOrderDetail() {
                                   : t('po.detail.vendorAccountsPayable'),
                             })}
                           </span>
-                          <Button
+                          <ActionButton
                             variant="ghost"
                             size="sm"
                             onClick={() => {
@@ -4630,44 +3695,32 @@ export default function PurchaseOrderDetail() {
                             }}
                           >
                             {t('po.detail.keepFundingSource')}
-                          </Button>
+                          </ActionButton>
                         </div>
                       )}
-                      <div
-                        style={{
-                          padding: '10px 14px',
-                          borderRadius: '8px',
-                          background: theme.bgSurface,
-                          border: `1px solid ${theme.border}`,
-                          fontSize: '12px',
-                          color: theme.textSecondary,
-                        }}
-                      >
+                      <div style={{ fontSize: '13px', color: theme.textSecondary }}>
                         {t('po.detail.howWasThisPoPaidPick')}
                       </div>
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                          gap: '8px',
-                        }}
-                      >
-                        <Button
-                          variant={fundingChoice === 'vendor_ap' ? 'primary' : 'secondary'}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <ChipButton
+                          selected={fundingChoice === 'vendor_ap'}
                           onClick={() => {
                             setFundingChoice('vendor_ap')
                           }}
                         >
                           {t('po.detail.vendorAccountsPayable')}
-                        </Button>
-                        <Button
-                          variant={fundingChoice === 'employee_advance' ? 'primary' : 'secondary'}
+                        </ChipButton>
+                        <ChipButton
+                          selected={fundingChoice === 'employee_advance'}
                           onClick={() => {
                             setFundingChoice('employee_advance')
                           }}
                         >
                           {t('po.detail.employeeAdvance')}
-                        </Button>
+                        </ChipButton>
+                        {fundingChoice !== 'employee_advance' && (
+                          <span style={{ marginInlineStart: 'auto' }}>{confirmFundingButton}</span>
+                        )}
                       </div>
                       {fundingChoice === 'employee_advance' && (
                         <>
@@ -4683,11 +3736,12 @@ export default function PurchaseOrderDetail() {
                           <div
                             style={{
                               display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                              gap: '8px',
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                              gap: '12px',
                             }}
                           >
                             <SearchableSelect
+                              field
                               label={t('po.detail.employee')}
                               value={fundingEmployeeId}
                               onChange={setFundingEmployeeId}
@@ -4708,10 +3762,11 @@ export default function PurchaseOrderDetail() {
                                 <div key={currency}>
                                   <label
                                     htmlFor={`funding-advance-${currency}`}
+                                    // the same label as the Employee box beside it (SearchableSelect's own)
                                     style={{
                                       fontSize: '12px',
-                                      fontWeight: 600,
-                                      color: theme.textMuted,
+                                      fontWeight: 500,
+                                      color: theme.textSecondary,
                                       display: 'block',
                                       marginBottom: '4px',
                                     }}
@@ -4727,14 +3782,17 @@ export default function PurchaseOrderDetail() {
                                       const advanceId = e.target.value
                                       setFundingAdvanceIds((prev) => ({ ...prev, [currency]: advanceId }))
                                     }}
+                                    // drawn like SearchableSelect's `field` box: 40px, 10px corners, the darker field edge
                                     style={{
                                       width: '100%',
-                                      padding: '7px 10px',
-                                      borderRadius: '6px',
-                                      border: `1px solid ${theme.border}`,
-                                      background: theme.bgCanvas,
+                                      height: '40px',
+                                      padding: '0 12px',
+                                      borderRadius: '10px',
+                                      border: `1px solid ${theme.borderField}`,
+                                      background: theme.bgSurface,
                                       color: theme.textPrimary,
                                       fontSize: '13px',
+                                      fontFamily: 'inherit',
                                       boxSizing: 'border-box' as const,
                                     }}
                                   >
@@ -4752,7 +3810,7 @@ export default function PurchaseOrderDetail() {
                                     ))}
                                   </select>
                                   {fundingCurrencyList.length > 1 && poTotal && (
-                                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
+                                    <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '4px' }}>
                                       {t('po.detail.poAmountInCurrency', {
                                         amount: Number(poTotal.subtotal).toLocaleString(),
                                         currency,
@@ -4765,30 +3823,11 @@ export default function PurchaseOrderDetail() {
                           </div>
                         </>
                       )}
-                      <Button
-                        variant="primary"
-                        style={PRIMARY_CTA_STYLE}
-                        loading={settingFunding}
-                        disabled={
-                          !fundingChoice ||
-                          (fundingChoice === 'employee_advance' &&
-                            !fundingSelectionComplete(fundingCurrencyList, fundingAdvanceIds))
-                        }
-                        onClick={() =>
-                          void setPOFunding({
-                            variables: {
-                              id: po.id,
-                              fundingSource: fundingChoice,
-                              fundingAdvances:
-                                fundingChoice === 'employee_advance'
-                                  ? fundingAdvancesInput(fundingCurrencyList, fundingAdvanceIds)
-                                  : undefined,
-                            },
-                          })
-                        }
-                      >
-                        {t('po.detail.confirmFundingSource')}
-                      </Button>
+                      {fundingChoice === 'employee_advance' && (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                          {confirmFundingButton}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div
@@ -4819,9 +3858,8 @@ export default function PurchaseOrderDetail() {
                           {renderGlClassificationPanel(
                             t('po.detail.fundedByAdvanceClassifyHint'),
                           )}
-                          <Button
-                            variant="primary"
-                            style={PRIMARY_CTA_STYLE}
+                          <ActionButton
+                            variant="solid"
                             loading={anyLoading}
                             disabled={unclassifiedCount > 0}
                             onClick={() => void completePO({ variables: { id: po.id } })}
@@ -4829,7 +3867,7 @@ export default function PurchaseOrderDetail() {
                             {unclassifiedCount > 0
                               ? t('po.detail.markCompletedUnclassified', { count: unclassifiedCount })
                               : t('po.detail.markAsCompleted')}
-                          </Button>
+                          </ActionButton>
                         </div>
                       )
                     })()
@@ -4885,15 +3923,15 @@ export default function PurchaseOrderDetail() {
                             <span style={{ textTransform: 'capitalize' }}>{enumLabel(apInvoice.status)}</span>
                           </div>
                         </div>
-                        <Button
-                          variant="secondary"
+                        <ActionButton
+                          variant="outline"
                           size="sm"
                           onClick={() => {
                             navigate(`/finance/ap/${apInvoice.id}`)
                           }}
                         >
                           {t('po.detail.viewInAp')}
-                        </Button>
+                        </ActionButton>
                       </div>
                     ) : can('finance.ap.edit') ? (
                       <div
@@ -4923,16 +3961,15 @@ export default function PurchaseOrderDetail() {
                             {t('po.detail.createAVendorInvoiceInAp')}
                           </div>
                         </div>
-                        <Button
-                          variant="primary"
-                          style={PRIMARY_CTA_STYLE}
+                        <ActionButton
+                          variant="solid"
                           size="sm"
                           onClick={() => {
                             navigate(`/finance/ap/new?po_id=${po.id}`)
                           }}
                         >
                           {t('po.detail.createInAp')}
-                        </Button>
+                        </ActionButton>
                       </div>
                     ) : (
                       <div
@@ -4950,14 +3987,14 @@ export default function PurchaseOrderDetail() {
                     )}
                     {can('finance.ap.approve', 'approve') && (
                       <>
-                        <Button
-                          variant={apInvoice?.status === 'paid' ? 'primary' : 'secondary'}
+                        <ActionButton
+                          variant={apInvoice?.status === 'paid' ? 'solid' : 'outline'}
                           loading={anyLoading}
                           disabled={apInvoice?.status !== 'paid' && apInvoice !== null}
                           onClick={() => void completePO({ variables: { id: po.id } })}
                         >
                           {t('po.detail.markAsCompleted')}
-                        </Button>
+                        </ActionButton>
                         {apInvoice && apInvoice.status !== 'paid' && (
                           <div style={{ fontSize: '11px', color: theme.textMuted }}>
                             {t('po.detail.markAsCompletedWillBeEnabled')}
@@ -4990,21 +4027,21 @@ export default function PurchaseOrderDetail() {
                     style={{
                       padding: '10px 14px',
                       borderRadius: '8px',
-                      background: '#fef2f2',
-                      border: '1px solid #ef4444',
+                      background: `${theme.danger}14`,
+                      border: `1px solid ${theme.danger}`,
                       fontSize: '13px',
-                      color: '#991b1b',
+                      color: theme.textPrimary,
                     }}
                   >
                     {t('po.detail.thisPoWasRejectedReviseAnd')}
                   </div>
-                  <Button
-                    variant="secondary"
+                  <ActionButton
+                    variant="outline"
                     loading={anyLoading}
                     onClick={() => void reopenPO({ variables: { id: po.id } })}
                   >
                     {t('po.detail.reopenAsDraft')}
-                  </Button>
+                  </ActionButton>
                 </div>
               )}
 
@@ -5014,10 +4051,16 @@ export default function PurchaseOrderDetail() {
       )}
         </div>
 
-        <div style={{ flex: '40 1 460px', minWidth: 0 }}>
+        <div style={{ minWidth: 0 }}>
+      {recordReceiptStage && po.receipts.some((r) => r.status === 'draft') && (
+        <div style={{ marginBottom: '16px' }}>
+          <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
+        </div>
+      )}
       {/* Tabs */}
       <div style={{ marginBottom: '16px' }}>
         <TabBar
+          readable
           tabs={tabs}
           active={activeTab}
           onChange={(key) => {
@@ -5035,21 +4078,21 @@ export default function PurchaseOrderDetail() {
             { bg: string; border: string; dot: string; label: string }
           > = {
             dispute: {
-              bg: 'rgba(239,68,68,0.08)',
-              border: 'rgba(239,68,68,0.25)',
-              dot: '#ef4444',
+              bg: `${theme.danger}14`,
+              border: `${theme.danger}40`,
+              dot: theme.danger,
               label: t('po.detail.dispute'),
             },
             warning: {
-              bg: 'rgba(245,158,11,0.08)',
-              border: 'rgba(245,158,11,0.25)',
-              dot: '#f59e0b',
+              bg: `${theme.warning}14`,
+              border: `${theme.warning}40`,
+              dot: theme.warning,
               label: t('po.detail.warning'),
             },
             info: {
-              bg: 'rgba(59,130,246,0.08)',
-              border: 'rgba(59,130,246,0.25)',
-              dot: '#3b82f6',
+              bg: `${theme.info}14`,
+              border: `${theme.info}40`,
+              dot: theme.info,
               label: t('po.detail.info'),
             },
           }
@@ -5101,11 +4144,13 @@ export default function PurchaseOrderDetail() {
               key: 'index',
               header: '#',
               width: '32px',
+              // A phone card is one line; its position in the list is not a field worth a row of its own.
+              mobileHide: true,
               render: (line) => (
                 <span
                   style={{
                     fontSize: '12px',
-                    color: theme.textMuted,
+                    color: theme.textSecondary,
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
@@ -5120,52 +4165,38 @@ export default function PurchaseOrderDetail() {
               wrap: true,
               minWidth: '220px',
               render: (line) => {
-                // An edit request can override this line's own description
-                // independently of the catalog product it's linked to (the
-                // product_id itself is never editable post-creation). That
-                // override must win here like it does everywhere else this
-                // file renders a line's item text — otherwise an approved
-                // description edit never shows up on a catalog-linked line.
-                const primary = line.description || line.product_name
-                const secondary = line.description ? line.product_name : line.product_name_ar
-                const secondaryIsArabic = !line.description && !!line.product_name_ar
+                // Drawn like the requisition's item cell: the name, the Arabic name under it, then the SKU. An edit request can
+                // override this line's own description independently of the catalog product (the product_id itself is never
+                // editable), so the description wins; the catalog name is added only when it says something else.
+                const name = line.description || line.product_name
+                const catalogName =
+                  line.description && line.product_name && line.product_name !== line.description
+                    ? line.product_name
+                    : null
                 return (
-                  <>
-                    {primary && (
-                      <div
-                        style={{
-                          fontSize: '13px',
-                          color: theme.textPrimary,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {primary}
+                  <div>
+                    <div style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: 500 }}>
+                      {name || '—'}
+                    </div>
+                    {catalogName && (
+                      <div style={{ fontSize: '12px', color: theme.textSecondary }}>{catalogName}</div>
+                    )}
+                    {line.product_name_ar && (
+                      // The block keeps the page's direction and only the text is right-to-left (playbook #80); the readable grey (#75)
+                      <div style={{ textAlign: 'start' }}>
+                        <span dir="rtl" style={{ fontSize: '13px', color: theme.textSecondary }}>
+                          {line.product_name_ar}
+                        </span>
                       </div>
                     )}
-                    {secondary && (
-                      <div
-                        dir={secondaryIsArabic ? 'rtl' : undefined}
-                        style={{
-                          fontSize: '12px',
-                          color: theme.textMuted,
-                          textAlign: secondaryIsArabic ? 'left' : undefined,
-                          marginTop: primary ? '2px' : 0,
-                        }}
-                      >
-                        {secondary}
-                      </div>
-                    )}
-                    {!primary && !secondary && (
-                      <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
-                    )}
-                  </>
+                    {line.sku && <div style={{ fontSize: '12px', color: theme.textSecondary }}>{line.sku}</div>}
+                  </div>
                 )
               },
             },
             {
               key: 'qty',
               header: t('po.detail.qty'),
-              mobilePriority: 4,
               render: (line) => {
                 const fromStock = parseFloat(String(line.qty_from_stock)) || 0
                 const toPurchase = Math.max(0, line.qty - fromStock)
@@ -5174,7 +4205,6 @@ export default function PurchaseOrderDetail() {
                     <span
                       style={{
                         color: theme.textPrimary,
-                        fontFamily: 'monospace',
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
@@ -5184,8 +4214,8 @@ export default function PurchaseOrderDetail() {
                       <div
                         style={{
                           fontSize: '11px',
-                          color: BRAND_BLUE,
-                          fontFamily: 'monospace',
+                          color: theme.accentSolid,
+                          fontVariantNumeric: 'tabular-nums',
                           marginTop: '2px',
                         }}
                       >
@@ -5196,8 +4226,8 @@ export default function PurchaseOrderDetail() {
                       <div
                         style={{
                           fontSize: '11px',
-                          color: theme.textMuted,
-                          fontFamily: 'monospace',
+                          color: theme.textSecondary,
+                          fontVariantNumeric: 'tabular-nums',
                           marginTop: '2px',
                         }}
                       >
@@ -5211,13 +4241,11 @@ export default function PurchaseOrderDetail() {
             {
               key: 'initial_unit_price',
               header: t('po.detail.initialPrice'),
-              mobilePriority: 5,
               render: (line) =>
                 line.initial_unit_price != null ? (
                   <span
                     style={{
-                      color: theme.textMuted,
-                      fontFamily: 'monospace',
+                      color: theme.textSecondary,
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
@@ -5225,7 +4253,7 @@ export default function PurchaseOrderDetail() {
                     {line.requested_currency_code ?? poLineCurrency(line, po.currency_code)}
                   </span>
                 ) : (
-                  <span style={{ color: theme.textMuted, fontSize: '12px' }} title={t('po.detail.notRecordedBeforeThisWasTracked')}>
+                  <span style={{ color: theme.textSecondary, fontSize: '12px' }} title={t('po.detail.notRecordedBeforeThisWasTracked')}>
                     —
                   </span>
                 ),
@@ -5233,12 +4261,10 @@ export default function PurchaseOrderDetail() {
             {
               key: 'market_price',
               header: t('po.detail.marketPrice2'),
-              mobilePriority: 6,
               render: (line) => (
                 <span
                   style={{
                     color: theme.textSecondary,
-                    fontFamily: 'monospace',
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
@@ -5250,29 +4276,26 @@ export default function PurchaseOrderDetail() {
             {
               key: 'store_price',
               header: t('po.detail.storePrice2'),
-              mobilePriority: 6,
               render: (line) => {
                 const sp = parseFloat(String(line.store_price ?? 0))
                 return sp > 0 ? (
                   <span
                     style={{
-                      color: BRAND_GREEN,
+                      color: theme.success,
                       fontWeight: 600,
-                      fontFamily: 'monospace',
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
                     {fmtN(sp)} {line.store_price_currency ?? po.currency_code}
                   </span>
                 ) : (
-                  <span style={{ color: theme.textMuted, fontFamily: 'monospace' }}>—</span>
+                  <span style={{ color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>—</span>
                 )
               },
             },
             {
               key: 'inventory_cost',
               header: t('po.detail.inventoryCost'),
-              mobilePriority: 6,
               render: (line) => (
                 <InventoryCost
                   cost={line.inventory_cost}
@@ -5283,50 +4306,55 @@ export default function PurchaseOrderDetail() {
             {
               key: 'verified_price',
               header: t('po.detail.verifiedPriceCol'),
-              mobilePriority: 7,
               render: (line) => {
                 const vp = parseFloat(String(line.verified_price ?? 0))
                 return vp > 0 ? (
                   <span
                     style={{
                       color: theme.textSecondary,
-                      fontFamily: 'monospace',
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
                     {fmtN(vp)} {line.verified_price_currency ?? po.currency_code}
                   </span>
                 ) : (
-                  <span style={{ color: theme.textMuted, fontFamily: 'monospace' }}>—</span>
+                  <span style={{ color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>—</span>
                 )
               },
             },
             {
               key: 'actual_price',
               header: t('po.detail.actualPrice'),
-              mobilePriority: 7,
               render: (line) => {
                 const ap = parseFloat(String(line.actual_unit_price ?? 0))
                 const ccy = poLineCurrency(line, po.currency_code)
-                return ap > 0 ? (
-                  <span
-                    style={{
-                      color: theme.textSecondary,
-                      fontFamily: 'monospace',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    {fmtN(ap)} {ccy}
-                  </span>
+                const value =
+                  ap > 0 ? (
+                    <span
+                      style={{
+                        color: theme.textSecondary,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {fmtN(ap)} {ccy}
+                    </span>
+                  ) : (
+                    <span style={{ color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>—</span>
+                  )
+                // While it is audited: how far the price is from the PO price, and a warning when none was recorded
+                return auditing ? (
+                  <div>
+                    {value}
+                    <AuditPriceNote line={line} currency={ccy} />
+                  </div>
                 ) : (
-                  <span style={{ color: theme.textMuted, fontFamily: 'monospace' }}>—</span>
+                  value
                 )
               },
             },
             {
               key: 'total',
               header: t('po.detail.total'),
-              mobilePriority: 2,
               render: (line) => {
                 const total = poLineTotalNative(line)
                 const ccy = poLineCurrency(line, po.currency_code)
@@ -5334,8 +4362,7 @@ export default function PurchaseOrderDetail() {
                   <span
                     style={{
                       fontWeight: 700,
-                      color: BRAND_GREEN,
-                      fontFamily: 'monospace',
+                      color: theme.success,
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
@@ -5347,36 +4374,37 @@ export default function PurchaseOrderDetail() {
             {
               key: 'received',
               header: t('po.detail.received'),
-              mobilePriority: 3,
-              render: (line) => {
-                const received = line.qty_received >= line.qty
-                const partial = line.qty_received > 0 && !received
-                const color = received ? BRAND_GREEN : partial ? '#D97706' : theme.textMuted
-                return (
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: '2px 8px',
-                      borderRadius: '999px',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      fontFamily: 'monospace',
-                      background: `${color}18`,
-                      color,
-                    }}
-                  >
-                    {received && '✓ '}
-                    {fmtN(line.qty_received)}/{fmtN(line.qty)}
-                  </span>
-                )
-              },
+              // The same cell the Finance audit and the bar read (playbook #41); the audit also wants short / over
+              render: (line) => <LineCoverageCell line={line} showDeviation={auditing} />,
             },
+            // The Finance audit's choice for the line. Not in the Columns menu: it cannot be hidden while there is an audit.
+            ...(auditing
+              ? [
+                  {
+                    key: 'audit',
+                    header: t('po.detail.auditCheck'),
+                    mobileFullWidth: true,
+                    render: (line: POLine) => (
+                      <AuditCheckButtons
+                        itemName={line.description || line.product_name || ''}
+                        status={line.audit_status}
+                        locked={lock.lockedByOther}
+                        onOk={() => {
+                          void setLineAuditStatus({
+                            variables: { poId: po.id, lineId: line.id, auditStatus: 'ok' },
+                          })
+                        }}
+                        onFlag={() => {
+                          setFlaggingLines((p) => ({ ...p, [line.id]: line.audit_note ?? '' }))
+                        }}
+                      />
+                    ),
+                  },
+                ]
+              : []),
             {
               key: 'notes',
               header: t('po.detail.notes2'),
-              mobilePriority: 1,
               render: (line) => {
                 const comments = lineComments[line.id] ?? []
                 const activeFlag = getLineFlag(line.id)
@@ -5390,7 +4418,7 @@ export default function PurchaseOrderDetail() {
                       <div
                         style={{
                           fontSize: '12px',
-                          color: '#dc2626',
+                          color: theme.danger,
                           fontWeight: 600,
                           display: 'flex',
                           alignItems: 'flex-start',
@@ -5398,7 +4426,7 @@ export default function PurchaseOrderDetail() {
                         }}
                       >
                         <span style={{ flexShrink: 0 }}>⚑</span>
-                        <span style={{ color: '#dc2626', fontWeight: 400 }}>
+                        <span style={{ color: theme.danger, fontWeight: 400 }}>
                           {line.audit_note || t('po.detail.flaggedLabel')}
                         </span>
                       </div>
@@ -5428,7 +4456,7 @@ export default function PurchaseOrderDetail() {
                           ? flagStyle.dot
                           : totalCount > 0
                             ? theme.accent
-                            : theme.textMuted,
+                            : theme.textSecondary,
                         display: 'flex',
                         alignItems: 'center',
                         gap: '5px',
@@ -5506,7 +4534,8 @@ export default function PurchaseOrderDetail() {
             {
               key: 'actual_price',
               label: t('po.detail.actualPrice'),
-              defaultOn: false,
+              // what the auditor compares against the PO price
+              defaultOn: auditing,
               locked: false,
             },
             { key: 'total', label: t('po.detail.total'), defaultOn: true, locked: true },
@@ -5529,11 +4558,19 @@ export default function PurchaseOrderDetail() {
           const orderTotals = poTotalEntries(po)
 
           return (
-            <Card>
+            // On a phone the lines are cards of their own (like the requisition's), so the card around them is only a heading:
+            // no second border and fill, and the line cards sit straight on the page.
+            <Card
+              style={
+                isPhone
+                  ? { background: 'transparent', border: 'none', boxShadow: 'none', overflow: 'visible' }
+                  : undefined
+              }
+            >
               <div
                 style={{
-                  padding: '16px 20px',
-                  borderBottom: `1px solid ${theme.border}`,
+                  padding: isPhone ? '0 2px 12px' : '16px 20px',
+                  borderBottom: isPhone ? 'none' : `1px solid ${theme.border}`,
                   display: 'flex',
                   flexWrap: 'wrap',
                   alignItems: 'center',
@@ -5552,21 +4589,57 @@ export default function PurchaseOrderDetail() {
                       color: theme.textPrimary,
                     }}
                   >
-                    <span style={{ color: theme.textMuted, display: 'flex' }}>
+                    <span style={{ color: theme.textSecondary, display: 'flex' }}>
                       <IconBox />
                     </span>
                     {t('po.detail.purchaseOrderLines')}
                   </div>
-                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
                     {filterText
                       ? t('ui.tableView.showing', {
                           shown: shownLines.length,
                           total: po.lines.length,
                         })
-                      : t('po.detail.itemsOnOrder', { count: po.lines.length })}
+                      : auditing
+                        ? t('po.detail.financeAuditMarkEachLineOk')
+                        : t('po.detail.itemsOnOrder', { count: po.lines.length })}
                   </div>
+                  {auditing && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                      <div
+                        role="progressbar"
+                        aria-label={t('po.detail.auditChecked', { done: auditState.checked, total: auditState.total })}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={
+                          auditState.total > 0 ? Math.round((auditState.checked / auditState.total) * 100) : 0
+                        }
+                        style={{
+                          width: '140px',
+                          height: '6px',
+                          borderRadius: '3px',
+                          background: theme.border,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${auditState.total > 0 ? Math.round((auditState.checked / auditState.total) * 100) : 0}%`,
+                            background: auditState.flagged > 0 ? theme.danger : theme.success,
+                            borderRadius: '3px',
+                          }}
+                        />
+                      </div>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textSecondary }}>
+                        {t('po.detail.auditChecked', { done: auditState.checked, total: auditState.total })}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                  {/* While auditing: the receipts and photos in a window of their own (drag it to a second screen) */}
+                  {auditing && <OpenPhotosButton poId={po.id} onOpenFloating={photoPip.open} />}
                   <SearchInput
                     value={lineFilter}
                     onChange={setLineFilter}
@@ -5597,6 +4670,7 @@ export default function PurchaseOrderDetail() {
                 columns={shownColumns}
                 data={shownLines}
                 density={linesView.density}
+                mobileLayout="fields"
                 emptyMessage={filterText ? t('ui.tableView.noMatches') : undefined}
                 footerRow={
                   orderTotals.length > 0
@@ -5607,7 +4681,7 @@ export default function PurchaseOrderDetail() {
                             {orderTotals.map((e) => (
                               <span
                                 key={e.currencyCode}
-                                style={{ color: BRAND_GREEN, fontFamily: 'monospace' }}
+                                style={{ color: theme.success, fontVariantNumeric: 'tabular-nums' }}
                               >
                                 {fmtN(e.amount)} {e.currencyCode}
                               </span>
@@ -5643,25 +4717,62 @@ export default function PurchaseOrderDetail() {
                   const activeFlag = getLineFlag(line.id)
                   const flagStyle = activeFlag ? FLAG_COLORS[activeFlag] : null
                   const isAuditFlagged = line.audit_status === 'flagged'
+                  // A phone card keeps the fill and the edge it is drawn with unless the line has a state to show: the plain
+                  // style below made it transparent, so the cards ran together with no space between them.
+                  if (isPhone && !isAuditFlagged && !flagStyle && !(auditing && line.audit_status === 'ok')) return {}
                   return {
                     borderBottom: isAuditFlagged
-                      ? '1px solid rgba(239,68,68,0.3)'
+                      ? `1px solid ${theme.danger}4d`
                       : flagStyle
                         ? `1px solid ${flagStyle.border}`
                         : `1px solid ${theme.border}22`,
                     background: isAuditFlagged
-                      ? 'rgba(239,68,68,0.06)'
+                      ? `${theme.danger}0f`
                       : flagStyle
                         ? flagStyle.bg
-                        : 'transparent',
+                        : auditing && line.audit_status === 'ok'
+                          ? `${theme.success}0d`
+                          : 'transparent',
                     borderLeft: isAuditFlagged
-                      ? '3px solid #ef4444'
+                      ? `3px solid ${theme.danger}`
                       : flagStyle
                         ? `3px solid ${flagStyle.dot}`
                         : '3px solid transparent',
                   }
                 }}
                 renderExpanded={(line) => {
+                  // the reason for an audit flag is typed right under the line
+                  const auditReason = auditing ? (flaggingLines[line.id] as string | undefined) : undefined
+                  if (auditReason !== undefined) {
+                    const stop = () => {
+                      setFlaggingLines((p) => {
+                        const n = { ...p }
+                        Reflect.deleteProperty(n, line.id)
+                        return n
+                      })
+                    }
+                    return (
+                      <AuditFlagEditor
+                        reason={auditReason}
+                        onChange={(value) => {
+                          setFlaggingLines((p) => ({ ...p, [line.id]: value }))
+                        }}
+                        onSave={() => {
+                          if (!auditReason.trim()) return
+                          void setLineAuditStatus({
+                            variables: {
+                              poId: po.id,
+                              lineId: line.id,
+                              auditStatus: 'flagged',
+                              auditNote: auditReason.trim(),
+                            },
+                          })
+                          stop()
+                        }}
+                        onCancel={stop}
+                      />
+                    )
+                  }
                   const hasOpenFlag = !!line.flag_reason && !line.flag_resolved_at
                   const isComposing = line.id in lineFlagNotes
                   if (!hasOpenFlag && !isComposing) return null
@@ -5680,7 +4791,7 @@ export default function PurchaseOrderDetail() {
                         <div style={{ marginBottom: isComposing ? '10px' : 0 }}>
                           <div style={{ fontSize: '11px', fontWeight: 600, color, marginBottom: '4px' }}>
                             {open ? t('po.detail.flaggedLabel') : t('po.detail.addressedLabel')}
-                            <span style={{ fontWeight: 400, color: theme.textMuted, marginLeft: '6px' }}>
+                            <span style={{ fontWeight: 400, color: theme.textSecondary, marginLeft: '6px' }}>
                               {t('po.detail.flaggedByDuring', {
                                 name: line.flagged_by_name ?? t('po.detail.someone'),
                                 stage: getPOStatusLabel(
@@ -5701,14 +4812,14 @@ export default function PurchaseOrderDetail() {
                             {line.flag_reason}
                           </div>
                           {!open && (
-                            <Button
-                              variant="secondary"
+                            <ActionButton
+                              variant="outline"
                               size="sm"
                               loading={lResolveFlag}
                               onClick={() => void resolveLineFlag({ variables: { lineId: line.id } })}
                             >
                               {t('po.detail.resolve')}
-                            </Button>
+                            </ActionButton>
                           )}
                         </div>
                       )}
@@ -5735,26 +4846,28 @@ export default function PurchaseOrderDetail() {
 
       {activeTab === 'receipts' && (
         <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <OpenPhotosButton poId={po.id} onOpenFloating={photoPip.open} />
+          </div>
           {(po.status === 'approved' || po.status === 'bought' || po.status === 'goods_received') && (
             <div style={{ marginBottom: '12px' }}>
               <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-                <Button
-                  variant="primary"
-                  style={PRIMARY_CTA_STYLE}
+                <ActionButton
+                  variant="solid"
                   size="sm"
                   onClick={() => {
                     navigate(`/procurement/purchase-orders/${po.id}/receive`)
                   }}
                 >
                   {t('po.detail.recordReceipt')}
-                </Button>
+                </ActionButton>
               </div>
             </div>
           )}
           {po.receipts.length === 0 && (
             <Card style={{ padding: '32px', textAlign: 'center' }}>
-              <span style={{ color: theme.textMuted, fontSize: '13px' }}>{t('po.detail.noReceiptsYet')}</span>
+              <span style={{ color: theme.textSecondary, fontSize: '14px' }}>{t('po.detail.noReceiptsYet')}</span>
             </Card>
           )}
           {po.receipts.map((r) => {
@@ -5776,7 +4889,7 @@ export default function PurchaseOrderDetail() {
                 header: t('po.detail.qtyReceived'),
                 mobilePriority: 1,
                 render: (rl) => (
-                  <span style={{ color: BRAND_GREEN, fontWeight: 700, fontFamily: 'monospace' }}>
+                  <span style={{ color: theme.success, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                     {rl.qty_received}
                   </span>
                 ),
@@ -5810,58 +4923,46 @@ export default function PurchaseOrderDetail() {
                     </span>
                     {t('po.detail.receiptDate', { date: r.receipt_date })}
                   </div>
+                  {r.status === 'confirmed' && <Badge variant="success">{t('po.detail.receiptConfirmed')}</Badge>}
                   {r.status === 'draft' && (
                     <Badge variant="warning">{t('po.detail.draftNotYetAddedToInventory')}</Badge>
                   )}
                   {r.status === 'cancelled' && <Badge variant="danger">{t('po.detail.cancelled')}</Badge>}
                 </div>
                 <div style={{ padding: '16px 20px' }}>
-                  <div
+                  <dl
                     style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: '12px',
-                      marginBottom: '16px',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                      gap: '12px 24px',
+                      margin: '0 0 16px',
                     }}
                   >
-                    <div
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        background: theme.bgCanvas,
-                        border: `1px solid ${theme.border}`,
-                        minWidth: '160px',
-                      }}
-                    >
-                      <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '3px' }}>
-                        {t('po.detail.location')}
+                    {[
+                      { label: t('po.detail.location'), value: r.location_name ?? '—' },
+                      { label: t('po.detail.receivedBy'), value: r.received_by_name ?? r.received_by_email ?? '—' },
+                    ].map(({ label, value }) => (
+                      <div key={label} style={{ minWidth: 0 }}>
+                        <dt style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>{label}</dt>
+                        <dd
+                          style={{
+                            margin: '2px 0 0',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            color: theme.textPrimary,
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
+                          {value}
+                        </dd>
                       </div>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                        {r.location_name ?? '—'}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        background: theme.bgCanvas,
-                        border: `1px solid ${theme.border}`,
-                        minWidth: '160px',
-                      }}
-                    >
-                      <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '3px' }}>
-                        {t('po.detail.receivedBy')}
-                      </div>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                        {r.received_by_name ?? r.received_by_email ?? '—'}
-                      </div>
-                    </div>
-                  </div>
+                    ))}
+                  </dl>
                   {r.location_notes && (
                     <div
                       style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}
                     >
-                      <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>
                         {t('po.detail.jobsiteLocationNotes')}{' '}
                       </span>
                       {r.location_notes}
@@ -5871,7 +4972,7 @@ export default function PurchaseOrderDetail() {
                     <div
                       style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}
                     >
-                      <span style={{ fontSize: '11px', color: theme.textMuted }}>{t('po.detail.notes')} </span>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>{t('po.detail.notes')} </span>
                       {r.notes}
                     </div>
                   )}
@@ -5916,11 +5017,11 @@ export default function PurchaseOrderDetail() {
                                 >
                                   {g.title}
                                 </span>
-                                <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                                <span style={{ fontSize: '12px', color: theme.textSecondary }}>
                                   ({g.photos.length})
                                 </span>
                               </div>
-                              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
+                              <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '1px' }}>
                                 {g.description}
                               </div>
                             </div>
@@ -5932,7 +5033,7 @@ export default function PurchaseOrderDetail() {
                       })()}
                     </div>
                   )}
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}>
                     {t('po.detail.itemsReceived')}
                   </div>
                   <Table columns={receiptLineColumns} data={r.lines} />
@@ -5980,79 +5081,103 @@ export default function PurchaseOrderDetail() {
           {PO_RETURNABLE_STATUSES.includes(po.status) &&
             can('procurement.po.edit', 'edit') && (
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-                <Button
-                  variant="primary"
-                  style={PRIMARY_CTA_STYLE}
+                <ActionButton
+                  variant="solid"
                   size="sm"
                   onClick={() => {
                     navigate(`/procurement/purchase-orders/${po.id}/returns/new`)
                   }}
                 >
                   {t('po.detail.createReturn')}
-                </Button>
+                </ActionButton>
               </div>
             )}
           {poReturns.length === 0 && (
             <Card style={{ padding: '32px', textAlign: 'center' }}>
-              <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+              <span style={{ color: theme.textSecondary, fontSize: '14px' }}>
                 {t('po.detail.noReturnsOnThisPo')}
               </span>
             </Card>
           )}
           {poReturns.map((ret) => {
             const sc: Record<string, { bg: string; text: string }> = {
-              draft: { bg: '#f9fafb', text: '#6b7280' },
-              submitted: { bg: '#fffbeb', text: '#d97706' },
-              approved: { bg: '#f0fdf4', text: '#16a34a' },
-              credited: { bg: '#eff6ff', text: '#2563eb' },
+              draft: { bg: theme.bgCanvas, text: theme.textSecondary },
+              submitted: { bg: theme.warningBg, text: theme.warning },
+              approved: { bg: theme.successBg, text: theme.success },
+              credited: { bg: theme.infoBg, text: theme.info },
             }
             const c = sc[ret.status] ?? sc.draft
+            const openReturn = () => {
+              navigate(`/procurement/purchase-orders/${po.id}/returns/${ret.id}`)
+            }
+            // A card that goes somewhere is a link for the keyboard too: Tab reaches it, Enter or Space opens it.
             return (
-              <Card
+              <div
                 key={ret.id}
-                style={{ marginBottom: '10px', padding: '14px 18px', cursor: 'pointer' }}
-                onClick={() => {
-                  navigate(`/procurement/purchase-orders/${po.id}/returns/${ret.id}`)
+                role="link"
+                tabIndex={0}
+                aria-label={`${ret.return_number}, ${enumLabel(ret.status)}`}
+                onClick={openReturn}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    openReturn()
+                  }
                 }}
+                onFocus={(e) => {
+                  if (isKeyboardFocus(e.currentTarget)) e.currentTarget.style.boxShadow = menuFocusRing(theme)
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+                style={{ marginBottom: '10px', cursor: 'pointer', borderRadius: '14px', outline: 'none' }}
               >
-                <div
-                  style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}
-                >
-                  <span style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>
-                    {ret.return_number}
-                  </span>
-                  <span
-                    style={{
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      background: c.bg,
-                      color: c.text,
-                    }}
-                  >
-                    {ret.status.charAt(0).toUpperCase() + ret.status.slice(1)}
-                  </span>
-                  <span
-                    style={{
-                      padding: '2px 8px',
-                      borderRadius: '6px',
-                      fontSize: '11px',
-                      background: ret.return_type === 'damage' ? '#fff7ed' : '#f0fdf4',
-                      color: ret.return_type === 'damage' ? '#c2410c' : '#15803d',
-                    }}
-                  >
-                    {ret.return_type === 'damage' ? t('po.detail.damage') : t('po.detail.fullRefund')}
-                  </span>
-                  <div style={{ flex: 1 }} />
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: theme.accent }}>
-                    {ret.currency_code}{' '}
-                    {Number(ret.total_returned_value).toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-              </Card>
+                <Card style={{ padding: '14px 18px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 600, fontSize: '14px', color: theme.textPrimary }}>
+                      {ret.return_number}
+                    </span>
+                    <span
+                      style={{
+                        padding: '2px 10px',
+                        borderRadius: '999px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: c.bg,
+                        color: c.text,
+                      }}
+                    >
+                      {enumLabel(ret.status)}
+                    </span>
+                    <span
+                      style={{
+                        padding: '2px 10px',
+                        borderRadius: '999px',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        background: ret.return_type === 'damage' ? theme.warningBg : theme.successBg,
+                        color: ret.return_type === 'damage' ? theme.warning : theme.success,
+                      }}
+                    >
+                      {ret.return_type === 'damage' ? t('po.detail.damage') : t('po.detail.fullRefund')}
+                    </span>
+                    <div style={{ flex: 1 }} />
+                    <span
+                      style={{
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        color: theme.textPrimary,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {ret.currency_code}{' '}
+                      {Number(ret.total_returned_value).toLocaleString(undefined, {
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                </Card>
+              </div>
             )
           })}
         </div>
@@ -6072,7 +5197,7 @@ export default function PurchaseOrderDetail() {
               color: theme.textPrimary,
             }}
           >
-            <span style={{ color: theme.textMuted, display: 'flex' }}>
+            <span style={{ color: theme.textSecondary, display: 'flex' }}>
               <IconDocument />
             </span>
             {t('po.detail.approvalLog')}
@@ -6087,21 +5212,24 @@ export default function PurchaseOrderDetail() {
             }}
           >
             <Textarea
+              field
               value={logNoteText}
               onChange={(e) => setLogNoteText(e.target.value)}
               placeholder={t('po.detail.addNotePlaceholder')}
               rows={2}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
+              <ActionButton
+                variant="solid"
                 size="sm"
                 disabled={!logNoteText.trim() || addingLogNote}
+                loading={addingLogNote}
                 onClick={() =>
                   void addLogNote({ variables: { poId: po.id, note: logNoteText.trim() } })
                 }
               >
                 {t('po.detail.addNote')}
-              </Button>
+              </ActionButton>
             </div>
           </div>
           {po.notes && (
@@ -6109,13 +5237,14 @@ export default function PurchaseOrderDetail() {
               style={{
                 padding: '14px 16px',
                 borderBottom: `1px solid ${theme.border}`,
-                background: theme.bgSurface,
+                background: theme.bgCanvas,
               }}
             >
               <div
                 style={{
-                  fontSize: '11px',
-                  color: theme.textMuted,
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: theme.textSecondary,
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
                   marginBottom: '6px',
@@ -6123,90 +5252,43 @@ export default function PurchaseOrderDetail() {
               >
                 {t('po.detail.poNotes')}
               </div>
-              <div style={{ fontSize: '13px', color: theme.textPrimary, whiteSpace: 'pre-wrap' }}>
+              <div style={{ fontSize: '14px', color: theme.textPrimary, whiteSpace: 'pre-wrap' }}>
                 {po.notes}
               </div>
             </div>
           )}
-          {po.approval_log.length === 0 && !po.notes && (
+          {po.approval_log.length === 0 && (
             <div
               style={{
-                padding: '32px',
+                padding: po.notes ? '16px' : '32px',
                 textAlign: 'center',
-                color: theme.textMuted,
-                fontSize: '13px',
+                color: theme.textSecondary,
+                fontSize: '14px',
               }}
             >
-              {t('po.detail.noActivityYet')}
+              {po.notes ? t('po.detail.noApprovalActivityYet') : t('po.detail.noActivityYet')}
             </div>
           )}
-          {po.approval_log.length === 0 && po.notes && (
-            <div
-              style={{
-                padding: '16px',
-                textAlign: 'center',
-                color: theme.textMuted,
-                fontSize: '13px',
-              }}
-            >
-              {t('po.detail.noApprovalActivityYet')}
-            </div>
+          {po.approval_log.length > 0 && (
+            <ActivityTimeline
+              entries={po.approval_log.map((entry) => ({
+                id: entry.id,
+                action: entry.action,
+                actor_name: entry.user_email,
+                notes: entry.notes,
+                created_at: entry.created_at,
+              }))}
+              systemActor={t('po.detail.systemActor')}
+              label={t('po.detail.approvalLog')}
+              actionLabel={getPOLogActionLabel}
+              actionTone={getPOLogActionTone}
+            />
           )}
-          {po.approval_log.map((entry) => (
-            <div
-              key={entry.id}
-              style={{
-                display: 'flex',
-                gap: '16px',
-                padding: '12px 16px',
-                borderBottom: `1px solid ${theme.border}22`,
-                alignItems: 'center',
-              }}
-            >
-              <Badge
-                variant={
-                  entry.action === 'approved'
-                    ? 'success'
-                    : entry.action.startsWith('reject')
-                      ? 'danger'
-                      : 'info'
-                }
-              >
-                {entry.action.replace(/_/g, ' ')}
-              </Badge>
-              <span style={{ fontSize: '13px', color: theme.textPrimary }}>{entry.user_email}</span>
-              {entry.notes && (
-                <span style={{ fontSize: '12px', color: theme.textMuted }}>{entry.notes}</span>
-              )}
-              <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}>
-                {entry.created_at.slice(0, 16).replace('T', ' ')}
-              </span>
-            </div>
-          ))}
         </Card>
       )}
 
       {activeTab === 'changes' &&
         (() => {
-          const inputStyle: React.CSSProperties = {
-            width: '100%',
-            padding: '7px 10px',
-            borderRadius: '6px',
-            border: `1px solid ${theme.borderInput}`,
-            background: theme.bgCanvas,
-            color: theme.textPrimary,
-            fontSize: '13px',
-            boxSizing: 'border-box',
-          }
-          const labelStyle: React.CSSProperties = {
-            fontSize: '11px',
-            fontWeight: 600,
-            color: theme.textMuted,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            display: 'block',
-            marginBottom: '4px',
-          }
 
           const initDraft = (): EditDraft => ({
             notes: po.notes ?? '',
@@ -6298,9 +5380,18 @@ export default function PurchaseOrderDetail() {
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* a column with a gap: the request form and the history used to touch each other */}
               <fieldset
                 disabled={lock.lockedByOther}
-                style={{ border: 'none', padding: 0, margin: 0 }}
+                style={{
+                  border: 'none',
+                  padding: 0,
+                  margin: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '16px',
+                  minWidth: 0,
+                }}
               >
                 {/* ── Request edit form ── */}
                 <Card style={{ padding: '20px' }}>
@@ -6322,38 +5413,38 @@ export default function PurchaseOrderDetail() {
                         color: theme.textPrimary,
                       }}
                     >
-                      <span style={{ color: theme.textMuted, display: 'flex' }}>
+                      <span style={{ color: theme.textSecondary, display: 'flex' }}>
                         <IconDocument />
                       </span>
                       {t('po.detail.requestAnEdit')}
                     </div>
                     {hasPending && <Badge variant="warning">{t('po.detail.pendingReviewSubmitLocked')}</Badge>}
                     {!editDraft && !hasPending && (
-                      <Button
+                      <ActionButton
                         size="sm"
-                        variant="secondary"
+                        variant="outline"
                         onClick={() => {
                           setEditDraft(initDraft())
                         }}
                       >
                         {t('po.detail.startEditing')}
-                      </Button>
+                      </ActionButton>
                     )}
                     {editDraft && (
-                      <Button
+                      <ActionButton
                         size="sm"
-                        variant="secondary"
+                        variant="outline"
                         onClick={() => {
                           setEditDraft(null)
                         }}
                       >
                         {t('po.detail.cancel')}
-                      </Button>
+                      </ActionButton>
                     )}
                   </div>
 
                   {!editDraft && (
-                    <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                    <div style={{ fontSize: '14px', color: theme.textSecondary }}>
                       {hasPending
                         ? t('po.detail.thereIsAlreadyAPendingEdit')
                         : t('po.detail.clickStartEditingToProposeChanges')}
@@ -6422,7 +5513,7 @@ export default function PurchaseOrderDetail() {
                           render: (line, i) => (
                             <select
                               value={line.currency_code}
-                              style={inputStyle}
+                              style={selectStyle}
                               disabled={line._removed}
                               onChange={(e) => {
                                 const lines = [...editDraft.lines]
@@ -6496,22 +5587,17 @@ export default function PurchaseOrderDetail() {
                           label: '',
                           width: '70px',
                           render: (line, i) => (
-                            <button
+                            <ActionButton
+                              size="sm"
+                              variant={line._removed ? 'outline' : 'danger'}
                               onClick={() => {
                                 const lines = [...editDraft.lines]
                                 lines[i] = { ...lines[i], _removed: !lines[i]._removed }
                                 setEditDraft({ ...editDraft, lines })
                               }}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                color: line._removed ? theme.accent : theme.danger,
-                                fontSize: '12px',
-                              }}
                             >
                               {line._removed ? t('po.detail.restore') : t('po.detail.remove')}
-                            </button>
+                            </ActionButton>
                           ),
                         },
                       ]
@@ -6618,7 +5704,7 @@ export default function PurchaseOrderDetail() {
                               <textarea
                                 value={editDraft.notes}
                                 rows={2}
-                                style={{ ...inputStyle, resize: 'vertical' }}
+                                style={textareaStyle}
                                 onChange={(e) => {
                                   setEditDraft({ ...editDraft, notes: e.target.value })
                                 }}
@@ -6644,9 +5730,9 @@ export default function PurchaseOrderDetail() {
                           <div>
                             <div
                               style={{
-                                fontSize: '11px',
+                                fontSize: '12px',
                                 fontWeight: 600,
-                                color: theme.textMuted,
+                                color: theme.textSecondary,
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.05em',
                                 marginBottom: '8px',
@@ -6698,9 +5784,8 @@ export default function PurchaseOrderDetail() {
                             />
                           </div>
                           <div>
-                            <Button
-                              variant="primary"
-                              style={PRIMARY_CTA_STYLE}
+                            <ActionButton
+                              variant="solid"
                               loading={leR}
                               onClick={() => {
                                 const changes = buildChanges(editDraft)
@@ -6728,7 +5813,7 @@ export default function PurchaseOrderDetail() {
                               }}
                             >
                               {t('po.detail.submitEditRequest')}
-                            </Button>
+                            </ActionButton>
                           </div>
                         </div>
                       )
@@ -6749,7 +5834,7 @@ export default function PurchaseOrderDetail() {
                       color: theme.textPrimary,
                     }}
                   >
-                    <span style={{ color: theme.textMuted, display: 'flex' }}>
+                    <span style={{ color: theme.textSecondary, display: 'flex' }}>
                       <IconBox />
                     </span>
                     {t('po.detail.editRequestHistory')}
@@ -6759,8 +5844,8 @@ export default function PurchaseOrderDetail() {
                       style={{
                         padding: '32px',
                         textAlign: 'center',
-                        fontSize: '13px',
-                        color: theme.textMuted,
+                        fontSize: '14px',
+                        color: theme.textSecondary,
                       }}
                     >
                       {t('po.detail.noEditRequestsYet')}
@@ -6771,7 +5856,6 @@ export default function PurchaseOrderDetail() {
                       key={er.id}
                       request={er}
                       currentLines={po.lines}
-                      primaryStyle={PRIMARY_CTA_STYLE}
                       approving={leA}
                       rejecting={leJ}
                       onApprove={(requestId, notes) => {
@@ -6794,25 +5878,6 @@ export default function PurchaseOrderDetail() {
 
       {activeTab === 'admin_correction' &&
         (() => {
-          const inputStyle: React.CSSProperties = {
-            width: '100%',
-            padding: '7px 10px',
-            borderRadius: '6px',
-            border: `1px solid ${theme.borderInput}`,
-            background: theme.bgCanvas,
-            color: theme.textPrimary,
-            fontSize: '13px',
-            boxSizing: 'border-box',
-          }
-          const labelStyle: React.CSSProperties = {
-            fontSize: '11px',
-            fontWeight: 600,
-            color: theme.textMuted,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            display: 'block',
-            marginBottom: '4px',
-          }
 
           const initAdminDraft = (): AdminCorrectionDraft => ({
             vendor_id: po.vendor_id ?? '',
@@ -6982,7 +6047,7 @@ export default function PurchaseOrderDetail() {
               render: (line, i) => (
                 <select
                   value={line.product_id}
-                  style={inputStyle}
+                  style={selectStyle}
                   onChange={(e) => {
                     if (!adminCorrectionDraft) return
                     const lines = [...adminCorrectionDraft.lines]
@@ -7074,7 +6139,7 @@ export default function PurchaseOrderDetail() {
               render: (line, i) => (
                 <select
                   value={line.source_location_id}
-                  style={inputStyle}
+                  style={selectStyle}
                   onChange={(e) => {
                     if (!adminCorrectionDraft) return
                     const lines = [...adminCorrectionDraft.lines]
@@ -7098,11 +6163,11 @@ export default function PurchaseOrderDetail() {
               <div
                 style={{
                   padding: '12px 16px',
-                  background: '#fffbeb',
-                  border: '1px solid #fde68a',
+                  background: theme.warningBg,
+                  border: `1px solid ${theme.warningBorder}`,
                   borderRadius: '8px',
                   fontSize: '13px',
-                  color: '#92400e',
+                  color: theme.warning,
                 }}
               >
                 {t('po.detail.adminCorrectionAppliesImmediatelyThereIs')}
@@ -7110,15 +6175,15 @@ export default function PurchaseOrderDetail() {
 
               {!adminCorrectionDraft && (
                 <div>
-                  <Button
-                    variant="secondary"
+                  <ActionButton
+                    variant="outline"
                     onClick={() => {
                       setAdminCorrectionDraft(initAdminDraft())
                       setAdminCorrectionConfirming(false)
                     }}
                   >
                     {t('po.detail.startCorrection')}
-                  </Button>
+                  </ActionButton>
                 </div>
               )}
 
@@ -7146,7 +6211,7 @@ export default function PurchaseOrderDetail() {
                         <label style={labelStyle}>{t('po.detail.vendor')}</label>
                         <select
                           value={adminCorrectionDraft.vendor_id}
-                          style={inputStyle}
+                          style={selectStyle}
                           onChange={(e) => {
                             setAdminCorrectionDraft({
                               ...adminCorrectionDraft,
@@ -7166,7 +6231,7 @@ export default function PurchaseOrderDetail() {
                         <label style={labelStyle}>{t('po.detail.currency')}</label>
                         <select
                           value={adminCorrectionDraft.currency_code}
-                          style={inputStyle}
+                          style={selectStyle}
                           onChange={(e) => {
                             setAdminCorrectionDraft({
                               ...adminCorrectionDraft,
@@ -7185,7 +6250,7 @@ export default function PurchaseOrderDetail() {
                         <label style={labelStyle}>{t('po.detail.analyticAccount')}</label>
                         <select
                           value={adminCorrectionDraft.analytic_account_id}
-                          style={inputStyle}
+                          style={selectStyle}
                           onChange={(e) => {
                             setAdminCorrectionDraft({
                               ...adminCorrectionDraft,
@@ -7205,7 +6270,7 @@ export default function PurchaseOrderDetail() {
                         <label style={labelStyle}>{t('po.detail.priority')}</label>
                         <select
                           value={adminCorrectionDraft.priority}
-                          style={inputStyle}
+                          style={selectStyle}
                           onChange={(e) => {
                             setAdminCorrectionDraft({
                               ...adminCorrectionDraft,
@@ -7222,7 +6287,7 @@ export default function PurchaseOrderDetail() {
                         <label style={labelStyle}>{t('po.detail.receivedBy2')}</label>
                         <select
                           value={adminCorrectionDraft.assigned_receiver_id}
-                          style={inputStyle}
+                          style={selectStyle}
                           onChange={(e) => {
                             setAdminCorrectionDraft({
                               ...adminCorrectionDraft,
@@ -7242,7 +6307,7 @@ export default function PurchaseOrderDetail() {
                         <label style={labelStyle}>{t('po.detail.branch')}</label>
                         <select
                           value={adminCorrectionDraft.branch_id}
-                          style={inputStyle}
+                          style={selectStyle}
                           onChange={(e) => {
                             setAdminCorrectionDraft({
                               ...adminCorrectionDraft,
@@ -7263,7 +6328,7 @@ export default function PurchaseOrderDetail() {
                           <label style={labelStyle}>{t('po.detail.deliveryDestination')}</label>
                           <select
                             value={adminCorrectionDraft.delivery_destination}
-                            style={inputStyle}
+                            style={selectStyle}
                             onChange={(e) => {
                               setAdminCorrectionDraft({
                                 ...adminCorrectionDraft,
@@ -7295,7 +6360,7 @@ export default function PurchaseOrderDetail() {
                         <textarea
                           value={adminCorrectionDraft.notes}
                           rows={2}
-                          style={{ ...inputStyle, resize: 'vertical' }}
+                          style={textareaStyle}
                           onChange={(e) => {
                             setAdminCorrectionDraft({
                               ...adminCorrectionDraft,
@@ -7362,7 +6427,7 @@ export default function PurchaseOrderDetail() {
                             <label style={labelStyle}>{t('po.detail.warehouseLocation')}</label>
                             <select
                               value={dr.warehouse_location_id}
-                              style={inputStyle}
+                              style={selectStyle}
                               onChange={(e) => {
                                 const receipts = [...adminCorrectionDraft.receipts]
                                 receipts[ri] = {
@@ -7525,8 +6590,8 @@ export default function PurchaseOrderDetail() {
                         alignItems: 'center',
                       }}
                     >
-                      <Button
-                        variant="secondary"
+                      <ActionButton
+                        variant="outline"
                         onClick={() => {
                           setAdminCorrectionDraft(null)
                           setAdminCorrectionConfirming(false)
@@ -7534,11 +6599,10 @@ export default function PurchaseOrderDetail() {
                         }}
                       >
                         {t('po.detail.cancel')}
-                      </Button>
+                      </ActionButton>
                       {!adminCorrectionConfirming && (
-                        <Button
-                          variant="primary"
-                          style={PRIMARY_CTA_STYLE}
+                        <ActionButton
+                          variant="solid"
                           disabled={totalChanges === 0 || !adminCorrectionReason.trim()}
                           onClick={() => {
                             setAdminCorrectionConfirming(true)
@@ -7547,14 +6611,14 @@ export default function PurchaseOrderDetail() {
                           {totalChanges === 0
                             ? t('po.detail.noChangesYet')
                             : t('po.detail.reviewChanges', { count: totalChanges })}
-                        </Button>
+                        </ActionButton>
                       )}
                       {adminCorrectionConfirming && (
                         <>
                           <span style={{ fontSize: '13px', color: theme.danger }}>
                             {t('po.detail.applyConfirm', { count: totalChanges })}
                           </span>
-                          <Button
+                          <ActionButton
                             variant="danger"
                             loading={adminCorrecting}
                             onClick={() => {
@@ -7569,15 +6633,15 @@ export default function PurchaseOrderDetail() {
                             }}
                           >
                             {t('po.detail.yesApplyCorrection')}
-                          </Button>
-                          <Button
-                            variant="secondary"
+                          </ActionButton>
+                          <ActionButton
+                            variant="outline"
                             onClick={() => {
                               setAdminCorrectionConfirming(false)
                             }}
                           >
                             {t('po.detail.back')}
-                          </Button>
+                          </ActionButton>
                         </>
                       )}
                     </div>
@@ -7589,6 +6653,135 @@ export default function PurchaseOrderDetail() {
         })()}
         </div>
       </div>
+
+      {recordReceiptStage && (
+        <StageActionBar
+          title={`${t('po.detail.nextStep')}: ${t('po.detail.recordReceipt')}`}
+          hint={
+            po.status === 'bought'
+              ? t('po.detail.itemsForThisPurchaseOrderWere')
+              : po.status === 'approved'
+                ? t('po.detail.poIsApprovedRecordAGoods')
+                : t('po.detail.buyingIsDoneRecordWhatS')
+          }
+        >
+          <ActionButton
+            data-tour="po-record-receipt-btn"
+            variant="solid"
+            disabled={lock.lockedByOther}
+            onClick={() => {
+              navigate(`/procurement/purchase-orders/${po.id}/receive`)
+            }}
+          >
+            {t('po.detail.recordReceipt')}
+          </ActionButton>
+        </StageActionBar>
+      )}
+
+      {/* Goods received, something recorded: the one step left is "send it to Finance Audit". sendPOToAudit only needs one
+          confirmed receipt (recordReceipt has always allowed receiving some lines), so it stays available mid-way through
+          receiving the rest; a jobsite delivery never creates a receipt row, it updates the lines, which `hasAnyReceipt`
+          counts. This bar is outside the Next Step card's fieldset, so the edit lock is applied to its buttons directly. */}
+      {sendToAuditStage && (
+        <StageActionBar
+          title={`${t('po.detail.nextStep')}: ${t('po.detail.sendToFinanceAudit')}`}
+          hint={t('po.detail.goodsReceivedReviewReceiptsBelowThen')}
+          more={receiptCoverage.complete ? undefined : t('po.detail.notEveryLineIsFullyReceived')}
+          status={
+            // in a flex row so the badge keeps the width of its words instead of filling the bar
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              <Badge variant={receiptCoverage.complete ? 'success' : 'warning'} dot>
+                {receiptCoverage.complete
+                  ? t('po.detail.everyLineFullyReceived')
+                  : t('po.detail.linesFullyReceived', {
+                      done: receiptCoverage.fullyCovered,
+                      total: receiptCoverage.lines,
+                    })}
+              </Badge>
+            </div>
+          }
+        >
+          {!receiptCoverage.complete && (
+            <ActionButton
+              variant="outline"
+              disabled={lock.lockedByOther}
+              onClick={() => {
+                navigate(`/procurement/purchase-orders/${po.id}/receive`)
+              }}
+            >
+              {t('po.detail.recordReceipt')}
+            </ActionButton>
+          )}
+          <ActionButton
+            variant="solid"
+            loading={lAudit}
+            disabled={lock.lockedByOther}
+            onClick={() => void sendToAudit({ variables: { id: po.id } })}
+          >
+            {t('po.detail.sendToFinanceAudit')}
+          </ActionButton>
+        </StageActionBar>
+      )}
+
+      {/* Finance review / audit: pass the audit or send the order back. The bar is outside the card's fieldset, so the edit
+          lock is applied to its buttons directly. Someone who may not audit sees the bar as an explanation only. */}
+      {financeAuditStage && (
+        <StageActionBar
+          title={`${t('po.detail.nextStep')}: ${t('po.detail.financeAuditStep')}`}
+          hint={canAudit ? t('po.detail.financeAuditBarHint') : t('po.detail.awaitingFinanceAudit')}
+          status={
+            canAudit ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {auditState.canPass ? (
+                  <Badge variant="success" dot>
+                    {t('po.detail.auditAllOk')}
+                  </Badge>
+                ) : (
+                  <>
+                    <Badge variant={auditState.flagged > 0 ? 'danger' : 'warning'} dot>
+                      {t('po.detail.auditChecked', { done: auditState.checked, total: auditState.total })}
+                    </Badge>
+                    {auditState.flagged > 0 && (
+                      <Badge variant="danger">{t('po.detail.auditFlaggedN', { n: auditState.flagged })}</Badge>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : undefined
+          }
+        >
+          {canAudit && (
+            <>
+              <ActionButton
+                variant="outline"
+                disabled={lock.lockedByOther}
+                onClick={() =>
+                  void failAudit({
+                    variables: { id: po.id },
+                  })
+                }
+              >
+                {t('po.detail.returnForCorrection')}
+              </ActionButton>
+              <ActionButton
+                variant="solid"
+                loading={lPass}
+                disabled={!auditState.canPass || lock.lockedByOther}
+                onClick={() => void passAudit({ variables: { id: po.id } })}
+              >
+                {auditState.canPass
+                  ? t('po.detail.passAuditInvoiced')
+                  : auditState.pending > 0
+                    ? t('po.detail.passAuditPending', { count: auditState.pending })
+                    : t('po.detail.passAuditFlagged', { count: auditState.flagged })}
+              </ActionButton>
+            </>
+          )}
+        </StageActionBar>
+      )}
+
+      {/* The photo viewer in its floating window. It is a portal of this page, so it follows the PO shown here and closes with it. */}
+      {photoPip.win && <PhotoPipPortal win={photoPip.win} poId={po.id} />}
 
       {/* assignDeptHead reserved for future use */}
 
@@ -7733,9 +6926,9 @@ export default function PurchaseOrderDetail() {
       {commentModal &&
         (() => {
           const FLAG_META: Record<string, { color: string; bg: string; label: string }> = {
-            info: { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', label: t('po.detail.info') },
-            warning: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: t('po.detail.warning') },
-            dispute: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: t('po.detail.dispute') },
+            info: { color: theme.info, bg: `${theme.info}1a`, label: t('po.detail.info') },
+            warning: { color: theme.warning, bg: `${theme.warning}1a`, label: t('po.detail.warning') },
+            dispute: { color: theme.danger, bg: `${theme.danger}1a`, label: t('po.detail.dispute') },
           }
           const comments = lineComments[commentModal.lineId] ?? []
           const auditLine = po.lines.find((l) => l.id === commentModal.lineId)
@@ -7779,55 +6972,29 @@ export default function PurchaseOrderDetail() {
               setResolvingId(null)
             }
           }
+          // The shared Modal: Escape, focus trap and focus back, a named dialog, and the title / description header.
           return (
-            <div
-              style={{
-                position: 'fixed',
-                inset: 0,
-                background: 'rgba(0,0,0,0.45)',
-                zIndex: 1000,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '16px',
+            <Modal
+              open
+              onClose={() => {
+                setCommentModal(null)
               }}
-              onClick={(e) => {
-                if (e.target === e.currentTarget) setCommentModal(null)
-              }}
+              title={t('po.detail.comments')}
+              description={t('po.detail.itemDescriptionLabel', { text: commentModal.description })}
+              size="md"
+              noPadding
             >
-              <div
-                style={{
-                  background: theme.bgSurface,
-                  borderRadius: '12px',
-                  width: '100%',
-                  maxWidth: '500px',
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  maxHeight: '90vh',
-                  overflow: 'hidden',
-                }}
-              >
-                {/* Header */}
-                <div style={{ padding: '18px 20px', borderBottom: `1px solid ${theme.border}` }}>
-                  <div style={{ fontSize: '16px', fontWeight: 700, color: theme.textPrimary }}>
-                    {t('po.detail.comments')}
-                  </div>
-                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
-                    {t('po.detail.itemDescriptionLabel', { text: commentModal.description })}
-                  </div>
-                </div>
-
+              <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {/* Comment list */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+                <div style={{ maxHeight: '44vh', overflowY: 'auto', padding: '4px 0' }}>
                   {/* Pinned finance audit flag */}
                   {auditFlag && (
                     <div
                       style={{
                         padding: '12px 20px',
-                        borderBottom: `1px solid rgba(239,68,68,0.2)`,
-                        background: 'rgba(239,68,68,0.06)',
-                        borderLeft: '3px solid #ef4444',
+                        borderBottom: `1px solid ${theme.danger}33`,
+                        background: `${theme.danger}0f`,
+                        borderInlineStart: `3px solid ${theme.danger}`,
                       }}
                     >
                       <div style={{ marginBottom: '4px' }}>
@@ -7839,9 +7006,9 @@ export default function PurchaseOrderDetail() {
                             letterSpacing: '0.06em',
                             padding: '2px 7px',
                             borderRadius: '4px',
-                            background: 'rgba(239,68,68,0.12)',
-                            color: '#dc2626',
-                            border: '1px solid #ef4444',
+                            background: `${theme.danger}1f`,
+                            color: theme.danger,
+                            border: `1px solid ${theme.danger}`,
                           }}
                         >
                           {t('po.detail.financeAuditFlag')}
@@ -7852,7 +7019,7 @@ export default function PurchaseOrderDetail() {
                       >
                         {auditFlag.audit_note || t('po.detail.noReasonGiven')}
                       </div>
-                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                      <div style={{ fontSize: '12px', color: theme.textSecondary }}>
                         {auditFlag.audit_flagged_by_email ?? t('po.detail.financeTeam')}
                         {auditFlag.audit_flagged_at && (
                           <span>&nbsp;&nbsp;{fmt(auditFlag.audit_flagged_at)}</span>
@@ -7865,8 +7032,8 @@ export default function PurchaseOrderDetail() {
                       style={{
                         padding: '24px 20px',
                         textAlign: 'center',
-                        fontSize: '13px',
-                        color: theme.textMuted,
+                        fontSize: '14px',
+                        color: theme.textSecondary,
                       }}
                     >
                       {t('po.detail.noCommentsYet')}
@@ -7882,7 +7049,7 @@ export default function PurchaseOrderDetail() {
                           borderBottom:
                             idx < comments.length - 1 ? `1px solid ${theme.border}22` : 'none',
                           background: fm && !c.resolved ? fm.bg : 'transparent',
-                          borderLeft: fm
+                          borderInlineStart: fm
                             ? `3px solid ${c.resolved ? theme.border : fm.color}`
                             : '3px solid transparent',
                         }}
@@ -7928,34 +7095,24 @@ export default function PurchaseOrderDetail() {
                             >
                               {c.comment}
                             </div>
-                            <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                            <div style={{ fontSize: '12px', color: theme.textSecondary }}>
                               {c.created_by_name}&nbsp;&nbsp;{fmt(c.created_at)}
                               {c.resolved && c.resolved_at && (
-                                <span style={{ marginLeft: '8px', color: '#10b981' }}>
+                                <span style={{ marginInlineStart: '8px', color: theme.success }}>
                                   {t('po.detail.resolvedOn', { date: fmt(c.resolved_at) })}
                                 </span>
                               )}
                             </div>
                           </div>
                           {fm && !c.resolved && (
-                            <button
+                            <ActionButton
+                              variant="outline"
+                              size="sm"
                               onClick={() => void handleResolve(c.id)}
                               disabled={resolvingId === c.id}
-                              style={{
-                                flexShrink: 0,
-                                padding: '4px 10px',
-                                borderRadius: '5px',
-                                border: `1px solid ${fm.color}`,
-                                background: 'transparent',
-                                color: fm.color,
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
-                              }}
                             >
                               {resolvingId === c.id ? '…' : t('po.detail.resolve')}
-                            </button>
+                            </ActionButton>
                           )}
                         </div>
                       </div>
@@ -7982,17 +7139,7 @@ export default function PurchaseOrderDetail() {
                     }}
                     rows={2}
                     placeholder={t('po.detail.typeYourComment')}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: '6px',
-                      border: `1px solid ${theme.border}`,
-                      background: theme.bgCanvas,
-                      color: theme.textPrimary,
-                      fontSize: '13px',
-                      resize: 'vertical',
-                      boxSizing: 'border-box',
-                    }}
+                    style={textareaStyle}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void handleAddComment()
                     }}
@@ -8001,40 +7148,32 @@ export default function PurchaseOrderDetail() {
                   <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
                     <span
                       style={{
-                        fontSize: '11px',
-                        color: theme.textMuted,
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: theme.textSecondary,
                         alignSelf: 'center',
-                        marginRight: '2px',
+                        marginInlineEnd: '2px',
                       }}
                     >
                       {t('po.detail.flag2')}
                     </span>
                     {(
                       [
-                        ['', t('po.detail.noneOption'), theme.textMuted, theme.border],
-                        ['info', t('po.detail.info'), '#3b82f6', '#3b82f6'],
-                        ['warning', t('po.detail.warning'), '#f59e0b', '#f59e0b'],
-                        ['dispute', t('po.detail.dispute'), '#ef4444', '#ef4444'],
-                      ] as [string, string, string, string][]
-                    ).map(([val, label, color, border]) => (
-                      <button
+                        ['', t('po.detail.noneOption')],
+                        ['info', t('po.detail.info')],
+                        ['warning', t('po.detail.warning')],
+                        ['dispute', t('po.detail.dispute')],
+                      ] as [string, string][]
+                    ).map(([val, label]) => (
+                      <ChipButton
                         key={val}
+                        selected={newFlag === val}
                         onClick={() => {
                           setNewFlag(val as typeof newFlag)
                         }}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          border: `1px solid ${newFlag === val ? border : theme.border}`,
-                          background: newFlag === val ? `${color}18` : 'transparent',
-                          color: newFlag === val ? color : theme.textMuted,
-                          fontSize: '11px',
-                          fontWeight: newFlag === val ? 700 : 400,
-                          cursor: 'pointer',
-                        }}
                       >
                         {label}
-                      </button>
+                      </ChipButton>
                     ))}
                   </div>
                   <div
@@ -8045,42 +7184,25 @@ export default function PurchaseOrderDetail() {
                       marginTop: '10px',
                     }}
                   >
-                    <button
+                    <ActionButton
+                      variant="outline"
                       onClick={() => {
                         setCommentModal(null)
                       }}
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: '6px',
-                        border: `1px solid ${theme.border}`,
-                        background: 'transparent',
-                        color: theme.textPrimary,
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                      }}
                     >
                       {t('po.detail.close')}
-                    </button>
-                    <button
+                    </ActionButton>
+                    <ActionButton
+                      variant="solid"
                       onClick={() => void handleAddComment()}
                       disabled={!newComment.trim() || addingComment}
-                      style={{
-                        padding: '8px 18px',
-                        borderRadius: '6px',
-                        border: 'none',
-                        background: newComment.trim() ? theme.accent : theme.border,
-                        color: '#fff',
-                        fontSize: '13px',
-                        cursor: newComment.trim() ? 'pointer' : 'not-allowed',
-                        fontWeight: 600,
-                      }}
                     >
                       {addingComment ? t('po.detail.adding') : t('po.detail.add')}
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
               </div>
-            </div>
+            </Modal>
           )
         })()}
 
@@ -8099,74 +7221,185 @@ export default function PurchaseOrderDetail() {
         confirmVariant="danger"
       />
 
-      {/* Print dialog */}
+      {/* Actions: cancel this PO (with a reason) and, for system-level users, the status override. Same gates as the old
+          popover: the button above decides who sees it, the cancel part is hidden once the PO is cancelled or deleted,
+          the override part is system-level only. */}
+      <Modal
+        open={showActionsPanel && canOpenActions}
+        onClose={() => {
+          setShowActionsPanel(false)
+        }}
+        title={t('po.detail.actions')}
+        size="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {!['cancelled', 'deleted'].includes(po.status) && (
+            <section style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
+                  {t('po.detail.cancelThisPo')}
+                </div>
+                <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '2px' }}>
+                  {t('po.detail.thisActionCannotBeUndoneWithout')}
+                </div>
+              </div>
+              <Textarea
+                field
+                label={t('po.detail.cancelReasonLabel')}
+                value={cancelReason}
+                rows={3}
+                onChange={(e) => {
+                  setCancelReason(e.target.value)
+                }}
+              />
+              <div>
+                <ActionButton
+                  variant="danger"
+                  onClick={() => {
+                    void cancelPO({ variables: { id: po.id, reason: cancelReason.trim() || undefined } })
+                    setCancelReason('')
+                    setShowActionsPanel(false)
+                  }}
+                >
+                  {t('po.detail.cancelPo')}
+                </ActionButton>
+              </div>
+            </section>
+          )}
+          {isSystemLevel && (
+            <section
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                paddingTop: po.status === 'cancelled' || po.status === 'deleted' ? 0 : '20px',
+                borderTop:
+                  po.status === 'cancelled' || po.status === 'deleted' ? 'none' : `1px solid ${theme.border}`,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: theme.danger,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.07em',
+                  }}
+                >
+                  {t('po.detail.adminOverride')}
+                </span>
+                <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+                  {t('po.detail.bypassesWorkflow')}
+                </span>
+              </div>
+              <Select
+                field
+                label={t('po.detail.newStatus')}
+                value={adminPoStatus || po.status}
+                disabled={adminSetting}
+                onChange={(e) => {
+                  setAdminPoStatus(e.target.value)
+                }}
+              >
+                {[
+                  { value: 'draft', label: getPOStatusLabel('draft') },
+                  { value: 'inventory_check', label: getPOStatusLabel('inventory_check') },
+                  { value: 'store_pricing', label: getPOStatusLabel('store_pricing') },
+                  { value: 'market_pricing', label: getPOStatusLabel('market_pricing') },
+                  { value: 'price_verification', label: getPOStatusLabel('price_verification') },
+                  { value: 'pending_approval', label: getPOStatusLabel('pending_approval') },
+                  { value: 'approved', label: getPOStatusLabel('approved') },
+                  { value: 'ready_to_issue', label: getPOStatusLabel('ready_to_issue') },
+                  { value: 'items_bought', label: getPOStatusLabel('items_bought') },
+                  { value: 'bought', label: getPOStatusLabel('bought') + ' (G1 child)' },
+                  { value: 'goods_received', label: getPOStatusLabel('goods_received') },
+                  { value: 'finance_audit', label: getPOStatusLabel('finance_audit') },
+                  { value: 'finance_review', label: getPOStatusLabel('finance_review') + ' (G1 child)' },
+                  { value: 'invoiced', label: getPOStatusLabel('invoiced') },
+                  { value: 'payment_pending', label: getPOStatusLabel('payment_pending') + ' (G1 child)' },
+                  { value: 'completed', label: getPOStatusLabel('completed') },
+                  { value: 'closed', label: getPOStatusLabel('closed') + ' (G1 child)' },
+                  { value: 'rejected', label: getPOStatusLabel('rejected') },
+                  { value: 'cancelled', label: getPOStatusLabel('cancelled') },
+                  { value: 'deleted', label: getPOStatusLabel('deleted') },
+                ].map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+              <div>
+                <ActionButton
+                  variant="danger"
+                  disabled={!adminPoStatus || adminPoStatus === po.status}
+                  loading={adminSetting}
+                  onClick={() =>
+                    void adminSetPOStatus({
+                      variables: { id: po.id, status: adminPoStatus },
+                    }).then(() => {
+                      setShowActionsPanel(false)
+                    })
+                  }
+                >
+                  {t('po.detail.apply')}
+                </ActionButton>
+              </div>
+            </section>
+          )}
+        </div>
+      </Modal>
+
+      {/* Print dialog: the shared Modal (Escape, focus trap, focus back, a named dialog) instead of its own overlay */}
       {showPrintModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            background: 'rgba(0,0,0,0.45)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '24px',
-          }}
-          onClick={() => {
+        <Modal
+          open
+          onClose={() => {
             setShowPrintModal(false)
           }}
-        >
-          <div
-            style={{
-              background: theme.bgSurface,
-              borderRadius: '12px',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
-              width: '94vw',
-              maxWidth: '1100px',
-              height: '92vh',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            }}
-            onClick={(e) => {
-              e.stopPropagation()
-            }}
-          >
-            {/* Dialog header */}
+          title={t('po.detail.printPurchaseOrderTitle', { number: po.po_number })}
+          size="xl"
+          noPadding
+          footer={
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '16px 20px',
-                borderBottom: `1px solid ${theme.border}`,
-                flexShrink: 0,
+                gap: '12px',
+                flexWrap: 'wrap',
+                width: '100%',
               }}
             >
-              <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
-                {t('po.detail.printPurchaseOrderTitle', { number: po.po_number })}
-              </span>
-              <button
-                onClick={() => {
-                  setShowPrintModal(false)
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: theme.textMuted,
-                  fontSize: '18px',
-                  lineHeight: 1,
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                }}
-              >
-                ×
-              </button>
+              <Checkbox
+                label={t('po.detail.includeInternalLineNotesNotFor')}
+                checked={printWithNotes}
+                onChange={setPrintWithNotes}
+              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <ActionButton
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowPrintModal(false)
+                  }}
+                >
+                  {t('po.detail.cancel')}
+                </ActionButton>
+                <ActionButton
+                  variant="solid"
+                  size="sm"
+                  onClick={() => printIframeRef.current?.contentWindow?.print()}
+                >
+                  {t('po.detail.printSaveAsPdf')}
+                </ActionButton>
+              </div>
             </div>
-
-            {/* iframe preview */}
-            <div style={{ flex: 1, overflow: 'hidden', background: '#f3f4f6', minHeight: 0 }}>
+          }
+        >
+          {/* iframe preview */}
+          <div style={{ height: '68vh', background: theme.bgCanvas }}>
+            <div style={{ height: '100%' }}>
               <iframe
                 ref={printIframeRef}
                 srcDoc={buildPurchaseOrderHTML({
@@ -8239,60 +7472,8 @@ export default function PurchaseOrderDetail() {
                 title={t('po.detail.purchaseOrderNumber', { number: po.po_number })}
               />
             </div>
-
-            {/* Dialog footer */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px',
-                padding: '14px 20px',
-                borderTop: `1px solid ${theme.border}`,
-                flexShrink: 0,
-              }}
-            >
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '7px',
-                  fontSize: '12px',
-                  color: theme.textSecondary,
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={printWithNotes}
-                  onChange={(e) => {
-                    setPrintWithNotes(e.target.checked)
-                  }}
-                />
-                {t('po.detail.includeInternalLineNotesNotFor')}
-              </label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setShowPrintModal(false)
-                  }}
-                >
-                  {t('po.detail.cancel')}
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => printIframeRef.current?.contentWindow?.print()}
-                >
-                  {t('po.detail.printSaveAsPdf')}
-                </Button>
-              </div>
-            </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

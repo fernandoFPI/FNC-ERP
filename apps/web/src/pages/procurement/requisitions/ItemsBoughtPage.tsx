@@ -1,6 +1,12 @@
 import { getRequisitionStatusLabel } from '../../../lib/requisition-constants'
 import { useTranslation } from 'react-i18next'
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -26,15 +32,23 @@ import { lineHandlerName } from '../../../lib/lineHandler'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
 import { usePagePadding } from '../../../hooks/usePagePadding'
+import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
-import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import { ActionButton } from '../../../components/ui/ActionButton'
+import { ChipButton } from '../../../components/ui/ChipButton'
+import { ChoiceTile } from '../../../components/ui/ChoiceTile'
+import { MoneyField } from '../../../components/ui/MoneyField'
+import { QuantityStepper } from '../../../components/ui/QuantityStepper'
 import { Modal } from '../../../components/ui/Modal'
+import { StageActionBar } from '../../../components/procurement/StageActionBar'
+import { ReceiptDropZone } from '../../../components/procurement/ReceiptDropZone'
+import { ReceiptTileIcon, VendorTileIcon } from '../../../components/procurement/tileIcons'
 import { EntityAttachments } from '../../../components/inventory/EntityAttachments'
 import { useToastStore } from '../../../store/toastStore'
 import type {
@@ -163,6 +177,18 @@ function lineIsResolved(line: ReqLine): boolean {
   return !!line.short_marked_at || remainingToBuy(line) <= 0.0001
 }
 
+// The columns of a line's row. The header row and every line use the same widths, so they line up like a table.
+const LINE_COLUMNS = '36px minmax(220px, 2.2fr) repeat(4, minmax(84px, 1fr)) minmax(150px, 1.3fr)'
+// Text only a screen reader gets: on a desktop the header row names the columns once.
+const SR_ONLY = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+} as const
+
 export default function ItemsBoughtPage() {
   const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
@@ -173,8 +199,7 @@ export default function ItemsBoughtPage() {
   const accessToken = useAuthStore((s) => s.accessToken)
   const addToast = useToastStore((s) => s.addToast)
   const padding = usePagePadding()
-  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
-  const globalFileInputRef = useRef<HTMLInputElement | null>(null)
+  const { isPhone } = useBreakpoint()
   // Mirrors globalReceiptFileIds synchronously so a "record all" loop reuses
   // the first upload instead of reading stale state and re-uploading per line.
   const globalReceiptFileIdsRef = useRef<string[] | null>(null)
@@ -375,17 +400,38 @@ export default function ItemsBoughtPage() {
   const [quickCreateName, setQuickCreateName] = useState('')
   const [creatingVendor, setCreatingVendor] = useState(false)
 
+  // Phone: the lines are an accordion with one entry card open at a time (four lines used to make a 4,500px page).
+  // null = automatic (the first line that still needs buying), '' = everything closed, an id = that line.
+  const [openLineId, setOpenLineId] = useState<string | null>(null)
+  // Phone: the "Apply to all items" card is one row until it is opened (or one of its choices is on).
+  const [batchOpen, setBatchOpen] = useState(false)
+  const needingBuyingKey = (req?.lines ?? [])
+    .filter((l) => !l.short_marked_at && remainingToBuy(l) > 0)
+    .map((l) => l.id)
+    .join(',')
+  const previouslyNeeding = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const now = new Set(needingBuyingKey ? needingBuyingKey.split(',') : [])
+    // Taken before the ref is overwritten below: React runs the updater later, when the ref already holds `now`.
+    const before = previouslyNeeding.current
+    // The line being bought is done: hand over to the next one that still needs buying.
+    setOpenLineId((current) =>
+      current && before.has(current) && !now.has(current) ? null : current,
+    )
+    previouslyNeeding.current = now
+  }, [needingBuyingKey])
+
   if (!id) return null
   if (loading && !req) {
     return (
-      <div style={{ ...padding, maxWidth: '1100px', margin: '0 auto' }}>
+      <div style={{ ...padding, maxWidth: '1800px', margin: '0 auto' }}>
         <div style={{ color: theme.textMuted, fontSize: '13px' }}>{t('req.bought.loading')}</div>
       </div>
     )
   }
   if (!req) {
     return (
-      <div style={{ ...padding, maxWidth: '1100px', margin: '0 auto' }}>
+      <div style={{ ...padding, maxWidth: '1800px', margin: '0 auto' }}>
         <div style={{ color: theme.textMuted, fontSize: '13px' }}>{t('req.bought.requisitionNotFound')}</div>
       </div>
     )
@@ -397,6 +443,33 @@ export default function ItemsBoughtPage() {
   const canBuyLine = (l: ReqLine) => canBuy || (isOwner && !!l.owner_handles)
   const ownsAnyLine = isOwner && req.lines.some((l) => !!l.owner_handles)
   const canApproveTolerance = isSystemLevel || !!req.callerCanApprove
+  // Phone accordion: which line's entry card is open.
+  const firstNeedingId =
+    req.lines.find((l) => !l.short_marked_at && remainingToBuy(l) > 0)?.id ?? null
+  const openId = openLineId === null ? firstNeedingId : openLineId || null
+
+  // One cell of a line's row. A screen reader always gets the label; a phone shows it above the value; a desktop
+  // shows it once, in the header row above the lines.
+  const lineCell = (label: string, content: ReactNode) => (
+    <div style={{ minWidth: 0, fontSize: '13px', color: theme.textPrimary }}>
+      <span
+        style={
+          isPhone
+            ? {
+                display: 'block',
+                fontSize: '12px',
+                fontWeight: 500,
+                color: theme.textSecondary,
+                marginBottom: '2px',
+              }
+            : SR_ONLY
+        }
+      >
+        {label}
+      </span>
+      {content}
+    </div>
+  )
 
   const vendorOptions = [
     { value: CASH_VENDOR_VALUE, label: t('req.bought.cashPurchase') },
@@ -615,13 +688,324 @@ export default function ItemsBoughtPage() {
     }
   }
 
+  // Vendors already used on this requisition, most recent first, for the one-tap picks on a line's entry card.
+  // The cash vendor and any vendor that is not in the list are not offered here (Cash has its own chip).
+  const recentVendors = (() => {
+    const seen = new Set<string>()
+    const out: { value: string; label: string }[] = []
+    const bought = req.lines
+      .flatMap((l) => l.purchases)
+      .sort((a, b) => b.bought_at.localeCompare(a.bought_at))
+    for (const p of bought) {
+      if (seen.has(p.vendor_id)) continue
+      const vendor = vendors.find((v) => v.id === p.vendor_id)
+      if (!vendor) continue
+      seen.add(p.vendor_id)
+      out.push({ value: vendor.id, label: vendor.name })
+      if (out.length === 3) break
+    }
+    return out
+  })()
+
+  // The one-tap vendor choices: Cash, the vendors already used on this requisition, and "+ New vendor". A line's card
+  // and the "apply to all items" card both use it, so a vendor is picked the same way in both.
+  function renderVendorChips(
+    selected: string,
+    onPick: (vendorValue: string) => void,
+    onNewVendor: () => void,
+  ) {
+    return (
+      <div
+        role="group"
+        aria-label={t('req.bought.quickPick')}
+        style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}
+      >
+        <ChipButton
+          selected={selected === CASH_VENDOR_VALUE}
+          onClick={() => {
+            onPick(CASH_VENDOR_VALUE)
+          }}
+        >
+          {t('req.bought.cashChip')}
+        </ChipButton>
+        {recentVendors.map((v) => (
+          <ChipButton
+            key={v.value}
+            selected={selected === v.value}
+            onClick={() => {
+              onPick(v.value)
+            }}
+          >
+            {v.label}
+          </ChipButton>
+        ))}
+        <ChipButton dashed onClick={onNewVendor}>
+          {t('req.bought.newVendorChip')}
+        </ChipButton>
+      </div>
+    )
+  }
+
+  // The card a buyer fills in to record one purchase on a line: vendor (search or a quick pick), quantity, price
+  // with its currency, the receipt, and the three ways to finish the line (record, resolve from stock, mark short).
+  // The logic it calls (handleUploadAndRecord and the setters) is the page's own and unchanged.
+  function renderEntryCard(line: ReqLine, remaining: number) {
+    const qtyValue = purchaseQty[line.id] || (remaining > 0 ? String(remaining) : '')
+    const priceValue = purchasePrice[line.id] || (line.approved_unit_price ?? line.unit_price)
+    // Typed as possibly missing: nothing is chosen until the buyer picks one, and then the line's own currency applies
+    // (the same order handleUploadAndRecord uses when it records).
+    const chosenCurrency = purchaseCurrency[line.id] as string | undefined
+    const currencyValue = chosenCurrency ?? line.currency_code ?? 'IQD'
+    const currencyChoices = CURRENCIES.includes(currencyValue)
+      ? CURRENCIES
+      : [currencyValue, ...CURRENCIES]
+    const qtyNumber = parseFloat(qtyValue)
+    const priceNumber = parseFloat(priceValue)
+    // Only a preview for the buyer; the server stores qty and price, never this product.
+    const previewTotal = qtyNumber * priceNumber
+    const files = pendingFiles[line.id] ?? []
+    const vendorValue = selectedVendor[line.id] ?? ''
+    const approvedPrice =
+      `${fmtN(line.approved_unit_price ?? line.unit_price)} ${line.currency_code ?? ''}`.trim()
+    const fieldLabel = {
+      fontSize: '12px',
+      fontWeight: 600,
+      color: theme.textSecondary,
+      marginBottom: '4px',
+    } as const
+
+    return (
+      <div
+        data-entry-card={line.id}
+        style={{
+          marginTop: '14px',
+          padding: isPhone ? '14px' : '16px 18px',
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`,
+          background: theme.bgSurface,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px',
+        }}
+      >
+        <div>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary }}>
+            {t('req.bought.recordAPurchase')}
+          </div>
+          <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '2px' }}>
+            {t('req.bought.recordCaption', {
+              qty: fmtN(remaining),
+              uom: line.uom ?? '',
+              price: approvedPrice,
+            })}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isPhone ? '1fr' : 'minmax(0, 1.25fr) minmax(0, 1fr)',
+            gap: '16px 28px',
+            alignItems: 'start',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            {sameVendorForAll ? (
+              <div>
+                <div style={fieldLabel}>{t('req.bought.vendor')}</div>
+                <div style={{ fontSize: '13px', color: theme.textPrimary, padding: '8px 0' }}>
+                  {vendorOptions.find((v) => v.value === globalVendorId)?.label ??
+                    t('req.bought.selectAbove')}
+                </div>
+              </div>
+            ) : (
+              <>
+                <SearchableSelect
+                  field
+                  label={t('req.bought.vendor')}
+                  value={vendorValue}
+                  onChange={(v) => {
+                    setSelectedVendor((prev) => ({ ...prev, [line.id]: v }))
+                  }}
+                  options={vendorOptions}
+                  placeholder={t('req.bought.searchVendor')}
+                  minDropdownWidth={320}
+                />
+                {renderVendorChips(
+                  vendorValue,
+                  (picked) => {
+                    setSelectedVendor((prev) => ({ ...prev, [line.id]: picked }))
+                  },
+                  () => {
+                    setQuickCreateLineId(line.id)
+                    setQuickCreateOpen(true)
+                  },
+                )}
+              </>
+            )}
+          </div>
+
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div>
+                <div style={fieldLabel}>{t('req.bought.qty')}</div>
+                <QuantityStepper
+                  // Defaults to the full remaining qty: the buyer only needs to type when this purchase is a partial one.
+                  value={qtyValue}
+                  onChange={(v) => {
+                    setPurchaseQty((prev) => ({ ...prev, [line.id]: v }))
+                  }}
+                  ariaLabel={t('req.bought.qty')}
+                  decreaseLabel={t('req.bought.decreaseQty')}
+                  increaseLabel={t('req.bought.increaseQty')}
+                  max={remaining}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: '190px' }}>
+                <div style={fieldLabel}>{t('req.bought.actualPrice')}</div>
+                <MoneyField
+                  // Defaults to the already-approved price: the buyer only needs to type when the real price differs.
+                  value={priceValue}
+                  onChange={(v) => {
+                    setPurchasePrice((prev) => ({ ...prev, [line.id]: v }))
+                  }}
+                  ariaLabel={t('req.bought.actualPrice')}
+                  currency={currencyValue}
+                  onCurrencyChange={(c) => {
+                    setPurchaseCurrency((prev) => ({ ...prev, [line.id]: c }))
+                  }}
+                  currencies={currencyChoices}
+                  currencyAriaLabel={t('req.bought.currency')}
+                  invalid={priceValue !== '' && !(priceNumber > 0)}
+                />
+              </div>
+            </div>
+            {previewTotal > 0 && (
+              <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '8px' }}>
+                {t('req.bought.lineTotal')}{' '}
+                <strong
+                  style={{
+                    color: theme.textPrimary,
+                    fontWeight: 600,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {fmtN(previewTotal)} {currencyValue}
+                </strong>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {sameReceiptForAll ? (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: '10px',
+              border: `1px dashed ${theme.borderField}`,
+              background: theme.bgSurfaceHover,
+              fontSize: '13px',
+              color: theme.textSecondary,
+            }}
+          >
+            {globalReceiptFiles.length > 0
+              ? `📎 ${t('req.bought.filesSameForAll', { count: globalReceiptFiles.length })}`
+              : t('req.bought.attachTheSharedReceiptSAbove')}
+          </div>
+        ) : (
+          <ReceiptDropZone
+            files={files}
+            onAdd={(added) => {
+              setPendingFiles((prev) => ({
+                ...prev,
+                [line.id]: [...(prev[line.id] ?? []), ...added],
+              }))
+            }}
+            onRemove={(position) => {
+              setPendingFiles((prev) => ({
+                ...prev,
+                [line.id]: (prev[line.id] ?? []).filter((_, i) => i !== position),
+              }))
+            }}
+            onClear={() => {
+              setPendingFiles((prev) => ({ ...prev, [line.id]: [] }))
+            }}
+            browseLabel={t('req.bought.attachReceiptPhotoS')}
+            addMoreLabel={`📎 ${t('req.bought.filesAddMore', { count: files.length })}`}
+            hint={t('req.bought.dropReceiptHint')}
+            clearLabel={t('req.bought.clear')}
+            removeLabel={(name) => t('req.bought.removeFile', { name })}
+          />
+        )}
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '10px',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            paddingTop: '14px',
+            borderTop: `1px solid ${theme.border}`,
+          }}
+        >
+          {/* On a phone the main action comes first and Mark short drops below it. */}
+          <div style={{ order: isPhone ? 2 : 0, alignSelf: isPhone ? 'center' : undefined }}>
+            <ActionButton
+              variant="ghost"
+              onClick={() => {
+                setShortReasonFor(line.id)
+              }}
+            >
+              {t('req.bought.markShort')}
+            </ActionButton>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              gap: '10px',
+              flexWrap: 'wrap',
+              flex: isPhone ? '1 1 100%' : undefined,
+              flexDirection: isPhone ? 'column-reverse' : 'row',
+            }}
+          >
+            {line.product_id && (
+              <ActionButton
+                variant="outline"
+                fullWidth={isPhone}
+                onClick={() => {
+                  setResolveStockFor(line.id)
+                  setResolveStockQty(String(remaining))
+                }}
+              >
+                {t('req.bought.resolveFromStock')}
+              </ActionButton>
+            )}
+            {!sameReceiptForAll && (
+              <ActionButton
+                variant="solid"
+                size="lg"
+                fullWidth={isPhone}
+                loading={lRecording || uploadingLine === line.id}
+                onClick={() => void handleUploadAndRecord(line.id)}
+              >
+                {t('req.bought.recordPurchase')}
+              </ActionButton>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div style={{ ...padding, maxWidth: '1100px', margin: '0 auto' }}>
+    <div style={{ ...padding, maxWidth: '1800px', margin: '0 auto' }}>
       <PageHeader
         title={t('req.bought.pageTitle', { number: req.requisition_number })}
         subtitle={t('req.bought.recordEachPurchasePerVendorWith')}
         backPath={`/procurement/requisitions/${id}`}
         backLabel={t('req.bought.requisitionBack')}
+        compact
         status={
           <Badge variant={req.status === 'items_bought' ? 'accent' : 'neutral'}>
             {getRequisitionStatusLabel(req.status)}
@@ -637,7 +1021,7 @@ export default function ItemsBoughtPage() {
             borderInlineStart: `3px solid ${theme.warning}`,
           }}
         >
-          <div style={{ fontSize: '13px', color: theme.textMuted }}>
+          <div style={{ fontSize: '13px', color: theme.textSecondary }}>
             {t('req.bought.onlyABuyerPositionHolderFor')}
           </div>
         </Card>
@@ -651,7 +1035,7 @@ export default function ItemsBoughtPage() {
             borderInlineStart: `3px solid ${theme.info}`,
           }}
         >
-          <div style={{ fontSize: '13px', color: theme.textMuted }}>
+          <div style={{ fontSize: '13px', color: theme.textSecondary }}>
             {t('req.bought.ownerBuysOwnItems')}
           </div>
         </Card>
@@ -661,7 +1045,7 @@ export default function ItemsBoughtPage() {
         <Card
           style={{ padding: '14px 20px', marginTop: '16px', borderInlineStart: `3px solid ${theme.info}` }}
         >
-          <div style={{ fontSize: '13px', color: theme.textMuted }}>
+          <div style={{ fontSize: '13px', color: theme.textSecondary }}>
             {t('req.bought.thisRequisitionIsNoLongerAt')}
           </div>
         </Card>
@@ -684,11 +1068,11 @@ export default function ItemsBoughtPage() {
             <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
               {t('req.bought.waitingForOrganizerTitle')}
             </div>
-            <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
+            <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
               {t('req.bought.waitingForOrganizerBody', { count: awaitingApproval.length })}
             </div>
             {waitingOnMyOwn.length > 0 && (
-              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+              <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '4px' }}>
                 {t('req.bought.youRecordedSomeOfThese')}
               </div>
             )}
@@ -708,159 +1092,297 @@ export default function ItemsBoughtPage() {
       {req.status === 'items_bought' && req.lines.filter(canBuyLine).length > 1 && (
         <Card
           style={{
-            padding: '14px 20px',
+            padding: isPhone ? '4px 16px' : '16px 20px',
             marginTop: '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '14px',
+            display: 'grid',
+            gap: isPhone ? '4px' : '16px',
           }}
         >
-          <div>
-            <label
+          {isPhone ? (
+            // One row until opened: the choices are shortcuts, not the work (which is the line below).
+            <button
+              type="button"
+              aria-expanded={batchOpen || sameVendorForAll || sameReceiptForAll}
+              onClick={() => {
+                setBatchOpen((open) => !open)
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'space-between',
                 gap: '8px',
-                fontSize: '13px',
-                color: theme.textPrimary,
+                minHeight: '48px',
+                padding: 0,
+                background: 'transparent',
+                border: 'none',
+                textAlign: 'start',
+                fontFamily: 'inherit',
                 cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent',
               }}
             >
-              <input
-                type="checkbox"
-                checked={sameVendorForAll}
-                onChange={(e) => {
-                  toggleSameVendorForAll(e.target.checked)
-                }}
-              />
-              {t('req.bought.allItemsAreFromTheSame')}
-            </label>
-            {sameVendorForAll && (
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '6px',
-                  alignItems: 'flex-end',
-                  marginTop: '10px',
-                  maxWidth: '420px',
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <SearchableSelect
-                    label={t('req.bought.vendorForAllItems')}
-                    value={globalVendorId}
-                    onChange={(v) => {
-                      applyVendorToAllLines(v)
-                    }}
-                    options={vendorOptions}
-                    placeholder={t('req.bought.searchVendor')}
-                    minDropdownWidth={320}
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setQuickCreateLineId(ALL_LINES_SENTINEL)
-                    setQuickCreateOpen(true)
+              <span style={{ minWidth: 0 }}>
+                <span
+                  style={{
+                    display: 'block',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    color: theme.textPrimary,
                   }}
                 >
-                  {t('req.bought.new')}
-                </Button>
-              </div>
-            )}
-          </div>
-          <div>
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '13px',
-                color: theme.textPrimary,
-                cursor: 'pointer',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={sameReceiptForAll}
-                onChange={(e) => {
-                  setSameReceiptForAll(e.target.checked)
-                }}
-              />
-              {t('req.bought.attachOneReceiptForAllItems')}
-            </label>
-            {sameReceiptForAll && (
-              <div
-                style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px' }}
-              >
-                <input
-                  ref={globalFileInputRef}
-                  type="file"
-                  accept="image/*,application/pdf"
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files ?? [])
-                    setGlobalReceiptFiles((prev) => [...prev, ...files])
-                    setGlobalReceiptFileIds(null)
-                    globalReceiptFileIdsRef.current = null
-                    e.target.value = ''
-                  }}
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => globalFileInputRef.current?.click()}
-                >
-                  {globalReceiptFiles.length > 0
-                    ? `📎 ${t('req.bought.filesAttachedAddMore', { count: globalReceiptFiles.length })}`
-                    : t('req.bought.attachReceiptPhotoS')}
-                </Button>
-                {globalReceiptFiles.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setGlobalReceiptFiles([])
-                      setGlobalReceiptFileIds(null)
-                      globalReceiptFileIdsRef.current = null
+                  {t('req.bought.applyToAllTitle')}
+                </span>
+                {(batchOpen || sameVendorForAll || sameReceiptForAll) && (
+                  <span
+                    style={{
+                      display: 'block',
+                      fontSize: '13px',
+                      color: theme.textSecondary,
+                      marginTop: '2px',
                     }}
                   >
-                    {t('req.bought.clear')}
-                  </Button>
+                    {t('req.bought.applyToAllHint')}
+                  </span>
                 )}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={recordingAll}
-                  onClick={() => void handleRecordAll()}
-                >
-                  {t('req.bought.recordAllPurchases')}
-                </Button>
+              </span>
+              <span aria-hidden="true" style={{ color: theme.textSecondary, flexShrink: 0 }}>
+                {batchOpen || sameVendorForAll || sameReceiptForAll ? '▴' : '▾'}
+              </span>
+            </button>
+          ) : (
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary }}>
+                {t('req.bought.applyToAllTitle')}
               </div>
-            )}
+              <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '2px' }}>
+                {t('req.bought.applyToAllHint')}
+              </div>
+            </div>
+          )}
+          <div
+            style={{
+              // Kept mounted while closed so a choice made earlier (a vendor, a receipt) is never lost.
+              display:
+                isPhone && !(batchOpen || sameVendorForAll || sameReceiptForAll) ? 'none' : 'grid',
+              gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+              gap: '14px',
+              alignItems: 'start',
+              paddingBottom: isPhone ? '12px' : 0,
+            }}
+          >
+            <ChoiceTile
+              icon={<VendorTileIcon />}
+              title={t('req.bought.allItemsAreFromTheSame')}
+              description={t('req.bought.sameVendorTileHint')}
+              checked={sameVendorForAll}
+              onChange={toggleSameVendorForAll}
+            >
+              <div style={{ maxWidth: '460px' }}>
+                <SearchableSelect
+                  field
+                  label={t('req.bought.vendorForAllItems')}
+                  value={globalVendorId}
+                  onChange={(v) => {
+                    applyVendorToAllLines(v)
+                  }}
+                  options={vendorOptions}
+                  placeholder={t('req.bought.searchVendor')}
+                  minDropdownWidth={320}
+                />
+                {renderVendorChips(globalVendorId, applyVendorToAllLines, () => {
+                  setQuickCreateLineId(ALL_LINES_SENTINEL)
+                  setQuickCreateOpen(true)
+                })}
+              </div>
+            </ChoiceTile>
+            <ChoiceTile
+              icon={<ReceiptTileIcon />}
+              title={t('req.bought.attachOneReceiptForAllItems')}
+              description={t('req.bought.sameReceiptTileHint')}
+              checked={sameReceiptForAll}
+              onChange={setSameReceiptForAll}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Changing the shared files means they must be uploaded afresh for the next line recorded. */}
+                <ReceiptDropZone
+                  files={globalReceiptFiles}
+                  onAdd={(added) => {
+                    setGlobalReceiptFiles((prev) => [...prev, ...added])
+                    setGlobalReceiptFileIds(null)
+                    globalReceiptFileIdsRef.current = null
+                  }}
+                  onRemove={(position) => {
+                    setGlobalReceiptFiles((prev) => prev.filter((_, i) => i !== position))
+                    setGlobalReceiptFileIds(null)
+                    globalReceiptFileIdsRef.current = null
+                  }}
+                  onClear={() => {
+                    setGlobalReceiptFiles([])
+                    setGlobalReceiptFileIds(null)
+                    globalReceiptFileIdsRef.current = null
+                  }}
+                  browseLabel={t('req.bought.attachReceiptPhotoS')}
+                  addMoreLabel={`📎 ${t('req.bought.filesAttachedAddMore', { count: globalReceiptFiles.length })}`}
+                  hint={t('req.bought.dropReceiptHint')}
+                  clearLabel={t('req.bought.clear')}
+                  removeLabel={(name) => t('req.bought.removeFile', { name })}
+                />
+                <div style={{ display: 'flex', justifyContent: isPhone ? 'stretch' : 'flex-end' }}>
+                  <ActionButton
+                    variant="solid"
+                    size="lg"
+                    fullWidth={isPhone}
+                    loading={recordingAll}
+                    onClick={() => void handleRecordAll()}
+                  >
+                    {t('req.bought.recordAllPurchases')}
+                  </ActionButton>
+                </div>
+              </div>
+            </ChoiceTile>
           </div>
         </Card>
       )}
 
-      {req.lines.map((line) => {
+      {/* The lines read as one list: a header row, then a row per line (joined borders, like a table). */}
+      {!isPhone && req.lines.length > 0 && (
+        <div
+          aria-hidden="true"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: LINE_COLUMNS,
+            gap: '8px 16px',
+            marginTop: '16px',
+            padding: '10px 20px',
+            background: theme.bgSurface,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '12px 12px 0 0',
+            fontSize: '11px',
+            fontWeight: 600,
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+            color: theme.textSecondary,
+          }}
+        >
+          <div>#</div>
+          <div>{t('req.bought.colItem')}</div>
+          <div>{t('req.bought.colOrdered')}</div>
+          <div>{t('req.bought.colFromStock')}</div>
+          <div>{t('req.bought.colLeftToBuy')}</div>
+          <div>{t('req.bought.colApprovedPrice')}</div>
+          <div>{t('req.bought.colStatus')}</div>
+        </div>
+      )}
+      {req.lines.map((line, index) => {
         const resolved = lineIsResolved(line)
         const remaining = remainingToBuy(line)
         const handlerName = lineHandlerName(line, req)
+        // A line that still has something to buy is the active one: it carries the entry strip below.
+        const needsBuying = !line.short_marked_at && remaining > 0
+        // Phone accordion: only the open line shows its purchases and its entry card.
+        const collapsedOnPhone = isPhone && openId !== line.id
+        const lineFromStock = parseFloat(line.qty_from_stock ?? '0') || 0
+        const statusBadge = line.short_marked_at ? (
+          <Badge variant="neutral">
+            {t('req.bought.markedShort', { reason: line.short_reason })}
+          </Badge>
+        ) : resolved ? (
+          <Badge variant="success">{t('req.bought.fullyBought')}</Badge>
+        ) : (
+          <Badge variant="warning">{t('req.bought.notBoughtYet')}</Badge>
+        )
+        const toggleOpen = () => {
+          setOpenLineId(openId === line.id ? '' : line.id)
+        }
         return (
-          <Card key={line.id} style={{ padding: '20px', marginTop: '16px' }}>
+          <div
+            key={line.id}
+            data-line-id={line.id}
+            data-needs-buying={needsBuying ? 'true' : undefined}
+            style={{
+              padding: '16px 20px',
+              background: needsBuying ? theme.accentBg : theme.bgSurface,
+              border: `1px solid ${theme.border}`,
+              // a clear line between two rows; a phone's rows are cards of their own
+              borderTop: isPhone
+                ? `1px solid ${theme.border}`
+                : index === 0
+                  ? 'none'
+                  : `2px solid ${theme.borderStrong}`,
+              borderInlineStart: needsBuying
+                ? `4px solid ${theme.accent}`
+                : `1px solid ${theme.border}`,
+              // on a phone every line is a card of its own; on a desktop the last row closes the list
+              borderRadius: isPhone ? '12px' : index === req.lines.length - 1 ? '0 0 12px 12px' : 0,
+              marginTop: isPhone ? '12px' : 0,
+            }}
+          >
             <div
               style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: '10px',
-                flexWrap: 'wrap',
+                display: 'grid',
+                gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : LINE_COLUMNS,
+                gap: '8px 16px',
+                alignItems: 'start',
               }}
             >
-              <div>
+              {/* The line's number: its own column on a desktop, in front of the name on a phone. */}
+              {!isPhone && (
+                <div
+                  data-line-number={index + 1}
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: theme.textSecondary,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {index + 1}
+                </div>
+              )}
+              <div
+                style={{
+                  gridColumn: isPhone ? '1 / -1' : undefined,
+                  minWidth: 0,
+                  ...(isPhone
+                    ? { position: 'relative', paddingInlineEnd: '28px', cursor: 'pointer' }
+                    : {}),
+                }}
+                // Phone: tapping the name opens or closes the line (one open at a time).
+                {...(isPhone
+                  ? {
+                      role: 'button',
+                      tabIndex: 0,
+                      'aria-expanded': !collapsedOnPhone,
+                      onClick: toggleOpen,
+                      onKeyDown: (e: ReactKeyboardEvent) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          toggleOpen()
+                        }
+                      },
+                    }
+                  : {})}
+              >
+                {isPhone && (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      insetInlineEnd: 0,
+                      top: 0,
+                      fontSize: '16px',
+                      color: theme.textSecondary,
+                    }}
+                  >
+                    {collapsedOnPhone ? '▾' : '▴'}
+                  </span>
+                )}
                 <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
+                  {isPhone && (
+                    <span data-line-number={index + 1} style={{ color: theme.textSecondary }}>
+                      {index + 1}.{' '}
+                    </span>
+                  )}
                   {line.description || line.product_name || '—'}
                   {/* Every line that needs buying says who buys it; one fully covered from stock has nobody. */}
                   {(parseFloat(line.qty) || 0) - (parseFloat(line.qty_from_stock ?? '0') || 0) >
@@ -878,7 +1400,7 @@ export default function ItemsBoughtPage() {
                             marginInlineStart: '6px',
                             fontSize: '12px',
                             fontWeight: 400,
-                            color: theme.textMuted,
+                            color: theme.textSecondary,
                           }}
                         >
                           {handlerName}
@@ -887,57 +1409,91 @@ export default function ItemsBoughtPage() {
                     </>
                   )}
                 </div>
+                {/* The block keeps the page's own direction, so the Arabic name starts right under the English one
+                    (a block that is itself right-to-left puts "start" on the right edge, under the handler's name).
+                    Only the text is right-to-left. */}
                 {line.product_name_ar && (
-                  <div
-                    dir="rtl"
-                    style={{
-                      fontSize: '12px',
-                      color: theme.textMuted,
-                      textAlign: 'start',
-                      marginTop: '2px',
-                    }}
-                  >
-                    {line.product_name_ar}
+                  <div data-arabic-name style={{ textAlign: 'start', marginTop: '3px' }}>
+                    <span
+                      dir="rtl"
+                      style={{ fontSize: '14px', lineHeight: 1.5, color: theme.textSecondary }}
+                    >
+                      {line.product_name_ar}
+                    </span>
                   </div>
                 )}
-                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                  {t('req.bought.orderedFromStock', {
-                    qty: fmtN(line.qty),
-                    uom: line.uom,
-                    stock: fmtN(line.qty_from_stock ?? 0),
-                  })}{' '}
-                  {t('req.bought.remainingToBuy')}{' '}
-                  <strong style={{ color: remaining > 0 ? theme.warning : theme.success }}>
-                    {fmtN(remaining)}
-                  </strong>
-                  {line.approved_unit_price && (
-                    <>
-                      {' '}
-                      {t('req.bought.approvedPrice', {
-                        price: fmtN(line.approved_unit_price),
-                        currency: line.currency_code,
-                      })}
-                    </>
-                  )}
-                </div>
                 {(line.account_name || line.cost_center_name) && (
-                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
                     {line.account_name ? t('req.bought.accountLabel', { name: line.account_name }) : ''}
                     {line.account_name && line.cost_center_name ? ' · ' : ''}
                     {line.cost_center_name ? t('req.bought.costCenterLabel', { name: line.cost_center_name }) : ''}
                   </div>
                 )}
               </div>
-              {line.short_marked_at && (
-                <Badge variant="neutral">
-                  {t('req.bought.markedShort', { reason: line.short_reason })}
-                </Badge>
+              {isPhone ? (
+                // Phone: one wrapped line of the facts that matter instead of five stacked label/value cells.
+                <div
+                  style={{
+                    gridColumn: '1 / -1',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: '4px 12px',
+                    fontSize: '13px',
+                    color: theme.textSecondary,
+                  }}
+                >
+                  <span>
+                    {t('req.bought.colOrdered')}{' '}
+                    <strong style={{ color: theme.textPrimary }}>
+                      {fmtN(line.qty)} {line.uom ?? ''}
+                    </strong>
+                  </span>
+                  {lineFromStock > 0 && (
+                    <span>
+                      {t('req.bought.colFromStock')}{' '}
+                      <strong style={{ color: theme.textPrimary }}>{fmtN(lineFromStock)}</strong>
+                    </span>
+                  )}
+                  <span>
+                    {t('req.bought.colLeftToBuy')}{' '}
+                    <strong style={{ color: remaining > 0 ? theme.textPrimary : theme.success }}>
+                      {fmtN(remaining)}
+                    </strong>
+                  </span>
+                  {line.approved_unit_price && (
+                    <span>
+                      {t('req.bought.colApprovedPrice')}{' '}
+                      <strong style={{ color: theme.textPrimary }}>
+                        {fmtN(line.approved_unit_price)} {line.currency_code ?? ''}
+                      </strong>
+                    </span>
+                  )}
+                  <span>{statusBadge}</span>
+                </div>
+              ) : (
+                <>
+                  {lineCell(t('req.bought.colOrdered'), `${fmtN(line.qty)} ${line.uom ?? ''}`)}
+                  {lineCell(t('req.bought.colFromStock'), fmtN(line.qty_from_stock ?? 0))}
+                  {lineCell(
+                    t('req.bought.colLeftToBuy'),
+                    <strong style={{ color: remaining > 0 ? theme.textPrimary : theme.success }}>
+                      {fmtN(remaining)}
+                    </strong>,
+                  )}
+                  {lineCell(
+                    t('req.bought.colApprovedPrice'),
+                    line.approved_unit_price
+                      ? `${fmtN(line.approved_unit_price)} ${line.currency_code ?? ''}`
+                      : '—',
+                  )}
+                  {lineCell(t('req.bought.colStatus'), statusBadge)}
+                </>
               )}
-              {resolved && !line.short_marked_at && <Badge variant="success">{t('req.bought.fullyBought')}</Badge>}
             </div>
 
             {/* ── Existing purchases for this line ── */}
-            {line.purchases.length > 0 && (
+            {!collapsedOnPhone && line.purchases.length > 0 && (
               <div
                 style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}
               >
@@ -965,7 +1521,7 @@ export default function ItemsBoughtPage() {
                       <span style={{ color: theme.textSecondary }}>
                         {fmtN(p.qty)} @ {fmtN(p.actual_unit_price)} {p.currency_code}
                       </span>
-                      <span style={{ color: theme.textMuted }}>{p.bought_by_name ?? ''}</span>
+                      <span style={{ color: theme.textSecondary }}>{p.bought_by_name ?? ''}</span>
                       <button
                         onClick={() => {
                           setReceiptsModalFor(p.id)
@@ -1052,7 +1608,7 @@ export default function ItemsBoughtPage() {
                         }}
                       >
                         <div style={{ flex: 1, minWidth: '200px' }}>
-                          <Input
+                          <Input field
                             label={t('req.bought.whyIsThisRejectedTheBuyer')}
                             value={rejectPurchaseReason}
                             onChange={(e) => {
@@ -1097,7 +1653,7 @@ export default function ItemsBoughtPage() {
                         }}
                       >
                         <div style={{ flex: 1, minWidth: '200px' }}>
-                          <Input
+                          <Input field
                             label={t('req.bought.whyIsThisSentBack')}
                             value={sendBackReason}
                             onChange={(e) => {
@@ -1136,198 +1692,14 @@ export default function ItemsBoughtPage() {
             )}
 
             {/* ── Record a purchase / mark short ── */}
-            {canBuyLine(line) &&
+            {!collapsedOnPhone &&
+              canBuyLine(line) &&
               req.status === 'items_bought' &&
               !line.short_marked_at &&
-              remaining > 0 && (
-              <div
-                style={{
-                  marginTop: '14px',
-                  padding: '14px',
-                  borderRadius: '8px',
-                  border: `1px solid ${theme.border}`,
-                }}
-              >
-                <div
-                  style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}
-                >
-                  <div style={{ flex: 1, minWidth: '200px' }}>
-                    {sameVendorForAll ? (
-                      <div>
-                        <div
-                          style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}
-                        >
-                          {t('req.bought.vendor')}
-                        </div>
-                        <div
-                          style={{ fontSize: '13px', color: theme.textPrimary, padding: '8px 0' }}
-                        >
-                          {vendorOptions.find((v) => v.value === globalVendorId)?.label ??
-                            t('req.bought.selectAbove')}
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
-                        <div style={{ flex: 1 }}>
-                          <SearchableSelect
-                            label={t('req.bought.vendor')}
-                            value={selectedVendor[line.id] ?? ''}
-                            onChange={(v) => {
-                              setSelectedVendor((prev) => ({ ...prev, [line.id]: v }))
-                            }}
-                            options={vendorOptions}
-                            placeholder={t('req.bought.searchVendor')}
-                            minDropdownWidth={320}
-                          />
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setQuickCreateLineId(line.id)
-                            setQuickCreateOpen(true)
-                          }}
-                        >
-                          {t('req.bought.new')}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ width: '110px' }}>
-                    <Input
-                      label={t('req.bought.qty')}
-                      type="number"
-                      min="0"
-                      max={remaining}
-                      // Defaults to the full remaining qty — the buyer only
-                      // needs to type when this purchase is a partial one.
-                      value={purchaseQty[line.id] || (remaining > 0 ? String(remaining) : '')}
-                      onChange={(e) => {
-                        setPurchaseQty((prev) => ({ ...prev, [line.id]: e.target.value }))
-                      }}
-                    />
-                  </div>
-                  <div style={{ width: '130px' }}>
-                    <Input
-                      label={t('req.bought.actualPrice')}
-                      type="number"
-                      min="0"
-                      // Defaults to the already-approved price — the buyer
-                      // only needs to type when the real price differs.
-                      value={
-                        purchasePrice[line.id] || (line.approved_unit_price ?? line.unit_price)
-                      }
-                      onChange={(e) => {
-                        setPurchasePrice((prev) => ({ ...prev, [line.id]: e.target.value }))
-                      }}
-                    />
-                  </div>
-                  <div style={{ width: '100px' }}>
-                    <Select
-                      label={t('req.bought.currency')}
-                      value={purchaseCurrency[line.id] ?? line.currency_code}
-                      onChange={(e) => {
-                        setPurchaseCurrency((prev) => ({ ...prev, [line.id]: e.target.value }))
-                      }}
-                      options={CURRENCIES.map((c) => ({ value: c, label: c }))}
-                    />
-                  </div>
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '10px',
-                    alignItems: 'center',
-                    marginTop: '10px',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  {sameReceiptForAll ? (
-                    <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                      {globalReceiptFiles.length > 0
-                        ? `📎 ${t('req.bought.filesSameForAll', { count: globalReceiptFiles.length })}`
-                        : t('req.bought.attachTheSharedReceiptSAbove')}
-                    </span>
-                  ) : (
-                    <>
-                      <input
-                        ref={(el) => {
-                          fileInputRefs.current[line.id] = el
-                        }}
-                        type="file"
-                        accept="image/*,application/pdf"
-                        multiple
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          const files = Array.from(e.target.files ?? [])
-                          setPendingFiles((prev) => ({
-                            ...prev,
-                            [line.id]: [...(prev[line.id] ?? []), ...files],
-                          }))
-                          e.target.value = ''
-                        }}
-                      />
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => fileInputRefs.current[line.id]?.click()}
-                      >
-                        {(() => {
-                          const receipts = pendingFiles[line.id] ?? []
-                          return receipts.length > 0
-                            ? `📎 ${t('req.bought.filesAddMore', { count: receipts.length })}`
-                            : t('req.bought.attachReceiptPhotoS')
-                        })()}
-                      </Button>
-                      {(pendingFiles[line.id] ?? []).length > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setPendingFiles((prev) => ({ ...prev, [line.id]: [] }))
-                          }}
-                        >
-                          {t('req.bought.clear')}
-                        </Button>
-                      )}
-                    </>
-                  )}
-                  {!sameReceiptForAll && (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      loading={lRecording || uploadingLine === line.id}
-                      onClick={() => void handleUploadAndRecord(line.id)}
-                    >
-                      {t('req.bought.recordPurchase')}
-                    </Button>
-                  )}
-                  {line.product_id && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setResolveStockFor(line.id)
-                        setResolveStockQty(String(remaining))
-                      }}
-                    >
-                      {t('req.bought.resolveFromStock')}
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setShortReasonFor(line.id)
-                    }}
-                  >
-                    {t('req.bought.markShort')}
-                  </Button>
-                </div>
-              </div>
-            )}
+              remaining > 0 &&
+              renderEntryCard(line, remaining)}
 
-            {resolveStockFor === line.id && (
+            {!collapsedOnPhone && resolveStockFor === line.id && (
               <div
                 style={{
                   marginTop: '10px',
@@ -1346,7 +1718,7 @@ export default function ItemsBoughtPage() {
                   style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}
                 >
                   <div style={{ width: '120px' }}>
-                    <Input
+                    <Input field
                       label={t('req.bought.qtyFromStock')}
                       type="number"
                       min="0"
@@ -1358,7 +1730,7 @@ export default function ItemsBoughtPage() {
                     />
                   </div>
                   <div style={{ flex: 1, minWidth: '220px' }}>
-                    <SearchableSelect
+                    <SearchableSelect field
                       label={t('req.bought.sourceLocation')}
                       value={resolveStockLocation}
                       onChange={setResolveStockLocation}
@@ -1397,7 +1769,7 @@ export default function ItemsBoughtPage() {
               </div>
             )}
 
-            {shortReasonFor === line.id && (
+            {!collapsedOnPhone && shortReasonFor === line.id && (
               <div
                 style={{
                   marginTop: '10px',
@@ -1408,7 +1780,7 @@ export default function ItemsBoughtPage() {
                 }}
               >
                 <div style={{ flex: 1, minWidth: '200px' }}>
-                  <Input
+                  <Input field
                     label={t('req.bought.reasonTheVendorCanTSupply')}
                     value={shortReasonText}
                     onChange={(e) => {
@@ -1438,52 +1810,41 @@ export default function ItemsBoughtPage() {
                 </Button>
               </div>
             )}
-          </Card>
+          </div>
         )
       })}
 
       {req.status === 'items_bought' && canBuy && (
-        <Card style={{ padding: '20px', marginTop: '16px' }}>
-          <div
-            style={{
-              fontSize: '14px',
-              fontWeight: 600,
-              color: theme.textPrimary,
-              marginBottom: '8px',
-            }}
-          >
-            {t('req.bought.finishBuying')}
-          </div>
-          <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>
-            {t('req.bought.finishesByItself')}
-          </div>
-          {!canFinishBuying && (
-            <ul
-              style={{
-                fontSize: '12px',
-                color: theme.warning,
-                margin: '0 0 12px',
-                paddingInlineStart: '18px',
-              }}
-            >
-              {unresolvedLines.length > 0 && (
-                <li>
-                  {t('req.bought.unresolvedLines', { count: unresolvedLines.length })}
-                </li>
-              )}
-              {missingReceipt.length > 0 && (
-                <li>{t('req.bought.missingReceipts', { count: missingReceipt.length })}</li>
-              )}
-              {unapprovedTolerance.length > 0 && (
-                <li>
-                  {t('req.bought.unapprovedTolerance', { count: unapprovedTolerance.length })}
-                </li>
-              )}
-              {awaitingApproval.length > 0 && (
-                <li>{t('req.bought.waitingApprovals', { count: awaitingApproval.length })}</li>
-              )}
-            </ul>
-          )}
+        <StageActionBar
+          title={t('req.bought.finishBuying')}
+          hint={t('req.bought.finishesByItself')}
+          status={
+            canFinishBuying ? undefined : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {unresolvedLines.length > 0 && (
+                  <Badge variant="warning">
+                    {t('req.bought.unresolvedLines', { count: unresolvedLines.length })}
+                  </Badge>
+                )}
+                {missingReceipt.length > 0 && (
+                  <Badge variant="warning">
+                    {t('req.bought.missingReceipts', { count: missingReceipt.length })}
+                  </Badge>
+                )}
+                {unapprovedTolerance.length > 0 && (
+                  <Badge variant="warning">
+                    {t('req.bought.unapprovedTolerance', { count: unapprovedTolerance.length })}
+                  </Badge>
+                )}
+                {awaitingApproval.length > 0 && (
+                  <Badge variant="warning">
+                    {t('req.bought.waitingApprovals', { count: awaitingApproval.length })}
+                  </Badge>
+                )}
+              </div>
+            )
+          }
+        >
           <Button
             variant="primary"
             loading={lFinishing}
@@ -1492,7 +1853,7 @@ export default function ItemsBoughtPage() {
           >
             {t('req.bought.finishBuying2')}
           </Button>
-        </Card>
+        </StageActionBar>
       )}
 
       <Modal
@@ -1526,7 +1887,7 @@ export default function ItemsBoughtPage() {
           </div>
         }
       >
-        <Input
+        <Input field
           label={t('req.bought.vendorName')}
           value={quickCreateName}
           onChange={(e) => {

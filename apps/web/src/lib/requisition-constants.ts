@@ -21,6 +21,93 @@ export const REQUISITION_STATUSES = [
 
 export const REQUISITION_TERMINAL_STATUSES = ['completed', 'rejected', 'cancelled', 'deleted'] as const
 
+// The ten statuses above grouped into the five phases the progress bar on the requisition page
+// shows. The status names themselves (and their labels) are unchanged: a phase only says which
+// stretch of the process a status belongs to. Every status sits in exactly one phase, in order;
+// requisitionPhases.test.ts fails when a status is added to the list above and not placed here.
+export const REQUISITION_PHASES = [
+  { key: 'prepare', statuses: ['draft', 'inventory_check'] },
+  { key: 'price', statuses: ['store_pricing', 'market_pricing', 'price_verification'] },
+  { key: 'approve', statuses: ['pending_approval'] },
+  { key: 'buy', statuses: ['approved', 'items_bought', 'sourcing'] },
+  { key: 'done', statuses: ['completed'] },
+] as const
+
+// Direct supply is always tied to a project and skips inventory check and every pricing step (the Est. Unit Price
+// typed at creation is the price), so its progress bar has no Price phase. The server (lib/directSupply.ts) is what
+// keeps it out of those stages; this only says what to draw.
+export const DIRECT_SUPPLY_PURPOSE = 'direct_supply'
+
+export function requisitionPhasesFor(purpose: string | null | undefined) {
+  return purpose === DIRECT_SUPPLY_PURPOSE
+    ? REQUISITION_PHASES.filter((p) => p.key !== 'price')
+    : REQUISITION_PHASES
+}
+
+const REQUISITION_PHASE_LABELS: Record<string, string> = {
+  prepare: 'Prepare',
+  price: 'Price',
+  approve: 'Approve',
+  buy: 'Buy',
+  done: 'Done',
+}
+
+export function getRequisitionPhaseLabel(key: string): string {
+  return i18n.t(`req.phase.${key}`, { defaultValue: REQUISITION_PHASE_LABELS[key] ?? key })
+}
+
+// The action names the approval log carries (requisition_approval_log.action) as the sentence the Log
+// tab's timeline shows. A name that is not listed (an older or a newer action) shows its own words, so
+// the timeline never drops an entry. The names stay English internally; only the sentence is translated.
+const REQUISITION_LOG_ACTION_LABELS: Record<string, string> = {
+  submit_to_inventory_check: 'Submitted for inventory check',
+  submit_direct_supply: 'Submitted for approval',
+  confirm_inventory_check: 'Confirmed the inventory check',
+  submit_to_market_pricing: 'Submitted store pricing',
+  submit_to_price_verification: 'Submitted market pricing',
+  submit_for_approval: 'Verified the prices and sent for approval',
+  reject_verification_to_market_pricing: 'Sent back to market pricing',
+  reject_verification_to_store_pricing: 'Sent back to store pricing',
+  reject_verification_to_inventory_check: 'Sent back to inventory check',
+  reject_to_inventory_check: 'Sent back to inventory check',
+  reject_to_market_pricing: 'Sent back to market pricing',
+  reset_to_draft: 'Reset to draft',
+  approve: 'Approved',
+  approved: 'Approved',
+  reject: 'Rejected',
+  start_buying: 'Started buying',
+  skip_buying: 'Skipped buying',
+  finish_buying: 'Finished buying, purchase orders created',
+  complete: 'Completed',
+  cancel: 'Cancelled',
+  delete: 'Deleted',
+  edit_applied: 'Edit applied',
+  edit_approved: 'Edit approved',
+  edit_rejected: 'Edit rejected',
+}
+
+export function getRequisitionLogActionLabel(action: string): string {
+  return i18n.t(`req.logAction.${action}`, {
+    defaultValue: REQUISITION_LOG_ACTION_LABELS[action] ?? action.replace(/_/g, ' '),
+  })
+}
+
+export type RequisitionLogTone = 'success' | 'danger' | 'info'
+
+// The colour of an entry's dot on the timeline, decided from the action's name (never from its
+// translated sentence, which differs by language).
+export function getRequisitionLogActionTone(action: string): RequisitionLogTone {
+  if (
+    ['approve', 'approved', 'complete', 'finish_buying', 'edit_approved', 'edit_applied'].includes(
+      action,
+    )
+  )
+    return 'success'
+  if (action.startsWith('reject') || ['cancel', 'delete', 'edit_rejected'].includes(action))
+    return 'danger'
+  return 'info'
+}
+
 export function getRequisitionStatusVariant(status: string): BadgeVariant {
   switch (status) {
     case 'draft':

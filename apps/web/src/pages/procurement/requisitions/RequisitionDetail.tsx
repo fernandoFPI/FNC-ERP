@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -8,6 +8,7 @@ import {
   REQUISITION_STOCK_AVAILABILITY_QUERY,
   REQUISITION_LINE_PRODUCT_AVAILABILITY_QUERY,
   SUBMIT_REQUISITION_TO_INVENTORY_CHECK,
+  SUBMIT_REQUISITION_DIRECT_SUPPLY,
   CONFIRM_REQUISITION_INVENTORY_CHECK,
   SUBMIT_REQUISITION_STORE_PRICING,
   SUBMIT_REQUISITION_MARKET_PRICING,
@@ -33,7 +34,8 @@ import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { MATERIAL_ISSUES_QUERY } from '../../../graphql/projects'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
-import { enumLabel } from '../../../i18n'
+import { enumLabel, useIsRtl } from '../../../i18n'
+import { denseFormStyles } from '../../../components/ui/fieldStyles'
 import { usePermission } from '../../../hooks/usePermission'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
@@ -46,7 +48,16 @@ import { InventoryCost } from '../../../components/procurement/InventoryCost'
 import { ColumnsMenu } from '../../../components/ui/ColumnsMenu'
 import { useTableView } from '../../../hooks/useTableView'
 import { Button } from '../../../components/ui/Button'
-import { StatusBar } from '../../../components/ui/StatusBar'
+import { PhaseBar } from '../../../components/procurement/PhaseBar'
+import { StageActionBar } from '../../../components/procurement/StageActionBar'
+import { LinePriceInput } from '../../../components/procurement/LinePriceInput'
+import { InlineSelect } from '../../../components/procurement/InlineSelect'
+import { ActivityTimeline } from '../../../components/procurement/ActivityTimeline'
+import { OverflowMenu } from '../../../components/procurement/OverflowMenu'
+import {
+  SendBackDialog,
+  type SendBackDestination,
+} from '../../../components/procurement/SendBackDialog'
 import { TabBar } from '../../../components/ui/TabBar'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
@@ -57,8 +68,10 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { buildRequisitionHTML } from '../../../lib/requisitionHtml'
 import {
-  REQUISITION_STATUSES,
-  REQUISITION_PRIORITY_LABELS,
+  DIRECT_SUPPLY_PURPOSE,
+  requisitionPhasesFor,
+  getRequisitionPhaseLabel,
+  getRequisitionPriorityLabel,
   getRequisitionStatusVariant,
   getRequisitionStatusLabel,
 } from '../../../lib/requisition-constants'
@@ -108,6 +121,8 @@ import type {
   PoLineCommentsQuery,
   SetRequisitionLineOwnerMutation,
   SetRequisitionLineOwnerMutationVariables,
+  SubmitRequisitionDirectSupplyMutation,
+  SubmitRequisitionDirectSupplyMutationVariables,
   SubmitRequisitionEditRequestMutation,
   SubmitRequisitionEditRequestMutationVariables,
   SubmitRequisitionMarketPricingMutation,
@@ -347,11 +362,54 @@ function fromStockDisplayValue(l: ReqLine): { amount: number; currency: string }
   return { amount: qtyFromStock * storePrice, currency: l.store_price_currency ?? '' }
 }
 
+// One label and value in the Summary. The label is the darker secondary grey and the value the
+// main text colour; neither is the pale "muted" grey, which is too faint to read figures in.
+function SummaryField({
+  label,
+  children,
+  style,
+}: {
+  label: string
+  children: ReactNode
+  /** Placement only (the phone summary sets `order` and `gridColumn` here). */
+  style?: React.CSSProperties
+}) {
+  const { theme } = useTheme()
+  return (
+    <div style={{ minWidth: 0, ...style }}>
+      <dt
+        style={{
+          fontSize: '12px',
+          fontWeight: 500,
+          color: theme.textSecondary,
+          marginBottom: '2px',
+        }}
+      >
+        {label}
+      </dt>
+      <dd
+        style={{
+          margin: 0,
+          fontSize: '15px',
+          fontWeight: 600,
+          color: theme.textPrimary,
+          overflowWrap: 'anywhere',
+        }}
+      >
+        {children}
+      </dd>
+    </div>
+  )
+}
+
 export default function RequisitionDetail() {
   const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { theme } = useTheme()
+  const { theme, themeKey } = useTheme()
+  const rtl = useIsRtl()
+  // The edit-request form shares the PO page's dense field look (36px, the readable edge, the shared chevron).
+  const { inputStyle, selectStyle } = denseFormStyles(theme, { rtl, dark: themeKey === 'black' })
   const { isSystemLevel } = usePermission()
   const currentUserId = useAuthStore((s) => s.user?.id)
   const addToast = useToastStore((s) => s.addToast)
@@ -387,6 +445,11 @@ export default function RequisitionDetail() {
     SubmitRequisitionToInventoryCheckMutation,
     SubmitRequisitionToInventoryCheckMutationVariables
   >(SUBMIT_REQUISITION_TO_INVENTORY_CHECK, mutOpts)
+  // A direct supply skips inventory check and every pricing step: its draft goes straight to the approver.
+  const [submitDirectSupply, { loading: lSubmitDirect }] = useMutation<
+    SubmitRequisitionDirectSupplyMutation,
+    SubmitRequisitionDirectSupplyMutationVariables
+  >(SUBMIT_REQUISITION_DIRECT_SUPPLY, mutOpts)
   const [confirmInventory, { loading: lConfirm }] = useMutation<
     ConfirmRequisitionInventoryCheckMutation,
     ConfirmRequisitionInventoryCheckMutationVariables
@@ -425,6 +488,7 @@ export default function RequisitionDetail() {
     onCompleted: () => {
       setRejectReason('')
       setFlaggedLines({})
+      setSendBackOpen(false)
       void refetch()
     },
     onError: onErr,
@@ -673,6 +737,8 @@ export default function RequisitionDetail() {
   const [marketCurrency, setMarketCurrency] = useState<Record<string, string>>({})
   const [verifiedPrices, setVerifiedPrices] = useState<Record<string, string>>({})
   const [rejectReason, setRejectReason] = useState('')
+  // The dialog behind the Send back button (price verification and pending approval).
+  const [sendBackOpen, setSendBackOpen] = useState(false)
   // Per-line review flags for the price_verification/pending_approval reject
   // boxes — key=lineId, value=that line's own reason. At least one is
   // required to reject (see applyLineFlags's own comment); the overall
@@ -742,6 +808,8 @@ export default function RequisitionDetail() {
   // Which optional line columns this person has switched on or off; kept before the early
   // returns below because a hook can't come after them.
   const linesView = useTableView('req-lines')
+  // The Summary shows the few details people look for first; the rest open with "All details".
+  const [showAllDetails, setShowAllDetails] = useState(false)
 
   if (!id) return null
 
@@ -762,6 +830,9 @@ export default function RequisitionDetail() {
   }
 
   const isOrganizer = req.organizer_id === currentUserId
+  // Direct supply (always tied to a project): no inventory check and no pricing step. Draft goes straight to the
+  // approver, who sees the Est. Unit Price typed at creation; the pricing columns below would only ever be empty.
+  const isDirectSupply = req.purpose === DIRECT_SUPPLY_PURPOSE
   // Purchases by a marked buyer that the organizer has not approved yet: the requisition waits in Items Bought for them.
   const awaitingOrganizerApproval = req.lines
     .flatMap((l) => l.purchases ?? [])
@@ -785,6 +856,211 @@ export default function RequisitionDetail() {
   // purpose: it only ever hides the button, never grants a capability
   // the backend wouldn't also allow).
   const canRequestEdit = isSystemLevel || isOrganizer
+
+  // ── The three pricing steps are filled in on the Lines table itself ──────
+  // Lines that still need buying (what stock does not cover) take a market and a verified price;
+  // lines with stock in them take a store price. A line fully covered from stock needs no market
+  // price: it was priced for reference at inventory check. These are the same filters the old side
+  // panels used, so the same lines are asked for the same things.
+  const linesToBuy = req.lines.filter(
+    (l) => (parseFloat(l.qty) || 0) - (parseFloat(String(l.qty_from_stock ?? '0')) || 0) > 0.0001,
+  )
+  const linesFromStock = req.lines.filter(
+    (l) => (parseFloat(String(l.qty_from_stock ?? '0')) || 0) > 0,
+  )
+  const needsBuying = (l: ReqLine) => linesToBuy.includes(l)
+  // An empty description falls back to the product name, so test truthiness rather than null-ness.
+  const lineName = (l: ReqLine) => (l.description ? l.description : (l.product_name ?? ''))
+  const priceIsValid = (raw: string) =>
+    raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
+  // A price typed in the box, else the one already saved on the line: a requisition sent back to
+  // a pricing step keeps what was typed before instead of showing a blank box.
+  const marketRawOf = (l: ReqLine) =>
+    marketPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
+  const verifiedRawOf = (l: ReqLine) =>
+    verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
+  // Market pricing is done in two parts (migration 315): the lines the owner took to price and buy
+  // himself, and procurement's. The requisition moves on once each part that has lines has been
+  // submitted. Procurement (and admins) can price any line, the owner only the ones he took.
+  const ownerLines = linesToBuy.filter((l) => !!l.owner_handles)
+  const procLines = linesToBuy.filter((l) => !l.owner_handles)
+  const splitPricing = ownerLines.length > 0
+  const ownerAllPriced = ownerLines.every((l) => priceIsValid(marketRawOf(l)))
+  const procAllPriced = procLines.every((l) => priceIsValid(marketRawOf(l)))
+  const marketLinePrices = (ls: ReqLine[]) =>
+    ls.map((l) => ({
+      lineId: l.id,
+      marketPrice: parseFloat(marketRawOf(l)),
+      currencyCode: marketCurrency[l.id] ?? l.currency_code,
+    }))
+  // Who may type in which column at this step (the gates are the old panels' gates, unchanged).
+  const storeEntry = req.status === 'store_pricing' && canStorePrice
+  const marketEntry = req.status === 'market_pricing' && (canMarketPrice || isOrganizer)
+  const verifyEntry = req.status === 'price_verification' && canVerifyPrice
+  // Under the lines, full width: the cards about what the requisition made (its purchase orders, its Store Outs).
+  // The step's own action is always the bar at the bottom of the page, never a panel beside the lines.
+  const hasFollowUpCards = showChildren && (children.length > 0 || materialIssues.length > 0)
+  const barNote = (text: string) => (
+    <span style={{ fontSize: '13px', color: theme.textSecondary }}>{text}</span>
+  )
+  const barWarning = (text: string) => (
+    <div style={{ fontSize: '12px', color: theme.danger }}>{text}</div>
+  )
+
+  // ── Send back: one dialog for the two steps that can send a requisition back ──
+  // Only the places the step is allowed to send it to are offered (the old reject boxes' own lists):
+  // price verification can go to four, pending approval to three (no store pricing).
+  const sendBackVariables = {
+    id: req.id,
+    reason: effectiveRejectReason,
+    lineFlags: lineFlagsPayload,
+  }
+  const sendBackToDraft: SendBackDestination & { run: () => unknown } = {
+    key: 'draft',
+    label: getRequisitionStatusLabel('draft'),
+    description: t('req.detail.sendBackDescDraft'),
+    run: () => reject({ variables: sendBackVariables }),
+  }
+  const sendBackOptions: (SendBackDestination & { run: () => unknown })[] = isDirectSupply
+    ? // A direct supply never visited inventory check or market pricing, so draft is the only place to send it back to
+      // (the server refuses the other two for it).
+      [sendBackToDraft]
+    : req.status === 'price_verification'
+      ? [
+          {
+            key: 'market',
+            label: getRequisitionStatusLabel('market_pricing'),
+            description: t('req.detail.sendBackDescMarket'),
+            run: () => rejectVerificationToMarket({ variables: sendBackVariables }),
+          },
+          {
+            key: 'store',
+            label: getRequisitionStatusLabel('store_pricing'),
+            description: t('req.detail.sendBackDescStore'),
+            run: () => rejectVerificationToStore({ variables: sendBackVariables }),
+          },
+          {
+            key: 'inventory',
+            label: getRequisitionStatusLabel('inventory_check'),
+            description: t('req.detail.sendBackDescInventory'),
+            run: () => rejectVerificationToInventory({ variables: sendBackVariables }),
+          },
+          {
+            key: 'draft',
+            label: getRequisitionStatusLabel('draft'),
+            description: t('req.detail.sendBackDescDraft'),
+            run: () => resetToDraft({ variables: sendBackVariables }),
+          },
+        ]
+      : [
+          {
+            key: 'market',
+            label: getRequisitionStatusLabel('market_pricing'),
+            description: t('req.detail.sendBackDescMarket'),
+            run: () => rejectToMarketPricing({ variables: sendBackVariables }),
+          },
+          {
+            key: 'inventory',
+            label: getRequisitionStatusLabel('inventory_check'),
+            description: t('req.detail.sendBackDescInventory'),
+            run: () => rejectToInventoryCheck({ variables: sendBackVariables }),
+          },
+          {
+            key: 'draft',
+            label: getRequisitionStatusLabel('draft'),
+            description: t('req.detail.sendBackDescDraft'),
+            run: () => reject({ variables: sendBackVariables }),
+          },
+        ]
+  // ── Inventory check, on the lines ──────────────────────────────────────────
+  // A store keeper (or an admin) sees stock levels, picks the location and types the quantity to take from
+  // stock in the Lines table; "to buy" is what is left. The draft is still kept in localStorage.
+  const invEntry = req.status === 'inventory_check' && canConfirmInventory
+  const availOf = (l: ReqLine) =>
+    productOverride[l.id] ? previewByLine.get(l.id) : availabilityByLine.get(l.id)
+  // The most that can be taken: what the line needs, or what the chosen location has if that is less.
+  const invMaxFor = (l: ReqLine) => {
+    const qtyNeeded = parseFloat(l.qty) || 0
+    const selectedLoc = availOf(l)?.byLocation.find((loc) => loc.locationId === invLoc[l.id])
+    return selectedLoc ? Math.min(qtyNeeded, selectedLoc.qtyAvailable) : qtyNeeded
+  }
+  const invCovered = req.lines.filter((l) => {
+    const needed = parseFloat(l.qty) || 0
+    return needed > 0 && (parseFloat(invQty[l.id] ?? '0') || 0) >= needed - 0.0001
+  }).length
+  // "Wrong item? Reselect": the store keeper is the first to notice a line was made against the wrong product.
+  const reselectControl = (l: ReqLine) => {
+    const isOverridden = !!productOverride[l.id]
+    const avail = availOf(l)
+    return (
+      <div style={{ marginTop: '4px' }}>
+        {isOverridden && avail?.productName && (
+          <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
+            → {avail.productName}
+          </div>
+        )}
+        {isOverridden && avail?.productNameAr && (
+          <div
+            dir="rtl"
+            style={{ fontSize: '12px', color: theme.textSecondary, textAlign: 'start' }}
+          >
+            {avail.productNameAr}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            setReselectOpenFor((cur) => (cur === l.id ? null : l.id))
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            fontSize: '12px',
+            fontWeight: 600,
+            color: theme.accent,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          {isOverridden ? t('req.detail.changeSelection') : t('req.detail.wrongItemReselect')}
+        </button>
+        {reselectOpenFor === l.id && (
+          <div style={{ marginTop: '8px' }}>
+            <SearchableSelect field
+              label={t('req.detail.correctItem')}
+              value={productOverride[l.id] ?? ''}
+              onChange={(productId) => {
+                setProductOverride((prev) => ({ ...prev, [l.id]: productId }))
+                setInvQty((prev) => ({ ...prev, [l.id]: '' }))
+                setInvLoc((prev) => {
+                  const next = { ...prev }
+                  Reflect.deleteProperty(next, l.id)
+                  return next
+                })
+                setReselectOpenFor(null)
+              }}
+              options={productOptions}
+              placeholder={t('req.detail.searchByNameOrSku')}
+              minDropdownWidth={360}
+            />
+          </div>
+        )}
+      </div>
+    )
+  }
+  const sendBackFlagged = flaggedLineIds.map((lid) => {
+    const line = req.lines.find((l) => l.id === lid)
+    return { id: lid, name: line ? lineName(line) : '', reason: (flaggedLines[lid] ?? '').trim() }
+  })
+  // What the bar says about the flags: how to start, what is missing, or how many lines are ready.
+  const sendBackHint =
+    flaggedLineIds.length === 0
+      ? t('req.detail.sendBackTickHint')
+      : !hasValidFlags
+        ? t('req.detail.sendBackAddReasons')
+        : t('req.detail.sendBackFlaggedHint', { count: flaggedLineIds.length })
+
   // Delivery Destination stops doing anything once Finish Buying has run
   // for every line (status 'sourcing'/'completed') — by then each child
   // PO already has its own frozen copy from fork time (finishBuyingRequisition),
@@ -793,25 +1069,6 @@ export default function RequisitionDetail() {
   // correction — surfaced as disabled-with-explanation rather than left
   // to quietly do nothing.
   const deliveryDestinationEditable = !['sourcing', 'completed'].includes(req.status)
-
-  // Shared by both reject boxes (price_verification/pending_approval) — the
-  // actual flag checkbox + reason live on each row in the Lines tab (right
-  // side), not duplicated here as a second list of line names. This is just
-  // a pointer + live count so the action panel still shows where things
-  // stand without repeating the line names.
-  const renderLineFlagHint = () => (
-    <div
-      style={{
-        fontSize: '12px',
-        color: flaggedLineIds.length > 0 ? theme.accent : theme.textMuted,
-        marginBottom: '12px',
-      }}
-    >
-      {flaggedLineIds.length > 0
-        ? t('req.detail.flaggedLinesBanner', { count: flaggedLineIds.length })
-        : t('req.detail.checkTheLineSThatNeed')}
-    </div>
-  )
 
   const sectionCard: React.CSSProperties = {
     padding: '20px',
@@ -839,7 +1096,7 @@ export default function RequisitionDetail() {
   }
 
   // ── Lines table (columns adapt to current stage) ────────────────────────
-  const lineColumns: Column<ReqLine>[] = [
+  const baseLineColumns: Column<ReqLine>[] = [
     // Flag-to-reject checkbox — only at the two statuses a reject box can
     // appear for. Leftmost deliberately: this table can grow wider than the
     // visible card (many price columns), and only leading columns are
@@ -852,6 +1109,8 @@ export default function RequisitionDetail() {
             key: 'flag_toggle',
             header: t('req.detail.flag'),
             width: '36px',
+            // On a phone the box sits in the top corner of the line's card
+            mobileAction: true,
             render: (l: ReqLine) => (
               <input
                 type="checkbox"
@@ -869,6 +1128,8 @@ export default function RequisitionDetail() {
       key: 'index',
       header: '#',
       width: '32px',
+      // On a phone the card's title is the item's name, not its number
+      mobileHide: true,
       render: (l) => (
         <span
           style={{
@@ -888,17 +1149,23 @@ export default function RequisitionDetail() {
       // they pushed Qty and every price column off the card on all but the widest screens.
       wrap: true,
       minWidth: '220px',
+      mobilePrimary: true,
       render: (l) => (
         <div>
           <div style={{ fontSize: '13px', color: theme.textPrimary }}>
             {l.description || l.product_name || '—'}
           </div>
           {l.product_name_ar && (
-            <div dir="rtl" style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'left' }}>
-              {l.product_name_ar}
+            // The block keeps the page's own direction so the name starts under the English one in both
+            // languages; only the text is right-to-left (playbook #80). Secondary grey, not the pale muted one (#75).
+            <div style={{ textAlign: 'start' }}>
+              <span dir="rtl" style={{ fontSize: '13px', color: theme.textSecondary }}>
+                {l.product_name_ar}
+              </span>
             </div>
           )}
-          {l.sku && <div style={{ fontSize: '11px', color: theme.textMuted }}>{l.sku}</div>}
+          {l.sku && <div style={{ fontSize: '12px', color: theme.textSecondary }}>{l.sku}</div>}
+          {invEntry && reselectControl(l)}
         </div>
       ),
     },
@@ -922,22 +1189,39 @@ export default function RequisitionDetail() {
             minWidth: '130px',
             render: (l: ReqLine) => {
               // A line fully covered from stock is bought by nobody: its Store Out is the whole story.
-              const toBuy =
-                (parseFloat(l.qty) || 0) - (parseFloat(String(l.qty_from_stock ?? '0')) || 0) >
-                0.0001
-              if (!toBuy) return <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
+              if (!needsBuying(l))
+                return <span style={{ fontSize: '13px', color: theme.textSecondary }}>—</span>
               const name = lineHandlerName(l, req)
+              const ownerLine = !!l.owner_handles
+              // The owner may take a line only before it has a price; procurement may always hand it back.
+              const canTake = isOrganizer && !ownerLine && l.market_price == null
+              const canGiveBack =
+                ownerLine && (canMarketPrice || (isOrganizer && l.market_price == null))
               return (
                 <div>
-                  {l.owner_handles ? (
+                  {ownerLine ? (
                     <Badge variant="accent">{t('req.detail.handledByOwner')}</Badge>
                   ) : (
                     <Badge variant="neutral">{t('req.detail.handledByProcurement')}</Badge>
                   )}
                   {name && (
-                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                    <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
                       {name}
                     </div>
+                  )}
+                  {marketEntry && (canTake || canGiveBack) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={togglingLineId === l.id}
+                      onClick={() => void toggleLineOwner(l.id, !ownerLine)}
+                    >
+                      {canTake
+                        ? t('req.detail.takeThisLine')
+                        : isOrganizer
+                          ? t('req.detail.handBackThisLine')
+                          : t('req.detail.takeOverThisLine')}
+                    </Button>
                   )}
                 </div>
               )
@@ -954,6 +1238,111 @@ export default function RequisitionDetail() {
         </span>
       ),
     },
+    // A direct supply has no store, market or verified price: the price typed when it was created is the one the
+    // approver judges, so it gets a column of its own (in the line's own currency, never converted).
+    ...(isDirectSupply
+      ? [
+          {
+            key: 'est_unit_price',
+            header: t('req.detail.estUnitPrice'),
+            render: (l: ReqLine) => (
+              <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                {fmtN(l.unit_price)} {l.currency_code}
+              </span>
+            ),
+          },
+        ]
+      : []),
+    ...(invEntry
+      ? [
+          {
+            key: 'stock_levels',
+            header: t('req.detail.inStock'),
+            minWidth: '210px',
+            mobileFullWidth: true,
+            render: (l: ReqLine) => {
+              const avail = availOf(l)
+              if (!avail) {
+                return (
+                  <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+                    {productOverride[l.id]
+                      ? t('req.detail.checkingStockForTheNewlySelected')
+                      : t('req.detail.loadingStockLevels')}
+                  </span>
+                )
+              }
+              const qtyReserved = avail.qtyOnHand - avail.qtyAvailable
+              return (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '4px 14px',
+                    flexWrap: 'wrap',
+                    fontSize: '12px',
+                    color: theme.textSecondary,
+                  }}
+                >
+                  <span>
+                    {t('req.detail.onHand')}{' '}
+                    <strong style={{ color: theme.textPrimary }}>{fmtN(avail.qtyOnHand)}</strong>
+                  </span>
+                  <span>
+                    {t('req.detail.reserved')}{' '}
+                    <strong style={{ color: theme.textPrimary }}>{fmtN(qtyReserved)}</strong>
+                  </span>
+                  <span>
+                    {t('req.detail.availableLabel')}{' '}
+                    <strong style={{ color: avail.isAvailable ? theme.success : theme.warning }}>
+                      {fmtN(avail.qtyAvailable)}
+                    </strong>
+                  </span>
+                </div>
+              )
+            },
+          },
+          {
+            key: 'source_location',
+            header: t('req.detail.sourceLocation'),
+            minWidth: '230px',
+            mobileFullWidth: true,
+            render: (l: ReqLine) => {
+              const avail = availOf(l)
+              if (!avail)
+                return <span style={{ fontSize: '13px', color: theme.textSecondary }}>—</span>
+              // Only locations that actually have stock of this item.
+              if (avail.byLocation.length === 0) {
+                return (
+                  <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+                    {t('req.detail.noStockAvailableAtAnyLocation')}
+                  </span>
+                )
+              }
+              return (
+                <InlineSelect
+                  value={invLoc[l.id] ?? ''}
+                  placeholder={t('req.detail.sourceLocation')}
+                  ariaLabel={`${t('req.detail.sourceLocation')}: ${lineName(l)}`}
+                  options={avail.byLocation.map((loc) => ({
+                    value: loc.locationId,
+                    label: `${loc.locationName} · ${loc.companyName} — ${t('req.detail.availShort', { qty: fmtN(loc.qtyAvailable) })}`,
+                  }))}
+                  onChange={(locationId) => {
+                    setInvLoc((prev) => ({ ...prev, [l.id]: locationId }))
+                    const loc = avail.byLocation.find((b) => b.locationId === locationId)
+                    const currentQty = parseFloat(invQty[l.id] ?? '0') || 0
+                    if (loc && currentQty > loc.qtyAvailable) {
+                      setInvQty((prev) => ({
+                        ...prev,
+                        [l.id]: String(Math.max(0, loc.qtyAvailable)),
+                      }))
+                    }
+                  }}
+                />
+              )
+            },
+          },
+        ]
+      : []),
     ...([
       'inventory_check',
       'store_pricing',
@@ -969,9 +1358,38 @@ export default function RequisitionDetail() {
           {
             key: 'qty_from_stock',
             header: t('req.detail.fromStock'),
-            render: (l: ReqLine) => (
-              <span style={{ fontSize: '13px' }}>{fmtN(l.qty_from_stock ?? 0)}</span>
-            ),
+            minWidth: invEntry ? '150px' : undefined,
+            mobileFullWidth: invEntry,
+            render: (l: ReqLine) => {
+              // Inventory check: the quantity to take from stock is typed right on the line.
+              if (invEntry) {
+                const needed = parseFloat(l.qty) || 0
+                const taking = parseFloat(invQty[l.id] ?? '0') || 0
+                return (
+                  <div>
+                    <LinePriceInput
+                      width="90px"
+                      placeholder="0"
+                      max={String(invMaxFor(l))}
+                      value={invQty[l.id] ?? ''}
+                      ariaLabel={`${t('req.detail.qtyFromStock')}: ${lineName(l)}`}
+                      onChange={(raw) => {
+                        const v = Math.max(0, Math.min(invMaxFor(l), parseFloat(raw) || 0))
+                        setInvQty((prev) => ({ ...prev, [l.id]: raw === '' ? '' : String(v) }))
+                      }}
+                    />
+                    <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '4px' }}>
+                      {t('req.detail.qtyToBuy')}: {fmtN(Math.max(0, needed - taking))} {l.uom ?? ''}
+                    </div>
+                  </div>
+                )
+              }
+              return (
+                <span style={{ fontSize: '13px', color: theme.textPrimary }}>
+                  {fmtN(l.qty_from_stock ?? 0)}
+                </span>
+              )
+            },
           },
         ]
       : []),
@@ -998,11 +1416,39 @@ export default function RequisitionDetail() {
           {
             key: 'store_price',
             header: t('req.detail.storePrice'),
-            render: (l: ReqLine) => (
-              <span style={{ fontSize: '13px', color: theme.textMuted }}>
-                {l.store_price ? `${fmtN(l.store_price)} ${l.store_price_currency ?? ''}` : '—'}
-              </span>
-            ),
+            minWidth: storeEntry ? '160px' : undefined,
+            mobileFullWidth: storeEntry,
+            render: (l: ReqLine) => {
+              // Store pricing: the price is typed right on the line (only lines with stock in them).
+              if (storeEntry && linesFromStock.includes(l)) {
+                const defaultPrice = l.store_price ?? l.source_average_cost ?? ''
+                return (
+                  <div>
+                    <LinePriceInput
+                      value={storePrices[l.id] ?? String(defaultPrice)}
+                      onChange={(v) => {
+                        setStorePrices((prev) => ({ ...prev, [l.id]: v }))
+                      }}
+                      ariaLabel={`${t('req.detail.storePrice')}: ${lineName(l)}`}
+                    />
+                    {l.source_location_name && (
+                      <div
+                        style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '4px' }}
+                      >
+                        {t('req.detail.fromLocation', { location: l.source_location_name })}
+                        {l.source_average_cost != null &&
+                          ` ${t('req.detail.lastCost', { cost: l.source_average_cost })}`}
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+              return (
+                <span style={{ fontSize: '13px', color: theme.textPrimary }}>
+                  {l.store_price ? `${fmtN(l.store_price)} ${l.store_price_currency ?? ''}` : '—'}
+                </span>
+              )
+            },
           },
         ]
       : []),
@@ -1019,11 +1465,75 @@ export default function RequisitionDetail() {
           {
             key: 'market_price',
             header: t('req.detail.marketPrice'),
-            render: (l: ReqLine) => (
-              <span style={{ fontSize: '13px' }}>
-                {l.market_price ? `${fmtN(l.market_price)} ${l.market_price_currency ?? ''}` : '—'}
-              </span>
-            ),
+            minWidth: marketEntry ? '250px' : undefined,
+            mobileFullWidth: marketEntry,
+            render: (l: ReqLine) => {
+              // Market pricing: the vendor quote and its currency are typed right on the line.
+              if (marketEntry && needsBuying(l)) {
+                const requestedQty = parseFloat(l.qty) || 0
+                const stockQty = parseFloat(String(l.qty_from_stock ?? '0')) || 0
+                const mayPrice = canMarketPrice || (isOrganizer && !!l.owner_handles)
+                const raw = marketRawOf(l)
+                return (
+                  <div>
+                    {mayPrice ? (
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: '8px',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        {/* On a phone the price takes the room the currency leaves, so both share one row. */}
+                        <div style={isPhone ? { flex: '1 1 120px', minWidth: 0 } : undefined}>
+                          <LinePriceInput
+                            value={raw}
+                            invalid={!priceIsValid(raw)}
+                            onChange={(v) => {
+                              setMarketPrices((prev) => ({ ...prev, [l.id]: v }))
+                            }}
+                            ariaLabel={`${t('req.detail.marketPrice')}: ${lineName(l)}`}
+                          />
+                        </div>
+                        <div style={{ width: '96px' }}>
+                          <Select
+                            value={marketCurrency[l.id] ?? l.currency_code}
+                            onChange={(e) => {
+                              setMarketCurrency((prev) => ({ ...prev, [l.id]: e.target.value }))
+                            }}
+                            options={CURRENCIES.map((c) => ({ value: c, label: c }))}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+                        {t('req.detail.procurementPricesThisLine')}
+                      </div>
+                    )}
+                    {/* What the quote is for: the requested quantity less whatever stock covers. */}
+                    <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '4px' }}>
+                      {t('req.detail.qtyToBuy')}: {fmtN(requestedQty - stockQty)} {l.uom ?? ''}
+                    </div>
+                    {stockQty > 0.0001 && (
+                      <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+                        {t('req.detail.qtyRequestedStockNote', {
+                          requested: fmtN(requestedQty),
+                          stock: fmtN(stockQty),
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+              return (
+                <span style={{ fontSize: '13px', color: theme.textPrimary }}>
+                  {l.market_price
+                    ? `${fmtN(l.market_price)} ${l.market_price_currency ?? ''}`
+                    : '—'}
+                </span>
+              )
+            },
           },
         ]
       : []),
@@ -1039,13 +1549,31 @@ export default function RequisitionDetail() {
           {
             key: 'verified_price',
             header: t('req.detail.verifiedPrice'),
-            render: (l: ReqLine) => (
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                {l.verified_price
-                  ? `${fmtN(l.verified_price)} ${l.verified_price_currency ?? ''}`
-                  : '—'}
-              </span>
-            ),
+            minWidth: verifyEntry ? '140px' : undefined,
+            mobileFullWidth: verifyEntry,
+            render: (l: ReqLine) => {
+              // Price verification: cross-check the market price and adjust it right on the line.
+              if (verifyEntry && needsBuying(l)) {
+                const raw = verifiedRawOf(l)
+                return (
+                  <LinePriceInput
+                    value={raw}
+                    invalid={!priceIsValid(raw)}
+                    onChange={(v) => {
+                      setVerifiedPrices((prev) => ({ ...prev, [l.id]: v }))
+                    }}
+                    ariaLabel={`${t('req.detail.verifiedPrice')}: ${lineName(l)}`}
+                  />
+                )
+              }
+              return (
+                <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                  {l.verified_price
+                    ? `${fmtN(l.verified_price)} ${l.verified_price_currency ?? ''}`
+                    : '—'}
+                </span>
+              )
+            },
           },
         ]
       : []),
@@ -1132,12 +1660,32 @@ export default function RequisitionDetail() {
     },
   ]
 
+  // A direct supply never has stock taken from inventory or a store, market or verified price, so those columns
+  // would only ever show dashes: leave them out (and so out of the Columns menu too).
+  const DIRECT_SUPPLY_HIDDEN_COLUMNS = [
+    'qty_from_stock',
+    'store_price',
+    'market_price',
+    'verified_price',
+  ]
+  const lineColumns = isDirectSupply
+    ? baseLineColumns.filter((c) => !DIRECT_SUPPLY_HIDDEN_COLUMNS.includes(c.key))
+    : baseLineColumns
+
   // Which of those columns are shown: the person's own choice where they made one, otherwise the
   // default here (everything the stage has, except Inventory cost, which waits until the order
   // leaves draft). A column the stage doesn't have isn't in lineColumns, so the menu lists only
   // what this requisition can show. The flag box, # and Item are not in the menu; Qty and Total
   // are listed but locked.
-  const lockedLineColumns = ['qty', 'total']
+  // The column the person types in at this step can't be switched off, or the step would have no input.
+  const lockedLineColumns = [
+    'qty',
+    'total',
+    ...(storeEntry ? ['store_price'] : []),
+    ...(marketEntry ? ['market_price', 'handled_by'] : []),
+    ...(verifyEntry ? ['verified_price'] : []),
+    ...(invEntry ? ['qty_from_stock'] : []),
+  ]
   const optionalLineColumns = [
     'handled_by',
     'qty_from_stock',
@@ -1267,8 +1815,9 @@ export default function RequisitionDetail() {
     <div
       style={{
         ...padding,
+        // Phone: clears the 64px bottom navigation; the action bar adds its own measured spacer.
         paddingBottom: isPhone
-          ? 'calc(env(safe-area-inset-bottom, 0px) + 120px)'
+          ? 'calc(env(safe-area-inset-bottom, 0px) + 72px)'
           : padding.paddingBottom,
         maxWidth: '1800px',
         margin: '0 auto',
@@ -1276,37 +1825,72 @@ export default function RequisitionDetail() {
     >
       <PageHeader
         title={req.requisition_number}
-        subtitle={req.purpose ? t('req.detail.subtitlePurpose', { purpose: req.purpose }) : undefined}
+        subtitle={
+          req.purpose
+            ? t('req.detail.subtitlePurpose', { purpose: enumLabel(req.purpose) })
+            : undefined
+        }
         backPath="/procurement/requisitions"
         backLabel={t('req.detail.requisitionsBack')}
+        compact
         status={
           <Badge variant={getRequisitionStatusVariant(req.status)}>
             {getRequisitionStatusLabel(req.status)}
           </Badge>
         }
         actions={
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setShowPrintModal(true)
-              }}
-            >
-              {t('req.detail.print')}
-            </Button>
-            {canCancel && (
+          isPhone ? (
+            // On a phone the title would be crowded by two buttons: they sit behind one "⋯" menu.
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <OverflowMenu
+                label={t('req.detail.moreActions')}
+                items={[
+                  {
+                    key: 'print',
+                    label: t('req.detail.print'),
+                    onSelect: () => {
+                      setShowPrintModal(true)
+                    },
+                  },
+                  ...(canCancel
+                    ? [
+                        {
+                          key: 'cancel',
+                          label: t('req.detail.cancelRequisition'),
+                          danger: true,
+                          onSelect: () => {
+                            setShowCancelBox((v) => !v)
+                          },
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '8px' }}>
               <Button
-                variant="danger"
+                variant="secondary"
                 size="sm"
                 onClick={() => {
-                  setShowCancelBox((v) => !v)
+                  setShowPrintModal(true)
                 }}
               >
-                {t('req.detail.cancel')}
+                {t('req.detail.print')}
               </Button>
-            )}
-          </div>
+              {canCancel && (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => {
+                    setShowCancelBox((v) => !v)
+                  }}
+                >
+                  {t('req.detail.cancel')}
+                </Button>
+              )}
+            </div>
+          )
         }
       />
 
@@ -1320,7 +1904,7 @@ export default function RequisitionDetail() {
         >
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div style={{ flex: 1, minWidth: '200px' }}>
-              <Input
+              <Input field
                 label={t('req.detail.reasonOptional')}
                 value={cancelReason}
                 onChange={(e) => {
@@ -1344,36 +1928,49 @@ export default function RequisitionDetail() {
       )}
 
       <div style={{ marginTop: '16px', marginBottom: '16px' }}>
-        <StatusBar
-          steps={REQUISITION_STATUSES.map((s) => ({ key: s.key, label: s.label }))}
-          currentStep={req.status}
-          rejectedSteps={['rejected', 'cancelled', 'deleted']}
+        <PhaseBar
+          phases={requisitionPhasesFor(req.purpose).map((p) => ({
+            key: p.key,
+            label: getRequisitionPhaseLabel(p.key),
+            statuses: p.statuses,
+          }))}
+          current={req.status}
+          currentLabel={getRequisitionStatusLabel(req.status)}
+          stoppedStatuses={['rejected', 'cancelled', 'deleted']}
         />
       </div>
 
-      {/* Summary — colored stat-card grid, matching PurchaseOrderDetail's own "PO Summary" */}
-      <Card style={{ padding: '24px', marginBottom: '16px' }}>
+      {/* Summary — the total, then what people look for first; the rest sits behind "All details".
+          Labels use the darker secondary grey and values the main text colour, never the pale
+          "muted" grey (about 2.6:1 on white), which is too faint to read figures in. */}
+      <Card style={{ padding: isPhone ? '14px 16px' : '20px 24px', marginBottom: '16px' }}>
         <div
-          style={{
-            fontWeight: 600,
-            fontSize: '15px',
-            color: theme.textPrimary,
-            marginBottom: '16px',
-          }}
+          style={
+            isPhone
+              ? // Phone: Total beside Priority, Project across the card, Organizer beside the delivery date.
+                {
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: '12px 16px',
+                  alignItems: 'start',
+                }
+              : { display: 'flex', flexWrap: 'wrap', gap: '16px 40px', alignItems: 'flex-start' }
+          }
         >
-          {t('req.detail.summary')}
-        </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-            gap: '12px',
-          }}
-        >
-          {[
-            {
-              label: t('req.detail.total'),
-              value: (() => {
+          <div style={isPhone ? { minWidth: 0, order: 1 } : { flex: '1 1 220px', minWidth: 0 }}>
+            <div style={{ fontSize: '13px', color: theme.textSecondary }}>
+              {t('req.detail.total')}
+            </div>
+            <div
+              style={{
+                fontSize: isPhone ? '24px' : '28px',
+                fontWeight: 700,
+                color: theme.textPrimary,
+                lineHeight: 1.15,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {(() => {
                 // Purchased amount (per currency) plus, folded in separately
                 // since it's display-only, each from-stock line's reference
                 // value — see fromStockDisplayValue's own comment for why
@@ -1402,76 +1999,172 @@ export default function RequisitionDetail() {
                     {[...fromStockTotals.entries()].map(([currency, amount]) => (
                       <span
                         key={`stock-${currency}`}
-                        style={{ color: theme.textMuted, fontSize: '12px' }}
+                        style={{ color: theme.textSecondary, fontSize: '13px', fontWeight: 500 }}
                       >
                         {t('req.detail.fromStockAmount', { amount: fmtN(amount), currency })}
                       </span>
                     ))}
                   </div>
                 )
-              })(),
-            },
-            {
-              label: t('req.detail.priority'),
-              value: REQUISITION_PRIORITY_LABELS[req.priority ?? 'low'] ?? req.priority ?? '—',
-            },
-            {
-              label: t('req.detail.project'),
-              value: req.projectCode
-                ? `${req.projectCode} — ${req.projectName ?? ''}`
-                : (req.projectName ?? '—'),
-            },
-            ...(req.linkedMoNumber
-              ? [{ label: t('req.detail.manufacturingOrder'), value: req.linkedMoNumber }]
-              : []),
-            { label: t('req.detail.branch'), value: req.branch_name ?? '—' },
-            { label: t('req.detail.organizer'), value: req.organizerName ?? '—' },
-            { label: t('req.detail.receivedBy'), value: req.assigned_receiver_name ?? '—' },
-            { label: t('req.detail.expectedDelivery'), value: req.expected_delivery_date?.slice(0, 10) ?? '—' },
-            { label: t('req.detail.created'), value: req.created_at.slice(0, 10) },
-          ].map((f) => (
-            <div
-              key={f.label}
-              style={{
-                padding: '14px',
-                borderRadius: '10px',
-                background: theme.bgCanvas,
-                border: `1px solid ${theme.border}`,
-                minWidth: 0,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 500,
-                  color: theme.textMuted,
-                  marginBottom: '6px',
-                }}
-              >
-                {f.label}
-              </div>
-              <div
-                style={{
-                  fontSize: '16px',
-                  fontWeight: 700,
-                  color: theme.textPrimary,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {f.value}
-              </div>
+              })()}
             </div>
-          ))}
+          </div>
+          <dl
+            style={
+              isPhone
+                ? // The fields join the summary grid above (Priority, Project, Organizer, Delivery).
+                  { display: 'contents' }
+                : {
+                    flex: '3 1 420px',
+                    minWidth: 0,
+                    margin: 0,
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                    gap: '16px 24px',
+                  }
+            }
+          >
+            <SummaryField
+              label={t('req.detail.priority')}
+              style={isPhone ? { order: 2 } : undefined}
+            >
+              {getRequisitionPriorityLabel(req.priority ?? 'low')}
+            </SummaryField>
+            <SummaryField
+              label={t('req.detail.expectedDelivery')}
+              style={isPhone ? { order: 5 } : undefined}
+            >
+              {req.expected_delivery_date?.slice(0, 10) ?? '—'}
+            </SummaryField>
+            <SummaryField
+              label={t('req.detail.project')}
+              style={isPhone ? { order: 3, gridColumn: '1 / -1' } : undefined}
+            >
+              {req.projectCode
+                ? `${req.projectCode} — ${req.projectName ?? ''}`
+                : (req.projectName ?? '—')}
+            </SummaryField>
+            <SummaryField
+              label={t('req.detail.organizer')}
+              style={isPhone ? { order: 4 } : undefined}
+            >
+              {req.organizerName ?? '—'}
+            </SummaryField>
+          </dl>
         </div>
+        <button
+          type="button"
+          aria-expanded={showAllDetails}
+          onClick={() => {
+            setShowAllDetails((v) => !v)
+          }}
+          style={
+            isPhone
+              ? // A quiet text link on a phone: the details are secondary, so they do not get a button's weight.
+                {
+                  marginTop: '4px',
+                  minHeight: '44px',
+                  padding: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: theme.accent,
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent',
+                }
+              : {
+                  marginTop: '14px',
+                  minHeight: '32px',
+                  padding: '0 12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  background: 'transparent',
+                  border: `1px solid ${theme.borderStrong}`,
+                  borderRadius: '8px',
+                  color: theme.textPrimary,
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                }
+          }
+        >
+          {showAllDetails ? t('req.detail.hideDetails') : t('req.detail.allDetails')}
+          <span aria-hidden="true">{showAllDetails ? '▴' : '▾'}</span>
+        </button>
+        {showAllDetails && (
+          <dl
+            data-phone-grid=""
+            style={{
+              margin: isPhone ? '4px 0 0' : '16px 0 0',
+              paddingTop: isPhone ? '12px' : '16px',
+              borderTop: `1px solid ${theme.border}`,
+              display: 'grid',
+              gridTemplateColumns: isPhone
+                ? 'repeat(2, minmax(0, 1fr))'
+                : 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: isPhone ? '12px 16px' : '16px 24px',
+            }}
+          >
+            {req.linkedMoNumber && (
+              <SummaryField label={t('req.detail.manufacturingOrder')}>
+                {req.linkedMoNumber}
+              </SummaryField>
+            )}
+            <SummaryField label={t('req.detail.branch')}>{req.branch_name ?? '—'}</SummaryField>
+            <SummaryField label={t('req.detail.receivedBy')}>
+              {req.assigned_receiver_name ?? '—'}
+            </SummaryField>
+            <SummaryField label={t('req.detail.created')}>
+              {req.created_at.slice(0, 10)}
+            </SummaryField>
+          </dl>
+        )}
       </Card>
 
-      {/* Next Step (left) and Tabs/Lines (right) side by side instead of
-          stacked, matching PurchaseOrderDetail's own layout — both are tall
-          on their own and the page has plenty of unused horizontal room on
-          wide screens. CSS `order` puts the per-status panels column first
-          visually without moving that ~400-line block in the source; it
-          stays exactly where it was, right before the closing </div>. */}
+      {req.status === 'completed' && (
+        <Card
+          style={{
+            padding: '14px 20px',
+            marginBottom: '16px',
+            borderInlineStart: `3px solid ${theme.success}`,
+          }}
+        >
+          <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
+            {t('req.detail.completed')}
+          </div>
+          <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '2px' }}>
+            {t('req.detail.everyLineOnThisRequisitionHas')}
+          </div>
+        </Card>
+      )}
+      {['rejected', 'cancelled', 'deleted'].includes(req.status) && (
+        <Card
+          style={{
+            padding: '14px 20px',
+            marginBottom: '16px',
+            borderInlineStart: `3px solid ${theme.danger}`,
+          }}
+        >
+          <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
+            {getRequisitionStatusLabel(req.status)}
+          </div>
+          <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '2px' }}>
+            {t('req.detail.thisRequisitionIsNoLongerActive')}
+          </div>
+        </Card>
+      )}
+
+      {/* The lines (and the other tabs) take the full width. Under them, also full width, come the cards about
+          what the requisition made (its purchase orders and Store Outs). The step's action is the bar at the
+          bottom of the page. */}
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <div style={{ flex: '3 1 560px', minWidth: 0, order: 2 }}>
           {/* Tabs — Lines / Log / Edit requests (Receipts/Returns/Finance-Audit
@@ -1479,6 +2172,7 @@ export default function RequisitionDetail() {
           PO-side concerns this page never reaches) */}
           <div style={{ marginBottom: '16px' }}>
             <TabBar
+              readable
               tabs={[
                 { key: 'lines', label: t('req.detail.lines') },
                 { key: 'log', label: t('req.detail.log') },
@@ -1498,8 +2192,29 @@ export default function RequisitionDetail() {
           </div>
 
           {activeTab === 'lines' && (
-            <Card style={sectionCard}>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <Card
+              style={
+                isPhone
+                  ? // On a phone each line is already a card: a second box around them only costs width.
+                    {
+                      ...sectionCard,
+                      padding: 0,
+                      background: 'transparent',
+                      border: 'none',
+                      backdropFilter: 'none',
+                      WebkitBackdropFilter: 'none',
+                      overflow: 'visible',
+                    }
+                  : sectionCard
+              }
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  marginBottom: isPhone ? '8px' : '12px',
+                }}
+              >
                 <ColumnsMenu
                   items={lineViewOptions.map((o) => ({
                     key: o.key,
@@ -1518,6 +2233,7 @@ export default function RequisitionDetail() {
               </div>
               <Table
                 columns={shownLineColumns}
+                mobileLayout="fields"
                 data={req.lines}
                 rowKey="id"
                 getRowStyle={(l) => {
@@ -1683,8 +2399,9 @@ export default function RequisitionDetail() {
                 >
                   <div
                     style={{
-                      fontSize: '11px',
-                      color: theme.textMuted,
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: theme.textSecondary,
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       marginBottom: '6px',
@@ -1704,63 +2421,25 @@ export default function RequisitionDetail() {
                   style={{
                     padding: '32px',
                     textAlign: 'center',
-                    color: theme.textMuted,
+                    color: theme.textSecondary,
                     fontSize: '13px',
                   }}
                 >
                   {t('req.detail.noActivityYet')}
                 </div>
               )}
-              {req.approval_log.map((entry) => (
-                <div
-                  key={entry.id}
-                  style={{
-                    display: 'flex',
-                    gap: '16px',
-                    padding: '12px 16px',
-                    borderBottom: `1px solid ${theme.border}22`,
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <Badge
-                    variant={
-                      entry.action === 'approved'
-                        ? 'success'
-                        : entry.action.startsWith('reject')
-                          ? 'danger'
-                          : 'info'
-                    }
-                  >
-                    {entry.action.replace(/_/g, ' ')}
-                  </Badge>
-                  <span style={{ fontSize: '13px', color: theme.textPrimary }}>
-                    {entry.actor_name ?? t('req.detail.systemActor')}
-                    {entry.actor_position ? ` (${entry.actor_position})` : ''}
-                  </span>
-                  {entry.notes && (
-                    <span style={{ fontSize: '12px', color: theme.textMuted }}>{entry.notes}</span>
-                  )}
-                  <span style={{ fontSize: '12px', color: theme.textMuted, marginInlineStart: 'auto' }}>
-                    {entry.created_at.slice(0, 16).replace('T', ' ')}
-                  </span>
-                </div>
-              ))}
+              {req.approval_log.length > 0 && (
+                <ActivityTimeline
+                  entries={req.approval_log}
+                  systemActor={t('req.detail.systemActor')}
+                  label={t('req.detail.approvalLog')}
+                />
+              )}
             </Card>
           )}
 
           {activeTab === 'changes' &&
             (() => {
-              const inputStyle: React.CSSProperties = {
-                width: '100%',
-                padding: '7px 10px',
-                borderRadius: '6px',
-                border: `1px solid ${theme.borderInput}`,
-                background: theme.bgCanvas,
-                color: theme.textPrimary,
-                fontSize: '13px',
-                boxSizing: 'border-box',
-              }
               const hasPendingEdit = (req.edit_requests ?? []).some((r) => r.status === 'pending')
 
               const lineFields: LineItemField<EditLineDraft>[] = [
@@ -1901,7 +2580,7 @@ export default function RequisitionDetail() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
                           <div style={{ flex: '1 1 240px' }}>
-                            <Input
+                            <Input field
                               label={t('req.detail.notes')}
                               value={editDraft.notes}
                               onChange={(e) => {
@@ -1910,7 +2589,7 @@ export default function RequisitionDetail() {
                             />
                           </div>
                           <div style={{ flex: '1 1 160px' }}>
-                            <Select
+                            <Select field
                               label={t('req.detail.priority')}
                               value={editDraft.priority}
                               onChange={(e) => {
@@ -1924,7 +2603,7 @@ export default function RequisitionDetail() {
                           </div>
                           {req.purpose === 'project' && (
                             <div style={{ flex: '1 1 220px' }}>
-                              <Select
+                              <Select field
                                 label={t('req.detail.deliveryDestination')}
                                 value={editDraft.delivery_destination}
                                 disabled={!deliveryDestinationEditable}
@@ -2086,7 +2765,7 @@ export default function RequisitionDetail() {
                                 <select
                                   value={al.currency_code}
                                   aria-label={t('req.detail.currency')}
-                                  style={inputStyle}
+                                  style={selectStyle}
                                   onChange={(e) => {
                                     const linesAdded = [...editDraft.linesAdded]
                                     linesAdded[i] = {
@@ -2209,1241 +2888,16 @@ export default function RequisitionDetail() {
             })()}
         </div>
 
-        <div style={{ flex: '1 1 340px', minWidth: 0, order: 1 }}>
-          {/* ── Panel 1: draft ────────────────────────────────────────────────── */}
-          {req.status === 'draft' && (
-            <Card style={sectionCard}>
-              <div style={sectionTitle}>{t('req.detail.nextStepSubmitForInventoryCheck')}</div>
-              <div style={sectionHint}>
-                {t('req.detail.onceSubmittedTheOrganizerOrA')}
-              </div>
-              {canSubmitDraft ? (
-                <Button
-                  variant="primary"
-                  loading={lSubmit}
-                  onClick={() => void submitToInventory({ variables: { id: req.id } })}
-                >
-                  {t('req.detail.submitForInventoryCheck')}
-                </Button>
-              ) : (
-                <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  {t('req.detail.onlyTheOrganizerOrAnAdmin2')}
-                </div>
-              )}
-            </Card>
-          )}
-
-          {/* ── Panel 2: inventory_check ─────────────────────────────────────── */}
-          {req.status === 'inventory_check' && (
-            <Card style={sectionCard}>
-              <div style={sectionTitle}>{t('req.detail.nextStepConfirmStockAvailability')}</div>
-              <div style={sectionHint}>
-                {t('req.detail.enterTheQuantityToTakeFrom')}
-              </div>
-              {!canConfirmInventory ? (
-                <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  {t('req.detail.onlyTheOrganizerAStoreKeeper')}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {req.lines.map((l) => {
-                    const isOverridden = !!productOverride[l.id]
-                    const avail = isOverridden
-                      ? previewByLine.get(l.id)
-                      : availabilityByLine.get(l.id)
-                    const qtyReserved = avail ? avail.qtyOnHand - avail.qtyAvailable : null
-                    return (
-                      <div
-                        key={l.id}
-                        style={{
-                          padding: '12px',
-                          borderRadius: '8px',
-                          border: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            justifyContent: 'space-between',
-                            gap: '10px',
-                            marginBottom: '8px',
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                fontSize: '13px',
-                                fontWeight: 600,
-                                color: theme.textPrimary,
-                              }}
-                            >
-                              {(isOverridden ? avail?.productName : null) ??
-                                l.description ??
-                                l.product_name}{' '}
-                              {t('req.detail.needsQty', { qty: fmtN(l.qty), uom: l.uom })}
-                            </div>
-                            {(isOverridden ? avail?.productNameAr : l.product_name_ar) && (
-                              <div
-                                dir="rtl"
-                                style={{
-                                  fontSize: '12px',
-                                  color: theme.textMuted,
-                                  textAlign: 'start',
-                                }}
-                              >
-                                {isOverridden ? avail?.productNameAr : l.product_name_ar}
-                              </div>
-                            )}
-                          </div>
-                          {canConfirmInventory && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReselectOpenFor((cur) => (cur === l.id ? null : l.id))
-                              }}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                padding: 0,
-                                flexShrink: 0,
-                                fontSize: '11px',
-                                color: theme.accent,
-                                cursor: 'pointer',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              {isOverridden ? t('req.detail.changeSelection') : t('req.detail.wrongItemReselect')}
-                            </button>
-                          )}
-                        </div>
-                        {reselectOpenFor === l.id && (
-                          <div style={{ marginBottom: '10px' }}>
-                            <SearchableSelect
-                              label={t('req.detail.correctItem')}
-                              value={productOverride[l.id] ?? ''}
-                              onChange={(productId) => {
-                                setProductOverride((prev) => ({ ...prev, [l.id]: productId }))
-                                setInvQty((prev) => ({ ...prev, [l.id]: '' }))
-                                setInvLoc((prev) => {
-                                  const next = { ...prev }
-                                  Reflect.deleteProperty(next, l.id)
-                                  return next
-                                })
-                                setReselectOpenFor(null)
-                              }}
-                              options={productOptions}
-                              placeholder={t('req.detail.searchByNameOrSku')}
-                              minDropdownWidth={360}
-                            />
-                          </div>
-                        )}
-                        {avail ? (
-                          <div
-                            style={{
-                              display: 'flex',
-                              gap: '16px',
-                              flexWrap: 'wrap',
-                              fontSize: '12px',
-                              color: theme.textMuted,
-                              marginBottom: '12px',
-                            }}
-                          >
-                            <span>
-                              {t('req.detail.onHand')}{' '}
-                              <strong style={{ color: theme.textPrimary }}>
-                                {fmtN(avail.qtyOnHand)}
-                              </strong>
-                            </span>
-                            <span>
-                              {t('req.detail.reserved')}{' '}
-                              <strong style={{ color: theme.textPrimary }}>
-                                {fmtN(qtyReserved)}
-                              </strong>
-                            </span>
-                            <span>
-                              {t('req.detail.availableLabel')}{' '}
-                              <strong
-                                style={{ color: avail.isAvailable ? theme.success : theme.warning }}
-                              >
-                                {fmtN(avail.qtyAvailable)}
-                              </strong>
-                            </span>
-                          </div>
-                        ) : (
-                          <div
-                            style={{
-                              fontSize: '12px',
-                              color: theme.textMuted,
-                              marginBottom: '10px',
-                            }}
-                          >
-                            {isOverridden
-                              ? t('req.detail.checkingStockForTheNewlySelected')
-                              : t('req.detail.loadingStockLevels')}
-                          </div>
-                        )}
-                        {avail &&
-                          // Only locations that actually have stock of this item —
-                          // matches PurchaseOrderDetail's own inventory-check card
-                          // list, fed by the same byLocation shape instead of a
-                          // plain dropdown built from every active stock location.
-                          (avail.byLocation.length > 0 ? (
-                            <div style={{ marginBottom: '12px' }}>
-                              <label
-                                style={{
-                                  fontSize: '12px',
-                                  fontWeight: 500,
-                                  color: theme.textSecondary,
-                                  display: 'block',
-                                  marginBottom: '6px',
-                                }}
-                              >
-                                {t('req.detail.sourceLocation')}
-                              </label>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                {avail.byLocation.map((loc) => {
-                                  const selected = invLoc[l.id] === loc.locationId
-                                  return (
-                                    <button
-                                      key={loc.locationId}
-                                      type="button"
-                                      onClick={() => {
-                                        setInvLoc((prev) => ({ ...prev, [l.id]: loc.locationId }))
-                                        const currentQty = parseFloat(invQty[l.id] ?? '0') || 0
-                                        if (currentQty > loc.qtyAvailable) {
-                                          setInvQty((prev) => ({
-                                            ...prev,
-                                            [l.id]: String(Math.max(0, loc.qtyAvailable)),
-                                          }))
-                                        }
-                                      }}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        gap: '12px',
-                                        padding: '10px 14px',
-                                        borderRadius: '8px',
-                                        textAlign: 'start',
-                                        cursor: 'pointer',
-                                        fontFamily: 'inherit',
-                                        border: `1px solid ${selected ? theme.accent : theme.border}`,
-                                        background: selected ? `${theme.accent}18` : theme.bgCanvas,
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: '10px',
-                                        }}
-                                      >
-                                        <span
-                                          style={{
-                                            width: '14px',
-                                            height: '14px',
-                                            borderRadius: '50%',
-                                            border: `2px solid ${selected ? theme.accent : theme.border}`,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            flexShrink: 0,
-                                          }}
-                                        >
-                                          {selected && (
-                                            <span
-                                              style={{
-                                                width: '6px',
-                                                height: '6px',
-                                                borderRadius: '50%',
-                                                background: theme.accent,
-                                              }}
-                                            />
-                                          )}
-                                        </span>
-                                        <span>
-                                          <div
-                                            style={{
-                                              fontSize: '13px',
-                                              fontWeight: selected ? 600 : 500,
-                                              color: selected ? theme.accent : theme.textPrimary,
-                                            }}
-                                          >
-                                            {loc.locationName}
-                                          </div>
-                                          <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                                            {loc.companyName}
-                                          </div>
-                                        </span>
-                                      </span>
-                                      <span
-                                        style={{
-                                          fontSize: '13px',
-                                          fontWeight: 600,
-                                          color: selected ? theme.accent : theme.textSecondary,
-                                          whiteSpace: 'nowrap',
-                                          flexShrink: 0,
-                                        }}
-                                      >
-                                        {t('req.detail.availShort', { qty: fmtN(loc.qtyAvailable) })}
-                                      </span>
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          ) : (
-                            <div
-                              style={{
-                                marginBottom: '12px',
-                                fontSize: '12px',
-                                color: theme.textMuted,
-                              }}
-                            >
-                              {t('req.detail.noStockAvailableAtAnyLocation')}
-                            </div>
-                          ))}
-                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                          <div style={{ width: '140px' }}>
-                            <Input
-                              label={t('req.detail.qtyFromStock')}
-                              type="number"
-                              min="0"
-                              max={String(
-                                (() => {
-                                  const qtyNeeded = parseFloat(l.qty) || 0
-                                  const selectedLoc = avail?.byLocation.find(
-                                    (loc) => loc.locationId === invLoc[l.id],
-                                  )
-                                  return selectedLoc
-                                    ? Math.min(qtyNeeded, selectedLoc.qtyAvailable)
-                                    : qtyNeeded
-                                })(),
-                              )}
-                              value={invQty[l.id] ?? ''}
-                              onChange={(e) => {
-                                const qtyNeeded = parseFloat(l.qty) || 0
-                                const selectedLoc = avail?.byLocation.find(
-                                  (loc) => loc.locationId === invLoc[l.id],
-                                )
-                                const max = selectedLoc
-                                  ? Math.min(qtyNeeded, selectedLoc.qtyAvailable)
-                                  : qtyNeeded
-                                const v = Math.max(
-                                  0,
-                                  Math.min(max, parseFloat(e.target.value) || 0),
-                                )
-                                setInvQty((prev) => ({
-                                  ...prev,
-                                  [l.id]: e.target.value === '' ? '' : String(v),
-                                }))
-                              }}
-                              placeholder="0"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  <Button
-                    variant="primary"
-                    loading={lConfirm}
-                    style={{ alignSelf: 'flex-start' }}
-                    onClick={() =>
-                      void confirmInventory({
-                        variables: {
-                          id: req.id,
-                          lineStockQtys: req.lines.map((l) => ({
-                            lineId: l.id,
-                            qtyFromStock: parseFloat(invQty[l.id] ?? '0') || 0,
-                            sourceLocationId: invLoc[l.id] || undefined,
-                            productId: productOverride[l.id] || undefined,
-                          })),
-                        },
-                      }).then(() => {
-                        // Now saved for real — the draft would otherwise linger
-                        // in localStorage forever for a stage this requisition
-                        // has already moved past.
-                        if (invCheckDraftKey) {
-                          try {
-                            localStorage.removeItem(invCheckDraftKey)
-                          } catch {
-                            // Unavailable localStorage — nothing to clean up.
-                          }
-                        }
-                      })
-                    }
-                  >
-                    {t('req.detail.confirmInventoryCheck')}
-                  </Button>
-                </div>
-              )}
-            </Card>
-          )}
-
-          {/* ── Panel 3: store_pricing ───────────────────────────────────────── */}
-          {req.status === 'store_pricing' && (
-            <Card style={sectionCard}>
-              <div style={sectionTitle}>{t('req.detail.nextStepStorePricing')}</div>
-              <div style={sectionHint}>
-                {t('req.detail.recordWhatThisWouldCostFrom')}
-              </div>
-              {!canStorePrice ? (
-                <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  {t('req.detail.onlySomeoneHoldingTheStorePricing')}
-                </div>
-              ) : (
-                (() => {
-                  // Store price only values the from-stock portion of a line —
-                  // mirrors PurchaseOrderDetail's own stockLines filter. In the
-                  // normal flow this panel is auto-filled and skipped entirely
-                  // by confirmRequisitionInventoryCheck; it only renders at all
-                  // for the rare case a requisition is moved back here by some
-                  // other path, so pre-filling from each line's own source
-                  // average cost still matters here too.
-                  const stockLines = req.lines.filter(
-                    (l) => (parseFloat(String(l.qty_from_stock ?? '0')) || 0) > 0,
-                  )
-                  return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {stockLines.length === 0 && (
-                        <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                          {t('req.detail.noLinesOnThisRequisitionAre')}
-                        </div>
-                      )}
-                      {stockLines.map((l) => {
-                        const defaultPrice = l.store_price ?? l.source_average_cost ?? ''
-                        return (
-                          <div
-                            key={l.id}
-                            style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}
-                          >
-                            <div
-                              style={{
-                                flex: 1,
-                                fontSize: '13px',
-                                color: theme.textPrimary,
-                                paddingBottom: '10px',
-                              }}
-                            >
-                              {l.description || l.product_name}
-                              {l.source_location_name && (
-                                <span style={{ color: theme.textMuted }}>
-                                  {' '}
-                                  {t('req.detail.fromLocation', { location: l.source_location_name })}
-                                  {l.source_average_cost != null &&
-                                    ` ${t('req.detail.lastCost', { cost: l.source_average_cost })}`}
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ width: '140px' }}>
-                              <Input
-                                label={t('req.detail.storePrice')}
-                                type="number"
-                                min="0"
-                                value={storePrices[l.id] ?? String(defaultPrice)}
-                                onChange={(e) => {
-                                  setStorePrices((prev) => ({ ...prev, [l.id]: e.target.value }))
-                                }}
-                                placeholder="0.00"
-                              />
-                            </div>
-                          </div>
-                        )
-                      })}
-                      <Button
-                        variant="primary"
-                        loading={lStore}
-                        style={{ alignSelf: 'flex-start' }}
-                        onClick={() =>
-                          void submitStorePricing({
-                            variables: {
-                              id: req.id,
-                              linePrices: stockLines.map((l) => ({
-                                lineId: l.id,
-                                storePrice:
-                                  parseFloat(
-                                    storePrices[l.id] ??
-                                      String(l.store_price ?? l.source_average_cost ?? '0'),
-                                  ) || 0,
-                                currencyCode: l.currency_code ?? 'IQD',
-                              })),
-                            },
-                          })
-                        }
-                      >
-                        {t('req.detail.submitToMarketPricing')}
-                      </Button>
-                    </div>
-                  )
-                })()
-              )}
-            </Card>
-          )}
-
-          {/* ── Panel 4: market_pricing ──────────────────────────────────────── */}
-          {req.status === 'market_pricing' && (
-            <Card style={sectionCard}>
-              <div style={sectionTitle}>{t('req.detail.nextStepMarketPricing')}</div>
-              <div style={sectionHint}>
-                {t('req.detail.enterTheCheckedVendorQuotePer')}
-              </div>
-              {!canMarketPrice && !isOrganizer ? (
-                <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  {t('req.detail.onlyAProcurementOfficerOrAn')}
-                </div>
-              ) : (
-                (() => {
-                  // Only lines still needing purchase — a line fully covered
-                  // from stock was already zeroed and priced (for reference) at
-                  // inventory check, and never needs a market price. Mirrors
-                  // PurchaseOrderDetail's own purchaseLines filter exactly. A
-                  // free-text/service line has no qty_from_stock at all, so it
-                  // always shows up here.
-                  const purchaseLines = req.lines.filter(
-                    (l) =>
-                      (parseFloat(l.qty) || 0) -
-                        (parseFloat(String(l.qty_from_stock ?? '0')) || 0) >
-                      0.0001,
-                  )
-                  if (purchaseLines.length === 0)
-                    return (
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '12px',
-                          alignItems: 'flex-start',
-                        }}
-                      >
-                        <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                          {t('req.detail.nothingOnThisRequisitionNeedsA')}
-                        </div>
-                        {canMarketPrice && (
-                          <Button
-                            variant="primary"
-                            loading={lMarket}
-                            onClick={() =>
-                              void submitMarketPricing({
-                                variables: { id: req.id, linePrices: [] },
-                              })
-                            }
-                          >
-                            {t('req.detail.continueToPriceVerification')}
-                          </Button>
-                        )}
-                      </div>
-                    )
-
-                  // Market pricing is done in two parts (migration 315): the lines the owner took to price and buy
-                  // himself, and procurement's. The requisition moves on once each part that has lines has been
-                  // submitted. Procurement (and admins) can price any line, the owner only the ones he took.
-                  const ownerLines = purchaseLines.filter((l) => !!l.owner_handles)
-                  const procLines = purchaseLines.filter((l) => !l.owner_handles)
-                  const split = ownerLines.length > 0
-                  // Falls back to the line's own previously-saved market_price —
-                  // sent back here from price_verification (or later), a figure
-                  // Procurement already typed in should still be here, editable,
-                  // not wiped back to blank (mirrors verifiedPrices' own fallback
-                  // to market_price in the price_verification panel below).
-                  const rawOf = (l: ReqLine) =>
-                    marketPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
-                  const pricedOk = (l: ReqLine) => {
-                    const raw = rawOf(l)
-                    return raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
-                  }
-                  const linePricesOf = (ls: ReqLine[]) =>
-                    ls.map((l) => ({
-                      lineId: l.id,
-                      marketPrice: parseFloat(rawOf(l)),
-                      currencyCode: marketCurrency[l.id] ?? l.currency_code,
-                    }))
-                  const ownerAllPriced = ownerLines.every(pricedOk)
-                  const procAllPriced = procLines.every(pricedOk)
-                  const ownerSubmitted = !!req.owner_pricing_submitted_at
-                  const procSubmitted = !!req.procurement_pricing_submitted_at
-                  return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {isOrganizer && (
-                        <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                          {t('req.detail.splitHintOwner')}
-                        </div>
-                      )}
-                      {split && (
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            gap: '8px 16px',
-                            fontSize: '12px',
-                            color: theme.textMuted,
-                          }}
-                        >
-                          <span>
-                            {t('req.detail.ownerItemsCount', { n: ownerLines.length })}{' '}
-                            <Badge variant={ownerSubmitted ? 'success' : 'warning'}>
-                              {ownerSubmitted
-                                ? t('req.detail.partSubmitted')
-                                : t('req.detail.partWaiting')}
-                            </Badge>
-                          </span>
-                          <span>
-                            {t('req.detail.procurementItemsCount', { n: procLines.length })}{' '}
-                            {procLines.length === 0 ? (
-                              <Badge variant="neutral">{t('req.detail.partNone')}</Badge>
-                            ) : (
-                              <Badge variant={procSubmitted ? 'success' : 'warning'}>
-                                {procSubmitted
-                                  ? t('req.detail.partSubmitted')
-                                  : t('req.detail.partWaiting')}
-                              </Badge>
-                            )}
-                          </span>
-                        </div>
-                      )}
-                      {purchaseLines.map((l) => {
-                        const ownerLine = !!l.owner_handles
-                        const handlerName = lineHandlerName(l, req)
-                        const mayPrice = canMarketPrice || (isOrganizer && ownerLine)
-                        const raw = rawOf(l)
-                        const missing = raw === ''
-                        const invalid = !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
-                        // The owner may take a line only before it has a price; procurement may always hand it back.
-                        const canTake = isOrganizer && !ownerLine && l.market_price == null
-                        const canGiveBack =
-                          ownerLine && (canMarketPrice || (isOrganizer && l.market_price == null))
-                        // What the vendor quote is for: the requested quantity less
-                        // whatever stock already covers (the same subtraction the
-                        // purchaseLines filter above uses).
-                        const requestedQty = parseFloat(l.qty) || 0
-                        const stockQty = parseFloat(String(l.qty_from_stock ?? '0')) || 0
-                        const buyQty = requestedQty - stockQty
-                        return (
-                          <div
-                            key={l.id}
-                            style={{
-                              padding: '12px',
-                              borderRadius: '8px',
-                              border: `1px solid ${mayPrice && (missing || invalid) ? theme.dangerBorder : theme.border}`,
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'flex-start',
-                                justifyContent: 'space-between',
-                                gap: '12px',
-                                marginBottom: '8px',
-                              }}
-                            >
-                              <div style={{ minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: '13px',
-                                    fontWeight: 600,
-                                    color: theme.textPrimary,
-                                  }}
-                                >
-                                  {l.description || l.product_name}
-                                </div>
-                                {(split || isOrganizer) && (
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      flexWrap: 'wrap',
-                                      gap: '6px',
-                                      marginTop: '6px',
-                                    }}
-                                  >
-                                    <Badge variant={ownerLine ? 'accent' : 'neutral'}>
-                                      {t('req.detail.handledBy')}:{' '}
-                                      {ownerLine
-                                        ? t('req.detail.handledByOwner')
-                                        : t('req.detail.handledByProcurement')}
-                                      {handlerName ? ` · ${handlerName}` : ''}
-                                    </Badge>
-                                    {(canTake || canGiveBack) && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        loading={togglingLineId === l.id}
-                                        onClick={() => void toggleLineOwner(l.id, !ownerLine)}
-                                      >
-                                        {canTake
-                                          ? t('req.detail.takeThisLine')
-                                          : isOrganizer
-                                            ? t('req.detail.handBackThisLine')
-                                            : t('req.detail.takeOverThisLine')}
-                                      </Button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                              <div style={{ flexShrink: 0, textAlign: 'end' }}>
-                                <div
-                                  style={{
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                    color: theme.accent,
-                                    background: theme.accentBg,
-                                    borderRadius: '6px',
-                                    padding: '2px 8px',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {t('req.detail.qtyToBuy')}: {fmtN(buyQty)} {l.uom ?? ''}
-                                </div>
-                                {stockQty > 0.0001 && (
-                                  <div
-                                    style={{
-                                      fontSize: '11px',
-                                      color: theme.textMuted,
-                                      marginTop: '2px',
-                                    }}
-                                  >
-                                    {t('req.detail.qtyRequestedStockNote', {
-                                      requested: fmtN(requestedQty),
-                                      stock: fmtN(stockQty),
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            {mayPrice ? (
-                              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                                <div style={{ width: '140px' }}>
-                                  <Input
-                                    label={t('req.detail.marketPrice')}
-                                    type="number"
-                                    min="0"
-                                    value={raw}
-                                    onChange={(e) => {
-                                      setMarketPrices((prev) => ({
-                                        ...prev,
-                                        [l.id]: e.target.value,
-                                      }))
-                                    }}
-                                    placeholder="0.00"
-                                    error={
-                                      missing
-                                        ? t('req.detail.required')
-                                        : invalid
-                                          ? t('req.detail.enterAValidPrice')
-                                          : undefined
-                                    }
-                                  />
-                                </div>
-                                <div style={{ width: '110px' }}>
-                                  <Select
-                                    label={t('req.detail.currency')}
-                                    value={marketCurrency[l.id] ?? l.currency_code}
-                                    onChange={(e) => {
-                                      setMarketCurrency((prev) => ({
-                                        ...prev,
-                                        [l.id]: e.target.value,
-                                      }))
-                                    }}
-                                    options={CURRENCIES.map((c) => ({ value: c, label: c }))}
-                                  />
-                                </div>
-                              </div>
-                            ) : (
-                              <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                                {t('req.detail.procurementPricesThisLine')}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                      {/* The owner's part: his own lines, or procurement stepping in for him. */}
-                      {(isOrganizer || canMarketPrice) && ownerLines.length > 0 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {!ownerAllPriced && (
-                            <div style={{ fontSize: '12px', color: theme.danger }}>
-                              {t('req.detail.priceEveryItemYouTook')}
-                            </div>
-                          )}
-                          <Button
-                            variant={
-                              procLines.length === 0 && canMarketPrice ? 'primary' : 'secondary'
-                            }
-                            loading={lMarket}
-                            disabled={!ownerAllPriced}
-                            style={{ alignSelf: 'flex-start' }}
-                            onClick={() =>
-                              void submitMarketPricing({
-                                variables: {
-                                  id: req.id,
-                                  side: 'OWNER',
-                                  linePrices: linePricesOf(ownerLines),
-                                },
-                              })
-                            }
-                          >
-                            {isOrganizer
-                              ? ownerSubmitted
-                                ? t('req.detail.updateMyItems')
-                                : t('req.detail.submitMyItems')
-                              : ownerSubmitted
-                                ? t('req.detail.updateOwnerItems')
-                                : t('req.detail.submitOwnerItems')}
-                          </Button>
-                        </div>
-                      )}
-                      {/* Procurement's part. With nothing split this is the one submit it always was. */}
-                      {canMarketPrice && procLines.length > 0 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {!procAllPriced && (
-                            <div style={{ fontSize: '12px', color: theme.danger }}>
-                              {t('req.detail.enterAPriceForEveryLine')}
-                            </div>
-                          )}
-                          <Button
-                            variant="primary"
-                            loading={lMarket}
-                            disabled={!procAllPriced}
-                            style={{ alignSelf: 'flex-start' }}
-                            onClick={() =>
-                              void submitMarketPricing({
-                                variables: { id: req.id, linePrices: linePricesOf(procLines) },
-                              })
-                            }
-                          >
-                            {split
-                              ? procSubmitted
-                                ? t('req.detail.updateProcurementItems')
-                                : t('req.detail.submitProcurementItems')
-                              : t('req.detail.submitToPriceVerification')}
-                          </Button>
-                        </div>
-                      )}
-                      {canMarketPrice && procLines.length === 0 && (
-                        <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                          {t('req.detail.nothingLeftForProcurement')}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })()
-              )}
-            </Card>
-          )}
-
-          {/* ── Panel 5: price_verification ──────────────────────────────────── */}
-          {req.status === 'price_verification' && (
-            <Card style={sectionCard}>
-              <div style={sectionTitle}>{t('req.detail.nextStepVerifyPrices')}</div>
-              <div style={sectionHint}>
-                {t('req.detail.crossCheckEachMarketPriceAnd')}
-              </div>
-              {!canVerifyPrice ? (
-                <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  {t('req.detail.onlyAProcurement2ndPositionHolder')}
-                </div>
-              ) : (
-                (() => {
-                  // Same purchaseLines filter as the market-pricing panel above —
-                  // a line fully covered from stock never got a market price
-                  // either, so there's nothing here to verify for it.
-                  const purchaseLines = req.lines.filter(
-                    (l) =>
-                      (parseFloat(l.qty) || 0) -
-                        (parseFloat(String(l.qty_from_stock ?? '0')) || 0) >
-                      0.0001,
-                  )
-                  return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {purchaseLines.length === 0 ? (
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '12px',
-                            alignItems: 'flex-start',
-                          }}
-                        >
-                          <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                            {t('req.detail.nothingOnThisRequisitionNeedsPrice')}
-                          </div>
-                          <Button
-                            variant="primary"
-                            loading={anyVerifyLoading}
-                            onClick={() =>
-                              void verifyPrices({ variables: { id: req.id, lineAdjustments: [] } })
-                            }
-                          >
-                            {t('req.detail.continueToApproval')}
-                          </Button>
-                        </div>
-                      ) : (
-                        <>
-                          {purchaseLines.map((l) => {
-                            const raw =
-                              verifiedPrices[l.id] ??
-                              (l.market_price != null ? String(l.market_price) : '')
-                            const missing = raw === ''
-                            const invalid =
-                              !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
-                            return (
-                              <div
-                                key={l.id}
-                                style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}
-                              >
-                                <div
-                                  style={{
-                                    flex: 1,
-                                    fontSize: '13px',
-                                    color: theme.textPrimary,
-                                    paddingBottom: '10px',
-                                  }}
-                                >
-                                  {l.description || l.product_name}
-                                  <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                                    {t('req.detail.marketLabel')}{' '}
-                                    {l.market_price != null
-                                      ? `${fmtN(l.market_price)} ${l.market_price_currency}`
-                                      : t('req.detail.notSet2')}
-                                  </div>
-                                </div>
-                                <div style={{ width: '140px' }}>
-                                  <Input
-                                    label={t('req.detail.verifiedPrice')}
-                                    type="number"
-                                    min="0"
-                                    value={raw}
-                                    onChange={(e) => {
-                                      setVerifiedPrices((prev) => ({
-                                        ...prev,
-                                        [l.id]: e.target.value,
-                                      }))
-                                    }}
-                                    placeholder="0.00"
-                                    error={
-                                      missing
-                                        ? t('req.detail.required')
-                                        : invalid
-                                          ? t('req.detail.enterAValidPrice')
-                                          : undefined
-                                    }
-                                  />
-                                </div>
-                              </div>
-                            )
-                          })}
-                          {(() => {
-                            const allVerified = purchaseLines.every((l) => {
-                              const raw =
-                                verifiedPrices[l.id] ??
-                                (l.market_price != null ? String(l.market_price) : '')
-                              return raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
-                            })
-                            return (
-                              <>
-                                {!allVerified && (
-                                  <div style={{ fontSize: '12px', color: theme.danger }}>
-                                    {t('req.detail.enterAVerifiedPriceForEvery')}
-                                  </div>
-                                )}
-                                <Button
-                                  variant="primary"
-                                  loading={anyVerifyLoading}
-                                  disabled={!allVerified}
-                                  style={{ alignSelf: 'flex-start' }}
-                                  onClick={() =>
-                                    void verifyPrices({
-                                      variables: {
-                                        id: req.id,
-                                        lineAdjustments: purchaseLines.map((l) => ({
-                                          lineId: l.id,
-                                          verifiedPrice: parseFloat(
-                                            verifiedPrices[l.id] ??
-                                              (l.market_price != null
-                                                ? String(l.market_price)
-                                                : ''),
-                                          ),
-                                        })),
-                                      },
-                                    })
-                                  }
-                                >
-                                  {t('req.detail.submitForApproval')}
-                                </Button>
-                              </>
-                            )
-                          })()}
-                        </>
-                      )}
-
-                      {/* ── Reject box — mirrors PurchaseOrderDetail's price_verification
-                   "Not ready to approve?" panel, now with a required per-line
-                   flag picker (migration 279) feeding both the destination
-                   mutations' lineFlags and this composed reason ─────────── */}
-                      <div
-                        style={{
-                          marginTop: '4px',
-                          padding: '16px',
-                          borderRadius: '10px',
-                          background: theme.bgCanvas,
-                          border: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: '13px',
-                            fontWeight: 600,
-                            color: theme.textPrimary,
-                            marginBottom: '10px',
-                          }}
-                        >
-                          {t('req.detail.notReadyToApprove')}
-                        </div>
-                        {renderLineFlagHint()}
-                        <Textarea
-                          label={t('req.detail.overallReasonAutoFilledFromFlagged')}
-                          value={rejectReason}
-                          onChange={(e) => {
-                            setRejectReason(e.target.value)
-                          }}
-                          placeholder={flagAutoReason || t('req.detail.enterReason')}
-                          rows={2}
-                        />
-                        <div
-                          style={{
-                            fontSize: '11px',
-                            fontWeight: 500,
-                            color: theme.textMuted,
-                            margin: '12px 0 6px',
-                          }}
-                        >
-                          {t('req.detail.sendBackTo')}
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                          <Button
-                            variant="danger"
-                            disabled={!hasValidFlags}
-                            loading={anyVerifyLoading}
-                            onClick={() =>
-                              void resetToDraft({
-                                variables: {
-                                  id: req.id,
-                                  reason: effectiveRejectReason,
-                                  lineFlags: lineFlagsPayload,
-                                },
-                              })
-                            }
-                          >
-                            {t('req.detail.resetToDraft')}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            disabled={!hasValidFlags}
-                            loading={anyVerifyLoading}
-                            onClick={() =>
-                              void rejectVerificationToInventory({
-                                variables: {
-                                  id: req.id,
-                                  reason: effectiveRejectReason,
-                                  lineFlags: lineFlagsPayload,
-                                },
-                              })
-                            }
-                          >
-                            {t('req.detail.inventoryCheck')}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            disabled={!hasValidFlags}
-                            loading={anyVerifyLoading}
-                            onClick={() =>
-                              void rejectVerificationToStore({
-                                variables: {
-                                  id: req.id,
-                                  reason: effectiveRejectReason,
-                                  lineFlags: lineFlagsPayload,
-                                },
-                              })
-                            }
-                          >
-                            {t('req.detail.storePricing')}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            disabled={!hasValidFlags}
-                            loading={anyVerifyLoading}
-                            onClick={() =>
-                              void rejectVerificationToMarket({
-                                variables: {
-                                  id: req.id,
-                                  reason: effectiveRejectReason,
-                                  lineFlags: lineFlagsPayload,
-                                },
-                              })
-                            }
-                          >
-                            {t('req.detail.marketPricing')}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })()
-              )}
-            </Card>
-          )}
-
-          {/* ── Panel 6: pending_approval ─────────────────────────────────────── */}
-          {req.status === 'pending_approval' && (
-            <Card style={sectionCard}>
-              <div style={sectionTitle}>{t('req.detail.nextStepApproveOrReject')}</div>
-              <div style={sectionHint}>
-                {t('req.detail.rejectingSendsThisRequisitionBackTo')}
-              </div>
-              {!canApprove ? (
-                <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  {t('req.detail.onlyTheDepartmentHeadTheAssigned')}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <Button
-                    variant="primary"
-                    loading={anyApprovalLoading}
-                    style={{ alignSelf: 'flex-start' }}
-                    onClick={() => void approve({ variables: { id: req.id } })}
-                  >
-                    {t('req.detail.approve')}
-                  </Button>
-
-                  {/* ── Reject box — mirrors PurchaseOrderDetail's pending_approval
-                   "Not ready to approve?" panel, now with a required per-line
-                   flag picker (migration 279) feeding both the destination
-                   mutations' lineFlags and this composed reason ─────────── */}
-                  <div
-                    style={{
-                      marginTop: '4px',
-                      padding: '16px',
-                      borderRadius: '10px',
-                      background: theme.bgCanvas,
-                      border: `1px solid ${theme.border}`,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        color: theme.textPrimary,
-                        marginBottom: '10px',
-                      }}
-                    >
-                      {t('req.detail.notReadyToApprove')}
-                    </div>
-                    {renderLineFlagHint()}
-                    <Textarea
-                      label={t('req.detail.overallReasonAutoFilledFromFlagged')}
-                      value={rejectReason}
-                      onChange={(e) => {
-                        setRejectReason(e.target.value)
-                      }}
-                      placeholder={flagAutoReason || t('req.detail.enterReason')}
-                      rows={2}
-                    />
-                    <div
-                      style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}
-                    >
-                      <Button
-                        variant="danger"
-                        disabled={!hasValidFlags}
-                        loading={anyApprovalLoading}
-                        onClick={() =>
-                          void reject({
-                            variables: {
-                              id: req.id,
-                              reason: effectiveRejectReason,
-                              lineFlags: lineFlagsPayload,
-                            },
-                          })
-                        }
-                      >
-                        {t('req.detail.resetToDraft')}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        disabled={!hasValidFlags}
-                        loading={anyApprovalLoading}
-                        onClick={() =>
-                          void rejectToInventoryCheck({
-                            variables: {
-                              id: req.id,
-                              reason: effectiveRejectReason,
-                              lineFlags: lineFlagsPayload,
-                            },
-                          })
-                        }
-                      >
-                        {t('req.detail.sendBackToInventoryCheck')}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        disabled={!hasValidFlags}
-                        loading={anyApprovalLoading}
-                        onClick={() =>
-                          void rejectToMarketPricing({
-                            variables: {
-                              id: req.id,
-                              reason: effectiveRejectReason,
-                              lineFlags: lineFlagsPayload,
-                            },
-                          })
-                        }
-                      >
-                        {t('req.detail.sendBackToMarketPricing')}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </Card>
-          )}
-
-          {/* ── approved / items_bought: Items Bought lives on its own screen ─── */}
-          {(req.status === 'approved' || req.status === 'items_bought') && (
-            <Card style={sectionCard}>
-              <div style={sectionTitle}>
-                {req.status === 'approved'
-                  ? t('req.detail.approvedBuyingStartsNext')
-                  : t('req.detail.itemsBoughtInProgress')}
-              </div>
-              <div
-                style={{
-                  fontSize: '13px',
-                  color: theme.textMuted,
-                  marginBottom: req.status === 'items_bought' ? '10px' : 0,
-                }}
-              >
-                {t('req.detail.recordingPurchasesPerVendorHappensOn')}
-              </div>
-              {req.status === 'items_bought' && awaitingOrganizerApproval > 0 && (
-                <div style={{ fontSize: '13px', color: theme.warning, marginBottom: '10px' }}>
-                  {t('req.detail.waitingForOrganizerApproval', {
-                    count: awaitingOrganizerApproval,
-                  })}
-                </div>
-              )}
-              {req.status === 'items_bought' && (
-                <Button
-                  variant="primary"
-                  size="sm"
-
-                  onClick={() => {
-                    navigate(`/procurement/requisitions/${req.id}/items-bought`)
-                  }}
-                >
-                  {t('req.detail.goToItemsBought')}
-                </Button>
-              )}
-            </Card>
-          )}
+        <div
+          style={{
+            // A row of its own under the lines, full width; hidden when there is nothing to put in it.
+            flex: '1 1 100%',
+            minWidth: 0,
+            order: 3,
+            display: hasFollowUpCards ? undefined : 'none',
+          }}
+        >
+          {/* Draft, store pricing, market pricing and price verification: their action is the bar at the bottom of the page. */}
 
           {/* ── Children POs (once any exist) ───────────────────────────────── */}
           {showChildren && children.length > 0 && (
@@ -3567,34 +3021,415 @@ export default function RequisitionDetail() {
             </Card>
           )}
 
-          {req.status === 'sourcing' && (
-            <Card style={sectionCard}>
-              <div style={sectionTitle}>{t('req.detail.sourcing')}</div>
-              <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                {t('req.detail.waitingOnEveryLineToResolve')}
-              </div>
-            </Card>
-          )}
-
-          {req.status === 'completed' && (
-            <Card style={sectionCard}>
-              <div style={sectionTitle}>{t('req.detail.completed')}</div>
-              <div style={{ fontSize: '13px', color: theme.success }}>
-                {t('req.detail.everyLineOnThisRequisitionHas')}
-              </div>
-            </Card>
-          )}
-
-          {['rejected', 'cancelled', 'deleted'].includes(req.status) && (
-            <Card style={sectionCard}>
-              <div style={sectionTitle}>{getRequisitionStatusLabel(req.status)}</div>
-              <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                {t('req.detail.thisRequisitionIsNoLongerActive')}
-              </div>
-            </Card>
-          )}
         </div>
       </div>
+
+      {/* ── The step's action: one bar at the bottom of the page ────────────────
+          Draft, store pricing, market pricing and price verification are filled in on the Lines table
+          itself (price boxes in the cells); what is left of each step is its button, here. ─────── */}
+      {req.status === 'draft' && !isDirectSupply && (
+        <StageActionBar
+          title={t('req.detail.nextStepSubmitForInventoryCheck')}
+          hint={t('req.detail.onceSubmittedTheOrganizerOrA')}
+          status={canSubmitDraft ? undefined : barNote(t('req.detail.onlyTheOrganizerOrAnAdmin2'))}
+        >
+          {canSubmitDraft && (
+            <Button
+              variant="primary"
+              loading={lSubmit}
+              onClick={() => void submitToInventory({ variables: { id: req.id } })}
+            >
+              {t('req.detail.submitForInventoryCheck')}
+            </Button>
+          )}
+        </StageActionBar>
+      )}
+
+      {/* Direct supply: no inventory check and no pricing step, so the draft goes straight to the approver, who sees
+          the Est. Unit Price typed when it was created. */}
+      {req.status === 'draft' && isDirectSupply && (
+        <StageActionBar
+          title={t('req.detail.nextStepSubmitForApproval')}
+          hint={t('req.detail.directSupplyApprovalHint')}
+          status={canSubmitDraft ? undefined : barNote(t('req.detail.onlyTheOrganizerOrAnAdmin2'))}
+        >
+          {canSubmitDraft && (
+            <Button
+              variant="primary"
+              loading={lSubmitDirect}
+              onClick={() => void submitDirectSupply({ variables: { id: req.id } })}
+            >
+              {t('req.detail.submitForApproval')}
+            </Button>
+          )}
+        </StageActionBar>
+      )}
+
+      {req.status === 'inventory_check' && (
+        <StageActionBar
+          title={t('req.detail.nextStepConfirmStockAvailability')}
+          hint={t('req.detail.enterTheQuantityToTakeFrom')}
+          status={
+            canConfirmInventory
+              ? barNote(
+                  t('req.detail.invCoveredSummary', {
+                    covered: invCovered,
+                    total: req.lines.length,
+                  }),
+                )
+              : barNote(t('req.detail.onlyTheOrganizerAStoreKeeper'))
+          }
+        >
+          {canConfirmInventory && (
+            <Button
+              variant="primary"
+              loading={lConfirm}
+              onClick={() =>
+                void confirmInventory({
+                  variables: {
+                    id: req.id,
+                    lineStockQtys: req.lines.map((l) => ({
+                      lineId: l.id,
+                      qtyFromStock: parseFloat(invQty[l.id] ?? '0') || 0,
+                      sourceLocationId: invLoc[l.id] || undefined,
+                      productId: productOverride[l.id] || undefined,
+                    })),
+                  },
+                }).then(() => {
+                  // Now saved for real: the draft would otherwise linger in localStorage forever for a
+                  // stage this requisition has already moved past.
+                  if (invCheckDraftKey) {
+                    try {
+                      localStorage.removeItem(invCheckDraftKey)
+                    } catch {
+                      // Unavailable localStorage: nothing to clean up.
+                    }
+                  }
+                })
+              }
+            >
+              {t('req.detail.confirmInventoryCheck')}
+            </Button>
+          )}
+        </StageActionBar>
+      )}
+
+      {req.status === 'store_pricing' && (
+        <StageActionBar
+          title={t('req.detail.nextStepStorePricing')}
+          hint={t('req.detail.recordWhatThisWouldCostFrom')}
+          status={
+            !canStorePrice
+              ? barNote(t('req.detail.onlySomeoneHoldingTheStorePricing'))
+              : linesFromStock.length === 0
+                ? barNote(t('req.detail.noLinesOnThisRequisitionAre'))
+                : undefined
+          }
+        >
+          {canStorePrice && (
+            <Button
+              variant="primary"
+              loading={lStore}
+              onClick={() =>
+                void submitStorePricing({
+                  variables: {
+                    id: req.id,
+                    linePrices: linesFromStock.map((l) => ({
+                      lineId: l.id,
+                      storePrice:
+                        parseFloat(
+                          storePrices[l.id] ??
+                            String(l.store_price ?? l.source_average_cost ?? '0'),
+                        ) || 0,
+                      currencyCode: l.currency_code ?? 'IQD',
+                    })),
+                  },
+                })
+              }
+            >
+              {t('req.detail.submitToMarketPricing')}
+            </Button>
+          )}
+        </StageActionBar>
+      )}
+
+      {req.status === 'market_pricing' && (
+        <StageActionBar
+          title={t('req.detail.nextStepMarketPricing')}
+          hint={t('req.detail.enterTheCheckedVendorQuotePer')}
+          // The long explanation and who has submitted which part go in `more`: on a phone they sit behind the
+          // bar's info button, so what is left in `status` is only what blocks the step.
+          more={
+            marketEntry && linesToBuy.length > 0 && (isOrganizer || splitPricing) ? (
+              <>
+                {isOrganizer && (
+                  <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+                    {t('req.detail.splitHintOwner')}
+                  </div>
+                )}
+                {splitPricing && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '8px 16px',
+                      fontSize: '12px',
+                      color: theme.textSecondary,
+                    }}
+                  >
+                    <span>
+                      {t('req.detail.ownerItemsCount', { n: ownerLines.length })}{' '}
+                      <Badge variant={req.owner_pricing_submitted_at ? 'success' : 'warning'}>
+                        {req.owner_pricing_submitted_at
+                          ? t('req.detail.partSubmitted')
+                          : t('req.detail.partWaiting')}
+                      </Badge>
+                    </span>
+                    <span>
+                      {t('req.detail.procurementItemsCount', { n: procLines.length })}{' '}
+                      {procLines.length === 0 ? (
+                        <Badge variant="neutral">{t('req.detail.partNone')}</Badge>
+                      ) : (
+                        <Badge
+                          variant={req.procurement_pricing_submitted_at ? 'success' : 'warning'}
+                        >
+                          {req.procurement_pricing_submitted_at
+                            ? t('req.detail.partSubmitted')
+                            : t('req.detail.partWaiting')}
+                        </Badge>
+                      )}
+                    </span>
+                  </div>
+                )}
+              </>
+            ) : undefined
+          }
+          status={
+            !marketEntry ? (
+              barNote(t('req.detail.onlyAProcurementOfficerOrAn'))
+            ) : linesToBuy.length === 0 ? (
+              barNote(t('req.detail.nothingOnThisRequisitionNeedsA'))
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {splitPricing &&
+                  !ownerAllPriced &&
+                  barWarning(t('req.detail.priceEveryItemYouTook'))}
+                {canMarketPrice &&
+                  procLines.length > 0 &&
+                  !procAllPriced &&
+                  barWarning(t('req.detail.enterAPriceForEveryLine'))}
+                {canMarketPrice &&
+                  procLines.length === 0 &&
+                  barNote(t('req.detail.nothingLeftForProcurement'))}
+              </div>
+            )
+          }
+        >
+          {/* Nothing to buy at all: one Continue, for procurement. */}
+          {marketEntry && linesToBuy.length === 0 && canMarketPrice && (
+            <Button
+              variant="primary"
+              loading={lMarket}
+              onClick={() =>
+                void submitMarketPricing({ variables: { id: req.id, linePrices: [] } })
+              }
+            >
+              {t('req.detail.continueToPriceVerification')}
+            </Button>
+          )}
+          {/* The owner's part: his own lines, or procurement stepping in for him. */}
+          {marketEntry && splitPricing && (
+            <Button
+              variant={procLines.length === 0 && canMarketPrice ? 'primary' : 'secondary'}
+              loading={lMarket}
+              disabled={!ownerAllPriced}
+              onClick={() =>
+                void submitMarketPricing({
+                  variables: {
+                    id: req.id,
+                    side: 'OWNER',
+                    linePrices: marketLinePrices(ownerLines),
+                  },
+                })
+              }
+            >
+              {isOrganizer
+                ? req.owner_pricing_submitted_at
+                  ? t('req.detail.updateMyItems')
+                  : t('req.detail.submitMyItems')
+                : req.owner_pricing_submitted_at
+                  ? t('req.detail.updateOwnerItems')
+                  : t('req.detail.submitOwnerItems')}
+            </Button>
+          )}
+          {/* Procurement's part. With nothing split this is the one submit it always was. */}
+          {marketEntry && canMarketPrice && procLines.length > 0 && (
+            <Button
+              variant="primary"
+              loading={lMarket}
+              disabled={!procAllPriced}
+              onClick={() =>
+                void submitMarketPricing({
+                  variables: { id: req.id, linePrices: marketLinePrices(procLines) },
+                })
+              }
+            >
+              {splitPricing
+                ? req.procurement_pricing_submitted_at
+                  ? t('req.detail.updateProcurementItems')
+                  : t('req.detail.submitProcurementItems')
+                : t('req.detail.submitToPriceVerification')}
+            </Button>
+          )}
+        </StageActionBar>
+      )}
+
+      {req.status === 'price_verification' && (
+        <StageActionBar
+          title={t('req.detail.nextStepVerifyPrices')}
+          hint={t('req.detail.crossCheckEachMarketPriceAnd')}
+          status={
+            !canVerifyPrice ? (
+              barNote(t('req.detail.onlyAProcurement2ndPositionHolder'))
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {linesToBuy.length === 0
+                  ? barNote(t('req.detail.nothingOnThisRequisitionNeedsPrice'))
+                  : !linesToBuy.every((l) => priceIsValid(verifiedRawOf(l))) &&
+                    barWarning(t('req.detail.enterAVerifiedPriceForEvery'))}
+                {barNote(sendBackHint)}
+              </div>
+            )
+          }
+        >
+          {canVerifyPrice && (
+            <Button
+              variant="secondary"
+              disabled={!hasValidFlags}
+              onClick={() => {
+                setSendBackOpen(true)
+              }}
+            >
+              {t('req.detail.sendBackButton')}
+            </Button>
+          )}
+          {canVerifyPrice && linesToBuy.length === 0 && (
+            <Button
+              variant="primary"
+              loading={anyVerifyLoading}
+              onClick={() => void verifyPrices({ variables: { id: req.id, lineAdjustments: [] } })}
+            >
+              {t('req.detail.continueToApproval')}
+            </Button>
+          )}
+          {canVerifyPrice && linesToBuy.length > 0 && (
+            <Button
+              variant="primary"
+              loading={anyVerifyLoading}
+              disabled={!linesToBuy.every((l) => priceIsValid(verifiedRawOf(l)))}
+              onClick={() =>
+                void verifyPrices({
+                  variables: {
+                    id: req.id,
+                    lineAdjustments: linesToBuy.map((l) => ({
+                      lineId: l.id,
+                      verifiedPrice: parseFloat(verifiedRawOf(l)),
+                    })),
+                  },
+                })
+              }
+            >
+              {t('req.detail.submitForApproval')}
+            </Button>
+          )}
+        </StageActionBar>
+      )}
+
+      {req.status === 'pending_approval' && (
+        <StageActionBar
+          title={t('req.detail.nextStepApproveOrReject')}
+          hint={t('req.detail.rejectingSendsThisRequisitionBackTo')}
+          status={
+            canApprove
+              ? barNote(sendBackHint)
+              : barNote(t('req.detail.onlyTheDepartmentHeadTheAssigned'))
+          }
+        >
+          {canApprove && (
+            <Button
+              variant="secondary"
+              disabled={!hasValidFlags}
+              onClick={() => {
+                setSendBackOpen(true)
+              }}
+            >
+              {t('req.detail.sendBackButton')}
+            </Button>
+          )}
+          {canApprove && (
+            <Button
+              variant="primary"
+              loading={anyApprovalLoading}
+              onClick={() => void approve({ variables: { id: req.id } })}
+            >
+              {t('req.detail.approve')}
+            </Button>
+          )}
+        </StageActionBar>
+      )}
+
+      {(req.status === 'approved' || req.status === 'items_bought') && (
+        <StageActionBar
+          title={
+            req.status === 'approved'
+              ? t('req.detail.approvedBuyingStartsNext')
+              : t('req.detail.itemsBoughtInProgress')
+          }
+          hint={t('req.detail.recordingPurchasesPerVendorHappensOn')}
+          status={
+            req.status === 'items_bought' && awaitingOrganizerApproval > 0 ? (
+              <Badge variant="warning">
+                {t('req.detail.waitingForOrganizerApproval', { count: awaitingOrganizerApproval })}
+              </Badge>
+            ) : undefined
+          }
+        >
+          {req.status === 'items_bought' && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                navigate(`/procurement/requisitions/${req.id}/items-bought`)
+              }}
+            >
+              {t('req.detail.goToItemsBought')}
+            </Button>
+          )}
+        </StageActionBar>
+      )}
+
+      {req.status === 'sourcing' && (
+        <StageActionBar
+          title={t('req.detail.sourcing')}
+          status={barNote(t('req.detail.waitingOnEveryLineToResolve'))}
+        />
+      )}
+
+      <SendBackDialog
+        open={sendBackOpen}
+        onClose={() => {
+          setSendBackOpen(false)
+        }}
+        title={t('req.detail.sendBackTitle', { number: req.requisition_number })}
+        destinations={sendBackOptions}
+        flagged={sendBackFlagged}
+        note={rejectReason}
+        notePlaceholder={flagAutoReason}
+        onNoteChange={setRejectReason}
+        loading={anyVerifyLoading || anyApprovalLoading}
+        onConfirm={(key) => {
+          void sendBackOptions.find((o) => o.key === key)?.run()
+        }}
+      />
 
       {/* Print dialog — mirrors PurchaseOrderDetail's own print modal
           (buildRequisitionHTML instead of buildPurchaseOrderHTML: no vendor

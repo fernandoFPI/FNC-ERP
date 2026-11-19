@@ -163,12 +163,12 @@ export default function VendorForm() {
         >
           <SectionTitle theme={theme} label={t('vendor.form.basicInfo')} />
           <Row>
-            <Input label={t('vendor.form.vendorName')} value={form.name} onChange={field('name')} required />
-            <Input label={t('vendor.form.legalName')} value={form.legal_name} onChange={field('legal_name')} />
+            <Input field label={t('vendor.form.vendorName')} value={form.name} onChange={field('name')} required />
+            <Input field label={t('vendor.form.legalName')} value={form.legal_name} onChange={field('legal_name')} />
           </Row>
           <Row>
-            <Input label={t('vendor.form.taxId')} value={form.tax_id} onChange={field('tax_id')} />
-            <Select label={t('vendor.form.currency')} value={form.currency_code} onChange={field('currency_code')}>
+            <Input field label={t('vendor.form.taxId')} value={form.tax_id} onChange={field('tax_id')} />
+            <Select field label={t('vendor.form.currency')} value={form.currency_code} onChange={field('currency_code')}>
               {CURRENCIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -177,7 +177,7 @@ export default function VendorForm() {
             </Select>
           </Row>
           <Row>
-            <Input
+            <Input field
               label={t('vendor.form.paymentTermsDays')}
               type="number"
               min="0"
@@ -188,7 +188,7 @@ export default function VendorForm() {
 
           <SectionTitle theme={theme} label={t('vendor.form.address')} />
           <Row>
-            <Input
+            <Input field
               label={t('vendor.form.countryCode')}
               value={form.country_code}
               onChange={(e) => {
@@ -197,18 +197,18 @@ export default function VendorForm() {
               placeholder="IQ"
               maxLength={2}
             />
-            <Input label={t('vendor.form.city')} value={form.city} onChange={field('city')} />
+            <Input field label={t('vendor.form.city')} value={form.city} onChange={field('city')} />
           </Row>
-          <Input label={t('vendor.form.address')} value={form.address} onChange={field('address')} />
+          <Input field label={t('vendor.form.address')} value={form.address} onChange={field('address')} />
 
           <SectionTitle theme={theme} label={t('vendor.form.contact')} />
           <Row>
-            <Input
+            <Input field
               label={t('vendor.form.contactName')}
               value={form.contact_name}
               onChange={field('contact_name')}
             />
-            <Input
+            <Input field
               label={t('vendor.form.contactEmail')}
               type="email"
               value={form.contact_email}
@@ -216,12 +216,12 @@ export default function VendorForm() {
             />
           </Row>
           <Row>
-            <Input
+            <Input field
               label={t('vendor.form.contactPhone')}
               value={form.contact_phone}
               onChange={field('contact_phone')}
             />
-            <Input label={t('vendor.form.bankName')} value={form.bank_name} onChange={field('bank_name')} />
+            <Input field label={t('vendor.form.bankName')} value={form.bank_name} onChange={field('bank_name')} />
           </Row>
 
           <Checkbox

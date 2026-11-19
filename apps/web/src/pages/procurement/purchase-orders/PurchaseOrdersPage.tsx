@@ -5,7 +5,11 @@ import { useTranslation } from 'react-i18next'
 import { PURCHASE_ORDERS_QUERY, APPROVE_PO, REJECT_PO } from '../../../graphql/procurement'
 import { useTheme } from '../../../theme/ThemeContext'
 import { Card } from '../../../components/ui/Card'
-import { Button } from '../../../components/ui/Button'
+import { ActionButton } from '../../../components/ui/ActionButton'
+import { Checkbox } from '../../../components/ui/Checkbox'
+import { Textarea } from '../../../components/ui/Textarea'
+import { denseFormStyles } from '../../../components/ui/fieldStyles'
+import { useIsRtl } from '../../../i18n'
 import { Modal } from '../../../components/ui/Modal'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
@@ -23,9 +27,11 @@ import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { useMyQueueCount } from '../../../hooks/useMyQueueCount'
+import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import {
   BarButton,
   DockLayout,
+  EmptyState,
   FilterField,
   Icon,
   IconButton,
@@ -36,11 +42,13 @@ import {
   Pagination,
   PersonCell,
   PillSelect,
+  PriorityTag,
   RowMenu,
   SearchBox,
   SelectionBar,
   StageMini,
-  dateInputStyle,
+  FilterChips,
+  type FilterChip,
   formatAge,
   formatMoney,
   isPastDate,
@@ -72,9 +80,10 @@ const FILTER_DEFAULTS = {
 
 const PAGE_SIZE = 200
 
-const PRIORITY_STYLES: Partial<Record<string, { color: string; bg: string; border: string }>> = {
-  high: { color: '#d97706', bg: 'rgba(217,119,6,0.08)', border: 'rgba(217,119,6,0.3)' },
-  emergency: { color: '#dc2626', bg: 'rgba(220,38,38,0.08)', border: 'rgba(220,38,38,0.3)' },
+// Which priorities get a tag, and in which tone (a normal priority is not tagged)
+const PRIORITY_TONE: Partial<Record<string, 'warning' | 'danger'>> = {
+  high: 'warning',
+  emergency: 'danger',
 }
 
 const OPEN_EXCLUDED = new Set<string>([...PO_TERMINAL_STATUSES, ...CHILD_PO_TERMINAL_STATUSES])
@@ -135,7 +144,10 @@ const isDelayed = (o: PurchaseOrder) => {
 
 export default function PurchaseOrdersPage() {
   const { t } = useTranslation()
-  const { theme } = useTheme()
+  const { theme, themeKey } = useTheme()
+  const rtl = useIsRtl()
+  // the filter panel's boxes: the same field look as the forms
+  const filterBoxes = denseFormStyles(theme, { rtl, dark: themeKey === 'black' })
   const priorityLabel = (p: string) => t(`po.priority.${p}`, { defaultValue: p })
   const STATUS_OPTIONS = [
     ...ALL_PO_STATUSES.map((s) => ({ value: s.key, label: getPOStatusLabel(s.key) })),
@@ -145,6 +157,9 @@ export default function PurchaseOrdersPage() {
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
   const [urlParams] = useSearchParams()
+  const { isPhone } = useBreakpoint()
+  // Phone: the four dropdown filters sit behind one button.
+  const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [buyerFilter, setBuyerFilter] = useState('')
@@ -343,6 +358,121 @@ export default function PurchaseOrdersPage() {
     !!(search || statusFilter || buyerFilter || vendorFilter || projectFilter) ||
     moreFilterCount > 0
 
+  // The applied filters as chips (desktop): each can be taken off with one click, and a filter no visible box shows (a tile's
+  // quick filter, "only mine") is named here too, so a short list is never a mystery.
+  const labelOf = (options: { value: string; label: string }[], value: string) =>
+    options.find((o) => o.value === value)?.label ?? value
+  const filterChips: FilterChip[] = [
+    ...(statusFilter
+      ? [
+          {
+            key: 'status',
+            label: t('po.list.filter.status'),
+            value: labelOf(STATUS_OPTIONS, statusFilter),
+            onRemove: () => {
+              setStatusFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(buyerFilter
+      ? [
+          {
+            key: 'organizer',
+            label: t('po.list.filter.organizer'),
+            value: buyerFilter,
+            onRemove: () => {
+              setBuyerFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(vendorFilter
+      ? [
+          {
+            key: 'vendor',
+            label: t('po.list.filter.vendor'),
+            value: labelOf(vendorOptions, vendorFilter),
+            onRemove: () => {
+              setVendorFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(projectFilter
+      ? [
+          {
+            key: 'project',
+            label: t('po.list.filter.project'),
+            value: labelOf(projectOptions, projectFilter),
+            onRemove: () => {
+              setProjectFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(priorityFilter
+      ? [
+          {
+            key: 'priority',
+            label: t('po.list.filter.priority'),
+            value: labelOf(PRIORITY_OPTIONS, priorityFilter),
+            onRemove: () => {
+              setPriorityFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(quickFilter
+      ? [
+          {
+            key: 'quick',
+            label: t('common.quickFilter'),
+            value:
+              quickFilter === 'needAction' ? t('po.list.kpi.needAction') : t('po.list.kpi.delayed'),
+            onRemove: () => {
+              setQuickFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(fromDate
+      ? [
+          {
+            key: 'from',
+            label: t('po.list.filter.createdFrom'),
+            value: fromDate,
+            onRemove: () => {
+              setFromDate('')
+            },
+          },
+        ]
+      : []),
+    ...(toDate
+      ? [
+          {
+            key: 'to',
+            label: t('po.list.filter.createdTo'),
+            value: toDate,
+            onRemove: () => {
+              setToDate('')
+            },
+          },
+        ]
+      : []),
+    ...(myPOsOnly
+      ? [
+          {
+            key: 'mine',
+            label: t('po.list.filter.onlyMine'),
+            onRemove: () => {
+              setMyPOsOnly(false)
+            },
+          },
+        ]
+      : []),
+  ]
+
   // ── Selection helpers ──
   const filteredIds = filtered.map((o) => o.id)
   const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id))
@@ -476,15 +606,11 @@ export default function PurchaseOrdersPage() {
     width: '40px',
     mobileHide: true,
     renderHeader: () => (
-      <input
-        type="checkbox"
-        aria-label={t('po.list.selectAll')}
+      <Checkbox
+        ariaLabel={t('po.list.selectAll')}
         checked={allSelected}
-        ref={(el) => {
-          if (el) el.indeterminate = someSelected && !allSelected
-        }}
+        indeterminate={someSelected && !allSelected}
         onChange={toggleSelectAll}
-        style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: theme.accent }}
       />
     ),
     render: (o) => (
@@ -494,14 +620,12 @@ export default function PurchaseOrdersPage() {
         }}
         style={{ display: 'flex', alignItems: 'center' }}
       >
-        <input
-          type="checkbox"
-          aria-label={t('po.list.selectOne', { po: o.po_number })}
+        <Checkbox
+          ariaLabel={t('po.list.selectOne', { po: o.po_number })}
           checked={selectedIds.has(o.id)}
           onChange={() => {
             toggleSelect(o.id)
           }}
-          style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: theme.accent }}
         />
       </div>
     ),
@@ -513,33 +637,19 @@ export default function PurchaseOrdersPage() {
       header: t('po.list.col.poNumber'),
       mobilePrimary: true,
       render: (o) => {
-        const ps = PRIORITY_STYLES[o.priority]
+        const tone = PRIORITY_TONE[o.priority]
         return (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontWeight: 600, color: theme.accent, fontSize: '13px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontWeight: 600, color: theme.accentSolid, fontSize: '13px' }}>
                 {o.po_number}
               </span>
-              {ps && (
-                <span
-                  style={{
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    color: ps.color,
-                    background: ps.bg,
-                    border: `1px solid ${ps.border}`,
-                    borderRadius: '4px',
-                    padding: '0 5px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  {priorityLabel(o.priority)}
-                </span>
-              )}
+              {tone && <PriorityTag tone={tone}>{priorityLabel(o.priority)}</PriorityTag>}
             </div>
             {o.requisitionNumber && (
-              <div style={{ fontSize: '11px', color: theme.textMuted }}>{o.requisitionNumber}</div>
+              <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+                {o.requisitionNumber}
+              </div>
             )}
           </div>
         )
@@ -563,7 +673,7 @@ export default function PurchaseOrdersPage() {
             // falling back to a misleading "0".
             render: (o: PurchaseOrder) =>
               o.currencyTotals.length === 0 ? (
-                <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
+                <span style={{ fontSize: '13px', color: theme.textSecondary }}>—</span>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   {o.currencyTotals.map((ct) => (
@@ -616,7 +726,7 @@ export default function PurchaseOrdersPage() {
         >
           <Badge variant={getPOStatusVariant(o.status)}>{getPOStatusLabel(o.status)}</Badge>
           {needsInvoice(o) && (
-            <span style={{ fontSize: '11px', color: theme.warning, fontWeight: 600 }}>
+            <span style={{ fontSize: '12px', color: theme.warning, fontWeight: 600 }}>
               ⚠ {t('po.list.needsInvoice')}
             </span>
           )}
@@ -673,6 +783,9 @@ export default function PurchaseOrdersPage() {
   ]
 
   const columns = [checkboxCol, ...dataColumns]
+  const dropdownFilterCount = [statusFilter, buyerFilter, vendorFilter, projectFilter].filter(
+    Boolean,
+  ).length
   const previewRow = previewId ? orders.find((o) => o.id === previewId) : undefined
 
   const toggleQuick = (k: string) => {
@@ -680,32 +793,39 @@ export default function PurchaseOrdersPage() {
   }
 
   return (
-    <div style={{ padding: '24px', margin: '0 auto', maxWidth: '2400px' }}>
+    <div
+      style={{
+        padding: isPhone ? '12px 16px 24px' : '24px',
+        margin: '0 auto',
+        maxWidth: '2400px',
+      }}
+    >
       <PageTitle
         icon="cart"
         title={t('po.list.title')}
         subtitle={t('po.list.subtitle')}
         actions={
           <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                csvFor(filtered, `purchase-orders-${today}.csv`)
-              }}
-            >
-              {t('po.list.exportCsv')}
-            </Button>
-            <Button
+            {/* A CSV file is not something to download on a phone. */}
+            {!isPhone && (
+              <ActionButton
+                variant="outline"
+                onClick={() => {
+                  csvFor(filtered, `purchase-orders-${today}.csv`)
+                }}
+              >
+                {t('po.list.exportCsv')}
+              </ActionButton>
+            )}
+            <ActionButton
               data-tour="new-po-btn"
-              variant="primary"
-              size="sm"
+              variant="solid"
               onClick={() => {
                 navigate('/procurement/requisitions/new')
               }}
             >
               {t('po.list.newRequisition')}
-            </Button>
+            </ActionButton>
           </>
         }
       />
@@ -728,21 +848,17 @@ export default function PurchaseOrdersPage() {
           <span>
             {t('po.list.filteredByProject')} <strong>{projectNameFilter}</strong>
           </span>
-          <button
-            style={{
-              marginInlineStart: 'auto',
-              color: theme.textMuted,
-              cursor: 'pointer',
-              background: 'none',
-              border: 'none',
-              fontSize: '14px',
-            }}
-            onClick={() => {
-              navigate('/procurement/purchase-orders')
-            }}
-          >
-            {t('po.list.clearX')}
-          </button>
+          <span style={{ marginInlineStart: 'auto' }}>
+            <ActionButton
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                navigate('/procurement/purchase-orders')
+              }}
+            >
+              {t('po.list.clearX')}
+            </ActionButton>
+          </span>
         </div>
       )}
 
@@ -843,7 +959,23 @@ export default function PurchaseOrdersPage() {
       >
         <Card
           padding="md"
-          style={{ borderRadius: '14px', flex: 1, display: 'flex', flexDirection: 'column' }}
+          style={{
+            borderRadius: '14px',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            // Phone: each PO is already a card, so the list is not boxed a second time.
+            ...(isPhone
+              ? {
+                  padding: 0,
+                  background: 'transparent',
+                  border: 'none',
+                  backdropFilter: 'none',
+                  WebkitBackdropFilter: 'none',
+                  overflow: 'visible',
+                }
+              : {}),
+          }}
         >
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
             <SearchBox
@@ -851,6 +983,41 @@ export default function PurchaseOrdersPage() {
               onChange={setSearch}
               placeholder={t('po.list.searchPlaceholder')}
             />
+            {isPhone && (
+              <button
+                type="button"
+                aria-label={t('po.list.filters')}
+                aria-expanded={phoneFiltersOpen}
+                onClick={() => {
+                  setPhoneFiltersOpen((open) => !open)
+                }}
+                style={{
+                  height: '40px',
+                  minWidth: '40px',
+                  padding: '0 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  borderRadius: '10px',
+                  border: `1px solid ${phoneFiltersOpen || dropdownFilterCount > 0 ? theme.accentSolid : theme.borderField}`,
+                  background: phoneFiltersOpen ? theme.accentBg : theme.bgSurface,
+                  color: dropdownFilterCount > 0 ? theme.accentSolid : theme.textSecondary,
+                  fontFamily: 'inherit',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                <Icon name="filter" size={16} />
+                {dropdownFilterCount > 0 && <span>{dropdownFilterCount}</span>}
+              </button>
+            )}
+            {/* Phone: the four dropdowns stay mounted (their values keep applying) but are hidden until the Filters
+                button is pressed; anywhere else this wrapper does not change the layout. */}
+            <div style={{ display: isPhone && !phoneFiltersOpen ? 'none' : 'contents' }}>
             <PillSelect
               label={t('po.list.filter.status')}
               value={statusFilter}
@@ -882,7 +1049,7 @@ export default function PurchaseOrdersPage() {
                   onChange={(e) => {
                     setPriorityFilter(e.target.value)
                   }}
-                  style={dateInputStyle(theme)}
+                    style={filterBoxes.selectStyle}
                 >
                   <option value="">{t('common.all')}</option>
                   {PRIORITY_OPTIONS.map((p) => (
@@ -899,7 +1066,7 @@ export default function PurchaseOrdersPage() {
                   onChange={(e) => {
                     setFromDate(e.target.value)
                   }}
-                  style={dateInputStyle(theme)}
+                    style={filterBoxes.inputStyle}
                 />
               </FilterField>
               <FilterField label={t('po.list.filter.createdTo')}>
@@ -909,29 +1076,16 @@ export default function PurchaseOrdersPage() {
                   onChange={(e) => {
                     setToDate(e.target.value)
                   }}
-                  style={dateInputStyle(theme)}
+                    style={filterBoxes.inputStyle}
                 />
               </FilterField>
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '13px',
-                  color: theme.textPrimary,
-                }}
-              >
-                <input
-                  type="checkbox"
+                <Checkbox
+                  label={t('po.list.filter.onlyMine')}
                   checked={myPOsOnly}
-                  onChange={(e) => {
-                    setMyPOsOnly(e.target.checked)
-                  }}
-                  style={{ accentColor: theme.accent }}
+                  onChange={setMyPOsOnly}
                 />
-                {t('po.list.filter.onlyMine')}
-              </label>
               <FilterPresets
+                  inline
                 presets={presets}
                 onApply={(preset) => {
                   const r = resolvePreset(preset)
@@ -952,24 +1106,12 @@ export default function PurchaseOrdersPage() {
                 onDelete={deletePreset}
               />
               {anyFilter && (
-                <button
-                  type="button"
-                  onClick={clearAllFilters}
-                  style={{
-                    border: 'none',
-                    background: 'none',
-                    color: theme.accent,
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    textAlign: 'start',
-                    padding: 0,
-                    fontFamily: 'inherit',
-                  }}
-                >
+                  <ActionButton size="sm" variant="ghost" onClick={clearAllFilters}>
                   {t('po.list.filter.clearAll')}
-                </button>
+                  </ActionButton>
               )}
             </MoreFilters>
+            </div>
             <IconButton
               title={t('common.refresh')}
               onClick={() => {
@@ -979,6 +1121,14 @@ export default function PurchaseOrdersPage() {
               <Icon name="refresh" size={16} />
             </IconButton>
           </div>
+
+          {!isPhone && (
+            <FilterChips
+              chips={filterChips}
+              onClearAll={clearAllFilters}
+              clearAllLabel={t('common.clearAll')}
+            />
+          )}
 
           {selectedIds.size > 0 && (
             <SelectionBar
@@ -1023,29 +1173,113 @@ export default function PurchaseOrdersPage() {
               // empty result here previously looked like a dead end — this
               // always gives a one-click way out regardless of which filter
               // (visible or not) is the actual cause.
-              <div style={{ padding: '56px 16px', textAlign: 'center' }}>
-                <div style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>
-                  {t('po.list.emptyFiltered')}
-                </div>
-                <button
-                  type="button"
-                  onClick={clearAllFilters}
-                  style={{
-                    marginTop: '10px',
-                    border: 'none',
-                    background: 'none',
-                    color: theme.accent,
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {t('po.list.filter.clearAll')}
-                </button>
+              <EmptyState
+                title={t('po.list.emptyFiltered')}
+                action={
+                  <ActionButton variant="outline" size="sm" onClick={clearAllFilters}>
+                    {t('po.list.filter.clearAll')}
+                  </ActionButton>
+                }
+              />
+            ) : isPhone && !loading && pageRows.length > 0 ? (
+              // Phone: a PO is three short lines, so a screen holds about six instead of three. Tapping goes straight to the
+              // PO (the docked preview panel is an extra step on a phone).
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {pageRows.map((o) => {
+                  const tone = PRIORITY_TONE[o.priority]
+                  const subtitle = [o.vendor_name, o.project_id ? o.projectName : null]
+                    .filter(Boolean)
+                    .join(' · ')
+                  const totalText =
+                    canSeeTotals && o.currencyTotals.length > 0
+                      ? o.currencyTotals
+                          .map((ct) => formatMoney(parseFloat(ct.subtotal) || 0, ct.currency_code))
+                          .join(' + ')
+                      : null
+                  const meta = [totalText, o.organizerName, formatAge(o.created_at)]
+                    .filter(Boolean)
+                    .join(' · ')
+                  const open = () => {
+                    navigate(`/procurement/purchase-orders/${o.id}`)
+                  }
+                  return (
+                    <div
+                      key={o.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={open}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          open()
+                        }
+                      }}
+                      style={{
+                        background: theme.bgSurface,
+                        border: `0.5px solid ${theme.border}`,
+                        borderInlineStart:
+                          o.priority === 'emergency'
+                            ? `3px solid ${theme.danger}`
+                            : `0.5px solid ${theme.border}`,
+                        borderRadius: '12px',
+                        padding: '12px 14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                        }}
+                      >
+                        <span
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}
+                        >
+                          <span
+                            style={{ fontWeight: 700, color: theme.accentSolid, fontSize: '14px' }}
+                          >
+                            {o.po_number}
+                          </span>
+                          {tone && (
+                            <PriorityTag tone={tone}>{priorityLabel(o.priority)}</PriorityTag>
+                          )}
+                        </span>
+                        <Badge variant={getPOStatusVariant(o.status)}>
+                          {getPOStatusLabel(o.status)}
+                        </Badge>
+                      </div>
+                      {subtitle && (
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: theme.textPrimary,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {subtitle}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '12px', color: theme.textSecondary }}>{meta}</div>
+                      {needsInvoice(o) && (
+                        <div style={{ fontSize: '12px', color: theme.warning, fontWeight: 600 }}>
+                          ⚠ {t('po.list.needsInvoice')}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             ) : (
               <Table
+                readable
                 columns={columns}
                 data={pageRows}
                 loading={loading}
@@ -1055,7 +1289,10 @@ export default function PurchaseOrdersPage() {
                   setPreviewId(o.id)
                 }}
                 getRowStyle={(o) => {
-                  const base = o.priority === 'emergency' ? { borderInlineStart: '3px solid #dc2626' } : {}
+                  const base =
+                    o.priority === 'emergency'
+                      ? { borderInlineStart: `3px solid ${theme.danger}` }
+                      : {}
                   if (o.id === previewId) return { ...base, background: theme.accentBg }
                   return selectedIds.has(o.id) ? { ...base, background: theme.accentBg } : base
                 }}
@@ -1080,8 +1317,8 @@ export default function PurchaseOrdersPage() {
         description={t('po.list.rejectModal.description')}
         footer={
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <Button
-              variant="ghost"
+            <ActionButton
+              variant="outline"
               size="sm"
               disabled={rejecting}
               onClick={() => {
@@ -1089,8 +1326,8 @@ export default function PurchaseOrdersPage() {
               }}
             >
               {t('common.cancel')}
-            </Button>
-            <Button
+            </ActionButton>
+            <ActionButton
               variant="danger"
               size="sm"
               loading={rejecting}
@@ -1098,29 +1335,19 @@ export default function PurchaseOrdersPage() {
               onClick={() => void handleBulkReject()}
             >
               {t('po.list.reject')}
-            </Button>
+            </ActionButton>
           </div>
         }
       >
-        <textarea
+        <Textarea
+          field
+          autoFocus
           value={rejectReason}
           onChange={(e) => {
             setRejectReason(e.target.value)
           }}
           placeholder={t('po.list.rejectModal.placeholder')}
           rows={4}
-          style={{
-            width: '100%',
-            padding: '10px 12px',
-            borderRadius: '8px',
-            border: `1px solid ${theme.borderInput}`,
-            background: theme.bgSurface,
-            color: theme.textPrimary,
-            fontSize: '13px',
-            fontFamily: 'inherit',
-            resize: 'vertical',
-            boxSizing: 'border-box',
-          }}
         />
       </Modal>
     </div>

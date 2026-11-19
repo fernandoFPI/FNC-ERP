@@ -7,7 +7,7 @@ import { useQuery } from '@apollo/client'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { Badge } from '../ui/Badge'
-import { Button } from '../ui/Button'
+import { ActionButton } from '../ui/ActionButton'
 import { enumLabel } from '../../i18n'
 import { formatDateTime } from './ListKit'
 import { PO_EDIT_REQUEST_IMPACT_QUERY } from '../../graphql/procurement'
@@ -49,8 +49,6 @@ interface Props {
   onReject: (requestId: string, reason: string) => void
   approving?: boolean
   rejecting?: boolean
-  /** Bold fill for the Approve button, matching the page's other primary actions. */
-  primaryStyle?: CSSProperties
   /** What the request is on. Only changes the wording ("PO" or "requisition"). */
   kind?: 'po' | 'requisition'
   /** Show Approve / Reject on a pending request. The requisition page limits them to admins. */
@@ -79,7 +77,6 @@ export function EditRequestCard({
   onReject,
   approving,
   rejecting,
-  primaryStyle,
   kind = 'po',
   canReview = true,
   flush = false,
@@ -113,7 +110,8 @@ export function EditRequestCard({
   const lineName = (name: string | null) =>
     name ? <bdi>{name}</bdi> : t('po.editReq.lineNotOnPo', { context })
 
-  const muted: CSSProperties = { color: theme.textMuted }
+  // the readable grey (textMuted is 2.6:1 on white, #75)
+  const muted: CSSProperties = { color: theme.textSecondary }
   const displayValue = (field: string, value: unknown) =>
     ENUM_FIELDS.has(field) && typeof value === 'string' && value !== ''
       ? enumLabel(value)
@@ -438,17 +436,16 @@ export function EditRequestCard({
             marginTop: '12px',
           }}
         >
-          <Button
+          <ActionButton
             size="sm"
-            variant="primary"
-            style={primaryStyle}
+            variant="solid"
             loading={approving}
             onClick={() => {
               onApprove(er.id, reason.trim() || undefined)
             }}
           >
             {t('po.detail.approve')}
-          </Button>
+          </ActionButton>
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <input
               value={reason}
@@ -456,18 +453,21 @@ export function EditRequestCard({
                 setReason(e.target.value)
               }}
               placeholder={t('po.detail.rejectionReasonRequired')}
+              // the field look at 32px, the height of the buttons beside it
               style={{
                 width: '240px',
-                padding: '7px 10px',
-                borderRadius: '6px',
-                border: `1px solid ${theme.borderInput}`,
-                background: theme.bgCanvas,
+                height: '32px',
+                padding: '0 12px',
+                borderRadius: '10px',
+                border: `1px solid ${theme.borderField}`,
+                background: theme.bgSurface,
                 color: theme.textPrimary,
                 fontSize: '13px',
+                fontFamily: 'inherit',
                 boxSizing: 'border-box',
               }}
             />
-            <Button
+            <ActionButton
               size="sm"
               variant="danger"
               loading={rejecting}
@@ -477,7 +477,7 @@ export function EditRequestCard({
               }}
             >
               {t('po.detail.reject')}
-            </Button>
+            </ActionButton>
           </div>
         </div>
       )}

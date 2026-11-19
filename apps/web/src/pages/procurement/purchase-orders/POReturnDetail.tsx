@@ -23,8 +23,10 @@ import type {
 import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
 import { useTheme } from '../../../theme/ThemeContext'
+import type { ThemeTokens } from '../../../theme/tokens'
+import { denseFormStyles } from '../../../components/ui/fieldStyles'
 import { PageHeader } from '../../../components/ui/PageHeader'
-import { Button } from '../../../components/ui/Button'
+import { ActionButton } from '../../../components/ui/ActionButton'
 import { useToastStore } from '../../../store/toastStore'
 import { usePermission } from '../../../hooks/usePermission'
 import type { Column } from '../../../components/ui/Table'
@@ -78,11 +80,15 @@ interface POReturn {
   deduction_applied_at: string | null
 }
 
-const STATUS_COLOR: Record<string, { bg: string; text: string; border: string }> = {
-  draft: { bg: '#f9fafb', text: '#6b7280', border: '#d1d5db' },
-  submitted: { bg: '#fffbeb', text: '#d97706', border: '#fcd34d' },
-  approved: { bg: '#f0fdf4', text: '#16a34a', border: '#86efac' },
-  credited: { bg: '#eff6ff', text: '#2563eb', border: '#93c5fd' },
+// The colours of a return's status chip, taken from the active theme (they were fixed light tints that read badly in the
+// dark theme).
+function statusColors(theme: ThemeTokens): Record<string, { bg: string; text: string; border: string }> {
+  return {
+    draft: { bg: theme.bgCanvas, text: theme.textSecondary, border: theme.borderInput },
+    submitted: { bg: theme.warningBg, text: theme.warning, border: theme.warningBorder },
+    approved: { bg: theme.successBg, text: theme.success, border: theme.successBorder },
+    credited: { bg: theme.infoBg, text: theme.info, border: theme.infoBorder },
+  }
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -95,7 +101,9 @@ const STATUS_LABEL: Record<string, string> = {
 export default function POReturnDetail() {
   const { id, returnId } = useParams<{ id: string; returnId: string }>()
   const navigate = useNavigate()
-  const { theme } = useTheme()
+  const { theme, themeKey } = useTheme()
+  // The raw boxes on this page share the PO forms' field look (36px, the readable edge).
+  const { inputStyle } = denseFormStyles(theme, { dark: themeKey === 'black' })
   const addToast = useToastStore((s) => s.addToast)
   const { can } = usePermission()
 
@@ -303,7 +311,8 @@ export default function POReturnDetail() {
       </div>
     )
 
-  const sc = STATUS_COLOR[ret.status] ?? STATUS_COLOR.draft
+  const statusPalette = statusColors(theme)
+  const sc = statusPalette[ret.status] ?? statusPalette.draft
   const fmtNum = (n: string | number) =>
     parseFloat(String(n)).toLocaleString(undefined, { maximumFractionDigits: 2 })
   const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString('en-GB') : '—')
@@ -366,7 +375,7 @@ export default function POReturnDetail() {
             fontVariantNumeric: 'tabular-nums',
             color:
               parseFloat(item.assessed_unit_price) < parseFloat(item.original_unit_price)
-                ? '#ef4444'
+                ? theme.danger
                 : theme.textPrimary,
           }}
         >
@@ -385,7 +394,7 @@ export default function POReturnDetail() {
           <div style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: theme.accent }}>
             {ret.currency_code} {fmtNum(item.line_total)}
             {ret.return_type === 'damage' && itemLoss > 0 && (
-              <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 400 }}>
+              <div style={{ fontSize: '10px', color: theme.danger, fontWeight: 400 }}>
                 −{fmtNum(itemLoss)} loss
               </div>
             )}
@@ -418,48 +427,48 @@ export default function POReturnDetail() {
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {ret.status === 'draft' && can('procurement.po.edit', 'edit') && (
               <>
-                <Button
-                  variant="secondary"
+                <ActionButton
+                  variant="outline"
                   size="sm"
                   onClick={() => {
                     navigate(`/procurement/purchase-orders/${id}/returns/${returnId}/edit`)
                   }}
                 >
                   Edit
-                </Button>
-                <Button variant="danger" size="sm" onClick={() => void doDeleteFn()}>
+                </ActionButton>
+                <ActionButton variant="danger" size="sm" onClick={() => void doDeleteFn()}>
                   Delete
-                </Button>
-                <Button
-                  variant="primary"
+                </ActionButton>
+                <ActionButton
+                  variant="solid"
                   size="sm"
                   loading={actionLoading}
                   onClick={() => void doSubmit()}
                 >
                   Submit for Approval
-                </Button>
+                </ActionButton>
               </>
             )}
             {ret.status === 'submitted' && can('procurement.po.approve', 'approve') && (
-              <Button
-                variant="primary"
+              <ActionButton
+                variant="solid"
                 size="sm"
                 loading={actionLoading}
                 onClick={() => void doApprove()}
               >
                 Approve Return
-              </Button>
+              </ActionButton>
             )}
             {ret.status === 'approved' && can('finance.ap.edit', 'edit') && (
-              <Button
-                variant="primary"
+              <ActionButton
+                variant="solid"
                 size="sm"
                 onClick={() => {
                   setShowCreditModal(true)
                 }}
               >
                 Mark as Credited
-              </Button>
+              </ActionButton>
             )}
           </div>
         }
@@ -487,9 +496,9 @@ export default function POReturnDetail() {
               borderRadius: '6px',
               fontSize: '11px',
               fontWeight: 600,
-              background: ret.return_type === 'damage' ? '#fff7ed' : '#f0fdf4',
-              color: ret.return_type === 'damage' ? '#c2410c' : '#15803d',
-              border: `1px solid ${ret.return_type === 'damage' ? '#fed7aa' : '#bbf7d0'}`,
+              background: ret.return_type === 'damage' ? theme.warningBg : theme.successBg,
+              color: ret.return_type === 'damage' ? theme.warning : theme.success,
+              border: `1px solid ${ret.return_type === 'damage' ? theme.warningBorder : theme.successBorder}`,
             }}
           >
             {ret.return_type === 'damage' ? '⚠ Damage Return' : '↩ Full Refund'}
@@ -501,7 +510,7 @@ export default function POReturnDetail() {
               {ret.currency_code} {fmtNum(ret.total_returned_value)}
             </div>
             {ret.return_type === 'damage' && loss > 0 && (
-              <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '2px' }}>
+              <div style={{ fontSize: '11px', color: theme.danger, marginTop: '2px' }}>
                 Loss: {ret.currency_code} {fmtNum(loss)} (not recoverable)
               </div>
             )}
@@ -545,9 +554,9 @@ export default function POReturnDetail() {
 
       {/* Damage description */}
       {ret.return_type === 'damage' && ret.damage_description && (
-        <div style={{ ...cardStyle, background: '#fff7ed', border: '1px solid #fed7aa' }}>
-          <div style={{ ...labelStyle, color: '#c2410c', marginBottom: '8px' }}>Damage Report</div>
-          <div style={{ fontSize: '13px', color: '#7c2d12', whiteSpace: 'pre-wrap' }}>
+        <div style={{ ...cardStyle, background: theme.warningBg, border: `1px solid ${theme.warningBorder}` }}>
+          <div style={{ ...labelStyle, color: theme.warning, marginBottom: '8px' }}>Damage Report</div>
+          <div style={{ fontSize: '13px', color: theme.warning, whiteSpace: 'pre-wrap' }}>
             {ret.damage_description}
           </div>
         </div>
@@ -714,18 +723,7 @@ export default function POReturnDetail() {
                           setEmployeeDropdownOpen(true)
                         }}
                         placeholder="Search by name or employee number…"
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          borderRadius: '8px',
-                          border: `1px solid ${theme.border}`,
-                          background: theme.bgCanvas,
-                          color: theme.textPrimary,
-                          fontSize: '13px',
-                          fontFamily: 'inherit',
-                          outline: 'none',
-                          boxSizing: 'border-box',
-                        }}
+                        style={inputStyle}
                       />
                       {employeeDropdownOpen && employeeResults.length > 0 && (
                         <div
@@ -795,18 +793,7 @@ export default function POReturnDetail() {
                       setDeductionAmount(e.target.value)
                     }}
                     placeholder="Auto-filled from assessed loss"
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      border: `1px solid ${theme.border}`,
-                      background: theme.bgCanvas,
-                      color: theme.textPrimary,
-                      fontSize: '13px',
-                      fontFamily: 'inherit',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
+                    style={inputStyle}
                   />
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
                     Auto-filled from total assessed loss · will apply on next payroll run
@@ -824,14 +811,14 @@ export default function POReturnDetail() {
             ...cardStyle,
             background:
               ret.deduction_status === 'applied'
-                ? '#f0fdf4'
+                ? theme.successBg
                 : ret.deduction_status === 'cancelled'
                   ? theme.bgSurface
-                  : '#fffbeb',
-            border: `1px solid ${ret.deduction_status === 'applied' ? '#86efac' : ret.deduction_status === 'cancelled' ? theme.border : '#fcd34d'}`,
+                  : theme.warningBg,
+            border: `1px solid ${ret.deduction_status === 'applied' ? theme.successBorder : ret.deduction_status === 'cancelled' ? theme.border : theme.warningBorder}`,
           }}
         >
-          <div style={{ ...labelStyle, color: '#92400e', marginBottom: '10px' }}>
+          <div style={{ ...labelStyle, color: theme.warning, marginBottom: '10px' }}>
             Employee Deduction
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
@@ -854,7 +841,7 @@ export default function POReturnDetail() {
             <div>
               <div style={labelStyle}>Deduction Amount</div>
               <div
-                style={{ fontSize: '15px', fontWeight: 700, color: '#b45309', marginTop: '4px' }}
+                style={{ fontSize: '15px', fontWeight: 700, color: theme.warning, marginTop: '4px' }}
               >
                 {ret.currency_code} {ret.deduction_amount ? fmtNum(ret.deduction_amount) : '—'}
               </div>
@@ -871,17 +858,17 @@ export default function POReturnDetail() {
                       fontWeight: 600,
                       background:
                         ret.deduction_status === 'applied'
-                          ? '#f0fdf4'
+                          ? theme.successBg
                           : ret.deduction_status === 'cancelled'
-                            ? '#f9fafb'
-                            : '#fffbeb',
+                            ? theme.bgCanvas
+                            : theme.warningBg,
                       color:
                         ret.deduction_status === 'applied'
-                          ? '#16a34a'
+                          ? theme.success
                           : ret.deduction_status === 'cancelled'
-                            ? '#6b7280'
-                            : '#d97706',
-                      border: `1px solid ${ret.deduction_status === 'applied' ? '#86efac' : ret.deduction_status === 'cancelled' ? '#d1d5db' : '#fcd34d'}`,
+                            ? theme.textSecondary
+                            : theme.warning,
+                      border: `1px solid ${ret.deduction_status === 'applied' ? theme.successBorder : ret.deduction_status === 'cancelled' ? theme.borderInput : theme.warningBorder}`,
                     }}
                   >
                     {ret.deduction_status === 'applied'
@@ -982,18 +969,7 @@ export default function POReturnDetail() {
                 setCreditRef(e.target.value)
               }}
               placeholder="e.g. CN-2024-001"
-              style={{
-                width: '100%',
-                padding: '8px 10px',
-                borderRadius: '6px',
-                border: `1px solid ${theme.border}`,
-                background: theme.bgCanvas,
-                color: theme.textPrimary,
-                fontSize: '13px',
-                fontFamily: 'inherit',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
+              style={inputStyle}
             />
             <div
               style={{
@@ -1003,17 +979,17 @@ export default function POReturnDetail() {
                 justifyContent: 'flex-end',
               }}
             >
-              <Button
-                variant="secondary"
+              <ActionButton
+                variant="outline"
                 onClick={() => {
                   setShowCreditModal(false)
                 }}
               >
                 Cancel
-              </Button>
-              <Button variant="primary" loading={actionLoading} onClick={() => void doCredit()}>
+              </ActionButton>
+              <ActionButton variant="solid" loading={actionLoading} onClick={() => void doCredit()}>
                 Confirm Credit
-              </Button>
+              </ActionButton>
             </div>
           </div>
         </div>

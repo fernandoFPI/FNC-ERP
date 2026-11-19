@@ -20,7 +20,7 @@ export function InventoryCost({ cost, currency }: InventoryCostProps) {
   const amount = cost == null ? NaN : parseFloat(String(cost))
 
   if (!(amount > 0)) {
-    return <span style={{ color: theme.textMuted, fontFamily: 'monospace' }}>—</span>
+    return <span style={{ color: theme.textSecondary }}>—</span>
   }
 
   return (
@@ -28,7 +28,6 @@ export function InventoryCost({ cost, currency }: InventoryCostProps) {
       <span
         style={{
           color: theme.textSecondary,
-          fontFamily: 'monospace',
           fontVariantNumeric: 'tabular-nums',
         }}
       >
@@ -36,7 +35,7 @@ export function InventoryCost({ cost, currency }: InventoryCostProps) {
         {currency ?? ''}
       </span>
       {!currency && (
-        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+        <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
           {t('po.detail.currencyNotSet')}
         </div>
       )}

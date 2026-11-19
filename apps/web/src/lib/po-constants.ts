@@ -73,6 +73,50 @@ export function getStatusesForPO(po: { requisition_id?: string | null }): typeof
   return po.requisition_id ? CHILD_PO_STATUSES : PO_STATUSES
 }
 
+// The progress bar on the PO page shows a few phases, not a dot per status. The status names and labels are
+// unchanged: a phase only says which stretch of the process a status belongs to. Every status sits in exactly one
+// phase, in order (poPhases.test.ts fails when a status is added to the lists above and not placed here).
+// A whole-flow PO (no requisition) goes through all of them; a child PO (forked at Finish Buying) has only five
+// statuses, so each is its own phase and its label is the status's own.
+export const PO_PHASES = [
+  { key: 'prepare', statuses: ['draft', 'inventory_check'] },
+  { key: 'price', statuses: ['store_pricing', 'market_pricing', 'price_verification'] },
+  { key: 'approve', statuses: ['pending_approval', 'approved', 'ready_to_issue'] },
+  { key: 'buy', statuses: ['items_bought', 'goods_received'] },
+  { key: 'finance', statuses: ['finance_audit', 'invoiced'] },
+  { key: 'done', statuses: ['completed'] },
+] as const
+
+export const CHILD_PO_PHASES = [
+  { key: 'bought', statuses: ['bought'] },
+  { key: 'goods_received', statuses: ['goods_received'] },
+  { key: 'finance_review', statuses: ['finance_review'] },
+  { key: 'payment_pending', statuses: ['payment_pending'] },
+  { key: 'closed', statuses: ['closed'] },
+] as const
+
+/** The phases to draw for this PO: its own five for a forked child PO, the whole-flow six otherwise. */
+export function getPhasesForPO(po: {
+  requisition_id?: string | null
+}): typeof PO_PHASES | typeof CHILD_PO_PHASES {
+  return po.requisition_id ? CHILD_PO_PHASES : PO_PHASES
+}
+
+const PO_PHASE_LABELS: Record<string, string> = {
+  prepare: 'Prepare',
+  price: 'Price',
+  approve: 'Approve',
+  buy: 'Buy and receive',
+  finance: 'Finance',
+  done: 'Done',
+}
+
+/** A phase's label. A child PO's phases are its statuses, so they read as the status does. */
+export function getPOPhaseLabel(key: string): string {
+  if (CHILD_PO_STATUSES.some((s) => s.key === key)) return getPOStatusLabel(key)
+  return i18n.t(`po.phase.${key}`, { defaultValue: PO_PHASE_LABELS[key] ?? key })
+}
+
 export const PO_POSITIONS = [
   {
     key: 'buyer',
@@ -258,6 +302,24 @@ export function getPOStatusVariant(status: string): BadgeVariant {
     default:
       return 'neutral'
   }
+}
+
+/**
+ * What an entry of the PO's Approval Log is called on its timeline: the action's name with spaces and a capital letter,
+ * or a translation when `po.logAction.<action>` exists. The action itself is data from the server and stays English.
+ */
+export function getPOLogActionLabel(action: string): string {
+  const plain = action.replace(/_/g, ' ')
+  return i18n.t(`po.logAction.${action}`, {
+    defaultValue: plain.charAt(0).toUpperCase() + plain.slice(1),
+  })
+}
+
+/** The colour of an entry's dot, decided from the action's NAME (never from a translated sentence). */
+export function getPOLogActionTone(action: string): 'success' | 'danger' | 'info' {
+  if (action === 'approved') return 'success'
+  if (action.startsWith('reject')) return 'danger'
+  return 'info'
 }
 
 export function getPOStatusLabel(status: string): string {

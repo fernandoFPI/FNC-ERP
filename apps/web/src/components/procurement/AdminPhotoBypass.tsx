@@ -46,7 +46,7 @@ export function AdminPhotoBypass({ enabled, reason, onEnabledChange, onReasonCha
       </div>
       {enabled && (
         <div style={{ marginTop: '10px' }}>
-          <Textarea
+          <Textarea field
             label={t('receipt.bypass.reasonLabel')}
             placeholder={t('receipt.bypass.reasonPlaceholder')}
             value={reason}

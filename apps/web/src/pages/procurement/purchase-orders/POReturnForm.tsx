@@ -11,7 +11,7 @@ import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
-import { Button } from '../../../components/ui/Button'
+import { ActionButton } from '../../../components/ui/ActionButton'
 import { Input } from '../../../components/ui/Input'
 import { Textarea } from '../../../components/ui/Textarea'
 import { useToastStore } from '../../../store/toastStore'
@@ -366,7 +366,7 @@ export default function POReturnForm() {
           {/* Damage description */}
           <div style={cardStyle}>
             <label style={labelStyle}>Damage Report Description *</label>
-            <Textarea
+            <Textarea field
               value={damageDescription}
               onChange={(e) => {
                 setDamageDescription(e.target.value)
@@ -488,11 +488,11 @@ export default function POReturnForm() {
           <div
             style={{
               ...cardStyle,
-              background: '#fffbeb',
-              border: '1px solid #fcd34d',
+              background: theme.warningBg,
+              border: `1px solid ${theme.warningBorder}`,
             }}
           >
-            <div style={{ fontSize: '12px', color: '#92400e' }}>
+            <div style={{ fontSize: '12px', color: theme.warning }}>
               <strong>Note:</strong> Employee responsibility and salary deduction will be assigned
               by the approver (Finance / HR) after submission.
             </div>
@@ -551,7 +551,7 @@ export default function POReturnForm() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={labelStyle}>Quantity to Return</label>
-                    <Input
+                    <Input field
                       type="number"
                       min={0.001}
                       max={item.max_qty}
@@ -572,7 +572,7 @@ export default function POReturnForm() {
                           ≤ {fmtN(item.original_unit_price)}
                         </span>
                       </label>
-                      <Input
+                      <Input field
                         type="number"
                         min={0}
                         max={item.original_unit_price}
@@ -588,7 +588,7 @@ export default function POReturnForm() {
                   {returnType === 'damage' && (
                     <div style={{ gridColumn: '1 / -1' }}>
                       <label style={labelStyle}>Item-Level Damage Notes (optional)</label>
-                      <Input
+                      <Input field
                         value={item.damage_notes}
                         onChange={(e) => {
                           updateItem(idx, 'damage_notes', e.target.value)
@@ -644,7 +644,7 @@ export default function POReturnForm() {
       {/* Notes */}
       <div style={cardStyle}>
         <label style={labelStyle}>General Notes (optional)</label>
-        <Textarea
+        <Textarea field
           value={notes}
           onChange={(e) => {
             setNotes(e.target.value)
@@ -690,22 +690,22 @@ export default function POReturnForm() {
           )}
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <Button
-            variant="secondary"
+          <ActionButton
+            variant="outline"
             onClick={() => {
               navigate(`/procurement/purchase-orders/${id}`)
             }}
           >
             Cancel
-          </Button>
-          <Button
-            variant="primary"
+          </ActionButton>
+          <ActionButton
+            variant="solid"
             loading={saving || uploading}
             disabled={selectedItems.length === 0}
             onClick={() => void handleSave()}
           >
             Create Return
-          </Button>
+          </ActionButton>
         </div>
       </div>
     </div>

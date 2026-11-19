@@ -1,8 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import i18n, { useIsRtl } from '../../i18n'
 import { useTheme } from '../../theme/ThemeContext'
+import { useBreakpoint } from '../../hooks/useBreakpoint'
+import { ActionButton } from '../ui/ActionButton'
+import { useFocusRing } from '../ui/keyboardFocus'
+import { focusMenuRow, handleMenuKeyDown } from '../ui/menuKeys'
+import { menuFocusRing, menuItemStyle, menuPanelStyle } from '../ui/menuStyles'
 
 // Shared building blocks for the Procurement list pages (Purchase Orders,
 // Requisitions): page title, KPI tiles, filter controls, stage mini-progress,
@@ -212,6 +217,37 @@ export function PageTitle({
   actions?: React.ReactNode
 }) {
   const { theme } = useTheme()
+  const { isPhone } = useBreakpoint()
+  if (isPhone) {
+    // Phone: the title and the main action share one row. The icon tile and the subtitle only push the list down.
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          // a page with two actions (Purchase Orders) puts them under the title instead of squeezing it
+          flexWrap: 'wrap',
+          gap: '8px 12px',
+          marginBottom: '12px',
+        }}
+      >
+        <h1
+          style={{
+            fontSize: '22px',
+            fontWeight: 700,
+            color: theme.textPrimary,
+            margin: 0,
+            lineHeight: 1.2,
+            minWidth: 0,
+          }}
+        >
+          {title}
+        </h1>
+        {actions && <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>{actions}</div>}
+      </div>
+    )
+  }
   return (
     <div
       style={{
@@ -222,13 +258,16 @@ export function PageTitle({
         marginBottom: '20px',
       }}
     >
+      {/* a quiet tile: the accent tint with the solid accent icon, not a loud filled block */}
       <div
+        aria-hidden="true"
         style={{
           width: '48px',
           height: '48px',
           borderRadius: '12px',
-          background: theme.accent,
-          color: '#fff',
+          background: theme.accentBg,
+          border: `1px solid ${theme.accentBorder}`,
+          color: theme.accentSolid,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -253,7 +292,9 @@ export function PageTitle({
           {subtitle}
         </p>
       </div>
-      {actions && <div style={{ display: 'flex', gap: '8px' }}>{actions}</div>}
+      {actions && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{actions}</div>
+      )}
     </div>
   )
 }
@@ -293,10 +334,67 @@ export function KpiTile({
   }
   const c = toneColor[tone]
   const Tag = onClick ? 'button' : 'div'
+  const { isPhone } = useBreakpoint()
+  const [hover, setHover] = useState(false)
+  const { ring, handlers } = useFocusRing()
+  // A tile with a trailing arrow navigates elsewhere; the others are quick filters that are on or off.
+  const pressed = onClick && !trailing ? active : undefined
+  if (isPhone) {
+    // Phone: a compact chip (number and name on one line) in a scrolling row, not a 110px card.
+    return (
+      <Tag
+        type={onClick ? 'button' : undefined}
+        onClick={onClick}
+        aria-pressed={pressed}
+        style={{
+          textAlign: 'start',
+          fontFamily: 'inherit',
+          flex: '0 0 auto',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          minHeight: '44px',
+          padding: '6px 14px',
+          borderRadius: '999px',
+          background: c.bg,
+          border: `1px solid ${active ? c.fg : c.border}`,
+          boxShadow: active ? `0 0 0 1px ${c.fg}` : 'none',
+          cursor: onClick ? 'pointer' : 'default',
+          whiteSpace: 'nowrap',
+          WebkitTapHighlightColor: 'transparent',
+        }}
+      >
+        {loading ? (
+          <span
+            className="skeleton"
+            style={{ display: 'inline-block', height: '18px', width: '22px', borderRadius: '4px' }}
+          />
+        ) : (
+          <span style={{ fontSize: '18px', fontWeight: 700, color: theme.textPrimary }}>
+            {value}
+          </span>
+        )}
+        <span style={{ fontSize: '13px', fontWeight: 600, color: c.fg }}>{label}</span>
+      </Tag>
+    )
+  }
   return (
     <Tag
       type={onClick ? 'button' : undefined}
       onClick={onClick}
+      aria-pressed={pressed}
+      {...(onClick
+        ? {
+            ...handlers,
+            onMouseEnter: () => {
+              setHover(true)
+            },
+            onMouseLeave: () => {
+              setHover(false)
+            },
+          }
+        : {})}
+      // A calm card: the surface and a hairline. The tone lives only in the icon, so four colours do not shout at once.
       style={{
         textAlign: 'start',
         fontFamily: 'inherit',
@@ -305,19 +403,23 @@ export function KpiTile({
         gap: '14px',
         padding: '16px 18px',
         borderRadius: '14px',
-        background: c.bg,
-        border: `1px solid ${active ? c.fg : c.border}`,
-        boxShadow: active ? `0 0 0 1px ${c.fg}` : 'none',
+        background: active ? theme.accentBg : theme.bgSurface,
+        border: `1px solid ${active ? theme.accentSolid : hover ? theme.borderStrong : theme.border}`,
+        boxShadow: ring ? menuFocusRing(theme) : 'none',
         cursor: onClick ? 'pointer' : 'default',
         minWidth: 0,
+        outline: 'none',
+        color: 'inherit',
+        transition: 'border-color 0.12s, background 0.12s',
       }}
     >
       <div
+        aria-hidden="true"
         style={{
           width: '44px',
           height: '44px',
           borderRadius: '12px',
-          background: theme.bgSurface,
+          background: c.bg,
           color: c.fg,
           display: 'flex',
           alignItems: 'center',
@@ -328,7 +430,7 @@ export function KpiTile({
         <Icon name={icon} size={22} />
       </div>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: '13px', fontWeight: 600, color: c.fg }}>{label}</div>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textSecondary }}>{label}</div>
         {loading ? (
           <div
             className="skeleton"
@@ -347,6 +449,7 @@ export function KpiTile({
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              fontVariantNumeric: 'tabular-nums',
             }}
           >
             {value}
@@ -354,12 +457,33 @@ export function KpiTile({
         )}
         <div style={{ fontSize: '12px', color: theme.textSecondary }}>{sub}</div>
       </div>
-      {trailing && <div style={{ color: theme.textMuted, flexShrink: 0 }}>{trailing}</div>}
+      {trailing && <div style={{ color: theme.textSecondary, flexShrink: 0 }}>{trailing}</div>}
     </Tag>
   )
 }
 
 export function KpiRow({ children }: { children: React.ReactNode }) {
+  const { isPhone } = useBreakpoint()
+  if (isPhone) {
+    // Phone: one scrolling row of chips instead of a stack of five cards (they used to push the list 560px down).
+    return (
+      <div
+        style={{
+          display: 'flex',
+          gap: '8px',
+          overflowX: 'auto',
+          // run to the screen edges so the next chip peeks in, hinting that the row scrolls
+          marginInline: '-16px',
+          paddingInline: '16px',
+          paddingBottom: '4px',
+          marginBottom: '12px',
+          scrollbarWidth: 'none',
+        }}
+      >
+        {children}
+      </div>
+    )
+  }
   return (
     <div
       style={{
@@ -387,20 +511,28 @@ export function SearchBox({
 }) {
   const { theme } = useTheme()
   const { t } = useTranslation()
+  const { isPhone } = useBreakpoint()
+  const [focused, setFocused] = useState(false)
   return (
     <label
       style={{
-        flex: '1 1 260px',
-        minWidth: '200px',
+        // Phone: a smaller minimum lets the box share its row with the buttons beside it (a 200px minimum pushed
+        // the refresh button onto a row of its own).
+        flex: isPhone ? '1 1 120px' : '1 1 260px',
+        minWidth: isPhone ? '120px' : '200px',
         height: '40px',
+        boxSizing: 'border-box',
         display: 'flex',
         alignItems: 'center',
         gap: '8px',
         padding: '0 12px',
         borderRadius: '10px',
-        border: `1px solid ${theme.borderInput}`,
+        // the readable edge, turning to the accent while the box has the cursor
+        border: `1px solid ${focused ? theme.accentSolid : theme.borderField}`,
+        boxShadow: focused ? `0 0 0 3px ${theme.accentHover}` : 'none',
         background: theme.bgSurface,
-        color: theme.textMuted,
+        color: theme.textSecondary,
+        transition: 'border-color 0.12s, box-shadow 0.12s',
       }}
     >
       <Icon name="search" size={16} />
@@ -409,6 +541,12 @@ export function SearchBox({
         onChange={(e) => {
           onChange(e.target.value)
         }}
+        onFocus={() => {
+          setFocused(true)
+        }}
+        onBlur={() => {
+          setFocused(false)
+        }}
         placeholder={placeholder}
         style={{
           flex: 1,
@@ -416,7 +554,8 @@ export function SearchBox({
           border: 'none',
           outline: 'none',
           background: 'transparent',
-          fontSize: '13px',
+          // 16px on a phone: a smaller size makes iOS zoom into the box
+          fontSize: isPhone ? '16px' : '13px',
           color: theme.textPrimary,
           fontFamily: 'inherit',
         }}
@@ -431,7 +570,7 @@ export function SearchBox({
           style={{
             border: 'none',
             background: 'none',
-            color: theme.textMuted,
+            color: theme.textSecondary,
             cursor: 'pointer',
             display: 'flex',
             padding: 0,
@@ -444,7 +583,7 @@ export function SearchBox({
   )
 }
 
-// "Status (All) ▾" style dropdown — a native <select> laid transparently over
+// "Status  All ▾" style dropdown — a native <select> laid transparently over
 // the styled label, so keyboard / mobile / accessibility behaviour stays native.
 export function PillSelect({
   label,
@@ -459,6 +598,7 @@ export function PillSelect({
 }) {
   const { theme } = useTheme()
   const { t } = useTranslation()
+  const { ring, handlers } = useFocusRing()
   const shown = options.find((o) => o.value === value)?.label ?? t('common.all')
   const active = value !== ''
   return (
@@ -466,23 +606,31 @@ export function PillSelect({
       style={{
         position: 'relative',
         height: '40px',
+        boxSizing: 'border-box',
         display: 'flex',
         alignItems: 'center',
         gap: '8px',
         padding: '0 12px',
         borderRadius: '10px',
-        border: `1px solid ${active ? theme.accent : theme.borderInput}`,
+        // an applied filter is the solid accent; the resting edge is the readable one
+        border: `1px solid ${active ? theme.accentSolid : theme.borderField}`,
         background: active ? theme.accentBg : theme.bgSurface,
-        color: theme.textPrimary,
+        boxShadow: ring ? menuFocusRing(theme) : 'none',
         fontSize: '13px',
         whiteSpace: 'nowrap',
         flexShrink: 0,
       }}
     >
-      <span>
-        {label} <span style={{ color: theme.textMuted }}>({shown})</span>
+      <span style={{ color: theme.textSecondary }}>{label}</span>
+      <span
+        style={{
+          color: active ? theme.accentSolid : theme.textPrimary,
+          fontWeight: active ? 600 : 500,
+        }}
+      >
+        {shown}
       </span>
-      <span style={{ color: theme.textMuted, display: 'flex' }}>
+      <span style={{ color: theme.textSecondary, display: 'flex' }}>
         <Icon name="chevron" size={14} />
       </span>
       <select
@@ -491,6 +639,7 @@ export function PillSelect({
         onChange={(e) => {
           onChange(e.target.value)
         }}
+        {...handlers}
         style={{
           position: 'absolute',
           inset: 0,
@@ -518,36 +667,56 @@ export function MoreFilters({
   activeCount: number
   children: React.ReactNode
 }) {
-  const { theme } = useTheme()
+  const { theme, themeKey } = useTheme()
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const panelId = useId()
+  const { ring, handlers } = useFocusRing()
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    // Escape closes the panel and gives the keyboard back to the button
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      setOpen(false)
+      buttonRef.current?.focus()
+    }
     document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
     }
   }, [open])
   return (
     <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
       <button
+        ref={buttonRef}
         type="button"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls={open ? panelId : undefined}
         onClick={() => {
           setOpen((v) => !v)
         }}
+        {...handlers}
         style={{
           height: '40px',
+          boxSizing: 'border-box',
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
           padding: '0 14px',
           borderRadius: '10px',
-          border: `1px solid ${activeCount > 0 ? theme.accent : theme.borderInput}`,
-          background: activeCount > 0 ? theme.accentBg : theme.bgSurface,
+          border: `1px solid ${activeCount > 0 || open ? theme.accentSolid : theme.borderField}`,
+          background: activeCount > 0 || open ? theme.accentBg : theme.bgSurface,
+          boxShadow: ring ? menuFocusRing(theme) : 'none',
+          outline: 'none',
           color: theme.textPrimary,
           fontSize: '13px',
           fontWeight: 500,
@@ -560,8 +729,8 @@ export function MoreFilters({
         {activeCount > 0 && (
           <span
             style={{
-              background: theme.accent,
-              color: '#fff',
+              background: theme.accentSolid,
+              color: theme.accentSolidText,
               borderRadius: '10px',
               fontSize: '11px',
               fontWeight: 700,
@@ -574,12 +743,16 @@ export function MoreFilters({
       </button>
       {open && (
         <div
+          id={panelId}
+          role="dialog"
+          aria-label={t('common.moreFilters')}
           style={{
+            ...menuPanelStyle(theme, themeKey === 'black'),
             position: 'absolute',
             top: '46px',
             insetInlineEnd: 0,
             zIndex: 40,
-            width: '300px',
+            width: '320px',
             // Anchored to the button, which can sit anywhere on the page —
             // with no cap, a panel opened low on a long filter bar (or on a
             // short window) rendered past the viewport edge with nothing to
@@ -587,13 +760,9 @@ export function MoreFilters({
             maxHeight: '70vh',
             overflowY: 'auto',
             padding: '16px',
-            borderRadius: '12px',
-            border: `1px solid ${theme.border}`,
-            background: theme.bgSurface,
-            boxShadow: '0 12px 32px rgba(0,0,0,0.14)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px',
+            gap: '14px',
           }}
         >
           {children}
@@ -607,32 +776,25 @@ export function FilterField({ label, children }: { label: string; children: Reac
   const { theme } = useTheme()
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <span
-        style={{
-          fontSize: '11px',
-          fontWeight: 600,
-          color: theme.textMuted,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-        }}
-      >
-        {label}
-      </span>
+      <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>{label}</span>
       {children}
     </label>
   )
 }
 
+// A native select or date box in the filter panel, in the same box as the newer form controls.
 export function dateInputStyle(theme: {
-  borderInput: string
+  borderField: string
   bgSurface: string
   textPrimary: string
 }): React.CSSProperties {
   return {
-    height: '34px',
+    height: '38px',
+    boxSizing: 'border-box',
+    width: '100%',
     padding: '0 10px',
-    borderRadius: '8px',
-    border: `1px solid ${theme.borderInput}`,
+    borderRadius: '10px',
+    border: `1px solid ${theme.borderField}`,
     background: theme.bgSurface,
     color: theme.textPrimary,
     fontSize: '13px',
@@ -650,12 +812,21 @@ export function IconButton({
   children: React.ReactNode
 }) {
   const { theme } = useTheme()
+  const { ring, handlers } = useFocusRing()
+  const [hover, setHover] = useState(false)
   return (
     <button
       type="button"
       title={title}
       aria-label={title}
       onClick={onClick}
+      {...handlers}
+      onMouseEnter={() => {
+        setHover(true)
+      }}
+      onMouseLeave={() => {
+        setHover(false)
+      }}
       style={{
         width: '40px',
         height: '40px',
@@ -663,8 +834,10 @@ export function IconButton({
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: '10px',
-        border: `1px solid ${theme.borderInput}`,
-        background: theme.bgSurface,
+        border: `1px solid ${theme.borderField}`,
+        background: hover ? theme.bgSurfaceHover : theme.bgSurface,
+        boxShadow: ring ? menuFocusRing(theme) : 'none',
+        outline: 'none',
         color: theme.textSecondary,
         cursor: 'pointer',
         flexShrink: 0,
@@ -672,6 +845,187 @@ export function IconButton({
     >
       {children}
     </button>
+  )
+}
+
+// ── Applied filters, as chips ────────────────────────────────────────────────
+
+export interface FilterChip {
+  key: string
+  /** What is filtered ("Status"). */
+  label: string
+  /** What it is set to ("Payment pending"). Left out for a plain on/off filter ("Only mine"). */
+  value?: string
+  onRemove: () => void
+}
+
+/**
+ * The filters that are applied, each a chip that can be taken off with one click, and one "clear all". A filter that no visible
+ * control shows (a quick filter from a tile, "only mine") is named here too, so a short list is never a mystery.
+ */
+export function FilterChips({
+  chips,
+  onClearAll,
+  clearAllLabel,
+}: {
+  chips: FilterChip[]
+  onClearAll: () => void
+  clearAllLabel: string
+}) {
+  const { theme } = useTheme()
+  const { t } = useTranslation()
+  if (chips.length === 0) return null
+  return (
+    <ul
+      aria-label={t('common.activeFilters')}
+      style={{
+        listStyle: 'none',
+        margin: '12px 0 0',
+        padding: 0,
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: '8px',
+      }}
+    >
+      {chips.map((c) => (
+        <li
+          key={c.key}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            minHeight: '30px',
+            padding: '0 4px 0 12px',
+            borderRadius: '999px',
+            background: theme.accentBg,
+            border: `1px solid ${theme.accentBorder}`,
+            fontSize: '13px',
+            color: theme.textPrimary,
+          }}
+        >
+          <span style={{ color: theme.textSecondary }}>{c.label}</span>
+          {c.value && <span style={{ fontWeight: 600 }}>{c.value}</span>}
+          <button
+            type="button"
+            aria-label={t('common.removeFilter', {
+              name: c.value ? `${c.label} ${c.value}` : c.label,
+            })}
+            onClick={c.onRemove}
+            style={{
+              width: '22px',
+              height: '22px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: 'none',
+              borderRadius: '50%',
+              background: 'transparent',
+              color: theme.textSecondary,
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            <Icon name="x" size={12} />
+          </button>
+        </li>
+      ))}
+      <li>
+        <button
+          type="button"
+          onClick={onClearAll}
+          style={{
+            border: 'none',
+            background: 'none',
+            color: theme.accentSolid,
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            padding: '4px 6px',
+          }}
+        >
+          {clearAllLabel}
+        </button>
+      </li>
+    </ul>
+  )
+}
+
+// ── Empty state ──────────────────────────────────────────────────────────────
+
+export function EmptyState({
+  icon = 'search',
+  title,
+  hint,
+  action,
+}: {
+  icon?: IconName
+  title: string
+  hint?: string
+  action?: React.ReactNode
+}) {
+  const { theme } = useTheme()
+  return (
+    <div style={{ padding: '48px 16px', textAlign: 'center' }}>
+      <div
+        aria-hidden="true"
+        style={{
+          width: '48px',
+          height: '48px',
+          margin: '0 auto 12px',
+          borderRadius: '50%',
+          background: theme.bgSurfaceHover,
+          color: theme.textSecondary,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Icon name={icon} size={22} />
+      </div>
+      <div style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>{title}</div>
+      {hint && (
+        <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>{hint}</div>
+      )}
+      {action && <div style={{ marginTop: '14px' }}>{action}</div>}
+    </div>
+  )
+}
+
+// ── Priority tag ─────────────────────────────────────────────────────────────
+
+/** The small tag next to a number for a priority that needs a second look (High, Emergency). */
+export function PriorityTag({
+  tone,
+  children,
+}: {
+  tone: 'warning' | 'danger'
+  children: React.ReactNode
+}) {
+  const { theme } = useTheme()
+  const c =
+    tone === 'danger'
+      ? { fg: theme.danger, bg: theme.dangerBg, border: theme.dangerBorder }
+      : { fg: theme.warning, bg: theme.warningBg, border: theme.warningBorder }
+  return (
+    <span
+      style={{
+        fontSize: '11px',
+        fontWeight: 700,
+        color: c.fg,
+        background: c.bg,
+        border: `1px solid ${c.border}`,
+        borderRadius: '999px',
+        padding: '0 8px',
+        lineHeight: '18px',
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </span>
   )
 }
 
@@ -690,14 +1044,16 @@ export function SelectionBar({
   const { t } = useTranslation()
   return (
     <div
+      role="region"
+      aria-label={label}
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: '10px',
         flexWrap: 'wrap',
-        padding: '12px 16px',
+        padding: '10px 14px',
         marginTop: '14px',
-        borderRadius: '10px',
+        borderRadius: '12px',
         background: theme.accentBg,
         border: `1px solid ${theme.accentBorder}`,
       }}
@@ -713,12 +1069,13 @@ export function SelectionBar({
         }}
       >
         <span
+          aria-hidden="true"
           style={{
-            width: '18px',
-            height: '18px',
-            borderRadius: '4px',
-            background: theme.accent,
-            color: '#fff',
+            width: '20px',
+            height: '20px',
+            borderRadius: '6px',
+            background: theme.accentSolid,
+            color: theme.accentSolidText,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -729,22 +1086,11 @@ export function SelectionBar({
         {label}
       </span>
       {children}
-      <button
-        type="button"
-        onClick={onClear}
-        style={{
-          marginInlineStart: 'auto',
-          border: 'none',
-          background: 'none',
-          color: theme.accent,
-          fontSize: '13px',
-          fontWeight: 500,
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-        }}
-      >
-        {t('common.clearSelection')}
-      </button>
+      <span style={{ marginInlineStart: 'auto' }}>
+        <ActionButton size="sm" variant="ghost" onClick={onClear}>
+          {t('common.clearSelection')}
+        </ActionButton>
+      </span>
     </div>
   )
 }
@@ -762,43 +1108,24 @@ export function BarButton({
   onClick: () => void
   children: React.ReactNode
 }) {
-  const { theme } = useTheme()
-  const color = tone === 'danger' ? theme.danger : theme.textPrimary
   return (
-    <button
-      type="button"
+    <ActionButton
+      size="sm"
+      variant={tone === 'danger' ? 'danger' : 'outline'}
       disabled={disabled}
       onClick={onClick}
-      style={{
-        height: '34px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '0 14px',
-        borderRadius: '8px',
-        border: `1px solid ${tone === 'danger' ? theme.dangerBorder : theme.borderInput}`,
-        background: theme.bgSurface,
-        color,
-        fontSize: '13px',
-        fontWeight: 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-        fontFamily: 'inherit',
-      }}
+      icon={icon ? <Icon name={icon} size={14} /> : undefined}
     >
-      {icon && <Icon name={icon} size={14} />}
       {children}
-    </button>
+    </ActionButton>
   )
 }
 
 // ── Table cells ──────────────────────────────────────────────────────────────
 
-const AVATAR_COLORS = ['#4a7a9b', '#5EA58C', '#D98C4A', '#A9568F', '#C95C5C', '#4E9BB5']
-
 export function PersonCell({ name }: { name?: string | null }) {
-  const { theme } = useTheme()
-  if (!name) return <span style={{ color: theme.textMuted }}>—</span>
+  const { theme, themeKey } = useTheme()
+  if (!name) return <span style={{ color: theme.textSecondary }}>—</span>
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -807,16 +1134,22 @@ export function PersonCell({ name }: { name?: string | null }) {
     .join('')
   let h = 0
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0
-  const color = AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]
+  const hue = Math.abs(h) % 360
+  // A soft tint with a dark letter (light theme) or a deep tint with a pale letter (dark): readable, and still a different
+  // colour for each person. The old white letter on a mid-tone circle was 2.9:1 on some of them.
+  const dark = themeKey === 'black'
+  const background = dark ? `hsl(${hue} 30% 24%)` : `hsl(${hue} 45% 90%)`
+  const color = dark ? `hsl(${hue} 60% 85%)` : `hsl(${hue} 55% 26%)`
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
       <span
+        aria-hidden="true"
         style={{
           width: '28px',
           height: '28px',
           borderRadius: '50%',
-          background: color,
-          color: '#fff',
+          background,
+          color,
           fontSize: '11px',
           fontWeight: 700,
           display: 'flex',
@@ -854,10 +1187,10 @@ export function StageMini({
 }) {
   const { theme } = useTheme()
   if (reached === null) {
-    return <span style={{ color: theme.textMuted, fontSize: '13px' }}>—</span>
+    return <span style={{ color: theme.textSecondary, fontSize: '13px' }}>—</span>
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '88px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '96px' }}>
       <div style={{ display: 'flex', alignItems: 'center' }}>
         {Array.from({ length: total }).map((_, i) => {
           const done = i < reached
@@ -870,8 +1203,8 @@ export function StageMini({
                   height: '9px',
                   borderRadius: '50%',
                   flexShrink: 0,
-                  background: done ? theme.accent : theme.bgSurface,
-                  border: `2px solid ${done || current ? theme.accent : theme.borderStrong}`,
+                  background: done ? theme.accentSolid : theme.bgSurface,
+                  border: `2px solid ${done || current ? theme.accentSolid : theme.borderStrong}`,
                 }}
               />
               {i < total - 1 && (
@@ -879,7 +1212,7 @@ export function StageMini({
                   style={{
                     flex: 1,
                     height: '2px',
-                    background: i < reached ? theme.accent : theme.border,
+                    background: i < reached ? theme.accentSolid : theme.border,
                   }}
                 />
               )}
@@ -887,7 +1220,7 @@ export function StageMini({
           )
         })}
       </div>
-      <span style={{ fontSize: '11px', color: theme.textSecondary, textAlign: 'center' }}>
+      <span style={{ fontSize: '12px', color: theme.textSecondary, textAlign: 'center' }}>
         {label}
       </span>
     </div>
@@ -900,12 +1233,18 @@ export interface MenuItem {
   tone?: 'default' | 'danger'
 }
 
-// Row "⋮" menu — rendered in a portal so table overflow can't clip it.
+// Row "⋮" menu — rendered in a portal so table overflow can't clip it. A real menu: it takes the keyboard when it opens (the arrow
+// keys, Home, End and Enter work, Escape and Tab close it and give the focus back), and each row is a menu item.
 export function RowMenu({ items }: { items: MenuItem[] }) {
   const { t } = useTranslation()
-  const { theme } = useTheme()
+  const { theme, themeKey } = useTheme()
+  const rtl = useIsRtl()
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [hi, setHi] = useState(-1)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const { ring, handlers } = useFocusRing()
+  const menuId = useId()
   useEffect(() => {
     if (!pos) return
     const close = () => {
@@ -920,6 +1259,11 @@ export function RowMenu({ items }: { items: MenuItem[] }) {
       window.removeEventListener('resize', close)
     }
   }, [pos])
+  // the first row takes the keyboard as the menu opens
+  useEffect(() => {
+    if (!pos) return
+    focusMenuRow(panelRef.current, 0)
+  }, [pos])
   return (
     <div
       onClick={(e) => {
@@ -930,6 +1274,10 @@ export function RowMenu({ items }: { items: MenuItem[] }) {
         ref={btnRef}
         type="button"
         aria-label={t('common.rowActions')}
+        aria-haspopup="menu"
+        aria-expanded={pos !== null}
+        aria-controls={pos ? menuId : undefined}
+        {...handlers}
         onClick={(e) => {
           e.stopPropagation()
           if (pos) {
@@ -937,16 +1285,23 @@ export function RowMenu({ items }: { items: MenuItem[] }) {
             return
           }
           const r = btnRef.current?.getBoundingClientRect()
-          if (r) setPos({ top: r.bottom + 4, left: Math.max(8, r.right - 190) })
+          // under the button, on its far side from the text, and never off the window
+          if (r)
+            setPos({
+              top: r.bottom + 4,
+              left: Math.max(8, Math.min(window.innerWidth - 198, rtl ? r.left : r.right - 190)),
+            })
         }}
         style={{
-          width: '30px',
-          height: '30px',
+          width: '32px',
+          height: '32px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           border: 'none',
-          background: pos ? theme.bgSurfaceHover : 'transparent',
+          background: pos ? theme.accentBg : 'transparent',
+          boxShadow: ring ? menuFocusRing(theme) : 'none',
+          outline: 'none',
           borderRadius: '8px',
           color: theme.textSecondary,
           cursor: 'pointer',
@@ -957,48 +1312,53 @@ export function RowMenu({ items }: { items: MenuItem[] }) {
       {pos &&
         createPortal(
           <div
+            ref={panelRef}
+            id={menuId}
+            role="menu"
+            aria-label={t('common.rowActions')}
             onMouseDown={(e) => {
               e.stopPropagation()
             }}
+            onKeyDown={(e) => {
+              handleMenuKeyDown(e, panelRef.current, {
+                close: () => {
+                  setPos(null)
+                },
+                restoreFocus: () => {
+                  btnRef.current?.focus()
+                },
+              })
+            }}
             style={{
+              ...menuPanelStyle(theme, themeKey === 'black'),
               position: 'fixed',
               top: pos.top,
               left: pos.left,
               zIndex: 1000,
               width: '190px',
               padding: '6px',
-              borderRadius: '10px',
-              border: `1px solid ${theme.border}`,
-              background: theme.bgSurface,
-              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
             }}
           >
-            {items.map((it) => (
+            {items.map((it, i) => (
               <button
                 key={it.label}
                 type="button"
+                role="menuitem"
+                tabIndex={-1}
                 onClick={() => {
                   setPos(null)
                   it.onClick()
                 }}
+                onMouseEnter={() => {
+                  setHi(i)
+                }}
+                onFocus={() => {
+                  setHi(i)
+                }}
                 style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'start',
-                  padding: '8px 10px',
+                  ...menuItemStyle(theme, { highlighted: hi === i, danger: it.tone === 'danger' }),
                   border: 'none',
-                  borderRadius: '6px',
-                  background: 'transparent',
-                  color: it.tone === 'danger' ? theme.danger : theme.textPrimary,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = theme.bgSurfaceHover
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent'
+                  outline: 'none',
                 }}
               >
                 {it.label}
@@ -1024,20 +1384,21 @@ export function Pagination({
 }) {
   const { theme } = useTheme()
   const { t } = useTranslation()
-  const rtl = useIsRtl()
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1
   const to = Math.min(total, page * pageSize)
   const btn = (disabled: boolean): React.CSSProperties => ({
-    width: '32px',
-    height: '32px',
+    minWidth: '34px',
+    height: '34px',
+    padding: '0 8px',
+    boxSizing: 'border-box',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: '8px',
-    border: `1px solid ${theme.borderInput}`,
+    border: `1px solid ${theme.borderField}`,
     background: theme.bgSurface,
-    color: theme.textSecondary,
+    color: theme.textPrimary,
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.45 : 1,
     fontSize: '13px',
@@ -1063,7 +1424,7 @@ export function Pagination({
       <span style={{ fontSize: '13px', color: theme.textSecondary }}>
         {t('common.showingEntries', { from, to, total })}
       </span>
-      <div style={{ display: 'flex', gap: '6px' }}>
+      <nav aria-label={t('common.pagination')} style={{ display: 'flex', gap: '6px' }}>
         <button
           type="button"
           aria-label={t('common.previousPage')}
@@ -1073,13 +1434,20 @@ export function Pagination({
           }}
           style={btn(page <= 1)}
         >
-          {rtl ? '›' : '‹'}
+          {/* ‹ and › are mirrored by the browser in a right-to-left page; swapping them here would flip them back */}
+          ‹
         </button>
         {nums.map((n, i) =>
           n === '…' ? (
             <span
               key={`gap-${i}`}
-              style={{ ...btn(true), border: 'none', background: 'none', opacity: 1 }}
+              style={{
+                ...btn(true),
+                border: 'none',
+                background: 'none',
+                opacity: 1,
+                color: theme.textSecondary,
+              }}
             >
               …
             </span>
@@ -1087,14 +1455,15 @@ export function Pagination({
             <button
               key={n}
               type="button"
+              aria-current={n === page ? 'page' : undefined}
               onClick={() => {
                 onChange(n)
               }}
               style={{
                 ...btn(false),
-                background: n === page ? theme.accent : theme.bgSurface,
-                color: n === page ? '#fff' : theme.textSecondary,
-                borderColor: n === page ? theme.accent : theme.borderInput,
+                background: n === page ? theme.accentSolid : theme.bgSurface,
+                color: n === page ? theme.accentSolidText : theme.textPrimary,
+                borderColor: n === page ? theme.accentSolid : theme.borderField,
                 fontWeight: n === page ? 700 : 500,
               }}
             >
@@ -1111,9 +1480,9 @@ export function Pagination({
           }}
           style={btn(page >= pages)}
         >
-          {rtl ? '‹' : '›'}
+          ›
         </button>
-      </div>
+      </nav>
     </div>
   )
 }
@@ -1291,8 +1660,8 @@ export function PanelHeader({
                 justifyContent: 'center',
                 borderRadius: '8px',
                 border: 'none',
-                background: theme.accent,
-                color: '#fff',
+                background: theme.accentSolid,
+                color: theme.accentSolidText,
                 cursor: 'pointer',
               }}
             >
@@ -1485,9 +1854,9 @@ export function WorkflowStepper({
                   height: '28px',
                   boxSizing: 'border-box',
                   borderRadius: '50%',
-                  background: done ? theme.accent : theme.bgSurface,
-                  border: `2px solid ${done || isCurrent ? theme.accent : theme.borderStrong}`,
-                  color: '#fff',
+                  background: done ? theme.accentSolid : theme.bgSurface,
+                  border: `2px solid ${done || isCurrent ? theme.accentSolid : theme.borderStrong}`,
+                  color: theme.accentSolidText,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -1501,7 +1870,7 @@ export function WorkflowStepper({
                       width: '10px',
                       height: '10px',
                       borderRadius: '50%',
-                      background: theme.accent,
+                      background: theme.accentSolid,
                     }}
                   />
                 )}
@@ -1511,7 +1880,11 @@ export function WorkflowStepper({
                   marginTop: '6px',
                   fontSize: '11px',
                   textAlign: 'center',
-                  color: isCurrent ? theme.accent : done ? theme.textPrimary : theme.textMuted,
+                  color: isCurrent
+                    ? theme.accentSolid
+                    : done
+                      ? theme.textPrimary
+                      : theme.textSecondary,
                   fontWeight: isCurrent ? 700 : 500,
                 }}
               >

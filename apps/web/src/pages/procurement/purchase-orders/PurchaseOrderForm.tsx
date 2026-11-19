@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@apollo/client'
 import { CREATE_PO, PURCHASE_ORDERS_QUERY, PO_FX_RATES_QUERY } from '../../../graphql/procurement'
@@ -13,7 +14,7 @@ import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
-import { Button } from '../../../components/ui/Button'
+import { ActionButton } from '../../../components/ui/ActionButton'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
@@ -22,6 +23,15 @@ import { LineItemEditor, type LineItemField } from '../../../components/ui/LineI
 import { useToastStore } from '../../../store/toastStore'
 import { useTourStore } from '../../../store/tourStore'
 import type { AnalyticAccountsQuery, AnalyticAccountsQueryVariables, CompanyBranchesQuery, CompanyBranchesQueryVariables, CreatePurchaseOrderMutation, CreatePurchaseOrderMutationVariables, EmployeesQuery, EmployeesQueryVariables, ManufacturingOrdersQuery, ManufacturingOrdersQueryVariables, MyCompaniesQuery, MyCompaniesQueryVariables, PoFxRatesQuery, PoFxRatesQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, VendorsQuery, VendorsQueryVariables } from '../../../graphql/generated'
+
+// One grid for every row of the details card, so the columns line up from one row to the next (flex rows with
+// different basis sizes put the second column at a different place on each row).
+const DETAILS_ROW: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))',
+  gap: '18px 20px',
+  alignItems: 'start',
+}
 
 interface POLine {
   product_id: string
@@ -45,20 +55,6 @@ const emptyLine = (defaultCurrency = 'IQD'): POLine => ({
 })
 
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
-
-// Same fixed enterprise accent palette used on the Record Receipt page — kept
-// as literal values (not theme tokens) so the two forms read as one visual
-// system regardless of which of the app's themes is active.
-const BRAND_BLUE = '#2563EB'
-const BRAND_GREEN = '#16A34A'
-const BRAND_ORANGE = '#F97316'
-const BRAND_RED = '#DC2626'
-
-const PRIORITY_COLOR: Record<'low' | 'high' | 'emergency', string> = {
-  low: BRAND_BLUE,
-  high: BRAND_ORANGE,
-  emergency: BRAND_RED,
-}
 
 function IconDocument({ size = 17 }: { size?: number }) {
   return (
@@ -140,6 +136,12 @@ function IconCheckCircle({ size = 16 }: { size?: number }) {
 export default function PurchaseOrderForm() {
   const navigate = useNavigate()
   const { theme } = useTheme()
+  // The colour of each priority, taken from the active theme (they were fixed literals before)
+  const PRIORITY_COLOR: Record<'low' | 'high' | 'emergency', string> = {
+    low: theme.accentSolid,
+    high: theme.warning,
+    emergency: theme.danger,
+  }
   const addToast = useToastStore((s) => s.addToast)
   const [searchParams] = useSearchParams()
 
@@ -466,7 +468,7 @@ export default function PurchaseOrderForm() {
       label: 'Product / Description',
       render: (line, i) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <SearchableSelect
+          <SearchableSelect field
             value={line.product_id}
             onChange={(v) => {
               updateLine(i, 'product_id', v)
@@ -475,7 +477,7 @@ export default function PurchaseOrderForm() {
             placeholder="Search by name or SKU…"
             minDropdownWidth={400}
           />
-          <Input
+          <Input field
             value={line.description}
             onChange={(e) => {
               updateLine(i, 'description', e.target.value)
@@ -490,7 +492,7 @@ export default function PurchaseOrderForm() {
       label: 'UOM',
       width: '160px',
       render: (line, i) => (
-        <Input
+        <Input field
           value={line.uom}
           onChange={(e) => {
             updateLine(i, 'uom', e.target.value)
@@ -503,7 +505,7 @@ export default function PurchaseOrderForm() {
       label: 'Qty',
       width: '80px',
       render: (line, i) => (
-        <Input
+        <Input field
           type="number"
           min="0"
           step="0.01"
@@ -519,7 +521,7 @@ export default function PurchaseOrderForm() {
       label: 'Unit Price',
       width: '100px',
       render: (line, i) => (
-        <Input
+        <Input field
           type="number"
           min="0"
           step="0.01"
@@ -535,7 +537,7 @@ export default function PurchaseOrderForm() {
       label: 'Currency',
       width: '90px',
       render: (line, i) => (
-        <Select
+        <Select field
           value={line.requested_currency_code}
           onChange={(e) => {
             updateLine(i, 'requested_currency_code', e.target.value)
@@ -578,15 +580,15 @@ export default function PurchaseOrderForm() {
         subtitle="Create a purchase order"
         backPath="/procurement/purchase-orders"
         actions={
-          <Button
+          <ActionButton
             type="button"
-            variant="primary"
+            variant="solid"
             icon={<IconCheckCircle size={16} />}
             loading={loading}
             onClick={() => formRef.current?.requestSubmit()}
           >
             Create Purchase Order
-          </Button>
+          </ActionButton>
         }
       />
 
@@ -621,10 +623,10 @@ export default function PurchaseOrderForm() {
               {/* Row 1: Purpose + Project/MO + Delivery Destination */}
               <div
                 data-tour="po-purpose-row"
-                style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}
+                style={DETAILS_ROW}
               >
-                <div style={{ flex: '1 1 200px' }}>
-                  <Select
+                <div style={{ minWidth: 0 }}>
+                  <Select field
                     label="Purchase Purpose"
                     value={purpose}
                     onChange={(e) => {
@@ -637,8 +639,8 @@ export default function PurchaseOrderForm() {
                   </Select>
                 </div>
                 {purpose === 'project' && (
-                  <div style={{ flex: '1 1 200px' }}>
-                    <SearchableSelect
+                  <div style={{ minWidth: 0 }}>
+                    <SearchableSelect field
                       label="Project *"
                       value={linkedProjectId}
                       onChange={(v) => {
@@ -652,8 +654,8 @@ export default function PurchaseOrderForm() {
                   </div>
                 )}
                 {purpose === 'project' && (
-                  <div style={{ flex: '1 1 200px' }}>
-                    <Select
+                  <div style={{ minWidth: 0 }}>
+                    <Select field
                       label="Delivery Destination *"
                       value={deliveryDestination}
                       disabled={companyRequiresJobsiteDelivery}
@@ -679,8 +681,8 @@ export default function PurchaseOrderForm() {
                   </div>
                 )}
                 {purpose === 'manufacturing' && (
-                  <div style={{ flex: '1 1 200px' }}>
-                    <Select
+                  <div style={{ minWidth: 0 }}>
+                    <Select field
                       label="Manufacturing Order"
                       value={linkedMoId}
                       onChange={(e) => {
@@ -703,10 +705,10 @@ export default function PurchaseOrderForm() {
               {/* Row 2: Vendor + Currency + Branch */}
               <div
                 data-tour="po-vendor-row"
-                style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}
+                style={DETAILS_ROW}
               >
-                <div style={{ flex: '1 1 200px' }}>
-                  <SearchableSelect
+                <div style={{ minWidth: 0 }}>
+                  <SearchableSelect field
                     label="Vendor (optional)"
                     value={form.vendor_id}
                     onChange={(v) => {
@@ -723,8 +725,8 @@ export default function PurchaseOrderForm() {
                     minDropdownWidth={320}
                   />
                 </div>
-                <div style={{ flex: '1 1 200px' }}>
-                  <Select
+                <div style={{ minWidth: 0 }}>
+                  <Select field
                     label="Currency"
                     value={form.currency_code}
                     onChange={(e) => {
@@ -740,8 +742,8 @@ export default function PurchaseOrderForm() {
                   </Select>
                 </div>
                 {branches.length > 0 && (
-                  <div style={{ flex: '1 1 200px' }}>
-                    <Select
+                  <div style={{ minWidth: 0 }}>
+                    <Select field
                       label="Branch *"
                       value={form.branch_id}
                       onChange={(e) => {
@@ -762,10 +764,10 @@ export default function PurchaseOrderForm() {
               {/* Row 3: Analytic Account + Expected Delivery + FX Rate */}
               <div
                 data-tour="po-delivery-row"
-                style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}
+                style={DETAILS_ROW}
               >
-                <div style={{ flex: '1 1 180px' }}>
-                  <Select
+                <div style={{ minWidth: 0 }}>
+                  <Select field
                     label="Analytic Account"
                     value={form.analytic_account_id}
                     onChange={(e) => {
@@ -780,8 +782,8 @@ export default function PurchaseOrderForm() {
                     ))}
                   </Select>
                 </div>
-                <div style={{ flex: '1 1 180px' }}>
-                  <Input
+                <div style={{ minWidth: 0 }}>
+                  <Input field
                     label="Expected Delivery"
                     type="date"
                     value={form.expected_delivery_date}
@@ -790,8 +792,8 @@ export default function PurchaseOrderForm() {
                     }}
                   />
                 </div>
-                <div style={{ flex: '1 1 180px' }}>
-                  <Input
+                <div style={{ minWidth: 0 }}>
+                  <Input field
                     label={`FX Rate (1 ${form.currency_code} = ? ${baseCurrency})`}
                     type="number"
                     step="0.0001"
@@ -813,9 +815,9 @@ export default function PurchaseOrderForm() {
               </div>
 
               {/* Row 4: Received By + Priority */}
-              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                <div style={{ flex: '1 1 200px' }}>
-                  <SearchableSelect
+              <div style={DETAILS_ROW}>
+                <div style={{ minWidth: 0 }}>
+                  <SearchableSelect field
                     label={purpose === 'project' ? 'Received By *' : 'Received By'}
                     value={form.assigned_receiver_id}
                     onChange={(v) => {
@@ -826,7 +828,7 @@ export default function PurchaseOrderForm() {
                     minDropdownWidth={320}
                   />
                 </div>
-                <div style={{ flex: '1 1 200px' }}>
+                <div style={{ minWidth: 0 }}>
                   <div
                     style={{
                       fontSize: '12px',
@@ -854,7 +856,8 @@ export default function PurchaseOrderForm() {
                           fontFamily: 'inherit',
                           border: `1px solid ${priority === p ? PRIORITY_COLOR[p] : theme.borderInput}`,
                           background: priority === p ? PRIORITY_COLOR[p] : theme.bgSurface,
-                          color: priority === p ? '#ffffff' : theme.textMuted,
+                          // the card colour on the solid fill: white in the light theme, dark in the dark one
+                          color: priority === p ? theme.bgSurface : theme.textSecondary,
                           transition: 'background 0.15s, border-color 0.15s, color 0.15s',
                         }}
                       >
@@ -863,14 +866,14 @@ export default function PurchaseOrderForm() {
                     ))}
                   </div>
                   {priority === 'emergency' && (
-                    <div style={{ fontSize: '11px', color: BRAND_RED, marginTop: '5px' }}>
+                    <div style={{ fontSize: '11px', color: theme.danger, marginTop: '5px' }}>
                       Skips inventory check, store &amp; market pricing — goes direct to approval.
                     </div>
                   )}
                 </div>
               </div>
 
-              <Textarea
+              <Textarea field
                 label="Notes"
                 value={form.notes}
                 onChange={(e) => {
@@ -914,7 +917,7 @@ export default function PurchaseOrderForm() {
                   {
                     label: 'Subtotal',
                     value: `${subtotal.toLocaleString()} ${form.currency_code}`,
-                    color: BRAND_GREEN,
+                    color: theme.success,
                     // Other currencies among the lines aren't converted at
                     // this stage, so they're broken out here instead of
                     // being silently added into the header-currency figure.
@@ -1056,7 +1059,7 @@ export default function PurchaseOrderForm() {
               borderTop: `1px solid ${theme.border}`,
             }}
           >
-            <Button
+            <ActionButton
               data-tour="po-add-line"
               variant="ghost"
               size="sm"
@@ -1066,7 +1069,7 @@ export default function PurchaseOrderForm() {
               }}
             >
               + Add Line
-            </Button>
+            </ActionButton>
             <span
               style={{
                 fontSize: '14px',
@@ -1104,11 +1107,11 @@ export default function PurchaseOrderForm() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span
                 style={{
-                  color: BRAND_BLUE,
+                  color: theme.accentSolid,
                   display: 'flex',
                   padding: '8px',
                   borderRadius: '8px',
-                  background: '#EFF6FF',
+                  background: theme.infoBg,
                 }}
               >
                 <IconBox size={18} />
@@ -1125,11 +1128,11 @@ export default function PurchaseOrderForm() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span
                 style={{
-                  color: BRAND_GREEN,
+                  color: theme.success,
                   display: 'flex',
                   padding: '8px',
                   borderRadius: '8px',
-                  background: '#F0FDF4',
+                  background: theme.successBg,
                 }}
               >
                 <IconCheckCircle size={18} />
@@ -1146,30 +1149,24 @@ export default function PurchaseOrderForm() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <Button
-              variant="secondary"
+            <ActionButton
+              variant="outline"
               type="button"
               onClick={() => {
                 navigate('/procurement/purchase-orders')
               }}
             >
               Cancel
-            </Button>
-            <Button
+            </ActionButton>
+            <ActionButton
               data-tour="submit-po-btn"
-              variant="primary"
+              variant="solid"
               type="submit"
               loading={loading}
               icon={<IconCheckCircle size={16} />}
-              style={{
-                background: BRAND_BLUE,
-                border: `1px solid ${BRAND_BLUE}`,
-                color: '#ffffff',
-                fontWeight: 600,
-              }}
             >
               Create Purchase Order
-            </Button>
+            </ActionButton>
           </div>
         </div>
       </form>

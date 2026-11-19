@@ -228,12 +228,13 @@ describe('Requisitions list: advance rows', () => {
     ]
     await mount()
     await screen.findByText('ADV-WAIT-MGR')
-    fireEvent.click(screen.getByText(t('req.list.needAction')))
+    // the tile is first in the page; once it is on, the applied-filter chip repeats its name below
+    fireEvent.click(screen.getAllByText(t('req.list.needAction'))[0])
     expect(screen.getByText('ADV-WAIT-CASH')).toBeInTheDocument()
     expect(screen.queryByText('ADV-WAIT-MGR')).not.toBeInTheDocument()
     expect(screen.queryByText('ADV-ISSUED')).not.toBeInTheDocument()
     // toggle off, then the other tile (its label also reads as a status badge, the tile comes first in the page)
-    fireEvent.click(screen.getByText(t('req.list.needAction')))
+    fireEvent.click(screen.getAllByText(t('req.list.needAction'))[0])
     fireEvent.click(screen.getAllByText(t('req.list.pendingApproval'))[0])
     expect(screen.getByText('ADV-WAIT-MGR')).toBeInTheDocument()
     expect(screen.queryByText('ADV-WAIT-CASH')).not.toBeInTheDocument()

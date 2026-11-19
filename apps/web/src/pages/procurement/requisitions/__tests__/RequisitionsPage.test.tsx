@@ -127,7 +127,7 @@ describe('RequisitionsPage', () => {
     const RequisitionsPage = (await import('../RequisitionsPage')).default
     wrap(<RequisitionsPage />)
     fireEvent.click(screen.getAllByRole('button', { name: 'Row actions' })[0])
-    fireEvent.click(screen.getByRole('button', { name: 'Open full page' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open full page' }))
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.stringMatching(/^\/procurement\/requisitions\/req-/),
     )
@@ -199,5 +199,58 @@ describe('RequisitionsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /more filters/i }))
     fireEvent.click(screen.getByTitle('Saved filter presets'))
     expect(screen.getByText('No saved presets')).toBeInTheDocument()
+  })
+})
+
+// A direct supply is a purpose like the others: it can be filtered on, and its rows name it properly instead of
+// printing the stored value (direct_supply).
+describe('RequisitionsPage: direct supply', () => {
+  const directSupply = {
+    ...sampleRequisitions[1],
+    id: 'req-3',
+    requisition_number: 'REQ-2026-003',
+    status: 'pending_approval',
+    purpose: 'direct_supply',
+    projectName: 'Tower B',
+    organizerName: 'Sara Ali',
+  }
+  beforeEach(() => {
+    mockUseQuery.mockReturnValue({
+      data: {
+        requisitions: [...sampleRequisitions, directSupply],
+        myRequisitionApprovalQueue: [],
+      },
+      loading: false,
+      refetch: vi.fn(),
+    })
+  })
+
+  it('offers Direct Supply in the Purpose filter, after Project Supply', async () => {
+    const RequisitionsPage = (await import('../RequisitionsPage')).default
+    wrap(<RequisitionsPage />)
+    const filter = screen.getByRole('combobox', { name: 'Purpose' })
+    const options = [...filter.querySelectorAll('option')].map((o) => [o.getAttribute('value'), o.textContent])
+    expect(options).toContainEqual(['direct_supply', 'Direct Supply'])
+    const values = options.map((o) => o[0])
+    expect(values.indexOf('direct_supply')).toBe(values.indexOf('project') + 1)
+  })
+
+  it('narrows the list to direct supplies when that purpose is chosen', async () => {
+    const RequisitionsPage = (await import('../RequisitionsPage')).default
+    wrap(<RequisitionsPage />)
+    expect(screen.getByText('REQ-2026-001')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Purpose' }), {
+      target: { value: 'direct_supply' },
+    })
+    expect(screen.getByText('REQ-2026-003')).toBeInTheDocument()
+    expect(screen.queryByText('REQ-2026-001')).not.toBeInTheDocument()
+    expect(screen.queryByText('REQ-2026-002')).not.toBeInTheDocument()
+  })
+
+  it('names the purpose on its row, not the stored value', async () => {
+    const RequisitionsPage = (await import('../RequisitionsPage')).default
+    wrap(<RequisitionsPage />)
+    expect(screen.getByText('Direct supply')).toBeInTheDocument()
+    expect(screen.queryByText('direct_supply')).not.toBeInTheDocument()
   })
 })

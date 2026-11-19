@@ -25,127 +25,50 @@ import type {
   EntityAttachmentsQueryVariables,
 } from '../../../graphql/generated'
 import { useTheme } from '../../../theme/ThemeContext'
+import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
-import { Button } from '../../../components/ui/Button'
+import { ActionButton } from '../../../components/ui/ActionButton'
+import { Checkbox } from '../../../components/ui/Checkbox'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Textarea } from '../../../components/ui/Textarea'
-import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
+import { SectionTitle } from '../../../components/procurement/SectionTitle'
+import { StageActionBar } from '../../../components/procurement/StageActionBar'
+import {
+  RequirementsChecklist,
+  type Requirement,
+} from '../../../components/procurement/RequirementsChecklist'
+import {
+  clearLines,
+  isLineReceiving,
+  receiptRequirements,
+  receiptTotals,
+  selectAllLines,
+  selectLine,
+  type ReceiptLine,
+} from '../../../lib/receiptLines'
+import { ReceiptLinesTable } from './ReceiptLinesTable'
+import { ReceiptProofTile, type PendingPhoto, type PhotoKind, type ProofStatus } from './ReceiptProofTile'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
 import type { AttachFileMutation, AttachFileMutationVariables, EmployeesQuery, EmployeesQueryVariables, PurchaseOrderQuery, PurchaseOrderQueryVariables, RecordDirectDeliveryMutation, RecordDirectDeliveryMutationVariables, RecordReceiptMutation, RecordReceiptMutationVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
-
-interface ReceiptLine {
-  po_line_id: string
-  description: string
-  sku: string | null
-  ordered_qty: number
-  qty_received_so_far: number
-  qty_from_stock: number
-  qty_to_receive: string
-  po_unit_price: number
-  // Lines start unselected — the store keeper actively picks which items
-  // they're physically receiving instead of every line showing up
-  // pre-filled and editable at once. "Select All" below covers the common
-  // full-shipment case in one click.
-  selected: boolean
-}
 
 // Direct-to-jobsite deliveries skip Store In entirely, but still need proof
 // of delivery — these photos attach straight to the PO (entityType
 // 'purchase_order') instead of a po_receipt, since no receipt record exists
 // for this path.
-type PhotoKind = 'vendor_receipt' | 'materials'
 const PHOTO_CATEGORY: Record<PhotoKind, string> = {
   vendor_receipt: 'po_receipt_document',
   materials: 'po_receipt_photo',
-}
-
-interface PendingPhoto {
-  id: string
-  file: File
-  previewUrl: string
-  label: string
-  kind: PhotoKind
-  uploading: boolean
-  error?: string
 }
 
 const PO_STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger' | 'info'> = {
   approved: 'info',
   items_bought: 'warning',
   goods_received: 'success',
-}
-
-// Fixed enterprise accent palette for this page's data-visibility color coding
-// (ordered/available/remaining, KPI values, primary CTA) — kept as literal
-// values rather than theme tokens so they stay vivid and consistent
-// regardless of which of the app's themes is active, matching the intended
-// "modern enterprise ERP" reference look.
-const BRAND_BLUE = '#2563EB'
-const BRAND_GREEN = '#16A34A'
-const BRAND_ORANGE = '#F97316'
-
-function IconDocument({ size = 17 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="8" y1="13" x2="16" y2="13" />
-      <line x1="8" y1="17" x2="16" y2="17" />
-      <line x1="8" y1="9" x2="10" y2="9" />
-    </svg>
-  )
-}
-
-function IconBarChart({ size = 17 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <line x1="18" y1="20" x2="18" y2="10" />
-      <line x1="12" y1="20" x2="12" y2="4" />
-      <line x1="6" y1="20" x2="6" y2="14" />
-    </svg>
-  )
-}
-
-function IconBox({ size = 17 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-      <line x1="12" y1="22.08" x2="12" y2="12" />
-    </svg>
-  )
 }
 
 function IconSave({ size = 16 }: { size?: number }) {
@@ -159,6 +82,7 @@ function IconSave({ size = 16 }: { size?: number }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
+      aria-hidden="true"
     >
       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
       <polyline points="17 21 17 13 7 13 7 21" />
@@ -167,7 +91,7 @@ function IconSave({ size = 16 }: { size?: number }) {
   )
 }
 
-function IconCheckCircle({ size = 20 }: { size?: number }) {
+function IconCheckCircle({ size = 16 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -178,27 +102,10 @@ function IconCheckCircle({ size = 20 }: { size?: number }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
+      aria-hidden="true"
     >
       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
       <polyline points="22 4 12 14.01 9 11.01" />
-    </svg>
-  )
-}
-
-function IconCamera({ size = 20 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-      <circle cx="12" cy="13" r="4" />
     </svg>
   )
 }
@@ -211,12 +118,15 @@ export default function ReceiptForm() {
   // tourDemoPO.ts.
   const isTourDemo = id === TOUR_DEMO_PO_ID
   const { theme } = useTheme()
+  const { isPhone } = useBreakpoint()
   const addToast = useToastStore((s) => s.addToast)
   const currentUser = useAuthStore((s) => s.user)
 
   const [form, setForm] = useState({
     receipt_date: new Date().toISOString().split('T')[0],
     location_id: '',
+    // where goods received into a TEMPORARY store are going (a warehouse or a site)
+    final_destination_location_id: '',
     notes: '',
     received_by_id: '',
     received_by_name: '',
@@ -233,7 +143,6 @@ export default function ReceiptForm() {
   // submit should only retry the failed photos — not record the delivery
   // (and double-count qty_received/cost) a second time.
   const [deliveryRecorded, setDeliveryRecorded] = useState(false)
-  const formRef = useRef<HTMLFormElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const captureKindRef = useRef<PhotoKind>('materials')
@@ -245,7 +154,7 @@ export default function ReceiptForm() {
     {},
   )
 
-  const { data: poData } = useQuery<PurchaseOrderQuery, PurchaseOrderQueryVariables>(PURCHASE_ORDER_QUERY, {
+  const { data: poData, loading: poLoading } = useQuery<PurchaseOrderQuery, PurchaseOrderQueryVariables>(PURCHASE_ORDER_QUERY, {
     variables: { id: id ?? '' },
     skip: !id || isTourDemo,
   })
@@ -322,6 +231,10 @@ export default function ReceiptForm() {
   // Never offer Virtual Receipts / Virtual Consumption: stock put there counts as used up, so the goods would
   // never become stock and the project would never be charged (playbook #105). The server refuses them too.
   const locations = receivableLocations(locationsData?.stockLocations ?? [])
+  const receivingIsTemporary = locations.some((l) => l.id === form.location_id && l.type === 'temporary')
+  const destinationChoices = locations.filter(
+    (l) => (l.type === 'warehouse' || l.type === 'site') && l.id !== form.location_id,
+  )
   const employees: {
     id: string
     first_name: string
@@ -415,192 +328,38 @@ export default function ReceiptForm() {
     })
   }
 
-  function renderPhotoGrid(kind: PhotoKind) {
-    const photos = pendingPhotos.filter((p) => p.kind === kind)
-    const isDragOver = dragOverKind === kind
-    return (
-      <div
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragOverKind(kind)
-        }}
-        onDragLeave={(e) => {
-          // dragleave fires when the pointer moves onto a CHILD element too
-          // (button, thumbnail) — only actually clear the highlight once the
-          // pointer has left the whole zone, or it flickers on/off while
-          // dragging over its contents.
-          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
-          setDragOverKind((prev) => (prev === kind ? null : prev))
-        }}
-        onDrop={(e) => { handleDrop(e, kind); }}
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '12px',
-          marginBottom: '12px',
-          padding: isDragOver ? '10px' : 0,
-          borderRadius: '8px',
-          background: isDragOver ? 'rgba(37,99,235,0.06)' : 'transparent',
-          outline: isDragOver ? `2px dashed ${BRAND_BLUE}` : 'none',
-          outlineOffset: '2px',
-          transition: 'background 0.15s, outline 0.15s',
-        }}
-      >
-        {photos.map((photo) => (
-          <div key={photo.id} style={{ position: 'relative', width: '140px' }}>
-            {photo.file.type === 'application/pdf' ? (
-              <div
-                style={{
-                  width: '140px',
-                  height: '100px',
-                  borderRadius: '6px',
-                  border: `1px solid ${theme.border}`,
-                  background: theme.bgSurface,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
-                  padding: '6px',
-                }}
-              >
-                <span style={{ fontSize: '28px' }}>📄</span>
-                <span
-                  style={{
-                    fontSize: '10px',
-                    color: theme.textMuted,
-                    maxWidth: '120px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {photo.file.name}
-                </span>
-              </div>
-            ) : (
-              <img
-                src={photo.previewUrl}
-                alt={photo.file.name}
-                style={{
-                  width: '140px',
-                  height: '100px',
-                  objectFit: 'cover',
-                  borderRadius: '6px',
-                  border: `1px solid ${theme.border}`,
-                }}
-              />
-            )}
-            {photo.uploading && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: 'rgba(0,0,0,0.4)',
-                  borderRadius: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  fontSize: '12px',
-                }}
-              >
-                {t('receipt.form.uploading')}
-              </div>
-            )}
-            {photo.error && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: 'rgba(200,0,0,0.5)',
-                  borderRadius: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  fontSize: '11px',
-                  padding: '4px',
-                  textAlign: 'center',
-                }}
-              >
-                {photo.error}
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                removePhoto(photo.id)
-              }}
-              style={{
-                position: 'absolute',
-                top: '4px',
-                right: '4px',
-                background: 'rgba(0,0,0,0.6)',
-                border: 'none',
-                borderRadius: '50%',
-                color: '#fff',
-                width: '20px',
-                height: '20px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                lineHeight: '20px',
-                textAlign: 'center',
-                padding: 0,
-              }}
-            >
-              ×
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => { openCamera(kind); }}
-          style={{
-            width: '140px',
-            height: '100px',
-            border: `2px dashed ${BRAND_BLUE}`,
-            borderRadius: '6px',
-            cursor: 'pointer',
-            background: 'transparent',
-            color: BRAND_BLUE,
-            fontSize: '13px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '4px',
-          }}
-        >
-          <IconCamera size={22} />
-          <span>{t('receipt.form.takePhoto')}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => { openGallery(kind); }}
-          style={{
-            width: '140px',
-            height: '100px',
-            border: `2px dashed ${theme.border}`,
-            borderRadius: '6px',
-            cursor: 'pointer',
-            background: 'transparent',
-            color: theme.textMuted,
-            fontSize: '13px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '4px',
-          }}
-        >
-          <span style={{ fontSize: '24px' }}>+</span>
-          <span>{t('receipt.form.addPhotoPdf')}</span>
-          <span style={{ fontSize: '10px' }}>{t('receipt.form.orDragDrop')}</span>
-        </button>
-      </div>
+  // What is still needed before the form can be saved. ONE list: the checklist, the action bar and the refusal on
+  // submit all read it (lib/receiptLines.ts), so they cannot disagree.
+  const hasVendorReceipt =
+    buyerReceiptOnFile || pendingPhotos.some((p) => p.kind === 'vendor_receipt')
+  const hasMaterials = pendingPhotos.some((p) => p.kind === 'materials')
+  const photosSkipped = isJobsite && (!hasVendorReceipt || !hasMaterials)
+  const requirements = receiptRequirements({
+    isJobsite,
+    receiverName: form.received_by_name,
+    lines,
+    hasVendorReceipt,
+    hasMaterialsPhoto: hasMaterials,
+    photosBypassed: bypassReady,
+    needsDestination: !isJobsite && receivingIsTemporary,
+    hasDestination: form.final_destination_location_id !== '',
+  })
+  const openRequirements = requirements.filter((r) => !r.done)
+  const requirementLabel = (reqId: (typeof requirements)[number]['id']) =>
+    t(
+      {
+        receiver: 'receipt.form.reqReceiver',
+        items: 'receipt.form.reqItems',
+        destination: 'receipt.form.reqDestination',
+        vendorReceipt: 'receipt.form.reqVendorReceipt',
+        materials: 'receipt.form.reqMaterials',
+      }[reqId],
     )
-  }
+  const checklistItems: Requirement[] = requirements.map((r) => ({
+    id: r.id,
+    label: requirementLabel(r.id),
+    done: r.done,
+  }))
 
   // Saves a draft only — no qty_received/stock impact yet. The two required
   // photos (vendor receipt + materials) and the actual "Confirm Receipt" step
@@ -609,33 +368,32 @@ export default function ReceiptForm() {
   // skip all of that (see recordDirectDelivery below).
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!isJobsite && !form.received_by_name.trim()) {
-      addToast({ type: 'error', message: t('receipt.form.pleaseSelectWhoReceivedTheGoods') })
-      return
-    }
-    if (!lines.some((l) => l.selected && parseFloat(l.qty_to_receive) > 0)) {
-      addToast({ type: 'error', message: t('receipt.form.selectAtLeastOneItemYou') })
-      return
-    }
-    const hasVendorReceipt =
-      buyerReceiptOnFile || pendingPhotos.some((p) => p.kind === 'vendor_receipt')
-    const hasMaterials = pendingPhotos.some((p) => p.kind === 'materials')
-    const photosSkipped = isJobsite && (!hasVendorReceipt || !hasMaterials)
-    if (isJobsite) {
-      if (photosSkipped && !bypassReady) {
-        const missing = [
-          !hasVendorReceipt ? t('receipt.form.theVendorReceipt') : null,
-          !hasMaterials ? t('receipt.form.aPhotoOfMaterials') : null,
-        ]
+    const first = openRequirements.at(0)
+    if (first) {
+      if (first.id === 'receiver') {
+        addToast({ type: 'error', message: t('receipt.form.pleaseSelectWhoReceivedTheGoods') })
+      } else if (first.id === 'items') {
+        addToast({ type: 'error', message: t('receipt.form.selectAtLeastOneItemYou') })
+      } else if (first.id === 'destination') {
+        addToast({ type: 'error', message: t('receipt.form.reqDestination') })
+      } else {
+        const missing = openRequirements
+          .map((r) =>
+            r.id === 'vendorReceipt'
+              ? t('receipt.form.theVendorReceipt')
+              : r.id === 'materials'
+                ? t('receipt.form.aPhotoOfMaterials')
+                : null,
+          )
           .filter(Boolean)
           .join(t('receipt.form.andJoin'))
         addToast({ type: 'error', message: t('receipt.form.pleaseAttach', { missing }) })
-        return
       }
+      return
     }
     setSubmitting(true)
     try {
-      const toReceive = lines.filter((l) => l.selected && parseFloat(l.qty_to_receive) > 0)
+      const toReceive = lines.filter(isLineReceiving)
 
       if (isJobsite) {
         const isRetry = deliveryRecorded
@@ -709,6 +467,7 @@ export default function ReceiptForm() {
             input: {
               receipt_date: form.receipt_date,
               location_id: form.location_id || undefined,
+              final_destination_location_id: receivingIsTemporary ? form.final_destination_location_id : undefined,
               notes: form.notes || undefined,
               received_by_name: form.received_by_name,
               received_from_name: form.received_from_name || undefined,
@@ -745,6 +504,7 @@ export default function ReceiptForm() {
               input: {
                 receipt_date: form.receipt_date,
                 location_id: form.location_id || undefined,
+                final_destination_location_id: receivingIsTemporary ? form.final_destination_location_id : undefined,
                 notes: form.notes || undefined,
                 received_by_name: name,
                 received_from_name: form.received_from_name || undefined,
@@ -782,277 +542,148 @@ export default function ReceiptForm() {
     }
   }
 
-  function remainingQty(line: ReceiptLine): number {
-    return Math.max(0, line.ordered_qty - line.qty_received_so_far - line.qty_from_stock)
-  }
+  // Summary stats for the side column — recomputed on every render so they stay live as lines are ticked and edited.
+  const totals = receiptTotals(lines)
 
-  function toggleLineSelected(poLineId: string, checked: boolean) {
-    setLines((prev) =>
-      prev.map((l) => {
-        if (l.po_line_id !== poLineId) return l
-        // Re-selecting after having zeroed it out should default back to the
-        // full remaining qty rather than staying at 0.
-        const qty =
-          checked && parseFloat(l.qty_to_receive || '0') <= 0
-            ? String(remainingQty(l))
-            : l.qty_to_receive
-        return { ...l, selected: checked, qty_to_receive: qty }
-      }),
+  // The same rows as the New Requisition form: every detail row is one grid, so the columns line up row to row.
+  const detailsRow = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
+    gap: isPhone ? '14px' : '18px 20px',
+    alignItems: 'start',
+  } as const
+  const hint = { fontSize: '12px', color: theme.textSecondary, marginTop: '4px' } as const
+
+  const primaryLabel = isJobsite ? t('receipt.form.markDelivered') : t('receipt.form.saveDraft')
+
+  const proofStatus = (kind: PhotoKind): { status: ProofStatus; label: string } => {
+    const added = pendingPhotos.filter((p) => p.kind === kind).length
+    if (kind === 'vendor_receipt' && buyerReceiptOnFile && added === 0)
+      return { status: 'onFile', label: t('receipt.form.proofOnFile') }
+    if (added > 0) return { status: 'added', label: t('receipt.form.proofAdded', { count: added }) }
+    if (bypassReady) return { status: 'skipped', label: t('receipt.form.proofSkipped') }
+    return { status: 'missing', label: t('receipt.form.proofMissing') }
+  }
+  const proofTile = (kind: PhotoKind, title: string, hintText: string, tour?: string) => {
+    const { status, label } = proofStatus(kind)
+    return (
+      <ReceiptProofTile
+        data-tour={tour}
+        title={title}
+        hint={hintText}
+        status={status}
+        statusLabel={label}
+        photos={pendingPhotos.filter((p) => p.kind === kind)}
+        dragOver={dragOverKind === kind}
+        onDragOver={() => {
+          setDragOverKind(kind)
+        }}
+        onDragLeave={(e) => {
+          // dragleave fires when the pointer moves onto a CHILD element too
+          // (button, thumbnail) — only actually clear the highlight once the
+          // pointer has left the whole zone, or it flickers on/off while
+          // dragging over its contents.
+          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+          setDragOverKind((prev) => (prev === kind ? null : prev))
+        }}
+        onDrop={(e) => {
+          handleDrop(e, kind)
+        }}
+        onTakePhoto={() => {
+          openCamera(kind)
+        }}
+        onAddFile={() => {
+          openGallery(kind)
+        }}
+        onRemove={removePhoto}
+      />
     )
   }
 
-  // Summary stats for the right-hand column — recomputed on every render so
-  // they stay live as the user checks lines and edits quantities.
-  const itemCount = lines.length
-  const orderedQtyTotal = lines.reduce((s, l) => s + l.ordered_qty, 0)
-  const alreadyCoveredQty = lines.reduce((s, l) => s + l.qty_received_so_far + l.qty_from_stock, 0)
-  const receivingNowQty = lines.reduce(
-    (s, l) => s + (l.selected ? parseFloat(l.qty_to_receive || '0') || 0 : 0),
-    0,
-  )
-  const remainingAfterQty = Math.max(0, orderedQtyTotal - alreadyCoveredQty - receivingNowQty)
-  const progressPct =
-    orderedQtyTotal > 0
-      ? Math.min(100, Math.round(((alreadyCoveredQty + receivingNowQty) / orderedQtyTotal) * 100))
-      : 0
-  const selectedCount = lines.filter((l) => l.selected).length
-
-  const receiptLineFields: LineItemField<ReceiptLine>[] = [
-    {
-      key: 'selected',
-      label: t('receipt.form.receiving'),
-      width: '70px',
-      render: (line) => (
-        <input
-          type="checkbox"
-          checked={line.selected}
-          onChange={(e) => {
-            toggleLineSelected(line.po_line_id, e.target.checked)
-          }}
-          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-        />
-      ),
-    },
-    {
-      key: 'description',
-      label: t('receipt.form.item'),
-      render: (line) => (
-        <div>
-          <div
-            style={{
-              fontWeight: 500,
-              color: line.selected ? theme.textPrimary : theme.textSecondary,
-            }}
-          >
-            {line.description}
-          </div>
-          {line.sku && (
-            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
-              {t('receipt.form.skuLabel', { sku: line.sku })}
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'po_unit_price',
-      label: t('receipt.form.poPrice'),
-      render: (line) => (
-        <span style={{ fontFamily: 'monospace', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-          {line.po_unit_price > 0 ? line.po_unit_price.toLocaleString() : '—'}
-        </span>
-      ),
-    },
-    {
-      key: 'ordered_qty',
-      label: t('receipt.form.ordered'),
-      render: (line) => (
-        <span style={{ fontFamily: 'monospace', fontWeight: 600, color: BRAND_BLUE }}>
-          {line.ordered_qty.toLocaleString()}
-        </span>
-      ),
-    },
-    {
-      key: 'qty_received_so_far',
-      label: t('receipt.form.previouslyReceived'),
-      render: (line) => (
-        <span style={{ fontFamily: 'monospace', color: theme.textMuted }}>
-          {line.qty_received_so_far.toLocaleString()}
-        </span>
-      ),
-    },
-    {
-      key: 'qty_from_stock',
-      label: t('receipt.form.availableInStock'),
-      render: (line) => (
-        <span
-          style={{
-            fontFamily: 'monospace',
-            fontWeight: line.qty_from_stock > 0 ? 600 : 400,
-            color: line.qty_from_stock > 0 ? BRAND_GREEN : theme.textMuted,
-          }}
-        >
-          {line.qty_from_stock > 0 ? line.qty_from_stock.toLocaleString() : '—'}
-        </span>
-      ),
-    },
-    {
-      key: 'remaining',
-      label: t('receipt.form.remaining'),
-      render: (line) => (
-        <span style={{ fontFamily: 'monospace', fontWeight: 600, color: BRAND_ORANGE }}>
-          {remainingQty(line).toLocaleString()}
-        </span>
-      ),
-    },
-    {
-      key: 'qty_to_receive',
-      label: t('receipt.form.receiveNow'),
-      width: '140px',
-      render: (line, i) => {
-        const max = remainingQty(line)
-        return (
-          <div>
-            <Input
-              type="number"
-              min="0"
-              max={max}
-              step="0.01"
-              disabled={!line.selected}
-              value={line.qty_to_receive}
-              onChange={(e) => {
-                const val = e.target.value
-                // Cap at what's actually left to receive — can't over-receive by typo.
-                const clamped =
-                  val !== '' && !isNaN(parseFloat(val)) && parseFloat(val) > max ? String(max) : val
-                setLines((prev) =>
-                  prev.map((l, idx) => (idx === i ? { ...l, qty_to_receive: clamped } : l)),
-                )
-              }}
-            />
-            <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '2px' }}>
-              {t('receipt.form.maxLabel', { max: max.toLocaleString() })}
-            </div>
-          </div>
-        )
-      },
-    },
-    ...(receiveAll
-      ? []
-      : [
-          {
-            key: 'receiver',
-            label: t('receipt.form.receiver'),
-            width: '160px',
-            render: (line: ReceiptLine) => (
-              <Select
-                value={lineReceivers[line.po_line_id]?.id ?? ''}
-                onChange={(e) => {
-                  const empId = e.target.value
-                  if (!empId) {
-                    setLineReceivers((prev) => {
-                      const next = { ...prev }
-                      Reflect.deleteProperty(next, line.po_line_id)
-                      return next
-                    })
-                    return
-                  }
-                  const emp = employees.find((emp2) => emp2.id === empId)
-                  setLineReceivers((prev) => ({
-                    ...prev,
-                    [line.po_line_id]: {
-                      id: empId,
-                      name: emp ? `${emp.first_name} ${emp.last_name}` : '',
-                    },
-                  }))
-                }}
-              >
-                <option value="">{t('receipt.form.default')}</option>
-                {employees.map((emp2) => (
-                  <option key={emp2.id} value={emp2.id}>
-                    {emp2.first_name} {emp2.last_name}
-                  </option>
-                ))}
-              </Select>
-            ),
-          },
-        ]),
-  ]
-
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={{ padding: isPhone ? '12px 16px' : '24px' }}>
       <PageHeader
+        compact
         title={po?.po_number ?? t('receipt.form.recordReceiptTitle')}
         subtitle={t('receipt.form.recordGoodsReceipt')}
         badge={po?.status && <Badge variant={PO_STATUS_VARIANT[po.status] ?? 'neutral'}>{getPOStatusLabel(po.status)}</Badge>}
         backPath={`/procurement/purchase-orders/${id}`}
-        actions={
-          <Button
-            data-tour="po-mark-delivered-btn"
-            type="button"
-            variant="primary"
-            icon={isJobsite ? <IconCheckCircle size={16} /> : <IconSave size={16} />}
-            loading={submitting}
-            onClick={() => formRef.current?.requestSubmit()}
-          >
-            {isJobsite ? t('receipt.form.markDelivered') : t('receipt.form.saveDraft')}
-          </Button>
-        }
       />
-      <div
-        style={{
-          display: 'flex',
-          gap: '20px',
-          flexWrap: 'wrap',
-          marginTop: '-14px',
-          marginBottom: '20px',
-          fontSize: '13px',
-          color: theme.textSecondary,
-        }}
-      >
-        <span>
-          <span style={{ color: theme.textMuted }}>{t('receipt.form.vendor')}</span>{' '}
-          <strong style={{ color: theme.textPrimary }}>{po?.vendor_name ?? '—'}</strong>
-        </span>
-        <span>
-          <span style={{ color: theme.textMuted }}>{t('receipt.form.poDate')}</span>{' '}
-          <strong style={{ color: theme.textPrimary }}>
-            {po?.created_at ? po.created_at.slice(0, 10) : '—'}
-          </strong>
-        </span>
+
+      {/* Who it is from, and where the goods go: it decides what the form asks for. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '4px 20px',
+            fontSize: '13px',
+            color: theme.textSecondary,
+          }}
+        >
+          <span>
+            {t('receipt.form.vendor')}{' '}
+            <strong style={{ color: theme.textPrimary }}>{po?.vendor_name ?? '—'}</strong>
+          </span>
+          <span>
+            {t('receipt.form.poDate')}{' '}
+            <strong style={{ color: theme.textPrimary }}>
+              {po?.created_at ? po.created_at.slice(0, 10) : '—'}
+            </strong>
+          </span>
+        </div>
+        {po && (
+          <div
+            data-destination={isJobsite ? 'jobsite' : 'inventory'}
+            style={{
+              fontSize: '13px',
+              color: theme.textPrimary,
+              background: theme.accentBg,
+              border: `1px solid ${theme.accentBorder}`,
+              borderRadius: '10px',
+              padding: '10px 14px',
+            }}
+          >
+            <strong>
+              {isJobsite
+                ? t('receipt.form.destinationJobsite')
+                : t('receipt.form.destinationInventory')}
+            </strong>
+            {' — '}
+            <span style={{ color: theme.textSecondary }}>
+              {isJobsite
+                ? t('receipt.form.destinationJobsiteHint')
+                : t('receipt.form.destinationInventoryHint')}
+            </span>
+          </div>
+        )}
       </div>
 
-      <form ref={formRef} onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
-        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'stretch' }}>
-          {/* Left column ~70%: Receipt Information */}
-          <div style={{ flex: '2 1 560px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <form onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}>
+        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          {/* Left column: the details, the lines, the proof of delivery */}
+          <div
+            style={{
+              flex: '2 1 560px',
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+            }}
+          >
             <Card
               style={{
-                padding: '24px',
+                padding: isPhone ? '16px' : '24px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '18px',
+                gap: isPhone ? '14px' : '18px',
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontWeight: 600,
-                  fontSize: '15px',
-                  color: theme.textPrimary,
-                }}
-              >
-                <span style={{ color: theme.textMuted, display: 'flex' }}>
-                  <IconDocument />
-                </span>
-                {t('receipt.form.receiptInformation')}
-              </div>
+              <SectionTitle step={1}>{t('receipt.form.stepDetails')}</SectionTitle>
 
-              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                <div style={{ flex: '1 1 180px' }}>
-                  <Input
+              <div style={detailsRow}>
+                <div style={{ minWidth: 0 }}>
+                  <Input field
                     label={t('receipt.form.receiptDate')}
                     type="date"
                     value={form.receipt_date}
@@ -1062,76 +693,52 @@ export default function ReceiptForm() {
                     required
                   />
                 </div>
-
                 {!isJobsite && (
-                  <div style={{ flex: '1.4 1 220px' }}>
-                    <label
-                      style={{
-                        display: 'block',
-                        fontSize: '12px',
-                        fontWeight: 500,
-                        color: theme.textSecondary,
-                        marginBottom: '4px',
+                  <div style={{ minWidth: 0 }}>
+                    <Select field
+                      label={t('receipt.form.receivingLocationOptional')}
+                      value={form.location_id}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, location_id: e.target.value, final_destination_location_id: '' }))
                       }}
                     >
-                      &nbsp;
-                    </label>
-                    <label
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        fontSize: '13px',
-                        fontWeight: receiveAll ? 600 : 400,
-                        color: receiveAll ? BRAND_BLUE : theme.textMuted,
-                        cursor: 'pointer',
-                        paddingTop: '2px',
+                      <option value="">{t('receipt.form.selectLocation')}</option>
+                      {locations.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                          {l.code ? ` (${l.code})` : ''}
+                          {l.type === 'temporary' ? ` · ${t('receipt.form.temporaryTag')}` : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                )}
+                {!isJobsite && receivingIsTemporary && (
+                  <div style={{ minWidth: 0 }}>
+                    <Select field
+                      label={t('receipt.form.finalDestination')}
+                      value={form.final_destination_location_id}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, final_destination_location_id: e.target.value }))
                       }}
                     >
-                      <input
-                        type="checkbox"
-                        checked={receiveAll}
-                        onChange={(e) => {
-                          setReceiveAll(e.target.checked)
-                        }}
-                        style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: BRAND_BLUE }}
-                      />
-                      {t('receipt.form.receiveAllItems')}
-                    </label>
-                    <div style={{ fontSize: '11px', color: theme.textMuted, marginInlineStart: '23px' }}>
-                      {t('receipt.form.singleReceiver')}
-                    </div>
+                      <option value="">{t('receipt.form.selectLocation')}</option>
+                      {destinationChoices.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                          {l.code ? ` (${l.code})` : ''}
+                        </option>
+                      ))}
+                    </Select>
                   </div>
                 )}
               </div>
-              {!isJobsite && !receiveAll && (
-                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '-10px' }}>
-                  {t('receipt.form.eachLineBelowCanBeAssigned')}
-                </div>
-              )}
 
               {!isJobsite && (
                 <>
-                  <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                    <div style={{ flex: '1 1 200px' }}>
-                      <Select
-                        label={t('receipt.form.receivingLocationOptional')}
-                        value={form.location_id}
-                        onChange={(e) => {
-                          setForm((f) => ({ ...f, location_id: e.target.value }))
-                        }}
-                      >
-                        <option value="">{t('receipt.form.selectLocation')}</option>
-                        {locations.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.name}
-                            {l.code ? ` (${l.code})` : ''}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <div style={{ flex: '1 1 200px' }}>
-                      <SearchableSelect
+                  <div style={detailsRow}>
+                    <div style={{ minWidth: 0 }}>
+                      <SearchableSelect field
                         label={receiveAll ? t('receipt.form.receivedBy') : t('receipt.form.defaultReceiver')}
                         value={form.received_by_id}
                         onChange={(v) => {
@@ -1147,15 +754,15 @@ export default function ReceiptForm() {
                         minDropdownWidth={280}
                       />
                       {form.received_by_id && (
-                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
+                        <div style={hint}>
                           {receiveAll
                             ? t('receipt.form.autoSelectedChangeIfSomeoneElse')
                             : t('receipt.form.usedForAnyLineBelowWith')}
                         </div>
                       )}
                     </div>
-                    <div style={{ flex: '1 1 200px' }}>
-                      <SearchableSelect
+                    <div style={{ minWidth: 0 }}>
+                      <SearchableSelect field
                         label={t('receipt.form.receivedFrom')}
                         value={form.received_from_id}
                         onChange={(v) => {
@@ -1170,12 +777,24 @@ export default function ReceiptForm() {
                         placeholder={t('receipt.form.searchEmployee')}
                         minDropdownWidth={280}
                       />
-                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
-                        {t('receipt.form.whichEmployeeDeliveredHandedOverThese')}
-                      </div>
+                      <div style={hint}>{t('receipt.form.whichEmployeeDeliveredHandedOverThese')}</div>
                     </div>
                   </div>
-                  <Input
+
+                  <div>
+                    <Checkbox
+                      label={t('receipt.form.sameReceiver')}
+                      checked={receiveAll}
+                      onChange={setReceiveAll}
+                    />
+                    <div style={{ ...hint, marginInlineStart: '24px' }}>
+                      {receiveAll
+                        ? t('receipt.form.sameReceiverHint')
+                        : t('receipt.form.eachLineBelowCanBeAssigned')}
+                    </div>
+                  </div>
+
+                  <Input field
                     label={t('receipt.form.locationJobsiteNotes')}
                     placeholder={t('receipt.form.eGSiteBFloor3')}
                     value={form.location_notes}
@@ -1186,7 +805,7 @@ export default function ReceiptForm() {
                 </>
               )}
 
-              <Textarea
+              <Textarea field
                 label={t('receipt.form.generalNotes')}
                 placeholder={t('receipt.form.addAnyAdditionalNotesAboutThis')}
                 value={form.notes}
@@ -1195,6 +814,108 @@ export default function ReceiptForm() {
                 }}
                 rows={3}
               />
+            </Card>
+
+            <Card style={{ padding: 0 }}>
+              <div
+                style={{
+                  padding: isPhone ? '16px 16px 12px' : '20px 24px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <SectionTitle step={2} data-tour="receipt-lines-title">
+                    {t('receipt.form.stepItems')}
+                  </SectionTitle>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span
+                      aria-live="polite"
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        padding: '3px 10px',
+                        borderRadius: '999px',
+                        color: theme.textSecondary,
+                        background: theme.bgCanvas,
+                        border: `1px solid ${theme.border}`,
+                      }}
+                    >
+                      {t('receipt.form.itemsSelectedOf', {
+                        selected: totals.selectedCount,
+                        total: totals.itemCount,
+                      })}
+                    </span>
+                    <ActionButton
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setLines(selectAllLines)
+                      }}
+                    >
+                      {t('receipt.form.selectAll')}
+                    </ActionButton>
+                    <ActionButton
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setLines(clearLines)
+                      }}
+                    >
+                      {t('receipt.form.clearSelection')}
+                    </ActionButton>
+                  </div>
+                </div>
+                <div style={{ fontSize: '13px', color: theme.textSecondary }}>
+                  {t('receipt.form.itemsHint')}
+                </div>
+              </div>
+              <div style={{ padding: isPhone ? '0 12px 12px' : '0 16px 16px' }}>
+                <ReceiptLinesTable
+                  lines={lines}
+                  loading={poLoading}
+                  receiveAll={receiveAll}
+                  employees={employees}
+                  lineReceivers={lineReceivers}
+                  onToggle={(poLineId, checked) => {
+                    setLines((prev) => prev.map((l) => (l.po_line_id === poLineId ? selectLine(l, checked) : l)))
+                  }}
+                  onQty={(poLineId, value) => {
+                    setLines((prev) =>
+                      prev.map((l) => (l.po_line_id === poLineId ? { ...l, qty_to_receive: value } : l)),
+                    )
+                  }}
+                  onReceiver={(poLineId, employeeId) => {
+                    if (!employeeId) {
+                      setLineReceivers((prev) => {
+                        const next = { ...prev }
+                        Reflect.deleteProperty(next, poLineId)
+                        return next
+                      })
+                      return
+                    }
+                    const emp = employees.find((e) => e.id === employeeId)
+                    setLineReceivers((prev) => ({
+                      ...prev,
+                      [poLineId]: {
+                        id: employeeId,
+                        name: emp ? `${emp.first_name} ${emp.last_name}` : '',
+                      },
+                    }))
+                  }}
+                />
+              </div>
             </Card>
 
             {isJobsite && (
@@ -1216,333 +937,243 @@ export default function ReceiptForm() {
                   onChange={handleFileSelect}
                 />
 
-                <Card style={{ padding: '20px' }}>
+                <Card
+                  style={{
+                    padding: isPhone ? '16px' : '24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: isPhone ? '14px' : '18px',
+                  }}
+                >
+                  <SectionTitle step={3}>{t('receipt.form.stepProof')}</SectionTitle>
                   <div
-                    data-tour="po-jobsite-photos"
-                    style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
+                      gap: '16px',
+                      alignItems: 'start',
+                    }}
                   >
-                    {buyerReceiptOnFile
-                      ? t('receipt.form.vendorReceiptOnFile')
-                      : t('receipt.form.vendorReceiptRequired')}
+                    {proofTile(
+                      'vendor_receipt',
+                      buyerReceiptOnFile
+                        ? t('receipt.form.vendorReceiptOnFile')
+                        : t('receipt.form.vendorReceiptRequired'),
+                      buyerReceiptOnFile
+                        ? t('receipt.form.vendorReceiptOnFileHint')
+                        : t('receipt.form.photoScanOrPdfOfThe'),
+                      'po-jobsite-photos',
+                    )}
+                    {proofTile(
+                      'materials',
+                      t('receipt.form.materialsDeliveredRequired'),
+                      t('receipt.form.photoOfTheDeliveredGoodsAt'),
+                    )}
                   </div>
-                  {renderPhotoGrid('vendor_receipt')}
-                  <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                    {buyerReceiptOnFile
-                      ? t('receipt.form.vendorReceiptOnFileHint')
-                      : t('receipt.form.photoScanOrPdfOfThe')}
-                  </div>
+                  {isSystemAdmin && (
+                    <AdminPhotoBypass
+                      enabled={bypassPhotos}
+                      reason={bypassReason}
+                      onEnabledChange={setBypassPhotos}
+                      onReasonChange={setBypassReason}
+                    />
+                  )}
                 </Card>
-
-                <Card style={{ padding: '20px' }}>
-                  <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}>
-                    {t('receipt.form.materialsDeliveredRequired')}
-                  </div>
-                  {renderPhotoGrid('materials')}
-                  <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                    {t('receipt.form.photoOfTheDeliveredGoodsAt')}
-                  </div>
-                </Card>
-
-                {isSystemAdmin && (
-                  <AdminPhotoBypass
-                    enabled={bypassPhotos}
-                    reason={bypassReason}
-                    onEnabledChange={setBypassPhotos}
-                    onReasonChange={setBypassReason}
-                  />
-                )}
               </>
             )}
           </div>
 
-          {/* Right column ~30%: Receipt Summary — stretched to match the left column's height */}
-          <div style={{ flex: '1 1 280px', display: 'flex' }}>
-            <Card
+          {/* Right column: what is being received, and what the form still needs. Stays in view beside a long list. */}
+          <div style={{ flex: '1 1 300px', minWidth: 0, display: 'flex' }}>
+            <div
               style={{
-                padding: '24px',
-                position: 'sticky',
-                top: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '20px',
                 width: '100%',
+                alignSelf: 'flex-start',
+                position: isPhone ? 'static' : 'sticky',
+                top: '20px',
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontWeight: 600,
-                  fontSize: '15px',
-                  color: theme.textPrimary,
-                  marginBottom: '16px',
-                }}
-              >
-                <span style={{ color: theme.textMuted, display: 'flex' }}>
-                  <IconBarChart />
-                </span>
-                {t('receipt.form.receiptSummary')}
-              </div>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '10px',
-                  marginBottom: '20px',
-                }}
-              >
-                {[
-                  { label: t('receipt.form.items'), value: itemCount },
-                  { label: t('receipt.form.orderedQty'), value: orderedQtyTotal.toLocaleString() },
-                  {
-                    label: t('receipt.form.receivedQty'),
-                    value: alreadyCoveredQty.toLocaleString(),
-                    color: BRAND_GREEN,
-                  },
-                  {
-                    label: t('receipt.form.remainingQty'),
-                    value: remainingAfterQty.toLocaleString(),
-                    color: BRAND_ORANGE,
-                  },
-                ].map((kpi) => (
-                  <div
-                    key={kpi.label}
-                    style={{
-                      padding: '14px',
-                      borderRadius: '10px',
-                      background: theme.bgCanvas,
-                      border: `1px solid ${theme.border}`,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 500,
-                        color: theme.textMuted,
-                        marginBottom: '6px',
-                      }}
-                    >
-                      {kpi.label}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '24px',
-                        fontWeight: 700,
-                        color: kpi.color ?? theme.textPrimary,
-                        lineHeight: 1,
-                      }}
-                    >
-                      {kpi.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: '12px',
-                  marginBottom: '6px',
-                }}
-              >
-                <span style={{ fontWeight: 600, color: theme.textPrimary }}>{t('receipt.form.receiptProgress')}</span>
-                <span style={{ fontWeight: 700, color: BRAND_BLUE }}>{progressPct}%</span>
-              </div>
-              <div
-                style={{
-                  height: '8px',
-                  borderRadius: '999px',
-                  background: theme.bgCanvas,
-                  border: `1px solid ${theme.border}`,
-                  overflow: 'hidden',
-                }}
-              >
+              <Card style={{ padding: isPhone ? '16px' : '24px' }}>
                 <div
                   style={{
-                    height: '100%',
-                    width: `${progressPct}%`,
-                    background: BRAND_BLUE,
+                    fontWeight: 600,
+                    fontSize: '15px',
+                    color: theme.textPrimary,
+                    marginBottom: '16px',
+                  }}
+                >
+                  {t('receipt.form.receiptSummary')}
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '10px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  {[
+                    { label: t('receipt.form.items'), value: totals.itemCount.toLocaleString() },
+                    {
+                      label: t('receipt.form.orderedQty'),
+                      value: totals.orderedQtyTotal.toLocaleString(),
+                    },
+                    {
+                      label: t('receipt.form.receivedQty'),
+                      value: totals.alreadyCoveredQty.toLocaleString(),
+                      color: theme.success,
+                    },
+                    {
+                      label: t('receipt.form.remainingQty'),
+                      value: totals.remainingAfterQty.toLocaleString(),
+                      color: theme.warning,
+                    },
+                  ].map((kpi) => (
+                    <div
+                      key={kpi.label}
+                      style={{
+                        padding: isPhone ? '10px 12px' : '14px',
+                        borderRadius: '10px',
+                        background: theme.bgCanvas,
+                        border: `1px solid ${theme.border}`,
+                        minWidth: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          color: theme.textSecondary,
+                          marginBottom: '6px',
+                        }}
+                      >
+                        {kpi.label}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: isPhone ? '18px' : '22px',
+                          fontWeight: 700,
+                          color: kpi.color ?? theme.textPrimary,
+                          lineHeight: 1.2,
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {kpi.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '12px',
+                    marginBottom: '6px',
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: theme.textPrimary }}>
+                    {t('receipt.form.receiptProgress')}
+                  </span>
+                  <span style={{ fontWeight: 700, color: theme.accentSolid }}>
+                    {totals.progressPct}%
+                  </span>
+                </div>
+                <div
+                  role="progressbar"
+                  aria-label={t('receipt.form.receiptProgress')}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={totals.progressPct}
+                  style={{
+                    height: '8px',
                     borderRadius: '999px',
-                    transition: 'width 0.2s',
+                    background: theme.bgCanvas,
+                    border: `1px solid ${theme.border}`,
+                    overflow: 'hidden',
                   }}
-                />
-              </div>
-              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '10px' }}>
-                <Trans
-                  i18nKey="receipt.form.youAreReceiving"
-                  values={{
-                    received: receivingNowQty.toLocaleString(),
-                    total: orderedQtyTotal.toLocaleString(),
-                  }}
-                  components={{ strong: <strong style={{ color: theme.textPrimary }} /> }}
-                />
-              </div>
-            </Card>
+                >
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${totals.progressPct}%`,
+                      background: theme.accentSolid,
+                      borderRadius: '999px',
+                      transition: 'width 0.2s',
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '10px' }}>
+                  <Trans
+                    i18nKey="receipt.form.youAreReceiving"
+                    values={{
+                      received: totals.receivingNowQty.toLocaleString(),
+                      total: totals.orderedQtyTotal.toLocaleString(),
+                    }}
+                    components={{ strong: <strong style={{ color: theme.textPrimary }} /> }}
+                  />
+                </div>
+              </Card>
+
+              <RequirementsChecklist
+                data-tour="receipt-checklist"
+                title={isJobsite ? t('receipt.form.checkTitleDeliver') : t('receipt.form.checkTitleSave')}
+                items={checklistItems}
+                progressLabel={t('receipt.form.checkProgress', {
+                  done: requirements.length - openRequirements.length,
+                  total: requirements.length,
+                })}
+                readyLabel={t('receipt.form.checkReady')}
+                doneText={t('receipt.form.checkDone')}
+                todoText={t('receipt.form.checkTodo')}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Receiving Lines */}
-        <Card style={{ marginTop: '20px' }}>
-          <div
-            style={{
-              padding: '16px 20px',
-              borderBottom: `1px solid ${theme.border}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px',
-              flexWrap: 'wrap',
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontWeight: 600,
-                  fontSize: '15px',
-                  color: theme.textPrimary,
-                }}
-              >
-                <span style={{ color: theme.textMuted, display: 'flex' }}>
-                  <IconBox />
+        {/* The one action of the page. Desktop: sticks to the bottom of the window; phone: above the bottom navigation. */}
+        <div style={{ marginTop: '20px' }}>
+          <StageActionBar
+            title={isJobsite ? t('receipt.form.barTitleDeliver') : t('receipt.form.barTitleSave')}
+            hint={isJobsite ? t('receipt.form.barHintDeliver') : t('receipt.form.barHintSave')}
+            status={
+              openRequirements.length > 0 ? (
+                <span>
+                  {t('receipt.form.checkProgress', {
+                    done: requirements.length - openRequirements.length,
+                    total: requirements.length,
+                  })}
+                  {' · '}
+                  {t('receipt.form.barNext', { item: requirementLabel(openRequirements[0].id) })}
                 </span>
-                {t('receipt.form.receivingLines')}
-              </div>
-              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                {t('receipt.form.reviewEachItemAndEnterThe')}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setLines((prev) =>
-                    prev.map((l) =>
-                      remainingQty(l) > 0
-                        ? {
-                            ...l,
-                            selected: true,
-                            qty_to_receive:
-                              parseFloat(l.qty_to_receive || '0') > 0
-                                ? l.qty_to_receive
-                                : String(remainingQty(l)),
-                          }
-                        : l,
-                    ),
-                  )
-                }}
-              >
-                {t('receipt.form.selectAll')}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setLines((prev) => prev.map((l) => ({ ...l, selected: false })))
-                }}
-              >
-                {t('receipt.form.deselectAll')}
-              </Button>
-            </div>
-          </div>
-          <div style={{ padding: '16px 20px' }}>
-            <LineItemEditor
-              fields={receiptLineFields}
-              rows={lines}
-              rowKey={(line) => line.po_line_id}
-            />
-          </div>
-        </Card>
-
-        {/* Sticky footer action bar */}
-        <div
-          style={{
-            position: 'sticky',
-            bottom: '0',
-            marginTop: '20px',
-            background: theme.bgSurface,
-            border: `1px solid ${theme.border}`,
-            borderRadius: '12px',
-            boxShadow: '0 -6px 20px rgba(15,23,42,0.08)',
-            padding: '14px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '12px',
-            zIndex: 5,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span
-                style={{
-                  color: BRAND_BLUE,
-                  display: 'flex',
-                  padding: '8px',
-                  borderRadius: '8px',
-                  background: '#EFF6FF',
-                }}
-              >
-                <IconBox size={18} />
-              </span>
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                  {t('receipt.form.itemsSelected', { count: selectedCount })}
-                </div>
-                <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                  {t('receipt.form.ofTotalItems', { count: itemCount })}
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span
-                style={{
-                  color: BRAND_GREEN,
-                  display: 'flex',
-                  padding: '8px',
-                  borderRadius: '8px',
-                  background: '#F0FDF4',
-                }}
-              >
-                <IconCheckCircle size={18} />
-              </span>
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                  {t('receipt.form.quantityReceiving', { qty: receivingNowQty.toLocaleString() })}
-                </div>
-                <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                  {t('receipt.form.ofOrdered', { qty: orderedQtyTotal.toLocaleString() })}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <Button
-              variant="secondary"
+              ) : (
+                <span style={{ color: theme.success, fontWeight: 600 }}>
+                  {isJobsite ? t('receipt.form.barReadyDeliver') : t('receipt.form.barReadySave')}
+                </span>
+              )
+            }
+          >
+            <ActionButton
+              variant="outline"
               type="button"
               onClick={() => {
                 navigate(`/procurement/purchase-orders/${id}`)
               }}
             >
               {t('receipt.form.cancel')}
-            </Button>
-            <Button
-              variant="primary"
+            </ActionButton>
+            <ActionButton
+              data-tour="po-mark-delivered-btn"
+              variant="solid"
               type="submit"
               loading={submitting}
               icon={isJobsite ? <IconCheckCircle size={16} /> : <IconSave size={16} />}
-              style={{
-                background: BRAND_BLUE,
-                border: `1px solid ${BRAND_BLUE}`,
-                color: '#ffffff',
-                fontWeight: 600,
-              }}
             >
-              {isJobsite ? t('receipt.form.markDelivered') : t('receipt.form.saveDraft')}
-            </Button>
-          </div>
+              {primaryLabel}
+            </ActionButton>
+          </StageActionBar>
         </div>
       </form>
     </div>

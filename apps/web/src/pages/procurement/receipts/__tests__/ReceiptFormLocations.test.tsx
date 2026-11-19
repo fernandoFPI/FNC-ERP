@@ -96,7 +96,8 @@ async function renderForm() {
 
 // The receiving-location box is the select whose first choice is "Select location…".
 function locationSelect(): HTMLSelectElement {
-  const placeholder = screen.getByText('Select location…')
+  // the first one on the page (a temporary store adds a second box, the final destination, with the same placeholder)
+  const placeholder = screen.getAllByText('Select location…')[0]
   const select = placeholder.closest('select')
   if (!select) throw new Error('the "Select location…" choice is not inside a select')
   return select
@@ -166,5 +167,53 @@ describe('ReceiptForm: where the goods can be received', () => {
     fireEvent.change(select, { target: { value: 'loc-virtual-out' } })
     // an option that is not in the list cannot be selected: the box falls back to the empty choice
     expect(select.value).toBe('')
+  })
+})
+
+describe('ReceiptForm: a temporary store needs a final destination (playbook #108)', () => {
+  const withTemporary = [
+    ...everyLocation,
+    location('loc-temp', 'Erbil Temporary Store', 'temporary'),
+    location('loc-temp2', 'Basrah Temporary Store', 'temporary'),
+    location('loc-transit', 'Transit', 'transit'),
+  ]
+
+  it('offers a temporary store (tagged) but never the transit location', async () => {
+    mockData(withTemporary)
+    await renderForm()
+    const list = choices(locationSelect())
+    expect(list).toContain('Erbil Temporary Store · Temporary')
+    expect(list).not.toContain('Transit')
+  })
+
+  it('asks where the goods are going once a temporary store is chosen, offering warehouses and sites only, and not before', async () => {
+    mockData(withTemporary)
+    await renderForm()
+    expect(screen.queryByText('Final destination')).toBeNull()
+    fireEvent.change(locationSelect(), { target: { value: 'loc-main' } })
+    expect(screen.queryByText('Final destination')).toBeNull()
+    fireEvent.change(locationSelect(), { target: { value: 'loc-temp' } })
+    const destination = screen.getByText('Final destination').closest('div')?.querySelector('select')
+    if (!destination) throw new Error('no destination select')
+    const offered = choices(destination)
+    expect(offered).toContain('Main Warehouse (WH)')
+    expect(offered).toContain('Site Store')
+    expect(offered).not.toContain('Erbil Temporary Store')
+    expect(offered).not.toContain('Basrah Temporary Store')
+    expect(offered).not.toContain('Virtual Consumption')
+  })
+
+  it('forgets the destination again when the receiving location changes', async () => {
+    mockData(withTemporary)
+    await renderForm()
+    fireEvent.change(locationSelect(), { target: { value: 'loc-temp' } })
+    const select = () => screen.getByText('Final destination').closest('div')?.querySelector('select')
+    const first = select()
+    if (!first) throw new Error('no destination select')
+    fireEvent.change(first, { target: { value: 'loc-site' } })
+    expect(first.value).toBe('loc-site')
+    fireEvent.change(locationSelect(), { target: { value: 'loc-main' } })
+    fireEvent.change(locationSelect(), { target: { value: 'loc-temp' } })
+    expect(select()?.value).toBe('')
   })
 })

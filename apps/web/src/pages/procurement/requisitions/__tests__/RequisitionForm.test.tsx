@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
 import { useTourStore } from '../../../../store/tourStore'
@@ -43,13 +43,10 @@ function wrap(ui: React.ReactNode, initialPath = '/procurement/requisitions/new'
   )
 }
 
-// The shared Select component's <label> isn't associated to its <select>
-// via htmlFor/id (true across the whole app, not specific to this form),
-// so getByLabelText doesn't work here — Purpose is the first native
-// <select> the form renders (Branch/GL Account/Cost Center use the
-// options-array variant, which renders a SearchableSelect instead).
-function getPurposeSelect(container: HTMLElement): HTMLSelectElement {
-  return container.querySelectorAll('select')[0]
+// The purpose is a group of cards (one radio per purpose, named by its title), not a select.
+const purposeCard = (name: string) => screen.getByRole('radio', { name })
+function choosePurpose(name: string) {
+  fireEvent.click(purposeCard(name))
 }
 
 beforeEach(() => {
@@ -64,18 +61,28 @@ beforeEach(() => {
 })
 
 describe('RequisitionForm', () => {
-  it('renders the purpose selector defaulted to General Stock, with no project fields shown', async () => {
+  it('renders the purpose cards defaulted to General Stock, with no project fields shown', async () => {
     const RequisitionForm = (await import('../RequisitionForm')).default
     wrap(<RequisitionForm />)
     expect(screen.getByText('New Requisition')).toBeInTheDocument()
+    expect(screen.getAllByRole('radio').map((r) => r.getAttribute('value'))).toEqual([
+      'stock',
+      'project',
+      'direct_supply',
+      'manufacturing',
+      'expense',
+      'advance',
+    ])
+    expect(purposeCard('General Stock')).toBeChecked()
+    expect(purposeCard('Project Supply')).not.toBeChecked()
     expect(screen.queryByText(/project \*/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/delivery destination \*/i)).not.toBeInTheDocument()
   })
 
   it('shows Project and Delivery Destination fields when purpose is switched to Project Supply', async () => {
     const RequisitionForm = (await import('../RequisitionForm')).default
-    const { container } = wrap(<RequisitionForm />)
-    fireEvent.change(getPurposeSelect(container), { target: { value: 'project' } })
+    wrap(<RequisitionForm />)
+    choosePurpose('Project Supply')
     expect(screen.getByText(/project \*/i)).toBeInTheDocument()
     expect(screen.getByText(/delivery destination \*/i)).toBeInTheDocument()
   })
@@ -177,8 +184,8 @@ describe('RequisitionForm', () => {
     const createMock = vi.fn()
     mockUseMutation.mockReturnValue([createMock, { loading: false }])
     const RequisitionForm = (await import('../RequisitionForm')).default
-    const { container } = wrap(<RequisitionForm />)
-    fireEvent.change(getPurposeSelect(container), { target: { value: 'project' } })
+    wrap(<RequisitionForm />)
+    choosePurpose('Project Supply')
     fireEvent.change(screen.getByPlaceholderText('Description'), { target: { value: 'Rebar' } })
     fireEvent.click(screen.getByRole('button', { name: /create requisition/i }))
     expect(createMock).not.toHaveBeenCalled()
@@ -193,8 +200,8 @@ describe('RequisitionForm', () => {
     useTourStore.getState().activate('requisition', 'Create a Requisition', 9)
     try {
       const RequisitionForm = (await import('../RequisitionForm')).default
-      const { container } = wrap(<RequisitionForm />)
-      fireEvent.change(getPurposeSelect(container), { target: { value: 'project' } })
+      wrap(<RequisitionForm />)
+      choosePurpose('Project Supply')
       fireEvent.change(screen.getByPlaceholderText('Description'), { target: { value: 'Rebar' } })
       fireEvent.click(screen.getByRole('button', { name: /create requisition/i }))
       await vi.waitFor(() => {
@@ -241,20 +248,22 @@ describe('RequisitionForm', () => {
     // filter (description || product_id). Line Items/Total Qty/Est. Total
     // all read 0, plus the Lines table's own per-row Total column (also 0
     // for that starter line) — 4 "0"s in total.
-    expect(screen.getAllByText('0').length).toBe(4)
+    const summary = screen.getByText('Summary').parentElement
+    if (!summary) throw new Error('the Summary card was not found')
+    expect(within(summary).getAllByText('0').length).toBe(3)
 
     fireEvent.change(screen.getByPlaceholderText('Description'), { target: { value: 'Cement bags' } })
     // Line Items and Total Qty both become 1 (qty defaults to 1); Est.
-    // Total and the Lines table's row Total both stay 0 (unit_price
-    // defaults to 0) — so "1" appears twice and "0" still appears twice.
-    expect(screen.getAllByText('1').length).toBe(2)
+    // Total stays 0 (unit_price defaults to 0).
+    expect(within(summary).getAllByText('1').length).toBe(2)
+    expect(within(summary).getAllByText('0').length).toBe(1)
   })
 
   it('Summary sidebar reflects the project-vs-stock context line', async () => {
     const RequisitionForm = (await import('../RequisitionForm')).default
-    const { container } = wrap(<RequisitionForm />)
+    wrap(<RequisitionForm />)
     expect(screen.getByText(/not linked to a project/i)).toBeInTheDocument()
-    fireEvent.change(getPurposeSelect(container), { target: { value: 'project' } })
+    choosePurpose('Project Supply')
     // "for Project" also appears in the Lines section's own hint text, so
     // match on "not selected" — unique to the Summary sidebar's context line.
     expect(screen.getByText(/not selected/i)).toBeInTheDocument()

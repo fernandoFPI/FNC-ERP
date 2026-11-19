@@ -74,8 +74,9 @@ beforeEach(async () => {
   RequisitionFormLazy = (await import('../RequisitionForm')).default
 })
 
-const purposeSelect = (c: HTMLElement) => c.querySelectorAll('select')[0]
-const currencySelect = (c: HTMLElement) => c.querySelectorAll('select')[1]
+// The purpose is a group of cards now, so the first native select on an Advance form is the currency.
+const currencySelect = (c: HTMLElement) => c.querySelectorAll('select')[0]
+const purposeCard = (name: string) => screen.getByRole('radio', { name })
 function amountInput(c: HTMLElement): HTMLInputElement {
   const el = c.querySelector<HTMLInputElement>('input[type="number"]')
   if (!el) throw new Error('no amount box on the form')
@@ -93,17 +94,22 @@ const submit = () => {
 
 function chooseAdvance() {
   const view = mount()
-  fireEvent.change(purposeSelect(view.container), { target: { value: 'advance' } })
+  fireEvent.click(purposeCard(t('req.form.advance')))
   return view
 }
 
 describe('RequisitionForm: purpose Advance', () => {
   it('offers Advance as a purpose', () => {
-    const { container } = mount()
-    const options = [...purposeSelect(container).querySelectorAll('option')].map((o) =>
-      o.getAttribute('value'),
-    )
-    expect(options).toEqual(['stock', 'project', 'manufacturing', 'expense', 'advance'])
+    mount()
+    const options = screen.getAllByRole('radio').map((o) => o.getAttribute('value'))
+    expect(options).toEqual([
+      'stock',
+      'project',
+      'direct_supply',
+      'manufacturing',
+      'expense',
+      'advance',
+    ])
   })
 
   it('asks for an amount, currency, project and the reason, and nothing about goods', () => {
@@ -129,8 +135,8 @@ describe('RequisitionForm: purpose Advance', () => {
   })
 
   it('switching back to another purpose brings the lines and the usual fields back', () => {
-    const { container } = chooseAdvance()
-    fireEvent.change(purposeSelect(container), { target: { value: 'stock' } })
+    chooseAdvance()
+    fireEvent.click(purposeCard(t('req.form.generalStock')))
     expect(screen.getByText(t('req.form.lines'))).toBeInTheDocument()
     expect(screen.getAllByText(t('req.form.priority')).length).toBeGreaterThan(0) // the field and the summary tile
     expect(screen.queryByText(t('req.form.advanceAmount'))).not.toBeInTheDocument()

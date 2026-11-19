@@ -9,6 +9,7 @@ import type * as ApolloClientModule from '@apollo/client'
 import type * as ReactRouterDomModule from 'react-router-dom'
 import { Kind, visit } from 'graphql'
 import { ThemeProvider } from '../../../theme/ThemeContext'
+import { themes } from '../../../theme/tokens'
 import i18n from '../../../i18n'
 import { PO_LIFECYCLE_QUERY } from '../../../graphql/procurement'
 
@@ -357,5 +358,61 @@ describe('Edit PO form: the currency starts from what is stored', () => {
     expect(submittedChanges().lines.edited).toEqual([
       { id: 'l3', field: 'currency_code', from: 'IQD', to: 'USD' },
     ])
+  })
+})
+
+describe('Edit PO form: its boxes are in the shared field look', () => {
+  async function startEditing() {
+    mockPO('bought')
+    await openPO()
+    fireEvent.click(screen.getByRole('button', { name: /^Edit requests/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start editing' }))
+  }
+  const light = themes['light-flat']
+
+  it('draws the currency box as a native select with the shared chevron and the readable edge', async () => {
+    await startEditing()
+    const box = screen.getAllByRole<HTMLSelectElement>('combobox').find((el) => el.value === 'USD')
+    if (!box) throw new Error('no currency box')
+    expect(box).toHaveStyle({ height: '36px', borderRadius: '8px' })
+    expect(box).toHaveStyle({ borderColor: light.borderField })
+    expect(box.style.appearance).toBe('none')
+    expect(decodeURIComponent(box.style.backgroundImage)).toContain('M2 4l4 4 4-4')
+  })
+
+  it('draws the text, number and date boxes the same way', async () => {
+    await startEditing()
+    const boxes = [
+      ...document.querySelectorAll<HTMLInputElement>(
+        'input[type="number"], input[type="date"], input:not([type])',
+      ),
+    ]
+    expect(boxes.length).toBeGreaterThan(4)
+    for (const box of boxes) {
+      expect(box).toHaveStyle({ height: '36px', borderRadius: '8px' })
+      expect(box).toHaveStyle({ borderColor: light.borderField })
+    }
+  })
+
+  it('draws the notes box as a text area in the same family, not a fixed 36px', async () => {
+    await startEditing()
+    const area = document.querySelector('textarea')
+    if (!area) throw new Error('no text area')
+    expect(area).toHaveStyle({ borderRadius: '8px', height: 'auto' })
+    expect(area).toHaveStyle({ borderColor: light.borderField })
+  })
+
+  it('keeps the browser focus ring on a raw box (nothing here draws another one)', async () => {
+    await startEditing()
+    const box = document.querySelector<HTMLInputElement>('input[type="number"]')
+    expect(box?.style.outline).toBe('')
+  })
+
+  it('labels a box in the readable grey, not the old pale uppercase', async () => {
+    await startEditing()
+    const label = screen.getAllByText('Notes').find((el) => el.tagName === 'LABEL')
+    if (!label) throw new Error('no Notes label')
+    expect(label).toHaveStyle({ color: light.textSecondary, fontSize: '12px' })
+    expect(label.style.textTransform).toBe('')
   })
 })

@@ -5,13 +5,16 @@ import { useQuery } from '@apollo/client'
 import { REQUISITIONS_QUERY } from '../../../graphql/requisitions'
 import { useMyQueueCount } from '../../../hooks/useMyQueueCount'
 import { useTheme } from '../../../theme/ThemeContext'
+import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { Card } from '../../../components/ui/Card'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Badge, type BadgeVariant } from '../../../components/ui/Badge'
 import { Modal } from '../../../components/ui/Modal'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
-import { Button } from '../../../components/ui/Button'
+import { ActionButton } from '../../../components/ui/ActionButton'
+import { Checkbox } from '../../../components/ui/Checkbox'
+import { denseFormStyles } from '../../../components/ui/fieldStyles'
 import {
   REQUISITION_STATUSES,
   getRequisitionPriorityLabel,
@@ -23,7 +26,7 @@ import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { api } from '../../../lib/axios'
-import i18n, { enumLabel } from '../../../i18n'
+import i18n, { enumLabel, useIsRtl } from '../../../i18n'
 import { usePermission } from '../../../hooks/usePermission'
 import {
   miniReached,
@@ -34,6 +37,7 @@ import {
 import {
   BarButton,
   DockLayout,
+  EmptyState,
   FilterField,
   Icon,
   IconButton,
@@ -44,11 +48,13 @@ import {
   Pagination,
   PersonCell,
   PillSelect,
+  PriorityTag,
   RowMenu,
   SearchBox,
   SelectionBar,
   StageMini,
-  dateInputStyle,
+  FilterChips,
+  type FilterChip,
   formatAge,
   isPastDate,
 } from '../../../components/procurement/ListKit'
@@ -315,10 +321,10 @@ function loadSavedFilters(): typeof FILTER_DEFAULTS {
   return FILTER_DEFAULTS
 }
 
-const PRIORITY_STYLES: Partial<Record<string, { color: string; bg: string; border: string }>> = {
-  low: { color: '#6b7280', bg: 'transparent', border: 'transparent' },
-  high: { color: '#d97706', bg: 'rgba(217,119,6,0.08)', border: 'rgba(217,119,6,0.3)' },
-  emergency: { color: '#dc2626', bg: 'rgba(220,38,38,0.08)', border: 'rgba(220,38,38,0.3)' },
+// Which priorities get a tag, and in which tone (a normal priority is not tagged)
+const PRIORITY_TONE: Partial<Record<string, 'warning' | 'danger'>> = {
+  high: 'warning',
+  emergency: 'danger',
 }
 
 interface Requisition {
@@ -354,6 +360,7 @@ const STATUS_OPTIONS = [
 const PURPOSE_OPTIONS = [
   { value: 'stock', label: 'General Stock' },
   { value: 'project', label: 'Project Supply' },
+  { value: 'direct_supply', label: 'Direct Supply' },
   { value: 'manufacturing', label: 'Manufacturing / BOM' },
   { value: 'expense', label: 'Expense' },
   { value: 'advance', label: 'Advance' },
@@ -392,7 +399,11 @@ function downloadCSV(rows: string[][], filename: string) {
 
 export default function RequisitionsPage() {
   const { t } = useTranslation()
-  const { theme } = useTheme()
+  const { theme, themeKey } = useTheme()
+  const rtl = useIsRtl()
+  // the filter panel's boxes: the same field look as the forms
+  const filterBoxes = denseFormStyles(theme, { rtl, dark: themeKey === 'black' })
+  const { isPhone } = useBreakpoint()
   const navigate = useNavigate()
   const { can } = usePermission()
   const canViewAllExpenses = can('finance.expenses.view', 'view')
@@ -506,6 +517,7 @@ export default function RequisitionsPage() {
   const [toDate, setToDate] = useState(saved.toDate)
   const [organizerFilter, setOrganizerFilter] = useState(saved.organizer)
   const [projectFilter, setProjectFilter] = useState(saved.project)
+  const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false)
   const [priorityFilter, setPriorityFilter] = useState(saved.priority)
   const [quickFilter, setQuickFilter] = useState(saved.quick)
   const [page, setPage] = useState(1)
@@ -675,6 +687,10 @@ export default function RequisitionsPage() {
       .map(([value, label]) => ({ value, label }))
   }, [requisitions])
 
+  // Phone: the four dropdown filters sit behind one button; it shows how many of them are set.
+  const dropdownFilterCount = [statusFilter, purposeFilter, organizerFilter, projectFilter].filter(
+    Boolean,
+  ).length
   const moreFilterCount =
     (priorityFilter ? 1 : 0) +
     (fromDate ? 1 : 0) +
@@ -699,6 +715,131 @@ export default function RequisitionsPage() {
   const toggleQuick = (k: string) => {
     setQuickFilter((q) => (q === k ? '' : k))
   }
+
+  // The applied filters as chips (desktop): each can be taken off with one click, and a filter no visible box shows (a tile's
+  // quick filter, "only mine") is named here too, so a short list is never a mystery.
+  const optionLabel = (options: { value: string; label: string }[], value: string) =>
+    options.find((o) => o.value === value)?.label ?? value
+  const quickLabel: Record<string, string> = {
+    pendingApproval: t('req.list.pendingApproval'),
+    needAction: t('req.list.needAction'),
+    delayed: t('req.list.delayed'),
+  }
+  const filterChips: FilterChip[] = [
+    ...(statusFilter
+      ? [
+          {
+            key: 'status',
+            label: t('req.list.status'),
+            value: t(`req.status.${statusFilter}`, {
+              defaultValue: optionLabel(STATUS_OPTIONS, statusFilter),
+            }),
+            onRemove: () => {
+              setStatusFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(purposeFilter
+      ? [
+          {
+            key: 'purpose',
+            label: t('req.list.purpose'),
+            value: t(`req.purpose.${purposeFilter}`, {
+              defaultValue: optionLabel(PURPOSE_OPTIONS, purposeFilter),
+            }),
+            onRemove: () => {
+              setPurposeFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(organizerFilter
+      ? [
+          {
+            key: 'organizer',
+            label: t('req.list.organizer'),
+            value: organizerFilter,
+            onRemove: () => {
+              setOrganizerFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(projectFilter
+      ? [
+          {
+            key: 'project',
+            label: t('req.list.project'),
+            value: optionLabel(projectOptions, projectFilter),
+            onRemove: () => {
+              setProjectFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(priorityFilter
+      ? [
+          {
+            key: 'priority',
+            label: t('req.list.priority'),
+            value: t(`req.priority.${priorityFilter}`, {
+              defaultValue: optionLabel(PRIORITY_OPTIONS, priorityFilter),
+            }),
+            onRemove: () => {
+              setPriorityFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(quickFilter
+      ? [
+          {
+            key: 'quick',
+            label: t('common.quickFilter'),
+            value: quickLabel[quickFilter] ?? quickFilter,
+            onRemove: () => {
+              setQuickFilter('')
+            },
+          },
+        ]
+      : []),
+    ...(fromDate
+      ? [
+          {
+            key: 'from',
+            label: t('req.list.createdFrom'),
+            value: fromDate,
+            onRemove: () => {
+              setFromDate('')
+            },
+          },
+        ]
+      : []),
+    ...(toDate
+      ? [
+          {
+            key: 'to',
+            label: t('req.list.createdTo'),
+            value: toDate,
+            onRemove: () => {
+              setToDate('')
+            },
+          },
+        ]
+      : []),
+    ...(myRequisitionsOnly
+      ? [
+          {
+            key: 'mine',
+            label: t('req.list.onlyRequisitionsIOrganized'),
+            onRemove: () => {
+              setMyRequisitionsOnly(false)
+            },
+          },
+        ]
+      : []),
+  ]
 
   // ── Selection ──
   const filteredIds = filtered.map((r) => r.id)
@@ -789,17 +930,13 @@ export default function RequisitionsPage() {
       width: '40px',
       mobileHide: true,
       renderHeader: () => (
-        <input
-          type="checkbox"
-          aria-label={t('req.list.selectAll')}
+        <Checkbox
+          ariaLabel={t('req.list.selectAll')}
           checked={allSelected}
-          ref={(el) => {
-            if (el) el.indeterminate = someSelected && !allSelected
-          }}
+          indeterminate={someSelected && !allSelected}
           onChange={() => {
             setSelectedIds(allSelected ? new Set() : new Set(filteredIds))
           }}
-          style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: theme.accent }}
         />
       ),
       render: (r) => (
@@ -809,14 +946,12 @@ export default function RequisitionsPage() {
           }}
           style={{ display: 'flex', alignItems: 'center' }}
         >
-          <input
-            type="checkbox"
-            aria-label={`Select ${r.requisition_number}`}
+          <Checkbox
+            ariaLabel={`Select ${r.requisition_number}`}
             checked={selectedIds.has(r.id)}
             onChange={() => {
               toggleSelect(r.id)
             }}
-            style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: theme.accent }}
           />
         </div>
       ),
@@ -827,32 +962,18 @@ export default function RequisitionsPage() {
       mobilePrimary: true,
       render: (r) => {
         const p = r.priority ?? 'low'
-        const s = PRIORITY_STYLES[p]
+        const tone = PRIORITY_TONE[p]
         return (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontWeight: 600, color: theme.accent, fontSize: '13px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontWeight: 600, color: theme.accentSolid, fontSize: '13px' }}>
                 {r.requisition_number}
               </span>
-              {p !== 'low' && s && (
-                <span
-                  style={{
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    color: s.color,
-                    background: s.bg,
-                    border: `1px solid ${s.border}`,
-                    borderRadius: '4px',
-                    padding: '0 5px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  {getRequisitionPriorityLabel(p)}
-                </span>
-              )}
+              {tone && <PriorityTag tone={tone}>{getRequisitionPriorityLabel(p)}</PriorityTag>}
             </div>
-            <div style={{ fontSize: '11px', color: theme.textMuted }}>{enumLabel(r.purpose) || '—'}</div>
+            <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+              {enumLabel(r.purpose) || '—'}
+            </div>
           </div>
         )
       },
@@ -860,16 +981,19 @@ export default function RequisitionsPage() {
     {
       key: 'project',
       header: t('req.list.project'),
+      // Phone card: project, stage and organizer come first; age and branch sit behind "More".
+      mobilePriority: 1,
       render: (r) =>
         r.project_id ? (
           <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{r.projectName ?? '—'}</span>
         ) : (
-          <span style={{ color: theme.textMuted, fontSize: '13px' }}>—</span>
+          <span style={{ color: theme.textSecondary, fontSize: '13px' }}>—</span>
         ),
     },
     {
       key: 'branch_name',
       header: t('req.list.branch'),
+      mobilePriority: 5,
       render: (r) => (
         <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{r.branch_name ?? '—'}</span>
       ),
@@ -877,13 +1001,15 @@ export default function RequisitionsPage() {
     {
       key: 'organizerName',
       header: t('req.list.organizer'),
+      mobilePriority: 3,
       render: (r) => <PersonCell name={r.organizerName} />,
     },
     {
       key: 'stage',
       header: t('req.list.stage'),
+      mobilePriority: 2,
       render: (r) => {
-        if (r.__kind) return <span style={{ color: theme.textMuted, fontSize: '13px' }}>—</span>
+        if (r.__kind) return <span style={{ color: theme.textSecondary, fontSize: '13px' }}>—</span>
         const st = requisitionStage(r.status)
         return (
           <StageMini
@@ -897,6 +1023,7 @@ export default function RequisitionsPage() {
     {
       key: 'age',
       header: t('req.list.age'),
+      mobilePriority: 4,
       render: (r) => (
         <span style={{ fontSize: '13px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
           {formatAge(r.created_at)}
@@ -906,6 +1033,8 @@ export default function RequisitionsPage() {
     {
       key: 'status',
       header: t('req.list.status'),
+      // Phone card: the status is the first thing people look for, so it sits in the card's header, not behind "More".
+      mobileAction: true,
       render: (r) => <Badge variant={rowStatusVariant(r)}>{rowStatusLabel(r)}</Badge>,
     },
     {
@@ -956,26 +1085,34 @@ export default function RequisitionsPage() {
     : undefined
 
   return (
-    <div style={{ padding: '24px', margin: '0 auto', maxWidth: '2400px' }}>
+    <div
+      style={{
+        padding: isPhone ? '12px 16px 24px' : '24px',
+        margin: '0 auto',
+        maxWidth: '2400px',
+      }}
+    >
       <PageTitle
         icon="doc"
         title={t('req.list.requisitions')}
         subtitle={t('req.list.createTrackAndManagePurchaseRequisitions')}
         actions={
           <>
-            <Button variant="ghost" size="sm" onClick={handleExport}>
-              {t('req.list.exportCsv')}
-            </Button>
-            <Button
+            {/* A CSV download is not a phone job: the one button beside the title is the one people need. */}
+            {!isPhone && (
+              <ActionButton variant="outline" onClick={handleExport}>
+                {t('req.list.exportCsv')}
+              </ActionButton>
+            )}
+            <ActionButton
               data-tour="new-requisition-btn"
-              variant="primary"
-              size="sm"
+              variant="solid"
               onClick={() => {
                 navigate('/procurement/requisitions/new')
               }}
             >
               {t('req.list.newRequisition')}
-            </Button>
+            </ActionButton>
           </>
         }
       />
@@ -1060,7 +1197,23 @@ export default function RequisitionsPage() {
       >
         <Card
           padding="md"
-          style={{ borderRadius: '14px', flex: 1, display: 'flex', flexDirection: 'column' }}
+          style={{
+            borderRadius: '14px',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            // Phone: each requisition is already a card, so the list is not boxed a second time.
+            ...(isPhone
+              ? {
+                  padding: 0,
+                  background: 'transparent',
+                  border: 'none',
+                  backdropFilter: 'none',
+                  WebkitBackdropFilter: 'none',
+                  overflow: 'visible',
+                }
+              : {}),
+          }}
         >
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
             <SearchBox
@@ -1068,6 +1221,41 @@ export default function RequisitionsPage() {
               onChange={setSearch}
               placeholder={t('req.list.searchRequisitionPurposeProjectItemOrganizer')}
             />
+            {isPhone && (
+              <button
+                type="button"
+                aria-label={t('req.list.filters')}
+                aria-expanded={phoneFiltersOpen}
+                onClick={() => {
+                  setPhoneFiltersOpen((open) => !open)
+                }}
+                style={{
+                  height: '40px',
+                  minWidth: '40px',
+                  padding: '0 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  borderRadius: '10px',
+                  border: `1px solid ${phoneFiltersOpen || dropdownFilterCount > 0 ? theme.accentSolid : theme.borderField}`,
+                  background: phoneFiltersOpen ? theme.accentBg : theme.bgSurface,
+                  color: dropdownFilterCount > 0 ? theme.accentSolid : theme.textSecondary,
+                  fontFamily: 'inherit',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                <Icon name="filter" size={16} />
+                {dropdownFilterCount > 0 && <span>{dropdownFilterCount}</span>}
+              </button>
+            )}
+            {/* Phone: the four dropdowns stay mounted (their values keep applying) but are hidden until the
+                Filters button is pressed; anywhere else this wrapper does not change the layout. */}
+            <div style={{ display: isPhone && !phoneFiltersOpen ? 'none' : 'contents' }}>
             <PillSelect
               label={t('req.list.status')}
               value={statusFilter}
@@ -1105,7 +1293,7 @@ export default function RequisitionsPage() {
                   onChange={(e) => {
                     setPriorityFilter(e.target.value)
                   }}
-                  style={dateInputStyle(theme)}
+                    style={filterBoxes.selectStyle}
                 >
                   <option value="">{t('req.list.all')}</option>
                   {PRIORITY_OPTIONS.map((p) => (
@@ -1122,7 +1310,7 @@ export default function RequisitionsPage() {
                   onChange={(e) => {
                     setFromDate(e.target.value)
                   }}
-                  style={dateInputStyle(theme)}
+                    style={filterBoxes.inputStyle}
                 />
               </FilterField>
               <FilterField label={t('req.list.createdTo')}>
@@ -1132,29 +1320,16 @@ export default function RequisitionsPage() {
                   onChange={(e) => {
                     setToDate(e.target.value)
                   }}
-                  style={dateInputStyle(theme)}
+                    style={filterBoxes.inputStyle}
                 />
               </FilterField>
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '13px',
-                  color: theme.textPrimary,
-                }}
-              >
-                <input
-                  type="checkbox"
+                <Checkbox
+                  label={t('req.list.onlyRequisitionsIOrganized')}
                   checked={myRequisitionsOnly}
-                  onChange={(e) => {
-                    setMyRequisitionsOnly(e.target.checked)
-                  }}
-                  style={{ accentColor: theme.accent }}
+                  onChange={setMyRequisitionsOnly}
                 />
-                {t('req.list.onlyRequisitionsIOrganized')}
-              </label>
               <FilterPresets
+                  inline
                 presets={presets}
                 onApply={(preset) => {
                   const r = resolvePreset(preset)
@@ -1175,24 +1350,12 @@ export default function RequisitionsPage() {
                 onDelete={deletePreset}
               />
               {anyFilter && (
-                <button
-                  type="button"
-                  onClick={clearAllFilters}
-                  style={{
-                    border: 'none',
-                    background: 'none',
-                    color: theme.accent,
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    textAlign: 'start',
-                    padding: 0,
-                    fontFamily: 'inherit',
-                  }}
-                >
+                  <ActionButton size="sm" variant="ghost" onClick={clearAllFilters}>
                   {t('req.list.clearAllFilters')}
-                </button>
+                  </ActionButton>
               )}
             </MoreFilters>
+            </div>
             <IconButton
               title={t('req.list.refresh')}
               onClick={() => {
@@ -1205,6 +1368,14 @@ export default function RequisitionsPage() {
               <Icon name="refresh" size={16} />
             </IconButton>
           </div>
+
+          {!isPhone && (
+            <FilterChips
+              chips={filterChips}
+              onClearAll={clearAllFilters}
+              clearAllLabel={t('common.clearAll')}
+            />
+          )}
 
           {selectedIds.size > 0 && (
             <SelectionBar label={`${selectedIds.size} selected`} onClear={clearSelection}>
@@ -1226,29 +1397,103 @@ export default function RequisitionsPage() {
               // empty result here previously looked like a dead end — this
               // always gives a one-click way out regardless of which filter
               // (visible or not) is the actual cause.
-              <div style={{ padding: '56px 16px', textAlign: 'center' }}>
-                <div style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>
-                  {t('req.list.noRequisitionsMatchTheseFilters')}
-                </div>
-                <button
-                  type="button"
-                  onClick={clearAllFilters}
-                  style={{
-                    marginTop: '10px',
-                    border: 'none',
-                    background: 'none',
-                    color: theme.accent,
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {t('req.list.clearAllFilters')}
-                </button>
+              <EmptyState
+                title={t('req.list.noRequisitionsMatchTheseFilters')}
+                action={
+                  <ActionButton variant="outline" size="sm" onClick={clearAllFilters}>
+                    {t('req.list.clearAllFilters')}
+                  </ActionButton>
+                }
+              />
+            ) : isPhone && !loading && pageRows.length > 0 ? (
+              // Phone: a requisition is three short lines, so a screen holds about six instead of three. Tapping goes
+              // straight to the requisition (the docked preview panel is an extra step on a phone).
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {pageRows.map((r) => {
+                  const p = r.priority ?? 'low'
+                  const tone = PRIORITY_TONE[p]
+                  const stage = r.__kind
+                    ? null
+                    : stageLabel(requisitionStage(r.status), REQUISITION_STAGES)
+                  const subtitle = [enumLabel(r.purpose), r.project_id ? r.projectName : null]
+                    .filter(Boolean)
+                    .join(' · ')
+                  const meta = [stage, r.organizerName, formatAge(r.created_at)]
+                    .filter(Boolean)
+                    .join(' · ')
+                  return (
+                    <div
+                      key={r.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        openFull(r)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          openFull(r)
+                        }
+                      }}
+                      style={{
+                        background: theme.bgSurface,
+                        border: `0.5px solid ${theme.border}`,
+                        borderInlineStart:
+                          p === 'emergency'
+                            ? `3px solid ${theme.danger}`
+                            : `0.5px solid ${theme.border}`,
+                        borderRadius: '12px',
+                        padding: '12px 14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                        }}
+                      >
+                        <span
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}
+                        >
+                          <span
+                            style={{ fontWeight: 700, color: theme.accentSolid, fontSize: '14px' }}
+                          >
+                            {r.requisition_number}
+                          </span>
+                          {tone && (
+                            <PriorityTag tone={tone}>{getRequisitionPriorityLabel(p)}</PriorityTag>
+                          )}
+                        </span>
+                        <Badge variant={rowStatusVariant(r)}>{rowStatusLabel(r)}</Badge>
+                      </div>
+                      {subtitle && (
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: theme.textPrimary,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {subtitle}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '12px', color: theme.textSecondary }}>{meta}</div>
+                    </div>
+                  )
+                })}
               </div>
             ) : (
               <Table
+                readable
                 columns={columns}
                 data={pageRows}
                 loading={loading}
@@ -1262,7 +1507,10 @@ export default function RequisitionsPage() {
                   setPreviewId(r.id)
                 }}
                 getRowStyle={(r) => {
-                  const base = r.priority === 'emergency' ? { borderInlineStart: '3px solid #dc2626' } : {}
+                  const base =
+                    r.priority === 'emergency'
+                      ? { borderInlineStart: `3px solid ${theme.danger}` }
+                      : {}
                   return r.id === previewId || selectedIds.has(r.id)
                     ? { ...base, background: theme.accentBg }
                     : base
@@ -1339,7 +1587,7 @@ export default function RequisitionsPage() {
                 currency={viewSettlement.currency_code}
                 size="sm"
               />
-              <span style={{ fontSize: '12px', color: theme.textMuted }}>
+              <span style={{ fontSize: '12px', color: theme.textSecondary }}>
                 {t('req.list.fromAdvance', { number: viewSettlement.advance_number })}
               </span>
             </div>
@@ -1352,7 +1600,7 @@ export default function RequisitionsPage() {
                       style={{
                         padding: '6px 8px',
                         textAlign: h === 'Amount' ? 'end' : 'start',
-                        color: theme.textMuted,
+                        color: theme.textSecondary,
                         fontWeight: 500,
                       }}
                     >

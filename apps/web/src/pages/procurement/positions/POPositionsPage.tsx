@@ -422,7 +422,7 @@ export default function POPositionsPage() {
 
             {/* Position */}
             <div>
-              <Select
+              <Select field
                 label={t('proc.positions.position')}
                 value={position}
                 onChange={(e) => {
@@ -495,7 +495,7 @@ export default function POPositionsPage() {
               )}
 
               {scopeType === 'project' && (
-                <Select
+                <Select field
                   label=""
                   value={projectId}
                   onChange={(e) => {
@@ -507,7 +507,7 @@ export default function POPositionsPage() {
               )}
 
               {scopeType === 'department' && (
-                <Select
+                <Select field
                   label=""
                   value={departmentId}
                   onChange={(e) => {
@@ -521,7 +521,7 @@ export default function POPositionsPage() {
               )}
 
               {scopeType === 'branch' && (
-                <Select
+                <Select field
                   label=""
                   value={branchId}
                   onChange={(e) => {

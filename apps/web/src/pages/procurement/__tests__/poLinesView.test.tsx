@@ -480,7 +480,6 @@ describe('PO Lines table: not clipped, and not squeezed by the Next Step panel',
     if (!node) throw new Error('no column found')
     return node.style.flex
   }
-  const grow = (flex: string) => parseFloat(flex.split(' ')[0] ?? '0')
 
   it('draws the columns menu outside the lines card, so a one-line order does not cut it off', async () => {
     mockPO('goods_received', {
@@ -493,17 +492,25 @@ describe('PO Lines table: not clipped, and not squeezed by the Next Step panel',
     expect(screen.getByRole('checkbox', { name: 'Notes' })).toBeInTheDocument()
   })
 
-  it('gives the lines about ten times as much of the spare width as the Next Step panel', async () => {
-    mockPO('goods_received')
+  // The Next Step panel used to be a narrow column beside the lines (the lines got ten times its share of the spare
+  // width). Once a PO was Closed, Completed or Cancelled that column was empty and pushed the lines to the right. Now
+  // there is one column: the Next Step card above the tabs, the lines across the whole width.
+  it('puts the Next Step card above the lines, in one column, not beside them', async () => {
+    // Goods received no longer has a card (its one step is a bar at the bottom); payment pending still does
+    mockPO('payment_pending')
     await openPO()
-    const left = columnFlexOf(screen.getAllByText('Next Step')[0])
-    const right = columnFlexOf(linesTable())
-    expect(left).not.toBe(right)
-    expect(grow(left)).toBeGreaterThan(0)
-    expect(grow(right) / grow(left)).toBeGreaterThanOrEqual(8)
-    expect(grow(right) / grow(left)).toBeLessThanOrEqual(12)
-    // both still start from the same width, so they stack at the same window size as before
-    expect(left.endsWith('460px')).toBe(true)
-    expect(right.endsWith('460px')).toBe(true)
+    const card = screen.getAllByText('Next Step')[0]
+    const table = linesTable()
+    expect(card.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // neither sits in a flex column of its own (that was the side-by-side layout)
+    expect(() => columnFlexOf(card)).toThrow('no column found')
+    expect(() => columnFlexOf(table)).toThrow('no column found')
+  })
+
+  it('leaves no empty column beside the lines once the PO is closed', async () => {
+    mockPO('closed')
+    await openPO()
+    expect(screen.queryByText('Next Step')).not.toBeInTheDocument()
+    expect(() => columnFlexOf(linesTable())).toThrow('no column found')
   })
 })
