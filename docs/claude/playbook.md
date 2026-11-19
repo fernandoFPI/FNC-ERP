@@ -13,47 +13,66 @@ Don't re-derive, check these first.
    `outbox_dead_letter_queue` is `outbox_dead_letters`; `purchase_orders.vendor_name` never existed (join `vendors`).
    Audit technique: dump `information_schema.columns` from a migrate-only DB, regex-extract
    `alias.column` from SQL template literals, cross-check.
+
 2. **A fix can mask a second bug.** Removing the phantom column exposed `withholding_tax_rate` sent as
    NULL into a NOT NULL DEFAULT 0 column. After unblocking a crash, re-check adjacent constraints.
+
 3. **LEFT JOIN + filter leak.** Put company/date filters in a subquery, not a second JOIN condition, or
    non-matching rows leak into SUM() (Budget vs Actual).
+
 4. **Duplicate resolver keys.** `resolvers.ts` merges base `Query`/`Mutation` with
    `phase5QueryResolvers`/`phase5MutationResolvers` via `Object.assign`; phase5 ALWAYS wins. Check BOTH
    copies before deciding which is buggy. Past hits: missing `system_admin` checks (retry/dismiss DLQ,
    resetStuckEvents), invalid CHECK value `status='retrying'`, cross-tenant leak (`intercoStockTransfer`
    detail had no company filter). Diff top-level keys by script; the file is 20k+ lines.
+
 5. **Duplicate GraphQL schema fields** (`rejectPO`/`cancelPO` declared twice): graphql-tools silently
    merges args instead of erroring. Look for repeated field names in `schema.ts`.
+
 6. **Money totals recomputed in several places.** PO totals had 3 separate recalc paths (`recalcPO`,
    `applyPOEditChanges`, `setPOLineActualPrice`), only one in the original plan. Changing money logic =
    grep for every path that writes the total.
+
 7. **Migrations that compensate balances.** When a migration disables the trigger and fixes balances,
    use an upsert mirroring `update_stock_balance()`'s `ON CONFLICT`, never a bare `UPDATE` (no-ops when
    no row exists). Dev artifacts from earlier iterations can hide this; verify on a clean DB.
+
 8. **DB errors masked as auth failures.** `packages/auth` middleware once turned DB errors into 401;
    real failures should be 500. A mysterious 401 may be a DB problem.
+
 9. **Stale shared package.** Fix in `packages/*/src` "did nothing": `dist/` wasn't rebuilt. Check before
    re-diagnosing logic.
+
 10. **Dev DB ≠ prod schema.** A bug invisible on `fnc_erp_dev` (drifted) but real on a migrate-built DB.
+
 11. **dev/test DB split.** "column does not exist" in gateway tests right after migrate → migration not
     applied to `fnc_erp_test`.
+
 12. **Dead code vs live code.** Before fixing/removing, grep callers across `apps/web`, `apps/mobile`,
     `scripts`. procurement/interco/manufacturing REST services were dead and removed. hr, inventory,
     notifications, rental, reporting REST are MIXED-LIVE (mobile punch, worker stock-move, unread-count
     poll, maintenance, cash-flow/WHT reports): do not delete wholesale. finance and projects are live.
+
 13. **"Dead" status that isn't.** Query real data before removing a status/field (a live PO sat at the
     "dead" status; removal was correctly abandoned).
+
 14. **Tests that mock the DB prove nothing about SQL.** Run the real query against a migrated DB.
+
 15. **Test script hangs.** `"test": "vitest"` = watch mode; use `vitest run`. A hang can be hidden
     because an earlier package fails first and aborts the pipeline.
+
 16. **CI-only env failures.** Turbo strict env mode stripped env vars; invisible locally because the
     shell already had them and direct vitest bypasses turbo.
+
 17. **Flaky tests under parallel run.** Shared fixtures/DB races. Re-run the service alone; if it
     passes, it's the harness, not the code. Add `fileParallelism:false` for 2+ test files.
+
 18. **Save/DB failure triage.** Check column data types and DECIMAL precision/overflow before assuming a
     missing column. Browser/cPanel JS errors: consider document.ready scope and caching first.
+
 19. **Permissions not taking effect.** Needs gateway + auth restart and re-login; identity/permission
     state is dormant until re-login.
+
 20. **New document_attachments entity_type → also widen its CHECK constraint.** Wiring a new
     entity_type into `verifyAttachmentEntityOwnershipGW` and `entityAttachments`'s union query
     (resolvers.ts) is not enough — `document_attachments.entity_type` has a separate allow-list CHECK
@@ -64,6 +83,7 @@ Don't re-derive, check these first.
     receipt attachments — fixed in migration 293). Before trusting a new entityType end-to-end, grep
     `document_attachments_entity_type_check` across migrations and add a new migration with the full
     current list plus the new value(s), same pattern as migration 284.
+
 22. **A removed position check can silently orphan real `po_position_assignments` rows.**
     `procurement_2nd` was a real, dedicated position gating PO/Requisition price_verification
     (migration 030). A later refactor (commit 081bae3, accidentally entangled via a pathspec
@@ -79,6 +99,7 @@ Don't re-derive, check these first.
     replacing ANY position-based (or role-based) authorization check, query
     `po_position_assignments` (or the equivalent table) grouped by that value for real rows, not
     just grep the app code — the app layer can go quiet while the data stays live.
+
 21. **`po_line_purchases.receipt_attachment_id` points AT `document_attachments.id`.** Every other
     attachment consumer just tags a row by `entity_type`/`entity_id`; this is the one FK that goes the
     other way, no `ON DELETE` action. Deleting the referenced `document_attachments` row without
@@ -90,6 +111,7 @@ Don't re-derive, check these first.
     case — fixed there by nulling/promoting `receipt_attachment_id` before the delete. Any new code
     that deletes a `document_attachments` row needs to check this FK, not just assume entity_type/
     entity_id tagging is the only relationship.
+
 23. **Two code paths for the same source_type can drift (one fixed, one not).** The worker's
     monthly `runMonthlyDepreciation` job already created 'depreciation' journal entries as
     'draft' (with `asset_depreciation_schedule.status='draft'` as an intermediate state, flipped
@@ -122,8 +144,10 @@ Don't re-derive, check these first.
     `textAlign: 'left'|'right'` in new code. Use the logical forms (`marginInlineStart/End`,
     `borderInlineStart/End`, `insetInlineStart/End`, `textAlign: 'start'|'end'`). Exceptions that stay
     physical: viewport-coordinate popovers (`ListKit` RowMenu `left`) and `translateX` slides, which
-    must be flipped by hand with `useIsRtl()` (Sidebar mobile drawer). Directional glyphs (`‹ ›`,
-    arrows, chevrons) don't mirror by themselves: swap them with `useIsRtl()`. Non-component modules
+    must be flipped by hand with `useIsRtl()` (Sidebar mobile drawer). Directional glyphs: the
+    angle quotes `‹ ›` (and `« » < > ( ) [ ]`) ARE mirrored by the browser in an RTL page, so use them as they are and never swap
+    them (swapping flips them back: playbook #104); arrows (`→ ←`), triangles (`▸ ◂`) and chevron SVGs are NOT mirrored and
+    need `useIsRtl()`. Non-component modules
     (`lib/po-constants.ts`, `lib/procurementStages.ts`) translate with `i18n.t(key, { defaultValue })`
     so an untranslated key falls back to the English label. Tab/stage *keys* stay English internally
     and only the displayed label is translated (`PanelTabs` `labels` prop). Arabic plurals need all six
@@ -599,6 +623,7 @@ Don't re-derive, check these first.
     "requisition Store Out" tests in `apps/web/src/pages/inventory/__tests__/inventory.test.tsx`; the three fixes that
     matter most (the PO-or-requisition filter, the company name in the notes, the web submit by requisition) were each
     checked by undoing them and watching the matching tests fail.
+
 47. **An upload check that compares the file's extension with the browser's content type refuses real files when the
     list of accepted types is the textbook one, not the one browsers send.** Uploading a bid archive to the Bidding
     stage failed with `INVALID_FILE: File extension .rar does not match content type application/x-compressed`.
@@ -615,6 +640,7 @@ Don't re-derive, check these first.
     type the browser sent, so add THAT type to the map rather than loosening the check. Related to #30 (a web or
     server list that drifted from what actually arrives). Rebuild `packages/storage` and restart the gateway for it to
     take effect (#9).
+
 48. **A write action guarded only by "logged in" while its permission key sits unused, and a re-assignment that
     silently re-prices stock.** `createIntercoStockTransfer` (the Inter-company > Stock Transfers form) moves stock
     out of one company into another, yet it checked only that the caller was authenticated. The registry already
@@ -661,6 +687,7 @@ Don't re-derive, check these first.
     Do it this way instead: save a copy of the fixed file first, write the original with
     `cmd /c "git show HEAD:path > file"` (bytes preserved) or edit a copy with `String.Replace`, run the tests
     inside `try { ... } finally { restore the copy }`, and read the failing test NAMES, not just "failed".
+
 50. **"Allow all file types" is four separate restrictions, and relaxing one leaves the others.** The Bidding
     Stage packages, Attachments and Preliminary Engineering tabs each limited what could be uploaded in a different
     place. (1) The browser's file dialog: `accept=".zip,.rar,.7z"` on the bid packages, an `ACCEPT` list on Attachments
@@ -710,6 +737,7 @@ Don't re-derive, check these first.
     part, then render the real `<Trans>` in each language and assert there is no `proj.detail` in the output and the
     highlighted word sits in the `<0>` span (`apps/web/src/i18n/__tests__/uploadAreaKeys.test.tsx`; removing a key fails
     it). Run the scan for any file that a codemod touched before trusting its translations.
+
 52. **A list built on one `entity_type` shows only what was uploaded through that screen, while the project's files
     live in twenty places.** The project's Attachments tab read `/files/attachments?entityType=project`, so it listed
     only files uploaded through itself. Every other tab keeps its files elsewhere: Client Documents in
@@ -743,6 +771,7 @@ Don't re-derive, check these first.
     code paths). Lint trap met on the way: `@typescript-eslint/non-nullable-type-assertion-style` rewrites
     `x.closest('…') as HTMLElement` into `x.closest('…')!`, which `no-non-null-assertion` then forbids, and the `!`
     leaves the type as `Element`; use `closest<HTMLElement>('…')` and throw if it is null.
+
 53. **A fixed-position page decoration (the stamp) over a page whose length was decided by a row count.** On the
     letterhead invoice (`apps/web/src/lib/invoiceHtml.ts`, printed from the Invoice > PDF tab) the company stamp is
     `position: fixed; bottom: 43mm`, so it repeats at the same spot on EVERY printed page (about 43 to 77 mm up from the
@@ -1791,6 +1820,254 @@ Don't re-derive, check these first.
     mutations, all killed. Related to #43 (a currency shown without conversion), #65 (a hard-coded IQD label), #67 (the
     location's currency label) and #23 (one thing, several code paths).
 
+75. **Information drawn in the app's pale "muted" grey is hard to read, and a mockup in a darker grey hides it.** A
+    reviewer of the phone mockup said the line "40 pcs · Store 8.50 USD" "cannot be seen easily". The mockup used the
+    secondary grey (`#5f6368`, 6.05:1 on white) at 13px regular and it already looked faint; the real app's
+    `theme.textMuted` is `#9aa0a8` in the light theme, which is 2.64:1 on white and 2.43:1 on the canvas (text needs
+    4.5:1), so the built screen would have been worse than what was reviewed. It is not a one-off: `theme.textMuted` is
+    used 167 times on `RequisitionDetail`, `PurchaseOrderDetail` and `RequisitionForm`, and the old Summary tiles put
+    their labels in it at 11px, and the shared `Table` phone cards print every field label in it (11px). Compute the
+    ratio (a ten-line `node` script over the hex values, not by eye) before approving a mockup, and build from the real
+    token, not the colour the mockup used. Rule for the requisition and PO redesign: a label is `theme.textSecondary`,
+    a figure (qty, price, total, date, name) is `theme.textPrimary` with weight 600, and `textMuted` is only for hints
+    nobody needs to read. Not changed on purpose: the `textMuted` token itself (one value, every screen in the app; ask
+    first) and the shared `Table` card styling (about 90 tables; the Lines table gets an opt-in layout instead). Same
+    pass: the Summary's Priority came from the English-only map `REQUISITION_PRIORITY_LABELS`, so Arabic showed "High"
+    (#25e); it now uses `getRequisitionPriorityLabel`. Tests: the "Summary labels in the secondary grey" and "priority
+    name in Arabic" cases in `RequisitionDetail.test.tsx`; each was mutation-checked. Also met: the checked-out branch's
+    `RequisitionDetail.tsx` was about 100 lines longer than the copy read a day earlier, so line numbers quoted from an
+    earlier read were wrong; re-read the exact text before an edit and replace blocks by their text, never by line number.
+
+76. **Moving an entry form out of a side panel and into the table it describes: the person's own controls can undo it,
+    and the old layout leaves ghosts.** The requisition page's three pricing steps (store, market, verified price) had a
+    side panel with a second copy of every line and a price box per copy; the redesign puts the box in the Lines table
+    cell of the line it belongs to and keeps only the step's button, in a bar at the bottom of the page
+    (`StageActionBar`). Traps met:
+    (a) *A control that hides columns can hide the input.* The Columns menu lets a person switch off Store, Market and
+    Verified price; with the box now in that column, switching it off would leave a step with nothing to type in and no
+    error. The column of the step in progress (and Handled by, which carries "take this line" at Market pricing) is
+    added to `lockedLineColumns`, so the menu shows it ticked and disabled. Ask of any column that becomes an input:
+    can the person remove it?
+    (b) *An emptied column still takes its share of the width.* The side panel column is `flex: 1 1 340px`; with no
+    panel in it, it still squeezed the table to about 60 % of the page. It is `display: none` while the step is done
+    on the lines (a test finds it by its flex value). jsdom has no layout, so assert the style, then look at a real
+    window.
+    (c) *Move the UI, keep the strings.* The old tests pinned button names, the `0.00` placeholder, the validation
+    messages and the "Qty to buy" caption, so keeping those exact strings kept ~140 old tests guarding the old
+    behaviour (two-part Market pricing, take / hand back, blank-line blocking, stock-covered lines left out); only the
+    two that asserted the old card itself were rewritten. The submit gates and payloads are untouched.
+    (d) *A mutation that survived named a missing test.* "Take / hand-back buttons drawn at every stage" survived:
+    the buttons moved into a table cell that exists at every later stage, and nothing checked they stay away once the
+    step is over (the rule behind them, "no price yet", can still be true). Added; killed. A run that prints `Tests no
+    tests` is not a kill (#70).
+    (e) *A new element can match an old query.* The header's new "More actions" button matched an older test's
+    `/more/i` ("no More button on the phone card"), and the phase bar made `getByRole('listitem')` see seven items
+    instead of two. Name lists and menus (`aria-label`) and scope queries to them.
+    (f) *Sticky and fixed bars live outside a `Card`* (`overflow: hidden`, #42). Desktop: `position: sticky; bottom:
+    12px`. Phone: fixed above the 64 px bottom navigation, with a spacer in the page so the last line is reachable.
+    (g) *Lint `prefer-nullish-coalescing`* flags `l.description || l.product_name`; an empty description must still
+    fall back, so a helper tests truthiness explicitly (`lineName`).
+    Phone cards: `Table` gained an opt-in `mobileLayout="fields"` (label above value, two to a row, `mobileFullWidth`
+    for entry boxes, nothing behind "More"); the default is unchanged for the other ~90 tables. The Log tab is an
+    `ActivityTimeline` (sentence per action from `req.logAction.*`, colour from the action NAME, never from the
+    translated sentence, #25a) and a phone header folds Print and Cancel into `OverflowMenu`. Not verified in a
+    browser. Tests: `StageActionBar`, `LinePriceInput`, `ActivityTimeline`, `OverflowMenu` test files, the "prices typed
+    on the lines" and "activity timeline and the phone header menu" blocks in `RequisitionDetail.test.tsx`, the "phone
+    cards" block in `Table.test.tsx`; 22 + 19 mutations. Related to #40, #42, #70, #75.
+
+77. **Moving a control leaves the sentences that describe where it was, and a test regex without the `i` flag fails with
+    the right element on screen.** The requisition's price-verification "Not ready to approve?" card was moved under the
+    Lines table (#76), and its hint kept saying "Check the line(s) that need attention in the Lines tab on the right":
+    the user's own screenshot showed the card under the table with a sentence pointing right. Grep the strings that
+    describe position ("on the right", "above", "below", "side panel") whenever a block moves. The card itself was then
+    replaced by a **Send back** button in the action bar (disabled until a line is ticked and has a reason; the bar says
+    which of those is missing) that opens `SendBackDialog`: the destinations (price verification: market pricing, store
+    pricing, inventory check, draft; pending approval: the same without store pricing), the flagged lines with their
+    reasons, an overall reason (empty means "use the lines' reasons", as before), and a confirm button that names the
+    place ("Send back to Market pricing"). Rules kept on purpose: nothing is pre-selected (a default could send the work
+    to the wrong team); each destination calls its own mutation with the same payload as the old buttons; the dialog
+    closes in the mutation's `onCompleted` (so a failed send back keeps it open with the flags, and the toast from
+    `onError` still shows), tested by calling the `onCompleted` the page handed to `useMutation`.
+    Test traps: (a) `getByRole('button', { name: /^send back to / })` is case-sensitive, the name is "Send back to
+    Market pricing", and the failure ("Unable to find ... button") printed the very button in its list of roles: read
+    the role dump before suspecting the code. (b) The bar's "Send back" and the dialog's confirm both match `/^send
+    back$/i`, and the page header's Cancel matches the dialog's: take the LAST match (the dialog is drawn after the
+    page) or scope to the bar. (c) The shared `Modal` has no `role="dialog"` or `aria-modal`, so tests find the dialog
+    by its title; adding the role would help every modal in the app, but it is shared by dozens of screens and was not
+    changed here. (d) A `no raw key` assertion (`not.toMatch(/req\.(detail|status)\./)`) only means something if the
+    regex has single backslashes; check it can fail.
+    Inventory check followed the same pattern as #76: stock levels, the location (a native `InlineSelect`, so every
+    choice is in the page and none is clipped) and the quantity are cells of the Lines table, `invMaxFor` keeps the old
+    cap (the line's need, or the chosen location's stock if less), choosing a smaller location still pulls a larger
+    quantity down, and the draft in localStorage is untouched. One behaviour is new: a chosen location can be put back to
+    "nothing chosen" (the old list of buttons could not be unselected); nothing chosen sends no location, as before.
+    The From stock column is locked on at that step. **Not done: the Items Bought page** (`ItemsBoughtPage.tsx`, 1,560
+    lines, a page of its own with batch features: same vendor for all lines, same receipt for all, Record all). The sketch
+    for it left those out, so it needs a decision before a table-first rebuild. Tests: the "send back" and "inventory
+    check on the lines" blocks in `RequisitionDetail.test.tsx`, `InlineSelect.test.tsx`; 23 mutations. Related to #76,
+    #75, #24 (a gate and the list that mirrors it).
+
+78. **A page of per-line cards turned into one list without touching its logic, and an edit script that cut one line too
+    many.** `ItemsBoughtPage.tsx` (1,560 lines: purchases, "same vendor for all", "same receipt for all", Record all,
+    resolve from stock, mark short, tolerance and organizer approvals) kept every function, mutation and test; only the
+    render changed. Each line is a row of one joined list (a header row names Item, Ordered, From stock, Left to buy,
+    Approved price, Status once; every row uses the same grid, `LINE_COLUMNS`, so they line up like a table); the line
+    that still has something to buy is the active one (`data-needs-buying`, a tinted row with an accent edge) and carries
+    the existing entry strip; Finish buying is a `StageActionBar` whose reasons it cannot be used yet are badges. A
+    screen reader always gets each value's label (visually hidden on a desktop, shown above the value on a phone), and
+    the header row is `aria-hidden` for that reason. A real `<table>` was not used on purpose: the strip, the purchases
+    list and the inline forms under a line are 600 lines of JSX at one indentation, and moving them into table cells
+    would have re-indented all of it (the file already has ~200 prettier findings, so `--fix` is not an option, #37)
+    for no behavioural gain. All 52 existing tests passed unchanged on the new layout, which is the point of keeping the
+    logic where it was.
+    The trap: my edit script replaced "everything after the line holding `data-needs-buying`" with the new header, but
+    the row's own `style={{...}}` and closing `>` came after that line, so the file no longer parsed (`tsc` caught it at
+    once). Fix: restore from the backup copy, end the opening tag with a unique marker comment, replace from the marker
+    and delete the marker afterwards. When a script cuts "between two anchors", make the first anchor the LAST line of
+    the construct you are keeping, and run `tsc` before any test. The second trap, again: `\n` typed inside a bash
+    heredoc or a `node -e` string became a real newline in the generated script (#69); write scripts with the file tool.
+    Tests: the "lines as one list" block in `ItemsBoughtPage.test.tsx` (header row, one row per line in order, the values
+    of a row, each state, only the active row marked, entry strip only under it, desktop versus phone labels, the Finish
+    buying bar for buyer / non-buyer / after Items Bought); 10 mutations, all killed. Related to #76, #77, #75.
+
+79. **The shared `Checkbox` hid its real input with `display: none`, so a keyboard user could not reach it; and the page
+    next to it kept the browser's own boxes.** Items Bought's two batch toggles ("all items are from the same vendor",
+    "attach one receipt for all items") were native `<input type="checkbox">` in the browser's blue, unlike every other
+    checkbox in the app, which is `components/ui/Checkbox.tsx` (an accent-bordered box with a drawn tick). Switching to it
+    as it was would have made keyboard use worse: its input was `display: none`, which removes it from the Tab order
+    and the accessibility tree (no focus, no Space to toggle, invisible to `getByRole('checkbox')`: the "hidden-input
+    Checkbox" trap in #32). Fixed in the shared component, so its six other users gain too: the input stays in the page
+    (`position: absolute; opacity: 0`, label-wrapped so the label still toggles it), and the box shows a focus ring only
+    for keyboard focus (`:focus-visible`, treated as true where a browser does not know the selector, never after a
+    plain mouse click). The look is otherwise identical; the label is `textSecondary`. Not changed: the flag-to-reject
+    checkbox in the requisition Lines table (a native input at price verification and pending approval; many tests
+    find it with `getByRole('checkbox', { name: /flag this line/i })`), and the ones in ColumnsMenu. How to spot it: a
+    checkbox in a different colour from its neighbours, or one you cannot Tab to. Test traps: (a) `vi.spyOn(Element
+    .prototype, 'matches').mockReturnValue(...)` breaks every `getByRole` (testing-library calls `matches`), so answer
+    only `:focus-visible` and pass every other selector to the real one; (b) restore the spy in `afterEach`, or one
+    failing test poisons the next ones with "Unable to find an accessible element"; (c) `fireEvent.click` on a disabled
+    input still dispatches in jsdom, where a browser would not: assert `disabled`, not the click.
+    The same pass finished the requisition page's last steps: Approved, Items bought and Sourcing use the bar; Completed
+    and the stopped states are a banner above the lines; the lines take the whole row, and what is left of the old side
+    column (the purchase orders and Store Outs cards) is a full-width row under them (`flex: 1 1 100%; order: 3`),
+    hidden when empty (the old 340px column would otherwise keep squeezing the table, #76b). The Items Bought page is
+    full width too (`maxWidth` 1800px like the requisition page, was 1100px). Tests: `Checkbox.test.tsx` and the "later
+    steps" block in `RequisitionDetail.test.tsx`; 13 mutations. Related to #76, #77, #78, #32.
+
+80. **A "plain looking" form is usually a hierarchy problem, fixed with opt-in controls, not by restyling the shared ones;
+    and a second card built from the same parts must not keep its own copy of the old ones.** The user said the Items Bought
+    dropdowns and buttons "seem very plain" and chose a form card from three sketches: vendor picker with one-tap chips,
+    a quantity stepper, the price with its currency inside the box and a live total, a receipt drop zone with file chips, and
+    a footer with one solid main action. The shared `Button`, `Input` and `Select` are used by about 90 screens, so nothing
+    shared was restyled: five new opt-in components (`ActionButton`, `QuantityStepper`, `MoneyField`, `ChipButton` in
+    `components/ui`, `ReceiptDropZone` in `components/procurement`) and one opt-in prop, `SearchableSelect field` (40 px, 10 px
+    corners, the readable edge), so the vendor picker lines up with the boxes beside it. The record-a-purchase card is
+    `renderEntryCard` in `ItemsBoughtPage.tsx`; every function behind it (`handleUploadAndRecord`, the validations, the batch
+    toggles) is the page's own and untouched, which is why all 67 older tests passed unchanged on the new entry card (only the two "divider between the groups" tests of the batch card were rewritten later, when its groups became tiles).
+    The user then pointed at the "Apply to all items" card above the lines (a plain picker, a grey "+ New", plain buttons) and
+    asked for the same style. It now uses the same parts: `renderVendorChips` (Cash, up to three vendors already used on this
+    requisition, newest first, one entry per vendor, the cash vendor excluded because it has its own chip, and a dashed
+    "+ New vendor") is ONE function used by a line's card and by the batch card, and the shared receipt is a
+    `ReceiptDropZone` with a solid "Record all purchases". When one vendor is used for all items the lines lose their own
+    chips and the batch card shows them instead.
+    Its two toggles (the small grey checkboxes "All items are from the same vendor" / "Attach one receipt for all items")
+    went through a sketch round first: a page with the same card drawn four ways (switch rows, choice tiles, a per-line /
+    for-all segmented choice, chip toggles), each clickable in the app's own colours, and the user picked the tiles. They are
+    now two `ChoiceTile`s (`components/ui/ChoiceTile.tsx`, opt-in like the others): an icon, the title, a line saying why
+    ("Choose the vendor once instead of on every line"), a round tick, the whole header as the tap target, and what the
+    choice opens inside the tile once it is on. The accessibility is part of the component, not an afterthought: the header
+    is a real `<button role="checkbox" aria-checked>` named by `aria-labelledby` (the title) and described by
+    `aria-describedby` (the reason), and what the tile opens is a SIBLING of that button, never inside it (a control inside a
+    button is invalid and the click would toggle the tile). `aria-labelledby` also keeps every older test that finds the
+    toggle with `getByLabelText(/all items are from the same vendor/i)` working, because testing-library's label lookup does
+    not use a name derived from content.
+    One more thing on the same page: a line's Arabic name appeared at the right end of the item column, under the handler's
+    name, not under the item's (the user's screenshot, highlighted). Cause: the Arabic `<div dir="rtl">` had
+    `textAlign: 'start'`, and in a right-to-left block "start" is the RIGHT edge, so the name hung off the far side of the
+    cell. Fix: the block keeps the page's own direction (`textAlign: 'start'`, no `dir`) and only the text inside it, a
+    `<span dir="rtl">`, is right-to-left; it now starts under the English name in English and under it in Arabic too, since
+    both follow the page. It is also 14 px (was 12) with a 1.5 line height, in the secondary grey. How to spot it: a
+    right-to-left snippet that sits somewhere other than under its neighbour; the rule is "put `dir` on the inline text,
+    not on the block whose alignment you need to follow the page". Same pattern NOT changed (not asked for): the requisition
+    Lines table item cell (`dir="rtl"` with a physical `textAlign: 'left'`, 12 px in the pale `textMuted`, which also breaks
+    #75) and the inventory-check "replaced by" line in `RequisitionDetail.tsx` (`dir="rtl"` with `textAlign: 'start'`, the
+    same bug as here); `PurchaseOrderDetail`, `StoreInDetail`, `StoreInPage` and `CostChangeApprovalsPage` also print an
+    Arabic product name and were not read. Tests: the "Arabic name of a line" block in `ItemsBoughtPage.test.tsx` (7; 7
+    mutations).
+    Colour facts, computed rather than eyeballed (#75): the pale accent on its own tint is 4.19:1 in the light theme (text needs
+    4.5), so text on a tint (soft button, picked chip, dashed "add" chip) uses `accentSolid` (4.96 and 4.72 on the tints);
+    the new `borderField` edge is 3.15:1 (light) and 3.49:1 (dark) against the card (a box a person must find needs 3:1); white
+    text on `accentSolid` is 5.47:1 and 6.81:1 under the pointer. `theme/__tests__/controlColours.test.ts` computes all of
+    these in both themes, so a later token change that drops under fails there. How to spot the class: a control that reads as
+    "plain" has one weight for every action, a faint edge and no state (hover, focus, busy); give the main action one solid
+    button, the rest outline / ghost, an edge that passes 3:1 and a keyboard focus ring (`:focus-visible`, never after a click).
+    Things worth keeping from the batch card: (a) it had a latent gap. The shared receipt keeps the uploaded file ids so the
+    files are uploaded once for all lines, and only ADDING a file cleared them; there was no way to remove one. With a remove
+    button, "Record all" stops at a line with a bad price, the buyer removes b.jpg, fixes the price and records again: the old ids
+    (a and b) would be reused and b attached to every purchase. Removing now clears the cache like adding does
+    (`globalReceiptFileIdsRef`); a test walks exactly that (the cache is shown by the number of extra-file attach calls).
+    (b) The live total is a JS product for display only (the server stores quantity and price, never the product); there is
+    no rounding convention in JS here (domain rule), so it is formatted with `fmtN` and nothing is saved from it.
+    Test traps met. (1) The first run of the page file timed out on its first seven tests and the immediate re-run passed all
+    67 in 4.7 s: a cold dynamic import on a OneDrive checkout, not the code (#17: re-run alone). (2) `ThemeProvider` adds no
+    wrapper, so `container.firstElementChild` is the component's own root; my first stepper test took its first child (the minus
+    button, `height: 100%`) and failed on a 40 px assertion: a test bug, not a component bug. (3) The page fetches the cash
+    vendor's id as it opens; a test that taps Cash and then Record must flush that first (`await act(async () => {})`), or the
+    page refuses with its own "cash vendor is not ready" toast, which the mocked toast store hides, so it looks like
+    "recordPurchase was never called". (4) `const x: string | undefined = record[key]` is narrowed back to `string` by the
+    assignment, so a later `??` trips `no-unnecessary-condition`; write `record[key] as string | undefined`. (5) `eslint --fix`
+    removed the cast on `describe.each(Object.entries(themes) as ...)`, and I had also dropped a different `as string` by hand;
+    `tsc` caught it at once (some tokens are not strings), so read a token's type before parsing it as a colour. (6) A test that
+    said "no drop zone anywhere while one receipt is shared" became wrong when the batch card gained the zone: scope such
+    assertions to the card they are about. (7) A mutation script that edits a file the editor is also changing overwrites the
+    edit when it restores; do not touch the mutated files while it runs (only docs, locale files and brand-new files are
+    safe). (8) A helper that finds a card by its English text cannot find it in Arabic; find it by `i18n.t(...)` of the same
+    key. (9) The mutation script's first classifier called 28 real kills "not by assertion" because jest-dom failures read
+    `expect(element).toHaveStyle()` / `Expected the element ...`, not `AssertionError`; classify a kill as "tests failed, the
+    output has an assertion message, and no TypeError / ReferenceError / SyntaxError", and re-run what was not confirmed. (10)
+    Three mutations survived at first and each named a test that proved nothing: hover on a disabled button (jsdom never
+    delivers the event to a disabled button, so hover first, then disable it with `rerender`), the file picker being emptied
+    (jsdom's file input always reads back `''`, so watch the write with a `value` setter), and adding a shared file clearing
+    the cached uploads (the twin of the removal test; both walk "Record all stops at a bad line, the buyer changes the files,
+    records again" and count the extra-file attach calls). (11) The keyboard-focus check was written three times
+    (`ActionButton`, `ChipButton`, `ChoiceTile`); it is one helper now, `components/ui/keyboardFocus.ts`.
+    Not done: the shared `Modal` (the user has not answered whether to sketch it first), the new-requisition form (D), the PO page,
+    and the flag checkboxes in the Lines table are still native. Not verified in a browser (the layout of the card at a real
+    window width, the drag-and-drop, the phone). Tests: `ActionButton`, `QuantityStepper`, `MoneyField`, `ChipButton`,
+    `ChoiceTile` in `components/ui/__tests__`, `ReceiptDropZone.test.tsx`, `theme/__tests__/controlColours.test.ts`, the
+    `field` block in `SearchableSelect.test.tsx`, and the "record-a-purchase card", "apply-to-all card" and "the batch card"
+    blocks in `ItemsBoughtPage.test.tsx`; 79 mutations (49 on the entry card and the batch card, 23 on the tiles, 7 on the
+    Arabic name), all killed. Related to #25, #75, #76, #78, #79.
+
+81. **A flex-basis written for a row is a HEIGHT in a column, and a global "stop the iOS zoom" rule loses to inline styles.**
+    Two phone findings from the user's iPhone (Safari, the LAN address of the dev server), both invisible in jsdom.
+    (a) The bottom action bar (`StageActionBar`, requisition page and Items Bought) was a tall, mostly empty white panel
+    covering about half the screen: a title at the top, a gap, then the button. The text block had `flex: '1 1 320px'`, right
+    for the desktop row ("take the free width, at least 320px"), but on a phone the bar is a flex COLUMN, where the basis
+    is the block's height: 320px of it. Fix: `flex: isPhone ? '0 0 auto' : '1 1 320px'`. How to spot it: a block that is far
+    taller than its content in a column layout; grep `flex: '... Npx'` inside any container that switches to
+    `flexDirection: 'column'` on a phone. The component test existed and passed, because jsdom has no layout: assert the
+    style that decides the layout (`flexBasis` is `auto` on a phone, `320px` on a desktop), then look at a phone.
+    (b) "The system zooms in by itself and I have to undo it" (all screens). iOS Safari zooms the page into any text field
+    whose text is under 16px and never zooms back out. `themes.css` already had `input, select, textarea { font-size: 16px }`
+    for phones ("prevents iOS auto-zoom on focus"), but the shared `Input`, `Select` and `SearchableSelect` size their text
+    inline (13px), and an inline style beats a stylesheet rule, so the rule never applied in years. Fix: a block keyed on
+    a touch screen (`@media (pointer: coarse)`, not `max-width: 767px`: an iPhone turned sideways is wider than that) with
+    `font-size: 16px !important` on text fields only (checkbox, radio, range, file, colour and button inputs are excluded),
+    plus `touch-action: manipulation` on the page and on the things people tap twice (the + of a stepper, two lines in a
+    row), which turns off the double-tap zoom and keeps scrolling and pinch zoom. The viewport meta is left alone on purpose:
+    `maximum-scale=1` or `user-scalable=no` would also stop the zoom but takes pinch zoom away from people who need it.
+    What could break: text fields on touch screens are now 16px wherever they were 13 or 14, so a dense inline editor or a
+    fixed-height box can look a little larger; the controls built for the new Items Bought card already used 16px on a phone.
+    How it was checked: jsdom does not apply stylesheets (and Vitest turns a `.css?raw` import into an empty string, so a
+    first version of the test passed on nothing: read the file with `fs` and assert it is non-empty), so
+    `theme/__tests__/mobileZoom.test.tsx` pins the source: the rule is `!important`, touch-keyed, excludes the non-text
+    inputs, no plain overridable 16px rule is left behind, `manipulation` covers the page and the tap targets, the viewport
+    keeps pinch zoom, and a test shows the shared `Input` really has an inline 13px (the reason `!important` is needed);
+    10 mutations, all killed. NOT verified on a device: the user has to reload on the iPhone and tap into a few fields. If
+    the page still jumps, the cause is something else (a page wider than the screen makes iOS zoom out; ask which tap does
+    it). Related to #40 and #75 (layout that only shows at a real width), #76 and #79 (the bar and the Items Bought page).
+
 82. **A file that prints with the invoice: a dedicated attach path, sheets that sit above fixed print furniture, and a
     print button that must not outrun the file.** The request: "add an attachment (a picture or a PDF) that displays as
     the last page of the printed invoice, after the bank information". The user chose: exactly ONE attachment per invoice,
@@ -2073,6 +2350,122 @@ Don't re-derive, check these first.
     through the routes), `expense-claim-numbering.test.ts` (the no-rule path),
     `services/gateway/tests/create-company-expense-numbering.test.ts` (3, including the migration file's SQL run against known
     claims); 21 mutations, all killed. Related to #28, #69, #9.
+
+87. **A new requisition purpose is a value several places read, and the one that refuses it is the last step.** The request:
+    "add direct supply to requisition purpose, always tied to a project, Draft > Pending approval > Items bought > Sourcing >
+    Completed, the rest as is, Est. Unit Price typed at creation as now, the approver can see it". The user answered my two
+    questions: any project (not only projects of the Direct Supply TYPE, migration 291, a different thing with the same name:
+    a project that skips the tender), and the destination fixed to the jobsite. No migration: `requisitions.purpose` is a
+    free VARCHAR(30). Design: `services/gateway/src/lib/directSupply.ts` holds the rules (purpose, destination, the create and
+    submit checks, the child PO purpose); the state machine gets one edge, draft to pending_approval (`submit_direct_supply`);
+    `submitRequisitionDirectSupply` is the button's mutation (organizer or admin, company-scoped, same gate as the inventory
+    check submit, same approver notice as `submit_for_approval`).
+    Traps found before and while building:
+    (a) *The value passes create, submit, approve and buy, and fails only at Finish Buying.* The fork copies `req.purpose` onto the
+    child PO, and `purchase_orders.purpose` has its own CHECK (project, manufacturing, stock; migration 047). Storing
+    `direct_supply` there would throw after the buyer had recorded every purchase. The jobsite delivery path
+    (`recordDirectDelivery`, `ReceiptForm`, the project cost) also asks for a PO whose purpose is `project`, so the child POs
+    are plain project POs and the requisition keeps `direct_supply` for its own screens (`childPurchaseOrderPurpose`). How to
+    spot it: before adding a value to a column, grep every place it is COPIED to and every CHECK on the target table; the test
+    drives a requisition all the way to a forked PO for this reason.
+    (b) *A flow that skips a step also skips what that step set.* The creation form never collected a line currency (market
+    pricing sets it later) and `createRequisition` stores `requested_currency_code ?? 'IQD'`. With no market pricing every line
+    would stay IQD, and Items Bought only checks the tolerance when the purchase's currency equals the line's, so a USD purchase
+    would never be checked against the typed price: no error, no flag (#74 again). The form now asks for a currency on every
+    direct supply line (starting on the previous line's), the server refuses a line without one, and the summary totals each
+    currency on its own. For any step you skip, list what it wrote.
+    (c) *A skipped stage needs a refusal on the server, not only a missing button* (#32). Three mutations could still send a direct
+    supply into stages that have nothing in them: `submitRequisitionToInventoryCheck`, `rejectRequisitionToMarketPricing` and
+    `rejectRequisitionToInventoryCheck`; they now refuse it (`refuseForDirectSupplyGW`, company-scoped) with a message that says
+    what to do instead, and the send-back dialog offers Draft only. An edit request could also have moved its delivery
+    destination off the jobsite (`applyRequisitionEditChanges`); it is ignored for this purpose.
+    (d) *The approver could not see the price.* The Lines table shows Store, Market and Verified price and the Total, and never the
+    line's own `unit_price` (the Est. Unit Price typed at creation); for every other requisition that number is replaced by those
+    prices on the way. Direct supply gets an Est. Unit Price column (in the line's currency) and drops From stock, Store price,
+    Market price and Verified price, which would only ever show dashes (and so leave the Columns menu too). The progress bar has
+    no Price phase (`requisitionPhasesFor`).
+    (e) *Found, not changed.* `createRequisition` for Project Supply never checks that the project belongs to the caller's company
+    (the project is only read for its cost center); direct supply does and answers "Project not found". The approver notice's
+    admin query is not company-scoped (#35). The organizer cannot take lines for a direct supply, because taking happens at Market
+    pricing, so only buyers and admins buy. The English `enum.direct_supply` was the raw value, so it now reads "Direct supply"
+    (the Project Profitability report's project type column shows the same label in English), and the page subtitle now goes
+    through `enumLabel` (the Arabic UI no longer shows the purpose in English).
+    Test traps: `po_lines.qty_ordered` has a CHECK above zero, so "a line with no quantity" cannot be created and that rule is
+    covered by the pure test only; approval-log rows written by one transaction share `created_at` (approve and start_buying), so
+    order them by what they moved from, never by time; the page registers every mutation hook, so assert "was not called", not
+    "does not exist"; a shell one-liner ate the backslashes of a regex again (#69), found because it failed to parse and wrote
+    nothing; cleanup needs `po_edit_requests` and `service_outbox` rows removed before the requisitions.
+    Needs `packages/workflow` rebuilt and the gateway restarted (#9). Not verified in a browser. Tests:
+    `services/gateway/tests/requisition-direct-supply.test.ts` (real Postgres, 31: create, submit and its gates, the refused
+    stages, the approver notice and the key the worker reads, approval into Items Bought with the typed price as the ceiling, a
+    purchase within and above tolerance, Finish Buying forking project POs delivered to the jobsite, completion; 21 mutations
+    killed), `RequisitionFormDirectSupply.test.tsx` (11), `RequisitionDetailDirectSupply.test.tsx` (14), three more in
+    `RequisitionsPage.test.tsx` and the pinned purpose list in `RequisitionFormAdvance.test.tsx` (21 web mutations killed). One
+    gateway mutation (the project's cost center) was first killed only as a side effect of the project check and got its own
+    mutation. Related to #24, #29, #32, #33, #44, #74.
+
+88. **A global phone rule with `!important` silently undid a component's own layout, and the whole requisition flow was a
+    scroll of chrome around the one thing a person came to do.** The user: "for the phone all the screens of requisition look
+    like a mess, prioritize ease of navigation and simple UI." Measured in a real browser (headless Chrome, 390px, touch,
+    logged in against the dev stack; jsdom cannot see any of this) the screens were: requisitions list 12,051px for 35 rows
+    (five KPI cards of about 110px each, then cards of about 215px that hid the STATUS behind "+3 more"); a requisition at
+    price verification, one line card about 700px with every value on its own row; Items Bought 4,494px for four lines
+    (every line that still needed buying drew its whole entry card); a bottom bar about 190px (a quarter of the screen) with
+    the step's whole explanation in it; a header of four rows and a summary card of seven before the first tab.
+    (a) *The root cause of the 700px line card.* The `Table` "fields" layout (playbook #76) is a two-column grid, but
+    `themes.css` had `@media (max-width: 767px) { main dl[style] { grid-template-columns: 1fr !important } }`, a global rule
+    meant for label/value lists, and an `!important` rule beats an inline style. The two-up layout never applied on a phone
+    (the DOM said `grid-template-columns: 270px`, one column). Same family as #81(b) (the iOS zoom rule that lost to inline
+    sizes, here the opposite: the global rule wins). Fix: the rule is `main dl[style]:not([data-phone-grid])` and a grid that
+    sets its own phone layout carries `data-phone-grid` (the Table card and the summary's "All details"). How to spot it:
+    ask the browser, not the source: `getComputedStyle(el).gridTemplateColumns` on the element that should be two-up; grep
+    `themes.css` for `!important` before trusting an inline layout on a phone. Test: `theme/__tests__/phoneGrid.test.tsx`
+    reads the stylesheet with `fs` and pins the rule, the opt-out and the attribute on the Table card.
+    (b) *Design rules used for the pass (phone only; every desktop layout is unchanged).* One job per screen. A header is
+    one row (`PageHeader compact`: arrow named by `backLabel`, number, status, menu). A summary is Total beside Priority, the
+    project across the card, organizer beside the date, details behind a text link. A line is a two-up card with no second
+    card around it. The bottom bar is the title, the ONE thing that blocks the step, and the buttons side by side; the
+    explanation sits behind an info button (`StageActionBar` `more` prop: shown above `status` on a desktop, behind "About
+    this step" on a phone; its spacer is the measured bar height, not a constant). A list row is three short lines (number and
+    status, purpose and project, stage, organizer and age) and a tap goes straight to the record, because a docked preview
+    panel is an extra step on a phone. The KPI cards are a row of chips that scrolls sideways (`ListKit`), the four dropdown
+    filters are behind one button that shows how many are set, the CSV export is not offered on a phone, Create on the form
+    is in the bar above the bottom navigation. Items Bought is an accordion: one line open at a time, the first that still
+    needs buying open to begin with, "Apply to all items" one row until opened (kept MOUNTED and hidden with `display: none`,
+    so a vendor or receipt chosen earlier is never lost). Result on the same data: list 12,051 to 5,230, Items Bought
+    4,494 to 1,729, a requisition at market pricing 1,738 to 1,224 (verification and the form see the same chrome savings; the
+    form is about the same length, its Create button moved).
+    (c) *A state updater that reads a ref the effect overwrites.* The accordion hands over to the next line when the line
+    being bought is finished. First version: `setOpenLineId((current) => ... previouslyNeeding.current.has(current) ...)` and
+    then `previouslyNeeding.current = now` on the next line. React runs the updater LATER, when the ref already holds `now`, so
+    the check never fired and nothing stayed open on a finished line. The test "hands over to the first line that still
+    needs buying" caught it. Read the ref into a local (`const before = previouslyNeeding.current`) before the state call.
+    (d) *Smaller things met.* The shared `PageHeader` is used by hundreds of pages, so `compact` is opt-in and only affects a
+    phone. `ListKit` (list page title, KPI tiles) is used by exactly three procurement pages (requisitions, purchase orders,
+    My Queue), so its phone mode is automatic; the PO list and the queue were not looked at in a browser. The app scrolls
+    inside `<main>`, not the window, and the document is always one screen tall: a harness that scrolls `window` or picks
+    "the tallest scrollable element" picks the hidden mobile drawer instead. Git Bash rewrites an argument like
+    `name=/procurement/x` into a Windows path (use `MSYS_NO_PATHCONV=1`), and a heredoc swallowed a test block again (#69):
+    write test code with the file tool. A literal `new URL('../x', import.meta.url)` in a Vitest file is rewritten by Vite
+    into an http asset URL that `fileURLToPath` refuses; pass the path through a variable (as `mobileZoom.test.tsx` does).
+    `eslint --fix` turned two casts into forbidden `!` again (#52); and a block appended to a CRLF file with a heredoc is LF
+    (prettier flags every line): convert it (`crlf-block.mjs` idea: replace `\r?\n` with `\r\n` from the first line of the block).
+    A real-browser check of a local page needs a login: the seeded admin's password was supplied by the user and was read
+    from an environment variable, never written to a file or a doc.
+    NOT done: the purchase-order page and My Queue on a phone (PO page is next in the redesign plan), the shell's breadcrumb
+    that prints the first characters of the requisition's UUID ("#29ee62b4"), the primary `Button` look (a pale blue-grey
+    that reads like a disabled one next to the bar's disabled Send back), and the new-requisition form's own content
+    (purpose cards, mockup D). Not verified on a physical phone: the user must look.
+    Tests: `StageActionBar.test.tsx` (info button, `more`, measured spacer, nothing with a px flex-basis), `PageHeaderCompact`,
+    `ListKitPhone`, `phoneGrid`, `RequisitionsPagePhone` (15), `RequisitionFormPhone` (7), the "lines as one list" accordion and
+    apply-to-all blocks in `ItemsBoughtPage.test.tsx` and the "on a phone: compact header, summary, lines and bar" block in
+    `RequisitionDetail.test.tsx`; 42 mutations, all killed. Four first attempts were not results and were rewritten: a
+    mutation that removed only the back arrow's `aria-label` survived because the button also has a `title` with the same
+    text (both had to go), one pattern matched twice, one override was cancelled by a later `border: 'none'` in the same
+    object, and one run was labelled a crash by a regex that matched text inside a DOM dump (the tests had failed by
+    assertion). After the first screenshots two more things were fixed in `ListKit`: the search box's 200px minimum pushed
+    the refresh button onto a row of its own (phone minimum is now 120px), and a page with two title actions (Purchase
+    Orders) squeezed its title, so the actions wrap under it. Related to #40, #75, #76, #78, #80, #81.
 
 89. **A form that hard-codes a field the server accepts, with no edit path behind it, leaves a wrong value for ever; and
     a page total that adds across currencies hides it.** Two USD petty cash floats on production were stored as IQD:
@@ -2519,6 +2912,507 @@ Don't re-derive, check these first.
     the next IQD market price on a USD product from doing this again (options: refuse or flag a currency change from market pricing, or
     keep a price per currency; a product decision). Related to #43, #67, #74, #94.
 
+97. **A shared component that silently drops an attribute its callers pass, and a form whose "what is missing" list and
+    whose refusal are two different pieces of code.** The request: build the new-requisition form (mockup D: purpose
+    cards, only the fields that apply, a "before you create it" card) and do the PO pages (progress bar, phone header,
+    list). Four things came out of it.
+    (a) *`Card` never forwarded `data-tour`.* The onboarding walkthrough (`components/help/tours.ts`) finds its steps with
+    `[data-tour="..."]`, and four anchors were put on `<Card data-tour="...">`: the requisition form's details, lines and
+    summary cards and the PO form's lines card. TSX accepts any hyphenated attribute on any component, even one whose props
+    do not declare it, so there was no error, and `Card` ignored it, so the walkthrough pointed at nothing. Found because the
+    test for my new checklist card looked the card up by its anchor and got `null`; `git log -S"data-tour"` on `Card.tsx`
+    shows it never forwarded one (`EmployeeForm` works around it with a wrapping `<div data-tour>`). Fix: an optional
+    `'data-tour'` prop on `Card` (adds nothing when absent), `ui/__tests__/Card.test.tsx`. How to spot it: a test or tour step
+    that cannot find an element you know you rendered; grep `<Card[^>]*data-tour` and `Card\n *data-tour`, and read the
+    component for the prop. Any component that takes a `data-*` attribute from callers must declare and forward it.
+    (b) *One list drives both the card and the refusal (#24 applied before it could drift).* The form's old checks lived in
+    `handleSubmit` (project, destination, order, branch, lines, direct-supply price) and in the two money handlers (expense
+    lines, advance amount). The checklist needs the same rules to say "2 of 4 done", and a second copy would drift. Now
+    `requirements` in `RequisitionForm.tsx` is the only place: each item has a label, a toast message and `done`; the card
+    draws it and `handleSubmit` toasts the message of the first item that is not done, then calls the right handler (their own
+    guards were removed, not left as a second copy). The walkthrough (tour mode) has no real project, destination, order or
+    branch, so those items are not listed while it runs, as before. Create is never disabled: pressing it names the first
+    thing missing. Test: `RequisitionFormChecklist.test.tsx` runs every kind of request and asserts the toast equals the
+    message of the first item the card lists; 15 mutations on those rules, all killed.
+    (c) *Replacing a `<select>` with cards changes how every existing test finds it.* The purpose was "the first native
+    select on the page" in four test files (and the second select was the currency on an advance); with `PurposeCards` (one
+    real radio per card, named by its title, described by its line) they use `getByRole('radio', { name })`. The cards are
+    three to a row at most (`minmax(max(240px, calc((100% - 24px) / 3)), 1fr)`, so six purposes sit 3 x 2, not 4 + 2), and on
+    a phone only the icon and the name are drawn (a word like "Manufacturing" does not fit beside an icon and a tick in half a
+    phone, found in a screenshot) with the chosen purpose's description once under the group; every description is still the
+    radio's accessible description. Same family as #76 (move the UI, keep the strings): numbered section headings added a bare
+    "1" to the page, so a test that counted every "1" on the page (`getAllByText('1')`) had to read the Summary card instead.
+    (d) *The PO page.* `PhaseBar` (built for the requisition) now replaces the dot bar on the PO page: `PO_PHASES` groups the
+    whole-flow statuses into six phases and `CHILD_PO_PHASES` gives a forked child PO its five statuses as phases, named as the
+    statuses are (`po-constants.ts`; `poPhases.test.ts` fails when a status is added and not placed). On a phone: a compact
+    header, the status beside the title, the "forked from" link and the priority in a row under it, and Print, Create return,
+    View/Create invoice and Delete behind one "⋯" menu with the SAME gates as the desktop buttons (a phone no longer has a bar
+    fixed to the bottom with three buttons in it); the summary is two tiles to a row with the total across the first; the
+    Next Step panel can be folded away (kept mounted, `display: none`, so nothing typed in it is lost; its toggle sits inside
+    the edit-lock `fieldset`, so it is disabled while someone else holds the lock); the lines are the labelled two-up cards
+    (`mobileLayout="fields"`). The list is the requisition list's phone treatment (three lines per PO, status and total
+    visible, a tap opens the PO, one Filters button, no CSV): 6,213px to 2,867px on the same data. The PO page's
+    own internals are NOT redesigned: the Next Step panel is about 2,600 lines of stage forms and every one of them is as it was.
+    Traps met. (i) The local gateway on :3000 was older than the web app: the page asks for `PurchaseOrder.fundingAdvances`
+    (committed work), the running gateway did not know it, the whole `purchaseOrder` query failed validation and the page said
+    "PO not found". One unknown field takes a whole page down; check the Network tab for `GRAPHQL_VALIDATION_FAILED` before
+    suspecting the data, and restart the gateway after pulling schema changes (#9, #19). For screenshots only, the harness
+    strips that one field from the page's own request. (ii) My script that re-formats one region with prettier cut one line
+    too many and dropped the closing `]` of an array; `tsc` caught it at once. Format a region by wrapping it in a function and
+    keeping the wrapper's last line out of the slice, then run `tsc` before anything else. (iii) A PO page test without
+    `<Route path="/procurement/purchase-orders/:id">` has no `id` and silently skips the vendor-invoice lookup (#84), and
+    importing the 8,000-line page inside the first test can exceed the test limit: import it once in `beforeAll`. (iv) The
+    shell tests first hung for 70 seconds, not failed: a `waitFor` that clicked a toggle button on every retry; assert after one
+    click. (v) The heredoc ate a regex backslash again (#69); the failing script wrote nothing. Not verified in a browser:
+    Arabic / right-to-left on the new cards and the PO page, the PO page's Next Step panel at every status, a physical phone.
+    Not done: the legacy `PurchaseOrderForm`, the PO returns pages, My Queue on a phone, a lock-aware test of the menu's Delete
+    (it is disabled while someone else edits; there is no test that mocks the lock). NUMBERING: this working copy ends at #91
+    but the checked-out branch (`fix/cost-screens-one-voice`) already holds #92 to #96, so this entry is #97 to avoid a clash
+    when the two meet; the file in the working tree does not contain #92 to #96, so a commit must MERGE them in, not overwrite
+    (`git diff HEAD -- docs/claude/playbook.md` shows 215 deletions for that reason).
+    Tests: `Card.test.tsx`, `PurposeCards.test.tsx` (18), `RequirementsChecklist.test.tsx` (8),
+    `RequisitionFormChecklist.test.tsx` (24), `poPhases.test.ts` (7), `poDetailShell.test.tsx` (27),
+    `PurchaseOrdersPagePhone.test.tsx` (15), `OverflowMenu.test.tsx` (15, `disabled` items); the four older form test
+    files were changed to drive the cards. Related to #24 (a gate and the list that mirrors it), #75, #76, #88 (the phone pass),
+    #84 and #9.
+    (e) *A shared dropdown that draws every option freezes on a long list, and it looked like my change.* The user, right
+    after the form change: "the Custom item dropdown is glitching and taking a long time to load, on mobile and desktop".
+    Measured in a real browser (headless Chrome, `phone-shots/select-perf.mjs`: a real click, a MutationObserver for the
+    first option, the `longtask` observer): the product picker drew ALL 6,909 products (the company's own plus the central
+    warehouse's, `includeCentralWarehouse`), took 2,133 ms to open with one 1,513 ms freeze, and every mouse move over the
+    list took about 270 ms because `onMouseEnter` sets the highlighted row and re-renders every row. The untouched PO form's
+    picker gave the same numbers (6,909 options, 2,070 ms, 278 ms per move), so the form change did not cause it; the list
+    had simply grown past what an unbounded list can draw (the central warehouse's catalogue was added to it, and every
+    product has an Arabic line under it). Do not accept "it started after my change" without measuring the same component
+    on a page you did not touch. Fix in the shared `SearchableSelect`: it draws at most `maxVisible` options (default 200),
+    searches ALL of them (a hidden option comes up as soon as its name or code is typed), the keyboard works on the drawn
+    list, and a line under the list (not at the end of it) says "Showing the first 200 of 6,909. Type to narrow the list."
+    Lists of 200 or fewer (employees, branches, projects) are drawn exactly as before. After: 66 ms to the options, 147 ms
+    painted, 16 ms per mouse move, longest freeze 66 ms, on a desktop and on a phone. The form also builds its product
+    options once per load (`useMemo`), not on every keystroke in any field. Tests: `SearchableSelectLongList.test.tsx`
+    (14; 7 mutations, all killed). How to spot it: any dropdown or list fed by a catalogue (products, vendors, accounts)
+    that "got slow" as data grew; count the DOM nodes it creates when it opens, and time one mouse move over it.
+    Left alone: the picker lists some products twice (AC-006 and AC-007 each appear twice, one from the company and one
+    from the central warehouse, which carry the same SKU on purpose or by import); per the domain rule, items are never
+    matched across companies by SKU, so that is data to look at, not something to hide here. Other screens that pass a very
+    long `options` list to a plain `<select>` (not this component) were not looked at.
+
+98. **A shared dialog that was a dialog only to the eye, and a key that closed more than it was meant to.** The user asked
+    "what about the Modal" (the shared `components/ui/Modal.tsx`: 49 files, 91 uses, 48 of those files put inputs in it).
+    Probed first, in a throwaway unit test that printed what it does today (and was deleted after), and read in the code:
+    (1) no `role="dialog"`, no `aria-modal`, no name, and a close button whose only text is "✕" (read as "multiplication X");
+    (2) Esc inside an OPEN dropdown closed the whole modal (measured: gone after one Esc), losing everything typed;
+    (3) one Esc closed every stacked modal at once (both outer and inner gone); (4) a click on the dark area closed a
+    half-filled form (only 3 of 91 uses opt out); (5) focus went to the panel on open but landed on the page body on close;
+    (6) Tab walked out into the page behind; (7) on a phone the grab handle did nothing; (8) the cross was in `textMuted`
+    (2.64:1) and the animations ignored `prefers-reduced-motion`; also (9) closing one of two stacked modals unlocked the page
+    scroll under the other (one boolean, no count). The user chose: a click on the dark area is ignored once something was typed
+    or chosen (Esc, the close button and Cancel still close), and the phone handle gets a real swipe-down-to-close. Fix, props
+    unchanged, so no screen was edited: a module-level stack of open modals (Escape belongs to the last only, and not when
+    `e.defaultPrevented`, which is how a dropdown or menu inside says "I used this key": `SearchableSelect` now calls
+    `preventDefault` and `stopPropagation` when Escape closes its list); `role="dialog"`, `aria-modal`, `aria-labelledby` /
+    `aria-describedby` from the title and description (`useId`); a "Close" label (`ui.generic.close`, en and ar) with the drawn
+    cross hidden from a screen reader and in `textSecondary`; focus remembered on open and given back on close (also when the
+    parent unmounts the modal; skipped when the opener left the page); a Tab trap (wraps at the first and last control; skips a
+    disabled or `display:none` control, judged by computed style because jsdom's `offsetParent` is always null); a counted
+    scroll lock; the swipe on the handle only (90 px, springs back, ignores an upward pull and a cancelled touch); a
+    reduced-motion rule in `themes.css` keyed on `data-modal-panel` / `data-modal-backdrop` with `!important` (the
+    animation is inline, #88); and a short bump of the panel (Web Animations, not under reduced motion) when a click on the
+    dark area is ignored, so it does not look dead. Traps met. (a) A dropdown's list is a PORTAL: React sends its key and mouse
+    events up the REACT tree, so they reach the modal panel's handlers. The Tab trap therefore acts only when
+    `document.activeElement` is inside the panel's own DOM (focus in the dropdown's search box is left alone), and "something
+    was chosen" cannot be seen as an input event (choosing an option fires none inside the panel), so a mouse press or Enter
+    that comes from OUTSIDE the panel's DOM counts as dirty. (b) A synthetic `stopPropagation` in a handler on a portal stops
+    the native event before it reaches `document`, where the modal listens. (c) jsdom has no `scrollIntoView`, `matchMedia` or
+    `Element.animate`: stub them in the test, and play pointer events as `MouseEvent`s of the pointer type. (d) My first
+    "skips folded-away controls" test put the hidden button in the middle, where it can never matter; the mutation that
+    removed the rule survived until the hidden and disabled controls were put at the END of the footer, where the trap's
+    first/last logic reads them. Test each skip rule at the edge it guards. Not done: `Drawer`, `StageEditDrawer`,
+    `SearchPalette` and `HelpDrawer` are separate overlays and have the same gaps (no role, no focus return); a native
+    `<select>` open inside a modal and Esc was not tested; dragging the title row (only the handle drags); the phone sheet was
+    checked in a unit test, not on a physical phone. Tests: `Modal.test.tsx` (47; 31 mutations, all killed).
+    Related to #42 (a popover and its clipping), #79 (a control that hid its real input) and #88.
+
+99. **A two-column page leaves an empty column when one side is conditional, hard-coded light colours break the dark theme,
+    and "redesigned" is not the same as "built from the newest controls".** After the PO page shell (#97) the user came
+    back three times in one session: "the PO pages still show the old UI on some of the stages" (a Closed PO: the Next
+    Step column is not drawn, but its column still was, so the lines sat shoved to the right with 40% of the page empty),
+    "this UI is not correct" (my first fix made the Next Step card full width while its form stopped at 960px, so the status
+    tag sat at the far right edge, away from a form with empty space beside it), and "the compact strip's colours and size
+    don't match the new design" plus "these two also" (the Employee and Advance pickers: a default-height box beside a
+    native grey 7px-padded select with a paler, bolder label). Fixes: (a) ONE column: the Next Step card above the tabs only
+    while a form is wanted, the lines across the whole width (the old test that pinned a 4:40 flex ratio between the two
+    columns was replaced by "one column, the card above the lines, nothing reserves space at Closed"). (b) The stages whose
+    only step is "record the delivery" (approved, bought, goods received with nothing recorded: a message and one
+    button) have no card: the message and the button are the `StageActionBar` at the bottom, like the requisition's steps;
+    the draft-receipt notice stays above the tabs; `hasAnyReceipt` was lifted out of the stage block and the now-dead
+    "nothing recorded" branch deleted. (c) The Next Step is a compact strip: a small-caps label, no status tag (the header
+    and the progress bar already say it), the funding choice as two `ChipButton`s with Confirm on the same row (a solid
+    40px `ActionButton`, under the advance pickers once "Employee advance" opens them), and the card body at 960px only
+    for the longer forms. (d) The two pickers use SearchableSelect's `field` look and a native select styled to the same
+    40px / 10px corners / `borderField` edge / one label style. (e) The message boxes in the Next Step region were fixed
+    light colours (`#f0fdf4`/`#16a34a`/`#166534` green, orange, red trios) that are unreadable on the dark theme, which the
+    user's earlier screenshot was in; they are now `successBg`/`successBorder`/`success` and `warning` / `danger`
+    tinted by alpha. Traps. (i) I checked my layout in a 1,440px window and the user's window is 1,690px wide: a cap that
+    looks fine at one width leaves a stranded element at another; look at the page at the user's width, and never cap a
+    body while its header spans the card. (ii) "Match the new design" means the controls, not only the card: before saying
+    a screen is done, list every button, select and chip inside it and compare each with what the newest screen uses
+    (`ActionButton` solid 40px, `ChipButton`, a `field` box); the shared `Button` primary is a pale tint and a bare
+    `<select>` is a grey box. A native select in the same row as a styled one is the giveaway. (iii) `ActionButton` did
+    not forward `data-tour` either (the same class as `Card`, #97a); the walkthrough anchor `po-record-receipt-btn` would
+    have gone dead when the button was swapped, so the prop was added and tested. (iv) Several messages arrived while I
+    worked and each was short; when two readings are possible for a layout, one question with drawn options (a strip, a
+    bottom bar, a side column) settled it in a single round. (v) A mutation first survived because the "confirmed receipt"
+    test also had a line already received, so either half of the check alone passed; the test now has a confirmed receipt
+    and an unreceived line. Not done, by design: the long forms inside the Next Step card (finance review and audit, the
+    items-bought checklist, the pricing panels of whole-flow POs) keep their inside look; only the card around them, its
+    message boxes and the Payment pending strip were rebuilt. Tests: `poDetailShell.test.tsx` (56, most of them for this
+    pass: the bar stages, the card, the strip, the two pickers; 33 mutations on this pass, all killed),
+    `poLinesView.test.tsx` (the layout test). Related to #97, #75, #80, #88.
+
+100. **An overlay that rolls its own behaviour keeps every gap the shared one just fixed, and a form's boxes drift into
+    three families.** The user: "do the Drawers and the rest of the PO forms", with a screenshot of the new-requisition form:
+    the Priority box and the Expected Delivery date drawn in the browser's own grey chrome (a black arrow, a thin pale edge,
+    36px) between searchable pickers in the newer style, and the second column starting at a different place on each row.
+    (a) *Drawers.* `Drawer` (6 screens), `StageEditDrawer`, `HelpDrawer` and `SearchPalette` each rolled their own overlay: not
+    a dialog for a screen reader, no Tab trap, no focus return, a `Drawer` fixed at 460px on a 390px phone. `HelpDrawer` stayed
+    mounted off screen while closed, so its buttons were still reachable by Tab and a screen reader, and `AppShell`'s own global
+    Escape handler closed Help and Search on ANY Escape, even one meant for a dialog opened on top of them. The Modal's behaviour
+    moved into one module, `components/ui/overlay.ts` (`useOverlay`: Escape for the TOP overlay only and not when something inside
+    used the key, a counted page lock, focus in and back; `trapTab`; `useDirtyGuard`: a click on the dark area is ignored once
+    something was typed or chosen; `nudge`). Modal, `Drawer`, `StageEditDrawer` (rebuilt on `Drawer`), `HelpDrawer` and
+    `SearchPalette` all use it, so a dialog opened from a drawer is on top of the stack for Escape. `AppShell` no longer closes
+    Help and Search itself, and its "type anywhere opens the search" shortcut now stays out of the way while a modal dialog is
+    open (focus sits on the dialog's panel, not in a box, so a letter typed there used to open the search behind it). A closed
+    `HelpDrawer` is `aria-hidden` and `visibility: hidden` after its slide (`transition: ... visibility 0s linear .28s`).
+    How to spot it: an overlay with its own `addEventListener('keydown')` and a `position: fixed` backdrop (`grep -rn "Escape"`
+    across components); Tab from the last control reaching the page behind; a drawer whose `role="dialog"` is in the DOM while
+    it is closed. `Drawer` keeps its props and gains `description`, `footer` and `closeOnBackdrop`; the six screens that use it
+    were not edited.
+    (b) *A save that threw out of the click handler.* `StageEditDrawer.handleSave` was `try { ... } finally { setSaving(false) }`
+    with no `catch`: a refused save was an unhandled rejection and the person saw nothing (the class of #85d and #89). Found
+    because the new test of a refused save made vitest report an unhandled rejection. It now toasts the server's sentence (REST
+    `response.data.error.message`, else the GraphQL error's own message, never axios' "Request failed with status code 500") with
+    a translated fallback (`proj.stageEdit.couldNotSave`).
+    (c) *The field look.* `Input`, `Select` and `Textarea` take an opt-in `field` prop (the searchable select already had one): 40px,
+    10px corners, the readable `borderField` edge, the focus edge turning to the accent and back to the FIELD edge (not the pale
+    one), and a native select with the browser arrow hidden and the searchable select's own 12px chevron drawn as a background
+    image (on the left in Arabic). One source, `components/ui/fieldStyles.ts` (`fieldControlStyle`, `fieldTextareaStyle`,
+    `denseFormStyles`). Applied to every box of the requisition form, the PO form, the receipt form and the return form, and to the
+    PO page's Edit PO / Admin correction / receipt-draft forms and the requisition page's edit-request form, which carried three
+    copies of one `inputStyle` (7px 10px, 6px corners, canvas fill, hairline edge): now `denseFormStyles` (36px, 8px corners,
+    `borderField`, the shared chevron). Details that matter. A raw `<input>` has no focus handler, so the dense styles do NOT set
+    `outline: none` (the browser's focus ring stays; the component versions draw the accent edge instead). The old labels were 11px
+    uppercase `textMuted` (2.6:1, #75), now 12px/500 `textSecondary`. The flag-reason box on a flagged line and the comment box used
+    fixed light colours (`#fff`, `#fca5a5`, `#991b1b`) and were unreadable in the dark theme, now tokens. The store-price,
+    market-price and actual-price boxes of the pricing panels use the same boxes (and `field` on the currency pickers beside them).
+    Left alone on purpose: the vendor and receiver selects inside the PO summary tiles (large and borderless by design), the admin
+    override status select (a danger-bordered control), the funding advance select (already styled in #99), and every `Input` /
+    `Select` / `Textarea` of the other ~90 screens (the prop is off by default).
+    (d) *Rows that lined up only by accident.* The requisition form's detail rows were flex rows with `flex: 1 1 240px`, `1 1 200px`,
+    `1 1 160px`, so the second column started 10 to 30px apart from row to row. Now one grid per row,
+    `repeat(auto-fit, minmax(min(100%, 240px), 1fr))`, children `minWidth: 0` (the PO form the same with 210px), one column on a
+    phone. How to spot it: a form whose columns "wobble" down the page; any `flex: '1 1 Npx'` with a different N on each row.
+    (e) *Harness traps, all found by reading the `Errors` line and not only the pass count.* Vitest exits 1 when there are unhandled
+    errors even if every test passes, and `Modal.test.tsx` had been doing that: jsdom has no `setPointerCapture` (the phone-sheet swipe
+    tests threw inside the handler, so stub it), and two tests assigned `HTMLElement.prototype.animate` / `window.matchMedia` stubs
+    that `vi.restoreAllMocks()` does not remove, so the NEXT test's ignored-click bump read `matchMedia(...)` as undefined (keep the
+    originals at module level and put them back in `afterEach`). A hidden dialog has no accessible name in testing-library, so
+    `getByRole('dialog', { name, hidden: true })` fails (look it up without the name). jsdom drops a three-value
+    `background-position`, so the chevron's side is tested on the style function. A report of "all green" must include the `Errors`
+    line and the exit code.
+    (f) *A listener re-registered on every render misses the event that caused the render (found in a real browser, not by any
+    unit test).* The first version of `useOverlay` registered its Escape listener in an effect that depended on `onClose`, and
+    `AppShell` passes `onClose` as a new inline function on every render. On a phone the shell's own Escape handler runs first
+    and changes state (it also closes the phone navigation); the synchronous re-render swapped the overlay's listener in the middle
+    of that dispatch, and a listener added during a dispatch is NOT called for that event, so the Help drawer, opened from the
+    phone menu, ignored Escape (40 Tab presses stayed inside, Escape did nothing; on a desktop nothing re-renders, so the same code
+    worked). Moving Help and Search off the shell's global handler would have shipped that as a regression on every phone and
+    tablet. Fix: the listener is registered once per opening and calls the NEWEST `onClose` through a ref
+    (`components/ui/overlay.ts`). The jsdom test reproduces the mechanism, not the symptom: an earlier listener calls
+    `flushSync` to re-render the page during the same Escape (`overlay.test.tsx`; the old code fails 3 of its 5). How to spot it:
+    an overlay that "ignores Escape" only where some other handler also reacts to the key; any `addEventListener` inside an effect
+    whose deps include a callback prop. Check overlays in a real browser at a phone width, with another handler for the same key.
+    (g) *`StageEditDrawer` is unreachable.* `'stages'` is not in the project page's `ALL_TABS` and nothing calls
+    `setTab('stages')`, so the Stages tab block of `ProjectDetail` (its Add Stage button, the stage list, the only callers of
+    `StageEditDrawer`) cannot be shown; the drawer was rebuilt and unit-tested but could not be opened in a browser. NOT removed
+    (not asked, and someone may mean to bring the tab back); remove it or restore the tab on the user's word. Grep the callers of a
+    component AND how its trigger state is set before spending time on its look (#12).
+    (h) *A translation called without the value it interpolates prints the raw placeholder.* The notifications drawer's "unread"
+    section heading was `t('shell.notifDrawer.unread')`, a `{{count}} unread` string, called with no `count`, so the page showed
+    `{{COUNT}} UNREAD` above a badge that already had the number (it is in the user's own screenshot of the drawer). It is now its own
+    string, `unreadSection` ("Unread"), in both languages; the test fails on any `{{` in the drawer's text. How to spot it: a
+    translation key with `{{x}}` called with no options; a label on screen with braces in it.
+    Not done: `NotificationsDrawer` (a `Drawer` user) was not checked beyond its heading and its title alignment; the forms outside procurement still
+    have the plain boxes (add `field` where they are touched; the vendor form was done with the PO forms); `Dropdown`, `ColumnsMenu` and `Tooltip` popovers were not
+    checked; Arabic / right-to-left of the drawers and the chevron side, the dark theme of the new boxes, and a physical phone were
+    not looked at in a browser (a real browser WAS used for the desktop requisition form, the Help, notifications and search overlays at
+    a desktop and a phone width, Tab and Escape).
+    Tests: `overlay.test.tsx` (5), `Drawer.test.tsx` (29), `HelpDrawer.test.tsx` (14), `SearchPalette.test.tsx` (11),
+    `StageEditDrawer.test.tsx` (18), `NotificationsDrawer.test.tsx` (4), `fieldControls.test.tsx` (23),
+    `RequisitionFormFieldLook.test.tsx` (8), `VendorFormFieldLook.test.tsx` (2), the "Edit PO form: its boxes are in the shared
+    field look" block in `poLineCurrencyPage.test.tsx` (5), and `Modal.test.tsx` (47, now exit 0). Mutation-checked: 68, all killed
+    except one equivalent mutant (Tab trapped for focus outside the panel: with focus outside, the first/last test can never match,
+    so nothing observable changes); three survived at first and each named a weak test (a "does not treat other keys as Tab" test
+    that never focused the box, so the early return answered; a save button never checked while saving; the equivalent one).
+    Related to #98 (the Modal), #97, #99, #75, #85d, #12.
+
+101. **A restyled control whose OPEN state the browser draws, and a "done" report that left the same old thing in many
+    places.** After #100 the user sent a screenshot of the Priority box on the New Requisition form: the closed box was in
+    the field look, the list under it was the browser's own grey Windows popup, and they wrote "you did an amazing job with
+    some but left some other same as they were". An earlier screenshot said the same about the searchable picker's list
+    ("the dropdowns itself still is the old"). The `field` prop of #100 reshaped the CLOSED box only. A `<select>` opens a
+    popup that inline styles cannot reach at all, and the searchable select's list was a hand-drawn panel that still used
+    `#ffffff`, `#1a1a2e`, an indigo that is not the accent, 8px corners against the 10px boxes, no tick on the chosen row,
+    a physical `text-align: left` on the Arabic line and no focus ring or focus return. How to spot it: for every control,
+    look at its OPEN state and its keyboard state, not only the resting one; count every place a pattern lives before
+    saying "done" (`grep -c '<select'` found 113 raw selects and 54 `<Select>` boxes with `<option>` children, none of them
+    reached by the first pass).
+    What was done (all local, uncommitted):
+    (a) *One menu look.* `components/ui/menuStyles.ts` (`menuPanelStyle`, `menuItemStyle`, `menuSeparatorStyle`,
+    `menuFocusRing`): a 12px card on `bgSurface` with the `borderStrong` edge, rows that are 8px pills (concentric
+    corners), the accent tint under the pointer or keyboard, a stronger tint plus the solid accent text (the pale accent is
+    4.19:1 on its own tint) plus a TICK on the chosen row (not colour alone), 40px rows and 44px on a phone, a danger row
+    that tints red. The searchable select's list, the Columns menu and the "⋯" menu all use it; the entrance animation is
+    `fnc-menu-in` in `themes.css`, off under reduced motion.
+    (b) *The searchable select.* The value `''` row ("Select branch...", "Custom item") is "no choice" and is never drawn
+    as chosen (the old list drew it as a selected blue italic row, which is what the user's first screenshot showed); the
+    list opens on the chosen row; `role=button` + `aria-haspopup=listbox` on the field, `listbox` / `option` /
+    `aria-selected` / `aria-activedescendant` in the list; focus goes back to the field on select, Escape and Tab (the list
+    is a portal, so focus was simply lost before); the field has a keyboard-only focus ring; scrolling the LIST no longer
+    re-places it and re-draws up to 200 rows on every wheel tick; the highlighted row is kept in view by measuring the
+    list's own scroll box, not `scrollIntoView` (which also scrolls the page, and does not exist in jsdom: using it made
+    two `MyAdvanceModal` tests throw as soon as the list opened on a chosen row); the Arabic line is a block that follows
+    the page's direction with only the text `dir="rtl"` (#80), and an English name is a `<bdi>` so `PVC pipe 1.5"` does
+    not put its closing quote on the wrong side in an Arabic row.
+    (c) *Native selects.* Chrome and Edge 135+ can draw a select's popup from CSS (`appearance: base-select`,
+    `::picker(select)`, `option:checked::checkmark`). One `@supports (appearance: base-select)` block in `themes.css`
+    gives EVERY `<select>` (all 167) the same menu look with no markup change and no test rewrite, reading the theme through
+    CSS variables (`ThemeContext.applyTokens` now also publishes `--border-field`, `--accent-solid`, `--accent-solid-hover`,
+    `--accent-solid-text`). It needs `!important` for `appearance`, `background-image` (the field look draws its own chevron
+    as an inline background) and `padding-inline-end` (36px of room for that chevron); the chevron is the select's own
+    `::picker-icon`. A multiple select is left alone. Browsers without it (Safari, Firefox) keep their own popup and the
+    inline chevron, and a phone keeps its own picker. NOT covered: the calendar of a native `<input type="date">`, which no
+    CSS can restyle (the date boxes still open the browser's calendar; the `DatePicker` component is the replacement, used
+    on two pages). A first version of the block shipped for a few minutes with the CLOSED box broken (the user's next
+    screenshot: the label stuck to the top of the 40px box and the chevron right beside it): a customizable select lays its
+    content out itself, so the rule must say `display: inline-flex; align-items: center; justify-content: space-between`,
+    and the browser's own outline on the focused row doubled the chosen row's edge (`outline: none`; the tint shows focus).
+    Check BOTH states (closed and open) of a restyled control in a real browser before reporting it.
+    (d) *Other popovers.* `DatePicker` was rebuilt (a portal so a card cannot clip it, the solid accent for the chosen day,
+    today outlined, days outside min / max dimmed and disabled, a Today button, Escape, labelled month arrows that swap in
+    Arabic; it read `"2026-12-01"` through `new Date(...)`, which is midnight UTC and so November in a negative offset, and
+    now reads the numbers). `OverflowMenu` moved to a portal (found in a browser: inside a `Card` it was clipped, #42) and
+    has hover and focus states it never had. `NotificationItem` was a `div` with an `onClick`: a keyboard user could not open
+    a notification at all (now `role=button`, tabbable, Enter and Space), and its times were hard-coded English in the Arabic
+    UI (`shell.notifDrawer.justNow` ... `daysAgo`). The notifications drawer's buttons are `ActionButton`s.
+    (e) *The PO pages.* The 46 shared `Button`s on the PO page (whose primary is a pale tint) and the ones on the receipt,
+    PO, return and edit-request forms are `ActionButton`s (primary to solid, secondary to outline); the fixed `#2563EB` and
+    `#16A34A` brand constants, `PRIMARY_CTA_STYLE` and about 100 literal hex colours (light pink and green boxes, bright red
+    text, unreadable in the dark theme) became theme tokens by role (danger, success, warning, info and their backgrounds
+    and borders; a codemod keyed on the hex maps each one to the token of the same ROLE, turns `'1px solid #fecaca'` into a
+    template string, and `tsc` then finds the module-level uses that have no `theme`). A white tick on a coloured fill
+    became the theme's pale tint (white on the dark theme's light green is 1.7:1). The PO print dialog and the comments
+    dialog (both hand-rolled overlays with no Escape, focus trap or dialog role) are the shared `Modal`; `LineCommentsModal`
+    (the requisition twin) is too.
+    (f) *The field look everywhere.* `field` was added by script to every LABELLED `Input` / `Select` / `Textarea` /
+    `SearchableSelect` / `DatePicker` outside filter bars (about 345 tags in ~90 files): a control with no `label` is a
+    filter or a table cell and stays compact. `lib/__tests__/formLookCoverage.test.ts` reads the source and fails for a
+    labelled control without `field` (filter bars are an explicit list, itself checked) and for a fixed hex, brand constant
+    or shared `Button` in the PO files.
+    Still the OLD look (not done): other hand-rolled overlays with no Escape or focus trap (the `RequisitionDetail` print
+    dialog, `StoreInDetail`, `StoreOutDetail`, `POReturnDetail`, the photo viewer on the PO page, and the `position: fixed`
+    dialogs of about twenty finance pages); the shared `Dropdown` (no caller anywhere); raw `<button>`s that are toggles or
+    links; the native calendar of `type="date"`; the INSIDE arrangement of the PO Next Step forms (their boxes, buttons and
+    colours moved, the layout did not); hard-coded hex elsewhere in the app (`InvoiceBuilder`, the category icons of
+    `NotificationItem`, many pages).
+    Traps met. (1) `Select` with a placeholder prepends `{ value: '', label: placeholder }`, which is the "Select branch..."
+    row. (2) `role="button"` on the picker's field made its accessible name collide with a vendor chip of the same name in
+    `ItemsBoughtPage` (`getByRole('button', { name })` found two): select the pressed one. (3) A heredoc and `node -e` ate
+    regex backslashes or refused to parse three more times (#69): write scripts and long text with the file tool. (4) I
+    could not log in to the dev app (the password is deliberately never written down), so the popovers were checked in a
+    STANDALONE page: esbuild bundles the real components, headless Chrome opens each one (`scratchpad/menus/`: `harness.tsx`,
+    `build.mjs`, `shoot.mjs`; theme and language come from localStorage; the base-select popup is a top-layer element, so a
+    screenshot shows it). A page that renders the real component with no login is a good way to see a popover when the app
+    needs credentials. (5) A mutation run edits the real source files: do not build the harness or edit those files while
+    it runs (a build in the middle could bundle a deliberately broken file).
+    Tests: `menuStyles.test.ts`, `SearchableSelectMenu.test.tsx`, `DatePicker.test.tsx`, `NotificationItem.test.tsx`,
+    `LineCommentsModal.test.tsx`, `theme/__tests__/nativeSelectPopup.test.tsx` (pins the CSS block and that every variable it
+    reads is set by the theme provider), `formLookCoverage.test.ts`, more cases in `ColumnsMenu.test.tsx`,
+    `OverflowMenu.test.tsx` and `poDetailShell.test.tsx` (the print dialog is a named modal; the stage button is the theme
+    accent in both themes). Related to #100, #98, #80, #75, #42, #25.
+
+102. **A receipt form that asked for the same facts in three places, and one rule for "what is still missing".** The Record Goods
+    Receipt page (`pages/procurement/receipts/ReceiptForm.tsx`) was redone in the newer look: numbered cards (details, what arrived,
+    proof of delivery), a sticky summary with a checklist, and a bottom bar with Cancel and the one main action. The page's old
+    refusals were scattered through `handleSubmit`; now `lib/receiptLines.ts` holds ONE list, `receiptRequirements` (receiver, items,
+    vendor receipt, materials photo; the admin override counts both photos as done), and the checklist card, the bar's status line and
+    the submit refusal all read it, so a card cannot say "ready" while the button refuses (same family as #24 and #97b). A line with
+    nothing left to receive can no longer be ticked (it used to be tickable and then refused at submit). Traps met: (a) the lines
+    table was wider than its card, so "Receive now" sat behind a horizontal scrollbar (#40 again): the from-stock column became a
+    sub-line of the item, the tick column's header is hidden from sight (a screen reader still hears it) and the Received header is
+    shorter; (b) the shared `Checkbox` gained `ariaLabel` and a `large` size for a phone tap target, with the unticked border left as
+    `borderInput` because its own test pins it; (c) `getByRole('button')` found two buttons after a `role="button"` picker was added,
+    so tests select the pressed one. Real browser: Store In and jobsite destinations, desktop, phone, dark theme and Arabic, with the
+    dev login typed on the command line only, never written to a file. Mutation-checked: 46 mutations, all killed. Not exercised: a
+    real submit of a receipt (it writes to the dev database). Tests: `lib/__tests__/receiptLines.test.ts`,
+    `receipts/__tests__/ReceiptFormLayout.test.tsx` (46), `ReceiptProofTile.test.tsx`. Related to #40, #76, #97.
+
+103. **The PO page at Goods received, Finance review and every tab, and a picture window for the auditor.** Sessions of "the page
+    still looks old" came back to four causes, all fixed here.
+    (a) *Two meanings of "received" on one page (#41, now fixed).* `lib/poLineCoverage.ts` answers "how much of this line has arrived"
+    (received plus what stock covers, `arrived` uncapped so an over-receipt still reads 6/4, `covered` capped for the bar), and one
+    component, `LineCoverageCell`, draws it in the Lines table's Received column and in the Finance audit, so a line covered from stock
+    reads 5/5 in both (it used to read 0/n in the table and 100 % in the panel). The Goods received "Next Step" card (a coverage list per
+    line) is gone: its job is the Lines table plus a bar.
+    (b) *A step that is a message and a button is a bar, and a bar is outside the card's `<fieldset disabled={lock.lockedByOther}>`.*
+    Goods received (something recorded) and Finance review are `StageActionBar`s. The old Next Step card hard-blocked every control
+    while someone else held the edit lock by sitting inside one `fieldset`; a bar does not, so each button carries `disabled={lock.lockedByOther}`
+    itself (tested and mutation-checked for each). Who sees what did not change: Send to Finance Audit is for whoever saw it before; the
+    audit controls are for system-level users and the finance team (`callerIsFinanceTeam`); everyone else at Finance review gets a bar that
+    only explains and no buttons (before, an empty "Next Step" card).
+    (c) *The Actions popover used `window.prompt` for the cancel reason, and cancelled the PO whichever button was pressed in the
+    prompt.* `const reason = window.prompt(...) ?? ''` then `cancelPO(...)` ran even on Cancel. Actions is now a button that opens the
+    shared `Modal` (Escape, focus trap, a real reason box, Cancel PO as an explicit danger button), with the same gates: every viewer until
+    the PO is cancelled or deleted, system-level always; the admin status override only for system-level. On a phone it is an item in the ⋯
+    menu. The override list is the same 20 statuses.
+    (d) *The audit lives in the Lines card, not beside it (the user's call: "merge Finance Audit with Purchase Order Lines").* A first
+    version drew a second card with its own table; it repeated Item, quantity and prices. Now, while the order is at Finance review and
+    the viewer may audit: the Lines table gets a Check column (OK / Flag, `aria-pressed`, named for the line), the Actual price column is on
+    by default with "▲ +10.0% vs PO" (red) or "▼ -10.0% vs PO" (green) under it, a warning when the buyer has not recorded a price, short /
+    over under Received, a tint for checked lines, the flag-reason box under the line, and a progress bar in the card header. The Check column
+    is not in the Columns menu (it cannot be hidden while there is an audit, #76a). `lib/poAudit.ts` is the one rule: `auditProgress` feeds
+    the header, the bar's badge and the Pass Audit label (pending is named before flagged, because that is what blocks first), and
+    `auditPrices` the variance. Pass Audit stays disabled until nothing is flagged or pending, as before; an order with no lines can be passed,
+    as before. The mutations (`setPOLineAuditStatus`, `passPOAudit`, `failPOAudit`) and their variables are unchanged.
+    (e) *"Finance has to flip between the Receipts tab and the Lines tab to read a receipt photo and then find the line again."* Solution
+    (the user's idea, after three layouts were sketched): the receipts and photos open in a window of their own that can be dragged to a
+    second screen. `PoPhotoViewer` (`components/procurement`) shows every picture of the order grouped (buyer receipts, vendor receipt,
+    materials, delivery photos, other files), with zoom (wheel, + and -, double click), drag, rotate (receipt photos are often sideways), the
+    arrow keys (swapped in Arabic) and a PDF in a frame. It needs no backend change: the receipts' `photos` plus `entityAttachments` and
+    `fileDownloadUrl` for the attached files; a cancelled receipt's pictures are left out; signed links are asked for again when the window
+    is clicked back into after ten minutes (a window left on a second screen for an hour holds expired links). Two ways to open it:
+    a pop-up window (`lib/poPhotoViewer.ts`, route `/viewer/purchase-orders/:id/photos` outside the app shell, position and size remembered
+    per browser in `localStorage`, an open window is focused rather than reloaded, a phone gets a tab) and, where the browser has it, a
+    floating Document Picture-in-Picture window. The second exists because the first cannot be made plain: **a pop-up always shows the
+    browser's title bar and address bar and a page cannot hide them** (the user asked to remove "the edges marked in yellow"); the
+    picture-in-picture window has only a thin title bar, floats above other windows and can be dragged to any screen. It is a portal of
+    the PO page (`hooks/usePhotoPip.ts`, `components/procurement/PhotoPipPortal.tsx`, styles and root attributes copied by
+    `lib/photoPip.ts`), so language, theme and data connection are the page's own, it follows the PO shown, and it closes with the page
+    (a picture-in-picture window cannot outlive the page that opened it, so leaving the PO closes it; the pop-up survives). Buttons: in the
+    Lines card header while auditing (for whoever audits) and at the top of the Receipts tab. Verified in a visible Chrome (headless cannot
+    open one): the window opens on a real click, the viewer renders in it with the app's styles and the receipt photo fits. NOT verified:
+    the title bar of the window in Edge, a physical second monitor, Arabic and phone in the viewer.
+    Traps met. (1) *An effect keyed on a flag that does not mean "the element exists".* The viewer measured its picture area in an effect
+    that depended on `!!selected`; the area is drawn only after the order's data arrives, and the attachments can arrive first, so the
+    effect ran while the area was not mounted and never again: the first photo showed at its native 3024 x 4032 instead of fitted (found in
+    the first real-browser screenshot, invisible to every unit test). Keep the element in state (`ref={setEl}`) and key the effect on it.
+    (2) *A mocked hook that returns a new object every render hangs a test instead of failing it* (#60.3, #72i): `useApolloClient` mocked as
+    `() => ({ query })` re-ran the page's fetch effect for ever, and vitest sat for 400 s; mock one stable object. (3) `vi.restoreAllMocks()`
+    in an `afterEach` empties every `vi.fn().mockResolvedValue(...)` of the file, so the NEXT test throws "Cannot read properties of
+    undefined (reading 'then')" from inside the component (twice; restore only the spies you made). (4) jest-dom refuses an element of a
+    document with no window (`document.implementation.createHTMLDocument`): read the attribute directly. (5) jsdom has no `PointerEvent`:
+    play pointer events as `MouseEvent`s of the pointer type, and stub `setPointerCapture`. (6) A shell one-liner with backticks inside
+    double quotes truncated `graphql/procurement.ts` while appending a query (the file ended at `= gql`); use the edit tool for code with
+    template literals (#69), and `git diff --stat` after any scripted append. (7) `eslint --fix` re-wraps long ternaries, so a mutation
+    pattern written before the fix stops matching (the runner says "PATTERN MATCHED 0 TIMES", which is not a result): re-read the formatted
+    lines before mutating. (8) A test for "no card, one instruction" has to look for the text ONCE on the whole page, not inside a card.
+    Lines cards on a phone (asked for after seeing the PO beside the requisition): the PO's item cell is the requisition's (name, Arabic
+    name under it, SKU; the catalog name only when the description was edited to say something else, it used to be printed twice), the
+    fields follow the column order (Qty first, Total, Received and Notes last: the PO had `mobilePriority` numbers that put Notes and
+    Total on top), and the cards have a gap because the page's `getRowStyle` no longer paints over them. Root cause of "no space between
+    the rows": `getRowStyle` returned `background: 'transparent'`, a 1px bottom border and a 3px transparent left edge for EVERY row, which
+    is right for a `<tr>` and wipes out a phone card's fill and edge, so the Table's 8px gap between cards was between two invisible boxes.
+    A style function shared by the desktop row and the phone card must say when it has nothing to add (`{}`). The Lines card around the
+    cards is only a heading on a phone (no second border). The SKU needed no backend change: the PO line builder already returned it and
+    the page's query had never asked (`sku` added to the lifecycle query, its generated type and `POLine`). Tests: the two "Lines" blocks
+    at the end of `poGoodsReceivedPage.test.tsx`; 8 mutations killed.
+    The other tabs. Receipts: location and receiver as a definition list, a Confirmed badge, secondary text in the readable grey (#75).
+    Returns: each card is a keyboard link (`role="link"`, Enter and Space, a focus ring), the raw status goes through `enumLabel` (new
+    `enum.credited`). Approval Log: the shared `ActivityTimeline` (now taking `actionLabel` and `actionTone`; the PO's words and colours are
+    `getPOLogActionLabel` / `getPOLogActionTone` in `lib/po-constants.ts`, decided from the action NAME, #25a), a composer with the shared
+    textarea, notes as quotes. Edit requests: Remove / Restore are real buttons, the form and the history no longer touch each other.
+    Comments dialog: the flag choice is the shared `ChipButton`, left edges are logical. Everywhere: translucent `rgba(...)` literals that
+    only suited the light theme are theme tokens with an alpha suffix, figures use tabular digits instead of a monospace face, the Arabic
+    name under an item follows the page's direction (#80). Shared pieces gained opt-in options only: `TabBar readable` (inactive tabs in the
+    readable grey, active in the solid accent, a keyboard ring; used by the PO and requisition pages), `Textarea autoFocus`,
+    `Checkbox ariaLabel` / `large`, `ActivityTimeline` label and tone functions.
+    Tests: `poGoodsReceivedPage.test.tsx` (42), `poFinanceAuditPage.test.tsx` (37), `PoPhotoViewerPage.test.tsx` (37), `poLineCoverage`,
+    `poAudit`, `poPhotoViewer`, `photoPip`, `usePhotoPip`, `OpenPhotosButton` and `TabBar` tests, and the older shell and lines suites updated
+    where they pinned the old layout (the phone menu now lists Actions; Goods received has a bar, not a card). Full web suite: 185 files,
+    2,835 tests, tsc and the new files' lint clean. Mutation-checked: 112 mutations on this work, all killed (receipt page: 46 of 46).
+    Two lessons from the run. (a) *A mutation run edits the files the dev server is serving*, so the user's open browser would have shown
+    deliberately broken code; the first attempt was stopped, and a kill in the middle left `PurchaseOrderDetail.tsx` mutated (found by
+    comparing every target with a backup copy taken first, then restored). Run mutations in a copy of the app (`src` copied, `node_modules`
+    junctioned, `node node_modules/vitest/vitest.mjs run`, never pnpm there) and keep backups either way. Also never kill the runner by a
+    command-line pattern that matches your own waiting shell. (b) One survivor was a real missing test (a price difference of 0.001 % must
+    not be reported), the other printed `Tests no tests`, a transient collection failure that was killed on a clean rerun (#17): rerun a
+    "no tests" result alone before reading it as a survivor. Related to #24, #40, #41, #42, #60, #75, #76, #80, #97, #98, #100, #101.
+
+104. **A list kit four screens share, two angle quotes the browser already mirrors, and a floating list inside a scrolling
+    panel.** The request: "now lets redo these two pages" (Purchase Orders and Requisitions lists), and the user chose all
+    four areas: summary tiles, table rows, filters and search, page header and actions.
+    (a) *What changed, and who else gets it.* `components/procurement/ListKit.tsx` is the kit of four screens (the PO list,
+    the Requisitions list, My Queue and Cost Change Approvals), so the restyle reaches all four; the user was told, and the
+    two other screens were NOT looked at (no login, see (d)). New or rebuilt pieces: calm KPI tiles (a filter tile says
+    whether it is on with `aria-pressed`; a tile that navigates does not), `SearchBox`, `PillSelect` (what it filters, then
+    what it is set to), `MoreFilters` (a named dialog, Escape returns the focus), `FilterChips` (EVERY applied filter is a
+    chip that can be taken off, including the ones no visible box shows: a tile's quick filter, "only mine"), `EmptyState`
+    with a way out, `PriorityTag`, `PersonCell` (a soft tint with a dark letter, #75), `StageMini`, `RowMenu` (a real menu:
+    arrows, Home, End, Escape, Tab, `menuitem`), `Pagination` (a landmark, `aria-current`), `SelectionBar` (a region).
+    Shared components gained OPT-IN options only: `Table readable` (headings in the readable grey, a row that opens something
+    is a keyboard stop with Enter, Space and a keyboard-only ring), `Checkbox indeterminate` (the select-all box says "some"),
+    `FilterPresets inline`. `FilterPresets` is used by 12 pages and got a polish that changes them all: readable greys, the
+    readable edge, the menu card, a solid Save button (white on the pale accent was 4.19:1), and the name box lost an
+    `outline: none` that left it with no focus indicator (#100).
+    (b) *`‹` and `›` are mirrored by the browser in an RTL page, so swapping them in code flips them back.* Playbook #25 said
+    "directional glyphs (`‹ ›`, arrows, chevrons) don't mirror by themselves: swap them with `useIsRtl()`". For arrows and
+    triangles that is true; for the angle quotes it is wrong (they are Bidi_Mirrored characters, like brackets). Found in a
+    ZOOMED capture of the Arabic pager, not by any test: Previous, at the page-1 end, pointed AWAY from page 1 and Next
+    pointed the wrong way too. HEAD had the same swap, and so did three more places: `AttendanceCalendar` (older code),
+    `DatePicker` (#101, mine) and `PoPhotoViewer` (#103, mine), both copied from #25. The `DatePicker` test even pinned the
+    double flip as correct. All four now draw the same two characters in every language; #25 is corrected. jsdom does not
+    mirror, so the tests pin the SOURCE characters in both languages (undoing the fix fails them). How to spot it: in the Arabic
+    UI, a Previous / Next arrow that points away from the thing it moves toward; grep `rtl ? '›'` across `apps/web/src`. The
+    attendance calendar's two month buttons also have no accessible name (they hold only the glyph): found, not changed.
+    (c) *A popover inside a scrolling panel is cut off at the panel's edge (#42 again).* `FilterPresets` sits inside the
+    More Filters panel (`overflow-y: auto`, `max-height: 70vh`); its floating list lost the Save row at the panel edge and
+    overlapped the next field (found in a screenshot, not by a test). The other 10 pages that use it put it in an open
+    toolbar, so a portal everywhere was not needed, and for this spot it would have fought the panel's own outside-press
+    handler (the panel closes on a press outside its box, and a portal is outside it). Fix: the opt-in `inline` prop opens the
+    list in the flow of the panel, under the button; the two lists pass it. Each list has a test that the list is not
+    `position: absolute` in the panel.
+    (d) *Verification without a login.* The dev password is deliberately never written down, so this pass could not open the
+    real pages. A login-free harness (`scratchpad/lists`: esbuild bundles the REAL kit pieces and the real `Table readable`
+    with fake rows laid out like the page, headless Chrome with the theme and language in localStorage) gave desktop light, dark,
+    Arabic, phone light and phone dark Arabic, the open More Filters panel, the row menu, the presets, the keyboard ring and the
+    empty state, plus a 3x zoom of the pager. NOT verified: the two real pages with real data on a phone, in the dark theme and in
+    Arabic; My Queue and Cost Change Approvals; the phone search placeholder is cut ("Search PO, vendor, p...") in both languages.
+    (e) *Lint on a legacy file without `--fix` (#37).* The pages already carried ~110 prettier findings each, and 48 of them sat
+    on lines I wrote (the chip arrays). ESLint's own fix ranges can be applied selectively: run ESLint with `-f json`, keep only
+    the messages whose line is inside a `git diff -U0` hunk, apply their `fix.range` replacements from the end of the file
+    backwards, repeat until none are left (`scratchpad/fix-in-hunks.mjs`). Findings in my hunks went 48 to 0, and each file's total
+    fell by exactly the number fixed (107 to 84, 111 to 88), so nothing else was touched. For the NEW test files use
+    `--fix --fix-type layout` only: the `non-nullable-type-assertion-style` autofix turns `x as HTMLElement` into a forbidden `!`
+    (#52, #85); use a helper that throws (`must`). A block appended to a CRLF file with a heredoc is LF (#88).
+    (f) *Mutation check: 68 mutations, all killed in the end.* One survived first and named a weak test: "the picture is hidden from
+    a screen reader" passed with the attribute removed, because the `Icon` svg hides itself, so `querySelector('[aria-hidden]')`
+    found it anyway; the test now takes the picture's own circle. A pattern that matched twice and one whose text had changed in a
+    refactor are "not a result", fixed by taking a unique neighbouring line. The session ended in the middle of the run and left the
+    scratch copy's `ListKit.tsx` mutated: compare the working tree with the backups by hash (it was untouched), resync the copy,
+    re-run only what had not finished. Never read a half-finished run as a pass.
+    (g) *Small traps.* jsdom keeps a `boxShadow` set from JavaScript as the hex string you wrote (not `rgb(...)`), so compare with the
+    token; the pager's nav is named "Pages" in English (`common.pagination`), not "Pagination"; a stray `python -` in a command waits
+    on stdin for ever (stop the task); after the select-all box was made "some", a test that clicked `getAllByRole('checkbox')[0]`
+    would hit it, so name the boxes (`Select all`, `Select PO-...`).
+    Tests: `components/procurement/__tests__/ListKitPieces.test.tsx` (46: chips, empty state, tag, pill, More Filters, row menu, pager,
+    person and stage cells, selection bar), `ListKitPhone.test.tsx`, `components/ui/__tests__/FilterPresets.test.tsx` (15),
+    `AttendanceCalendar.test.tsx` (3), the "readable" block in `Table.test.tsx` (7) and the "indeterminate" block in `Checkbox.test.tsx`
+    (6), `pages/procurement/__tests__/PurchaseOrdersPageList.test.tsx` (11) and `requisitions/__tests__/RequisitionsPageList.test.tsx`
+    (10: chips and their removal, clear all, empty state with a way out, priority tag, select-all "some", presets kept in the panel),
+    the arrow tests in `DatePicker.test.tsx` and `PoPhotoViewerPage.test.tsx`. Related to #25 (corrected), #37, #40, #42, #75, #88, #100,
+    #101, #103.
+
 105. **A pick list fed by an unfiltered query of something that has a type, and a project that was never charged because
     the goods went into the system's "used up" bucket.** The reconciliation of NY-PRJ-2026-0032 (Mr. Rizgar's House)
     against a colleague's sheet ended on one gap that no screen could explain: USD 3,330.65 and IQD 79,950 of goods on the
@@ -2593,6 +3487,84 @@ Don't re-derive, check these first.
     Not verified in a browser. Related to #44 (what a destination decides), #65 (a project PO delivered to inventory costs
     nothing until a Store Out), #91 (a picker offering what the database refuses) and #83 (a screen that reads zero while
     the money exists).
+
+106. **A shell that "looks old" is its rows, its focus ring and its menus, and a ring borrowed from a menu is too faint for
+    a control you Tab to.** The user, with a screenshot of the PO page whose sidebar and top bar were outlined in green: "update
+    the side bar and top bar also to match the new UI look". Redone, all local and uncommitted: `Sidebar` (pill rows, group rows,
+    the icon rail, the phone drawer), `Topbar` (breadcrumb, search, language, theme, bell, avatar menu), `EntitySwitcher` (company
+    menu), `ThemeSwitcher`, `LanguageSwitcher`; `BottomNav` got a token pass only (readable grey, solid accent, `aria-current`);
+    the phone toast now sits under a 56px bar plus the notch inset. Shared pieces: `components/shell/shellParts.tsx`
+    (`TopbarButton`: one 36px button for every control, `useShellMenu`, `ShellMenuPanel`, `MenuRow`, `MenuTick`, `MenuCaption`,
+    `shellFocusRing`), `components/ui/menuKeys.ts` (`handleMenuKeyDown`: arrows wrap, Home, End, Escape returns the focus to
+    the button, Tab closes; the Row menu in `ListKit` now uses it too) and `useFocusRing` moved into `components/ui/keyboardFocus.ts`.
+    Things that were wrong, and the rule each one gives:
+    (a) *A group row was a `div` with a click handler.* The keyboard could not reach it and a screen reader did not know it
+    opens. It is a real `<button aria-expanded>`, with `aria-controls` only while its list exists (an id that points at nothing is
+    worse than none). The old code also tinted the parent AND the page inside it at once; now an open group only turns its own
+    text accent and the page inside carries the tint, and a closed group carries the tint, so there is always one place to look.
+    (b) *The focus ring borrowed from the menus was invisible on a tab stop.* `menuFocusRing` is a 12% tint, right for a menu row
+    that is also tinted, and the first screenshot of the sidebar showed almost no ring. Every shell control uses
+    `shellFocusRing`: a 2px gap and a 2px solid accent. A focus indicator needs 3:1 against what it sits on; compute it (#75).
+    (c) *The hairline token is 1.26:1.* The guide line beside an open group's pages (meant to be seen) was invisible in the same
+    screenshot; it is `borderStrong`. The hairline stays for dividers nobody has to find. Section headings and secondary text were
+    `textMuted` (2.64:1), now `textSecondary`.
+    (d) *A dead CSS rule hid a missing safe area.* `.fnc-topbar` in `themes.css` set a 52px height and the notch padding, but the
+    bar's own inline style always won, so the bar never owned the inset. The bar now sets `calc(56px + var(--safe-top))` and the
+    padding itself (56px: the sidebar's header is 56px too, so the two hairlines meet in one line), which means a phone with a
+    notch now gets the room the old rule was supposed to give (behaviour change; `index.html` already has `viewport-fit=cover`).
+    The old rule is still in `themes.css`, harmless and dead.
+    (e) *A menu that closes when the pointer wanders off.* The avatar menu closed on mouse-leave; a keyboard user whose pointer
+    was elsewhere lost it. It now closes on an outside press, Escape and Tab only.
+    (f) *Right-to-left.* Chevron SVGs are NOT mirrored by the browser: the sidebar's collapse chevron swaps and a closed group's
+    chevron points the other way in Arabic (`useIsRtl()`); menu panels use `insetInlineStart/End`, never `left/right`; the angle
+    quotes in the breadcrumb are left alone (they ARE mirrored, #104).
+    (g) *Icon-only rows have no name.* In the rail a row is its icon, so it carries `title` and `aria-label` (the page name plus its
+    count), and a count becomes a dot there instead of vanishing: a waiting queue is not invisible in the rail.
+    Not changed: the breadcrumb still prints `#29ee62b4` (the first characters of the UUID) for record pages, because a page
+    would have to register its own title; `Ctrl K` is not turned into `⌘K` on a Mac; the sidebar's items and permission gates are
+    untouched (`isItemVisible`, `permKeys`, system-level pass-through), only how rows look and answer keys.
+    Traps met. (1) jsdom (cssstyle) drops a `var()` inside the `padding` shorthand, so a test saw `paddingTop` as `''`; the bar sets
+    `paddingTop`, `paddingBottom` and `paddingInline` as longhands (also what the real browser handles best). It also reports `0` as
+    `'0'`, so `insetInlineEnd: 0` reads back as `'0'`, not `'0px'`. (2) `vi.restoreAllMocks()` empties a `vi.fn().mockRejectedValue`
+    that a test file put in a module mock (`lib/axios`), so the NEXT test threw `Cannot read properties of undefined (reading
+    'then')` from inside the component; this is the #103 trap again, in two files. Restore only the spies the tests made.
+    (3) A selector `button[aria-expanded="true"]` also matched the header's collapse button (it says whether the sidebar is
+    expanded); the group buttons are the ones with `aria-controls`. (4) `robocopy` called from Git Bash gets its flags turned into
+    paths by MSYS (`/MIR` became `C:/Program Files/Git/MIR`), exits 16 and syncs nothing, so the scratch copy for the mutation run
+    silently stayed old; run it from PowerShell (and exit code 1 there means "files copied", which is success). (5)
+    `@typescript-eslint/non-nullable-type-assertion-style` turns `x as HTMLElement` into a forbidden `!` once more (#52, #85, #104):
+    use a `must()` helper that throws. (6) One sequential mutation run took about 50 seconds per mutation (153 would be over two
+    hours). The runner takes `WEB=<copy>` and `SKIP=<n>` from the environment, so split the list by name prefix across several scratch
+    copies of `src` (`web-mut` to `web-mut6`, each with a `node_modules` junction) and run one runner per copy in parallel; on 24 cores
+    all 153 took about 15 minutes. Mutating the working tree is not an option while the dev server is up, and a full test suite run at
+    the same time times out (see below). (7) After a lint `--fix --fix-type layout` the test files' string quoting can change
+    (`'company\'s'` became `"company's"`), so an Edit that quotes the old text the way you wrote it no longer matches: re-read the
+    file before editing it again. (8) `vi.mocked(api.get)` trips `@typescript-eslint/unbound-method`; hold the mock function in
+    `vi.hoisted` and use that.
+    How it was checked (layout is invisible to jsdom): a login-free harness (`scratchpad/shell`: esbuild bundles the REAL `Sidebar`,
+    `Topbar` and `BottomNav` with the stores filled in and the queue count stubbed) in headless Chrome: desktop light, dark and
+    Arabic, the collapsed rail, a tablet rail, a phone, and the phone drawer. NOT verified: the real pages with real data and a real
+    login, a physical phone with a notch, Safari and Firefox, Arabic with the company menu open.
+    Tests: `components/shell/__tests__/{SidebarLook (47), Topbar (34), shellParts (29), EntitySwitcherMenu (21), ThemeSwitcherMenu
+    (8), LanguageAndBottomNav (9), shellKeys (36)}.test.ts(x)` and `components/ui/__tests__/menuKeys.test.ts` (11); the older Sidebar,
+    SidebarPhase5, ThemeSwitcher, EntitySwitcher and NotificationsDrawer tests pass unchanged. `shellKeys.test.ts` reads every
+    `t('...')` of the shell sources and fails for a key missing in `en.json` or `ar.json` (#26, #51).
+    Mutation check: 153 mutations (rows, groups, rail, chevrons, the top bar, the shared parts, the menu keys, the company, theme and
+    language controls, the bottom bar). 129 were killed by the first tests; **24 survived**, and every survivor named an assertion that
+    was missing, not a dead guard: the current row's heavier weight, the child count's danger tint, the expand chevron in Arabic, the
+    56px header, a plain number as an id in the trail, the search button's edge, the open avatar's edge and menu alignment, a hidden
+    badge and divider, sign out closing its menu, the profile being fetched only for a completed profile, the open edge of a bordered
+    button, the caller's own `onMouseLeave`, the panel's motion marker and width cap, rows being out of the Tab order, the keyboard
+    tint on a row, the tick on the logical side, the caption grey, the keyboard returning to the company button after a switch, the
+    round badge's `aria-expanded`, the tick on the active company, an empty API answer not emptying the company list, and the bottom
+    bar's buttons really navigating. Each got a test and was killed on a second pass (one first read "no tests", a transient
+    collection failure, and was killed on the rerun, #17). Lesson: a first set of tests that "covers the screen" killed 85 % of the
+    mutations; the rest is where the visible rules live (an edge, a weight, an `aria-hidden`), so mutate before saying "tested".
+    Full web suite after the last change, run with the machine idle: 201 files, 3,154 tests, exit 0, `tsc` clean, lint clean in my
+    lines. An earlier full run, made while six mutation runners were busy, failed 3 tests in two files (`UserRolesTab.purchaseReview`,
+    `InvoiceDetail`: a timeout and a "found multiple elements" after it); both passed alone (53 tests) and in the idle run, so do not
+    run a full suite while mutation runners are busy (#17).
+    Related to #25, #42, #75, #80, #88, #98, #100, #101, #103, #104.
 
 107. **Equipment that must come back: a Store Out that could only consume, three paths that confirm one, and a design
     rejected for the number of places it would touch.** The user's mockup (a Store Out with returnable lines, a Returnables list,
