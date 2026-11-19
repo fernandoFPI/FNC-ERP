@@ -50,6 +50,13 @@ import {
 } from '../lib/invoiceHeader.js'
 import { normalizeInvoiceUnit } from '../lib/invoiceUnit.js'
 import {
+  DIRECT_SUPPLY_DESTINATION,
+  childPurchaseOrderPurpose,
+  directSupplyCreateProblem,
+  directSupplySubmitProblem,
+  isDirectSupply,
+} from '../lib/directSupply.js'
+import {
   INVOICE_LINES_SQL,
   invoiceHeaderFlagFields,
   invoiceRejectionFields,
@@ -1039,11 +1046,17 @@ async function applyRequisitionEditChanges(
     // only one valid delivery_destination at all; an edit request can't
     // move it away from 'jobsite', same as createRequisition never lets it
     // start as anything else.
-    const companyRes = await client.query<{ requires_jobsite_delivery: boolean }>(
-      `SELECT c.requires_jobsite_delivery FROM requisitions r JOIN companies c ON c.id = r.company_id WHERE r.id=$1`,
+    const companyRes = await client.query<{
+      requires_jobsite_delivery: boolean
+      purpose: string | null
+    }>(
+      `SELECT c.requires_jobsite_delivery, r.purpose FROM requisitions r JOIN companies c ON c.id = r.company_id WHERE r.id=$1`,
       [reqId],
     )
-    const locksJobsite = companyRes.rows[0]?.requires_jobsite_delivery ?? false
+    // A direct supply is always delivered to the jobsite too (lib/directSupply.ts), whatever the company runs.
+    const locksJobsite =
+      (companyRes.rows[0]?.requires_jobsite_delivery ?? false) ||
+      isDirectSupply(companyRes.rows[0]?.purpose)
     const sets: string[] = []
     const vals: unknown[] = []
     for (const [field, diff] of Object.entries(changes.header)) {
@@ -2302,6 +2315,21 @@ async function getPOLinePurchaseForReturn(id: string): Promise<Record<string, un
   return r.rows[0] as Record<string, unknown>
 }
 
+// A direct supply requisition (lib/directSupply.ts) never visits inventory check, store pricing, market pricing or
+// price verification, so every action that would send it to one of them is refused with `message`, which says
+// what to do instead. Scoped to the caller's company like every other read of a requisition here.
+async function refuseForDirectSupplyGW(
+  reqId: string,
+  companyId: string,
+  message: string,
+): Promise<void> {
+  const r = await query<{ purpose: string | null }>(
+    `SELECT purpose FROM requisitions WHERE id=$1 AND company_id=$2`,
+    [reqId, companyId],
+  )
+  if (isDirectSupply(r.rows[0]?.purpose)) throw new Error(message)
+}
+
 async function userIsOrganizerForRequisitionGW(
   userId: string,
   reqId: string,
@@ -2862,7 +2890,8 @@ async function finishBuyingRequisitionCore(reqId: string, auth: GWAuth): Promise
             poNumber,
             vendorId,
             headerCurrency,
-            req.purpose ?? 'stock',
+            // 'direct_supply' is a requisition purpose only; its purchase orders are project POs (lib/directSupply.ts)
+            childPurchaseOrderPurpose(req.purpose),
             req.project_id,
             // The child PO continues the requisition's ownership: created_by is its organizer, not whoever happened
             // to trigger Finish Buying (that person is in requisition_approval_log, action finish_buying). Only a
@@ -35390,6 +35419,12 @@ const phase5MutationResolvers = {
     await requirePermGW(ctx.auth, 'procurement.po.edit', 'edit')
     const i = args.input
     if (!i.lines || i.lines.length === 0) throw new Error('A requisition needs at least one line')
+    // Direct supply: tied to a project, a currency on every line, delivered to the jobsite (lib/directSupply.ts).
+    const directSupply = isDirectSupply(i.purpose)
+    if (directSupply) {
+      const problem = directSupplyCreateProblem(i)
+      if (problem) throw new Error(problem)
+    }
     if (i.assigned_receiver_id) {
       const empCheck = await query(`SELECT id FROM employees WHERE id=$1 AND company_id=$2`, [
         i.assigned_receiver_id,
@@ -35404,7 +35439,7 @@ const phase5MutationResolvers = {
     // branch's default; account has no purpose/branch-specific mapping in
     // the schema, so it's always the one company-wide default.
     const [projectRow, branchRow, sysConfigRow, companyRow] = await Promise.all([
-      i.purpose === 'project' && i.project_id
+      (i.purpose === 'project' || directSupply) && i.project_id
         ? query<{ cost_center_id: string | null }>(
             `SELECT cost_center_id FROM projects WHERE id=$1 AND company_id=$2`,
             [i.project_id, ctx.auth.companyId],
@@ -35425,16 +35460,20 @@ const phase5MutationResolvers = {
         [ctx.auth.companyId],
       ),
     ])
+    // The project must be one of the caller's own company's: that query is scoped by company, so no row means a
+    // project of another company (or none). Project Supply has never checked this at creation.
+    if (directSupply && !projectRow.rows[0]) throw new Error('Project not found')
     const defaultCostCenterId =
       projectRow.rows[0]?.cost_center_id ?? branchRow.rows[0]?.default_cost_center_id ?? null
     const defaultAccountId = sysConfigRow.rows[0]?.default_unallocated_purchase_account_id ?? null
     // A company that doesn't run its own inventory (requires_jobsite_delivery
     // — see 301_requires_jobsite_delivery) can't choose 'inventory' at all;
     // every project line is forced to 'jobsite' regardless of what the form
-    // submitted.
-    const deliveryDestination = companyRow.rows[0]?.requires_jobsite_delivery
-      ? 'jobsite'
-      : (i.delivery_destination ?? null)
+    // submitted. A direct supply is always delivered to the jobsite, whatever the form sent.
+    const deliveryDestination =
+      directSupply || companyRow.rows[0]?.requires_jobsite_delivery
+        ? DIRECT_SUPPLY_DESTINATION
+        : (i.delivery_destination ?? null)
     const createdReq = await withTransaction(
       { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
       async (client) => {
@@ -35451,7 +35490,7 @@ const phase5MutationResolvers = {
             reqNum,
             i.project_id ?? null,
             i.purpose ?? 'stock',
-            i.purpose === 'project' ? deliveryDestination : null,
+            i.purpose === 'project' || directSupply ? deliveryDestination : null,
             priority,
             requireAuth(ctx).userId,
             i.assigned_receiver_id ?? null,
@@ -35501,6 +35540,11 @@ const phase5MutationResolvers = {
     const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the requisition organizer or an admin can submit to inventory check')
+    await refuseForDirectSupplyGW(
+      args.id,
+      auth.companyId,
+      'A direct supply requisition has no inventory check: submit it for approval instead',
+    )
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -35521,6 +35565,70 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  // Direct supply (lib/directSupply.ts): the organizer, or an admin, sends it straight to the approver. There is no
+  // inventory check and no pricing step, so the Est. Unit Price typed when it was created is the price the approver
+  // sees, and approval freezes it as the ceiling Items Bought judges each purchase against. Same gate as
+  // submitRequisitionToInventoryCheck, which a direct supply is refused at.
+  submitRequisitionDirectSupply: async (
+    _: unknown,
+    args: { id: string; notes?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error(
+        'Only the requisition organizer or an admin can submit a requisition for approval',
+      )
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const reqRes = await client.query<{ purpose: string | null; project_id: string | null }>(
+        `SELECT purpose, project_id FROM requisitions WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+        [args.id, auth.companyId],
+      )
+      if (!reqRes.rows[0])
+        throw Object.assign(new Error('Requisition not found'), {
+          extensions: { code: 'NOT_FOUND' },
+        })
+      const linesRes = await client.query<{
+        description: string | null
+        qty_ordered: string
+        unit_price: string
+      }>(
+        `SELECT description, qty_ordered, unit_price FROM po_lines WHERE requisition_id=$1 ORDER BY line_number`,
+        [args.id],
+      )
+      const problem = directSupplySubmitProblem(reqRes.rows[0], linesRes.rows)
+      if (problem) throw new Error(problem)
+      await markAllOpenFlagsAddressed(client, args.id, 'requisition_id')
+      await reqTransition(
+        client,
+        args.id,
+        'draft',
+        'pending_approval',
+        'submit_direct_supply',
+        auth,
+        args.notes,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void notifyDeptHeadsAndAdminsForRequisitionGW(args.id, {
+      type: 'REQ_APPROVAL_REQUIRED',
+      title: 'Requisition approval required',
+      body: 'A requisition is awaiting your approval',
+    })
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
   },
@@ -36720,6 +36828,11 @@ const phase5MutationResolvers = {
       throw new Error(
         `Cannot reject to market pricing from status '${reqRow.rows[0].status as string}'`,
       )
+    await refuseForDirectSupplyGW(
+      args.id,
+      auth.companyId,
+      'A direct supply requisition has no market pricing step: send it back to draft instead',
+    )
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -36776,6 +36889,11 @@ const phase5MutationResolvers = {
       throw new Error(
         `Cannot reject to inventory check from status '${reqRow.rows[0].status as string}'`,
       )
+    await refuseForDirectSupplyGW(
+      args.id,
+      auth.companyId,
+      'A direct supply requisition has no inventory check: send it back to draft instead',
+    )
     const client = await pool.connect()
     try {
       await client.query('BEGIN')

@@ -356,6 +356,15 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
 //                                              price or a verification pass, so confirm_inventory_check
 //                                              skips straight there, mirroring poStateMachine's own
 //                                              inventory_check → ready_to_issue shortcut)
+// draft → pending_approval      (submit_direct_supply — a DIRECT SUPPLY requisition (purpose
+//                                 'direct_supply', always tied to a project) skips inventory check,
+//                                 store pricing, market pricing and price verification entirely: its
+//                                 Est. Unit Price, typed at creation, is the price the approver sees.
+//                                 Nothing in the machine itself knows the purpose; the gateway only
+//                                 lets this action through for that purpose, and refuses
+//                                 submit_to_inventory_check / reject_to_inventory_check /
+//                                 reject_to_market_pricing for it, so the other flow never reaches
+//                                 these stages)
 // pending_approval → approved   (ONE gate — covers both the stock issue for from-stock
 //                                 lines and the spend for bought lines, shown per currency.
 //                                 In the same transaction: draft Store Out created for every
@@ -417,6 +426,7 @@ export type RequisitionStatus =
 
 export type RequisitionAction =
   | 'submit_to_inventory_check'
+  | 'submit_direct_supply'
   | 'confirm_inventory_check'
   | 'submit_to_market_pricing'
   | 'submit_to_price_verification'
@@ -451,6 +461,8 @@ export const reqStateMachine = new StateMachine<RequisitionStatus, RequisitionAc
   initial: 'draft',
   transitions: [
     { from: 'draft', to: 'inventory_check', action: 'submit_to_inventory_check' },
+    // Direct supply: no stock to check and nothing to price (see the header comment).
+    { from: 'draft', to: 'pending_approval', action: 'submit_direct_supply' },
     { from: 'inventory_check', to: 'store_pricing', action: 'confirm_inventory_check' },
     // 100%-from-stock shortcut, mirroring poStateMachine's own
     // inventory_check -> ready_to_issue edge: nothing left to price or

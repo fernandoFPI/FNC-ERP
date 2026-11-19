@@ -191,6 +191,10 @@
     # (approve/reject, Store Out draft creation) are PR 2)
     createRequisition(input: RequisitionInput!): Requisition!
     submitRequisitionToInventoryCheck(id: ID!, notes: String): Requisition!
+    # Direct supply (purpose 'direct_supply', always tied to a project): straight from draft to the approver. No
+    # inventory check and no pricing step; the Est. Unit Price typed at creation is the price. Refused for any
+    # other purpose, and a direct supply is refused at submitRequisitionToInventoryCheck.
+    submitRequisitionDirectSupply(id: ID!, notes: String): Requisition!
     confirmRequisitionInventoryCheck(id: ID!, lineStockQtys: [StockConfirmLineInput!]!, notes: String): Requisition!
     submitRequisitionStorePricing(id: ID!, linePrices: [RequisitionStorePriceInput!]): Requisition!
     # side: whose part of Market pricing is being submitted (migration 315). Omitted = PROCUREMENT, exactly the
