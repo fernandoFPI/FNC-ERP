@@ -16,6 +16,8 @@ export const DOC_TYPES = [
   { key: 'expense_claim', label: 'Expense Claim', defaultPrefix: 'EXP' },
   { key: 'material_issue', label: 'Store Out', defaultPrefix: 'SO' },
   { key: 'store_in', label: 'Store In', defaultPrefix: 'RCPT' },
+  { key: 'equipment_return', label: 'Equipment Return', defaultPrefix: 'ERET' },
+  { key: 'stock_transfer', label: 'Store Transfer', defaultPrefix: 'TRF' },
   { key: 'product', label: 'Product SKU', defaultPrefix: 'PRD' },
   { key: 'daily_report', label: 'Daily Progress Report', defaultPrefix: 'DPR' },
 ] as const
