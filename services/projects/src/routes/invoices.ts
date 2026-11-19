@@ -913,7 +913,8 @@ invoicesRouter.get(
           `SELECT pmil.id, p.name AS product_name, pmil.qty_issued, pmil.unit_cost, pmi.issue_number
          FROM project_material_issue_lines pmil JOIN project_material_issues pmi ON pmi.id=pmil.issue_id
          JOIN products p ON p.id=pmil.product_id
-         WHERE pmi.project_id=$1 AND pmi.status='issued' AND pmil.is_invoiced=false`,
+         WHERE pmi.project_id=$1 AND pmi.status='issued' AND pmil.is_invoiced=false
+           AND NOT pmil.is_returnable`,
           [projectId],
         )
         result['stock_issues'] = si.rows

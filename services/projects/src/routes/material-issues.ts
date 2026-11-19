@@ -145,6 +145,21 @@ materialIssuesRouter.post(
         lot_id: string | null
       }>('SELECT * FROM project_material_issue_lines WHERE issue_id=$1', [id])
 
+      // Equipment (a product flagged "must come back", migration 326) is lent out, not used up. This route only queues a stock move
+      // and knows nothing about returns, so it would consume the equipment for good and nothing could bring it back. Equipment is issued
+      // from the Store Out screen. The product is not named: it can belong to another company's catalogue.
+      const equipment = await query(
+        `SELECT 1 FROM products WHERE id = ANY($1::uuid[]) AND is_returnable LIMIT 1`,
+        [lines.rows.map((l) => l.product_id)],
+      )
+      if (equipment.rows[0])
+        return sendError(
+          res,
+          409,
+          'EQUIPMENT_NEEDS_STORE_OUT',
+          'This Store Out contains equipment that must come back. Issue it from the Store Out screen in the web app.',
+        )
+
       const client = await pool.connect()
       try {
         await client.query('BEGIN')

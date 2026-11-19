@@ -12,7 +12,7 @@ export const locationsRouter: IRouter = Router()
 const Schema = z.object({
   name: z.string().min(1).max(255),
   code: z.string().max(50).optional(),
-  type: z.enum(['warehouse', 'site', 'transit', 'virtual_in', 'virtual_out']),
+  type: z.enum(['warehouse', 'site', 'transit', 'virtual_in', 'virtual_out', 'temporary']),
   parent_id: z.string().uuid().optional(),
   address: z.string().optional(),
 })
