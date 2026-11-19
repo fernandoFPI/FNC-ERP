@@ -2593,3 +2593,127 @@ Don't re-derive, check these first.
     Not verified in a browser. Related to #44 (what a destination decides), #65 (a project PO delivered to inventory costs
     nothing until a Store Out), #91 (a picker offering what the database refuses) and #83 (a screen that reads zero while
     the money exists).
+
+107. **Equipment that must come back: a Store Out that could only consume, three paths that confirm one, and a design
+    rejected for the number of places it would touch.** The user's mockup (a Store Out with returnable lines, a Returnables list,
+    temporary stores, transfers in transit) needed equipment to come back to inventory. Confirming a Store Out moved stock into
+    `virtual_out` ("used up"), a manual Store Out (200 on production, no PO or requisition) could not be returned at all, and a
+    Store Out had no "issued to". Decisions (the user's): everything in the mockup in phases, equipment tracked by quantity,
+    nothing charged to the project on issue and a loss charged as stock issued, a loan from the central warehouse to another
+    company with no price and no bill. Phase 1 (this entry) is equipment and returnables; phases 2 and 3 (temporary stores,
+    transfers in transit, history) are in STORE_OUT_EQUIPMENT_PLAN.md and not built.
+    Design, and what it replaced. (a) *A new "Out with people" location type was rejected.* Every availability query leaves
+    `virtual_in` / `virtual_out` out by name (77 places in application code, 19 in resolvers.ts, plus the negative-stock trigger of
+    migration 254), so a new type would have been counted as available stock everywhere unless each was found. Equipment goes to
+    `virtual_out` while it is out, as a consumable does, and comes back through a move out of it, as Material Returns already do;
+    "out with people" is read from the Store Out lines (`lib/equipmentReturns.ts`, ONE base query for the list, its summary and
+    the product page's `qty_out`). Before adding a value to a type column, count the places that filter by the existing values.
+    (b) *Three paths confirm a Store Out.* The GraphQL `issueMaterialIssue` (the web), the requisition flow's auto-made lines (which
+    never heard of equipment) and the REST `POST /projects/material-issues/:id/issue` the mobile app calls. A line is equipment
+    when ticked OR when its product is flagged, decided at confirm; the REST route refuses equipment with 409
+    `EQUIPMENT_NEEDS_STORE_OUT` (it queues a stock move and knows nothing of returns). Same family as #23.
+    (c) *Everything that read "an issued line" now has to ask whether it is equipment:* project cost (`bookStockIssueCost`), the
+    invoice source lists (`packages/billing`, projects `invoices.ts`), the Material Return list and `createMaterialReturn`
+    (it would offset a cost never booked), and `cancelMaterialIssue` (it never reverses stock, so cancelling issued equipment
+    would leave it "out" for ever: refused once issued).
+    (d) *Tenancy of a loan.* The Store Out belongs to the borrowing company, the stock to the lender. The list shows a line to
+    both; only the company that HOLDS the equipment (the shelf it left) takes it back (`can_receive_back`, decided in SQL, the
+    page keeps no copy, #24); the lender never sees the borrower's project; a loan's loss is a write-off in the lender only (a
+    charge would need an inter-company bill). Lending from a company that is not the central warehouse is refused.
+    (e) *Pre-existing bug found, not fixed:* the projects service mounts `materialIssuesRouter` at `/projects/:id/material-issues`
+    without `mergeParams`, so `requireParam('id')` throws and POST and GET of that route always answer 500 / fail. Only the
+    `/material-issues/:id/issue` route works. Nothing in the web uses the REST create; the mobile sync does, so mobile Store Out
+    creation through it is probably dead. Check before relying on it.
+    Traps met. (1) The currency-SUM guard (`currency-sum-guard.test.ts`) failed the full gateway run on two quantity sums: a SUM
+    of units needs a `-- currency-safe` marker even inside a test. (2) My mutation runner counted "suite did not run" as KILLED:
+    one mutation (Material Return guard off) let a return land on an equipment line, left rows the test's cleanup did not delete,
+    so every later run failed in `beforeAll` and 16 mutations read as killed for the wrong reason. A kill needs
+    `Tests N failed`; anything else is "not a result", and cleanup must cover every table a broken run can write. (3) A race test
+    that fires two calls at once can pass without the row lock (it did); hold the line lock from a second connection, start the
+    call, wait until it shows as waiting in `pg_stat_activity`, let the other return land, release, and expect the refusal.
+    (4) `SearchableSelect` with an empty-value option shows that option's label, not the placeholder, so a "none" row needs its own
+    words ("No employee (type a name)"). (5) A mocked `useQuery` must honour `skip`, or a create form loads an edit form's data.
+    (6) The page `Input` does not tie its label to the box: find the box inside the label's wrapper.
+    Done after the first pass: returnable fields on an existing draft Store Out, the detail page and the printout (escaped, #54), and the
+    Returnables page rebuilt in the PO / requisition list style (PageTitle, KpiTile that filter, SearchBox, PillSelect, FilterChips,
+    readable Table, ActionButton, ChipButton for the condition, QuantityStepper). Not done: an "Out with people" column on Stock
+    Balances (the product page shows it), a sidebar count badge, who may edit (the screens reuse
+    `inventory.stock_moves.view` / `projects.execution.*`, an odd pair for store keepers), the lost-loan recharge, and everything
+    in phases 2 and 3. Migration 326. Tests: `services/gateway/tests/equipment-returnables.test.ts` (28, real Postgres; 27
+    mutations killed), `services/projects/tests/material-issue-equipment-guard.test.ts`, web `ReturnablesPage`,
+    `StoreOutEquipment`, `ProductFormEquipment`. Related to #23, #24, #44, #46, #65, #105.
+
+108. **Stock that is moving between two stores must be somewhere in the ledger, and "instant" transfers hide shortages.** Phase 2
+    of STORE_OUT_EQUIPMENT_PLAN.md (migration 327): temporary stores, goods received into them with a final destination, and store
+    transfers with an In Transit state. `createManualTransfer` moves stock between two locations at once: nothing said "sent, not yet
+    received", and a short delivery left no trace. Now `stock_transfers` / `stock_transfer_lines` and one library
+    (`services/gateway/src/lib/storeTransfers.ts`): SEND moves stock From the location into the company's transit location (made the
+    first time it is needed), RECEIVE moves what arrived into the To location and writes the rest off to Virtual Consumption with the
+    reason on the line (status `received_short`), CANCEL (only while in transit) puts it all back. Same company only: a transfer
+    between companies stays an inter-company transfer.
+    What it turned up. (a) *A new location type, but this time safe:* `temporary` is a REAL location (every stock query counts it like
+    a warehouse, no query changed), unlike the `issued` type rejected in #107. The type CHECK is replaced
+    (`stock_locations_type_check`, and the REST `/locations` zod enum and the Locations page list it). The transit location is the
+    opposite: stock waiting there is on a truck, so `assertReceivableLocation` (server) and `receivableLocations` (web) now refuse
+    it as a receiving place, and `confirmReceipt`'s "any active location" fallback skips it; the #105 tests that said transit
+    passes were changed on purpose. (b) *What waits, and for how long:* one SQL (`TEMP_STORE_ITEMS_SQL`) behind the list and the
+    summary. Age is the age of the OLDEST arrival still making up what is on the shelf (newest arrivals are assumed to be the ones left,
+    a running sum over incoming moves), so a late top-up does not hide a pallet that has waited weeks and a pallet already sent on
+    does not make new stock look old (two tests). The 7-day limit is a constant (`TEMP_WAIT_DAYS`), not a company setting. Supplier,
+    PO and destination come from the receipts those arrivals belong to (`po_receipts.final_destination_location_id`, required when the
+    receiving location is temporary, refused otherwise, checked before a receipt number is taken). (c) *Tooling traps:* a JS
+    `String.replace` replacement string turns `$$` into one `$`, so `$$${params.length}` became `${params.length}` and the SQL
+    read `t.id = 2` (found by "operator does not exist: uuid = integer"); the document loader of graphql-codegen cannot resolve an
+    interpolation INSIDE a selection set (use a `fragment` interpolated at the top, like the Store Out fields); the transfer lines
+    come back in a fixed order that is not the order they were typed in, so a test must find a line by its item; the Bash safety check
+    refused two harmless commands that contained `$$`, so write such edits with the edit tool. (d) *Tests:*
+    `services/gateway/tests/store-transfers.test.ts` (18, real Postgres, 16 mutations killed, the transfer row lock proved by holding
+    it from a second connection), web `TempStorePage.test.tsx` (13, 10 mutations killed; one first SURVIVED, the same store at both ends
+    after changing From, and got its own test), `ReceiptFormLocations.test.tsx` and `receiptLines.test.ts` for the destination.
+    Not done: the destination is not shown on the receipt/Store In page itself (only on Temp Store & Transit), a "send on" shortcut
+    from the receipt, a sidebar count badge, the 7 days as a company setting, a form-level test that submitting a temporary-store
+    receipt without a destination is refused (the rule is unit-tested in `receiptRequirements`). Related to #105, #107.
+
+109. **A history that is one query over four tables, not four lists glued together.** Phase 3 of STORE_OUT_EQUIPMENT_PLAN.md (no
+    migration): Inventory > Store History lists every Store In (goods receipt), Store Out, store transfer and equipment return,
+    newest first, filtered by kind, by store and by a search. `services/gateway/src/lib/storeDocuments.ts` is ONE statement, a
+    `UNION ALL` of the four inside a CTE, so the filters, the ordering and the limit (500, the page says when it was cut) are applied
+    once to all of them. Rules it keeps: each branch is scoped to the caller's company through its own parent (a receipt through its
+    purchase order, the others through their own `company_id`); Store In rows also follow the Store In list's branch scope
+    (`branchScopedPOFilterGW`), the same call as `poReceipts`; the "store" filter matches ANY store the document touched
+    (`location_ids`: a receipt's receiving location AND its final destination, every shelf a Store Out took from, both ends of a
+    transfer, every place a return put equipment back), so a transfer is found at both ends; a search is a LIKE pattern with `%`,
+    `_` and `\` escaped (a person typing "%" gets nothing, not everything). A click opens the document's own page when it has one
+    (Store In, Store Out) and otherwise the page that works with it (Temp Store & Transit, Returnables).
+    Traps met. (1) *An unused SQL parameter is a crash, not a no-op:* breaking a filter by replacing its clause with `true` leaves the
+    `$3` placeholder unused and Postgres refuses the statement ("could not determine data type of parameter"), so seven tests fail
+    for the wrong reason and the mutation looks killed; keep the parameter in the mutated text (`OR true`). Same family as the
+    suite-did-not-run trap of #107. (2) A mutation string with backslashes written through a shell heredoc lost one level of them (the
+    pattern matched nothing, "SKIPPED"): write such lists with the file tool and `String.raw`. (3) `PillSelect` draws its own "All" for
+    the empty value, so adding an empty option of your own makes two. (4) A test of ordering needs a document with an older date, or
+    `ASC` and `DESC` are indistinguishable (the first version survived the mutation). Not covered by a test: the branch scope on Store
+    In rows (it is the existing helper, unchanged) and the colour of the cancelled badge. Not done: dates as a range filter, export, a
+    detail page for a transfer or a return. Tests: `services/gateway/tests/store-documents.test.ts` (7, real Postgres, 12 mutations
+    killed), web `StoreHistoryPage.test.tsx` (7, 8 of 9 killed, the survivor is a badge colour). Related to #107, #108.
+
+110. **A list cached under one set of variables is not refreshed by a create made under another, and a link to a record needs
+    a way to fetch records the list never loaded.** The user made a Temporary location on Inventory > Locations, opened the
+    Record Receipt form and it was not in "Receiving Location". The row was in the database (code TEMP, active, right company)
+    and the server returned it; the page showed a stale list. Apollo caches `stockLocations` per variables: the Locations page
+    refetched only its own (`variables: {}`) after a create, while the receipt form reads `{ isActive: true }`, so in the same
+    browser session the form kept the list from before. Fix: the create evicts the whole `stockLocations` field
+    (`cache.evict({ fieldName }); cache.gc()`) so every cached variant refetches when next used. How to spot it: "I created X and
+    it is not in the dropdown until I reload"; the same query with different variables on two screens; a `refetchQueries` that
+    names one set of variables. Read the database and the Network response before blaming the filter.
+    Same session, Store History links: a click on a transfer opens its details through the address (`?transfer=<id>`), one
+    mechanism for both the Temp Store list and Store History (Back closes it). The Temp Store page loads only the newest 200
+    transfers, so `storeTransfers` gained an optional `id` (company scope kept, a malformed id is "none", not a database error,
+    because it comes from a URL) and the page fetches by id only when the list does not hold it; an unknown id says so with a
+    toast and closes. Traps: (a) a mocked `useQuery` ignores `skip`, so a skipped by-id query returned the whole list and the
+    dialog opened on the first transfer in every test; derive "what is open" from the address first, then from data. (b) Two
+    buttons named "Close" in a shared Modal (the corner cross and a footer button): take the last. (c) Do not drive a mutation
+    script from a nested shell with regexes in it (#69): a script run through `spawnSync` reported every mutation as killing all
+    21 tests while the same mutation by hand killed exactly one, so check a "kill" on one case by hand before trusting a runner's
+    count. Tests: `TempStorePage.test.tsx` (open from a row, from a link, a cancelled transfer, an older one fetched by id, no
+    fetch when listed, unknown id), `StoreHistoryPage.test.tsx` (transfer link carries the id), gateway `store-transfers.test.ts`
+    (by id, another company, malformed id); 7 mutations killed. Related to #108, #109.
