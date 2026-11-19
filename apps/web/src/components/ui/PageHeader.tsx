@@ -13,6 +13,12 @@ interface PageHeaderProps {
   backLabel?: string
   badge?: React.ReactNode
   className?: string
+  /**
+   * Phone only, opt-in: one row instead of four. The back control is an arrow (named by `backLabel`),
+   * the title, its status and the actions share the row, and the subtitle is one quiet line under the
+   * title. The default header stays as it was for every other page.
+   */
+  compact?: boolean
 }
 
 export function PageHeader({
@@ -24,11 +30,94 @@ export function PageHeader({
   backLabel,
   badge,
   className = '',
+  compact = false,
 }: PageHeaderProps) {
   const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
   const navigate = useNavigate()
+
+  if (compact && isPhone) {
+    const backName = backLabel ?? t('ui.generic.back')
+    return (
+      <div className={className} style={{ marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px' }}>
+          {backPath && (
+            <button
+              type="button"
+              aria-label={backName}
+              title={backName}
+              onClick={() => {
+                navigate(backPath)
+              }}
+              style={{
+                flexShrink: 0,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '44px',
+                height: '40px',
+                marginInlineStart: '-12px',
+                color: theme.accent,
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <svg
+                className="rtl-flip"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          )}
+          {/* The 8px of top padding puts the title's first line level with the back arrow's centre. */}
+          <div style={{ flex: 1, minWidth: 0, paddingTop: backPath ? '8px' : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <h1
+                style={{
+                  fontSize: '20px',
+                  fontWeight: 700,
+                  color: theme.textPrimary,
+                  margin: 0,
+                  lineHeight: 1.2,
+                }}
+              >
+                {title}
+              </h1>
+              {badge}
+              {status}
+            </div>
+            {subtitle && (
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: theme.textSecondary,
+                  margin: '2px 0 0',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {subtitle}
+              </p>
+            )}
+          </div>
+          {actions && <div style={{ flexShrink: 0 }}>{actions}</div>}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={className} style={{ marginBottom: isPhone ? '16px' : '24px' }}>

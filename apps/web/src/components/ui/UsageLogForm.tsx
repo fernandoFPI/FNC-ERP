@@ -64,7 +64,7 @@ export function UsageLogForm({
         onSubmit={(...args: Parameters<typeof handleSubmit>) => void handleSubmit(...args)}
         style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
       >
-        <Input
+        <Input field
           label={t('ui.usageLog.date')}
           type="date"
           value={form.usage_date}
@@ -74,7 +74,7 @@ export function UsageLogForm({
           required
         />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <Input
+          <Input field
             label={t('ui.usageLog.hoursUsed')}
             type="number"
             step="0.5"
@@ -85,7 +85,7 @@ export function UsageLogForm({
             }}
             required
           />
-          <Input
+          <Input field
             label={t('ui.usageLog.mileageKm')}
             type="number"
             step="1"
@@ -113,7 +113,7 @@ export function UsageLogForm({
           >{t('ui.usageLog.maintenanceWillBeDueAtH', { maintenanceDueHours, currentHours, projectedHours })}</div>
         )}
 
-        <Input
+        <Input field
           label={t('ui.usageLog.operatorName')}
           value={form.operator_name}
           onChange={(e) => {
@@ -121,7 +121,7 @@ export function UsageLogForm({
           }}
           required
         />
-        <Input
+        <Input field
           label={t('ui.usageLog.notes')}
           value={form.notes ?? ''}
           onChange={(e) => {

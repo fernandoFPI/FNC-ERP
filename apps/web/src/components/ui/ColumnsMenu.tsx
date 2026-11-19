@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { useIsRtl } from '../../i18n'
+import { isKeyboardFocus } from './keyboardFocus'
+import { menuFocusRing, menuItemStyle, menuPanelStyle } from './menuStyles'
 
 export interface ColumnsMenuItem {
   key: string
@@ -47,10 +49,14 @@ interface PanelPlace {
 // to the button on Escape.
 export function ColumnsMenu({ items, onToggle, onReset, canReset, note }: ColumnsMenuProps) {
   const { t } = useTranslation()
-  const { theme } = useTheme()
+  const { theme, themeKey } = useTheme()
   const isRtl = useIsRtl()
   const [open, setOpen] = useState(false)
   const [place, setPlace] = useState<PanelPlace | null>(null)
+  const [buttonHover, setButtonHover] = useState(false)
+  const [buttonFocused, setButtonFocused] = useState(false)
+  // The row under the pointer or holding keyboard focus.
+  const [activeKey, setActiveKey] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -135,19 +141,38 @@ export function ColumnsMenu({ items, onToggle, onReset, canReset, note }: Column
         onClick={() => {
           setOpen((v) => !v)
         }}
+        onMouseEnter={() => {
+          setButtonHover(true)
+        }}
+        onMouseLeave={() => {
+          setButtonHover(false)
+        }}
+        onFocus={(e) => {
+          setButtonFocused(isKeyboardFocus(e.currentTarget))
+        }}
+        onBlur={() => {
+          setButtonFocused(false)
+        }}
+        // The outline button of the newer controls (ActionButton, size sm): 10px corners, the readable edge, a focus ring.
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
           cursor: 'pointer',
-          background: open ? theme.accentBg : theme.bgSurface,
-          border: `1px solid ${open ? theme.accentBorder : theme.borderInput}`,
-          color: open ? theme.accent : theme.textPrimary,
-          borderRadius: '8px',
-          padding: '7px 11px',
+          height: '32px',
+          boxSizing: 'border-box',
+          background: open ? theme.accentBg : buttonHover ? theme.bgSurfaceHover : theme.bgSurface,
+          border: `1px solid ${open ? theme.accentBorder : theme.borderField}`,
+          // accentSolid, not accent: the pale accent on its own tint is 4.19:1 in the light theme
+          color: open ? theme.accentSolid : theme.textPrimary,
+          borderRadius: '10px',
+          padding: '0 12px',
           fontSize: '12px',
           fontWeight: 600,
+          fontFamily: 'inherit',
           whiteSpace: 'nowrap',
+          outline: 'none',
+          boxShadow: buttonFocused ? menuFocusRing(theme) : 'none',
         }}
       >
         <svg
@@ -174,7 +199,9 @@ export function ColumnsMenu({ items, onToggle, onReset, canReset, note }: Column
             id={panelId}
             role="group"
             aria-label={t('ui.tableView.showColumns')}
+            data-menu-panel
             style={{
+              ...menuPanelStyle(theme, themeKey === 'black'),
               position: 'fixed',
               top: place.top,
               bottom: place.bottom,
@@ -182,13 +209,10 @@ export function ColumnsMenu({ items, onToggle, onReset, canReset, note }: Column
               width: place.width,
               maxHeight: place.maxHeight,
               overflowY: 'auto',
-              boxSizing: 'border-box',
               zIndex: 1000,
-              background: theme.bgSurface,
-              border: `1px solid ${theme.borderInput}`,
-              borderRadius: '10px',
-              boxShadow: '0 10px 28px rgba(26, 26, 46, 0.18)',
-              padding: '12px 14px',
+              padding: '12px 6px 6px',
+              animation: 'fnc-menu-in 0.12s ease-out',
+              transformOrigin: place.bottom !== undefined ? 'bottom center' : 'top center',
             }}
           >
             <div
@@ -198,42 +222,63 @@ export function ColumnsMenu({ items, onToggle, onReset, canReset, note }: Column
                 letterSpacing: '0.06em',
                 textTransform: 'uppercase',
                 color: theme.textSecondary,
+                padding: '0 8px',
                 marginBottom: '8px',
               }}
             >
               {t('ui.tableView.showColumns')}
             </div>
-            {items.map((item) => (
-              <label
-                key={item.key}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '5px 0',
-                  fontSize: '13px',
-                  color: item.locked ? theme.textSecondary : theme.textPrimary,
-                  cursor: item.locked ? 'default' : 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={item.on || !!item.locked}
-                  disabled={item.locked}
-                  onChange={(e) => {
-                    onToggle(item.key, e.target.checked)
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {items.map((item) => (
+                <label
+                  key={item.key}
+                  onMouseEnter={() => {
+                    setActiveKey(item.key)
                   }}
-                  style={{ accentColor: theme.accent }}
-                />
-                {item.label}
-              </label>
-            ))}
+                  onMouseLeave={() => {
+                    setActiveKey((k) => (k === item.key ? null : k))
+                  }}
+                  onFocus={() => {
+                    setActiveKey(item.key)
+                  }}
+                  onBlur={() => {
+                    setActiveKey((k) => (k === item.key ? null : k))
+                  }}
+                  style={{
+                    ...menuItemStyle(theme, { highlighted: activeKey === item.key && !item.locked }),
+                    minHeight: '36px',
+                    padding: '6px 8px',
+                    gap: '10px',
+                    fontWeight: 500,
+                    color: item.locked ? theme.textSecondary : theme.textPrimary,
+                    cursor: item.locked ? 'default' : 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={item.on || !!item.locked}
+                    disabled={item.locked}
+                    onChange={(e) => {
+                      onToggle(item.key, e.target.checked)
+                    }}
+                    style={{
+                      accentColor: theme.accentSolid,
+                      width: '16px',
+                      height: '16px',
+                      margin: 0,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
+                </label>
+              ))}
+            </div>
             {(!!note || canReset) && (
               <div
                 style={{
                   borderTop: `1px solid ${theme.border}`,
-                  marginTop: '8px',
-                  paddingTop: '8px',
+                  margin: '8px 8px 0',
+                  padding: '10px 0 6px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px',
@@ -252,7 +297,8 @@ export function ColumnsMenu({ items, onToggle, onReset, canReset, note }: Column
                       cursor: 'pointer',
                       fontSize: '12px',
                       fontWeight: 600,
-                      color: theme.accent,
+                      fontFamily: 'inherit',
+                      color: theme.accentSolid,
                     }}
                   >
                     {t('ui.tableView.resetToDefault')}

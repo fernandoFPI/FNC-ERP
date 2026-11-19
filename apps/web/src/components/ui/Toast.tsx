@@ -22,7 +22,7 @@ export function Toast() {
 
   const positionStyle: React.CSSProperties = isPhone
     ? {
-        top: 'calc(52px + env(safe-area-inset-top, 0px) + 8px)',
+        top: 'calc(56px + env(safe-area-inset-top, 0px) + 8px)',
         insetInlineStart: '12px',
         insetInlineEnd: '12px',
       }

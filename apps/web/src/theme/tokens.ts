@@ -17,6 +17,9 @@ export interface ThemeTokens {
   border: string
   borderStrong: string
   borderInput: string
+  // The edge of a form field or choice control that has to be seen (3:1 against its surface), unlike the
+  // hairlines `border` and `borderInput` draw. Used by the opt-in controls (ActionButton, QuantityStepper...).
+  borderField: string
   textPrimary: string
   textSecondary: string
   textMuted: string
@@ -24,6 +27,10 @@ export interface ThemeTokens {
   accentBg: string
   accentBorder: string
   accentHover: string
+  // A filled button: its colour, its hover colour and the text on it (4.5:1 or better in both themes).
+  accentSolid: string
+  accentSolidHover: string
+  accentSolidText: string
   success: string
   successBg: string
   successBorder: string
@@ -63,6 +70,7 @@ export const themes: Record<ThemeKey, ThemeTokens> = {
     border: '#e2e5e9',
     borderStrong: '#cdd1d6',
     borderInput: '#d1d5db',
+    borderField: '#8a929b',
     textPrimary: '#1a1a2e',
     textSecondary: '#5f6368',
     textMuted: '#9aa0a8',
@@ -70,6 +78,9 @@ export const themes: Record<ThemeKey, ThemeTokens> = {
     accentBg: 'rgba(74,122,155,0.08)',
     accentBorder: 'rgba(74,122,155,0.20)',
     accentHover: 'rgba(74,122,155,0.12)',
+    accentSolid: '#3f6e8f',
+    accentSolidHover: '#355f7d',
+    accentSolidText: '#ffffff',
     success: '#065f46',
     successBg: '#ecfdf5',
     successBorder: '#a7f3d0',
@@ -108,6 +119,7 @@ export const themes: Record<ThemeKey, ThemeTokens> = {
     border: '#2a2d32',
     borderStrong: '#363a40',
     borderInput: '#363a40',
+    borderField: '#6b7380',
     textPrimary: '#f2f2f0',
     textSecondary: '#b0aea8',
     textMuted: '#6e6c66',
@@ -115,6 +127,9 @@ export const themes: Record<ThemeKey, ThemeTokens> = {
     accentBg: 'rgba(107,168,202,0.12)',
     accentBorder: 'rgba(107,168,202,0.25)',
     accentHover: 'rgba(107,168,202,0.18)',
+    accentSolid: '#6ba8ca',
+    accentSolidHover: '#84b9d8',
+    accentSolidText: '#0f1215',
     success: '#34d399',
     successBg: '#062318',
     successBorder: '#1a5e3a',

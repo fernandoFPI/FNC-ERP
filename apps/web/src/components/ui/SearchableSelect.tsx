@@ -1,7 +1,10 @@
 import { useTranslation } from 'react-i18next'
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { Fragment, useState, useRef, useEffect, useLayoutEffect, useCallback, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { useTheme } from '../../theme/ThemeContext'
+import { useBreakpoint } from '../../hooks/useBreakpoint'
+import { isKeyboardFocus } from './keyboardFocus'
+import { menuFocusRing, menuItemStyle, menuPanelStyle, menuSeparatorStyle } from './menuStyles'
 
 export interface SearchableSelectOption {
   value: string
@@ -24,7 +27,21 @@ interface Props {
   required?: boolean
   disabled?: boolean
   minDropdownWidth?: number
+  /**
+   * Opt-in: draw the box like the newer form controls (40 px, 10 px corners, the darker field border) so it lines
+   * up with `QuantityStepper` and `MoneyField` beside it. Off, nothing changes for the screens that already use it.
+   */
+  field?: boolean
+  /**
+   * The most options drawn at once (default 200). Search always looks through ALL of them, so nothing becomes
+   * unreachable; only the list on screen is cut, and a line under it says how many there are. Without a cap a product
+   * picker drew all 6,909 products (about 2 seconds to open) and re-drew every one of them on each mouse move.
+   */
+  maxVisible?: number
 }
+
+// Enough to scroll through for a short list (employees, branches), few enough that a list of thousands opens at once.
+const DEFAULT_MAX_VISIBLE = 200
 
 export function SearchableSelect({
   value,
@@ -36,29 +53,46 @@ export function SearchableSelect({
   required,
   disabled,
   minDropdownWidth = 260,
+  field = false,
+  maxVisible = DEFAULT_MAX_VISIBLE,
 }: Props) {
   const { t } = useTranslation()
   const { theme, themeKey } = useTheme()
+  const { isPhone } = useBreakpoint()
   const isDark = themeKey === 'black'
+  const listId = useId()
 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
+  const [triggerFocused, setTriggerFocused] = useState(false)
   const triggerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const listboxRef = useRef<HTMLDivElement>(null)
   const [highlighted, setHighlighted] = useState(0)
 
   const selected = options.find((o) => o.value === value)
 
-  const filtered = query.trim()
+  const needle = query.trim() ? query.toLowerCase() : ''
+  const filtered = needle
     ? options.filter(
         (o) =>
-          o.label.toLowerCase().includes(query.toLowerCase()) ||
-          (o.sublabel ?? '').toLowerCase().includes(query.toLowerCase()) ||
-          (o.keywords ?? '').toLowerCase().includes(query.toLowerCase()),
+          o.label.toLowerCase().includes(needle) ||
+          (o.sublabel ?? '').toLowerCase().includes(needle) ||
+          (o.keywords ?? '').toLowerCase().includes(needle),
       )
     : options
+  // Only what fits a screen is drawn; the keyboard and the highlight work on this list.
+  const shown = filtered.length > maxVisible ? filtered.slice(0, maxVisible) : filtered
+  const hiddenCount = filtered.length - shown.length
+
+  // What the list looked like when it was opened, for the effect that highlights the chosen row (read there, so it
+  // does not run again on every keystroke).
+  const latest = useRef({ shown, value })
+  useEffect(() => {
+    latest.current = { shown, value }
+  })
 
   useEffect(() => {
     setHighlighted(0)
@@ -76,7 +110,6 @@ export function SearchableSelect({
     const availableHeight = openUpward
       ? Math.min(MAX_HEIGHT, spaceAbove)
       : Math.min(MAX_HEIGHT, spaceBelow)
-    // Never wider than the window, so a generous minDropdownWidth can't push the list off a phone
     // Never wider than the window, so a generous minDropdownWidth can't push the list off a phone
     const dropWidth = Math.min(
       Math.max(rect.width, minDropdownWidth),
@@ -105,18 +138,30 @@ export function SearchableSelect({
     )
   }, [minDropdownWidth])
 
-  useEffect(() => {
-    if (!open) return
-    reposition()
-    setTimeout(() => inputRef.current?.focus(), 0)
+  // Placed before the browser paints, so the list never flashes in the wrong spot.
+  useLayoutEffect(() => {
+    if (open) reposition()
   }, [open, reposition])
 
   useEffect(() => {
     if (!open) return
-    window.addEventListener('scroll', reposition, true)
+    // Start on the chosen row (it is scrolled into view below), or on the first one when nothing is chosen.
+    const at = latest.current.shown.findIndex((o) => o.value === latest.current.value)
+    setHighlighted(at > 0 ? at : 0)
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    // Scrolling the list itself must not move it (and must not re-draw every row on each wheel tick).
+    const follow = (e: Event) => {
+      if (e.target instanceof Node && listRef.current?.contains(e.target)) return
+      reposition()
+    }
+    window.addEventListener('scroll', follow, true)
     window.addEventListener('resize', reposition)
     return () => {
-      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('scroll', follow, true)
       window.removeEventListener('resize', reposition)
     }
   }, [open, reposition])
@@ -137,20 +182,33 @@ export function SearchableSelect({
     }
   }, [open])
 
-  // Scroll highlighted item into view
+  // Keep the highlighted row inside the visible part of the list. Done by measuring the list's own scroll box, not with
+  // `scrollIntoView`, which would also scroll the page behind it.
   useEffect(() => {
-    if (!listRef.current) return
-    const item = listRef.current.querySelector<HTMLDivElement>(`[data-idx="${highlighted}"]`)
-    item?.scrollIntoView({ block: 'nearest' })
+    const box = listboxRef.current
+    if (!box) return
+    const item = box.querySelector<HTMLDivElement>(`[data-idx="${highlighted}"]`)
+    if (!item) return
+    const b = box.getBoundingClientRect()
+    const r = item.getBoundingClientRect()
+    const pad = 6
+    if (r.top < b.top + pad) box.scrollTop -= b.top + pad - r.top
+    else if (r.bottom > b.bottom - pad) box.scrollTop += r.bottom - (b.bottom - pad)
   }, [highlighted])
+
+  const close = useCallback(() => {
+    setOpen(false)
+    setQuery('')
+    // The list was drawn at the end of <body>, so focus would otherwise be lost: give it back to the field.
+    triggerRef.current?.focus()
+  }, [])
 
   const select = useCallback(
     (opt: SearchableSelectOption) => {
       onChange(opt.value)
-      setOpen(false)
-      setQuery('')
+      close()
     },
-    [onChange],
+    [onChange, close],
   )
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -162,19 +220,28 @@ export function SearchableSelect({
       return
     }
     if (e.key === 'ArrowDown') {
-      setHighlighted((h) => Math.min(h + 1, filtered.length - 1))
+      setHighlighted((h) => Math.min(h + 1, shown.length - 1))
       e.preventDefault()
     } else if (e.key === 'ArrowUp') {
       setHighlighted((h) => Math.max(h - 1, 0))
       e.preventDefault()
     } else if (e.key === 'Enter') {
-      if (filtered[highlighted]) select(filtered[highlighted])
+      if (shown[highlighted]) select(shown[highlighted])
       e.preventDefault()
     } else if (e.key === 'Escape') {
-      setOpen(false)
-      setQuery('')
+      // The key closed this list and nothing else: a modal around it must stay open (it holds what was typed).
+      e.preventDefault()
+      e.stopPropagation()
+      close()
+    } else if (e.key === 'Tab') {
+      // Leave the list the way a native select does: close it and let Tab go on from the field.
+      close()
     }
   }
+
+  const upward = dropdownStyle.bottom !== undefined
+  const rowHeightTouch = isPhone
+  const optionId = (idx: number) => `${listId}-opt-${idx}`
 
   return (
     <div style={{ position: 'relative' }}>
@@ -196,21 +263,33 @@ export function SearchableSelect({
       {/* Trigger */}
       <div
         ref={triggerRef}
+        role="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-disabled={disabled ? true : undefined}
         tabIndex={disabled ? -1 : 0}
         onClick={() => {
           if (disabled) return
           setOpen((o) => !o)
         }}
         onKeyDown={handleKeyDown}
+        onFocus={(e) => {
+          setTriggerFocused(isKeyboardFocus(e.currentTarget))
+        }}
+        onBlur={() => {
+          setTriggerFocused(false)
+        }}
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: selected?.keywords ? '6px 10px' : '0 10px',
-          minHeight: '36px',
-          borderRadius: '6px',
+          padding: selected?.keywords ? '6px 10px' : field ? '0 12px' : '0 10px',
+          minHeight: field ? '40px' : '36px',
+          borderRadius: field ? '10px' : '6px',
           cursor: disabled ? 'not-allowed' : 'pointer',
-          border: `1px solid ${error ? theme.dangerBorder : open ? theme.accent : theme.borderInput}`,
+          border: `1px solid ${error ? theme.dangerBorder : open || triggerFocused ? theme.accent : field ? theme.borderField : theme.borderInput}`,
+          boxShadow: triggerFocused && !open ? menuFocusRing(theme) : 'none',
           background: theme.bgSurface,
           opacity: disabled ? 0.5 : 1,
           userSelect: 'none',
@@ -218,17 +297,21 @@ export function SearchableSelect({
         }}
       >
         {selected ? (
-          <span style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: '2px' }}>
+          <span
+            style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: '2px' }}
+          >
             {selected.sublabel ? (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+              <span
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}
+              >
                 <span
                   style={{
                     fontFamily: 'monospace',
                     fontSize: '11px',
-                    color: theme.textMuted,
-                    background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-                    padding: '1px 5px',
-                    borderRadius: '3px',
+                    color: theme.textSecondary,
+                    background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
                     flexShrink: 0,
                   }}
                 >
@@ -243,7 +326,7 @@ export function SearchableSelect({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {selected.label}
+                  <bdi>{selected.label}</bdi>
                 </span>
               </span>
             ) : (
@@ -256,22 +339,25 @@ export function SearchableSelect({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {selected.label}
+                <bdi>{selected.label}</bdi>
               </span>
             )}
             {selected.keywords && (
+              // The block follows the page's direction (so the line starts under the name in English and in Arabic);
+              // only the text inside it runs right to left.
               <span
-                dir="rtl"
                 style={{
+                  display: 'block',
                   fontSize: '13px',
-                  color: theme.textMuted,
-                  textAlign: 'left',
+                  lineHeight: 1.5,
+                  color: theme.textSecondary,
+                  textAlign: 'start',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}
               >
-                {selected.keywords}
+                <span dir="rtl">{selected.keywords}</span>
               </span>
             )}
           </span>
@@ -294,6 +380,7 @@ export function SearchableSelect({
           height="12"
           viewBox="0 0 12 12"
           fill="none"
+          aria-hidden="true"
           style={{
             flexShrink: 0,
             marginInlineStart: '6px',
@@ -322,20 +409,23 @@ export function SearchableSelect({
         createPortal(
           <div
             ref={listRef}
+            data-menu-panel
             style={{
               ...dropdownStyle,
-              background: isDark ? '#1e2030' : '#ffffff',
-              border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
-              boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
-              overflow: 'hidden',
+              ...menuPanelStyle(theme, isDark),
               display: 'flex',
               flexDirection: 'column',
+              transformOrigin: upward ? 'bottom center' : 'top center',
+              animation: 'fnc-menu-in 0.12s ease-out',
             }}
           >
             {/* Search input */}
             <div
-              style={{ padding: '8px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0 }}
+              style={{
+                padding: '8px',
+                borderBottom: `1px solid ${theme.border}`,
+                flexShrink: 0,
+              }}
             >
               <div style={{ position: 'relative' }}>
                 <svg
@@ -343,11 +433,13 @@ export function SearchableSelect({
                   height="14"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke={theme.textMuted}
+                  stroke={theme.textSecondary}
                   strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
                   style={{
                     position: 'absolute',
-                    insetInlineStart: '8px',
+                    insetInlineStart: '11px',
                     top: '50%',
                     transform: 'translateY(-50%)',
                     pointerEvents: 'none',
@@ -363,16 +455,31 @@ export function SearchableSelect({
                     setQuery(e.target.value)
                   }}
                   onKeyDown={handleKeyDown}
+                  // Drawn on the element itself (not in state): the box is focused by a timer right after the list
+                  // opens, and a state change there would re-draw every row for a colour.
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = theme.accent
+                    e.currentTarget.style.boxShadow = menuFocusRing(theme)
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = theme.borderInput
+                    e.currentTarget.style.boxShadow = 'none'
+                  }}
                   placeholder={t('ui.select.search')}
+                  aria-label={t('ui.select.search')}
+                  aria-controls={listId}
+                  aria-activedescendant={shown.length > 0 ? optionId(highlighted) : undefined}
                   style={{
                     width: '100%',
-                    paddingBlock: '6px',
-                    paddingInlineEnd: '8px',
-                    paddingInlineStart: '28px',
+                    height: rowHeightTouch ? '44px' : '38px',
+                    paddingBlock: '0',
+                    paddingInlineEnd: '10px',
+                    paddingInlineStart: '34px',
                     fontSize: '13px',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '6px',
-                    background: isDark ? '#12131f' : '#f0f2f5',
+                    fontFamily: 'inherit',
+                    border: `1px solid ${theme.borderInput}`,
+                    borderRadius: '8px',
+                    background: theme.bgCanvas,
                     color: theme.textPrimary,
                     outline: 'none',
                     boxSizing: 'border-box',
@@ -382,116 +489,166 @@ export function SearchableSelect({
             </div>
 
             {/* Options list */}
-            <div style={{ overflowY: 'auto', flex: 1 }}>
+            <div
+              ref={listboxRef}
+              id={listId}
+              role="listbox"
+              aria-label={label ?? placeholder ?? t('ui.select.search')}
+              style={{
+                overflowY: 'auto',
+                flex: 1,
+                padding: '6px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px',
+              }}
+            >
               {filtered.length === 0 ? (
                 <div
                   style={{
-                    padding: '12px',
+                    padding: '20px 12px',
                     fontSize: '13px',
-                    color: theme.textMuted,
+                    color: theme.textSecondary,
                     textAlign: 'center',
                   }}
                 >
                   {t('ui.select.noResults')}
                 </div>
               ) : (
-                filtered.map((opt, idx) => {
+                shown.map((opt, idx) => {
+                  // The row with no value is "nothing chosen" (Select..., Custom item): it is never drawn as a pick.
                   const isCustom = opt.value === ''
-                  const isSelected = opt.value === value
+                  const isSelected = opt.value === value && !isCustom
                   const isHighlighted = idx === highlighted
+                  const base = menuItemStyle(theme, {
+                    highlighted: isHighlighted,
+                    selected: isSelected,
+                    touch: rowHeightTouch,
+                  })
                   return (
-                    <div
-                      key={opt.value}
-                      data-idx={idx}
-                      onMouseEnter={() => {
-                        setHighlighted(idx)
-                      }}
-                      onMouseDown={(e) => {
-                        e.preventDefault()
-                        select(opt)
-                      }}
-                      style={{
-                        padding: '8px 12px',
-                        cursor: 'pointer',
-                        borderBottom: isCustom ? `1px solid ${theme.border}` : 'none',
-                        background: isHighlighted
-                          ? isDark
-                            ? 'rgba(255,255,255,0.07)'
-                            : 'rgba(0,0,0,0.05)'
-                          : isSelected
-                            ? isDark
-                              ? 'rgba(99,102,241,0.15)'
-                              : 'rgba(99,102,241,0.08)'
-                            : 'transparent',
-                      }}
-                    >
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                        {opt.sublabel ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span
-                              style={{
-                                fontFamily: 'monospace',
-                                fontSize: '11px',
-                                color: isSelected ? theme.accent : theme.textMuted,
-                                background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                flexShrink: 0,
-                              }}
-                            >
-                              {opt.sublabel}
+                    <Fragment key={opt.value}>
+                      <div
+                        id={optionId(idx)}
+                        role="option"
+                        aria-selected={isSelected}
+                        data-idx={idx}
+                        onMouseEnter={() => {
+                          setHighlighted(idx)
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          select(opt)
+                        }}
+                        style={{
+                          ...base,
+                          // a long list scrolls: rows keep their height instead of being squeezed
+                          flexShrink: 0,
+                          ...(isCustom
+                            ? { color: theme.textSecondary, fontStyle: 'italic' }
+                            : null),
+                        }}
+                      >
+                        <div
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '2px',
+                          }}
+                        >
+                          {opt.sublabel ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontSize: '11px',
+                                  fontWeight: 500,
+                                  color: isSelected ? theme.accentSolid : theme.textSecondary,
+                                  background: isDark
+                                    ? 'rgba(255,255,255,0.08)'
+                                    : 'rgba(0,0,0,0.05)',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {opt.sublabel}
+                              </span>
+                              <span
+                                style={{
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {/* bdi: an English name keeps its own punctuation order inside a right-to-left row */}
+                                <bdi>{opt.label}</bdi>
+                              </span>
+                            </div>
+                          ) : (
+                            <span>
+                              <bdi>{opt.label}</bdi>
                             </span>
+                          )}
+                          {opt.keywords && (
                             <span
                               style={{
+                                display: 'block',
                                 fontSize: '13px',
-                                color: isSelected
-                                  ? theme.accent
-                                  : isDark
-                                    ? theme.textPrimary
-                                    : '#1a1a2e',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
+                                fontWeight: 400,
+                                lineHeight: 1.5,
+                                textAlign: 'start',
+                                color: isSelected ? theme.accentSolid : theme.textSecondary,
                               }}
                             >
-                              {opt.label}
+                              <span dir="rtl">{opt.keywords}</span>
                             </span>
-                          </div>
-                        ) : (
-                          <span
-                            style={{
-                              fontSize: '13px',
-                              fontStyle: isCustom ? 'italic' : 'normal',
-                              color: isSelected
-                                ? theme.accent
-                                : isCustom
-                                  ? theme.textMuted
-                                  : isDark
-                                    ? theme.textPrimary
-                                    : '#1a1a2e',
-                            }}
+                          )}
+                        </div>
+                        {isSelected && (
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            aria-hidden="true"
+                            style={{ flexShrink: 0 }}
                           >
-                            {opt.label}
-                          </span>
-                        )}
-                        {opt.keywords && (
-                          <span
-                            dir="rtl"
-                            style={{
-                              fontSize: '13px',
-                              textAlign: 'left',
-                              color: isSelected ? theme.accent : theme.textMuted,
-                            }}
-                          >
-                            {opt.keywords}
-                          </span>
+                            <path
+                              d="M3 8.5l3.2 3.2L13 4.8"
+                              stroke={theme.accentSolid}
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
                         )}
                       </div>
-                    </div>
+                      {isCustom && <div aria-hidden="true" style={menuSeparatorStyle(theme)} />}
+                    </Fragment>
                   )
                 })
               )}
             </div>
+            {/* Always in view under the list (not at the end of it, where nobody scrolls to): why the list stops. */}
+            {hiddenCount > 0 && (
+              <div
+                data-testid="select-truncated"
+                style={{
+                  flexShrink: 0,
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  color: theme.textSecondary,
+                  borderTop: `1px solid ${theme.border}`,
+                }}
+              >
+                {t('ui.select.showingFirst', {
+                  shown: shown.length.toLocaleString(),
+                  total: filtered.length.toLocaleString(),
+                })}
+              </div>
+            )}
           </div>,
           document.body,
         )}

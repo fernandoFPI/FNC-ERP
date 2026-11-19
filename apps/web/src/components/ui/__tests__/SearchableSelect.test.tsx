@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ThemeProvider } from '../../../theme/ThemeContext'
+import { themes } from '../../../theme/tokens'
 import { SearchableSelect } from '../SearchableSelect'
 import { Select } from '../Select'
 
@@ -136,5 +137,38 @@ describe('Select passes the popup width through', () => {
   it('keeps the 260px default when none is given', () => {
     renderSelect()
     expect(openAndGetPopup().style.width).toBe('260px')
+  })
+})
+
+// Opt-in `field` look: the same box as the newer entry controls (40 px, 10 px corners, the field border) so a
+// vendor picker lines up with QuantityStepper and MoneyField. Off, the box is what every other screen has.
+describe('SearchableSelect field look', () => {
+  const trigger = (field?: boolean) => {
+    render(
+      <ThemeProvider>
+        <SearchableSelect
+          value=""
+          options={options}
+          placeholder="Pick one"
+          onChange={vi.fn()}
+          {...(field ? { field: true } : {})}
+        />
+      </ThemeProvider>,
+    )
+    const box = screen.getByText('Pick one').closest<HTMLElement>('div[tabindex]')
+    if (!box) throw new Error('Expected the picker box')
+    return box
+  }
+
+  it('is unchanged by default: 36 px, 6 px corners, the input border', () => {
+    const box = trigger()
+    expect(box).toHaveStyle({ minHeight: '36px', borderRadius: '6px' })
+    expect(box).toHaveStyle({ border: `1px solid ${themes['light-flat'].borderInput}` })
+  })
+
+  it('with field: 40 px, 10 px corners and the readable field border', () => {
+    const box = trigger(true)
+    expect(box).toHaveStyle({ minHeight: '40px', borderRadius: '10px' })
+    expect(box).toHaveStyle({ border: `1px solid ${themes['light-flat'].borderField}` })
   })
 })

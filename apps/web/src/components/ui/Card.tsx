@@ -10,6 +10,8 @@ interface CardProps {
   style?: React.CSSProperties
   onClick?: () => void
   fullWidthOnMobile?: boolean
+  /** Anchor for the onboarding walkthrough (components/help/tours.ts), which finds its target by this attribute. */
+  'data-tour'?: string
 }
 
 export function Card({
@@ -20,6 +22,7 @@ export function Card({
   style,
   onClick,
   fullWidthOnMobile = false,
+  'data-tour': dataTour,
 }: CardProps) {
   const { theme } = useTheme()
   const { isPhone, isTablet } = useBreakpoint()
@@ -44,6 +47,7 @@ export function Card({
   return (
     <div
       className={className}
+      data-tour={dataTour}
       onClick={onClick}
       style={{
         position: 'relative',

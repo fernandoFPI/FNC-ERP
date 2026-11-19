@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ThemeProvider } from '../../../theme/ThemeContext'
 import i18n from '../../../i18n'
+import { themes } from '../../../theme/tokens'
+import { menuFocusRing } from '../menuStyles'
 import { ColumnsMenu, type ColumnsMenuItem } from '../ColumnsMenu'
 import { DensityToggle } from '../DensityToggle'
 
@@ -257,5 +259,106 @@ describe('ColumnsMenu: where the list appears', () => {
     openInsideClippingCard()
     fireEvent.mouseDown(document.body)
     expect(document.querySelector('[role="group"]')).toBeNull()
+  })
+})
+
+// The same look as the searchable select's list (menuStyles.ts): the panel is a 12px card, the rows are pills that take
+// the accent tint under the pointer or keyboard, the button is the outline button of the newer controls.
+describe('ColumnsMenu: the shared menu look', () => {
+  const open = () => {
+    renderMenu({ canReset: true, note: 'Total cannot be hidden.' })
+    fireEvent.click(screen.getByRole('button', { name: /^Columns/ }))
+    return screen.getByRole('group')
+  }
+  const rowOf = (name: string) => {
+    const label = screen.getByRole('checkbox', { name }).closest('label')
+    if (!label) throw new Error('the row was not found')
+    return label
+  }
+
+  it('draws the list as a 12px card on the theme surface with the strong edge', () => {
+    const panel = open()
+    expect(panel).toHaveAttribute('data-menu-panel')
+    expect(panel).toHaveStyle({
+      background: themes['light-flat'].bgSurface,
+      border: `1px solid ${themes['light-flat'].borderStrong}`,
+      borderRadius: '12px',
+    })
+  })
+
+  it('tints the row under the pointer with the accent, and gives it back', () => {
+    open()
+    expect(rowOf('Initial Price')).toHaveStyle({ background: 'transparent' })
+    fireEvent.mouseEnter(rowOf('Initial Price'))
+    expect(rowOf('Initial Price')).toHaveStyle({ background: themes['light-flat'].accentBg })
+    fireEvent.mouseLeave(rowOf('Initial Price'))
+    expect(rowOf('Initial Price')).toHaveStyle({ background: 'transparent' })
+  })
+
+  it('tints the row that holds keyboard focus', () => {
+    open()
+    fireEvent.focus(screen.getByRole('checkbox', { name: 'Qty' }))
+    expect(rowOf('Qty')).toHaveStyle({ background: themes['light-flat'].accentBg })
+    fireEvent.blur(screen.getByRole('checkbox', { name: 'Qty' }))
+    expect(rowOf('Qty')).toHaveStyle({ background: 'transparent' })
+  })
+
+  it('never tints a row that cannot be changed, and draws it in the secondary grey', () => {
+    open()
+    fireEvent.mouseEnter(rowOf('Total'))
+    expect(rowOf('Total')).toHaveStyle({
+      background: 'transparent',
+      color: themes['light-flat'].textSecondary,
+      cursor: 'default',
+    })
+  })
+
+  it('draws the tick boxes in the solid accent', () => {
+    open()
+    expect(screen.getByRole('checkbox', { name: 'Qty' }).style.accentColor).not.toBe('')
+    expect(screen.getByRole('checkbox', { name: 'Qty' })).toHaveStyle({ accentColor: themes['light-flat'].accentSolid })
+  })
+
+  it('draws "Reset to default" in the accent that passes 4.5:1 on white', () => {
+    open()
+    expect(screen.getByRole('button', { name: 'Reset to default' })).toHaveStyle({
+      color: themes['light-flat'].accentSolid,
+    })
+  })
+
+  it('draws the button as the 32px outline button with the readable edge', () => {
+    renderMenu()
+    expect(screen.getByRole('button', { name: /^Columns/ })).toHaveStyle({
+      height: '32px',
+      borderRadius: '10px',
+      border: `1px solid ${themes['light-flat'].borderField}`,
+    })
+  })
+
+  it('tints the button with the accent while the list is open', () => {
+    renderMenu()
+    const button = screen.getByRole('button', { name: /^Columns/ })
+    fireEvent.click(button)
+    expect(button).toHaveStyle({ background: themes['light-flat'].accentBg, color: themes['light-flat'].accentSolid })
+  })
+
+  it('draws a ring for keyboard focus on the button, and none after a mouse click', () => {
+    // Say what the browser would answer for ":focus-visible" and leave every other selector alone.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const original = Element.prototype.matches
+    let answer = true
+    const spy = vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, selector: string) {
+      return selector === ':focus-visible' ? answer : original.call(this, selector)
+    })
+    renderMenu()
+    const button = screen.getByRole('button', { name: /^Columns/ })
+    fireEvent.focus(button)
+    expect(button.style.boxShadow).toBe(menuFocusRing(themes['light-flat']))
+    fireEvent.blur(button)
+    expect(button.style.boxShadow).toBe('none')
+    answer = false
+    fireEvent.focus(button)
+    expect(button.style.boxShadow).toBe('none')
+    spy.mockRestore()
   })
 })

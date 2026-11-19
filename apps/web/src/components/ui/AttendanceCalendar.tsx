@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import i18n, { useIsRtl } from '../../i18n'
+import i18n from '../../i18n'
 import React, { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 
@@ -59,7 +59,6 @@ export function AttendanceCalendar({
   onMonthChange,
 }: AttendanceCalendarProps) {
   const { t } = useTranslation()
-  const rtl = useIsRtl()
   const { theme } = useTheme()
   const [hoverDate, setHoverDate] = useState<string | null>(null)
 
@@ -112,7 +111,7 @@ export function AttendanceCalendar({
             padding: '4px 8px',
           }}
         >
-          {rtl ? '›' : '‹'}
+          {/* ‹ and › are mirrored by the browser in a right-to-left page (playbook #104) */}‹
         </button>
         <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '15px' }}>
           {monthLabel}
@@ -128,7 +127,7 @@ export function AttendanceCalendar({
             padding: '4px 8px',
           }}
         >
-          {rtl ? '‹' : '›'}
+          ›
         </button>
       </div>
 

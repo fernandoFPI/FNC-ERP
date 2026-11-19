@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import React, { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
+import { isKeyboardFocus } from './keyboardFocus'
 
 export interface Column<T> {
   key: string
@@ -25,6 +26,9 @@ export interface Column<T> {
   mobileAction?: boolean
   // Lower sorts first among body fields on phone card view; ties keep column order.
   mobilePriority?: number
+  // Only with mobileLayout="fields": the field spans the whole card instead of sharing a row
+  // with its neighbour (price boxes, long text).
+  mobileFullWidth?: boolean
   tabletHide?: boolean
 }
 
@@ -56,6 +60,12 @@ interface TableProps<T extends object> {
   // this just renders whatever comes back. Desktop: an extra <tr>. Phone:
   // appended inside the row's card.
   renderExpanded?: (row: T) => React.ReactNode
+  /**
+   * Opt-in, for the list pages: column headings in the readable secondary grey (the default pale grey is 2.6:1 on white), and a
+   * row that opens something is a keyboard stop too (Tab reaches it, Enter or Space opens it, a ring shows where it is). Off,
+   * nothing changes.
+   */
+  readable?: boolean
   // Full-width section-header content rendered before a row when it starts
   // a new group — return null/undefined for rows that don't start one
   // (typically by comparing row[i] against row[i-1]). Desktop: a spanning
@@ -65,6 +75,11 @@ interface TableProps<T extends object> {
   // and the default; 'compact' trims the vertical padding of every row and header. No effect on
   // the phone card layout.
   density?: 'comfortable' | 'compact'
+  // How a row reads on a phone. 'rows' is the long-standing card (the first three fields as a
+  // small grey label beside the value, the rest behind "More"). 'fields' puts every field under
+  // its own label, label above value, two to a row, so figures and entry boxes read at a glance;
+  // nothing is hidden behind "More". Opt-in: the default leaves every other table as it was.
+  mobileLayout?: 'rows' | 'fields'
 }
 
 function renderValue<T extends object>(col: Column<T>, row: T): React.ReactNode {
@@ -129,8 +144,10 @@ export function Table<T extends object>({
   maxHeight,
   footerRow,
   renderExpanded,
+  readable = false,
   getSectionHeader,
   density = 'comfortable',
+  mobileLayout = 'rows',
 }: TableProps<T>) {
   const { t } = useTranslation()
   const { theme } = useTheme()
@@ -246,7 +263,8 @@ export function Table<T extends object>({
                         color: theme.textPrimary,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
+                        whiteSpace: mobileLayout === 'fields' ? 'normal' : 'nowrap',
+                        overflowWrap: mobileLayout === 'fields' ? 'anywhere' : undefined,
                       }}
                     >
                       {primaryContent}
@@ -273,8 +291,56 @@ export function Table<T extends object>({
                   ) : null}
                 </div>
 
+                {/* Body fields, labelled: label above value, two to a row (opt-in layout) */}
+                {bodyColumns.length > 0 && mobileLayout === 'fields' && (
+                  <dl
+                    // Keeps the two columns: the global phone rule in themes.css would otherwise force one.
+                    data-phone-grid=""
+                    style={{
+                      margin: 0,
+                      paddingTop: '10px',
+                      borderTop: `0.5px solid ${theme.tableBorder}`,
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                      gap: '12px 16px',
+                    }}
+                  >
+                    {bodyColumns.map((col) => (
+                      <div
+                        key={col.key}
+                        style={{
+                          minWidth: 0,
+                          gridColumn: col.mobileFullWidth ? '1 / -1' : undefined,
+                        }}
+                      >
+                        <dt
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            color: theme.textSecondary,
+                            marginBottom: '2px',
+                          }}
+                        >
+                          {col.mobileLabel ?? col.header}
+                        </dt>
+                        <dd
+                          style={{
+                            margin: 0,
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            color: theme.textPrimary,
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
+                          {renderValue(col, row)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+
                 {/* Body fields — stacked label/value rows */}
-                {bodyColumns.length > 0 && (
+                {bodyColumns.length > 0 && mobileLayout === 'rows' && (
                   <div
                     style={{
                       display: 'flex',
@@ -434,11 +500,11 @@ export function Table<T extends object>({
                   minWidth: col.minWidth,
                   padding: headerPadding,
                   textAlign: 'start',
-                  fontSize: '10px',
+                  fontSize: readable ? '11px' : '10px',
                   fontWeight: 600,
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
-                  color: theme.textMuted,
+                  color: readable ? theme.textSecondary : theme.textMuted,
                   borderBottom: `1px solid ${theme.tableBorder}`,
                   whiteSpace: 'nowrap',
                   background: theme.bgSurface,
@@ -502,9 +568,30 @@ export function Table<T extends object>({
                   )}
                   <tr
                     onClick={() => onRowClick?.(row)}
+                    {...(readable && onRowClick
+                      ? {
+                          tabIndex: 0,
+                          onKeyDown: (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+                            // only for the row itself: a key typed in a box or a button inside it belongs to that control
+                            if (e.target !== e.currentTarget) return
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              onRowClick(row)
+                            }
+                          },
+                          onFocus: (e: React.FocusEvent<HTMLTableRowElement>) => {
+                            if (e.target === e.currentTarget && isKeyboardFocus(e.currentTarget))
+                              e.currentTarget.style.boxShadow = `inset 0 0 0 2px ${theme.accentSolid}`
+                          },
+                          onBlur: (e: React.FocusEvent<HTMLTableRowElement>) => {
+                            e.currentTarget.style.boxShadow = 'none'
+                          },
+                        }
+                      : {})}
                     style={{
                       cursor: onRowClick ? 'pointer' : 'default',
                       borderBottom: `1px solid ${theme.tableBorder}`,
+                      outline: readable ? 'none' : undefined,
                       ...rowStyle,
                     }}
                     onMouseEnter={(e) => {

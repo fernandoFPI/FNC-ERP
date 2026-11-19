@@ -1,23 +1,32 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme/ThemeContext'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
+import { nudge, useDirtyGuard, useOverlay } from './overlay'
 
 interface ModalProps {
   open: boolean
   onClose: () => void
   title?: string
   description?: string
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
   children: React.ReactNode
   footer?: React.ReactNode
   className?: string
   bottomSheet?: boolean
   noPadding?: boolean
+  /**
+   * Whether a click on the dark area closes the modal (default yes). Even then, once something has been typed or
+   * chosen inside, that click only nudges the modal instead: Esc, the close button and Cancel still close it.
+   */
   closeOnBackdrop?: boolean
 }
 
-const maxWidths = { sm: '400px', md: '560px', lg: '720px', xl: '900px' }
+const maxWidths = { sm: '400px', md: '560px', lg: '720px', xl: '900px', '2xl': '1240px' }
+
+// How far down the handle must be dragged, in pixels, for a phone sheet to close.
+const SWIPE_CLOSE_DISTANCE = 90
 
 export function Modal({
   open,
@@ -32,42 +41,62 @@ export function Modal({
   noPadding = false,
   closeOnBackdrop = true,
 }: ModalProps) {
+  const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
   const panelRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+  const dragRef = useRef<{ startY: number; dy: number } | null>(null)
 
   const useBottomSheet = bottomSheet ?? isPhone
 
+  // Escape (top overlay only), the page lock, focus in and back, and the Tab trap are shared with every drawer.
+  useOverlay({ open, onClose, panelRef })
+  // Something was typed or chosen inside: a stray click outside must not throw it away.
+  const dirty = useDirtyGuard(panelRef)
   useEffect(() => {
-    if (open) panelRef.current?.focus()
-  }, [open])
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    if (open) document.addEventListener('keydown', handler)
-    return () => {
-      document.removeEventListener('keydown', handler)
-    }
-  }, [open, onClose])
-
-  // Body scroll lock
-  useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = ''
-    }
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [open])
+    if (open) dirty.reset()
+  }, [open]) // reset only when the modal opens
 
   if (!open) return null
 
+  const dirtyHandlers = dirty.handlers
+
+  const backdropClicked = (axis: 'scale' | 'lift') => {
+    if (!closeOnBackdrop) return
+    if (dirty.isDirty()) {
+      nudge(panelRef.current, axis)
+      panelRef.current?.focus()
+      return
+    }
+    onClose()
+  }
+
+  const dialogProps = {
+    role: 'dialog',
+    'aria-modal': true,
+    'aria-labelledby': title ? titleId : undefined,
+    'aria-describedby': description ? descriptionId : undefined,
+  } as const
+
+  const closeLabel = t('ui.generic.close')
+
   // ── PHONE — Bottom sheet ─────────────────────────────────────────────────────
   if (useBottomSheet) {
+    const endDrag = (commit: boolean) => {
+      const drag = dragRef.current
+      dragRef.current = null
+      const panel = panelRef.current
+      if (!drag || !panel) return
+      if (commit && drag.dy > SWIPE_CLOSE_DISTANCE) {
+        onClose()
+        return
+      }
+      panel.style.transition = 'transform 0.2s ease-out'
+      panel.style.transform = ''
+    }
+
     return createPortal(
       <div
         style={{
@@ -80,7 +109,10 @@ export function Modal({
         }}
       >
         <div
-          onClick={closeOnBackdrop ? onClose : undefined}
+          data-modal-backdrop=""
+          onClick={() => {
+            backdropClicked('lift')
+          }}
           style={{
             position: 'absolute',
             inset: 0,
@@ -91,8 +123,11 @@ export function Modal({
         />
         <div
           ref={panelRef}
+          data-modal-panel=""
           tabIndex={-1}
           className={className}
+          {...dialogProps}
+          {...dirtyHandlers}
           style={{
             position: 'relative',
             background: theme.bgSurface,
@@ -106,8 +141,36 @@ export function Modal({
             outline: 'none',
           }}
         >
-          {/* Drag handle */}
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
+          {/* Drag handle: pull it down to close the sheet. The close button and Esc do the same. */}
+          <div
+            data-testid="sheet-handle"
+            aria-hidden="true"
+            onPointerDown={(e) => {
+              dragRef.current = { startY: e.clientY, dy: 0 }
+              e.currentTarget.setPointerCapture(e.pointerId)
+            }}
+            onPointerMove={(e) => {
+              const drag = dragRef.current
+              const panel = panelRef.current
+              if (!drag || !panel) return
+              drag.dy = Math.max(0, e.clientY - drag.startY)
+              panel.style.transition = 'none'
+              panel.style.transform = `translateY(${drag.dy}px)`
+            }}
+            onPointerUp={() => {
+              endDrag(true)
+            }}
+            onPointerCancel={() => {
+              endDrag(false)
+            }}
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              padding: '12px 0 8px',
+              cursor: 'grab',
+              touchAction: 'none',
+            }}
+          >
             <div
               style={{
                 width: '36px',
@@ -124,18 +187,20 @@ export function Modal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '8px 20px 12px',
+                padding: '0 20px 12px',
                 borderBottom: `0.5px solid ${theme.border}`,
               }}
             >
               <div>
                 <h2
+                  id={titleId}
                   style={{ fontSize: '16px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}
                 >
                   {title}
                 </h2>
                 {description && (
                   <p
+                    id={descriptionId}
                     style={{
                       fontSize: '13px',
                       color: theme.textSecondary,
@@ -148,11 +213,13 @@ export function Modal({
                 )}
               </div>
               <button
+                type="button"
+                aria-label={closeLabel}
                 onClick={onClose}
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: theme.textMuted,
+                  color: theme.textSecondary,
                   cursor: 'pointer',
                   minWidth: '44px',
                   minHeight: '44px',
@@ -162,7 +229,7 @@ export function Modal({
                   fontSize: '18px',
                 }}
               >
-                ✕
+                <span aria-hidden="true">✕</span>
               </button>
             </div>
           )}
@@ -201,6 +268,7 @@ export function Modal({
   // ── TABLET + DESKTOP — Centred modal ────────────────────────────────────────
   return createPortal(
     <div
+      data-modal-backdrop=""
       style={{
         position: 'fixed',
         inset: 0,
@@ -215,7 +283,7 @@ export function Modal({
         padding: '20px',
       }}
       onClick={(e) => {
-        if (closeOnBackdrop && e.target === e.currentTarget) onClose()
+        if (e.target === e.currentTarget) backdropClicked('scale')
       }}
     >
       <style>{`
@@ -223,8 +291,11 @@ export function Modal({
       `}</style>
       <div
         ref={panelRef}
+        data-modal-panel=""
         tabIndex={-1}
         className={className}
+        {...dialogProps}
+        {...dirtyHandlers}
         style={{
           width: '100%',
           maxWidth: maxWidths[size],
@@ -255,12 +326,14 @@ export function Modal({
           >
             <div>
               <h2
+                id={titleId}
                 style={{ fontSize: '16px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}
               >
                 {title}
               </h2>
               {description && (
                 <p
+                  id={descriptionId}
                   style={{
                     fontSize: '13px',
                     color: theme.textSecondary,
@@ -273,11 +346,13 @@ export function Modal({
               )}
             </div>
             <button
+              type="button"
+              aria-label={closeLabel}
               onClick={onClose}
               style={{
                 background: 'none',
                 border: 'none',
-                color: theme.textMuted,
+                color: theme.textSecondary,
                 cursor: 'pointer',
                 padding: '4px',
                 minWidth: '32px',
@@ -289,7 +364,7 @@ export function Modal({
                 flexShrink: 0,
               }}
             >
-              ✕
+              <span aria-hidden="true">✕</span>
             </button>
           </div>
         )}

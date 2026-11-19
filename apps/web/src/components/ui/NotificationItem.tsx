@@ -1,5 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
+import i18n from '../../i18n'
 import { useTheme } from '../../theme/ThemeContext'
+import { isKeyboardFocus } from './keyboardFocus'
 
 interface NotificationData {
   id: string
@@ -17,17 +19,21 @@ interface NotificationItemProps {
   onNavigate: (notification: NotificationData) => void
 }
 
+// Not a component, so it translates with i18n.t (the English text is the fallback).
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const m = Math.floor(diff / 60000)
-  if (m < 1) return 'Just now'
-  if (m < 60) return `${m}m ago`
+  if (m < 1) return i18n.t('shell.notifDrawer.justNow', { defaultValue: 'Just now' })
+  if (m < 60)
+    return i18n.t('shell.notifDrawer.minutesAgo', { count: m, defaultValue: '{{count}}m ago' })
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
+  if (h < 24)
+    return i18n.t('shell.notifDrawer.hoursAgo', { count: h, defaultValue: '{{count}}h ago' })
   const d = Math.floor(h / 24)
-  if (d === 1) return 'Yesterday'
-  if (d < 30) return `${d}d ago`
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  if (d === 1) return i18n.t('shell.notifDrawer.yesterday', { defaultValue: 'Yesterday' })
+  if (d < 30)
+    return i18n.t('shell.notifDrawer.daysAgo', { count: d, defaultValue: '{{count}}d ago' })
+  return new Date(iso).toLocaleDateString(i18n.resolvedLanguage, { month: 'short', day: 'numeric' })
 }
 
 interface TypeMeta {
@@ -168,6 +174,7 @@ function typeMeta(type: string): TypeMeta {
 export function NotificationItem({ notification, onRead, onNavigate }: NotificationItemProps) {
   const { theme } = useTheme()
   const meta = typeMeta(notification.type)
+  const [focused, setFocused] = useState(false)
 
   function handleClick() {
     if (!notification.isRead) onRead(notification.id)
@@ -176,7 +183,22 @@ export function NotificationItem({ notification, onRead, onNavigate }: Notificat
 
   return (
     <div
+      // A row that opens something must be reachable and usable without a mouse.
+      role="button"
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          handleClick()
+        }
+      }}
+      onFocus={(e) => {
+        setFocused(isKeyboardFocus(e.currentTarget))
+      }}
+      onBlur={() => {
+        setFocused(false)
+      }}
       style={{
         display: 'flex',
         gap: '12px',
@@ -186,6 +208,9 @@ export function NotificationItem({ notification, onRead, onNavigate }: Notificat
         borderBottom: `1px solid ${theme.border}`,
         transition: 'background 0.12s',
         position: 'relative',
+        outline: 'none',
+        // inside the row, so the drawer's own edge does not clip it
+        boxShadow: focused ? `inset 0 0 0 2px ${theme.accent}` : 'none',
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.background = theme.bgSurfaceHover
@@ -260,11 +285,11 @@ export function NotificationItem({ notification, onRead, onNavigate }: Notificat
           style={{
             display: 'inline-block',
             fontSize: '11px',
-            color: theme.textMuted,
+            color: theme.textSecondary,
             background: theme.bgCanvas,
             border: `1px solid ${theme.border}`,
-            borderRadius: '4px',
-            padding: '1px 6px',
+            borderRadius: '6px',
+            padding: '1px 7px',
             letterSpacing: '0.01em',
           }}
         >

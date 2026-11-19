@@ -1,3 +1,4 @@
+import { menuPanelStyle } from './menuStyles'
 import { useTranslation } from 'react-i18next'
 import { useState, useRef, useEffect } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
@@ -8,11 +9,16 @@ interface Props {
   onApply: (preset: FilterPreset) => void
   onSave: (name: string) => void
   onDelete: (id: string) => void
+  /**
+   * Opens the list in the flow of the page, under the button, instead of floating over it. For a spot inside a scrolling panel
+   * (the lists' "More Filters"), where a floating list is cut off at the panel's edge. Off, nothing changes.
+   */
+  inline?: boolean
 }
 
-export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
+export function FilterPresets({ presets, onApply, onSave, onDelete, inline = false }: Props) {
   const { t } = useTranslation()
-  const { theme } = useTheme()
+  const { theme, themeKey } = useTheme()
   const [open, setOpen] = useState(false)
   const [saveName, setSaveName] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -50,17 +56,21 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
           setOpen((o) => !o)
         }}
         title={t('ui.presets.savedFilterPresets')}
+        aria-expanded={open}
+        aria-haspopup="true"
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '5px',
-          padding: '6px 10px',
-          borderRadius: '8px',
-          border: `1px solid ${open ? theme.accentBorder : theme.border}`,
+          gap: '6px',
+          height: '38px',
+          boxSizing: 'border-box',
+          padding: '0 12px',
+          borderRadius: '10px',
+          border: `1px solid ${open ? theme.accentSolid : theme.borderField}`,
           background: open ? theme.accentBg : theme.bgSurface,
-          color: open ? theme.accent : theme.textMuted,
+          color: open ? theme.accentSolid : theme.textPrimary,
           cursor: 'pointer',
-          fontSize: '12px',
+          fontSize: '13px',
           fontWeight: 500,
           whiteSpace: 'nowrap',
           fontFamily: 'inherit',
@@ -84,10 +94,10 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
               fontSize: '10px',
               fontWeight: 700,
               lineHeight: '1.4',
-              background: theme.border,
-              color: theme.textMuted,
+              background: theme.bgSurfaceHover,
+              color: theme.textSecondary,
               borderRadius: '10px',
-              padding: '1px 5px',
+              padding: '1px 6px',
             }}
           >
             {presets.length}
@@ -98,16 +108,18 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
       {open && (
         <div
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            insetInlineEnd: 0,
-            zIndex: 300,
-            width: '256px',
-            background: theme.bgSurface,
-            border: `1px solid ${theme.border}`,
-            borderRadius: '12px',
-            boxShadow: '0 8px 28px rgba(0,0,0,0.16)',
-            overflow: 'hidden',
+            ...(inline
+              ? { marginTop: '6px', width: '100%' }
+              : {
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  insetInlineEnd: 0,
+                  zIndex: 300,
+                  width: '264px',
+                }),
+            ...menuPanelStyle(theme, themeKey === 'black'),
+            // in the flow of a panel there is nothing for a shadow to float over
+            ...(inline ? { boxShadow: 'none' } : {}),
           }}
         >
           {/* Preset list */}
@@ -160,7 +172,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                       background: 'none',
                       border: 'none',
                       cursor: 'pointer',
-                      color: theme.textMuted,
+                      color: theme.textSecondary,
                       display: 'flex',
                       alignItems: 'center',
                       flexShrink: 0,
@@ -169,7 +181,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                       ;(e.currentTarget as HTMLButtonElement).style.color = theme.danger
                     }}
                     onMouseLeave={(e) => {
-                      ;(e.currentTarget as HTMLButtonElement).style.color = theme.textMuted
+                      ;(e.currentTarget as HTMLButtonElement).style.color = theme.textSecondary
                     }}
                   >
                     <svg
@@ -192,7 +204,7 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
               style={{
                 padding: '16px 12px',
                 fontSize: '12px',
-                color: theme.textMuted,
+                color: theme.textSecondary,
                 textAlign: 'center',
                 fontStyle: 'italic',
               }}
@@ -211,9 +223,9 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
           >
             <div
               style={{
-                fontSize: '10px',
+                fontSize: '11px',
                 fontWeight: 700,
-                color: theme.textMuted,
+                color: theme.textSecondary,
                 textTransform: 'uppercase',
                 letterSpacing: '0.07em',
                 marginBottom: '6px',
@@ -236,13 +248,12 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                 maxLength={50}
                 style={{
                   flex: 1,
-                  padding: '6px 8px',
-                  borderRadius: '7px',
-                  fontSize: '12px',
+                  padding: '6px 10px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
                   background: theme.bgSurface,
-                  border: `1px solid ${theme.border}`,
+                  border: `1px solid ${theme.borderField}`,
                   color: theme.textPrimary,
-                  outline: 'none',
                   fontFamily: 'inherit',
                 }}
               />
@@ -254,8 +265,8 @@ export function FilterPresets({ presets, onApply, onSave, onDelete }: Props) {
                   borderRadius: '7px',
                   fontSize: '12px',
                   fontWeight: 600,
-                  background: saveName.trim() ? theme.accent : theme.border,
-                  color: saveName.trim() ? '#fff' : theme.textMuted,
+                  background: saveName.trim() ? theme.accentSolid : theme.border,
+                  color: saveName.trim() ? theme.accentSolidText : theme.textSecondary,
                   border: 'none',
                   cursor: saveName.trim() ? 'pointer' : 'not-allowed',
                   whiteSpace: 'nowrap',

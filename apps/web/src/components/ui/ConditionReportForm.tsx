@@ -203,7 +203,7 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
           )}
         </div>
 
-        <Input
+        <Input field
           label={t('ui.condReport.notes')}
           value={notes}
           onChange={(e) => {

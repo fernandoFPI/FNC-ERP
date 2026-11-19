@@ -142,6 +142,27 @@ html, body, #root {
   -webkit-overflow-scrolling: touch;
 }
 
+/* ── iOS zoom ────────────────────────────────────────────────── */
+
+/* iOS Safari zooms the page into any text field whose text is under 16px, and does not zoom back out. The shared
+   Input, Select and SearchableSelect set their size inline (13px), and an inline size beats a plain rule here, so
+   this one is !important (the plain rule that used to sit in the 767px block never applied). It is keyed on a touch
+   screen, not a width: a phone turned sideways is wider than 767px. Checkboxes, radios, ranges, file, colour and
+   button inputs are not text fields. Pinch zoom stays available (no maximum-scale in the viewport meta). */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not([type='button']):not([type='submit']):not([type='reset']):not([type='image']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* A quick second tap (the + of a stepper, two lines in a row) is read as a double-tap zoom. This turns off only
+     that gesture; scrolling and pinch zoom still work. */
+  html, a, button, input, select, textarea, label, [role='button'], [role='checkbox'], [role='radio'], [role='switch'] {
+    touch-action: manipulation;
+  }
+}
+
 /* ── Animation keyframes ─────────────────────────────────────── */
 
 @keyframes fnc-shimmer {
@@ -157,6 +178,130 @@ html, body, #root {
 @keyframes fnc-modal-in {
   from { opacity: 0; transform: scale(0.96) translateY(8px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* The lists that open under a field or a button (the searchable select, the Columns menu, the "⋯" menu). */
+@keyframes fnc-menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* A person who asked the system for less motion gets the modal and its sheet without the slide, scale and fade.
+   !important because the animation is set inline on the panel. */
+@media (prefers-reduced-motion: reduce) {
+  [data-modal-panel],
+  [data-modal-backdrop],
+  [data-overlay-panel],
+  [data-overlay-backdrop],
+  [data-menu-panel] {
+    animation: none !important;
+  }
+}
+
+/* ── The open list of a native <select> ──────────────────────────────────────
+   A native select opens the browser's own grey popup, which none of the app's tokens reach: the Priority box on the New
+   Requisition form had the field look closed and a Windows-grey list open. Where the browser supports customizable
+   selects (Chrome and Edge 135+) the popup is drawn in the same menu look as the searchable select's list
+   (components/ui/menuStyles.ts), for every <select> in the app, with no change to any markup. Other browsers keep their
+   own popup, and a phone its own picker, which is the right control there.
+   !important where the field look already sets the same thing inline (`appearance: none`, a chevron as a background
+   image, 36px of right padding to make room for it); the chevron is the select's own ::picker-icon now, so the closed
+   box and the open list agree. */
+@supports (appearance: base-select) {
+  select:not([multiple]),
+  select:not([multiple])::picker(select) {
+    appearance: base-select !important;
+  }
+
+  /* The customizable select lays its content out itself: say how. The text is centred in the box and the chevron sits at
+     the far end (without this the text stuck to the top of a 40px box with the chevron right beside it). */
+  select:not([multiple]) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    line-height: normal;
+    background-image: none !important;
+    padding-inline-end: 12px !important;
+  }
+
+  select:not([multiple])::picker-icon {
+    content: '';
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    margin-inline-start: 8px;
+    background-color: var(--text-muted);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2 4l4 4 4-4' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2 4l4 4 4-4' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    transition: rotate 0.15s;
+  }
+
+  select:not([multiple]):open::picker-icon {
+    rotate: 180deg;
+  }
+
+  select:not([multiple])::picker(select) {
+    box-sizing: border-box;
+    margin-block: 6px;
+    padding: 6px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    box-shadow: 0 14px 36px rgba(26, 26, 46, 0.16), 0 2px 8px rgba(26, 26, 46, 0.08);
+    color: var(--text-primary);
+    max-block-size: min(320px, 60dvh);
+    overflow-y: auto;
+  }
+
+  select:not([multiple]) option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    min-height: 40px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    /* the browser outlines the focused row; the tint below already shows it, and the outline doubled the chosen row's edge */
+    outline: none;
+  }
+
+  /* under the pointer or the keyboard: the accent tint */
+  select:not([multiple]) option:hover,
+  select:not([multiple]) option:focus {
+    background: var(--accent-bg);
+  }
+
+  /* the chosen one: the stronger tint, the solid accent text and a tick at the end of the row */
+  select:not([multiple]) option:checked {
+    background: var(--accent-hover);
+    color: var(--accent-solid);
+    font-weight: 600;
+  }
+
+  select:not([multiple]) option::checkmark {
+    order: 1;
+    margin-inline-start: auto;
+    color: var(--accent-solid);
+  }
+
+  select:not([multiple]) option:disabled {
+    background: transparent;
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  @media (pointer: coarse) {
+    select:not([multiple]) option {
+      min-height: 44px;
+      font-size: 15px;
+    }
+  }
 }
 
 /* ── Global table scroll on mobile ── */
@@ -199,13 +344,12 @@ html, body, #root {
     grid-template-columns: 1fr;
   }
 
-  /* Full-width form inputs — prevents iOS auto-zoom on focus */
-  input, select, textarea {
-    font-size: 16px;
-  }
+  /* Text fields never drop below 16px on a touch device: see the "iOS zoom" block below. */
 
-  /* Collapse label-value definition list grids to single column */
-  main dl[style] {
+  /* Collapse label-value definition list grids to single column. A grid that sets its own phone
+     layout opts out with data-phone-grid: without it this !important rule beat the inline
+     two-column grid of the requisition line cards and made every card twice as tall. */
+  main dl[style]:not([data-phone-grid]) {
     grid-template-columns: 1fr !important;
   }
 

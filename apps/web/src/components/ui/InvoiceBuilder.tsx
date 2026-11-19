@@ -333,7 +333,7 @@ export function InvoiceBuilder({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {method === 'percentage' && (
                 <div>
-                  <Input
+                  <Input field
                     label={t('fin.invBuilder.percentageOfContract2', { currency, contractAmount: contractAmount.toLocaleString() })}
                     type="number"
                     min="1"
@@ -713,7 +713,7 @@ export function InvoiceBuilder({
                   {t('fin.invBuilder.discountOptional')}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <Input
+                  <Input field
                     label={t('fin.invBuilder.discount')}
                     type="number"
                     min="0"
@@ -725,7 +725,7 @@ export function InvoiceBuilder({
                     }}
                     placeholder="0"
                   />
-                  <Input
+                  <Input field
                     label={t('fin.invBuilder.flatDiscount', { currency })}
                     type="number"
                     min="0"
@@ -783,7 +783,7 @@ export function InvoiceBuilder({
                 </label>
                 {whtApplies && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <Select
+                    <Select field
                       label={t('fin.invBuilder.whtScenario')}
                       value={whtScenario}
                       onChange={(e) => {
@@ -797,7 +797,7 @@ export function InvoiceBuilder({
                         { value: 'fnc_pays', label: t('fin.invBuilder.clientPaysFullFncRemitsAnnually') },
                       ]}
                     />
-                    <Input
+                    <Input field
                       label={t('fin.invBuilder.whtRate')}
                       type="number"
                       min="0"
@@ -813,7 +813,7 @@ export function InvoiceBuilder({
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <Input
+                <Input field
                   label={t('fin.invBuilder.dueDate')}
                   type="date"
                   value={dueDate}
@@ -821,7 +821,7 @@ export function InvoiceBuilder({
                     setDueDate(e.target.value)
                   }}
                 />
-                <Input
+                <Input field
                   label={t('fin.invBuilder.notes')}
                   value={notes}
                   onChange={(e) => {

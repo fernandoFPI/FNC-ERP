@@ -2,6 +2,7 @@ import React from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
 import { ScrollFadeRow } from './ScrollFadeRow'
+import { isKeyboardFocus } from './keyboardFocus'
 
 interface Tab {
   key: string
@@ -18,9 +19,21 @@ interface TabBarProps {
   phoneLabels?: Partial<Record<string, string>>
   /** Background this strip sits on, for the ScrollFadeRow edge fade. Defaults to page canvas. */
   fadeColor?: string
+  /**
+   * Opt-in: inactive tabs in the readable secondary grey (the default pale grey is 2.6:1 on white, text needs 4.5:1), the
+   * active tab in the solid accent and semibold, slightly larger, and a ring for keyboard focus. Off, nothing changes.
+   */
+  readable?: boolean
 }
 
-export function TabBar({ tabs, active, onChange, phoneLabels, fadeColor }: TabBarProps) {
+export function TabBar({
+  tabs,
+  active,
+  onChange,
+  phoneLabels,
+  fadeColor,
+  readable = false,
+}: TabBarProps) {
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
 
@@ -57,11 +70,25 @@ export function TabBar({ tabs, active, onChange, phoneLabels, fadeColor }: TabBa
               style={{
                 background: 'transparent',
                 border: 'none',
-                borderBottom: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
-                padding: isPhone ? '9px 12px' : '10px 16px',
-                fontSize: isPhone ? '12px' : '13px',
-                fontWeight: isActive ? 500 : 400,
-                color: isActive ? theme.accent : theme.textMuted,
+                borderBottom: isActive
+                  ? `2px solid ${readable ? theme.accentSolid : theme.accent}`
+                  : '2px solid transparent',
+                padding: isPhone
+                  ? readable
+                    ? '11px 12px'
+                    : '9px 12px'
+                  : readable
+                    ? '12px 16px'
+                    : '10px 16px',
+                fontSize: isPhone ? (readable ? '13px' : '12px') : readable ? '14px' : '13px',
+                fontWeight: isActive ? (readable ? 600 : 500) : 400,
+                color: isActive
+                  ? readable
+                    ? theme.accentSolid
+                    : theme.accent
+                  : readable
+                    ? theme.textSecondary
+                    : theme.textMuted,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 display: 'flex',
@@ -73,10 +100,19 @@ export function TabBar({ tabs, active, onChange, phoneLabels, fadeColor }: TabBa
                 flexShrink: 0,
               }}
               onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.color = theme.textSecondary
+                if (!isActive)
+                  e.currentTarget.style.color = readable ? theme.textPrimary : theme.textSecondary
               }}
               onMouseLeave={(e) => {
-                if (!isActive) e.currentTarget.style.color = theme.textMuted
+                if (!isActive)
+                  e.currentTarget.style.color = readable ? theme.textSecondary : theme.textMuted
+              }}
+              onFocus={(e) => {
+                if (readable && isKeyboardFocus(e.currentTarget))
+                  e.currentTarget.style.boxShadow = `inset 0 0 0 2px ${theme.accentSolid}`
+              }}
+              onBlur={(e) => {
+                if (readable) e.currentTarget.style.boxShadow = 'none'
               }}
             >
               {isPhone ? (phoneLabels?.[tab.key] ?? tab.label) : tab.label}
@@ -88,7 +124,7 @@ export function TabBar({ tabs, active, onChange, phoneLabels, fadeColor }: TabBa
                     padding: '1px 5px',
                     borderRadius: '10px',
                     background: theme.accentBg,
-                    color: theme.accent,
+                    color: readable ? theme.accentSolid : theme.accent,
                     border: `1px solid ${theme.accentBorder}`,
                   }}
                 >
