@@ -138,6 +138,17 @@
     # stays supported for any future project-wide view.
     returnableMaterialIssueLines(poId: ID, projectId: ID, productId: ID): [ReturnableIssueLine!]!
     returnableDirectDeliveryLines(poId: ID, projectId: ID, productId: ID): [ReturnableDirectDeliveryLine!]!
+    # Equipment (returnable Store Out lines) still out with people, and what has come back.
+    # status: open (default) | overdue | all. See lib/equipmentReturns.ts for the one rule behind the list and the summary.
+    returnableItems(status: String, search: String): [ReturnableItem!]!
+    returnableItemsSummary: ReturnableItemsSummary!
+    # Transfers between two locations of the caller's company. status: in_transit | received | received_short | cancelled | all.
+    storeTransfers(status: String, id: ID): [StoreTransfer!]!
+    # What waits in the company's temporary stores and for how long; one rule behind the list and the summary (lib/storeTransfers.ts).
+    tempStoreItems: [TempStoreItem!]!
+    tempStoreSummary: TempStoreSummary!
+    # One history of Store In, Store Out, transfers and equipment returns, newest first (lib/storeDocuments.ts). type: store_in | store_out | transfer | return.
+    storeDocuments(type: String, locationId: ID, search: String): [StoreDocument!]!
     availableInvoiceCosts(invoiceId: ID!, sourceType: String): AvailableCosts!
 
     # Interco stock transfers
@@ -1538,6 +1549,11 @@
     projectCode: String
     projectName: String
     issuedByName: String
+    # Who the Store Out was issued to (an employee, or a typed name for a contractor) and the department. All nullable:
+    # a Store Out made before migration 326, or for a PO or requisition, has none (and a nullable field cannot null the issue).
+    issuedToName: String
+    issuedToEmployeeId: ID
+    department: String
     createdAt: String!
     lines: [MaterialIssueLine!]!
   }
@@ -1556,6 +1572,197 @@
     unitCost: Float!
     totalCost: Float!
     isInvoiced: Boolean!
+    # Equipment that must come back (migration 326). Nullable: the readers that return a bare line leave them out.
+    isReturnable: Boolean
+    expectedReturnDate: String
+    serialNote: String
+    qtyReturned: Float
+  }
+
+  # One returnable Store Out line: what is still out, with whom, due when, and what has come back.
+  type ReturnableItem {
+    issueLineId: ID!
+    issueId: ID!
+    issueNumber: String!
+    issueDate: String!
+    productId: ID!
+    productName: String
+    productNameAr: String
+    sku: String
+    uom: String
+    # The product is flagged Equipment (a line can also be ticked returnable by hand for any other product).
+    isEquipment: Boolean!
+    qtyIssued: Float!
+    qtyReturned: Float!
+    qtyLost: Float!
+    qtyOutstanding: Float!
+    expectedReturnDate: String
+    daysOverdue: Int
+    # out | overdue | returned
+    status: String!
+    serialNote: String
+    issuedToName: String
+    department: String
+    # Only for the company that made the Store Out: a lender never sees the borrower's project.
+    projectCode: String
+    projectName: String
+    storeName: String
+    fromLocationId: ID
+    # True when the stock came from another company's location (the central warehouse lending equipment): no price, no bill.
+    isLoan: Boolean!
+    ownerCompanyName: String
+    borrowerCompanyName: String
+    lastReturnDate: String
+    # Only the company that holds the equipment takes it back; the screen keeps no copy of this rule.
+    canReceiveBack: Boolean!
+  }
+
+  type ReturnableItemsSummary {
+    openLines: Int!
+    overdueLines: Int!
+    dueSoonLines: Int!
+    unitsOut: Float!
+  }
+
+  type EquipmentReturn {
+    id: ID!
+    returnNumber: String!
+    returnDate: String!
+    receivedByName: String
+    notes: String
+    lines: [EquipmentReturnLine!]!
+  }
+
+  type EquipmentReturnLine {
+    id: ID!
+    issueLineId: ID!
+    productId: ID!
+    productName: String
+    qtyReturned: Float!
+    # good | needs_repair | damaged | lost
+    condition: String!
+    toLocationName: String
+    remarks: String
+  }
+
+  type StoreTransfer {
+    id: ID!
+    transferNumber: String!
+    transferDate: String!
+    # in_transit | received | received_short | cancelled
+    status: String!
+    fromLocationId: ID!
+    fromLocationName: String
+    toLocationId: ID!
+    toLocationName: String
+    driverName: String
+    vehicleNo: String
+    waybillNo: String
+    reference: String
+    notes: String
+    daysInTransit: Int
+    receivedDate: String
+    receivedByName: String
+    lines: [StoreTransferLine!]!
+  }
+
+  type StoreTransferLine {
+    id: ID!
+    productId: ID!
+    productName: String
+    sku: String
+    uom: String
+    qtySent: Float!
+    qtyReceived: Float
+    remarks: String
+    receiveRemarks: String
+  }
+
+  input StoreTransferLineInput {
+    productId: ID!
+    qty: Float!
+    remarks: String
+  }
+
+  input StoreTransferInput {
+    fromLocationId: ID!
+    toLocationId: ID!
+    transferDate: String
+    driverName: String
+    vehicleNo: String
+    waybillNo: String
+    reference: String
+    notes: String
+    lines: [StoreTransferLineInput!]!
+  }
+
+  input ReceiveStoreTransferLineInput {
+    lineId: ID!
+    qtyReceived: Float!
+    remarks: String
+  }
+
+  input ReceiveStoreTransferInput {
+    receivedDate: String
+    receivedByName: String
+    lines: [ReceiveStoreTransferLineInput!]!
+  }
+
+  type TempStoreItem {
+    productId: ID!
+    productName: String
+    productNameAr: String
+    sku: String
+    uom: String
+    locationId: ID!
+    locationName: String
+    qty: Float!
+    since: String
+    daysWaiting: Int!
+    # waiting longer than the limit (7 days)
+    late: Boolean!
+    poNumbers: String
+    suppliers: String
+    destinationLocationId: ID
+    destinationName: String
+  }
+
+  type StoreDocument {
+    id: ID!
+    # store_in | store_out | transfer | return
+    docType: String!
+    number: String!
+    date: String!
+    storeId: ID
+    storeName: String
+    # the supplier (Store In), who it was issued to or the project (Store Out), the destination (transfer), who received it (return)
+    party: String
+    reference: String
+    lineCount: Int!
+    status: String!
+  }
+
+  type TempStoreSummary {
+    itemsWaiting: Int!
+    waitingTooLong: Int!
+    inTransit: Int!
+    oldestDays: Int!
+  }
+
+  input EquipmentReturnLineInput {
+    issueLineId: ID!
+    qtyReturned: Float!
+    condition: String!
+    # Required unless the condition is lost; a real warehouse or site of the company that holds the equipment.
+    toLocationId: ID
+    remarks: String
+  }
+
+  input EquipmentReturnInput {
+    returnDate: String
+    receivedByName: String
+    notes: String
+    lines: [EquipmentReturnLineInput!]!
   }
 
   # Material Return — unused, already-issued project material coming back
@@ -2920,6 +3127,8 @@
   input ReceiptInput {
     receipt_date: String!
     location_id: ID
+    # Required when location_id is a TEMPORARY store (a warehouse or site of the same company); refused otherwise.
+    final_destination_location_id: ID
     notes: String
     received_by_name: String
     received_from_name: String
@@ -3079,6 +3288,11 @@
     cost_currency: String
     reorder_point: String
     reorder_qty: String
+    # Equipment that must come back when issued (migration 326). default_return_days: how long it may be out; null = a week.
+    is_returnable: Boolean
+    default_return_days: Int
+    # How much of this product is out with people right now (open returnable Store Out lines). Only the product page asks.
+    qty_out: String
     has_stock_moves: Boolean
     balances: [ProductBalance!]
     costHistory: [ProductCostHistoryEntry!]
@@ -3258,6 +3472,8 @@
     reorder_point: Float
     reorder_qty: Float
     is_active: Boolean
+    is_returnable: Boolean
+    default_return_days: Int
   }
 
   input LocationInput {
@@ -3930,8 +4146,13 @@
     adminSetProjectStatus(id: ID!, status: String!): Project!
     adminSetPhase(id: ID!, phase: String!): Project!
     advancePhase(id: ID!, targetPhase: String!): Project!
-    createMaterialIssue(projectId: ID, poId: ID, issueDate: String!, notes: String): MaterialIssue!
-    addMaterialIssueLine(issueId: ID!, productId: ID!, poLineId: ID, qtyIssued: Float!, unitCost: Float!, fromLocationId: ID): MaterialIssueLine!
+    createMaterialIssue(projectId: ID, poId: ID, issueDate: String!, notes: String, issuedToEmployeeId: ID, issuedToName: String, department: String): MaterialIssue!
+    addMaterialIssueLine(issueId: ID!, productId: ID!, poLineId: ID, qtyIssued: Float!, unitCost: Float!, fromLocationId: ID, isReturnable: Boolean, expectedReturnDate: String, serialNote: String): MaterialIssueLine!
+    createEquipmentReturn(input: EquipmentReturnInput!): EquipmentReturn!
+    # Sends stock out of one location into transit; the other end receives it (full or short) or it is cancelled while in transit.
+    createStoreTransfer(input: StoreTransferInput!): StoreTransfer!
+    receiveStoreTransfer(id: ID!, input: ReceiveStoreTransferInput!): StoreTransfer!
+    cancelStoreTransfer(id: ID!): StoreTransfer!
     deleteMaterialIssueLine(id: ID!, issueId: ID!): Boolean!
     issueMaterialIssue(id: ID!): MaterialIssue!
     cancelMaterialIssue(id: ID!): MaterialIssue!

@@ -43,6 +43,9 @@ export async function stockIssueCostByCurrency(
        FROM project_material_issue_lines il
        LEFT JOIN products pr ON pr.id = il.product_id
       WHERE il.issue_id = $1
+        -- equipment that must come back costs the project nothing when it goes out (playbook #107); a loss is charged
+        -- when it is recorded, by createEquipmentReturn
+        AND NOT il.is_returnable
       GROUP BY 1
      HAVING SUM(il.total_cost) > 0
       ORDER BY 1`,

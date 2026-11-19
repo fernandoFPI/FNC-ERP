@@ -28,7 +28,7 @@ export function receivingLocationRefusal(name: string): string {
   )
 }
 
-/** Refuses a missing location and any virtual one. A real location of any other type (warehouse, site, transit) passes. */
+/** Refuses a missing location, any virtual one, and the transit location (stock waiting there is on a truck, not on a shelf). A warehouse, a site or a temporary store passes. */
 export async function assertReceivableLocation(exec: Exec, locationId: string): Promise<void> {
   const r = await exec.query<{ name: string; type: string }>(
     `SELECT name, type FROM stock_locations WHERE id = $1`,
@@ -37,4 +37,8 @@ export async function assertReceivableLocation(exec: Exec, locationId: string): 
   const location = r.rows.at(0)
   if (!location) throw new Error('The receiving location was not found.')
   if (isVirtualLocationType(location.type)) throw new Error(receivingLocationRefusal(location.name))
+  if (location.type === 'transit')
+    throw new Error(
+      `Goods cannot be received into "${location.name}": it is the transit location, where stock waits while it is being sent between stores. Choose a warehouse, site or temporary store.`,
+    )
 }

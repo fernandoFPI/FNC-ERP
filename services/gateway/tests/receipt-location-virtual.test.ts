@@ -229,7 +229,7 @@ describe('the rule itself (pure)', () => {
   it('knows the two virtual types and nothing else', () => {
     expect(isVirtualLocationType('virtual_in')).toBe(true)
     expect(isVirtualLocationType('virtual_out')).toBe(true)
-    for (const real of ['warehouse', 'site', 'transit', '', null, undefined])
+    for (const real of ['warehouse', 'site', 'transit', 'temporary', '', null, undefined])
       expect(isVirtualLocationType(real)).toBe(false)
   })
 
@@ -240,7 +240,7 @@ describe('the rule itself (pure)', () => {
     expect(text).toMatch(/warehouse or site/i)
   })
 
-  it('refuses a virtual location, a missing one, and accepts a warehouse, a site and a transit location', async () => {
+  it('refuses a virtual location, the transit location and a missing one, and accepts a warehouse, a site and a temporary store', async () => {
     await expect(assertReceivableLocation(pool, virtualOutId)).rejects.toThrow(REFUSED)
     await expect(assertReceivableLocation(pool, virtualInId)).rejects.toThrow(REFUSED)
     await expect(assertReceivableLocation(pool, randomUUID())).rejects.toThrow(/not found/)
@@ -250,7 +250,12 @@ describe('the rule itself (pure)', () => {
       `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,$2,'transit',true) RETURNING id`,
       [TEST_COMPANY_ID, `${TAG}Transit`],
     )
-    await expect(assertReceivableLocation(pool, transit.rows[0]!.id)).resolves.toBeUndefined()
+    await expect(assertReceivableLocation(pool, transit.rows[0]!.id)).rejects.toThrow(/transit location/)
+    const temp = await pool.query<{ id: string }>(
+      `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,$2,'temporary',true) RETURNING id`,
+      [TEST_COMPANY_ID, `${TAG}Temp`],
+    )
+    await expect(assertReceivableLocation(pool, temp.rows[0]!.id)).resolves.toBeUndefined()
   })
 })
 

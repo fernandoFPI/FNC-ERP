@@ -96,6 +96,38 @@ import { bookStockIssueCost, stockCostCurrencySql } from '../lib/stockIssueCost.
 import { assertLineAccountingChoice } from '../lib/poLineAccounting.js'
 import { assertReceivableLocation } from '../lib/receivingLocation.js'
 import {
+  STORE_DOCUMENTS_LIMIT,
+  STORE_DOCUMENTS_SQL,
+  isStoreDocumentType,
+  mapStoreDocumentRow,
+  searchPattern,
+} from '../lib/storeDocuments.js'
+import {
+  TEMP_STORE_ITEMS_SQL,
+  assertTransferEndpoint,
+  cancelStoreTransfer as cancelStoreTransferLib,
+  mapTempStoreRow,
+  receiveStoreTransfer as receiveStoreTransferLib,
+  sendStoreTransfer,
+  storeTransfersFor,
+} from '../lib/storeTransfers.js'
+import {
+  EQUIPMENT_DEFAULT_RETURN_DAYS,
+  ISSUE_LINE_EQUIPMENT_JSON,
+  QTY_EPSILON,
+  RETURNABLE_ITEMS_BASE_SQL,
+  RETURNABLE_SUMMARY_SQL,
+  cleanIssuedToText,
+  defaultExpectedReturnDate,
+  isDateOnly,
+  isReturnCondition,
+  isReturnableFilter,
+  issuedToFields,
+  mapReturnableItemRow,
+  productReturnDays,
+  returnableItemsSql,
+} from '../lib/equipmentReturns.js'
+import {
   advanceProblem,
   getPOFundingAdvances,
   planFundingSlots,
@@ -10424,7 +10456,8 @@ export const resolvers = {
                'poLineId', pmil.po_line_id,
                'fromLocationName', loc_from.name, 'toLocationName', loc_to.name,
                'qtyIssued', pmil.qty_issued, 'unitCost', pmil.unit_cost,
-               'totalCost', pmil.total_cost, 'isInvoiced', pmil.is_invoiced
+               'totalCost', pmil.total_cost, 'isInvoiced', pmil.is_invoiced,
+               ${ISSUE_LINE_EQUIPMENT_JSON}
              ) ORDER BY pmil.created_at) FILTER (WHERE pmil.id IS NOT NULL),
              '[]'
            ) AS lines
@@ -10455,6 +10488,7 @@ export const resolvers = {
         projectCode: r.project_code ?? null,
         projectName: r.project_name ?? null,
         issuedByName: r.issued_by_name ?? null,
+        ...issuedToFields(r),
         createdAt: r.created_at,
         lines: (r.lines as unknown[] | null) ?? [],
       }
@@ -10523,7 +10557,8 @@ export const resolvers = {
                'poLineId', pmil.po_line_id,
                'fromLocationName', loc_from.name, 'toLocationName', loc_to.name,
                'qtyIssued', pmil.qty_issued, 'unitCost', pmil.unit_cost,
-               'totalCost', pmil.total_cost, 'isInvoiced', pmil.is_invoiced
+               'totalCost', pmil.total_cost, 'isInvoiced', pmil.is_invoiced,
+               ${ISSUE_LINE_EQUIPMENT_JSON}
              ) ORDER BY pmil.created_at) FILTER (WHERE pmil.id IS NOT NULL),
              '[]'
            ) AS lines
@@ -10555,6 +10590,7 @@ export const resolvers = {
         projectCode: r.project_code ?? null,
         projectName: r.project_name ?? null,
         issuedByName: r.issued_by_name ?? null,
+        ...issuedToFields(r),
         createdAt: r.created_at,
         lines: (r.lines as unknown[] | null) ?? [],
       }))
@@ -10621,6 +10657,8 @@ export const resolvers = {
         'pmi.company_id=$1',
         "pmi.status='issued'",
         '(pmi.po_id IS NOT NULL OR pmi.requisition_id IS NOT NULL)',
+        // Equipment comes back through the Returnables page, not as a Material Return (it never charged the project).
+        'NOT pmil.is_returnable',
       ]
       const params: unknown[] = [ctx.auth.companyId]
       if (args.poId) {
@@ -10680,6 +10718,103 @@ export const resolvers = {
         fromLocationId: r.from_location_id ?? null,
         fromLocationName: r.from_location_name ?? null,
       }))
+    },
+
+    // Equipment (returnable Store Out lines) still out with people, and what has come back. The list and its summary read
+    // ONE query (lib/equipmentReturns.ts), so a count and the rows it counts cannot disagree, and the tenancy rule lives there
+    // too: the company that made the Store Out and the company whose shelf the stock left both see the line; nobody else.
+    returnableItems: async (
+      _: unknown,
+      args: { status?: string; search?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const status = args.status ?? 'open'
+      if (!isReturnableFilter(status)) throw new Error('status must be open, overdue or all')
+      const search = args.search?.trim() ?? ''
+      const params: unknown[] = [ctx.auth.companyId]
+      if (search) params.push(`%${search.replace(/[\\%_]/g, '\\$&')}%`)
+      const result = await query(returnableItemsSql(status, search !== ''), params)
+      return result.rows.map((r) => mapReturnableItemRow(r as Record<string, unknown>))
+    },
+
+    // Store transfers (sent, in transit, received) of the caller's company; status filters by one status, 'all' or empty is everything.
+    storeTransfers: async (
+      _: unknown,
+      args: { status?: string; id?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      // One transfer by id (a link from Store History to a transfer older than the newest 200 the list loads). The id comes
+      // from a URL, so anything that is not a uuid is "no such transfer", not a database error; the company filter still applies.
+      if (args.id !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.id)) return []
+      return storeTransfersFor(pool, ctx.auth.companyId, args.status, 200, args.id)
+    },
+
+    // What is waiting in the company's temporary stores and for how long (lib/storeTransfers.ts: ONE query for the list and the summary).
+    tempStoreItems: async (_: unknown, _args: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const r = await query(TEMP_STORE_ITEMS_SQL, [ctx.auth.companyId])
+      return r.rows.map((row) => mapTempStoreRow(row as Record<string, unknown>))
+    },
+
+    // The history of everything that moved stock through a store (lib/storeDocuments.ts). Store In rows follow the same branch scope as the Store In list.
+    storeDocuments: async (_: unknown, args: { type?: string; locationId?: string; search?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const type = args.type ?? ''
+      if (type !== '' && !isStoreDocumentType(type)) throw new Error('type must be store_in, store_out, transfer or return')
+      const branchScope = await branchScopedPOFilterGW(ctx.auth as GWAuth)
+      const r = await query(STORE_DOCUMENTS_SQL, [
+        ctx.auth.companyId,
+        branchScope ?? null,
+        type,
+        args.locationId ?? null,
+        searchPattern(args.search),
+        STORE_DOCUMENTS_LIMIT,
+      ])
+      return r.rows.map((row) => mapStoreDocumentRow(row as Record<string, unknown>))
+    },
+
+    tempStoreSummary: async (_: unknown, _args: unknown, ctx: GQLContext) => {
+      const empty = { itemsWaiting: 0, waitingTooLong: 0, inTransit: 0, oldestDays: 0 }
+      if (!ctx.auth) return empty
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const r = await query(TEMP_STORE_ITEMS_SQL, [ctx.auth.companyId])
+      const rows = r.rows.map((row) => mapTempStoreRow(row as Record<string, unknown>))
+      const transit = await query<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM stock_transfers WHERE company_id=$1 AND status='in_transit'`,
+        [ctx.auth.companyId],
+      )
+      return {
+        itemsWaiting: rows.length,
+        waitingTooLong: rows.filter((x) => x.late).length,
+        inTransit: transit.rows[0]?.n ?? 0,
+        oldestDays: rows.reduce((m, x) => Math.max(m, x.daysWaiting), 0),
+      }
+    },
+
+    returnableItemsSummary: async (_: unknown, _args: unknown, ctx: GQLContext) => {
+      const empty = { openLines: 0, overdueLines: 0, dueSoonLines: 0, unitsOut: 0 }
+      if (!ctx.auth) return empty
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const r = await query<{
+        open_lines: number
+        overdue_lines: number
+        due_soon_lines: number
+        units_out: string
+      }>(RETURNABLE_SUMMARY_SQL, [ctx.auth.companyId])
+      const row = r.rows[0]
+      if (!row) return empty
+      return {
+        openLines: row.open_lines,
+        overdueLines: row.overdue_lines,
+        dueSoonLines: row.due_soon_lines,
+        unitsOut: parseFloat(row.units_out) || 0,
+      }
     },
 
     // Counterpart to returnableMaterialIssueLines for PO lines that skipped
@@ -12253,7 +12388,7 @@ export const resolvers = {
 
     product: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
-      const [prod, balances, costHistory, pendingCostChanges] = await Promise.all([
+      const [prod, balances, costHistory, pendingCostChanges, outWithPeople] = await Promise.all([
         query(
           `SELECT p.*,
                   (SELECT COUNT(*)>0 FROM stock_moves WHERE product_id=p.id) AS has_stock_moves
@@ -12284,6 +12419,14 @@ export const resolvers = {
            ORDER BY pccr.created_at DESC`,
           [args.id],
         ),
+        // How much of this product is out with people: the same rule as the Returnables page (lib/equipmentReturns.ts), so the
+        // two numbers cannot disagree.
+        query<{ qty_out: string }>(
+          `SELECT COALESCE(SUM(b.qty_outstanding), 0)::text AS qty_out
+             FROM (${RETURNABLE_ITEMS_BASE_SQL}) b
+            WHERE b.product_id = $2 AND b.qty_outstanding > ${QTY_EPSILON}`,
+          [ctx.auth.companyId, args.id],
+        ),
       ])
       if (!prod.rows[0]) return null
       return {
@@ -12291,6 +12434,7 @@ export const resolvers = {
         balances: balances.rows,
         costHistory: costHistory.rows,
         pendingCostChanges: pendingCostChanges.rows,
+        qty_out: outWithPeople.rows[0]?.qty_out ?? '0',
       }
     },
 
@@ -14482,6 +14626,7 @@ export const resolvers = {
         input: {
           receipt_date: string
           location_id?: string
+          final_destination_location_id?: string
           notes?: string
           received_by_name?: string
           received_from_name?: string
@@ -14583,10 +14728,31 @@ export const resolvers = {
             }
           }
 
+          // Goods received into a TEMPORARY store are on their way somewhere else: say where (a warehouse or site of this company).
+          // Any other receiving location has no final destination. Checked before a receipt number is taken.
+          let finalDestinationId: string | null = null
+          if (i.location_id) {
+            const recvType = await client.query<{ type: string }>(`SELECT type FROM stock_locations WHERE id=$1`, [i.location_id])
+            if (recvType.rows[0]?.type === 'temporary') {
+              if (!i.final_destination_location_id)
+                throw new Error('Choose the final destination of goods received into a temporary store')
+              if (i.final_destination_location_id === i.location_id)
+                throw new Error('The final destination must be a different location')
+              const destType = await client.query<{ type: string }>(`SELECT type FROM stock_locations WHERE id=$1`, [i.final_destination_location_id])
+              await assertTransferEndpoint(client, requireAuth(ctx).companyId, i.final_destination_location_id)
+              if (destType.rows[0]?.type === 'temporary')
+                throw new Error('The final destination must be a warehouse or a site, not another temporary store')
+              finalDestinationId = i.final_destination_location_id
+            } else if (i.final_destination_location_id) {
+              throw new Error('A final destination only applies to goods received into a temporary store')
+            }
+          } else if (i.final_destination_location_id) {
+            throw new Error('A final destination only applies to goods received into a temporary store')
+          }
           const receiptNumber = await nextDocumentNumber(requireAuth(ctx).companyId, 'store_in', 'RCPT')
           const receipt = await client.query(
-            `INSERT INTO po_receipts (po_id,receipt_number,received_date,warehouse_location_id,notes,received_by,received_by_name,received_from_name,location_notes,status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft') RETURNING *`,
+            `INSERT INTO po_receipts (po_id,receipt_number,received_date,warehouse_location_id,notes,received_by,received_by_name,received_from_name,location_notes,status,final_destination_location_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft',$10) RETURNING *`,
             [
               args.poId,
               receiptNumber,
@@ -14597,6 +14763,7 @@ export const resolvers = {
               i.received_by_name ?? null,
               i.received_from_name ?? null,
               i.location_notes ?? null,
+              finalDestinationId,
             ],
           )
           const dbRow = receipt.rows[0] as Record<string, unknown>
@@ -14748,7 +14915,7 @@ export const resolvers = {
             // The last resort is any real location, never a virtual one (playbook #105): a company with no warehouse
             // used to get whichever active location came first, which could be Virtual Consumption.
             const fallbackRes = await client.query(
-              `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true AND type NOT IN ('virtual_in','virtual_out') ORDER BY name LIMIT 1`,
+              `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true AND type NOT IN ('virtual_in','virtual_out','transit') ORDER BY name LIMIT 1`,
               [requireAuth(ctx).companyId],
             )
             resolvedToLocationId =
@@ -15885,6 +16052,8 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
+      // Equipment (migration 326): how long it may be out. Refused here, with a message, rather than by the CHECK.
+      const returnDays = productReturnDays(i.default_return_days)
       const manualSku = typeof i.sku === 'string' ? i.sku.trim() : ''
       // Store (sub_category) determines the prefix for raw materials — looked
       // up from product_store_categories, which admins manage themselves at
@@ -15908,8 +16077,8 @@ export const resolvers = {
             )
           : await nextDocumentNumber(ctx.auth.companyId, 'product', 'PRD'))
       const r = await query(
-        `INSERT INTO products (company_id,sku,name,name_ar,description,category,sub_category,uom,valuation_method,standard_cost,cost_currency,reorder_point,reorder_qty,is_active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+        `INSERT INTO products (company_id,sku,name,name_ar,description,category,sub_category,uom,valuation_method,standard_cost,cost_currency,reorder_point,reorder_qty,is_active,is_returnable,default_return_days)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
         [
           ctx.auth.companyId,
           sku,
@@ -15925,6 +16094,8 @@ export const resolvers = {
           i.reorder_point ?? null,
           i.reorder_qty ?? null,
           i.is_active ?? true,
+          i.is_returnable === true,
+          returnDays,
         ],
       )
       void publishEntityChanged(ctx.auth.companyId, 'product', r.rows[0].id as string, 'created')
@@ -15945,7 +16116,10 @@ export const resolvers = {
             `UPDATE products SET name=COALESCE($3,name), name_ar=COALESCE($4,name_ar), description=COALESCE($5,description), category=COALESCE($6,category),
                sub_category=COALESCE($7,sub_category), uom=COALESCE($8,uom),
                reorder_point=COALESCE($9,reorder_point), reorder_qty=COALESCE($10,reorder_qty),
-               is_active=COALESCE($11,is_active), updated_at=NOW()
+               is_active=COALESCE($11,is_active),
+               is_returnable=COALESCE($12::boolean,is_returnable),
+               default_return_days=CASE WHEN $13::boolean THEN $14::int ELSE default_return_days END,
+               updated_at=NOW()
              WHERE id=$1 AND company_id=$2 RETURNING *`,
             [
               args.id,
@@ -15959,6 +16133,10 @@ export const resolvers = {
               i.reorder_point ?? null,
               i.reorder_qty ?? null,
               i.is_active ?? null,
+              typeof i.is_returnable === 'boolean' ? i.is_returnable : null,
+              // Only an edit that mentions the days changes them (null clears them back to "a week").
+              'default_return_days' in i,
+              productReturnDays(i.default_return_days),
             ],
           )
           if (!r.rows[0]) throw new Error('Product not found')
@@ -25598,7 +25776,15 @@ export const resolvers = {
 
     createMaterialIssue: async (
       _: unknown,
-      args: { projectId?: string; poId?: string; issueDate: string; notes?: string },
+      args: {
+        projectId?: string
+        poId?: string
+        issueDate: string
+        notes?: string
+        issuedToEmployeeId?: string
+        issuedToName?: string
+        department?: string
+      },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
@@ -25611,11 +25797,25 @@ export const resolvers = {
           if (!r.rows[0]) throw new Error('Project not found')
         })
       }
+      // Who the Store Out is issued to (migration 326). Everything is checked BEFORE the document number is taken (a sequence
+      // keeps the number it handed out, so a refusal afterwards would burn one). An employee must be this company's; the typed
+      // name is what is shown, so the employee's own name is copied into it (a document keeps the name it was issued under).
+      let issuedToName = cleanIssuedToText(args.issuedToName, 'Issued to', 200)
+      const department = cleanIssuedToText(args.department, 'Department', 100)
+      if (args.issuedToEmployeeId) {
+        const emp = await query<{ first_name: string; last_name: string }>(
+          `SELECT first_name, last_name FROM employees WHERE id=$1 AND company_id=$2`,
+          [args.issuedToEmployeeId, ctx.auth.companyId],
+        )
+        if (!emp.rows[0]) throw new Error('Employee not found')
+        issuedToName = `${emp.rows[0].first_name} ${emp.rows[0].last_name}`.trim()
+      }
       const issueNumber = await nextDocumentNumber(ctx.auth.companyId, 'material_issue', 'SO')
       const r = await query(
         `INSERT INTO project_material_issues
-           (project_id, company_id, issue_number, issue_date, notes, po_id, status, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7) RETURNING *`,
+           (project_id, company_id, issue_number, issue_date, notes, po_id, status, created_by,
+            issued_to_employee_id, issued_to_name, department)
+         VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, $8, $9, $10) RETURNING *`,
         [
           args.projectId ?? null,
           ctx.auth.companyId,
@@ -25624,6 +25824,9 @@ export const resolvers = {
           args.notes ?? null,
           args.poId ?? null,
           ctx.auth.userId,
+          args.issuedToEmployeeId ?? null,
+          issuedToName,
+          department,
         ],
       )
       const row = r.rows[0] as Record<string, unknown>
@@ -25637,6 +25840,7 @@ export const resolvers = {
         requisitionId: row.requisition_id ?? null,
         poNumber: null,
         issuedByName: null,
+        ...issuedToFields(row),
         createdAt: row.created_at,
         lines: [],
       }
@@ -25651,20 +25855,63 @@ export const resolvers = {
         qtyIssued: number
         unitCost: number
         fromLocationId?: string
+        isReturnable?: boolean
+        expectedReturnDate?: string
+        serialNote?: string
       },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
       const issueR = await query(
-        'SELECT status, company_id FROM project_material_issues WHERE id=$1',
+        'SELECT status, company_id, issue_date FROM project_material_issues WHERE id=$1',
         [args.issueId],
       )
       const issue = issueR.rows[0] as Record<string, unknown> | undefined
       if (!issue || issue.company_id !== ctx.auth.companyId)
         throw new Error('Material issue not found')
       if (issue.status !== 'draft') throw new Error('Can only add lines to a draft store-out')
-      const totalCost = args.qtyIssued * args.unitCost
+      // Equipment (migration 326): a product flagged returnable is ALWAYS returnable, whatever the caller sent; any other
+      // product can be ticked returnable for this line. Checked before anything is written.
+      const prodEarly = await query<{
+        name: string
+        name_ar: string | null
+        is_returnable: boolean
+        default_return_days: number | null
+      }>(`SELECT name, name_ar, is_returnable, default_return_days FROM products WHERE id=$1`, [
+        args.productId,
+      ])
+      const productEarly = prodEarly.rows[0]
+      if (!productEarly) throw new Error('Product not found')
+      const lineIsReturnable = args.isReturnable === true || productEarly.is_returnable
+      let expectedReturnDate: string | null = null
+      let serialNote: string | null = null
+      if (lineIsReturnable) {
+        if (args.expectedReturnDate != null && args.expectedReturnDate !== '') {
+          if (!isDateOnly(args.expectedReturnDate))
+            throw new Error('Expected return date must be a valid date (YYYY-MM-DD)')
+          if (args.expectedReturnDate < String(issue.issue_date))
+            throw new Error('Expected return date cannot be before the issue date')
+          expectedReturnDate = args.expectedReturnDate
+        } else {
+          expectedReturnDate = defaultExpectedReturnDate(
+            String(issue.issue_date),
+            productEarly.default_return_days,
+          )
+        }
+        serialNote = cleanIssuedToText(args.serialNote, 'Serial / asset note', 100)
+      }
+      let unitCostToUse = args.unitCost
+      // Equipment is not charged when it is issued, so nobody has a reason to type a cost for it. Its own cost at the shelf
+      // it leaves is the honest default: it is what a loss is charged at, and what goes back on the return move.
+      if (lineIsReturnable && !(unitCostToUse > 0) && args.fromLocationId) {
+        const shelf = await query<{ average_cost: string }>(
+          `SELECT average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL`,
+          [args.productId, args.fromLocationId],
+        )
+        unitCostToUse = parseFloat(shelf.rows[0]?.average_cost ?? '0') || 0
+      }
+      const totalCost = args.qtyIssued * unitCostToUse
       // Manual lines need a source location too, same as PO-originated ones,
       // so confirming this Store Out can actually deduct the right stock —
       // default to the company's warehouse if the caller didn't pick one.
@@ -25696,32 +25943,38 @@ export const resolvers = {
         ).rows[0].id
       const r = await query(
         `INSERT INTO project_material_issue_lines
-           (issue_id, product_id, po_line_id, qty_issued, unit_cost, total_cost, from_location_id, to_location_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+           (issue_id, product_id, po_line_id, qty_issued, unit_cost, total_cost, from_location_id, to_location_id,
+            is_returnable, expected_return_date, serial_note)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
         [
           args.issueId,
           args.productId,
           args.poLineId ?? null,
           args.qtyIssued,
-          args.unitCost,
+          unitCostToUse,
           totalCost,
           fromLocationId,
           toLocationId,
+          lineIsReturnable,
+          expectedReturnDate,
+          serialNote,
         ],
       )
-      const prodR = await query('SELECT name, name_ar FROM products WHERE id=$1', [args.productId])
       const row = r.rows[0] as Record<string, unknown>
-      const prodRow = prodR.rows[0] as Record<string, unknown> | undefined
       return {
         id: row.id,
         productId: row.product_id,
-        productName: prodRow?.name ?? null,
-        productNameAr: prodRow?.name_ar ?? null,
+        productName: productEarly.name ?? null,
+        productNameAr: productEarly.name_ar ?? null,
         poLineId: row.po_line_id ?? null,
         qtyIssued: parseFloat(String(row.qty_issued)),
         unitCost: parseFloat(String(row.unit_cost)),
         totalCost: parseFloat(String(row.total_cost)),
         isInvoiced: row.is_invoiced,
+        isReturnable: row.is_returnable === true,
+        expectedReturnDate: (row.expected_return_date as string | null) ?? null,
+        serialNote: (row.serial_note as string | null) ?? null,
+        qtyReturned: 0,
       }
     },
 
@@ -25855,13 +26108,26 @@ export const resolvers = {
         // acquires its FOR UPDATE locks in the same order — avoids deadlocks
         // between two Store Outs that share a product/location pair.
         const issueLinesRes = await client.query(
-          `SELECT piml.*, p.sku, p.name AS product_name
+          `SELECT piml.*, p.sku, p.name AS product_name,
+                  COALESCE(p.is_returnable, false) AS product_is_returnable, p.default_return_days
            FROM project_material_issue_lines piml
            LEFT JOIN products p ON p.id = piml.product_id
            WHERE piml.issue_id=$1
            ORDER BY piml.product_id, piml.from_location_id`,
           [args.id],
         )
+        // Equipment (migration 326): a line is returnable when it was ticked OR its product is flagged Equipment, so a line
+        // made before the flag existed, or by a path that never heard of it (a requisition covered from stock), is still
+        // equipment when it is confirmed. A manual Store Out must say who has it; the person is the whole point of the list.
+        const lineIsReturnable = (l: Record<string, unknown>): boolean =>
+          l.is_returnable === true || l.product_is_returnable === true
+        if (
+          !issue.po_id &&
+          !issue.requisition_id &&
+          !issue.issued_to_name &&
+          (issueLinesRes.rows as Record<string, unknown>[]).some(lineIsReturnable)
+        )
+          throw new Error('Enter who the equipment is issued to before confirming this Store Out')
         let fallbackFromLocationId: string | undefined
         let fallbackToLocationId: string | undefined
         for (const line of issueLinesRes.rows as Record<string, unknown>[]) {
@@ -25969,7 +26235,77 @@ export const resolvers = {
             }
           }
 
-          if (fromCompanyId === companyId) {
+          const returnable = lineIsReturnable(line)
+          if (returnable) {
+            // Equipment: it leaves the shelf and must come back. Mark the line (it may have been equipment only through its
+            // product), give it a due date if it has none, and keep it out of project cost and invoicing (those read is_returnable).
+            await client.query(
+              // The shelf and the place it goes while out are written onto the line too (an old line may have had neither),
+              // because the return finds them there.
+              `UPDATE project_material_issue_lines
+                  SET is_returnable = true,
+                      expected_return_date = COALESCE(expected_return_date, $2::date),
+                      from_location_id = COALESCE(from_location_id, $3::uuid),
+                      to_location_id = COALESCE(to_location_id, $4::uuid)
+                WHERE id = $1`,
+              [
+                line.id,
+                defaultExpectedReturnDate(
+                  String(issue.issue_date),
+                  (line.default_return_days as number | null | undefined) ?? EQUIPMENT_DEFAULT_RETURN_DAYS,
+                ),
+                fromLocationId,
+                toLocationId,
+              ],
+            )
+          }
+          if (returnable && fromCompanyId !== companyId) {
+            // A LOAN from another company's shelf (the group's central warehouse lending equipment): the stock never changes
+            // company, so there is no price, no inter-company transfer and no bill (playbook #107). One move, in the OWNER's
+            // books, from its shelf into its own Virtual Consumption; the line then points at that location, which is where the
+            // return takes it back from.
+            const lender = await client.query<{ is_central_warehouse: boolean }>(
+              `SELECT is_central_warehouse FROM companies WHERE id=$1`,
+              [fromCompanyId],
+            )
+            if (!lender.rows[0]?.is_central_warehouse)
+              throw new Error(
+                `${productLabel} sits in another company's location: equipment can only be lent from the group's central warehouse`,
+              )
+            const lenderOut = await client.query(
+              `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
+              [fromCompanyId],
+            )
+            const lenderOutId: string = (lenderOut.rows[0]?.id ??
+              (
+                await client.query(
+                  `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,'Virtual Consumption','virtual_out',true) RETURNING id`,
+                  [fromCompanyId],
+                )
+              ).rows[0].id) as string
+            const borrowerName = await companyNameForNote(client, companyId)
+            await client.query(
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id)
+               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10,$11)`,
+              [
+                fromCompanyId,
+                productId,
+                fromLocationId,
+                lenderOutId,
+                qty,
+                unitCost,
+                qty * unitCost,
+                args.id,
+                `Store Out ${String(issue.issue_number)}: equipment lent to ${borrowerName}`,
+                ctx.auth.userId,
+                line.po_line_id,
+              ],
+            )
+            await client.query(`UPDATE project_material_issue_lines SET to_location_id=$2 WHERE id=$1`, [
+              line.id,
+              lenderOutId,
+            ])
+          } else if (fromCompanyId === companyId) {
             await client.query(
               `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id)
                VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10,$11)`,
@@ -26256,7 +26592,8 @@ export const resolvers = {
                'productNameAr', prod.name_ar,
                'poLineId', pmil.po_line_id,
                'qtyIssued', pmil.qty_issued, 'unitCost', pmil.unit_cost,
-               'totalCost', pmil.total_cost, 'isInvoiced', pmil.is_invoiced
+               'totalCost', pmil.total_cost, 'isInvoiced', pmil.is_invoiced,
+               ${ISSUE_LINE_EQUIPMENT_JSON}
              ) ORDER BY pmil.created_at) FILTER (WHERE pmil.id IS NOT NULL), '[]'
            ) AS lines
          FROM project_material_issues pmi
@@ -26279,6 +26616,7 @@ export const resolvers = {
         requisitionId: row.requisition_id ?? null,
         poNumber: row.po_number ?? null,
         issuedByName: row.issued_by_name ?? null,
+        ...issuedToFields(row),
         createdAt: row.created_at,
         lines: (row.lines as unknown[] | null) ?? [],
       }
@@ -26315,6 +26653,19 @@ export const resolvers = {
         throw new Error(
           'Cannot cancel — one or more lines already has a Material Return recorded against it',
         )
+      // Cancelling never reverses stock (see below). A consumable that was issued by mistake is paperwork; equipment that
+      // was handed out is somebody holding it, and cancelling would leave it "out" for ever with nothing to return it
+      // against. A draft has issued nothing yet, so it can still be cancelled.
+      if (issue.status === 'issued') {
+        const equipmentRes = await query(
+          `SELECT 1 FROM project_material_issue_lines WHERE issue_id=$1 AND is_returnable LIMIT 1`,
+          [args.id],
+        )
+        if (equipmentRes.rows[0])
+          throw new Error(
+            'Cannot cancel — this Store Out issued equipment that must come back. Record its return on the Returnables page instead.',
+          )
+      }
       // Same store_keeper gate as issueMaterialIssue, for the same reason: a
       // PO-originated Store Out documents a physical stock deduction that
       // already happened at PO-approval time, so cancelling its paperwork
@@ -26393,6 +26744,284 @@ export const resolvers = {
         issuedByName: null,
         createdAt: row.created_at,
         lines: [],
+      }
+    },
+
+    // Brings returnable Store Out lines (equipment) back into inventory, or records them lost. Playbook #107.
+    // Single-step like createMaterialReturn: one physical event, someone handing equipment back. Differences that matter:
+    //  - the parent is the Store Out LINE, so a manual Store Out (no PO, no requisition) can be returned;
+    //  - only the company that HOLDS the equipment takes it back (the owner of the shelf it left): for a loan from the central
+    //    warehouse that is the lender, and nothing here ever prices, bills or moves stock between companies;
+    //  - every line carries a condition. good / needs_repair / damaged go back to a real location; lost never does;
+    //  - equipment charged the project nothing when it went out, so a return offsets nothing. A LOSS is charged to the
+    //    project at the line's cost (as stock issued) unless it was a loan, which would need an inter-company bill: a lost
+    //    loan is a write-off in the lender's books only and is left for management.
+    // Sends stock between two locations of the caller's company: out of the From location into transit, until the other end receives it.
+    createStoreTransfer: async (
+      _: unknown,
+      args: { input: Parameters<typeof sendStoreTransfer>[1]['input'] },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      const auth = ctx.auth
+      const id = await withTransaction({ companyId: auth.companyId, userId: auth.userId, role: auth.role }, async (client) => {
+        const number = await nextDocumentNumber(auth.companyId, 'stock_transfer', 'TRF')
+        return sendStoreTransfer(client, { companyId: auth.companyId, userId: auth.userId, number, input: args.input })
+      })
+      // read AFTER the commit (playbook #27)
+      const rows = await storeTransfersFor(pool, auth.companyId, undefined, 1, id)
+      return rows[0]
+    },
+
+    receiveStoreTransfer: async (
+      _: unknown,
+      args: { id: string; input: { receivedDate?: string; receivedByName?: string; lines: { lineId: string; qtyReceived: number; remarks?: string }[] } },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      const auth = ctx.auth
+      await withTransaction({ companyId: auth.companyId, userId: auth.userId, role: auth.role }, async (client) => {
+        await receiveStoreTransferLib(client, { companyId: auth.companyId, userId: auth.userId, transferId: args.id, ...args.input })
+      })
+      const rows = await storeTransfersFor(pool, auth.companyId, undefined, 1, args.id)
+      return rows[0]
+    },
+
+    cancelStoreTransfer: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      const auth = ctx.auth
+      await withTransaction({ companyId: auth.companyId, userId: auth.userId, role: auth.role }, async (client) => {
+        await cancelStoreTransferLib(client, { companyId: auth.companyId, userId: auth.userId, transferId: args.id })
+      })
+      const rows = await storeTransfersFor(pool, auth.companyId, undefined, 1, args.id)
+      return rows[0]
+    },
+
+    createEquipmentReturn: async (
+      _: unknown,
+      args: {
+        input: {
+          returnDate?: string
+          receivedByName?: string
+          notes?: string
+          lines: {
+            issueLineId: string
+            qtyReturned: number
+            condition: string
+            toLocationId?: string
+            remarks?: string
+          }[]
+        }
+      },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      const auth = ctx.auth
+      const { input } = args
+      if (!input.lines || input.lines.length === 0) throw new Error('A return needs at least one line')
+      if (input.returnDate && !isDateOnly(input.returnDate))
+        throw new Error('Return date must be a valid date (YYYY-MM-DD)')
+      const receivedBy = cleanIssuedToText(input.receivedByName, 'Received by', 200)
+      const notes = cleanIssuedToText(input.notes, 'Notes', 2000)
+      const seenLines = new Set<string>()
+      const cleanLines = input.lines.map((l) => {
+        if (seenLines.has(l.issueLineId))
+          throw new Error('A Store Out line can appear only once in a return')
+        seenLines.add(l.issueLineId)
+        if (!isReturnCondition(l.condition))
+          throw new Error('Condition must be good, needs_repair, damaged or lost')
+        const qty = Number(l.qtyReturned)
+        if (!(qty > 0)) throw new Error('Quantity returned must be greater than 0')
+        const remarks = cleanIssuedToText(l.remarks, 'Remarks', 500)
+        if (l.condition === 'lost') {
+          if (l.toLocationId) throw new Error('A lost quantity does not go back to a location')
+          if (!remarks) throw new Error('Say what happened to the equipment that was lost')
+        } else if (!l.toLocationId) {
+          throw new Error('Choose the location the equipment goes back to')
+        }
+        return { ...l, qty, remarks }
+      })
+      // Same lock order for two returns touching the same lines.
+      cleanLines.sort((a, b) => (a.issueLineId < b.issueLineId ? -1 : a.issueLineId > b.issueLineId ? 1 : 0))
+
+      const returnId = await withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client) => {
+          const returnNumber = await nextDocumentNumber(auth.companyId, 'equipment_return', 'ERET')
+          const header = await client.query<{ id: string }>(
+            `INSERT INTO store_out_returns (company_id, return_number, return_date, received_by_name, notes, created_by)
+             VALUES ($1,$2,COALESCE($3::date, CURRENT_DATE),$4,$5,$6) RETURNING id`,
+            [auth.companyId, returnNumber, input.returnDate ?? null, receivedBy, notes, auth.userId],
+          )
+          const headerId = header.rows[0].id
+          for (const line of cleanLines) {
+            const lr = await client.query<{
+              product_id: string
+              qty_issued: string
+              unit_cost: string
+              to_location_id: string | null
+              is_returnable: boolean
+              issue_status: string
+              issue_number: string
+              issue_company_id: string
+              issue_project_id: string | null
+              owner_company_id: string
+              consumption_type: string | null
+              consumption_company_id: string | null
+              sku: string | null
+              product_name: string | null
+              cost_currency: string
+            }>(
+              `SELECT il.product_id, il.qty_issued, il.unit_cost, il.to_location_id, il.is_returnable,
+                      pmi.status AS issue_status, pmi.issue_number, pmi.company_id AS issue_company_id,
+                      pmi.project_id AS issue_project_id, loc.company_id AS owner_company_id,
+                      src.type AS consumption_type, src.company_id AS consumption_company_id,
+                      p.sku, p.name AS product_name, ${stockCostCurrencySql('p')} AS cost_currency
+                 FROM project_material_issue_lines il
+                 JOIN project_material_issues pmi ON pmi.id = il.issue_id
+                 JOIN stock_locations loc ON loc.id = il.from_location_id
+                 LEFT JOIN stock_locations src ON src.id = il.to_location_id
+                 LEFT JOIN products p ON p.id = il.product_id
+                WHERE il.id = $1
+                FOR UPDATE OF il`,
+              [line.issueLineId],
+            )
+            const il = lr.rows[0]
+            // Only the company that holds the equipment takes it back; anyone else sees "not found", never a reason.
+            if (!il || il.owner_company_id !== auth.companyId)
+              throw new Error(`Store Out line ${line.issueLineId} not found`)
+            if (!il.is_returnable)
+              throw new Error(`Store Out line ${line.issueLineId} is not returnable equipment`)
+            if (il.issue_status !== 'issued')
+              throw new Error(`Store Out line ${line.issueLineId} was never issued: nothing to return`)
+            const label = il.sku ? `${il.sku} (${il.product_name ?? il.product_id})` : (il.product_name ?? il.product_id)
+            // Computed AFTER the line lock, so two returns of one line cannot both take the last unit.
+            const doneRes = await client.query<{ qty: string | null }>(
+              `SELECT SUM(qty_returned) AS qty FROM store_out_return_lines WHERE issue_line_id=$1`,
+              [line.issueLineId],
+            )
+            const done = parseFloat(doneRes.rows[0]?.qty ?? '0') || 0
+            const outstanding = parseFloat(il.qty_issued) - done
+            if (line.qty > outstanding + QTY_EPSILON)
+              throw new Error(
+                `Cannot return ${line.qty} of ${label}: only ${Math.max(outstanding, 0)} still out (${parseFloat(il.qty_issued)} issued, ${done} already returned or lost)`,
+              )
+            const unitCost = parseFloat(il.unit_cost) || 0
+            let moveId: string | null = null
+            if (line.condition !== 'lost') {
+              const toLocationId = line.toLocationId as string
+              await assertReceivableLocation(client, toLocationId)
+              const dest = await client.query<{ company_id: string; is_active: boolean }>(
+                `SELECT company_id, is_active FROM stock_locations WHERE id=$1`,
+                [toLocationId],
+              )
+              if (!dest.rows[0] || dest.rows[0].company_id !== auth.companyId || !dest.rows[0].is_active)
+                throw new Error("Choose an active warehouse or site of your own company to return the equipment to")
+              if (
+                !il.to_location_id ||
+                il.consumption_type !== 'virtual_out' ||
+                il.consumption_company_id !== auth.companyId
+              )
+                throw new Error(
+                  `Store Out line ${line.issueLineId} has no recorded consumption location to return from`,
+                )
+              const mv = await client.query<{ id: string }>(
+                `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,currency_code,source_type,source_id,notes,moved_by)
+                 VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,'equipment_return',$9,$10,$11) RETURNING id`,
+                [
+                  auth.companyId,
+                  il.product_id,
+                  il.to_location_id,
+                  toLocationId,
+                  line.qty,
+                  unitCost,
+                  line.qty * unitCost,
+                  il.cost_currency,
+                  headerId,
+                  `Equipment return ${returnNumber} (${line.condition}) from Store Out ${il.issue_number}`,
+                  auth.userId,
+                ],
+              )
+              moveId = mv.rows[0].id
+            }
+            const rl = await client.query<{ id: string }>(
+              `INSERT INTO store_out_return_lines
+                 (return_id, issue_line_id, product_id, qty_returned, condition, to_location_id, unit_cost, total_cost, stock_move_id, remarks)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+              [
+                headerId,
+                line.issueLineId,
+                il.product_id,
+                line.qty,
+                line.condition,
+                line.condition === 'lost' ? null : (line.toLocationId as string),
+                unitCost,
+                line.qty * unitCost,
+                moveId,
+                line.remarks,
+              ],
+            )
+            // A loss is stock consumed by the project. Not for a loan (the project belongs to another company: charging it
+            // would need an inter-company bill, which a loan deliberately never has) and not when nothing is costed.
+            if (
+              line.condition === 'lost' &&
+              il.issue_company_id === auth.companyId &&
+              il.issue_project_id &&
+              unitCost > 0
+            ) {
+              await client.query(
+                `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
+                 VALUES ($1, 'stock_issue', $2, 'materials', ROUND($3::numeric * $4::numeric, 4), $5, NOW()::date)`,
+                [il.issue_project_id, rl.rows[0].id, line.qty, il.unit_cost, il.cost_currency],
+              )
+            }
+          }
+          return headerId
+        },
+      )
+      // Read AFTER the commit (playbook #27): a read on the shared pool inside the transaction would not see the rows.
+      const head = await query<{
+        id: string
+        return_number: string
+        return_date: string
+        received_by_name: string | null
+        notes: string | null
+      }>(
+        `SELECT id, return_number, return_date::text AS return_date, received_by_name, notes
+           FROM store_out_returns WHERE id=$1 AND company_id=$2`,
+        [returnId, auth.companyId],
+      )
+      const lines = await query(
+        `SELECT rl.id, rl.issue_line_id, rl.product_id, p.name AS product_name, rl.qty_returned, rl.condition,
+                loc.name AS to_location_name, rl.remarks
+           FROM store_out_return_lines rl
+           LEFT JOIN products p ON p.id = rl.product_id
+           LEFT JOIN stock_locations loc ON loc.id = rl.to_location_id
+          WHERE rl.return_id=$1
+          ORDER BY rl.created_at, rl.id`,
+        [returnId],
+      )
+      const h = head.rows[0]
+      return {
+        id: h.id,
+        returnNumber: h.return_number,
+        returnDate: h.return_date,
+        receivedByName: h.received_by_name,
+        notes: h.notes,
+        lines: lines.rows.map((r: Record<string, unknown>) => ({
+          id: r.id,
+          issueLineId: r.issue_line_id,
+          productId: r.product_id,
+          productName: (r.product_name as string | null) ?? null,
+          qtyReturned: parseFloat(String(r.qty_returned)),
+          condition: r.condition,
+          toLocationName: (r.to_location_name as string | null) ?? null,
+          remarks: (r.remarks as string | null) ?? null,
+        })),
       }
     },
 
@@ -26736,11 +27365,12 @@ export const resolvers = {
             issue_requisition_id: string | null
             issue_project_id: string | null
             issue_company_id: string
+            is_returnable: boolean
             sku: string | null
             product_name: string | null
             product_cost_currency: string
           }>(
-            `SELECT pmil.product_id, pmil.qty_issued, pmil.unit_cost, pmil.to_location_id,
+            `SELECT pmil.product_id, pmil.qty_issued, pmil.unit_cost, pmil.to_location_id, pmil.is_returnable,
                     pmi.status AS issue_status, pmi.po_id AS issue_po_id,
                     pmi.requisition_id AS issue_requisition_id, pmi.project_id AS issue_project_id,
                     pmi.company_id AS issue_company_id,
@@ -26757,6 +27387,12 @@ export const resolvers = {
           if (!issueLine) throw new Error(`Store Out line ${issueLineId} not found`)
           if (issueLine.issue_company_id !== ctx.auth.companyId)
             throw new Error(`Store Out line ${issueLineId} not found`)
+          // Equipment never charged the project when it went out, so this return would offset a cost that was never booked.
+          // It comes back through the Returnables page (createEquipmentReturn), which records its condition.
+          if (issueLine.is_returnable)
+            throw new Error(
+              `Store Out line ${issueLineId} is returnable equipment: record its return on the Returnables page`,
+            )
           if (input.requisitionId) {
             if (issueLine.issue_requisition_id !== input.requisitionId)
               throw new Error(`Store Out line ${issueLineId} does not belong to this requisition`)
