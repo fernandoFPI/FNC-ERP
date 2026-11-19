@@ -237,7 +237,7 @@ export default function StockAdjustmentForm() {
         >
           {/* Product + Location */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('inv.adjust.product')}
               value={productId}
               onChange={(value) => {
@@ -254,7 +254,7 @@ export default function StockAdjustmentForm() {
               required
             />
 
-            <Select
+            <Select field
               label={t('inv.adjust.location')}
               value={locationId}
               onChange={(e) => {
@@ -321,7 +321,7 @@ export default function StockAdjustmentForm() {
 
           {/* New qty + cost + currency + date */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
-            <Input
+            <Input field
               label={`${t('inv.adjust.newQty')}${selectedProduct ? ` (${selectedProduct.uom})` : ''}`}
               type="number"
               min="0"
@@ -333,7 +333,7 @@ export default function StockAdjustmentForm() {
               placeholder={currentQty.toFixed(4)}
               required
             />
-            <Input
+            <Input field
               label={t('inv.adjust.unitCostOptional')}
               type="number"
               min="0"
@@ -344,7 +344,7 @@ export default function StockAdjustmentForm() {
               }}
               placeholder={currentCost > 0 ? currentCost.toFixed(4) : '0.0000'}
             />
-            <Select
+            <Select field
               label={t('inv.adjust.costCurrency')}
               value={effectiveCostCurrency}
               onChange={(e) => {
@@ -358,7 +358,7 @@ export default function StockAdjustmentForm() {
                 </option>
               ))}
             </Select>
-            <Input
+            <Input field
               label={t('inv.adjust.adjustmentDate')}
               type="date"
               value={adjustmentDate}
@@ -369,7 +369,7 @@ export default function StockAdjustmentForm() {
             />
           </div>
 
-          <Textarea
+          <Textarea field
             label={t('inv.adjust.reasonNotes')}
             value={notes}
             onChange={(e) => {

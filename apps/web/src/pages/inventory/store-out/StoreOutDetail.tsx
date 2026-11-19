@@ -29,6 +29,10 @@ interface MILine {
   unitCost: number
   totalCost: number
   isInvoiced: boolean
+  isReturnable?: boolean | null
+  expectedReturnDate?: string | null
+  serialNote?: string | null
+  qtyReturned?: number | null
 }
 
 interface MI {
@@ -42,6 +46,8 @@ interface MI {
   projectCode: string | null
   projectName: string | null
   issuedByName: string | null
+  issuedToName?: string | null
+  department?: string | null
   createdAt: string
   lines: MILine[]
 }
@@ -80,6 +86,22 @@ export default function StoreOutDetail() {
         <div>
           <div style={{ color: theme.textPrimary, fontWeight: 500 }}>{l.productName ?? '—'}</div>
           {l.sku && <div style={{ fontSize: '11px', color: theme.textMuted }}>{l.sku}</div>}
+          {l.isReturnable && (
+            <div style={{ marginTop: '4px', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <Badge variant="warning">{t('inv.storeOut.returnableTag')}</Badge>
+              {l.expectedReturnDate && (
+                <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+                  {t('inv.storeOut.backBy', { date: l.expectedReturnDate })}
+                </span>
+              )}
+              {(l.qtyReturned ?? 0) > 0 && (
+                <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+                  {t('inv.storeOut.returnedOf', { returned: l.qtyReturned, issued: l.qtyIssued })}
+                </span>
+              )}
+              {l.serialNote && <span style={{ fontSize: '12px', color: theme.textSecondary }}>{l.serialNote}</span>}
+            </div>
+          )}
         </div>
       ),
     },
@@ -141,6 +163,16 @@ export default function StoreOutDetail() {
               {mi.issuedByName ?? '—'}
             </div>
           </div>
+          {mi.issuedToName && (
+            <div>
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
+                {t('inv.storeOut.issuedToEmployee')}
+              </div>
+              <div style={{ fontSize: '13px', color: theme.textPrimary }}>
+                {[mi.issuedToName, mi.department].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+          )}
           {mi.poNumber && (
             <div>
               <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
@@ -250,6 +282,8 @@ export default function StoreOutDetail() {
                   projectName: mi.projectName,
                   poNumber: mi.poNumber,
                   issuedByName: mi.issuedByName,
+                  issuedToName: mi.issuedToName,
+                  department: mi.department,
                   companyName: activeCompany?.name,
                   lines: mi.lines.map((l) => ({
                     productName: l.productName,
@@ -261,6 +295,9 @@ export default function StoreOutDetail() {
                     toLocationName: l.toLocationName,
                     unitCost: l.unitCost,
                     totalCost: l.totalCost,
+                    isReturnable: l.isReturnable,
+                    expectedReturnDate: l.expectedReturnDate,
+                    serialNote: l.serialNote,
                   })),
                 })}
                 style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}

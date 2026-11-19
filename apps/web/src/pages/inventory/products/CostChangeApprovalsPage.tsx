@@ -114,7 +114,7 @@ export default function CostChangeApprovalsPage() {
       <PageHeader title={t('inv.costApprovals.title')} subtitle={t('inv.costApprovals.subtitle')} />
       <Card style={{ padding: '16px 20px', marginBottom: '16px' }}>
         <div style={{ maxWidth: '220px' }}>
-          <Select
+          <Select field
             label={t('inv.costApprovals.status')}
             value={statusFilter}
             onChange={(e) => {
@@ -397,7 +397,7 @@ export default function CostChangeApprovalsPage() {
             {rejectionOutcome(rejectTargetRequest)}
           </p>
         )}
-        <Textarea
+        <Textarea field
           label={t('inv.costApprovals.rejectionReason')}
           value={rejectReason}
           onChange={(e) => {

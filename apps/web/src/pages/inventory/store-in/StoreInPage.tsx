@@ -339,7 +339,7 @@ export default function StoreInPage() {
             }}
           />
           <div style={{ minWidth: '160px' }}>
-            <Select
+            <Select field
               label={t('inv.storeIn.status')}
               value={statusFilter}
               onChange={(e) => {
@@ -456,7 +456,7 @@ export default function StoreInPage() {
           <div style={{ fontSize: '12px', color: theme.textMuted }}>
             {t('inv.storeIn.storeInRecordsAreCreatedBy')}
           </div>
-          <Select
+          <Select field
             label={t('inv.storeIn.projectOptionalNarrowsThePoList')}
             value={pickerProjectId}
             onChange={(e) => {
@@ -471,7 +471,7 @@ export default function StoreInPage() {
               </option>
             ))}
           </Select>
-          <SearchableSelect
+          <SearchableSelect field
             label={t('inv.storeIn.purchaseOrder')}
             value={pickerPoId}
             onChange={(v) => {

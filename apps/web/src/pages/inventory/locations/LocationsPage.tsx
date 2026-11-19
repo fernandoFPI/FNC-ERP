@@ -34,6 +34,7 @@ const TYPE_OPTIONS = [
   { value: 'warehouse', label: 'Warehouse' },
   { value: 'site', label: 'Site' },
   { value: 'transit', label: 'Transit' },
+  { value: 'temporary', label: 'Temporary' },
   { value: 'virtual_in', label: 'Virtual In' },
   { value: 'virtual_out', label: 'Virtual Out' },
 ]
@@ -95,7 +96,7 @@ export default function LocationsPage() {
       render: (l) => (
         <Badge
           variant={
-            l.type === 'warehouse' ? 'success' : l.type === 'transit' ? 'warning' : 'neutral'
+            l.type === 'warehouse' ? 'success' : l.type === 'transit' || l.type === 'temporary' ? 'warning' : 'neutral'
           }
         >
           {l.type.replace('_', ' ')}
@@ -132,6 +133,12 @@ export default function LocationsPage() {
             parent_id: form.parent_id || undefined,
             address: form.address || undefined,
           },
+        },
+        // Every cached location list goes stale, not only this page's: the receipt form, transfers and Store Out read the
+        // same query with other variables, and a location made here (a temporary store) was missing from them until a reload.
+        update: (cache) => {
+          cache.evict({ fieldName: 'stockLocations' })
+          cache.gc()
         },
         refetchQueries: [{ query: STOCK_LOCATIONS_QUERY, variables: {} }],
       })
@@ -198,7 +205,7 @@ export default function LocationsPage() {
               gap: '12px',
             }}
           >
-            <Input
+            <Input field
               label={t('inv.locations.name')}
               value={form.name}
               onChange={(e) => {
@@ -206,7 +213,7 @@ export default function LocationsPage() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('inv.locations.code')}
               value={form.code}
               onChange={(e) => {
@@ -215,7 +222,7 @@ export default function LocationsPage() {
               placeholder={t('inv.locations.optional')}
             />
           </div>
-          <Select
+          <Select field
             label={t('inv.locations.type')}
             value={form.type}
             onChange={(e) => {
@@ -225,10 +232,11 @@ export default function LocationsPage() {
             <option value="warehouse">{t('inv.locations.warehouse')}</option>
             <option value="site">{t('inv.locations.site')}</option>
             <option value="transit">{t('inv.locations.transit')}</option>
+            <option value="temporary">{t('inv.locations.temporary')}</option>
             <option value="virtual_in">{t('inv.locations.virtualIn')}</option>
             <option value="virtual_out">{t('inv.locations.virtualOut')}</option>
           </Select>
-          <Select
+          <Select field
             label={t('inv.locations.parentLocation')}
             value={form.parent_id}
             onChange={(e) => {
@@ -242,7 +250,7 @@ export default function LocationsPage() {
               </option>
             ))}
           </Select>
-          <Input
+          <Input field
             label={t('inv.locations.address')}
             value={form.address}
             onChange={(e) => {

@@ -8,12 +8,15 @@
 
 export const VIRTUAL_LOCATION_TYPES: readonly string[] = ['virtual_in', 'virtual_out']
 
+// The transit location is where stock waits while it is being sent between stores (phase 2): goods are not received into it either.
+export const NOT_RECEIVABLE_TYPES: readonly string[] = [...VIRTUAL_LOCATION_TYPES, 'transit']
+
 interface HasType {
   type?: string | null
 }
 
 export function isReceivableLocation(location: HasType): boolean {
-  return !VIRTUAL_LOCATION_TYPES.includes(location.type ?? '')
+  return !NOT_RECEIVABLE_TYPES.includes(location.type ?? '')
 }
 
 /** The locations a receipt can be booked into: everything that is not a virtual system location. */

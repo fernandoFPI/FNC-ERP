@@ -404,7 +404,7 @@ export default function MaterialReturnsPage() {
 
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '340px' }}>
-          <SearchableSelect
+          <SearchableSelect field
             label={t('inv.matReturns.purchaseOrder')}
             value={poFilter}
             onChange={(val) => { setPoFilter(val); }}
@@ -413,7 +413,7 @@ export default function MaterialReturnsPage() {
           />
         </div>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '340px' }}>
-          <SearchableSelect
+          <SearchableSelect field
             label={t('inv.matReturns.project')}
             value={projectFilter}
             onChange={(val) => { setProjectFilter(val); }}
@@ -422,7 +422,7 @@ export default function MaterialReturnsPage() {
           />
         </div>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '340px' }}>
-          <SearchableSelect
+          <SearchableSelect field
             label={t('inv.matReturns.item')}
             value={productFilter}
             onChange={(val) => { setProductFilter(val); }}
@@ -606,7 +606,7 @@ export default function MaterialReturnsPage() {
       >
         <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: '180px' }}>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('inv.matReturns.narrowByProjectOptional')}
               value={formProjectFilter}
               onChange={(val) => {
@@ -618,7 +618,7 @@ export default function MaterialReturnsPage() {
             />
           </div>
           <div style={{ flex: 1, minWidth: '180px' }}>
-            <SearchableSelect
+            <SearchableSelect field
               label={t('inv.matReturns.narrowByItemOptional')}
               value={formProductFilter}
               onChange={(val) => {
@@ -632,7 +632,7 @@ export default function MaterialReturnsPage() {
         </div>
 
         <div style={{ marginBottom: '14px' }}>
-          <SearchableSelect
+          <SearchableSelect field
             label={formProductFilter ? t('inv.matReturns.purchaseOrderOptionalItemSearchAlready') : t('inv.matReturns.purchaseOrder')}
             value={formPoId}
             onChange={(val) => {
@@ -826,7 +826,7 @@ export default function MaterialReturnsPage() {
           </div>
         )}
 
-        <Textarea
+        <Textarea field
           label={t('inv.matReturns.notes')}
           value={formNotes}
           onChange={(e) => { setFormNotes(e.target.value); }}

@@ -25,15 +25,19 @@ describe('isReceivableLocation', () => {
   })
 
   it('accepts every real type, and a location whose type is not known', () => {
-    for (const type of ['warehouse', 'site', 'transit', 'yard', '', null, undefined]) {
+    for (const type of ['warehouse', 'site', 'temporary', 'yard', '', null, undefined]) {
       expect(isReceivableLocation({ type })).toBe(true)
     }
+  })
+
+  it('refuses the transit location too: stock waiting there is on a truck, not on a shelf', () => {
+    expect(isReceivableLocation({ type: 'transit' })).toBe(false)
   })
 })
 
 describe('receivableLocations', () => {
   it('drops Virtual Receipts and Virtual Consumption and keeps the order of the rest', () => {
-    expect(receivableLocations(all).map((l) => l.id)).toEqual(['warehouse', 'site', 'transit'])
+    expect(receivableLocations(all).map((l) => l.id)).toEqual(['warehouse', 'site'])
   })
 
   it('returns an empty list for an empty list, and does not change the list it was given', () => {
@@ -49,19 +53,17 @@ describe('receivableLocationsKeeping (editing a receipt that already sits in a v
     expect(receivableLocationsKeeping(all, 'virtual-out').map((l) => l.id)).toEqual([
       'warehouse',
       'site',
-      'transit',
       'virtual-out',
     ])
     expect(receivableLocationsKeeping(all, 'virtual-in').map((l) => l.id)).toEqual([
       'warehouse',
       'site',
-      'transit',
       'virtual-in',
     ])
   })
 
   it('is the plain list when the current location is real, empty, or not in the list', () => {
-    const plain = ['warehouse', 'site', 'transit']
+    const plain = ['warehouse', 'site']
     expect(receivableLocationsKeeping(all, 'site').map((l) => l.id)).toEqual(plain)
     expect(receivableLocationsKeeping(all, '').map((l) => l.id)).toEqual(plain)
     expect(receivableLocationsKeeping(all, null).map((l) => l.id)).toEqual(plain)

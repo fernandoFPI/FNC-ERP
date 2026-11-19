@@ -25,13 +25,16 @@ import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Textarea } from '../../../components/ui/Textarea'
+import { Checkbox } from '../../../components/ui/Checkbox'
+import { ActionButton } from '../../../components/ui/ActionButton'
+import { EMPLOYEES_QUERY } from '../../../graphql/hr'
 import { Table } from '../../../components/ui/Table'
 import type { Column } from '../../../components/ui/Table'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { useToastStore } from '../../../store/toastStore'
 import { useTheme } from '../../../theme/ThemeContext'
-import type { AddMaterialIssueLineMutation, AddMaterialIssueLineMutationVariables, CancelMaterialIssueMutation, CancelMaterialIssueMutationVariables, CreateMaterialIssueMutation, CreateMaterialIssueMutationVariables, DeleteMaterialIssueLineMutation, DeleteMaterialIssueLineMutationVariables, IssueMaterialIssueMutation, IssueMaterialIssueMutationVariables, MaterialIssuesQuery, MaterialIssuesQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, PurchaseOrderQuery, PurchaseOrderQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, RequisitionsQuery, RequisitionsQueryVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
+import type { AddMaterialIssueLineMutation, AddMaterialIssueLineMutationVariables, CancelMaterialIssueMutation, CancelMaterialIssueMutationVariables, CreateMaterialIssueMutation, CreateMaterialIssueMutationVariables, DeleteMaterialIssueLineMutation, DeleteMaterialIssueLineMutationVariables, EmployeesQuery, EmployeesQueryVariables, IssueMaterialIssueMutation, IssueMaterialIssueMutationVariables, MaterialIssuesQuery, MaterialIssuesQueryVariables, ProductsQuery, ProductsQueryVariables, ProjectsQuery, ProjectsQueryVariables, PurchaseOrderQuery, PurchaseOrderQueryVariables, PurchaseOrdersQuery, PurchaseOrdersQueryVariables, RequisitionsQuery, RequisitionsQueryVariables, StockLocationsQuery, StockLocationsQueryVariables } from '../../../graphql/generated'
 
 interface MILine {
   id: string
@@ -44,6 +47,11 @@ interface MILine {
   unitCost: number
   totalCost: number
   isInvoiced: boolean
+  // equipment that must come back (migration 326)
+  isReturnable?: boolean | null
+  expectedReturnDate?: string | null
+  serialNote?: string | null
+  qtyReturned?: number | null
 }
 interface MI {
   id: string
@@ -58,6 +66,8 @@ interface MI {
   projectCode: string | null
   projectName: string | null
   issuedByName: string | null
+  issuedToName?: string | null
+  department?: string | null
   createdAt: string
   lines: MILine[]
 }
@@ -68,6 +78,8 @@ interface Product {
   sku: string
   average_cost: string | null
   uom: string
+  is_returnable?: boolean | null
+  default_return_days?: number | null
 }
 interface PendingLine {
   key: number
@@ -77,6 +89,9 @@ interface PendingLine {
   qty: string
   unitCost: string
   fromLocationId: string
+  isReturnable: boolean
+  expectedReturnDate: string
+  serialNote: string
 }
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger'> = {
@@ -118,6 +133,10 @@ export default function StoreOutPage() {
   const [formNotes, setFormNotes] = useState('')
   const [formProjectId, setFormProjectId] = useState('')
   const [formPoId, setFormPoId] = useState('')
+  // Who it is issued to (an employee, or a typed name for a contractor) and the department
+  const [formIssuedToEmployeeId, setFormIssuedToEmployeeId] = useState('')
+  const [formIssuedToName, setFormIssuedToName] = useState('')
+  const [formDepartment, setFormDepartment] = useState('')
 
   // Pending lines in creation modal
   const [pendingLines, setPendingLines] = useState<PendingLine[]>([])
@@ -126,12 +145,19 @@ export default function StoreOutPage() {
   const [newQty, setNewQty] = useState('')
   const [newUnit, setNewUnit] = useState('')
   const [newFromLocationId, setNewFromLocationId] = useState('')
+  // Equipment that must come back: ticked by hand for a consumable, forced for a product flagged Equipment
+  const [newReturnable, setNewReturnable] = useState(false)
+  const [newDue, setNewDue] = useState('')
+  const [newSerial, setNewSerial] = useState('')
 
   // Add-line state for existing drafts
   const [draftProductId, setDraftProductId] = useState('')
   const [draftQty, setDraftQty] = useState('')
   const [draftUnit, setDraftUnit] = useState('')
   const [draftFromLocationId, setDraftFromLocationId] = useState('')
+  const [draftReturnable, setDraftReturnable] = useState(false)
+  const [draftDue, setDraftDue] = useState('')
+  const [draftSerial, setDraftSerial] = useState('')
 
   // Queries
   const { data, loading, refetch } = useQuery<MaterialIssuesQuery, MaterialIssuesQueryVariables>(MATERIAL_ISSUES_QUERY, {
@@ -175,6 +201,11 @@ export default function StoreOutPage() {
     fetchPolicy: 'cache-and-network',
   })
   const { data: locationsData } = useQuery<StockLocationsQuery, StockLocationsQueryVariables>(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
+  const { data: employeesData } = useQuery<EmployeesQuery, EmployeesQueryVariables>(EMPLOYEES_QUERY, {
+    variables: { is_active: true },
+    skip: !showModal,
+    errorPolicy: 'ignore',
+  })
 
   const issues = (data?.materialIssues ?? []) as MI[]
   // Client-side — every issue's own line items (productName/sku) are already
@@ -255,6 +286,18 @@ export default function StoreOutPage() {
     sublabel: p.sku,
     keywords: p.name_ar ?? undefined,
   }))
+  const employeeOptions = (employeesData?.employees ?? [])
+    .filter((e): e is NonNullable<typeof e> => e !== null)
+    .map((e) => ({
+      value: e.id,
+      label: `${e.first_name} ${e.last_name}`,
+      sublabel: [e.employee_number, e.department_name].filter(Boolean).join(' · ') || undefined,
+    }))
+  const newProduct = products.find((p) => p.id === newProductId)
+  // Equipment always comes back, whatever the tick says
+  const newIsReturnable = newReturnable || newProduct?.is_returnable === true
+  const draftProduct = products.find((p) => p.id === draftProductId)
+  const draftIsReturnable = draftReturnable || draftProduct?.is_returnable === true
   const locationOptions = [
     { value: '', label: t('inv.storeOut.defaultWarehouse') },
     ...locations.map((l) => ({ value: l.id, label: l.code ? `${l.name} (${l.code})` : l.name })),
@@ -297,6 +340,9 @@ export default function StoreOutPage() {
       setDraftQty('')
       setDraftUnit('')
       setDraftFromLocationId('')
+      setDraftReturnable(false)
+      setDraftDue('')
+      setDraftSerial('')
       void refetch()
     },
     onError: (e) => {
@@ -338,16 +384,23 @@ export default function StoreOutPage() {
     setFormNotes('')
     setFormProjectId('')
     setFormPoId('')
+    setFormIssuedToEmployeeId('')
+    setFormIssuedToName('')
+    setFormDepartment('')
     setPendingLines([])
     setNewProductId('')
     setNewQty('')
     setNewUnit('')
     setNewFromLocationId('')
+    setNewReturnable(false)
+    setNewDue('')
+    setNewSerial('')
   }
 
   function addPendingLine() {
     const prod = products.find((p) => p.id === newProductId)
-    if (!prod || !newQty || !newUnit) return
+    // Equipment is not charged when it goes out, so its cost may be left empty (the server uses the shelf's own cost)
+    if (!prod || !newQty || (!newUnit && !newIsReturnable)) return
     setPendingLines((prev) => [
       ...prev,
       {
@@ -356,14 +409,20 @@ export default function StoreOutPage() {
         productName: prod.name,
         sku: prod.sku,
         qty: newQty,
-        unitCost: newUnit,
+        unitCost: newUnit || '0',
         fromLocationId: newFromLocationId,
+        isReturnable: newIsReturnable,
+        expectedReturnDate: newIsReturnable ? newDue : '',
+        serialNote: newIsReturnable ? newSerial.trim() : '',
       },
     ])
     setNewProductId('')
     setNewQty('')
     setNewUnit('')
     setNewFromLocationId('')
+    setNewReturnable(false)
+    setNewDue('')
+    setNewSerial('')
   }
 
   // Stages one row per received line on the linked PO, defaulting quantity
@@ -380,6 +439,9 @@ export default function StoreOutPage() {
         qty: String(parseFloat(String(l.qty_received))),
         unitCost: String(l.unit_price),
         fromLocationId: '',
+        isReturnable: false,
+        expectedReturnDate: '',
+        serialNote: '',
       })),
     ])
   }
@@ -393,6 +455,9 @@ export default function StoreOutPage() {
           poId: formPoId || null,
           issueDate: formDate,
           notes: formNotes || null,
+          issuedToEmployeeId: formIssuedToEmployeeId || null,
+          issuedToName: formIssuedToName.trim() || null,
+          department: formDepartment.trim() || null,
         },
       })
       const issueId: string | undefined = res.data?.createMaterialIssue.id
@@ -405,6 +470,9 @@ export default function StoreOutPage() {
             qtyIssued: parseFloat(line.qty),
             unitCost: parseFloat(line.unitCost),
             fromLocationId: line.fromLocationId || undefined,
+            isReturnable: line.isReturnable || undefined,
+            expectedReturnDate: line.expectedReturnDate || undefined,
+            serialNote: line.serialNote || undefined,
           },
         }).catch((e: Error) => {
           addToast({ type: 'error', message: `"${line.productName}": ${e.message}` })
@@ -428,6 +496,13 @@ export default function StoreOutPage() {
   const draftCount = visibleIssues.filter((i) => i.status === 'draft').length
   const issuedCount = visibleIssues.filter((i) => i.status === 'issued').length
 
+  // Mirrors the server (issueMaterialIssue): a manual Store Out with equipment must say who has it. One linked to a PO is exempt.
+  const needsIssuedTo =
+    pendingLines.some((l) => l.isReturnable) &&
+    !formPoId &&
+    !formIssuedToEmployeeId &&
+    formIssuedToName.trim() === ''
+
   // Pending lines total
   const pendingTotal = pendingLines.reduce(
     (s, l) => s + (parseFloat(l.qty) || 0) * (parseFloat(l.unitCost) || 0),
@@ -446,9 +521,27 @@ export default function StoreOutPage() {
         key: 'productName',
         header: t('inv.storeOut.item'),
         render: (row) => (
-          <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
-            {row.productName ?? row.productId}
-          </span>
+          <div>
+            <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
+              {row.productName ?? row.productId}
+            </span>
+            {row.isReturnable && (
+              <div style={{ marginTop: '4px', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <Badge variant="warning">{t('inv.storeOut.returnableTag')}</Badge>
+                {row.expectedReturnDate && (
+                  <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+                    {t('inv.storeOut.backBy', { date: row.expectedReturnDate })}
+                  </span>
+                )}
+                {(row.qtyReturned ?? 0) > 0 && (
+                  <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+                    {t('inv.storeOut.returnedOf', { returned: row.qtyReturned, issued: row.qtyIssued })}
+                  </span>
+                )}
+                {row.serialNote && <span style={{ fontSize: '12px', color: theme.textSecondary }}>{row.serialNote}</span>}
+              </div>
+            )}
+          </div>
         ),
       },
       {
@@ -509,6 +602,11 @@ export default function StoreOutPage() {
         <div>
           <div style={{ color: theme.textPrimary, fontWeight: 500 }}>{row.productName}</div>
           <div style={{ fontSize: '11px', color: theme.textMuted }}>{row.sku}</div>
+          {row.isReturnable && (
+            <div style={{ marginTop: '4px' }}>
+              <Badge variant="warning">{t('inv.storeOut.returnableTag')}</Badge>
+            </div>
+          )}
         </div>
       ),
     },
@@ -603,14 +701,14 @@ export default function StoreOutPage() {
         title={t('inv.storeOut.storeOut')}
         subtitle={t('inv.storeOut.recordInventoryItemsIssuedToProjects')}
         actions={
-          <Button
-            variant="primary"
+          <ActionButton
+            variant="solid"
             onClick={() => {
               setShowModal(true)
             }}
           >
             {t('inv.storeOut.newStoreOut')}
-          </Button>
+          </ActionButton>
         }
       />
 
@@ -650,7 +748,7 @@ export default function StoreOutPage() {
         }}
       >
         <div style={{ minWidth: '160px' }}>
-          <Select
+          <Select field
             label={t('inv.storeOut.status')}
             value={statusFilter}
             options={statusFilterOptions}
@@ -661,7 +759,7 @@ export default function StoreOutPage() {
           />
         </div>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '320px' }}>
-          <Select
+          <Select field
             label={t('inv.storeOut.project')}
             value={projectFilter}
             options={projectOptions}
@@ -673,7 +771,7 @@ export default function StoreOutPage() {
           />
         </div>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '320px' }}>
-          <SearchableSelect
+          <SearchableSelect field
             label={t('inv.storeOut.purchaseOrder')}
             value={poFilter}
             onChange={setPoFilter}
@@ -682,7 +780,7 @@ export default function StoreOutPage() {
           />
         </div>
         <div style={{ minWidth: '220px', flex: 1, maxWidth: '320px' }}>
-          <SearchableSelect
+          <SearchableSelect field
             label={t('inv.storeOut.requisition')}
             value={requisitionFilter}
             onChange={setRequisitionFilter}
@@ -691,7 +789,7 @@ export default function StoreOutPage() {
           />
         </div>
         <div style={{ minWidth: '200px', flex: 1, maxWidth: '260px' }}>
-          <Input
+          <Input field
             label={t('inv.storeOut.storeInReceipt')}
             value={receiptNumberFilter}
             placeholder={t('inv.storeOut.eGGrn20260012')}
@@ -701,7 +799,7 @@ export default function StoreOutPage() {
           />
         </div>
         <div style={{ minWidth: '200px', flex: 1, maxWidth: '260px' }}>
-          <Input
+          <Input field
             label={t('inv.storeOut.itemNameOrSku')}
             value={itemSearch}
             placeholder={t('inv.storeOut.eGBolt2548mm')}
@@ -939,7 +1037,7 @@ export default function StoreOutPage() {
                             alignItems: 'flex-end',
                           }}
                         >
-                          <SearchableSelect
+                          <SearchableSelect field
                             label={t('inv.storeOut.item')}
                             value={draftProductId}
                             onChange={(val) => {
@@ -952,7 +1050,7 @@ export default function StoreOutPage() {
                             placeholder={t('inv.storeOut.searchNameOrSku')}
                             minDropdownWidth={420}
                           />
-                          <Select
+                          <Select field
                             label={t('inv.storeOut.fromLocation')}
                             value={draftFromLocationId}
                             onChange={(e) => {
@@ -960,7 +1058,7 @@ export default function StoreOutPage() {
                             }}
                             options={locationOptions}
                           />
-                          <Input
+                          <Input field
                             label={t('inv.storeOut.qty')}
                             type="number"
                             value={draftQty}
@@ -971,7 +1069,7 @@ export default function StoreOutPage() {
                             step="any"
                             placeholder="0"
                           />
-                          <Input
+                          <Input field
                             label={t('inv.storeOut.unitCostIqd')}
                             type="number"
                             value={draftUnit}
@@ -982,25 +1080,62 @@ export default function StoreOutPage() {
                             step="any"
                             placeholder="0.00"
                           />
-                          <Button
-                            variant="secondary"
+                          <ActionButton
+                            variant="outline"
                             size="sm"
-                            disabled={!draftProductId || !draftQty || !draftUnit || addingLine}
+                            disabled={!draftProductId || !draftQty || (!draftUnit && !draftIsReturnable) || addingLine}
                             onClick={() =>
                               void addLine({
                                 variables: {
                                   issueId: si.id,
                                   productId: draftProductId,
                                   qtyIssued: parseFloat(draftQty),
-                                  unitCost: parseFloat(draftUnit),
+                                  unitCost: parseFloat(draftUnit) || 0,
                                   fromLocationId: draftFromLocationId || undefined,
+                                  isReturnable: draftIsReturnable || undefined,
+                                  expectedReturnDate: draftIsReturnable ? draftDue || undefined : undefined,
+                                  serialNote: draftIsReturnable ? draftSerial.trim() || undefined : undefined,
                                 },
                               })
                             }
                           >
                             {t('inv.storeOut.add')}
-                          </Button>
+                          </ActionButton>
                         </div>
+                        {draftProductId !== '' && (
+                          <div
+                            data-testid="draft-returnable-fields"
+                            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', alignItems: 'flex-end', marginTop: '12px' }}
+                          >
+                            <Checkbox
+                              label={draftProduct?.is_returnable ? t('inv.storeOut.equipmentAlwaysReturnable') : t('inv.storeOut.mustComeBack')}
+                              checked={draftIsReturnable}
+                              disabled={draftProduct?.is_returnable === true}
+                              onChange={setDraftReturnable}
+                            />
+                            {draftIsReturnable && (
+                              <>
+                                <Input field
+                                  label={t('inv.storeOut.expectedReturn')}
+                                  type="date"
+                                  min={si.issueDate.slice(0, 10)}
+                                  value={draftDue}
+                                  onChange={(e) => {
+                                    setDraftDue(e.target.value)
+                                  }}
+                                />
+                                <Input field
+                                  label={t('inv.storeOut.serialNote')}
+                                  value={draftSerial}
+                                  maxLength={100}
+                                  onChange={(e) => {
+                                    setDraftSerial(e.target.value)
+                                  }}
+                                />
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1013,7 +1148,13 @@ export default function StoreOutPage() {
                       }}
                     >
                       <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                        {si.issuedByName ? t('inv.storeOut.issuedBy', { name: si.issuedByName }) : ''}
+                        {[
+                          si.issuedByName ? t('inv.storeOut.issuedBy', { name: si.issuedByName }) : '',
+                          si.issuedToName ? t('inv.storeOut.issuedToLine', { name: si.issuedToName }) : '',
+                          si.department ?? '',
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                       </span>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <Button
@@ -1075,36 +1216,37 @@ export default function StoreOutPage() {
         closeOnBackdrop={false}
         title={t('inv.storeOut.newStoreOut2')}
         description={t('inv.storeOut.recordInventoryItemsBeingIssuedTo')}
-        size="lg"
+        size="2xl"
         footer={
           <>
-            <Button variant="ghost" size="md" onClick={resetModal}>
+            <ActionButton variant="outline" onClick={resetModal}>
               {t('inv.storeOut.cancel')}
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              disabled={!formDate || pendingLines.length === 0 || creating}
+            </ActionButton>
+            <ActionButton
+              variant="solid"
+              disabled={!formDate || pendingLines.length === 0 || creating || needsIssuedTo}
               loading={creating}
               onClick={() => void handleCreate()}
             >
               {pendingLines.length > 0
                 ? t('inv.storeOut.createWithItems', { count: pendingLines.length })
                 : t('inv.storeOut.createPlain')}
-            </Button>
+            </ActionButton>
           </>
         }
       >
         {/* Header fields */}
         <div
           style={{
+            // Date, project, PO, issued to, name and department share one row on a wide window (six boxes need about
+            // 1,150px); a narrower one wraps them instead of squeezing the pickers.
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
             gap: '14px',
             marginBottom: '14px',
           }}
         >
-          <Input
+          <Input field
             label={t('inv.storeOut.issueDate')}
             required
             type="date"
@@ -1113,7 +1255,7 @@ export default function StoreOutPage() {
               setFormDate(e.target.value)
             }}
           />
-          <SearchableSelect
+          <SearchableSelect field
             label={t('inv.storeOut.projectOptional')}
             value={formProjectId}
             onChange={(val) => {
@@ -1124,7 +1266,7 @@ export default function StoreOutPage() {
             placeholder={t('inv.storeOut.noProject')}
             minDropdownWidth={PROJECT_PICKER_WIDTH}
           />
-          <SearchableSelect
+          <SearchableSelect field
             label={t('inv.storeOut.linkToPoOptional')}
             value={formPoId}
             onChange={(val) => {
@@ -1140,9 +1282,34 @@ export default function StoreOutPage() {
             options={poOptions}
             placeholder={t('inv.storeOut.searchPo')}
           />
+          <SearchableSelect field
+            label={t('inv.storeOut.issuedToEmployee')}
+            value={formIssuedToEmployeeId}
+            onChange={setFormIssuedToEmployeeId}
+            options={[{ value: '', label: t('inv.storeOut.noEmployee') }, ...employeeOptions]}
+            placeholder={t('inv.storeOut.issuedToEmployee')}
+          />
+          <Input field
+            label={t('inv.storeOut.orTypeName')}
+            value={formIssuedToName}
+            disabled={formIssuedToEmployeeId !== ''}
+            maxLength={200}
+            onChange={(e) => {
+              setFormIssuedToName(e.target.value)
+            }}
+            error={needsIssuedTo ? t('inv.storeOut.issuedToRequired') : undefined}
+          />
+          <Input field
+            label={t('inv.storeOut.department')}
+            value={formDepartment}
+            maxLength={100}
+            onChange={(e) => {
+              setFormDepartment(e.target.value)
+            }}
+          />
         </div>
 
-        <Textarea
+        <Textarea field
           label={t('inv.storeOut.notes')}
           value={formNotes}
           onChange={(e) => {
@@ -1233,7 +1400,7 @@ export default function StoreOutPage() {
                 alignItems: 'flex-end',
               }}
             >
-              <SearchableSelect
+              <SearchableSelect field
                 label={t('inv.storeOut.item')}
                 value={newProductId}
                 onChange={(val) => {
@@ -1245,7 +1412,7 @@ export default function StoreOutPage() {
                 placeholder={t('inv.storeOut.searchNameOrSku')}
                 minDropdownWidth={420}
               />
-              <Select
+              <Select field
                 label={t('inv.storeOut.fromLocation')}
                 value={newFromLocationId}
                 onChange={(e) => {
@@ -1253,7 +1420,7 @@ export default function StoreOutPage() {
                 }}
                 options={locationOptions}
               />
-              <Input
+              <Input field
                 label={t('inv.storeOut.qty')}
                 type="number"
                 value={newQty}
@@ -1264,7 +1431,7 @@ export default function StoreOutPage() {
                 step="any"
                 placeholder="0"
               />
-              <Input
+              <Input field
                 label={t('inv.storeOut.unitCostIqd')}
                 type="number"
                 value={newUnit}
@@ -1275,15 +1442,62 @@ export default function StoreOutPage() {
                 step="any"
                 placeholder="0.00"
               />
-              <Button
-                variant="secondary"
+              <ActionButton
+                variant="outline"
                 size="sm"
-                disabled={!newProductId || !newQty || !newUnit}
+                disabled={!newProductId || !newQty || (!newUnit && !newIsReturnable)}
                 onClick={addPendingLine}
               >
                 {t('inv.storeOut.add2')}
-              </Button>
+              </ActionButton>
             </div>
+            {newProductId !== '' && (
+              <div
+                data-testid="returnable-fields"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: '10px',
+                  alignItems: 'flex-end',
+                  marginTop: '12px',
+                }}
+              >
+                <div>
+                  <Checkbox
+                    label={newProduct?.is_returnable ? t('inv.storeOut.equipmentAlwaysReturnable') : t('inv.storeOut.mustComeBack')}
+                    checked={newIsReturnable}
+                    disabled={newProduct?.is_returnable === true}
+                    onChange={setNewReturnable}
+                  />
+                </div>
+                {newIsReturnable && (
+                  <>
+                    <Input field
+                      label={t('inv.storeOut.expectedReturn')}
+                      type="date"
+                      min={formDate}
+                      value={newDue}
+                      onChange={(e) => {
+                        setNewDue(e.target.value)
+                      }}
+                    />
+                    <Input field
+                      label={t('inv.storeOut.serialNote')}
+                      value={newSerial}
+                      maxLength={100}
+                      onChange={(e) => {
+                        setNewSerial(e.target.value)
+                      }}
+                    />
+                  </>
+                )}
+              </div>
+            )}
+            {newIsReturnable && (
+              <p style={{ margin: '8px 0 0', fontSize: '12px', color: theme.textSecondary }}>
+                {t('inv.storeOut.expectedReturnHint')}
+              </p>
+            )}
           </div>
 
           {pendingLines.length === 0 && (

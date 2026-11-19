@@ -546,7 +546,7 @@ export function EntityAttachments({
               {formatBytes(pendingFile.size)}
             </div>
           )}
-          <Input
+          <Input field
             label={t('attach.labelOptional')}
             value={uploadLabel}
             onChange={(e) => {

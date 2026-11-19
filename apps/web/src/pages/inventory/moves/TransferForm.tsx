@@ -164,7 +164,7 @@ export default function TransferForm() {
               gap: '16px',
             }}
           >
-            <Select
+            <Select field
               label={t('inv.transfer.fromLocation')}
               value={form.from_location_id}
               onChange={(e) => {
@@ -179,7 +179,7 @@ export default function TransferForm() {
                 </option>
               ))}
             </Select>
-            <Select
+            <Select field
               label={t('inv.transfer.toLocation')}
               value={form.to_location_id}
               onChange={(e) => {
@@ -202,7 +202,7 @@ export default function TransferForm() {
               gap: '16px',
             }}
           >
-            <Input
+            <Input field
               label={t('inv.transfer.transferDate')}
               type="date"
               value={form.move_date}
@@ -211,7 +211,7 @@ export default function TransferForm() {
               }}
               required
             />
-            <Input
+            <Input field
               label={t('inv.transfer.reference')}
               value={form.reference}
               onChange={(e) => {

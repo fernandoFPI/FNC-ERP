@@ -406,7 +406,7 @@ export default function PendingCatalogItemsPage() {
                     }}
                   >
                     {companies.length > 1 && (
-                      <Select
+                      <Select field
                         label={t('inv.catalog.catalogCompany')}
                         value={targetCompanyId}
                         onChange={(e) => { setTargetCompanyId(e.target.value); }}
@@ -425,12 +425,12 @@ export default function PendingCatalogItemsPage() {
                         gap: '12px',
                       }}
                     >
-                      <Input
+                      <Input field
                         label={t('inv.catalog.name')}
                         value={newForm.name}
                         onChange={(e) => { setNewForm((f) => ({ ...f, name: e.target.value })); }}
                       />
-                      <Input
+                      <Input field
                         label={t('inv.catalog.nameArabic')}
                         value={newForm.name_ar}
                         onChange={(e) => { setNewForm((f) => ({ ...f, name_ar: e.target.value })); }}
@@ -444,7 +444,7 @@ export default function PendingCatalogItemsPage() {
                         gap: '12px',
                       }}
                     >
-                      <Select
+                      <Select field
                         label={t('inv.catalog.category')}
                         value={newForm.category}
                         onChange={(e) => {
@@ -463,7 +463,7 @@ export default function PendingCatalogItemsPage() {
                         <option value="service">{t('inv.catalog.service')}</option>
                       </Select>
                       {newForm.category === 'raw_material' && (
-                        <Select
+                        <Select field
                           label={t('inv.catalog.storeSubCategory')}
                           value={newForm.sub_category}
                           onChange={(e) =>
@@ -478,12 +478,12 @@ export default function PendingCatalogItemsPage() {
                           ))}
                         </Select>
                       )}
-                      <Input
+                      <Input field
                         label={t('inv.catalog.uom')}
                         value={newForm.uom}
                         onChange={(e) => { setNewForm((f) => ({ ...f, uom: e.target.value })); }}
                       />
-                      <Input
+                      <Input field
                         label={t('inv.catalog.sku')}
                         value={newForm.sku}
                         onChange={(e) => { setNewForm((f) => ({ ...f, sku: e.target.value })); }}
@@ -518,7 +518,7 @@ export default function PendingCatalogItemsPage() {
                     }}
                   >
                     {companies.length > 1 && (
-                      <Select
+                      <Select field
                         label={t('inv.catalog.catalogCompany')}
                         value={targetCompanyId}
                         onChange={(e) => {
@@ -575,7 +575,7 @@ export default function PendingCatalogItemsPage() {
                     <div style={{ fontSize: '13px', color: theme.textMuted }}>
                       {t('inv.catalog.notACatalogItemHint')}
                     </div>
-                    <Textarea
+                    <Textarea field
                       label={t('inv.catalog.dismissReasonOptional')}
                       value={dismissReason}
                       onChange={(e) => {

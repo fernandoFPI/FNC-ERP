@@ -1,3 +1,5 @@
+import { esc } from './htmlEscape'
+
 export interface StoreOutPrintLine {
   productName?: string | null
   productNameAr?: string | null
@@ -8,6 +10,10 @@ export interface StoreOutPrintLine {
   toLocationName?: string | null
   unitCost: number
   totalCost: number
+  // equipment that must come back
+  isReturnable?: boolean | null
+  expectedReturnDate?: string | null
+  serialNote?: string | null
 }
 
 export interface StoreOutPrintData {
@@ -19,6 +25,8 @@ export interface StoreOutPrintData {
   projectName?: string | null
   poNumber?: string | null
   issuedByName?: string | null
+  issuedToName?: string | null
+  department?: string | null
   companyName?: string | null
   lines: StoreOutPrintLine[]
 }
@@ -45,6 +53,7 @@ export function buildStoreOutHTML(mi: StoreOutPrintData): string {
         <div style="font-weight:600;color:#1a1a1a">${l.productName ?? '—'}</div>
         ${l.productNameAr ? `<div dir="rtl" style="color:#555;margin-top:2px">${l.productNameAr}</div>` : ''}
         ${l.sku ? `<div style="color:#888;margin-top:2px">${l.sku}</div>` : ''}
+        ${l.isReturnable ? `<div style="margin-top:3px;font-weight:600;color:#92400e">MUST BE RETURNED${l.expectedReturnDate ? ` BY ${esc(l.expectedReturnDate)}` : ''}${l.serialNote ? ` · ${esc(l.serialNote)}` : ''}</div>` : ''}
       </td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#666">
         ${l.fromLocationName ?? '—'} → ${l.toLocationName ?? '—'}
@@ -107,6 +116,10 @@ export function buildStoreOutHTML(mi: StoreOutPrintData): string {
           <td style="padding:4px 0;font-size:11px;color:#888">Issued by</td>
           <td style="padding:4px 0;font-size:12px;text-align:right;color:#555">${mi.issuedByName ?? '—'}</td>
         </tr>
+        ${mi.issuedToName ? `<tr>
+          <td style="padding:4px 0;font-size:11px;color:#888">Issued to</td>
+          <td style="padding:4px 0;font-size:12px;font-weight:600;text-align:right">${esc(mi.issuedToName)}${mi.department ? ` · ${esc(mi.department)}` : ''}</td>
+        </tr>` : ''}
       </table>
     </div>
   </div>
