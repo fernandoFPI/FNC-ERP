@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import i18n, { enumLabel } from '../../../i18n'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { MY_PO_QUEUE_QUERY } from '../../../graphql/procurement'
@@ -103,6 +103,46 @@ const KIND_OPTIONS = (Object.keys(KIND_LABELS) as Kind[]).map((k) => ({
 
 const tAct = (label: string) => i18n.t(`queue.act.${label}`, { defaultValue: label })
 
+// The filters survive opening an item and coming back (playbook #70): the page unmounts when a row is opened, and the
+// item's own Back goes to the bare path, so the choice is kept for the browser tab in sessionStorage, like the Products
+// and Requisitions lists. Read defensively: a wrong type, an unknown tile or unavailable storage just means no filters.
+const FILTERS_STORAGE_KEY = 'my-queue-filters'
+interface SavedQueueFilters {
+  search: string
+  kindFilter: string
+  actionFilter: string
+  quick: string
+  page: number
+}
+const NO_QUEUE_FILTERS: SavedQueueFilters = {
+  search: '',
+  kindFilter: '',
+  actionFilter: '',
+  quick: '',
+  page: 1,
+}
+
+function loadSavedFilters(): SavedQueueFilters {
+  try {
+    const raw = sessionStorage.getItem(FILTERS_STORAGE_KEY)
+    if (!raw) return NO_QUEUE_FILTERS
+    const v = JSON.parse(raw) as Partial<Record<keyof SavedQueueFilters, unknown>> | null
+    if (!v || typeof v !== 'object') return NO_QUEUE_FILTERS
+    const str = (x: unknown) => (typeof x === 'string' ? x : '')
+    const kind = str(v.kindFilter)
+    const quick = str(v.quick)
+    return {
+      search: str(v.search),
+      kindFilter: Object.keys(KIND_LABELS).includes(kind) ? kind : '',
+      actionFilter: str(v.actionFilter),
+      quick: quick === 'approval' || quick === 'overdue' ? quick : '',
+      page: typeof v.page === 'number' && Number.isInteger(v.page) && v.page >= 1 ? v.page : 1,
+    }
+  } catch {
+    return NO_QUEUE_FILTERS
+  }
+}
+
 function titleCase(s: string): string {
   const t = s.replace(/_/g, ' ')
   return t.charAt(0).toUpperCase() + t.slice(1)
@@ -135,13 +175,14 @@ export default function MyQueuePage() {
   const canApproveExpenses = can('finance.expenses.approve', 'approve')
   const canApproveAdvances = can('finance.advances.approve', 'approve')
 
-  const [search, setSearch] = useState('')
-  const [kindFilter, setKindFilter] = useState('')
-  const [actionFilter, setActionFilter] = useState('')
+  const [saved] = useState(loadSavedFilters)
+  const [search, setSearch] = useState(saved.search)
+  const [kindFilter, setKindFilter] = useState(saved.kindFilter)
+  const [actionFilter, setActionFilter] = useState(saved.actionFilter)
   // '', 'approval' (needs my approval) or 'overdue' — set by the KPI tiles and by
-  // the old Approval Queue's redirect (?filter=approval).
-  const [quick, setQuick] = useState(params.get('filter') === 'approval' ? 'approval' : '')
-  const [page, setPage] = useState(1)
+  // the old Approval Queue's redirect (?filter=approval), which wins over a remembered choice.
+  const [quick, setQuick] = useState(params.get('filter') === 'approval' ? 'approval' : saved.quick)
+  const [page, setPage] = useState(saved.page)
 
   const {
     data: poData,
@@ -331,9 +372,30 @@ export default function MyQueuePage() {
     return true
   })
 
+  // A changed filter goes back to page 1; the first run must not, or a remembered page would be lost on return.
+  const filtersSeen = useRef({ search, kindFilter, actionFilter, quick })
   useEffect(() => {
+    const prev = filtersSeen.current
+    if (
+      prev.search === search &&
+      prev.kindFilter === kindFilter &&
+      prev.actionFilter === actionFilter &&
+      prev.quick === quick
+    )
+      return
+    filtersSeen.current = { search, kindFilter, actionFilter, quick }
     setPage(1)
   }, [search, kindFilter, actionFilter, quick])
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        FILTERS_STORAGE_KEY,
+        JSON.stringify({ search, kindFilter, actionFilter, quick, page }),
+      )
+    } catch {
+      // storage blocked: the filters just are not remembered
+    }
+  }, [search, kindFilter, actionFilter, quick, page])
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount)
   const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)

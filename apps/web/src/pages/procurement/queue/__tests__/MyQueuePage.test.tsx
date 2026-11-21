@@ -120,6 +120,7 @@ const purchaseOrders = [
 
 beforeEach(() => {
   vi.clearAllMocks()
+  sessionStorage.clear() // the page remembers its filters for the tab; each test starts with none
   mockUseQuery.mockReturnValue({
     data: { myRequisitionApprovalQueue: requisitions, myPOQueue: purchaseOrders },
     loading: false,

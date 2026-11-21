@@ -1571,7 +1571,16 @@ Don't re-derive, check these first.
     Requests, Stock Balances, Accounts, Locations, the two interco lists and the reports. `useSearchParams` in Lots and
     Stock Moves may only READ incoming links, so those two are not confirmed to keep anything. NOT changed (the request was
     Products). The same ten lines now exist three times (Projects, Requisitions, Products): if more lists get this, move
-    them into one hook rather than a fourth copy.
+    them into one hook rather than a fourth copy. **My Queue followed on 2026-11-21 (the fourth copy, key
+    `my-queue-filters`):** it keeps the search, the Type and Action boxes, the KPI tile (Needs My Approval, Overdue) and the
+    page the person was on; an explicit `?filter=approval` link still wins over a remembered tile; the "back to page 1 when a
+    filter changes" effect must skip its first run or it throws away the remembered page. A first set of tests left four
+    mutants alive, each naming a missing assertion: the Action box was never exercised, the saved page was never read back
+    from storage, an unknown tile value was only checked through the rows (check the "My Queue" tile is the pressed one), and
+    the page-1 reset used a search that matched fewer rows than a page (the clamp hid it; use a filter that still matches
+    more than one page). The older `MyQueuePage.test.tsx` now clears `sessionStorage` before each test, because state that
+    persists leaks between tests of one file. Tests: `queue/__tests__/MyQueuePageFilters.test.tsx` (13, through a real router
+    with a Back link to the bare path); 14 mutations killed.
     Traps met in the test. `Select` with `options` is a searchable portal select, not a native `<select>`: open it by
     clicking what it currently shows and choose the option on `mouseDown` (#59), and a store name is also printed in a
     product row, so take the LAST text match and assert on which rows are shown instead of on ambiguous text. A "mutation
