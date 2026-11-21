@@ -196,6 +196,9 @@
     # other purpose, and a direct supply is refused at submitRequisitionToInventoryCheck.
     submitRequisitionDirectSupply(id: ID!, notes: String): Requisition!
     confirmRequisitionInventoryCheck(id: ID!, lineStockQtys: [StockConfirmLineInput!]!, notes: String): Requisition!
+    # The store keeper double-checked an item's Cost for this requisition: its 30-day clock restarts (products.cost_confirmed_at).
+    # Store Keeper of the requisition or an admin; the product must be on one of the requisition's lines.
+    confirmRequisitionStockCost(requisitionId: ID!, productId: ID!): Boolean!
     submitRequisitionStorePricing(id: ID!, linePrices: [RequisitionStorePriceInput!]): Requisition!
     # side: whose part of Market pricing is being submitted (migration 315). Omitted = PROCUREMENT, exactly the
     # single submit it always was. The requisition advances to Price verification once every side that has
@@ -2555,6 +2558,12 @@
     # figures that never had one recorded.
     inventory_cost: String
     inventory_cost_currency: String
+    # Stale stock cost (playbook #111). How many whole days since the item's Cost was last changed or confirmed (null for a custom
+    # line with no catalog product), and whether that is over 30 days while the requisition is in a stage where the price still
+    # matters. Nullable on purpose: only the requisition reader fills them, and a non-null violation would null the whole line. Whether
+    # the line is actually covered from stock is the reader's question (qty_from_stock, or the quantity being typed at the Inventory Check).
+    cost_age_days: Int
+    cost_stale: Boolean
     market_price: String
     market_price_currency: String
     verified_price: String

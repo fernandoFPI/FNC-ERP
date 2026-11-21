@@ -129,6 +129,8 @@ export const REQUISITION_QUERY = gql`
         store_price_currency
         inventory_cost
         inventory_cost_currency
+        cost_age_days
+        cost_stale
         market_price
         market_price_currency
         verified_price
@@ -284,6 +286,13 @@ export const CONFIRM_REQUISITION_INVENTORY_CHECK = gql`
       id
       status
     }
+  }
+`
+
+// The store keeper double-checked an item's Cost: its 30-day clock restarts (playbook #111).
+export const CONFIRM_REQUISITION_STOCK_COST = gql`
+  mutation ConfirmRequisitionStockCost($requisitionId: ID!, $productId: ID!) {
+    confirmRequisitionStockCost(requisitionId: $requisitionId, productId: $productId)
   }
 `
 

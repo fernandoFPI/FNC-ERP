@@ -1531,7 +1531,15 @@
       "whyIsThisRequisitionBeingCancelled": "لماذا يُلغى طلب الشراء هذا؟",
       "wrongItemReselect": "مادة خاطئة؟ أعد الاختيار",
       "linesAlwaysVisible": "المادة والكمية والإجمالي تظهر دائمًا",
-      "onlyAnAdminAfterApproval": "يمكن للمسؤول فقط تعديل طلب الشراء بعد الموافقة عليه. اطلب من المسؤول إجراء التعديل."
+      "onlyAnAdminAfterApproval": "يمكن للمسؤول فقط تعديل طلب الشراء بعد الموافقة عليه. اطلب من المسؤول إجراء التعديل.",
+      "staleCostTitle": "راجع سعر المخزن مرة أخرى",
+      "staleCostIntro": "هذه الأصناف تُسحب من المخزون ولم تتغير تكلفتها أو يتم تأكيدها منذ أكثر من {{limit}} يوماً. سعر المخزن مأخوذ من هذه التكلفة، لذا يجب على أمين المخزن مراجعتها.",
+      "staleCostConfirmHint": "بعد المراجعة اضغط «تم تأكيد السعر».",
+      "staleCostAge": "التكلفة لم تتغير منذ {{days}} يوماً",
+      "staleCostOpenItem": "فتح الصنف",
+      "staleCostConfirm": "تم تأكيد السعر",
+      "staleCostTag": "التكلفة لم تتغير منذ {{days}} يوماً. راجع سعر المخزن.",
+      "staleCostConfirmedToast": "تم تأكيد السعر للصنف {{name}}"
     },
     "advanceStatus": {
       "draft": "مسودة",

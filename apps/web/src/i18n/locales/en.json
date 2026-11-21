@@ -1443,7 +1443,15 @@
       "whyIsThisRequisitionBeingCancelled": "Why is this requisition being cancelled?",
       "wrongItemReselect": "Wrong item? Reselect",
       "linesAlwaysVisible": "Item, Qty and Total always stay visible",
-      "onlyAnAdminAfterApproval": "Only an administrator can change an approved requisition. Ask an administrator to make the change."
+      "onlyAnAdminAfterApproval": "Only an administrator can change an approved requisition. Ask an administrator to make the change.",
+      "staleCostTitle": "Double-check the store price",
+      "staleCostIntro": "These items are drawn from stock and their cost has not changed or been confirmed for more than {{limit}} days. The store price comes from that cost, so a store keeper should double-check it.",
+      "staleCostConfirmHint": "When you have checked it, press Price confirmed.",
+      "staleCostAge": "Cost unchanged for {{days}} days",
+      "staleCostOpenItem": "Open item",
+      "staleCostConfirm": "Price confirmed",
+      "staleCostTag": "Cost unchanged for {{days}} days. Double-check the store price.",
+      "staleCostConfirmedToast": "Price confirmed for {{name}}"
     },
     "advanceStatus": {
       "draft": "Draft",
