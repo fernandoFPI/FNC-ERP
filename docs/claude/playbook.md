@@ -3745,3 +3745,32 @@ Don't re-derive, check these first.
     `RequisitionDetailAdminOnlyEdit.test.tsx` and the "who is offered it after approval" block in `poLineCurrencyPage.test.tsx`
     (13 web mutations killed). Needs the gateway restarted and a hard refresh (#19). Not verified in a browser. Related to #33,
     #58, #66, #26.
+113. **A worklist that was written before a document type existed, and tests that mock every permission as "no".** The user:
+    expense claims and advances do not show under My Queue's "Needs My Approval". Production (read-only, 2026-11-21) said why,
+    and it was three separate things. (a) *Advance REQUESTS were never in the queue.* The page loaded expense claims and advance
+    SETTLEMENTS from Finance and nothing for an advance request (migration 322: `pending_approval` for its manager, then
+    `pending_issue` for the cashbox handler), so the 5 Yakam advances waiting for cash, and any future request, were invisible there
+    although the Requisitions list shows them. The queue is a hand-written list of sources (#24); a document type added later is
+    missing until someone adds it. (b) *Funding decisions were excluded from the tile on purpose.* `needsApproval: !funding` kept
+    "approved" expense claims (waiting for Finance to choose reimburse / advance / petty cash) out of "Needs My Approval", so the one
+    claim each at Factory and Al Watanyia and five at Yakam were in the list but not in the tile. A funding decision is a sign-off that
+    waits on that person, so it now counts. (c) *Nothing was wrong with the expense route for approval itself:* no claim was at
+    `submitted` on production, which is why that part looked empty. How to spot it: a tile that reads lower than what the same
+    person sees in another list; read the production counts per company and status before changing the code, then compare each status
+    with what the queue asks for.
+    Fix: `MyQueuePage` loads advance requests for the two people who act on them, each behind the key the server's own step asks for
+    (`finance.advances.approve` reads `GET /finance/advances?status=pending_approval`; `finance.petty_cash.edit` reads
+    `GET /finance/advances/awaiting-issue`), a new Kind `advance` (tag ADV, Type filter "Advance request", locale keys in both
+    languages), an approver sees "Approve advance request", a cashbox handler "Issue advance cash" (waiting since the manager
+    approved it, not since it was filed), and both count under "Needs My Approval". The cash-issue rows are counted there because the
+    user's complaint was that advances were missing and those are the only ones waiting on production; if that is too wide, set
+    `needsApproval: false` on that one row (a one-line change, and one test names it). A cashbox handler without
+    `finance.advances.view` cannot open the advance page from the row (the Requisitions list opens a dialog for them instead); not
+    changed.
+    Test trap worth keeping: `MyQueuePage.test.tsx` mocked `can: () => false`, so no Finance code path had ever run in a test. The new
+    file (`MyQueuePageFinance.test.tsx`, 19) mocks the permission per key and the finance service per URL and status, so each gate and
+    each endpoint is exercised. A mutation that dropped `advancePending` / `advanceIssue` from the memo's dependencies SURVIVED
+    until the Apollo mock stopped returning a fresh result object every render (a fresh object makes the page recompute its list on
+    every render and hides a stale one; same family as #60.3 from the other side) and the test delivered the advance rows after
+    everything else. Remembered filters for this page are #70. Tests: 13 mutations on the Finance part killed (after the two fixes
+    above). Not verified in a browser. Related to #24, #85, #70.

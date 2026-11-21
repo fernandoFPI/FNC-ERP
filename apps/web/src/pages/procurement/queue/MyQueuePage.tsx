@@ -44,7 +44,7 @@ import type {
 // pages. Each source keeps its own server-side rule for "who can act" — this
 // page only merges and presents them.
 
-type Kind = 'requisition' | 'po' | 'expense' | 'settlement'
+type Kind = 'requisition' | 'po' | 'expense' | 'advance' | 'settlement'
 
 interface QueueItem {
   key: string
@@ -72,6 +72,17 @@ interface ExpenseClaimQueueApiRow {
   created_at: string
 }
 
+// An advance REQUEST (migration 322): waiting for its manager (pending_approval) or, once approved, for the cashbox
+// handler to pay it out (pending_issue). Not to be confused with a settlement of an advance already issued.
+interface AdvanceQueueApiRow {
+  id: string
+  advance_number: string
+  employee_name: string
+  status: string
+  created_at: string
+  approved_at?: string | null
+}
+
 interface SettlementQueueApiRow {
   id: string
   settlement_number: string
@@ -88,12 +99,14 @@ const KIND_LABELS: Record<Kind, string> = {
   requisition: 'Requisition',
   po: 'Purchase order',
   expense: 'Expense claim',
+  advance: 'Advance request',
   settlement: 'Advance settlement',
 }
 const KIND_TAGS: Record<Kind, string> = {
   requisition: 'REQ',
   po: 'PO',
   expense: 'EXP',
+  advance: 'ADV',
   settlement: 'SET',
 }
 const KIND_OPTIONS = (Object.keys(KIND_LABELS) as Kind[]).map((k) => ({
@@ -174,6 +187,8 @@ export default function MyQueuePage() {
   const { can } = usePermission()
   const canApproveExpenses = can('finance.expenses.approve', 'approve')
   const canApproveAdvances = can('finance.advances.approve', 'approve')
+  // The cashbox handler pays approved advance requests out (the same key the server's issue step asks for).
+  const canIssueAdvances = can('finance.petty_cash.edit', 'edit')
 
   const [saved] = useState(loadSavedFilters)
   const [search, setSearch] = useState(saved.search)
@@ -207,6 +222,8 @@ export default function MyQueuePage() {
   // approvers have anything to act on there.
   const [expenseRows, setExpenseRows] = useState<ExpenseClaimQueueApiRow[]>([])
   const [settlementRows, setSettlementRows] = useState<SettlementQueueApiRow[]>([])
+  const [advancePending, setAdvancePending] = useState<AdvanceQueueApiRow[]>([])
+  const [advanceIssue, setAdvanceIssue] = useState<AdvanceQueueApiRow[]>([])
   const loadFinanceItems = useCallback(() => {
     if (canApproveExpenses) {
       // Two waits on this approver: 'submitted' (legitimacy approval) and
@@ -238,8 +255,28 @@ export default function MyQueuePage() {
         .catch(() => {
           /* handled — the queue just won't include settlements this refresh */
         })
+      // Advance requests waiting for this approver. The list is the finance list filtered by one status.
+      api
+        .get<AdvanceQueueApiRow[]>('/finance/advances', { params: { status: 'pending_approval' } })
+        .then((r) => {
+          setAdvancePending(r.data)
+        })
+        .catch(() => {
+          /* handled — the queue just won't include advance requests this refresh */
+        })
     }
-  }, [canApproveExpenses, canApproveAdvances])
+    if (canIssueAdvances) {
+      // Approved advance requests waiting for the cashbox handler to pay them out.
+      api
+        .get<AdvanceQueueApiRow[]>('/finance/advances/awaiting-issue')
+        .then((r) => {
+          setAdvanceIssue(r.data)
+        })
+        .catch(() => {
+          /* handled — the queue just won't include advances awaiting cash this refresh */
+        })
+    }
+  }, [canApproveExpenses, canApproveAdvances, canIssueAdvances])
   useEffect(() => {
     loadFinanceItems()
     const timer = setInterval(loadFinanceItems, 60_000)
@@ -317,7 +354,48 @@ export default function MyQueuePage() {
         role: i18n.t('queue.role.approver', { defaultValue: 'Approver' }),
         updatedAt: c.created_at,
         href: `/finance/expense-claims/${c.id}`,
-        needsApproval: !funding,
+        // Finance's funding decision is a sign-off that waits on this person too, so it counts as "needs my approval".
+        needsApproval: true,
+        priority: null,
+      })
+    }
+    for (const a of advancePending) {
+      out.push({
+        key: `adv-${a.id}`,
+        kind: 'advance',
+        id: a.id,
+        number: a.advance_number,
+        headline: a.employee_name,
+        sub: t('queue.advanceRequest'),
+        status: a.status,
+        statusLabel: tAct('Pending approval'),
+        statusVariant: 'warning',
+        action: tAct('Approve advance request'),
+        role: i18n.t('queue.role.approver', { defaultValue: 'Approver' }),
+        updatedAt: a.created_at,
+        href: `/finance/advances/${a.id}`,
+        needsApproval: true,
+        priority: null,
+      })
+    }
+    for (const a of advanceIssue) {
+      out.push({
+        key: `advi-${a.id}`,
+        kind: 'advance',
+        id: a.id,
+        number: a.advance_number,
+        headline: a.employee_name,
+        sub: t('queue.advanceRequest'),
+        status: a.status,
+        statusLabel: tAct('Awaiting cash issue'),
+        statusVariant: 'warning',
+        action: tAct('Issue advance cash'),
+        role: i18n.t('queue.role.cashboxHandler', { defaultValue: 'Cashbox handler' }),
+        // waiting since the manager approved it
+        updatedAt: a.approved_at ?? a.created_at,
+        href: `/finance/advances/${a.id}`,
+        // paying the cash out is the release of an approved request, so it counts with what needs my sign-off
+        needsApproval: true,
         priority: null,
       })
     }
@@ -342,7 +420,7 @@ export default function MyQueuePage() {
     }
     // Longest-waiting first — the oldest item is the most overdue.
     return out.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
-  }, [reqData, poData, expenseRows, settlementRows, currentUserId, t])
+  }, [reqData, poData, expenseRows, settlementRows, advancePending, advanceIssue, currentUserId, t])
 
   const loading = (poLoading || reqLoading) && items.length === 0
   const count = (k: Kind) => items.filter((i) => i.kind === k).length

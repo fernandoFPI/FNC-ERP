@@ -1459,6 +1459,7 @@
   "queue": {
     "action": "Action",
     "actionsRequired": "Actions required",
+    "advanceRequest": "Advance request",
     "advanceSettlement": "Advance settlement",
     "awaitingYourAction": "Awaiting your action",
     "awaitingYourSignOff": "Awaiting your sign-off",
@@ -1492,6 +1493,9 @@
       "Decide expense funding source": "Decide expense funding source",
       "Approve expense claim": "Approve expense claim",
       "Approve advance settlement": "Approve advance settlement",
+      "Approve advance request": "Approve advance request",
+      "Issue advance cash": "Issue advance cash",
+      "Awaiting cash issue": "Awaiting cash issue",
       "Submit for inventory check": "Submit for inventory check",
       "Confirm inventory check": "Confirm inventory check",
       "Submit store pricing": "Submit store pricing",
@@ -1507,6 +1511,7 @@
       "finance": "Finance",
       "dept_head_or_admin": "Dept head / Admin",
       "approver": "Approver",
+      "cashboxHandler": "Cashbox handler",
       "store_keeper": "Store Keeper",
       "store_pricing": "Store Pricing",
       "procurement_officer": "Procurement Officer",
@@ -1518,6 +1523,7 @@
       "requisition": "Requisition",
       "po": "Purchase order",
       "expense": "Expense claim",
+      "advance": "Advance request",
       "settlement": "Advance settlement"
     }
   },

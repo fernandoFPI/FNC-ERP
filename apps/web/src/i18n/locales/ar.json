@@ -1547,6 +1547,7 @@
   "queue": {
     "action": "الإجراء",
     "actionsRequired": "إجراءات مطلوبة",
+    "advanceRequest": "طلب سلفة",
     "advanceSettlement": "تسوية سلفة",
     "awaitingYourAction": "بانتظار إجرائك",
     "awaitingYourSignOff": "بانتظار اعتمادك",
@@ -1580,6 +1581,9 @@
       "Decide expense funding source": "تحديد مصدر تمويل المصروف",
       "Approve expense claim": "الموافقة على مطالبة المصروفات",
       "Approve advance settlement": "الموافقة على تسوية السلفة",
+      "Approve advance request": "الموافقة على طلب السلفة",
+      "Issue advance cash": "صرف نقد السلفة",
+      "Awaiting cash issue": "بانتظار صرف النقد",
       "Submit for inventory check": "تقديم لفحص المخزون",
       "Confirm inventory check": "تأكيد فحص المخزون",
       "Submit store pricing": "تقديم تسعير المخزن",
@@ -1595,6 +1599,7 @@
       "finance": "المالية",
       "dept_head_or_admin": "رئيس القسم / المسؤول",
       "approver": "المعتمِد",
+      "cashboxHandler": "أمين الصندوق",
       "store_keeper": "أمين المخزن",
       "store_pricing": "مسعّر المخزن",
       "procurement_officer": "مسؤول المشتريات",
@@ -1606,6 +1611,7 @@
       "requisition": "طلب شراء",
       "po": "أمر شراء",
       "expense": "مطالبة مصروفات",
+      "advance": "طلب سلفة",
       "settlement": "تسوية سلفة"
     }
   },
