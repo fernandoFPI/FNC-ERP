@@ -863,6 +863,7 @@
     "breadcrumb": "مسار التنقل",
     "switchCompany": "تبديل الشركة",
     "selectCompany": "اختر الشركة",
+    "companyChangedNotice": "جلستك الآن في {{company}} (تم تبديل الشركة في علامة تبويب أو جهاز آخر). تم تحديث هذه الصفحة ببيانات {{company}}. راجع ما كنت تعمل عليه.",
     "userMenu": "قائمة المستخدم",
     "notificationsUnread": "الإشعارات، {{count}} غير مقروءة",
     "notifications": "الإشعارات",
